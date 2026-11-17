@@ -420,7 +420,7 @@ pub(in crate::decode) fn reconciled_model_plane(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
 ) -> Option<PlaneEquation> {
-    let mut model_surfaces = ir.model.surfaces.iter().filter(|surface| {
+    let mut model_surfaces = ir.geometry.surfaces.iter().filter(|surface| {
         crate::identity::matches_numbered_identity(
             surface.id.as_str(),
             "creo:visibgeom:surface#",

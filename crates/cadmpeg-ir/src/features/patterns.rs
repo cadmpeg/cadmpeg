@@ -566,7 +566,6 @@ pub enum PatternTransform<C = CompositePattern> {
         )]
         second: Option<LinearPatternDirection>,
         /// Zero-based positions omitted from the two-direction grid.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         omitted_instances: Vec<[u32; 2]>,
         /// Whether the first-direction instances lie on both sides of the
         /// original. `count` includes the original. Grid coordinate `0` is
@@ -574,7 +573,6 @@ pub enum PatternTransform<C = CompositePattern> {
         /// along `direction`, and an even coordinate `k > 0` lies `k / 2`
         /// spacings against it. An even `count` places `count / 2` instances
         /// along `direction` and `count / 2 - 1` against it.
-        #[serde(default, skip_serializing_if = "core::ops::Not::not")]
         symmetric: bool,
     },
     /// Repeats seeds at explicitly located distances along a straight direction.
@@ -806,6 +804,7 @@ fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
 #[serde(deny_unknown_fields)]
 pub enum PatternScaleCenter {
     /// Volume centroid of the first seed feature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FirstSeedCentroid,
     /// Explicit model-space point.
     Point(FinitePoint3),
@@ -849,7 +848,6 @@ pub struct LinearPatternDirection {
     pub count: u32,
     /// Whether the instances lie on both sides of the original, distributed
     /// as for a symmetric first direction.
-    #[serde(default, skip_serializing_if = "core::ops::Not::not")]
     pub symmetric: bool,
 }
 

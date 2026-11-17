@@ -138,7 +138,7 @@ pub(crate) fn transfer(
         None => None,
     };
     let positional_bindings = positional_colors
-        .filter(|colors| colors.len() == ir.model.faces.len())
+        .filter(|colors| colors.len() == ir.geometry.faces.len())
         .and_then(|colors| Some((standard_faces_in_row_order(ir)?, colors)));
     if let Some((faces, colors)) = positional_bindings {
         let compatible = match all_faces.as_slice() {
@@ -167,7 +167,7 @@ pub(crate) fn transfer(
             result.unresolved_packets += packets.len();
         }
     } else {
-        if all_faces.len() == 1 && !ir.model.faces.is_empty() {
+        if all_faces.len() == 1 && !ir.geometry.faces.is_empty() {
             let appearance = insert_appearance(ctx, ir, all_faces[0])?;
             let faces = copy_face_ids(ir);
             for (index, face) in faces.into_iter().enumerate() {
@@ -182,9 +182,9 @@ pub(crate) fn transfer(
         }
 
         match body.as_slice() {
-            [rgba] if all_faces.is_empty() && ir.model.bodies.len() == 1 => {
+            [rgba] if all_faces.is_empty() && ir.geometry.bodies.len() == 1 => {
                 let appearance = insert_appearance(ctx, ir, *rgba)?;
-                let target = AppearanceTarget::Body(ir.model.bodies[0].id.clone());
+                let target = AppearanceTarget::Body(ir.geometry.bodies[0].id.clone());
                 insert_binding(ctx, ir, &appearance, target, 0)?;
                 result.transferred_packets += 1;
             }
@@ -203,7 +203,7 @@ pub(crate) fn transfer(
 
 fn standard_faces_in_row_order(ir: &CadIr) -> Option<Vec<FaceId>> {
     let mut faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| {
@@ -221,7 +221,7 @@ fn standard_faces_in_row_order(ir: &CadIr) -> Option<Vec<FaceId>> {
 
 fn copy_face_ids(ir: &CadIr) -> Vec<FaceId> {
     let mut faces = Vec::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         let id = face.id.clone();
         faces.push(id);
     }
@@ -338,7 +338,7 @@ fn insert_binding_record(
     let object_type = "CATIA V5 display property".to_owned();
     ir.model.appearance_bindings.push(AppearanceBinding {
         id,
-        target,
+        target: target.into(),
         appearance: retained_appearance,
         source_entity_id: None,
         object_type: Some(object_type),
@@ -412,17 +412,17 @@ mod tests {
 
     fn model(face_count: usize) -> CadIr {
         let mut ir = CadIr::empty();
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: BodyId::mint("catia:test:body#body").expect("identity grammar"),
             kind: BodyKind::Solid,
-            regions: vec![],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         for index in 0..face_count {
-            ir.model.faces.push(Face {
+            ir.geometry.faces.push(Face {
                 id: FaceId::mint(format!("catia:standard:face#{index}")).expect("identity grammar"),
                 shell: ShellId::mint("catia:test:shell#shell").expect("identity grammar"),
                 surface: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
@@ -432,6 +432,7 @@ mod tests {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
         }
         ir
@@ -517,8 +518,8 @@ mod tests {
                 for face_count in [0, 2] {
                     for body_count in 0..=2 {
                         let mut ir = model(face_count);
-                        let body = ir.model.bodies[0].clone();
-                        ir.model.bodies = (0..body_count)
+                        let body = ir.geometry.bodies[0].clone();
+                        ir.geometry.bodies = (0..body_count)
                             .map(|index| Body {
                                 id: BodyId::compose(
                                     &cadmpeg_ir::identity_namespace!("catia", "test", "body"),
@@ -587,7 +588,7 @@ mod tests {
             (1, 1, 0, 1, 1)
         );
         assert!(matches!(
-            ir.model.appearance_bindings[0].target,
+            &ir.model.appearance_bindings[0].target.entity,
             AppearanceTarget::Body(_)
         ));
         assert_eq!(
@@ -620,7 +621,7 @@ mod tests {
             .model
             .appearance_bindings
             .iter()
-            .all(|binding| matches!(binding.target, AppearanceTarget::Face(_))));
+            .all(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_))));
     }
 
     #[test]
@@ -658,14 +659,14 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
                 .count(),
             1
         );
         assert!(ir.model.appearance_bindings.iter().any(|binding| {
             binding.appearance.as_str().contains("143de0ff")
                 && matches!(
-                    &binding.target,
+                    &binding.target.entity,
                     AppearanceTarget::Source { source_id }
                         if source_id == "values:field#0000000007:000001"
                 )
@@ -674,7 +675,7 @@ mod tests {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)))
             .all(|binding| binding.appearance.as_str().contains("d11a1fff")));
     }
 
@@ -700,7 +701,7 @@ mod tests {
             .as_str()
             .starts_with("catia:appearance:source-binding#source-"));
         assert!(matches!(
-            &binding.target,
+            &binding.target.entity,
             AppearanceTarget::Source { source_id } if source_id == &packet.source_id
         ));
     }
@@ -767,7 +768,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
                 .count(),
             6
         );
@@ -775,7 +776,7 @@ mod tests {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)))
             .all(|binding| binding.appearance.as_str().contains("143de0ff")));
     }
 
@@ -809,7 +810,7 @@ mod tests {
             .model
             .appearance_bindings
             .iter()
-            .all(|binding| matches!(binding.target, AppearanceTarget::Source { .. })));
+            .all(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. })));
     }
 
     #[test]
@@ -831,7 +832,7 @@ mod tests {
             assert_eq!(result.emitted_bindings, expected);
             assert_eq!(ir.model.appearance_bindings.len(), expected);
             assert!(ir.model.appearance_bindings.iter().all(|binding| {
-                matches!(binding.target, AppearanceTarget::Face(_))
+                matches!(binding.target.entity, AppearanceTarget::Face(_))
                     && binding.appearance.as_str().contains("d2d2ffff")
             }));
         }
@@ -840,7 +841,7 @@ mod tests {
     #[test]
     fn positional_colors_follow_fbb_rows_after_face_arena_sorting() {
         let mut ir = model(12);
-        ir.model.faces.sort_by(|a, b| a.id.cmp(&b.id));
+        ir.geometry.faces.sort_by(|a, b| a.id.cmp(&b.id));
         let brep = (0..12)
             .flat_map(|row| [0xb0, 4, 4, 0xff, 0xff, 0, 0, row])
             .collect::<Vec<_>>();
@@ -856,7 +857,7 @@ mod tests {
         .expect("transfer the appearance");
         assert_eq!(result.emitted_bindings, 12);
         for (row, binding) in ir.model.appearance_bindings.iter().enumerate() {
-            let AppearanceTarget::Face(id) = &binding.target else {
+            let AppearanceTarget::Face(id) = &binding.target.entity else {
                 panic!("FBB row binds to a standard face");
             };
             assert_eq!(id.as_str(), format!("catia:standard:face#{row}"));
@@ -923,7 +924,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
                 .count(),
             7
         );
@@ -931,7 +932,7 @@ mod tests {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)))
             .all(|binding| binding.appearance.as_str().contains("143de0ff")));
     }
 
@@ -1054,7 +1055,7 @@ mod tests {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)))
             .enumerate()
         {
             let mut rgba = colors[index];
@@ -1070,7 +1071,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
                 .count(),
             6
         );
@@ -1114,7 +1115,7 @@ mod tests {
         assert_eq!(ir.model.appearances.len(), 1);
         assert_eq!(ir.model.appearance_bindings.len(), 1);
         assert!(matches!(
-            ir.model.appearance_bindings[0].target,
+            &ir.model.appearance_bindings[0].target.entity,
             AppearanceTarget::Source { .. }
         ));
     }
@@ -1148,7 +1149,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)))
                 .count(),
             1
         );
@@ -1156,7 +1157,7 @@ mod tests {
             ir.model
                 .appearance_bindings
                 .iter()
-                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Source { .. }))
                 .count(),
             1
         );
@@ -1164,7 +1165,7 @@ mod tests {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)))
             .all(|binding| binding.appearance.as_str().ends_with("0a141eff")));
     }
 
@@ -1200,7 +1201,7 @@ mod tests {
                 .model
                 .appearance_bindings
                 .iter()
-                .filter(|b| matches!(b.target, AppearanceTarget::Face(_)))
+                .filter(|b| matches!(b.target.entity, AppearanceTarget::Face(_)))
                 .collect::<Vec<_>>();
             assert_eq!(faces.len(), 2);
             assert!(faces
@@ -1210,7 +1211,7 @@ mod tests {
                 .model
                 .appearance_bindings
                 .iter()
-                .filter(|b| matches!(b.target, AppearanceTarget::Source { .. }))
+                .filter(|b| matches!(b.target.entity, AppearanceTarget::Source { .. }))
                 .collect::<Vec<_>>();
             assert_eq!(sources.len(), 2);
             assert!(sources
@@ -1220,7 +1221,7 @@ mod tests {
                 .model
                 .appearance_bindings
                 .iter()
-                .any(|b| matches!(b.target, AppearanceTarget::Body(_))));
+                .any(|b| matches!(b.target.entity, AppearanceTarget::Body(_))));
         }
     }
 }

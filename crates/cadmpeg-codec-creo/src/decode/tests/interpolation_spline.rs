@@ -712,9 +712,12 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+    ir.geometry
+        .surfaces
+        .extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert!(matches!(
         crate::decode::with_service_context(
@@ -1258,9 +1261,12 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+    ir.geometry
+        .surfaces
+        .extend([plane(31, 2.0), plane(32, 8.0)]);
 
     let IrFeatureDefinition::Operation(IrFeatureOperation::Extrude {
         direction: ExtrudeDirection::Explicit {
@@ -1465,7 +1471,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         offset: 0,
     });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1476,6 +1482,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     assert_eq!(

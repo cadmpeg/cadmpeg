@@ -90,7 +90,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
 
     let mut ir = CadIr::empty();
     for (index, position) in [start, end].into_iter().enumerate() {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#p{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position)
                 .expect("a finite position is a point"),

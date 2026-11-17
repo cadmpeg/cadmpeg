@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
-use cadmpeg_ir::document::Model;
 
 use crate::layout::{
     pm_dc_blend_name_tail as blend_tail, pm_dc_generated_name_tail as generated_tail,
@@ -142,10 +141,10 @@ pub(super) struct BodyNames<'m> {
 }
 
 impl<'m> BodyNames<'m> {
-    pub(super) fn new(model: &'m Model) -> Self {
+    pub(super) fn new(ir: &'m cadmpeg_ir::CadIr) -> Self {
         let mut names = Self::default();
-        for attribute in &model.attributes {
-            let (kind, entity) = match &attribute.target {
+        for attribute in &ir.model.attributes {
+            let (kind, entity) = match &attribute.target.entity {
                 AttributeTarget::Face(face) => (EntityKind::Face, face.as_str()),
                 AttributeTarget::Edge(edge) => (EntityKind::Edge, edge.as_str()),
                 _ => continue,
@@ -165,12 +164,13 @@ impl<'m> BodyNames<'m> {
                     tail,
                 });
         }
-        let loop_faces = model
+        let loop_faces = ir
+            .geometry
             .loops
             .iter()
             .map(|entry| (entry.id.as_str(), entry.face.as_str()))
             .collect::<HashMap<_, _>>();
-        for coedge in &model.coedges {
+        for coedge in &ir.geometry.coedges {
             if let Some(face) = loop_faces.get(coedge.owner_loop.as_str()) {
                 names
                     .face_edges

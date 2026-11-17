@@ -32,7 +32,7 @@ name = "circular-arc"
 forms = [0]
 domain = "geometry"
 decoder = "entities::geometry::project_geometry"
-destination = "model.curves"
+destination = "geometry.curves"
 fixture_classes = ["analytic-curves"]
 assertions = ["curve-evaluation", "placement", "byte-coverage"]
 
@@ -42,7 +42,7 @@ name = "composite-curve"
 forms = [0]
 domain = "geometry"
 decoder = "entities::composite::project"
-destination = "model.procedural_curves"
+destination = "geometry.procedural_curves"
 fixture_classes = ["composite-curves"]
 assertions = ["ordered-children", "parameter-domain", "byte-coverage"]
 
@@ -52,7 +52,7 @@ name = "conic-arc"
 forms = [0, 1, 2, 3]
 domain = "geometry"
 decoder = "entities::conics::project"
-destination = "model.curves"
+destination = "geometry.curves"
 fixture_classes = ["conic-forms"]
 assertions = ["curve-evaluation", "endpoints", "byte-coverage"]
 
@@ -62,7 +62,7 @@ name = "copious-data"
 forms = [1, 2, 3, 11, 12, 13, 20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40, 63]
 domain = "geometry-presentation"
 decoder = "entities::copious::project"
-destination = "model.curves,native.iges.presentation"
+destination = "geometry.curves,native.iges.presentation"
 fixture_classes = ["copious-tuples", "centerlines", "sections", "witness-lines"]
 assertions = ["tuple-arity", "form-semantics", "byte-coverage"]
 
@@ -72,7 +72,7 @@ name = "plane"
 forms = [-1, 0, 1]
 domain = "geometry"
 decoder = "entities::surfaces::project"
-destination = "model.surfaces"
+destination = "geometry.surfaces"
 fixture_classes = ["analytic-surfaces"]
 assertions = ["surface-evaluation", "bounded-plane", "byte-coverage"]
 
@@ -82,7 +82,7 @@ name = "line"
 forms = [0, 1, 2]
 domain = "geometry"
 decoder = "entities::geometry::project_geometry"
-destination = "model.curves"
+destination = "geometry.curves"
 fixture_classes = ["line-forms"]
 assertions = ["curve-evaluation", "bounds", "byte-coverage"]
 
@@ -92,7 +92,7 @@ name = "parametric-spline-curve"
 forms = [0]
 domain = "geometry"
 decoder = "entities::splines::project"
-destination = "model.curves,native.iges.entities"
+destination = "geometry.curves,native.iges.entities"
 fixture_classes = ["parametric-spline-curves"]
 assertions = ["curve-evaluation", "continuity", "byte-coverage"]
 
@@ -102,7 +102,7 @@ name = "parametric-spline-surface"
 forms = [0]
 domain = "geometry"
 decoder = "entities::splines::project"
-destination = "model.surfaces,native.iges.entities"
+destination = "geometry.surfaces,native.iges.entities"
 fixture_classes = ["parametric-spline-surfaces"]
 assertions = ["surface-evaluation", "control-order", "byte-coverage"]
 
@@ -112,7 +112,7 @@ name = "point"
 forms = [0]
 domain = "geometry"
 decoder = "entities::geometry::project_geometry"
-destination = "model.points"
+destination = "geometry.points"
 fixture_classes = ["placed-points"]
 assertions = ["units", "placement", "byte-coverage"]
 
@@ -122,7 +122,7 @@ name = "ruled-surface"
 forms = [0, 1]
 domain = "geometry"
 decoder = "entities::surfaces::project"
-destination = "model.procedural_surfaces"
+destination = "geometry.procedural_surfaces"
 fixture_classes = ["ruled-surfaces"]
 assertions = ["surface-evaluation", "direction-flags", "byte-coverage"]
 
@@ -132,7 +132,7 @@ name = "surface-of-revolution"
 forms = [0]
 domain = "geometry"
 decoder = "entities::surfaces::project"
-destination = "model.procedural_surfaces"
+destination = "geometry.procedural_surfaces"
 fixture_classes = ["revolved-surfaces"]
 assertions = ["surface-evaluation", "angle-domain", "byte-coverage"]
 
@@ -142,7 +142,7 @@ name = "tabulated-cylinder"
 forms = [0]
 domain = "geometry"
 decoder = "entities::surfaces::project"
-destination = "model.procedural_surfaces"
+destination = "geometry.procedural_surfaces"
 fixture_classes = ["tabulated-surfaces"]
 assertions = ["surface-evaluation", "directrix", "byte-coverage"]
 
@@ -172,7 +172,7 @@ name = "flash"
 forms = [0, 1, 2, 3, 4]
 domain = "geometry-artwork"
 decoder = "entities::geometry::project_geometry"
-destination = "model.points,native.iges.flashes"
+destination = "geometry.points,native.iges.flashes"
 fixture_classes = ["flash-forms", "placed-points"]
 assertions = ["reference-point", "shape-parameters", "defining-reference", "byte-coverage"]
 
@@ -182,7 +182,7 @@ name = "rational-b-spline-curve"
 forms = [0, 1, 2, 3, 4, 5]
 domain = "geometry"
 decoder = "entities::geometry::project_geometry"
-destination = "model.curves"
+destination = "geometry.curves"
 fixture_classes = ["nurbs-curves"]
 assertions = ["knots", "multiplicity", "weights", "periodicity", "evaluation", "byte-coverage"]
 
@@ -192,7 +192,7 @@ name = "rational-b-spline-surface"
 forms = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 domain = "geometry"
 decoder = "entities::surfaces::project"
-destination = "model.surfaces"
+destination = "geometry.surfaces"
 fixture_classes = ["nurbs-surfaces"]
 assertions = [
   "knots",
@@ -210,7 +210,7 @@ name = "offset-curve"
 forms = [0]
 domain = "geometry"
 decoder = "entities::offsets::project"
-destination = "model.procedural_curves"
+destination = "geometry.procedural_curves"
 fixture_classes = ["offset-curves"]
 assertions = ["source-definition", "parameter-domain", "byte-coverage"]
 
@@ -290,7 +290,7 @@ name = "offset-surface"
 forms = [0]
 domain = "geometry"
 decoder = "entities::offsets::project"
-destination = "model.procedural_surfaces"
+destination = "geometry.procedural_surfaces"
 fixture_classes = ["offset-surfaces"]
 assertions = ["source-definition", "signed-distance", "byte-coverage"]
 
@@ -300,7 +300,7 @@ name = "boundary"
 forms = [0]
 domain = "topology"
 decoder = "entities::trimming::project"
-destination = "model.loops,model.coedges,model.edges,model.pcurves"
+destination = "geometry.loops,geometry.coedges,geometry.edges,geometry.pcurves"
 fixture_classes = ["surface-boundaries"]
 assertions = [
   "orientation",
@@ -316,7 +316,7 @@ name = "curve-on-parametric-surface"
 forms = [0]
 domain = "topology"
 decoder = "entities::trimming::project"
-destination = "model.pcurves,native.iges.entities"
+destination = "geometry.pcurves,native.iges.entities"
 fixture_classes = ["curves-on-surfaces"]
 assertions = ["preferred-representation", "carrier-agreement", "byte-coverage"]
 
@@ -326,7 +326,7 @@ name = "bounded-surface"
 forms = [0]
 domain = "topology"
 decoder = "entities::trimming::project"
-destination = "model.regions,model.faces,model.loops"
+destination = "geometry.regions,geometry.faces,geometry.loops"
 fixture_classes = ["bounded-surfaces"]
 assertions = ["face-local-topology", "inner-loops", "validation", "byte-coverage"]
 
@@ -336,7 +336,7 @@ name = "trimmed-parametric-surface"
 forms = [0]
 domain = "topology"
 decoder = "entities::trimming::project"
-destination = "model.regions,model.faces,model.loops"
+destination = "geometry.regions,geometry.faces,geometry.loops"
 fixture_classes = ["trimmed-surfaces"]
 assertions = ["face-local-topology", "outer-boundary", "inner-loops", "validation", "byte-coverage"]
 
@@ -466,7 +466,7 @@ name = "manifold-solid-brep-object"
 forms = [0]
 domain = "topology"
 decoder = "entities::brep::project"
-destination = "model.bodies,model.regions"
+destination = "geometry.bodies,geometry.regions"
 fixture_classes = ["manifold-solids"]
 assertions = ["connected-topology", "void-shells", "orientation", "validation", "byte-coverage"]
 
@@ -476,7 +476,7 @@ name = "plane-surface"
 forms = [0, 1]
 domain = "geometry"
 decoder = "entities::analytic_surfaces::project"
-destination = "model.surfaces"
+destination = "geometry.surfaces"
 fixture_classes = ["analytic-surfaces"]
 assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 
@@ -486,7 +486,7 @@ name = "right-circular-cylindrical-surface"
 forms = [0, 1]
 domain = "geometry"
 decoder = "entities::analytic_surfaces::project"
-destination = "model.surfaces"
+destination = "geometry.surfaces"
 fixture_classes = ["analytic-surfaces"]
 assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 
@@ -496,7 +496,7 @@ name = "right-circular-conical-surface"
 forms = [0, 1]
 domain = "geometry"
 decoder = "entities::analytic_surfaces::project"
-destination = "model.surfaces"
+destination = "geometry.surfaces"
 fixture_classes = ["analytic-surfaces"]
 assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 
@@ -506,7 +506,7 @@ name = "spherical-surface"
 forms = [0, 1]
 domain = "geometry"
 decoder = "entities::analytic_surfaces::project"
-destination = "model.surfaces"
+destination = "geometry.surfaces"
 fixture_classes = ["analytic-surfaces"]
 assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 
@@ -516,7 +516,7 @@ name = "toroidal-surface"
 forms = [0, 1]
 domain = "geometry"
 decoder = "entities::analytic_surfaces::project"
-destination = "model.surfaces"
+destination = "geometry.surfaces"
 fixture_classes = ["analytic-surfaces"]
 assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 
@@ -939,7 +939,7 @@ name = "vertex-list"
 forms = [1]
 domain = "topology"
 decoder = "entities::brep::project"
-destination = "model.vertices,model.points"
+destination = "geometry.vertices,geometry.points"
 fixture_classes = ["explicit-brep"]
 assertions = ["list-index", "shared-identity", "byte-coverage"]
 
@@ -949,7 +949,7 @@ name = "edge-list"
 forms = [1]
 domain = "topology"
 decoder = "entities::brep::project"
-destination = "model.edges"
+destination = "geometry.edges"
 fixture_classes = ["explicit-brep"]
 assertions = ["list-index", "endpoint-links", "curve-links", "byte-coverage"]
 
@@ -959,7 +959,7 @@ name = "loop"
 forms = [1]
 domain = "topology"
 decoder = "entities::brep::project"
-destination = "model.loops,model.coedges,model.pcurves"
+destination = "geometry.loops,geometry.coedges,geometry.pcurves"
 fixture_classes = ["explicit-brep"]
 assertions = ["ordered-uses", "orientation", "seams", "byte-coverage"]
 
@@ -969,7 +969,7 @@ name = "face"
 forms = [1]
 domain = "topology"
 decoder = "entities::brep::project"
-destination = "model.faces"
+destination = "geometry.faces"
 fixture_classes = ["explicit-brep"]
 assertions = ["surface-link", "same-sense", "outer-loop", "byte-coverage"]
 
@@ -979,6 +979,6 @@ name = "shell"
 forms = [1, 2]
 domain = "topology"
 decoder = "entities::brep::project"
-destination = "model.shells"
+destination = "geometry.shells"
 fixture_classes = ["explicit-brep"]
 assertions = ["face-membership", "orientation", "validation", "byte-coverage"]

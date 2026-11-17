@@ -25,6 +25,7 @@ use crate::records::{
         extrude_selection::DesignExtrudeSelectionMember, extrude_selection::DesignOperandRole,
         sketch_profile::DesignSketchProfileOperand,
         sketch_profile::DesignSketchProfileRegionMember,
+        sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
 use cadmpeg_core::decode::DecodeContext;
@@ -837,7 +838,9 @@ pub(crate) fn bind_extrude_profile_selections(
                                 match (&explicit_profiles, unresolved_region_operand, &merged) {
                                     (None, None, _) => true,
                                     (None, Some((operand, stream)), ProfileRef::Planar(planar)) => {
-                                        planar_selection_agrees_with_region_operand(
+                                        operand.region_selection.as_ref().is_some_and(
+                                            DesignSketchProfileRegionSelection::is_beyond_one_face_rings,
+                                        ) || planar_selection_agrees_with_region_operand(
                                             stream,
                                             operand,
                                             sketch,

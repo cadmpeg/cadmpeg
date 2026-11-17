@@ -164,7 +164,7 @@ pub fn source_attribute(
     }
     Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
-        target,
+        target: target.into(),
         name: record.name.clone(),
         values,
     })
@@ -309,12 +309,7 @@ fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
                 return None;
             }
             Some(DirectAttributeColor {
-                color: Color::new(
-                    cadmpeg_core::convert::f32_from_f64(r)?,
-                    cadmpeg_core::convert::f32_from_f64(g)?,
-                    cadmpeg_core::convert::f32_from_f64(b)?,
-                    1.0,
-                )?,
+                color: Color::new(r, g, b, 1.0)?,
                 carrier: DirectColorCarrier::NormalizedRgb {
                     fields: [r_field, g_field, b_field],
                 },

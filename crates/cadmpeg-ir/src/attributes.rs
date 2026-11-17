@@ -5,16 +5,19 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::features::{ConfigurationId, ParameterId};
 use crate::ids::{AttributeId, BodyId, CoedgeId, EdgeId, FaceId, LoopId, ShellId, VertexId};
+use crate::references::InstanceTarget;
 use crate::scalar::FiniteReal;
 
 /// An entity which owns a source attribute.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum AttributeTarget {
     /// Attribute is owned by the document as a whole, not a specific entity.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Document,
     /// Attribute is owned by a body.
     Body(BodyId),
@@ -30,6 +33,9 @@ pub enum AttributeTarget {
     Edge(EdgeId),
     /// Attribute is owned by a vertex.
     Vertex(VertexId),
+    /// A configuration's own value of the like-named attribute of its
+    /// scope's definition.
+    Configuration(ConfigurationId),
 }
 
 /// One ordered typed value from a source attribute record.
@@ -48,6 +54,9 @@ pub enum AttributeValue {
     Boolean(bool),
     /// A string-encoded reference to another entity, opaque to this crate.
     Reference(String),
+    /// The design parameter that a property linked to a dimension or a
+    /// measure is.
+    Parameter(ParameterId),
     /// A fixed- or variable-length numeric vector value.
     Vector(#[cfg_attr(feature = "schema", schemars(with = "Vec<f64>"))] Vec<FiniteReal>),
 }
@@ -76,8 +85,9 @@ impl AttributeValue {
 pub struct SourceAttribute {
     /// Stable id of this attribute record.
     pub id: AttributeId,
-    /// Entity this attribute is attached to.
-    pub target: AttributeTarget,
+    /// The entity this attribute is attached to, in the placed instance and
+    /// the state that hold it.
+    pub target: InstanceTarget<AttributeTarget>,
     /// Source attribute name, as recorded in the native attribute table.
     pub name: String,
     /// Ordered typed values carried by this attribute; length and types are
@@ -94,6 +104,63 @@ mod tests {
         let target = AttributeTarget::Face(crate::ids::FaceId::mint("test:model:face#17").unwrap());
         assert_eq!(target.clone(), target);
         assert_eq!(AttributeTarget::Document.clone(), AttributeTarget::Document);
+    }
+
+    #[test]
+    fn a_configuration_target_and_a_parameter_value_are_adjacently_tagged() {
+        let target = AttributeTarget::Configuration(
+            crate::features::ConfigurationId::mint("test:design:configuration#large").unwrap(),
+        );
+        let wire = serde_json::json!({"kind": "configuration", "value": "test:design:configuration#large"});
+        assert_eq!(serde_json::to_value(&target).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<AttributeTarget>(wire).unwrap(),
+            target
+        );
+        let value = super::AttributeValue::Parameter(
+            crate::features::ParameterId::mint("test:design:parameter#mass").unwrap(),
+        );
+        let wire = serde_json::json!({"kind": "parameter", "value": "test:design:parameter#mass"});
+        assert_eq!(serde_json::to_value(&value).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<super::AttributeValue>(wire).unwrap(),
+            value
+        );
+    }
+
+    #[test]
+    fn a_configuration_target_and_a_parameter_value_name_design_records() {
+        use crate::report::check::Check;
+
+        let mut ir = crate::document::CadIr::empty();
+        ir.model.attributes.push(super::SourceAttribute {
+            id: crate::ids::AttributeId::mint("test:model:attribute#part-number").unwrap(),
+            target: AttributeTarget::Configuration(
+                crate::features::ConfigurationId::mint("test:design:configuration#large").unwrap(),
+            )
+            .into(),
+            name: "Part Number".into(),
+            values: vec![super::AttributeValue::Parameter(
+                crate::features::ParameterId::mint("test:design:parameter#mass").unwrap(),
+            )],
+        });
+        let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
+        let missing = report
+            .findings
+            .iter()
+            .filter(|finding| finding.check == Check::ReferentialIntegrity)
+            .map(|finding| finding.message.as_str())
+            .collect::<Vec<_>>();
+        assert!(
+            missing
+                .iter()
+                .any(|message| message.contains("configuration")),
+            "{missing:?}"
+        );
+        assert!(
+            missing.iter().any(|message| message.contains("parameter")),
+            "{missing:?}"
+        );
     }
 }
 

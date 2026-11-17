@@ -34,37 +34,26 @@ pub struct BodyTopology {
     /// The body.
     pub body: Body,
     /// Regions of the body.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub regions: Vec<Region>,
     /// Shells of the regions.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shells: Vec<Shell>,
     /// Faces of the shells.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub faces: Vec<Face>,
     /// Loops of the faces.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub loops: Vec<Loop>,
     /// Coedges of the loops.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub coedges: Vec<Coedge>,
     /// Edges of the coedges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edges: Vec<Edge>,
     /// Vertices of the edges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vertices: Vec<Vertex>,
     /// Surface carriers of the faces. A carrier states solved geometry.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surfaces: Vec<Surface>,
     /// Curve carriers of the edges and coedges. A carrier states solved geometry.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curves: Vec<Curve>,
     /// Parameter-space curves of the coedges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<Pcurve>,
     /// Points of the vertices.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub points: Vec<Point>,
 }
 
@@ -104,23 +93,23 @@ impl BodyTopology {
             + self.points.len()
     }
 
-    /// The nest as a model that holds only its records, for the topology checks.
+    /// The nest as a topology that holds only its records, for the topology checks.
     #[must_use]
-    pub fn to_model(&self) -> crate::document::Model {
-        let mut model = crate::document::Model::default();
-        model.bodies.push(self.body.clone());
-        model.regions.clone_from(&self.regions);
-        model.shells.clone_from(&self.shells);
-        model.faces.clone_from(&self.faces);
-        model.loops.clone_from(&self.loops);
-        model.coedges.clone_from(&self.coedges);
-        model.edges.clone_from(&self.edges);
-        model.vertices.clone_from(&self.vertices);
-        model.surfaces.clone_from(&self.surfaces);
-        model.curves.clone_from(&self.curves);
-        model.pcurves.clone_from(&self.pcurves);
-        model.points.clone_from(&self.points);
-        model
+    pub fn to_topology(&self) -> crate::document::Topology {
+        let mut geometry = crate::document::Topology::default();
+        geometry.bodies.push(self.body.clone());
+        geometry.regions.clone_from(&self.regions);
+        geometry.shells.clone_from(&self.shells);
+        geometry.faces.clone_from(&self.faces);
+        geometry.loops.clone_from(&self.loops);
+        geometry.coedges.clone_from(&self.coedges);
+        geometry.edges.clone_from(&self.edges);
+        geometry.vertices.clone_from(&self.vertices);
+        geometry.surfaces.clone_from(&self.surfaces);
+        geometry.curves.clone_from(&self.curves);
+        geometry.pcurves.clone_from(&self.pcurves);
+        geometry.points.clone_from(&self.points);
+        geometry
     }
 }
 

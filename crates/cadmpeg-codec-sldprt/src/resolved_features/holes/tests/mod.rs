@@ -172,6 +172,7 @@ fn cylinder(id: usize, x: f64) -> Surface {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 

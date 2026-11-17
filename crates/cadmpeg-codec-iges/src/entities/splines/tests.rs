@@ -53,7 +53,7 @@ fn decode_skips_a_parametric_spline_segment_count_over_its_projection_limit() {
         )
         .unwrap();
 
-    assert!(decoded.ir().model.curves.is_empty());
+    assert!(decoded.ir().geometry.curves.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("segment count is outside 1..=100000")
@@ -75,7 +75,7 @@ fn decode_skips_a_parametric_spline_surface_over_its_pole_limit() {
         )
         .unwrap();
 
-    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.ir().geometry.surfaces.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss
@@ -108,8 +108,9 @@ fn spline_surface_patch_projects_a_bicubic_nurbs_carrier() {
     )
     .unwrap();
     assert!(result.decoded.contains(&1));
-    assert_eq!(ir.model.surfaces.len(), 1);
-    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = ir.model.surfaces[0].geometry.solved() else {
+    assert_eq!(ir.geometry.surfaces.len(), 1);
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = ir.geometry.surfaces[0].geometry.solved()
+    else {
         panic!("expected a bicubic NURBS carrier");
     };
     assert_eq!((surface.u_degree(), surface.v_degree()), (3, 3));
@@ -136,7 +137,7 @@ fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
         .unwrap();
 
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected a bicubic NURBS carrier");
     };
@@ -171,7 +172,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         )
         .unwrap();
 
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a cubic NURBS carrier");
     };
@@ -192,7 +193,7 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
         Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
     );
     assert_eq!(
-        result.ir().model.edges[0]
+        result.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 2.0])
@@ -215,7 +216,7 @@ fn decode_converts_nonzero_cubic_power_terms_on_a_nonunit_interval() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a cubic NURBS carrier");
     };
@@ -243,7 +244,7 @@ fn decode_converts_nonzero_bicubic_cross_terms_on_nonunit_intervals() {
         )
         .unwrap();
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected a bicubic NURBS carrier");
     };
@@ -307,7 +308,7 @@ fn decode_uses_global_resolution_for_spline_position_continuity() {
             )
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), usize::from(decoded));
+        assert_eq!(result.ir().geometry.curves.len(), usize::from(decoded));
         assert_eq!(
             result
                 .report()
@@ -366,7 +367,7 @@ fn decode_type_112_h1_compares_unit_tangent_not_parameter_speed() {
             )
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), 1);
+        assert_eq!(result.ir().geometry.curves.len(), 1);
         assert_eq!(
             result
                 .report()
@@ -425,7 +426,7 @@ fn decode_type_112_h2_compares_curvature_with_arc_length_parameterization() {
             )
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), 1);
+        assert_eq!(result.ir().geometry.curves.len(), 1);
         assert_eq!(
             result
                 .report()
@@ -455,7 +456,7 @@ fn decode_keeps_type_112_curve_when_redundant_terminal_block_disagrees() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::SplineClaimRecovered.kind()
             && loss
@@ -476,7 +477,7 @@ fn decode_rejects_a_degenerate_type_112_segment() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert_eq!(
         result
             .report()
@@ -501,8 +502,9 @@ fn coefficient_curve_survives_missing_terminal_and_invalid_claims() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(result.ir().model.curves.len(), 1, "{header}");
-        let Some(SolvedCurveGeometry::Nurbs(curve)) = result.ir().model.curves[0].geometry.solved()
+        assert_eq!(result.ir().geometry.curves.len(), 1, "{header}");
+        let Some(SolvedCurveGeometry::Nurbs(curve)) =
+            result.ir().geometry.curves[0].geometry.solved()
         else {
             panic!("exact carrier")
         };
@@ -546,9 +548,9 @@ fn coefficient_surface_survives_only_missing_unused_trailing_placeholders() {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.surfaces.len(), 1, "padding {padding}");
+        assert_eq!(result.ir().geometry.surfaces.len(), 1, "padding {padding}");
         let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-            result.ir().model.surfaces[0].geometry.solved()
+            result.ir().geometry.surfaces[0].geometry.solved()
         else {
             panic!("exact patch")
         };
@@ -590,10 +592,13 @@ fn coefficient_surface_requires_actual_patches_at_their_declared_grid_positions(
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.surfaces.len(), usize::from(recoverable));
+        assert_eq!(
+            result.ir().geometry.surfaces.len(),
+            usize::from(recoverable)
+        );
         if recoverable {
             let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-                result.ir().model.surfaces[0].geometry.solved()
+                result.ir().geometry.surfaces[0].geometry.solved()
             else {
                 panic!("exact grid")
             };

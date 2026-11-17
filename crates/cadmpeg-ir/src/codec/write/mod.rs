@@ -34,7 +34,10 @@ pub mod subset_lowering;
 pub mod target;
 
 use carried::{EntityLocation, FindingLocator};
-pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
+pub use coverage::{
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
+    ProcessArenaDispositions,
+};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// How much of its source a document must record for an encoder to plan it.
@@ -148,7 +151,7 @@ impl<E: EncoderBackend> Encoder for E {
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
     ) -> Result<ExportPlan, CodecError> {
-        let recorded = input.ir.decode_depth();
+        let recorded = input.ir.scope().depth();
         if !E::NEEDS.admits(recorded) {
             return Err(CodecError::InsufficientDepth {
                 format: E::FORMAT.as_str(),
@@ -167,7 +170,7 @@ impl<E: EncoderBackend> Encoder for E {
             mut losses,
             notes,
         } = body;
-        losses.extend(coverage.omission_losses(&input.ir.model, E::FORMAT.as_str()));
+        losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),

@@ -130,7 +130,7 @@ impl super::Builder<'_, '_, '_, '_> {
             let data = crate::schema::physics::rigid_body(prim, &mut self.issues);
             self.ir.model.rigid_bodies.push(RigidBody {
                 id: crate::ids::rigid_body(&prim.path),
-                target: occurrence.clone(),
+                target: occurrence.clone().into(),
                 kinematic: data.kinematic,
                 enabled: data.enabled,
                 linear_velocity: data.velocity.and_then(|[x, y, z]| {
@@ -147,7 +147,7 @@ impl super::Builder<'_, '_, '_, '_> {
         if schemas.contains("PhysicsArticulationRootAPI") {
             self.ir.model.articulations.push(Articulation {
                 id: crate::ids::articulation(&prim.path),
-                root: occurrence.clone(),
+                root: occurrence.clone().into(),
                 native_ref: Some(prim.path.clone()),
             });
             self.admit("usd_articulation")?;
@@ -174,7 +174,7 @@ impl super::Builder<'_, '_, '_, '_> {
             });
             self.ir.model.mass_properties.push(MassProperties {
                 id: crate::ids::mass_properties(&prim.path),
-                target: occurrence.clone(),
+                target: occurrence.clone().into(),
                 mass: data
                     .mass
                     .and_then(|value| PositiveReal::new(value * kilograms)),
@@ -269,7 +269,7 @@ impl super::Builder<'_, '_, '_, '_> {
         {
             self.ir.model.colliders.push(Collider {
                 id: id.clone(),
-                target,
+                target: target.into(),
                 shape,
                 enabled: data.enabled,
                 material,

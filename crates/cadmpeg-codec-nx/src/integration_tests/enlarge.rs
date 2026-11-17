@@ -42,7 +42,7 @@ fn enlarge_pipeline_resolves_the_owning_class_without_inventing_face_roles() {
     let definition = serde_json::to_value(feature.evaluation.definition()).unwrap();
     assert_eq!(
         definition,
-        serde_json::json!({"definition":"extend_surface", "faces":{"kind":"unresolved"}, "distance":null, "method":"unresolved"})
+        serde_json::json!({"kind": "operation", "value": {"kind": "extend_surface", "value": {"faces":{"kind":"unresolved"}, "method":"unresolved"}}})
     );
     let (mut ir, report, fidelity) = result.into_parts();
     let validation =

@@ -19,8 +19,8 @@ const RADIUS: f64 = 2.0;
 
 fn arc_wire(gap: f64, closed: bool) -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
-    let mut edge = ir.model.edges[0].clone();
-    let mut vertices = ir.model.vertices[..2].to_vec();
+    let mut edge = ir.geometry.edges[0].clone();
+    let mut vertices = ir.geometry.vertices[..2].to_vec();
     let curve_id = edge.curve().expect("curve").clone();
     let last = std::f64::consts::TAU - gap / RADIUS;
     let positions = [
@@ -38,15 +38,15 @@ fn arc_wire(gap: f64, closed: bool) -> CadIr {
             )
         })
         .collect();
-    edge.start = vertices[0].id.clone();
-    edge.end = vertices[usize::from(!closed)].id.clone();
+    edge.ends.as_mut().unwrap().start = vertices[0].id.clone();
+    edge.ends.as_mut().unwrap().end = vertices[usize::from(!closed)].id.clone();
     edge.carrier = EdgeCarrier::new(Some(curve_id.clone()), Some([0.0, last])).expect("range");
     if closed {
         vertices.truncate(1);
     }
-    ir.model.points = points;
-    ir.model.vertices = vertices;
-    ir.model.curves = vec![Curve {
+    ir.geometry.points = points;
+    ir.geometry.vertices = vertices;
+    ir.geometry.curves = vec![Curve {
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             CircleCurve::try_new(
@@ -59,18 +59,19 @@ fn arc_wire(gap: f64, closed: bool) -> CadIr {
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     }];
-    ir.model.shells = vec![Shell::with_wire_edge(
-        ir.model.shells[0].id.clone(),
-        ir.model.regions[0].id.clone(),
+    ir.geometry.shells = vec![Shell::with_wire_edge(
+        ir.geometry.shells[0].id.clone(),
+        ir.geometry.regions[0].id.clone(),
         edge.id.clone(),
     )];
-    ir.model.edges = vec![edge];
-    ir.model.faces.clear();
-    ir.model.surfaces.clear();
-    ir.model.loops.clear();
-    ir.model.coedges.clear();
-    ir.model.bodies[0].kind = BodyKind::Wire;
+    ir.geometry.edges = vec![edge];
+    ir.geometry.faces.clear();
+    ir.geometry.surfaces.clear();
+    ir.geometry.loops.clear();
+    ir.geometry.coedges.clear();
+    ir.geometry.bodies[0].kind = BodyKind::Wire;
     ir.tolerances.linear = PositiveLength::new(UNCERTAINTY).expect("uncertainty");
     ir
 }
@@ -102,18 +103,18 @@ fn near_full_arc_below_uncertainty_writes_two_edges_and_reads_back_open() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read back");
-    assert_eq!(decoded.ir().model.edges.len(), 2);
-    assert_eq!(decoded.ir().model.vertices.len(), 3);
+    assert_eq!(decoded.ir().geometry.edges.len(), 2);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 3);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
-        .all(|edge| edge.start != edge.end));
-    for expected in &ir.model.points {
+        .all(|edge| edge.ends.as_ref().unwrap().start != edge.ends.as_ref().unwrap().end));
+    for expected in &ir.geometry.points {
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .any(|point| point.position() == expected.position()));
@@ -132,11 +133,11 @@ fn closed_ring_keeps_one_edge_and_one_vertex() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read back");
-    assert_eq!(decoded.ir().model.edges.len(), 1);
-    assert_eq!(decoded.ir().model.vertices.len(), 1);
+    assert_eq!(decoded.ir().geometry.edges.len(), 1);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 1);
     assert_eq!(
-        decoded.ir().model.edges[0].start,
-        decoded.ir().model.edges[0].end
+        decoded.ir().geometry.edges[0].ends.as_ref().unwrap().start,
+        decoded.ir().geometry.edges[0].ends.as_ref().unwrap().end
     );
 }
 
@@ -146,22 +147,22 @@ fn short_line_at_uncertainty_is_split_with_and_without_an_edge_range() {
         let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
         let length = 1.0 / 1024.0;
         ir.tolerances.linear = PositiveLength::new(length).expect("uncertainty");
-        for (point, x) in ir.model.points.iter_mut().zip([0.0, length]) {
+        for (point, x) in ir.geometry.points.iter_mut().zip([0.0, length]) {
             *point = Point::new(
                 point.id.clone(),
                 FinitePoint3::new(Point3::new(x, 0.0, 0.0)).expect("point"),
                 None,
             );
         }
-        ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                 Point3::new(0.0, 0.0, 0.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
             .expect("line"),
         ));
-        ir.model.edges[0].carrier = EdgeCarrier::new(
-            ir.model.edges[0].curve().cloned(),
+        ir.geometry.edges[0].carrier = EdgeCarrier::new(
+            ir.geometry.edges[0].curve().cloned(),
             bounded.then_some([0.0, length]),
         )
         .expect("carrier");
@@ -174,12 +175,12 @@ fn near_closed_nurbs_uses_the_same_split_rule() {
     for bounded in [false, true] {
         let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
         let endpoints = ir
-            .model
+            .geometry
             .points
             .iter()
             .map(|point| point.position().get())
             .collect::<Vec<_>>();
-        ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                 2,
                 vec![4.0, 4.0, 4.0, 6.0, 6.0, 6.0],
@@ -189,8 +190,8 @@ fn near_closed_nurbs_uses_the_same_split_rule() {
             )
             .expect("NURBS"),
         ));
-        ir.model.edges[0].carrier = EdgeCarrier::new(
-            ir.model.edges[0].curve().cloned(),
+        ir.geometry.edges[0].carrier = EdgeCarrier::new(
+            ir.geometry.edges[0].curve().cloned(),
             bounded.then_some([4.0, 6.0]),
         )
         .expect("carrier");
@@ -199,8 +200,8 @@ fn near_closed_nurbs_uses_the_same_split_rule() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("read back");
-        assert_eq!(decoded.ir().model.edges.len(), 2);
-        assert_eq!(decoded.ir().model.vertices.len(), 3);
+        assert_eq!(decoded.ir().geometry.edges.len(), 2);
+        assert_eq!(decoded.ir().geometry.vertices.len(), 3);
     }
 }
 
@@ -222,44 +223,44 @@ fn split_face_edges_keep_shared_vertices_and_reversed_coedge_order() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read back");
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 6);
-    assert_eq!(decoded.ir().model.edges.len(), 16);
-    assert_eq!(decoded.ir().model.vertices.len(), 12);
-    assert_eq!(decoded.ir().model.coedges.len(), 32);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 6);
+    assert_eq!(decoded.ir().geometry.edges.len(), 16);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 12);
+    assert_eq!(decoded.ir().geometry.coedges.len(), 32);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
-        .all(|edge| edge.start != edge.end));
+        .all(|edge| edge.ends.as_ref().unwrap().start != edge.ends.as_ref().unwrap().end));
 }
 
 #[test]
 fn unbounded_edge_parameter_inference_uses_the_model_tolerance() {
     let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
-    for (point, x) in ir.model.points.iter_mut().zip([0.0, UNCERTAINTY * 0.5]) {
+    for (point, x) in ir.geometry.points.iter_mut().zip([0.0, UNCERTAINTY * 0.5]) {
         *point = Point::new(
             point.id.clone(),
             FinitePoint3::new(Point3::new(x, UNCERTAINTY * 0.25, 0.0)).expect("point"),
             None,
         );
     }
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .expect("line"),
     ));
-    ir.model.edges[0].carrier = EdgeCarrier::unbounded(ir.model.edges[0].curve().cloned());
+    ir.geometry.edges[0].carrier = EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
     assert_eq!(edge_count(&write(&ir)), 2);
 }
 
 #[test]
 fn a_missing_curve_keeps_its_existing_omission_loss() {
     let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
-    ir.model.curves.clear();
+    ir.geometry.curves.clear();
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -278,24 +279,24 @@ fn a_missing_curve_keeps_its_existing_omission_loss() {
 #[test]
 fn an_unreferenced_edge_preserves_independent_geometry() {
     let mut ir = arc_wire(0.0, false);
-    ir.model.edges[0].carrier = EdgeCarrier::unbounded(ir.model.edges[0].curve().cloned());
-    ir.model.bodies.clear();
-    ir.model.regions.clear();
-    ir.model.shells.clear();
-    let mut independent = ir.model.curves[0].clone();
+    ir.geometry.edges[0].carrier = EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
+    ir.geometry.bodies.clear();
+    ir.geometry.regions.clear();
+    ir.geometry.shells.clear();
+    let mut independent = ir.geometry.curves[0].clone();
     independent.id =
         cadmpeg_ir::ids::CurveId::mint("test:model:curve#independent").expect("curve id");
-    ir.model.curves.push(independent);
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+    ir.geometry.curves.push(independent);
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         cadmpeg_ir::geometry::analytic::LineCurve::try_new(
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         )
         .expect("line"),
     ));
-    ir.model.points[1] = Point::new(
-        ir.model.points[1].id.clone(),
-        ir.model.points[0].position(),
+    ir.geometry.points[1] = Point::new(
+        ir.geometry.points[1].id.clone(),
+        ir.geometry.points[0].position(),
         None,
     );
     let bytes = write(&ir);
@@ -313,14 +314,15 @@ fn an_unreferenced_edge_preserves_independent_geometry() {
 fn an_unbounded_near_full_arc_uses_endpoint_parameters() {
     for gap in [0.0, UNCERTAINTY * 0.5] {
         let mut ir = arc_wire(gap, false);
-        ir.model.edges[0].carrier = EdgeCarrier::unbounded(ir.model.edges[0].curve().cloned());
+        ir.geometry.edges[0].carrier =
+            EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
         let bytes = write(&ir);
         assert_eq!(edge_count(&bytes), 2);
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("read back");
-        assert_eq!(decoded.ir().model.edges.len(), 2);
-        assert_eq!(decoded.ir().model.vertices.len(), 3);
+        assert_eq!(decoded.ir().geometry.edges.len(), 2);
+        assert_eq!(decoded.ir().geometry.vertices.len(), 3);
     }
 }
 
@@ -329,30 +331,30 @@ fn an_unbounded_replica_uses_the_source_period() {
     use cadmpeg_ir::geometry::{ProceduralCurve, ProceduralCurveDefinition};
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId};
     let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
-    let mut source = ir.model.curves[0].clone();
+    let mut source = ir.geometry.curves[0].clone();
     source.id = CurveId::mint("test:model:curve#replica-source").expect("curve id");
     let construction =
         ProceduralCurveId::mint("test:model:procedural_curve#replica").expect("construction id");
-    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+    ir.geometry.curves[0].geometry = CurveGeometry::Procedural {
         construction: construction.clone(),
         cache: source.geometry.solved().cloned(),
     };
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction,
         ProceduralCurveDefinition::Replica {
             source: source.id.clone(),
             transform: cadmpeg_ir::transform::Transform::identity(),
         },
     ));
-    ir.model.curves.push(source);
-    ir.model.edges[0].carrier = EdgeCarrier::unbounded(ir.model.edges[0].curve().cloned());
+    ir.geometry.curves.push(source);
+    ir.geometry.edges[0].carrier = EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
     let bytes = write(&ir);
     assert_eq!(edge_count(&bytes), 2);
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read back");
-    assert_eq!(decoded.ir().model.edges.len(), 2);
-    assert_eq!(decoded.ir().model.vertices.len(), 3);
+    assert_eq!(decoded.ir().geometry.edges.len(), 2);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 3);
 }
 
 #[test]
@@ -361,9 +363,9 @@ fn an_unbounded_polyline_uses_its_sample_parameter_bounds() {
     for parameterized in [false, true] {
         let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
         let points = vec![
-            ir.model.points[0].position().get(),
+            ir.geometry.points[0].position().get(),
             Point3::new(-2.0, 3.0, 0.0),
-            ir.model.points[1].position().get(),
+            ir.geometry.points[1].position().get(),
         ];
         let samples = if parameterized {
             PolylineSamples::Parameterized {
@@ -380,17 +382,18 @@ fn an_unbounded_polyline_uses_its_sample_parameter_bounds() {
                 points: points.try_into().expect("points"),
             }
         };
-        ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+        ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
             PolylineCurve::new(samples, 0.0).expect("polyline"),
         ));
-        ir.model.edges[0].carrier = EdgeCarrier::unbounded(ir.model.edges[0].curve().cloned());
+        ir.geometry.edges[0].carrier =
+            EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
         let bytes = write(&ir);
         assert_eq!(edge_count(&bytes), 2);
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("read back");
-        assert_eq!(decoded.ir().model.edges.len(), 2);
-        assert_eq!(decoded.ir().model.vertices.len(), 3);
+        assert_eq!(decoded.ir().geometry.edges.len(), 2);
+        assert_eq!(decoded.ir().geometry.vertices.len(), 3);
     }
 }
 
@@ -398,7 +401,7 @@ fn an_unbounded_polyline_uses_its_sample_parameter_bounds() {
 fn a_short_arc_near_the_periodic_seam_keeps_its_parameter_midpoint() {
     let mut ir = arc_wire(UNCERTAINTY * 0.5, false);
     let range = [-3.0, -3.0 + UNCERTAINTY / (2.0 * RADIUS)];
-    for (point, angle) in ir.model.points.iter_mut().zip(range) {
+    for (point, angle) in ir.geometry.points.iter_mut().zip(range) {
         *point = Point::new(
             point.id.clone(),
             FinitePoint3::new(Point3::new(RADIUS * angle.cos(), RADIUS * angle.sin(), 0.0))
@@ -406,15 +409,18 @@ fn a_short_arc_near_the_periodic_seam_keeps_its_parameter_midpoint() {
             None,
         );
     }
-    ir.model.edges[0].carrier = EdgeCarrier::unbounded(ir.model.edges[0].curve().cloned());
+    ir.geometry.edges[0].carrier = EdgeCarrier::unbounded(ir.geometry.edges[0].curve().cloned());
     let bytes = write(&ir);
     assert_eq!(edge_count(&bytes), 2);
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read back");
     let mut uses = std::collections::HashMap::new();
-    for edge in &decoded.ir().model.edges {
-        for vertex in [&edge.start, &edge.end] {
+    for edge in &decoded.ir().geometry.edges {
+        for vertex in [
+            &edge.ends.as_ref().unwrap().start,
+            &edge.ends.as_ref().unwrap().end,
+        ] {
             *uses.entry(vertex).or_insert(0) += 1;
         }
     }
@@ -424,14 +430,14 @@ fn a_short_arc_near_the_periodic_seam_keeps_its_parameter_midpoint() {
         .expect("shared midpoint");
     let vertex = decoded
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
         .find(|vertex| vertex.id == *midpoint_id)
         .expect("vertex");
     let point = decoded
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id == vertex.point)

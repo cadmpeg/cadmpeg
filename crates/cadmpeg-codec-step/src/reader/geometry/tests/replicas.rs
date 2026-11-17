@@ -123,7 +123,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
     );
     let circle = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#14")
@@ -137,7 +137,7 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
     assert!(dot.abs() < 1.0e-12);
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .any(|curve| match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12), _ => false }));
@@ -160,7 +160,7 @@ fn omitted_placement_reference_uses_the_first_projected_axis() {
     );
     let circle = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#4")
@@ -189,7 +189,7 @@ fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
     );
     let circle = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#13")
@@ -224,7 +224,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
     for (source_id, (x, y, z)) in expected {
         let curve = decoded
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == format!("step:data:curve{source_id}"))
@@ -240,7 +240,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
 
     let near_axis = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#15")
@@ -253,7 +253,7 @@ fn placement_reference_witness_covers_default_axes_and_invalid_parallel_input() 
 
     let parallel_reference = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#18")
@@ -310,17 +310,17 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
 
     for (curve_id, expected) in [(9u64, [2.0, 4.0]), (12u64, [2.0, 4.0])] {
         let construction_id = ids::construction(kind!("trimmed_curve"), curve_id);
-        assert!(result.ir().model.procedural_curves.iter().any(|curve| {
+        assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
             curve.id.as_str() == construction_id.as_str()
                 && match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), (parameter_range,) if *parameter_range == expected), _ => false }
         }));
     }
 
-    assert!(result.ir().model.procedural_curves.iter().any(|curve| {
+    assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
         matches!(
             curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
-                if result.ir().model.procedural_curve_owner(&curve.id).map(CurveId::as_str)
+                if result.ir().geometry.procedural_curve_owner(&curve.id).map(CurveId::as_str)
                     == Some("step:data:curve#8")
                     && source.as_str() == "step:data:curve#6"
         )
@@ -361,13 +361,18 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
     let round_trip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode trimmed replica");
-    assert!(round_trip.ir().model.procedural_curves.iter().any(|curve| {
-        matches!(
-            curve.definition(),
-            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
-                if source.as_str().starts_with("step:data:curve#")
-        )
-    }));
+    assert!(round_trip
+        .ir()
+        .geometry
+        .procedural_curves
+        .iter()
+        .any(|curve| {
+            matches!(
+                curve.definition(),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+                    if source.as_str().starts_with("step:data:curve#")
+            )
+        }));
 }
 
 #[test]
@@ -406,16 +411,18 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
         .expect("placed surface"),
     );
     let mut source = CadIr::empty();
-    source.model.curves.push(Curve {
+    source.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("test:model:curve#transformed-curve").expect("identity grammar"),
         geometry: CurveGeometry::Solved(curve_geometry.clone()),
         source_object: None,
+        native_ref: None,
     });
-    source.model.surfaces.push(Surface {
+    source.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#transformed-surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(surface_geometry.clone()),
         source_object: None,
+        native_ref: None,
     });
 
     let mut output = Vec::new();
@@ -435,13 +442,13 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
         .expect("decode replicas");
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.geometry.solved() == Some(&curve_geometry)));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.geometry.solved() == Some(&surface_geometry)));
@@ -465,7 +472,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
 #13=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
     );
 
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#10"
             && matches!(
                 surface.geometry.solved(),
@@ -474,13 +481,13 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
     }));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| {
             decoded
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#10")
@@ -494,14 +501,14 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| {
             matches!(
                 surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
-                    if decoded.ir().model.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
+                    if decoded.ir().geometry.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
                         == Some("step:data:surface#8")
                         && source.as_str() == "step:data:surface#9"
             )
@@ -546,7 +553,7 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
         .expect("decode trimmed surface replica");
     assert!(round_trip
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| {
@@ -622,14 +629,14 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         )
         .expect("placed surface"),
     ));
-    assert!(decoded.ir().model.curves.iter().any(|curve| {
+    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
             && curve.geometry.solved() == expected_curve.solved()
     }));
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == "step:data:curve#6")
@@ -639,7 +646,7 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
     );
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#13"
@@ -647,7 +654,7 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "step:data:surface#12")
@@ -678,7 +685,7 @@ fn cartesian_transformation_operator_derives_optional_axes() {
     let transform_for = |id: &str| {
         decoded
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
@@ -744,7 +751,7 @@ fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
         .expect("decode pcurve replica");
     let pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
@@ -781,7 +788,7 @@ fn long_forward_curve_replica_chain_resolves_with_a_worklist() {
     records.push_str("#264=CURVE_REPLICA('',#6,#8);");
 
     let decoded = decode_inline(&records);
-    assert!(decoded.ir().model.curves.iter().any(|curve| {
+    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
             && matches!(
                 curve.geometry.solved(),
@@ -813,7 +820,7 @@ fn long_forward_offset_surface_chain_resolves_with_a_worklist() {
     let decoded = decode_inline(&records);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#6"));
@@ -844,25 +851,25 @@ fn replicas_retain_bounded_parent_relations() {
 #16=(GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('',''));",
     );
 
-    assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
+    assert!(decoded.ir().geometry.procedural_curves.iter().any(|curve| {
         matches!(
             curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
-                if decoded.ir().model.procedural_curve_owner(&curve.id).map(CurveId::as_str)
+                if decoded.ir().geometry.procedural_curve_owner(&curve.id).map(CurveId::as_str)
                     == Some("step:data:curve#9")
                     && source.as_str() == "step:data:curve#7"
         )
     }));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| {
             matches!(
                 surface.definition(),
                 cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
-                    if decoded.ir().model.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
+                    if decoded.ir().geometry.procedural_surface_owner(&surface.id).map(SurfaceId::as_str)
                         == Some("step:data:surface#13")
                         && source.as_str() == "step:data:surface#12"
             )
@@ -981,14 +988,14 @@ fn a_curve_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
         loss.message
             .contains("CURVE_REPLICA #9 nests past the admitted inline basis depth")
     }));
-    assert!(decoded.ir().model.curves.iter().any(|curve| {
+    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
             && matches!(
                 curve.geometry.solved(),
                 Some(SolvedCurveGeometry::Unknown { .. })
             )
     }));
-    assert!(decoded.ir().model.curves.iter().any(|curve| {
+    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#10"
             && matches!(
                 curve.geometry.solved(),
@@ -1022,14 +1029,14 @@ fn a_surface_replica_chain_past_the_admitted_depth_is_refused_at_decode() {
         loss.message
             .contains("SURFACE_REPLICA #8 nests past the admitted inline basis depth")
     }));
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#8"
             && matches!(
                 surface.geometry.solved(),
                 Some(SolvedSurfaceGeometry::Unknown { .. })
             )
     }));
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#9"
             && matches!(
                 surface.geometry.solved(),
@@ -1055,13 +1062,13 @@ fn two_dimensional_replicas_do_not_create_three_dimensional_fallbacks() {
             .unwrap();
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .pcurves
             .iter()
             .any(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56"));
         assert!(!decoded
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| curve.id.as_str() == "step:data:curve#71"

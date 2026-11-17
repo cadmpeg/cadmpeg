@@ -38,21 +38,21 @@ fn decode_builds_a_parametrically_bounded_sheet() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap();
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == loop_.coedges()[0])
@@ -60,7 +60,7 @@ fn decode_builds_a_parametrically_bounded_sheet() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -94,14 +94,14 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D13")
         .unwrap();
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
@@ -113,7 +113,7 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         .map(|id| {
             result
                 .ir()
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *id)
@@ -132,7 +132,7 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.owner_loop == loop_.id)
@@ -158,14 +158,14 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D13")
         .expect("bounded face within the declared resolution");
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
@@ -177,13 +177,13 @@ fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
         .any(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.001)));
     assert!(result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .any(|edge| edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.001)));
@@ -219,7 +219,7 @@ fn decode_rejects_a_bounded_sheet_join_just_beyond_global_resolution() {
         .unwrap();
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.id.as_str() != "iges:model:face#D13"));
@@ -244,7 +244,7 @@ fn decode_converts_non_millimetre_resolution_before_sewing_a_bounded_sheet() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D13")
@@ -255,13 +255,13 @@ fn decode_converts_non_millimetre_resolution_before_sewing_a_bounded_sheet() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
         .any(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.01)));
     assert!(result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .any(|edge| edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.01)));
@@ -286,7 +286,7 @@ fn decode_sews_boundary_roundoff_with_declared_coordinate_significance() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D13")
@@ -297,7 +297,7 @@ fn decode_sews_boundary_roundoff_with_declared_coordinate_significance() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| pcurve.fit_tolerance().is_none()));
@@ -322,7 +322,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
 
     let sheet = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.id.as_str() == "iges:model:body#D9")
@@ -330,7 +330,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
     assert_eq!(sheet.kind, cadmpeg_ir::topology::BodyKind::Sheet);
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D9")
@@ -339,7 +339,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
     assert_eq!(face.loops.len(), 1);
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
@@ -347,7 +347,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
@@ -358,7 +358,7 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
     assert_eq!(loop_.coedges().len(), 1);
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == loop_.coedges()[0])
@@ -390,21 +390,21 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == loop_.coedges()[0])
@@ -431,14 +431,14 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D13")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
@@ -448,7 +448,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
     };
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)
@@ -469,14 +469,14 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
 
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == loop_.coedges()[0])
@@ -484,7 +484,7 @@ fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
     assert_eq!(coedge.pcurves.len(), 1);
     let pcurve = result
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
@@ -521,28 +521,28 @@ fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D13")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == loop_.coedges()[0])
         .unwrap();
     let pcurve = result
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
@@ -592,21 +592,21 @@ fn decode_builds_a_model_curve_only_trimmed_sheet() {
 
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D9")
         .unwrap();
     let loop_ = result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| Some(&loop_.id) == face.loops.iter().next())
         .unwrap();
     let coedge = result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == loop_.coedges()[0])

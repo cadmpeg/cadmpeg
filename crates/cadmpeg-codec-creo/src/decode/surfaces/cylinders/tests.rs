@@ -204,6 +204,7 @@ fn model_plane(id: u32, origin: [f64; 3], normal: [f64; 3]) -> cadmpeg_ir::geome
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -221,6 +222,7 @@ fn model_cylinder(id: u32, radius: f64) -> cadmpeg_ir::geometry::Surface {
             .expect("valid CylinderSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -367,7 +369,7 @@ fn constrained_slot_fillet_uses_native_plane_carriers_when_model_planes_are_abse
     .expect("valid source object identity");
 
     assert_eq!(transferred, 1);
-    let [surface] = ir.model.surfaces.as_slice() else {
+    let [surface] = ir.geometry.surfaces.as_slice() else {
         panic!("one generated cylinder");
     };
     let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
@@ -399,7 +401,7 @@ fn constrained_slot_cylinder_radius_is_in_millimeters_at_ir_admission() {
         )
         .expect("constrained slot cylinder transfer");
     });
-    let surface = ir.model.surfaces.first().expect("transferred cylinder");
+    let surface = ir.geometry.surfaces.first().expect("transferred cylinder");
     let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
         panic!("transferred surface changed family");
     };
@@ -428,7 +430,7 @@ fn split_outline_uses_native_plane_carrier_when_model_plane_is_absent() {
         .expect("valid source object identity"),
         2
     );
-    assert!(ir.model.surfaces.iter().all(|surface| {
+    assert!(ir.geometry.surfaces.iter().all(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))
                 if {
                     let origin = cylinder_surface.origin();
@@ -459,7 +461,7 @@ fn split_outline_rejects_duplicate_surface_rows() {
         .expect("valid source object identity"),
         0
     );
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
 }
 
 #[test]
@@ -522,7 +524,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
         .transferred,
         0
     );
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
 }
 
 #[test]
@@ -597,7 +599,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
         .transferred,
         0
     );
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
 }
 
 fn inline_type24_scan() -> crate::container::ContainerScan<'static> {
@@ -666,7 +668,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
         1
     );
     assert!(ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| { surface.id.as_str() == "creo:visibgeom:surface#7" }));
@@ -719,7 +721,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
             body_offset: 7,
         });
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(model_cylinder(7, 0.75));
+    ir.geometry.surfaces.push(model_cylinder(7, 0.75));
 
     assert_eq!(
         crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
@@ -733,7 +735,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
         .transferred,
         0
     );
-    let [surface] = ir.model.surfaces.as_slice() else {
+    let [surface] = ir.geometry.surfaces.as_slice() else {
         panic!("one reconciled cylinder");
     };
     let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved() else {
@@ -945,7 +947,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
 fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
     let scan = counterbore_dimension_gate_scan(24.5);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(model_cylinder(1, 60.0));
+    ir.geometry.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
         crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
@@ -960,7 +962,7 @@ fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
         0
     );
     assert!(ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#3"));
@@ -970,7 +972,7 @@ fn counterbore_positional_radius_gate_rejects_unrelated_frame() {
 fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
     let scan = counterbore_dimension_gate_scan(20.0);
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(model_cylinder(1, 60.0));
+    ir.geometry.surfaces.push(model_cylinder(1, 60.0));
 
     assert_eq!(
         crate::decode::with_service_context(|ctx| super::transfer_positional_cylinders(
@@ -985,7 +987,7 @@ fn counterbore_positional_radius_gate_accepts_declared_source_radius() {
         1
     );
     assert!(ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#3"));
@@ -996,7 +998,7 @@ fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_ar
     let mut scan = slot_fillet_scan();
     scan.planes.positional_frames.clear();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         model_plane(1, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         model_plane(2, [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
         model_plane(3, [0.0, -1.0, 0.0], [0.0, 1.0, 0.0]),
@@ -1024,7 +1026,7 @@ fn constrained_slot_fillet_uses_transferred_plane_carriers_when_native_planes_ar
 fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
     let scan = slot_fillet_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .push(model_plane(3, [0.0, -0.5, 0.0], [0.0, 1.0, 0.0]));
 
@@ -1042,7 +1044,7 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
         0
     );
     assert!(ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| { surface.id.as_str() != "creo:visibgeom:surface#7" }));
@@ -1089,14 +1091,14 @@ fn unresolved_round_diagnostic_preserves_neighboring_model_surfaces() {
         .with_surface_ids([10, 11, 13]),
     );
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .extend([model_cylinder(13, 2.0), model_cylinder(13, 3.0)]);
 
     let mut losses = Vec::new();
     super::report_unresolved_round_carriers(&scan, &ir, &mut losses);
     assert_eq!(losses.len(), 1);
-    assert_eq!(ir.model.surfaces.len(), 2);
+    assert_eq!(ir.geometry.surfaces.len(), 2);
 }
 
 fn rowless_round_identity_input() -> (
@@ -1142,7 +1144,7 @@ fn rowless_round_identity_input() -> (
         .with_surface_ids([10, 11, 13]),
     );
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model.surfaces.push(model_cylinder(13, 2.0));
+    ir.geometry.surfaces.push(model_cylinder(13, 2.0));
     (scan, ir)
 }
 
@@ -1156,9 +1158,9 @@ fn rowless_round_entry_stays_unresolved_without_owned_geometry() {
         losses[0].code.local_code(),
         "geometry.round-carrier-owner-unresolved"
     );
-    assert_eq!(ir.model.surfaces.len(), 1);
+    assert_eq!(ir.geometry.surfaces.len(), 1);
     assert_eq!(
-        ir.model.surfaces[0].id.as_str(),
+        ir.geometry.surfaces[0].id.as_str(),
         "creo:visibgeom:surface#13"
     );
 }
@@ -1245,7 +1247,7 @@ fn round_envelope_rejects_an_extra_reference_circle() {
 fn split_outline_rejects_conflicting_model_plane_carrier() {
     let scan = split_outline_scan();
     let mut ir = cadmpeg_ir::document::CadIr::empty();
-    ir.model
+    ir.geometry
         .surfaces
         .push(model_plane(1, [0.0, 0.0, -0.5], [0.0, 0.0, 1.0]));
 
