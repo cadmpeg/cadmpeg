@@ -1276,6 +1276,37 @@ fn decode_transfers_a_chained_formula_definition_once() {
 }
 
 #[test]
+fn a_contradicted_literal_output_keeps_its_downstream_formula() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_chain(
+                FormulaChainCase::LiteralOutputs,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode literal formula chain");
+    let [input, intermediate, output] = decoded.ir().model.parameters.as_slice() else {
+        panic!("literal formula chain parameters")
+    };
+
+    assert_eq!(intermediate.expression, "#1_ /2+1mm");
+    assert_eq!(intermediate.value, None);
+    assert_eq!(
+        intermediate.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
+    assert_eq!(output.expression, "#2_ /3+1mm");
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&intermediate.id)
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::HistoryParameterLiteralAssumed.kind()
+            && loss.message.contains("1 formula output(s) whose")
+    }));
+}
+
+#[test]
 fn decode_rejects_multiple_formula_definitions_for_one_output() {
     let decoded = CatiaCodec
         .decode(

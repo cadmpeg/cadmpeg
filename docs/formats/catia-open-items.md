@@ -190,11 +190,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The current lookup selects the catalog entry at the stored fixed-width ordinal. The one-based interpretation selects the preceding entry and gives scalar-compatible roles for these controls. A partial change also alters the number of selectors in a definition and changes downstream value-chain admission.
 
-### DI-31. `E7` and `E8` literals beside a contradicting formula
+### DI-32. `E7` and `E8` literals beside a contradicting formula
 
 **Question.** Does a stored `E7` or `E8` parameter literal hold the value one or zero when the formula that reads or defines that parameter gives another value?
 
-**Known.** `catia.md` §7.3 gives `E7` as the value one and `E8` as the value zero in parameter, constraint-range, and `Range` nominal suffixes. The decoder publishes every `E7` or `E8` parameter value and `Range` nominal as one or zero and charges `history.parameter-literal-assumed` with their count. An `E7` or `E8` input leaves its formula unevaluated. An `E7` or `E8` result whose evaluated expression gives another value keeps no value, and the same loss counts it.
+**Known.** `catia.md` §7.3 gives `E7` as the value one and `E8` as the value zero in parameter, constraint-range, and `Range` nominal suffixes. The decoder publishes every `E7` or `E8` length, angle, real, or integer parameter value and every `E7` or `E8` `Range` nominal as one or zero and charges `history.parameter-literal-assumed` with their count. A Boolean or string parameter with `E7` or `E8` has no value. The legacy scalar form reads `E7` as unset. An `E7` or `E8` input leaves its formula unevaluated. An `E7` or `E8` result whose evaluated expression gives another value keeps no value, and the same loss counts it.
 
 **Need.** A saved part whose `E7` or `E8` parameters have known values in the application, with formulas that read and define them.
 

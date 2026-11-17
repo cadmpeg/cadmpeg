@@ -3551,7 +3551,7 @@ fn finish_decode(
         report
             .losses
             .push(CatiaLossCode::HistoryParameterLiteralAssumed.note(format!(
-                "{} design parameter(s) and {literal_range_nominal_count} Range nominal(s) read a                  stored E7 or E8 literal as the value one or zero; {} formula output(s) whose                  evaluated expression contradicts that value keep no value.",
+                "{} design parameter(s) and {literal_range_nominal_count} Range nominal(s) read a stored E7 or E8 literal as the value one or zero; {} formula output(s) whose evaluated expression contradicts that value keep no value.",
                 formula_transfer.literal_value_count, formula_transfer.contradicted_literal_count
             )));
     }

@@ -1694,18 +1694,27 @@ fn formula_parameter_candidates_agree(
         candidate.role.is_formula_output(),
     ) {
         (true, true) | (false, false) => existing.parameter == candidate.parameter,
-        (true, false) => formula_parameter_matches_input(&existing.parameter, &candidate.parameter),
-        (false, true) => formula_parameter_matches_input(&candidate.parameter, &existing.parameter),
+        (true, false) => formula_output_matches_input(existing, &candidate.parameter),
+        (false, true) => formula_output_matches_input(candidate, &existing.parameter),
     }
 }
 
-fn formula_parameter_matches_input(formula: &DesignParameter, input: &DesignParameter) -> bool {
+/// Whether a formula output and an input view describe one parameter. An
+/// output whose evaluated expression contradicts its stored literal keeps no
+/// value, and its input view keeps that literal.
+fn formula_output_matches_input(
+    output: &FormulaParameterCandidate,
+    input: &DesignParameter,
+) -> bool {
+    let formula = &output.parameter;
+    let value_agrees = formula.value == input.value
+        || (output.literal_value == Some(false) && formula.value.is_none());
     formula.id == input.id
         && formula.owner == input.owner
         && formula.ordinal == input.ordinal
         && formula.name == input.name
         && formula.display == input.display
-        && formula.value == input.value
+        && value_agrees
         && formula.properties == input.properties
         && formula.pmi == input.pmi
         && formula.native_ref == input.native_ref
@@ -1719,7 +1728,7 @@ fn formula_parameter_candidate_accepts_input(
         return false;
     }
     if candidate.role.is_formula_output() {
-        formula_parameter_matches_input(&candidate.parameter, &input.0)
+        formula_output_matches_input(candidate, &input.0)
     } else {
         candidate.parameter == input.0
     }
