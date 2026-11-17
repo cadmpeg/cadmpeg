@@ -113,10 +113,11 @@ pub(super) fn project(
                 losses,
             )?
         } else {
-            EdgeSelection::Native(format!(
-                "{stream}:design-construction-operand-group#{}",
-                set.group_record_index
-            ))
+            losses.push(F3dLossCode::FeatureFilletSetGroupUnresolved.note(format!(
+                "{}: Fillet set {} has an unresolved edge operand group at record {}.",
+                scope.id, set.record_index, set.group_record_index
+            )));
+            EdgeSelection::Unresolved
         };
         projected.push(FilletGroup {
             edges,

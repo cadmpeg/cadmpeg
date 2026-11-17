@@ -52,6 +52,61 @@ fn scope_with_sets(sets: Vec<DesignFilletSet>) -> DesignParameterScope {
 }
 
 #[test]
+fn asymmetric_fillet_reports_an_undecoded_edge_group() {
+    let group_record_index = 92;
+    let mut scope = scope_with_sets(vec![DesignFilletSet {
+        record_index: 91,
+        byte_offset: 700,
+        frame_length: u64::try_from(crate::layout::fillet_set_asymmetric::LEN).unwrap(),
+        group_record_index,
+        tangency_weight_owner_record_index: None,
+        tangent_chain: None,
+        curvature_continuity: None,
+        law: DesignFilletSetLaw::Asymmetric {
+            offset_one_owner_record_index: 100,
+            offset_two_owner_record_index: 102,
+        },
+    }]);
+    crate::design::test_support::name_scope_references(&mut scope, [group_record_index]);
+    let offsets = [
+        parameter(100, "EdgeOffset1", Some("cm"), 0.2),
+        parameter(102, "EdgeOffset2", Some("cm"), 0.3),
+    ];
+    let parameters = offsets.each_ref().map(|parameter| (0, parameter));
+    crate::test_support::with_decode_context(|ctx| {
+        let mut losses = Vec::new();
+        let Some(FeatureOperation::Fillet { groups }) = project(
+            &scope,
+            &parameters,
+            &ProjectInputs::default(),
+            ctx,
+            &mut losses,
+        )
+        .unwrap() else {
+            panic!("asymmetric Fillet");
+        };
+        let group = &groups.as_slice()[0];
+        assert_eq!(group.edges, EdgeSelection::Unresolved);
+        let RadiusSpec::Asymmetric {
+            offset_one,
+            offset_two,
+        } = group.radius
+        else {
+            panic!("asymmetric radius law");
+        };
+        assert!((offset_one.get() - 2.0).abs() < TOLERANCE);
+        assert!((offset_two.get() - 3.0).abs() < TOLERANCE);
+        let [loss] = losses.as_slice() else {
+            panic!("one Fillet group loss");
+        };
+        assert_eq!(
+            loss.code,
+            F3dLossCode::FeatureFilletSetGroupUnresolved.kind()
+        );
+    });
+}
+
+#[test]
 fn variable_fillet_sorts_complete_midpoint_pairs_and_refuses_duplicate_positions() {
     let set = DesignFilletSet {
         record_index: 50,
@@ -117,7 +172,10 @@ fn variable_fillet_sorts_complete_midpoint_pairs_and_refuses_duplicate_positions
     };
     assert_eq!(
         losses,
-        [F3dLossCode::FeatureFilletMidpointOrderAssumed.kind()]
+        [
+            F3dLossCode::FeatureFilletMidpointOrderAssumed.kind(),
+            F3dLossCode::FeatureFilletSetGroupUnresolved.kind(),
+        ]
     );
     assert_eq!(points.as_slice().len(), 4);
     for (point, (position, radius)) in
@@ -138,7 +196,10 @@ fn variable_fillet_sorts_complete_midpoint_pairs_and_refuses_duplicate_positions
     ));
     assert_eq!(
         losses,
-        [F3dLossCode::FeatureFilletSetInputUnresolved.kind()]
+        [
+            F3dLossCode::FeatureFilletSetInputUnresolved.kind(),
+            F3dLossCode::FeatureFilletSetGroupUnresolved.kind(),
+        ]
     );
 }
 
@@ -191,6 +252,9 @@ fn chordal_fillet_sets_pair_lengths_and_weights_by_explicit_owner() {
             assert!((chord_length.get() - length).abs() < TOLERANCE);
             assert!((group.tangency_weight.unwrap().get() - weight).abs() < TOLERANCE);
         }
-        assert!(losses.is_empty());
+        assert_eq!(losses.len(), 2);
+        assert!(losses
+            .iter()
+            .all(|loss| loss.code == F3dLossCode::FeatureFilletSetGroupUnresolved.kind()));
     });
 }

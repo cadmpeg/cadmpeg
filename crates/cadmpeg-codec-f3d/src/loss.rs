@@ -477,6 +477,8 @@ pub(crate) enum F3dLossCode {
     FeatureFilletMidpointOrderAssumed,
     /// An explicit Fillet set retains a saved law input outside the neutral dimension domain.
     FeatureFilletSetInputUnresolved,
+    /// An explicit Fillet set references an unresolved edge operand group.
+    FeatureFilletSetGroupUnresolved,
     HoleStandardSizingAssumed,
     /// A clearance Hole's specification takes fixed values for the fields it does not store.
     HoleClearanceFieldsAssumed,
@@ -1361,6 +1363,7 @@ impl F3dLossCode {
         Self::FeatureFilletPaddingAssumed,
         Self::FeatureFilletMidpointOrderAssumed,
         Self::FeatureFilletSetInputUnresolved,
+        Self::FeatureFilletSetGroupUnresolved,
         Self::HoleStandardSizingAssumed,
         Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
@@ -2192,6 +2195,7 @@ impl F3dLossCode {
             Self::FeatureFilletPaddingAssumed => "feature.fillet-padding-assumed",
             Self::FeatureFilletMidpointOrderAssumed => "feature.fillet-midpoint-order-assumed",
             Self::FeatureFilletSetInputUnresolved => "feature.fillet-set-input-unresolved",
+            Self::FeatureFilletSetGroupUnresolved => "feature.fillet-set-group-unresolved",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
@@ -2973,6 +2977,7 @@ impl F3dLossCode {
             | Self::FeatureFilletPaddingAssumed
             | Self::FeatureFilletMidpointOrderAssumed
             | Self::FeatureFilletSetInputUnresolved
+            | Self::FeatureFilletSetGroupUnresolved
             | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -3577,6 +3582,7 @@ impl F3dLossCode {
             | Self::FeatureFilletPaddingAssumed
             | Self::FeatureFilletMidpointOrderAssumed
             | Self::FeatureFilletSetInputUnresolved
+            | Self::FeatureFilletSetGroupUnresolved
             | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -4291,6 +4297,7 @@ mod tests {
                 "feature.fillet-padding-assumed",
                 "feature.fillet-midpoint-order-assumed",
                 "feature.fillet-set-input-unresolved",
+                "feature.fillet-set-group-unresolved",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",
