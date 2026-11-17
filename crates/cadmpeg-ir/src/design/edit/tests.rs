@@ -235,14 +235,11 @@ fn with_bodies(keys: &[u32]) -> StateContent {
 }
 
 fn product_definition(bodies: &[u32]) -> crate::products::ProductDefinition {
-    serde_json::from_value(json!({
-        "id": definition().as_str(),
-        "kind": "part",
-        "bom_properties": {},
-        "bodies": bodies.iter().map(|key| format!("test:edit:body#{key}")).collect::<Vec<_>>(),
-        "sketches": [],
-    }))
-    .unwrap()
+    let mut definition =
+        crate::products::ProductDefinition::new(definition(), crate::products::Storage::Embedded);
+    definition.kind = Some(crate::products::ProductDefinitionKind::Part);
+    definition.bodies = bodies.iter().map(|key| id("body", *key)).collect();
+    definition
 }
 
 /// One scope whose timeline holds features 1 to 3: 1 a sketch-like stateless
