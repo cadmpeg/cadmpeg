@@ -5,6 +5,7 @@ use super::{
     ChannelAddressing, Tessellation, TessellationChannel, TessellationId, TessellationMesh,
     TessellationTextureAssignment, TessellationTriangleGroup, TextureCoordinates,
 };
+use crate::design::refs::StateRef;
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{BodyId, FaceId};
 use crate::provenance::SourceObjectAssociation;
@@ -20,6 +21,8 @@ impl Serialize for Tessellation {
             body: Option<&'a BodyId>,
             faces: &'a Vec<FaceId>,
             #[serde(skip_serializing_if = "Option::is_none")]
+            state: Option<&'a StateRef>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             chordal_deflection: Option<f64>,
             #[serde(skip_serializing_if = "Option::is_none")]
             source_object: Option<&'a SourceObjectAssociation>,
@@ -34,6 +37,7 @@ impl Serialize for Tessellation {
             id: &self.id,
             body: self.body.as_ref(),
             faces: &self.faces,
+            state: self.state.as_ref(),
             chordal_deflection: self.chordal_deflection.map(NonNegativeReal::get),
             source_object: self.source_object.as_ref(),
             mesh: &self.mesh,

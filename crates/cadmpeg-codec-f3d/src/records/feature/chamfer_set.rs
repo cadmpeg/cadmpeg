@@ -11,15 +11,6 @@ pub(crate) struct DesignChamferScope {
     pub(crate) sets: Option<DesignChamferSetList>,
 }
 
-impl DesignChamferScope {
-    pub(crate) fn admit(
-        fixed: Option<DesignFixedChamferParameters>,
-        sets: Option<DesignChamferSetList>,
-    ) -> Self {
-        Self { fixed, sets }
-    }
-}
-
 /// Ordered chamfer sets named by the prefix of a `Chamfer` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignChamferSetListWire")]

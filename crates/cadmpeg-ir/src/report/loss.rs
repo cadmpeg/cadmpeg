@@ -181,6 +181,9 @@ pub enum LossTaxonomy {
     /// Physical materials, mass properties, rigid bodies, colliders, or joint
     /// drives were not transferred.
     PhysicsNotTransferred,
+    /// Manufacturing process records (setups, operations, tools, programs,
+    /// toolpaths, or process states) were not represented in the target.
+    ProcessRecordOmitted,
 }
 
 impl LossTaxonomy {
@@ -231,6 +234,7 @@ impl LossTaxonomy {
             Self::AppearanceReduced => "appearance_reduced",
             Self::PreservedSourceUnavailable => "preserved_source_unavailable",
             Self::PhysicsNotTransferred => "physics_not_transferred",
+            Self::ProcessRecordOmitted => "process_record_omitted",
         }
     }
 
@@ -260,7 +264,8 @@ impl LossTaxonomy {
             | Self::SourceDialectDisplaced
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
-            | Self::PreservedSourceUnavailable => LossCategory::Other,
+            | Self::PreservedSourceUnavailable
+            | Self::ProcessRecordOmitted => LossCategory::Other,
             Self::MissingGeometryStream
             | Self::GeometryNotTransferred
             | Self::GeometryAgreementSampled

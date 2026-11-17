@@ -245,7 +245,7 @@ fn unique_counted_diameter_adds_the_second_sphere_targets() {
     let face_targets = annotation
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => Some(face.as_str()),
             _ => None,
         })
@@ -285,7 +285,7 @@ fn zero_nominal_uses_the_existing_implicit_sphere_diameter() {
         annotation
             .targets
             .iter()
-            .filter(|target| matches!(target, PmiTarget::Face { .. }))
+            .filter(|target| matches!(&target.entity, PmiTarget::Face { .. }))
             .count(),
         2
     );

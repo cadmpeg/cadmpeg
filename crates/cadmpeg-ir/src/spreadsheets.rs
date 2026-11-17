@@ -122,38 +122,7 @@ impl Spreadsheet {
         merged_ranges: Vec<SpreadsheetRange>,
         native_ref: Option<String>,
     ) -> Result<Self, String> {
-        let mut parameters = HashSet::new();
-        let mut addresses = HashSet::new();
-        for cell in &cells {
-            if !parameters.insert(&cell.parameter) {
-                return Err("spreadsheet repeats a cell identity".into());
-            }
-            if !addresses.insert(cell.address) {
-                return Err("spreadsheet cell address is repeated".into());
-            }
-        }
-        for (name, dimensions) in [
-            ("column_widths", &column_widths),
-            ("row_heights", &row_heights),
-        ] {
-            let mut indices = HashSet::new();
-            for dimension in dimensions {
-                if !indices.insert(dimension.index) {
-                    return Err(format!("{name} repeats an index"));
-                }
-            }
-        }
-        for (index, range) in merged_ranges.iter().enumerate() {
-            if !addresses.contains(&range.start()) {
-                return Err("merged range start has no cell".into());
-            }
-            if merged_ranges[..index]
-                .iter()
-                .any(|other| ranges_overlap(other, range))
-            {
-                return Err("merged ranges overlap".into());
-            }
-        }
+        check_layout(&cells, &column_widths, &row_heights, &merged_ranges)?;
         Ok(Self {
             id,
             feature,
@@ -188,6 +157,49 @@ impl Spreadsheet {
     pub fn merged_ranges(&self) -> &[SpreadsheetRange] {
         &self.merged_ranges
     }
+}
+
+/// Refuses repeated cells and dimension indices, a merged range whose start
+/// has no cell, and overlapping merged ranges.
+pub(crate) fn check_layout(
+    cells: &[SpreadsheetCell],
+    column_widths: &[SpreadsheetDimension],
+    row_heights: &[SpreadsheetDimension],
+    merged_ranges: &[SpreadsheetRange],
+) -> Result<(), String> {
+    let mut parameters = HashSet::new();
+    let mut addresses = HashSet::new();
+    for cell in cells {
+        if !parameters.insert(&cell.parameter) {
+            return Err("spreadsheet repeats a cell identity".into());
+        }
+        if !addresses.insert(cell.address) {
+            return Err("spreadsheet cell address is repeated".into());
+        }
+    }
+    for (name, dimensions) in [
+        ("column_widths", column_widths),
+        ("row_heights", row_heights),
+    ] {
+        let mut indices = HashSet::new();
+        for dimension in dimensions {
+            if !indices.insert(dimension.index) {
+                return Err(format!("{name} repeats an index"));
+            }
+        }
+    }
+    for (index, range) in merged_ranges.iter().enumerate() {
+        if !addresses.contains(&range.start()) {
+            return Err("merged range start has no cell".into());
+        }
+        if merged_ranges[..index]
+            .iter()
+            .any(|other| ranges_overlap(other, range))
+        {
+            return Err("merged ranges overlap".into());
+        }
+    }
+    Ok(())
 }
 
 fn ranges_overlap(left: &SpreadsheetRange, right: &SpreadsheetRange) -> bool {
@@ -226,43 +238,53 @@ impl TryFrom<SpreadsheetWire> for Spreadsheet {
     type Error = String;
 
     fn try_from(wire: SpreadsheetWire) -> Result<Self, Self::Error> {
-        let column_widths = wire
-            .column_widths
-            .into_iter()
-            .map(|wire| {
-                let index = column_index(&wire.name)
-                    .and_then(NonZeroU32::new)
-                    .ok_or_else(|| format!("column_widths name is invalid: {}", wire.name))?;
-                Ok(SpreadsheetDimension {
-                    index,
-                    pixels: wire.pixels,
-                })
-            })
-            .collect::<Result<_, String>>()?;
-        let row_heights = wire
-            .row_heights
-            .into_iter()
-            .map(|wire| {
-                let index = wire
-                    .name
-                    .parse::<NonZeroU32>()
-                    .map_err(|_| format!("row_heights name is invalid: {}", wire.name))?;
-                Ok(SpreadsheetDimension {
-                    index,
-                    pixels: wire.pixels,
-                })
-            })
-            .collect::<Result<_, String>>()?;
         Self::new(
             wire.id,
             wire.feature,
             wire.cells,
-            column_widths,
-            row_heights,
+            column_widths(wire.column_widths)?,
+            row_heights(wire.row_heights)?,
             wire.merged_ranges,
             wire.native_ref,
         )
     }
+}
+
+/// Reads column widths, each named by its column letters.
+pub(crate) fn column_widths(
+    wires: Vec<SpreadsheetDimensionWire>,
+) -> Result<Vec<SpreadsheetDimension>, String> {
+    wires
+        .into_iter()
+        .map(|wire| {
+            let index = column_index(&wire.name)
+                .and_then(NonZeroU32::new)
+                .ok_or_else(|| format!("column_widths name is invalid: {}", wire.name))?;
+            Ok(SpreadsheetDimension {
+                index,
+                pixels: wire.pixels,
+            })
+        })
+        .collect()
+}
+
+/// Reads row heights, each named by its row number.
+pub(crate) fn row_heights(
+    wires: Vec<SpreadsheetDimensionWire>,
+) -> Result<Vec<SpreadsheetDimension>, String> {
+    wires
+        .into_iter()
+        .map(|wire| {
+            let index = wire
+                .name
+                .parse::<NonZeroU32>()
+                .map_err(|_| format!("row_heights name is invalid: {}", wire.name))?;
+            Ok(SpreadsheetDimension {
+                index,
+                pixels: wire.pixels,
+            })
+        })
+        .collect()
 }
 
 #[cfg(feature = "schema")]
@@ -290,10 +312,12 @@ pub struct SpreadsheetDimension {
     pub pixels: u32,
 }
 
+/// The wire form of a row height or column width: the row number or column
+/// letters, and the size.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-struct SpreadsheetDimensionWire {
+pub(crate) struct SpreadsheetDimensionWire {
     name: String,
     pixels: u32,
 }
@@ -494,4 +518,4 @@ cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref"
 
 mod identity_rewrite;
 
-mod serialization;
+pub(crate) mod serialization;

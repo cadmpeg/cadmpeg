@@ -1896,4 +1896,7 @@ cadmpeg_core::named_optional_field!(
 
 mod identity_rewrite;
 
+mod nested_override;
+pub use nested_override::NestedOverride;
+
 mod serialization;

@@ -1,6 +1,25 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
@@ -4261,8 +4280,10 @@
           "object_type": "ViewProvider",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "body",
-            "value": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
+            "entity": {
+              "kind": "body",
+              "value": "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1"
+            }
           }
         },
         {
@@ -4272,8 +4293,10 @@
           "object_type": "ViewProvider",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "body",
-            "value": "fcstd:model:body#Pad:Shape:PartShape3.brp:24%40location1"
+            "entity": {
+              "kind": "body",
+              "value": "fcstd:model:body#Pad:Shape:PartShape3.brp:24%40location1"
+            }
           }
         },
         {
@@ -4283,8 +4306,10 @@
           "object_type": "ViewProvider",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "body",
-            "value": "fcstd:model:body#Sketch:Shape:PartShape1.brp:9%40location1"
+            "entity": {
+              "kind": "body",
+              "value": "fcstd:model:body#Sketch:Shape:PartShape1.brp:9%40location1"
+            }
           }
         },
         {
@@ -4296,8 +4321,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:13%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:13%40location1"
+            }
           }
         },
         {
@@ -4309,8 +4336,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:14%40location19"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:14%40location19"
+            }
           }
         },
         {
@@ -4322,8 +4351,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:15%40location16"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:15%40location16"
+            }
           }
         },
         {
@@ -4335,8 +4366,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:20%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:20%40location1"
+            }
           }
         },
         {
@@ -4348,8 +4381,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:21%40location19"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:21%40location19"
+            }
           }
         },
         {
@@ -4361,8 +4396,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:22%40location16"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:22%40location16"
+            }
           }
         },
         {
@@ -4374,8 +4411,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:25%40location19"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:25%40location19"
+            }
           }
         },
         {
@@ -4387,8 +4426,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:26%40location16"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:26%40location16"
+            }
           }
         },
         {
@@ -4400,8 +4441,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:3%40location1"
+            }
           }
         },
         {
@@ -4413,8 +4456,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:6%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:6%40location1"
+            }
           }
         },
         {
@@ -4426,8 +4471,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:7%40location19"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:7%40location19"
+            }
           }
         },
         {
@@ -4439,8 +4486,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Body:Shape:PartShape.brp:8%40location16"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Body:Shape:PartShape.brp:8%40location16"
+            }
           }
         },
         {
@@ -4452,8 +4501,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:10%40location12"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:10%40location12"
+            }
           }
         },
         {
@@ -4465,8 +4516,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:10%40location14"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:10%40location14"
+            }
           }
         },
         {
@@ -4478,8 +4531,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:14%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:14%40location1"
+            }
           }
         },
         {
@@ -4491,8 +4546,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:15%40location12"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:15%40location12"
+            }
           }
         },
         {
@@ -4504,8 +4561,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:15%40location14"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:15%40location14"
+            }
           }
         },
         {
@@ -4517,8 +4576,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:18%40location12"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:18%40location12"
+            }
           }
         },
         {
@@ -4530,8 +4591,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:18%40location14"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:18%40location14"
+            }
           }
         },
         {
@@ -4543,8 +4606,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:2%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:2%40location1"
+            }
           }
         },
         {
@@ -4556,8 +4621,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:4%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:4%40location1"
+            }
           }
         },
         {
@@ -4569,8 +4636,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:5%40location12"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:5%40location12"
+            }
           }
         },
         {
@@ -4582,8 +4651,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:5%40location14"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:5%40location14"
+            }
           }
         },
         {
@@ -4595,8 +4666,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:9%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Pad:Shape:PartShape3.brp:9%40location1"
+            }
           }
         },
         {
@@ -4608,8 +4681,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:3%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:3%40location1"
+            }
           }
         },
         {
@@ -4621,8 +4696,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:5%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:5%40location1"
+            }
           }
         },
         {
@@ -4634,8 +4711,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:7%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:7%40location1"
+            }
           }
         },
         {
@@ -4647,8 +4726,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:8%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#Sketch:Shape:PartShape1.brp:8%40location1"
+            }
           }
         },
         {
@@ -4660,8 +4741,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Body:Shape:PartShape.brp:10%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Body:Shape:PartShape.brp:10%40location1"
+            }
           }
         },
         {
@@ -4673,8 +4756,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Body:Shape:PartShape.brp:17%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Body:Shape:PartShape.brp:17%40location1"
+            }
           }
         },
         {
@@ -4686,8 +4771,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Body:Shape:PartShape.brp:24%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Body:Shape:PartShape.brp:24%40location1"
+            }
           }
         },
         {
@@ -4699,8 +4786,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Body:Shape:PartShape.brp:28%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Body:Shape:PartShape.brp:28%40location1"
+            }
           }
         },
         {
@@ -4712,8 +4801,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Body:Shape:PartShape.brp:30%40location18"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Body:Shape:PartShape.brp:30%40location18"
+            }
           }
         },
         {
@@ -4725,8 +4816,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Body:Shape:PartShape.brp:32%40location15"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Body:Shape:PartShape.brp:32%40location15"
+            }
           }
         },
         {
@@ -4738,8 +4831,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:12%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:12%40location1"
+            }
           }
         },
         {
@@ -4751,8 +4846,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:17%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:17%40location1"
+            }
           }
         },
         {
@@ -4764,8 +4861,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:20%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:20%40location1"
+            }
           }
         },
         {
@@ -4777,8 +4876,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:22%40location11"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:22%40location11"
+            }
           }
         },
         {
@@ -4790,8 +4891,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:22%40location13"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:22%40location13"
+            }
           }
         },
         {
@@ -4803,8 +4906,10 @@
           "object_type": "ViewProvider Face",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:7%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#Pad:Shape:PartShape3.brp:7%40location1"
+            }
           }
         },
         {
@@ -4816,8 +4921,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location17"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:1%40location17"
+            }
           }
         },
         {
@@ -4829,8 +4936,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location17"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:11%40location17"
+            }
           }
         },
         {
@@ -4842,8 +4951,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location17"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:12%40location17"
+            }
           }
         },
         {
@@ -4855,8 +4966,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:18%40location17"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:18%40location17"
+            }
           }
         },
         {
@@ -4868,8 +4981,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:19%40location17"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:19%40location17"
+            }
           }
         },
         {
@@ -4881,8 +4996,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location17"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:2%40location17"
+            }
           }
         },
         {
@@ -4894,8 +5011,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location17"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:4%40location17"
+            }
           }
         },
         {
@@ -4907,8 +5026,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Body",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:5%40location17"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Body:Shape:PartShape.brp:5%40location17"
+            }
           }
         },
         {
@@ -4920,8 +5041,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location12"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location12"
+            }
           }
         },
         {
@@ -4933,8 +5056,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location14"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:1%40location14"
+            }
           }
         },
         {
@@ -4946,8 +5071,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:13%40location12"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:13%40location12"
+            }
           }
         },
         {
@@ -4959,8 +5086,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:13%40location14"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:13%40location14"
+            }
           }
         },
         {
@@ -4972,8 +5101,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:3%40location12"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:3%40location12"
+            }
           }
         },
         {
@@ -4985,8 +5116,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:3%40location14"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:3%40location14"
+            }
           }
         },
         {
@@ -4998,8 +5131,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:8%40location12"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:8%40location12"
+            }
           }
         },
         {
@@ -5011,8 +5146,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Pad",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:8%40location14"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Pad:Shape:PartShape3.brp:8%40location14"
+            }
           }
         },
         {
@@ -5024,8 +5161,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:1%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:1%40location1"
+            }
           }
         },
         {
@@ -5037,8 +5176,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:2%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:2%40location1"
+            }
           }
         },
         {
@@ -5050,8 +5191,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:4%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:4%40location1"
+            }
           }
         },
         {
@@ -5063,8 +5206,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#Sketch",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:6%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#Sketch:Shape:PartShape1.brp:6%40location1"
+            }
           }
         }
       ],
@@ -7024,7 +7169,19 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
