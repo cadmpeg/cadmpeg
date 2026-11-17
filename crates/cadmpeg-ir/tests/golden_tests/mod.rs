@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Every document-reachable shape in the committed goldens refuses an unknown
-//! key.
+//! key, and every value of a golden document has one spelling.
 //!
 //! The sweep walks every `*.json` under `crates/*/tests/golden`, locates each
 //! `CadIr` document by structure rather than by a fixed path, inserts one
@@ -28,8 +28,12 @@ use std::path::{Path, PathBuf};
 
 use cadmpeg_ir::CadIr;
 use cadmpeg_test_support::golden::{NATIVE_ELISION_KEY, NATIVE_ELISION_MARKER};
+use cadmpeg_test_support::spelling::SpellingSweep;
 use cadmpeg_test_support::unknown_keys::accepting_shapes;
 use serde_json::Value;
+
+#[cfg(feature = "schema")]
+mod schema_sweep;
 
 #[test]
 fn every_golden_shape_refuses_an_unknown_key() {
@@ -121,6 +125,57 @@ fn every_golden_shape_refuses_an_unknown_key() {
     );
 }
 
+#[test]
+fn every_golden_document_has_one_spelling() {
+    let mut documents = Vec::new();
+    for path in golden_files() {
+        let text = std::fs::read_to_string(&path).expect("read golden");
+        let golden: Value = serde_json::from_str(&text).expect("parse golden");
+        let mut roots = Vec::new();
+        collect_documents(&golden, &mut String::new(), &mut roots, &mut Vec::new());
+        documents.extend(
+            roots
+                .into_iter()
+                .filter(|(_, ir)| !states_native_elision(ir))
+                .map(|(pointer, ir)| (path.clone(), pointer, ir.clone())),
+        );
+    }
+    let mut sweep = SpellingSweep::default();
+    for (_, _, ir) in &documents {
+        sweep.learn(ir);
+    }
+    let mut accepting = Vec::new();
+    for (path, pointer, ir) in &documents {
+        let found = sweep.sweep(ir).unwrap_or_else(|error| {
+            panic!(
+                "{} at {pointer} does not read back: {error}",
+                path.display()
+            )
+        });
+        accepting.extend(
+            found
+                .into_iter()
+                .map(|finding| format!("{} at {pointer}{finding}", path.display())),
+        );
+    }
+    assert!(
+        sweep.probes > 0,
+        "the sweep read {} edited documents",
+        sweep.probes
+    );
+    println!(
+        "read {} edited documents of {} goldens",
+        sweep.probes,
+        documents.len()
+    );
+    assert!(
+        accepting.is_empty(),
+        "{} second spellings are admitted:\n{}",
+        accepting.len(),
+        accepting.join("\n")
+    );
+}
+
 /// Minimal documents that reach the free-form shapes no committed golden
 /// carries.
 ///
@@ -203,7 +258,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
             text: Vec::new(),
             references: BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("zz_source_role"),
-                vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
+                vec![ReferenceSelection::new(ReferenceTarget::Null)],
             )]),
             value: None,
             format: None,

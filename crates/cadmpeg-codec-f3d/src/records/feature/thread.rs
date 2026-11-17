@@ -22,6 +22,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_extended, DesignThreadExtended, "extended");
 cadmpeg_core::named_optional_field!(deserialize_full_length, bool, "full_length");
+cadmpeg_core::named_optional_field!(deserialize_right_handed, bool, "right_handed");
 
 /// Fields that the extended Thread prefix and the extended standard
 /// construction marker state.
@@ -41,6 +42,13 @@ pub(crate) struct DesignThreadExtended {
         deserialize_with = "deserialize_full_length"
     )]
     pub(crate) full_length: Option<bool>,
+    /// Whether an extended standard thread is right-handed.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_right_handed"
+    )]
+    pub(crate) right_handed: Option<bool>,
 }
 /// Bytes of a one-unit LP-UTF16 thread class and an empty LP-UTF16 designation
 /// copy between the extended prefix and the designation.
@@ -109,41 +117,84 @@ impl DesignThreadForm {
             }
     }
 
+    /// Ordinals of the offset owner and the length owner in the scope
+    /// reference table.
+    ///
+    /// The extended standard table is in record order, so its owners are the
+    /// two references whose owner records hold local ordinals 0 and 1.
+    pub(crate) fn owner_ordinals(
+        self,
+        scope: &super::scope::DesignParameterScope,
+        owners: &[crate::records::parameters::DesignParameterOwner],
+    ) -> Option<(usize, usize)> {
+        let count = scope.reference_members().len();
+        match self {
+            Self::CompactOwnersTrailing => Some((count.checked_sub(2)?, count.checked_sub(1)?)),
+            Self::CompactExtended(_) | Self::CompactOwnersLeading => Some((0, 1)),
+            Self::StandardExtended => {
+                let ordinal_of = |local_ordinal: u32| {
+                    let mut ordinals = (0..count).filter(|ordinal| {
+                        thread_owner_at(scope, owners, *ordinal)
+                            .is_some_and(|owner| owner.local_ordinal() == local_ordinal)
+                    });
+                    let ordinal = ordinals.next()?;
+                    ordinals.next().is_none().then_some(ordinal)
+                };
+                Some((ordinal_of(0)?, ordinal_of(1)?))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn owners_hold(
         self,
         scope: &super::scope::DesignParameterScope,
         owners: &[crate::records::parameters::DesignParameterOwner],
     ) -> bool {
-        let count = scope.reference_members().len();
-        let (offset_ordinal, length_ordinal) = match self {
-            Self::StandardExtended | Self::CompactOwnersTrailing => {
-                match (count.checked_sub(2), count.checked_sub(1)) {
-                    (Some(offset), Some(length)) => (offset, length),
-                    _ => return false,
-                }
-            }
-            Self::CompactExtended(_) | Self::CompactOwnersLeading => (0, 1),
-            _ => return true,
+        if !matches!(
+            self,
+            Self::StandardExtended
+                | Self::CompactOwnersTrailing
+                | Self::CompactExtended(_)
+                | Self::CompactOwnersLeading
+        ) {
+            return true;
+        }
+        let Some((offset_ordinal, length_ordinal)) = self.owner_ordinals(scope, owners) else {
+            return false;
         };
-        let owner_at = |ordinal| {
-            let index = scope.reference_members().values().nth(ordinal)?;
-            let mut matching = owners.iter().filter(|owner| {
-                crate::ids::native_stream(owner.id()) == crate::ids::native_stream(&scope.id)
-                    && owner.scope_record_index() == scope.record_index
-                    && owner.record_index() == *index
-            });
-            let owner = matching.next()?;
-            matching.next().is_none().then_some(owner)
-        };
-        match (owner_at(offset_ordinal), owner_at(length_ordinal)) {
+        match (
+            thread_owner_at(scope, owners, offset_ordinal),
+            thread_owner_at(scope, owners, length_ordinal),
+        ) {
             (Some(offset), Some(length)) => {
+                let offset_value = offset.evaluated_value().get();
                 offset.local_ordinal() == 0
-                    && offset.evaluated_value().get() == 0.0
+                    && if matches!(self, Self::StandardExtended) {
+                        offset_value >= 0.0
+                    } else {
+                        offset_value == 0.0
+                    }
                     && length.local_ordinal() == 1
                     && length.evaluated_value().get() > 0.0
             }
             _ => false,
         }
+    }
+
+    /// The face-selection groups of an extended standard scope: the first of
+    /// each reference pair that remains without the two owner references.
+    pub(crate) fn extended_standard_face_groups(
+        references: &[u32],
+        owner_ordinals: (usize, usize),
+    ) -> Vec<u32> {
+        references
+            .iter()
+            .enumerate()
+            .filter(|(ordinal, _)| *ordinal != owner_ordinals.0 && *ordinal != owner_ordinals.1)
+            .map(|(_, reference)| *reference)
+            .step_by(2)
+            .collect()
     }
 
     pub(crate) const fn face_reference_start(self) -> usize {
@@ -191,6 +242,22 @@ impl DesignThreadForm {
                 .collect(),
         }
     }
+}
+
+/// The one owner record of `scope` that its reference at `ordinal` names.
+fn thread_owner_at<'a>(
+    scope: &super::scope::DesignParameterScope,
+    owners: &'a [crate::records::parameters::DesignParameterOwner],
+    ordinal: usize,
+) -> Option<&'a crate::records::parameters::DesignParameterOwner> {
+    let index = scope.reference_members().values().nth(ordinal)?;
+    let mut matching = owners.iter().filter(|owner| {
+        crate::ids::native_stream(owner.id()) == crate::ids::native_stream(&scope.id)
+            && owner.scope_record_index() == scope.record_index
+            && owner.record_index() == *index
+    });
+    let owner = matching.next()?;
+    matching.next().is_none().then_some(owner)
 }
 
 /// Exact form and size construction carried by a `Thread` scope.

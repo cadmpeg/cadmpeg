@@ -25,17 +25,20 @@ const INDEXED_HEADER_LEN: usize = 11;
 const REFERENCE_LEN: usize = 11;
 const ENTITY_GUID_CODE_UNITS: u32 = 36;
 const CURRENT_FLAG_RUN_TAIL: [u8; 11] = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-const COMPACT_FLAG_RUN: [u8; 11] = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const COMPACT_FLAG_RUN_HEAD: [u8; 2] = [1, 1];
+const COMPACT_FLAG_RUN_LEN: usize = 11;
+const PADDING_LEN: usize = 4;
 
 /// The fillet set list of `scope`, admitted when the prefix, every set frame,
-/// and every owner reference match their forms.
+/// and every owner reference match their forms, and whether a compact padding
+/// byte of its flag run or of a set frame is nonzero.
 pub(super) fn fillet_set_list(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignFilletSetList> {
+) -> Option<(DesignFilletSetList, bool)> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Fillet) {
         return None;
     }
@@ -58,13 +61,21 @@ pub(super) fn fillet_set_list(
     }
     cursor += 4;
     let rolling_ball = *frame.get(cursor)?;
+    let mut padding_holds_bytes = false;
     let form = if matches!(rolling_ball, 0 | 1)
         && frame.get(cursor + 1..cursor + 1 + CURRENT_FLAG_RUN_TAIL.len())? == CURRENT_FLAG_RUN_TAIL
     {
         cursor += 1 + CURRENT_FLAG_RUN_TAIL.len();
         DesignFilletSetListForm::Current
-    } else if frame.get(cursor..cursor + COMPACT_FLAG_RUN.len())? == COMPACT_FLAG_RUN {
-        cursor += COMPACT_FLAG_RUN.len();
+    } else if frame
+        .get(cursor..cursor + COMPACT_FLAG_RUN_LEN)?
+        .starts_with(&COMPACT_FLAG_RUN_HEAD)
+    {
+        padding_holds_bytes = frame
+            .get(cursor + COMPACT_FLAG_RUN_HEAD.len()..cursor + COMPACT_FLAG_RUN_LEN)?
+            .iter()
+            .any(|byte| *byte != 0);
+        cursor += COMPACT_FLAG_RUN_LEN;
         DesignFilletSetListForm::Compact
     } else {
         return None;
@@ -78,9 +89,9 @@ pub(super) fn fillet_set_list(
         return None;
     }
     let mut sets = Vec::new();
-    for (position, (set_record_index, group_record_index)) in
-        (0_u32..).zip(set_references.into_iter().zip(group_references))
-    {
+    let mut ordinals = Vec::new();
+    let set_count = count;
+    for (set_record_index, group_record_index) in set_references.into_iter().zip(group_references) {
         if !scope
             .reference_members()
             .values()
@@ -88,10 +99,10 @@ pub(super) fn fillet_set_list(
         {
             return None;
         }
-        let set = fillet_set(
+        let (set, ordinal) = fillet_set(
             bytes,
             records,
-            (set_record_index, position),
+            (set_record_index, set_count),
             scope,
             parameters,
             parameter_owners,
@@ -99,16 +110,37 @@ pub(super) fn fillet_set_list(
         if set.group_record_index != group_record_index {
             return None;
         }
+        padding_holds_bytes |= set_padding_holds_bytes(bytes, &set);
         sets.push(set);
+        ordinals.push(ordinal);
     }
-    if sets.is_empty() {
+    if !ordinals_are_a_permutation(&ordinals) {
         return None;
     }
-    Some(DesignFilletSetList {
-        form,
-        rolling_ball_corner: rolling_ball == 1,
-        sets,
-    })
+    Some((
+        DesignFilletSetList {
+            form,
+            rolling_ball_corner: rolling_ball == 1,
+            sets,
+        },
+        padding_holds_bytes,
+    ))
+}
+
+/// Whether a padding field of the form of `set` holds a nonzero byte.
+fn set_padding_holds_bytes(bytes: &[u8], set: &DesignFilletSet) -> bool {
+    let Ok(start) = usize::try_from(set.byte_offset) else {
+        return false;
+    };
+    SET_FORMS
+        .iter()
+        .filter(|form| u64::try_from(form.len).ok() == Some(set.frame_length))
+        .flat_map(|form| form.padding)
+        .any(|at| {
+            bytes
+                .get(start + at..start + at + PADDING_LEN)
+                .is_some_and(|field| field.iter().any(|byte| *byte != 0))
+        })
 }
 
 /// `count` consecutive marked references from `cursor`, each distinct.
@@ -155,6 +187,7 @@ struct SetForm {
     law: (usize, LawRole),
     ordinal: usize,
     tangency_weight: usize,
+    padding: &'static [usize],
 }
 
 const SET_FORMS: [SetForm; 3] = [
@@ -167,6 +200,7 @@ const SET_FORMS: [SetForm; 3] = [
         law: (constant::RADIUS_OWNER_REFERENCE, LawRole::Radius),
         ordinal: constant::SET_ORDINAL,
         tangency_weight: constant::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[],
     },
     SetForm {
         len: chordal::LEN,
@@ -177,6 +211,7 @@ const SET_FORMS: [SetForm; 3] = [
         law: (chordal::CHORD_LENGTH_OWNER_REFERENCE, LawRole::ChordLength),
         ordinal: chordal::SET_ORDINAL,
         tangency_weight: chordal::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[],
     },
     SetForm {
         len: compact::LEN,
@@ -187,6 +222,10 @@ const SET_FORMS: [SetForm; 3] = [
         law: (compact::RADIUS_OWNER_REFERENCE, LawRole::Radius),
         ordinal: compact::SET_ORDINAL,
         tangency_weight: compact::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[
+            compact::RADIUS_OWNER_PADDING,
+            compact::TANGENCY_WEIGHT_OWNER_PADDING,
+        ],
     },
 ];
 
@@ -211,20 +250,37 @@ impl SetForm {
                 || fields
                     .iter()
                     .any(|(start, width)| (*start..start + width).contains(&at))
+                || self
+                    .padding
+                    .iter()
+                    .any(|start| (*start..start + PADDING_LEN).contains(&at))
         })
     }
 }
 
-/// The fillet set record `record_index` at `position` in the prefix list,
-/// admitted in exactly one form.
+/// Whether `ordinals` holds each of `0..ordinals.len()` exactly once and is
+/// not empty.
+pub(super) fn ordinals_are_a_permutation(ordinals: &[u32]) -> bool {
+    let mut seen = vec![false; ordinals.len()];
+    !ordinals.is_empty()
+        && ordinals.iter().all(|ordinal| {
+            usize::try_from(*ordinal)
+                .ok()
+                .and_then(|at| seen.get_mut(at))
+                .is_some_and(|slot| !std::mem::replace(slot, true))
+        })
+}
+
+/// The fillet set record `record_index` of a prefix list of `count` sets,
+/// admitted in exactly one form, with its stored set ordinal.
 fn fillet_set(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    (record_index, position): (u32, u32),
+    (record_index, count): (u32, u32),
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignFilletSet> {
+) -> Option<(DesignFilletSet, u32)> {
     let [start] = records.offsets(record_index) else {
         return None;
     };
@@ -238,7 +294,7 @@ fn fillet_set(
             || form
                 .curvature
                 .is_some_and(|at| !matches!(frame.get(at), Some(0 | 1)))
-            || View::u32_le_at(frame, form.ordinal)? != position
+            || View::u32_le_at(frame, form.ordinal)? >= count
             || !form.unnamed_bytes_are_zero(frame)
         {
             return None;
@@ -257,16 +313,20 @@ fn fillet_set(
                 radius_owner_record_index: law_owner,
             },
         };
-        Some(DesignFilletSet {
-            record_index,
-            byte_offset: u64::try_from(start).ok()?,
-            frame_length: u64::try_from(form.len).ok()?,
-            group_record_index: marked_record_reference(frame, form.group)?,
-            law,
-            tangency_weight_owner_record_index: owner(form.tangency_weight, "TangencyWeight")?,
-            tangent_chain: frame.get(form.tangent_chain) == Some(&1),
-            curvature_continuity: form.curvature.map(|at| frame.get(at) == Some(&1)),
-        })
+        let ordinal = View::u32_le_at(frame, form.ordinal)?;
+        Some((
+            DesignFilletSet {
+                record_index,
+                byte_offset: u64::try_from(start).ok()?,
+                frame_length: u64::try_from(form.len).ok()?,
+                group_record_index: marked_record_reference(frame, form.group)?,
+                law,
+                tangency_weight_owner_record_index: owner(form.tangency_weight, "TangencyWeight")?,
+                tangent_chain: frame.get(form.tangent_chain) == Some(&1),
+                curvature_continuity: form.curvature.map(|at| frame.get(at) == Some(&1)),
+            },
+            ordinal,
+        ))
     });
     let set = matches.next()?;
     matches.next().is_none().then_some(set)

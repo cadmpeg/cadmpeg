@@ -13,29 +13,29 @@ use crate::query_support::write;
 use crate::support::cadmpeg;
 
 const CHECK_REPORT: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "command": "check",
   "status": "ok",
   "refusal": null
 }"#;
 
 const SIDECAR: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "ir_sha256": "abc123"
 }"#;
 
 const BREP_DOC: &str = r#"{
-  "ir_version": "10",
-  "model": {
-    "bodies": [{"id": "body#1", "regions": ["region#1"]}],
-    "regions": [{"id": "region#1", "shells": ["shell#1"]}],
-    "shells": [{"id": "shell#1", "faces": ["face#1", "face#2"]}],
-    "faces": [{"id": "face#1"}, {"id": "face#2"}]
+  "ir_version": "11",
+  "geometry": {
+    "bodies": [{"id": "body#1"}],
+    "regions": [{"id": "region#1", "body": "body#1", "shells": ["shell#1"]}],
+    "shells": [{"id": "shell#1", "region": "region#1", "members": []}],
+    "faces": [{"id": "face#1", "shell": "shell#1"}, {"id": "face#2", "shell": "shell#1"}]
   }
 }"#;
 
 const GRAPH_DOC: &str = r#"{
-  "ir_version": "10",
+  "ir_version": "11",
   "model": {
     "features": [
       {
@@ -65,7 +65,7 @@ fn graph_input_over_256_mib_is_refused_before_json_parse() {
         .set_len(256 * 1024 * 1024 + 1)
         .unwrap();
     cadmpeg()
-        .args(["query", "graph", path.to_str().unwrap(), "model.faces"])
+        .args(["query", "graph", path.to_str().unwrap(), "geometry.faces"])
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
@@ -112,7 +112,7 @@ fn graph_rejects_report_and_sidecar() {
             "query",
             "graph",
             report.to_str().unwrap(),
-            "model.faces",
+            "geometry.faces",
             "f1",
         ])
         .assert()
@@ -129,7 +129,7 @@ fn graph_rejects_report_and_sidecar() {
             "query",
             "graph",
             sidecar.to_str().unwrap(),
-            "model.faces",
+            "geometry.faces",
             "f1",
         ])
         .assert()
@@ -183,10 +183,11 @@ fn graph_brep_hops_3_reaches_faces() {
             "graph",
             "--json",
             doc.to_str().unwrap(),
-            "model.bodies",
+            "geometry.bodies",
             "body#1",
             "--hops",
             "3",
+            "--reverse",
         ])
         .output()
         .unwrap();

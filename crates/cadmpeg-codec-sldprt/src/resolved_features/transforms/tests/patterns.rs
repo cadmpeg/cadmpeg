@@ -655,6 +655,7 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
                 count: 3,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             })
             .unwrap(),
         }));
@@ -744,6 +745,7 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
                 count: 3,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             })
             .unwrap(),
         }));

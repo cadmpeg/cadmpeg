@@ -48,17 +48,17 @@ const EPS_TRANSFER_PLANE_FRAME: f64 = 1.0e-6;
 fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
     use super::super::StandardPopulationScope;
     use cadmpeg_ir::document::EntityRewrite;
-    use cadmpeg_ir::ids::{BodyId, RegionId};
+    use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
     let source_id = "catia:standard:body#source";
     let body = Body {
         id: BodyId::mint(source_id).unwrap(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("catia:standard:region#source").unwrap()],
         transform: None,
         name: Some(source_id.into()),
         color: None,
         visible: None,
+        native_ref: None,
     };
     let scoped = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {
@@ -71,10 +71,6 @@ fn standard_population_scope_preserves_a_body_name_that_spells_its_identity() {
     assert_eq!(
         scoped.id.as_str(),
         "catia:standard:population-1/body#source"
-    );
-    assert_eq!(
-        scoped.regions[0].as_str(),
-        "catia:standard:population-1/region#source"
     );
     assert_eq!(scoped.name.as_deref(), Some(source_id));
 }
@@ -89,7 +85,7 @@ fn standard_decode_retains_native_surface_carrier_tags() {
         .expect("standard decode");
     let identities = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter_map(|surface| {
@@ -122,7 +118,7 @@ fn standard_decode_distinguishes_consolidated_surface_frames() {
         .expect("standard decode");
     let identities = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter_map(|surface| surface.source_object.as_ref())
@@ -154,7 +150,7 @@ fn standard_decode_retains_vertex_allocation_tags() {
         .expect("standard decode");
     let identities = decoded
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| {
@@ -184,20 +180,20 @@ fn decode_standard_transfers_vertices_and_cylinder() {
 
     assert!(result.report().geometry_transferred());
     // Three vertex records → three points and three vertices.
-    assert_eq!(result.ir().model.points.len(), 3);
-    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
     // A vertex coordinate is transferred verbatim in millimetres (no scaling).
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|p| (p.position().get().x - 10.0).abs() < 1.0e-6));
 
     // Cylinder and tag-bridged plane carriers are decoded from their stored
     // parameters.
-    assert_eq!(result.ir().model.surfaces.len(), 2);
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     let unknowns = result.ir().native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(unknowns[0].id.as_str(), "catia:payload:unknown#brep-stream");
@@ -205,7 +201,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .links
         .iter()
         .any(|link| link.as_str() == "catia:standard:circle#0"));
-    match &result.ir().model.surfaces[0].geometry {
+    match &result.ir().geometry.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
             let axis = cylinder_surface.frame().axis().as_raw();
             let radius = cylinder_surface.radius().get();
@@ -214,7 +210,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    assert!(result.ir().model.surfaces.iter().any(
+    assert!(result.ir().geometry.surfaces.iter().any(
         |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))
                 if {
                     let origin = plane_surface.origin();
@@ -237,14 +233,14 @@ fn decode_standard_transfers_vertices_and_cylinder() {
     // Stored face/carrier rows do not establish a B-rep without a complete
     // trim and edge graph. Carriers remain free and vertices receive only the
     // neutral ownership required for a disconnected point set.
-    assert!(result.ir().model.faces.is_empty());
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result.ir().geometry.faces.is_empty());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        result.ir().model.bodies[0].kind,
+        result.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
-    assert_eq!(result.ir().model.shells[0].free_vertices().len(), 3);
-    assert!(result.ir().model.edges.is_empty());
+    assert_eq!(result.ir().geometry.shells[0].free_vertices().count(), 3);
+    assert!(result.ir().geometry.edges.is_empty());
     assert!(result
         .report()
         .losses
@@ -400,10 +396,10 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
         )
         .expect("decode unresolved roster carrier");
 
-    assert_eq!(decoded.ir().model.surfaces.len(), 2);
-    assert!(decoded.ir().model.faces.is_empty());
+    assert_eq!(decoded.ir().geometry.surfaces.len(), 2);
+    assert!(decoded.ir().geometry.faces.is_empty());
     assert!(matches!(
-        decoded.ir().model.surfaces[1].geometry,
+        decoded.ir().geometry.surfaces[1].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(_) })
     ));
     assert!(decoded.report().losses.iter().any(|loss| {
@@ -412,7 +408,7 @@ fn decode_standard_retains_unresolved_roster_carrier_without_fabricating_a_face(
             && loss.message.contains("1 unresolved surface carriers")
             && loss
                 .message
-                .contains(decoded.ir().model.surfaces[1].id.as_str())
+                .contains(decoded.ir().geometry.surfaces[1].id.as_str())
     }));
 }
 
@@ -425,32 +421,32 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         )
         .expect("decode generated topology part");
 
-    assert_eq!(decoded.ir().model.faces.len(), 4);
-    assert_eq!(decoded.ir().model.loops.len(), 4);
-    assert_eq!(decoded.ir().model.edges.len(), 6);
-    assert_eq!(decoded.ir().model.coedges.len(), 12);
+    assert_eq!(decoded.ir().geometry.faces.len(), 4);
+    assert_eq!(decoded.ir().geometry.loops.len(), 4);
+    assert_eq!(decoded.ir().geometry.edges.len(), 6);
+    assert_eq!(decoded.ir().geometry.coedges.len(), 12);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.loops.len() == 1));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.radial_next != coedge.id));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .all(|edge| edge.curve().is_some()));
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .map(|curve| curve
@@ -615,8 +611,8 @@ fn decode_fbb_only_without_parseable_counted_table_transfers_only_carriers() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.points.is_empty());
-    assert_eq!(result.ir().model.surfaces.len(), 2);
+    assert!(result.ir().geometry.points.is_empty());
+    assert_eq!(result.ir().geometry.surfaces.len(), 2);
 }
 
 #[test]
@@ -628,7 +624,7 @@ fn decode_standard_does_not_promote_unbound_consolidated_pcurve() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode consolidated pcurve");
-    assert!(decoded.ir().model.pcurves.is_empty());
+    assert!(decoded.ir().geometry.pcurves.is_empty());
     assert!(!decoded.ir().native_unknowns("catia").unwrap().is_empty());
 }
 
@@ -661,7 +657,7 @@ fn standard_decode_refines_a_unique_quantized_analytic_carrier() {
         .expect("decode exact consolidated analytic refinement");
     let surface = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "catia:standard:surf#0")
@@ -706,7 +702,7 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
         .expect("decode resolved consolidated edge");
     let procedural = decoded
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find(|curve| {
@@ -771,7 +767,7 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
         .expect("decode resolved consolidated cone edge");
     let procedural = decoded
         .ir()
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .find(|curve| {
@@ -815,7 +811,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             .expect("decode resolved consolidated NURBS edge");
         let procedural = decoded
             .ir()
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .find(|curve| {
@@ -852,7 +848,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
         if offset == 0.0 {
             let surface = decoded
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| &surface.id == surface_id)
@@ -864,11 +860,11 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
         } else {
             let construction = decoded
                 .ir()
-                .model
+                .geometry
                 .procedural_surfaces
                 .iter()
                 .find(|surface| {
-                    decoded.ir().model.procedural_surface_owner(&surface.id) == Some(surface_id)
+                    decoded.ir().geometry.procedural_surface_owner(&surface.id) == Some(surface_id)
                 })
                 .expect("offset NURBS construction");
             let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
@@ -879,7 +875,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             let support = definition_payload.support();
             let distance = definition_payload.distance();
             assert!((distance.get() - offset).abs() < 1.0e-12);
-            assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+            assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
                 surface.id == *support
                     && matches!(
                         surface.geometry,
@@ -915,7 +911,7 @@ fn decode_standard_transfers_exact_offset_construction() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("standard decode");
-    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
+    let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
@@ -930,7 +926,7 @@ fn decode_standard_transfers_exact_offset_construction() {
     let extension = definition_payload.extension();
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id == *support));
@@ -979,7 +975,7 @@ fn decode_standard_transfers_construction_use_offset() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("standard decode");
-    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
+    let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one offset construction");
     };
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(definition_payload) =
@@ -1010,16 +1006,20 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("standard decode");
-    let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
+    let [procedural] = decoded.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one rolling-ball construction");
     };
     let surface = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| {
-            decoded.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            decoded
+                .ir()
+                .geometry
+                .procedural_surface_owner(&procedural.id)
+                == Some(&surface.id)
         })
         .expect("rolling-ball surface");
     assert!(matches!(
@@ -1063,7 +1063,7 @@ fn standard_decode_transfers_consolidated_guide_curve() {
         .expect("decode guide fixture");
     let guide = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str().starts_with("catia:guide:curve#"))
@@ -1085,11 +1085,11 @@ fn population_scope_prefixes_rewritten_body_ids() {
     let body = Body {
         id: BodyId::mint("catia:standard:body#0").expect("identity"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let admitted = crate::test_support::with_service_context(|ctx| {
         StandardPopulationScope {

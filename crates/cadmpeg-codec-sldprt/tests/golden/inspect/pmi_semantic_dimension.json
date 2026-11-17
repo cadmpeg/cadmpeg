@@ -10,8 +10,8 @@
         "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
         "type_id": "0x00000020"
       },
-      "compression": "deflate",
       "expanded": 544,
+      "kind": "deflate",
       "name": "Contents/Config-0-Partition",
       "role": "block",
       "stored": 186
@@ -23,8 +23,8 @@
         "sha256": "babf7e38baa147f4489ffef19d624ed0dfce42db5bf1a4582b4d9863bd5e6fee",
         "type_id": "0x00000042"
       },
-      "compression": "deflate",
       "expanded": 67,
+      "kind": "deflate",
       "name": "Contents/Keywords",
       "role": "block",
       "stored": 57
@@ -36,19 +36,20 @@
         "sha256": "23fe8ad82b26a6239a6c55db9a8a19151226214bc13d2c9cc11cba30363d5066",
         "type_id": "0x00000049"
       },
-      "compression": "deflate",
       "expanded": 301,
+      "kind": "deflate",
       "name": "Contents/PMISemanticDataDB",
       "role": "block",
       "stored": 216
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [
         {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "carrier": "block@8:Contents/Config-0-Partition+0",
             "schema": "SCH_SW_33103_11000"
@@ -57,19 +58,25 @@
         }
       ],
       "primary": {
-        "admission": "residual",
+        "admission": {
+          "kind": "residual"
+        },
+        "declared": {},
         "dialect": "sldprt:unknown"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "source.dialect-unverified",
-        "kind": "source_dialect_unverified",
-        "namespace": "sldprt",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "sldprt",
+          "strict_floor": "warning"
+        }
       },
       "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
       "severity": "warning"

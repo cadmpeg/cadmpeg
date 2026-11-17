@@ -37,7 +37,9 @@ pub(crate) enum PlateRefusal {
     PlateDirection,
     /// The first attachment direction is not along the sketch u axis.
     FirstDirection,
-    /// The second attachment direction is not along the sketch v axis.
+    /// The second attachment direction is not perpendicular to the first with a
+    /// positive sketch v component, nor antiparallel to v after a reversed first
+    /// direction.
     SecondDirection,
     /// The attachment thickness is not the slot-3 reference.
     ThicknessReference,

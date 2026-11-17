@@ -630,6 +630,7 @@ fn axis(
         direction,
         spacing,
         count,
+        symmetric: false,
     })
 }
 
@@ -771,6 +772,7 @@ impl LinearConstruction<'_> {
             count: self.first.count,
             second: self.second,
             omitted_instances,
+            symmetric: false,
         })
         .ok())
     }
@@ -782,11 +784,13 @@ impl LinearConstruction<'_> {
             count,
             second,
             omitted_instances,
+            symmetric,
         } = pattern.definition()
         else {
             return false;
         };
-        direction.as_ref() == Some(&self.first.direction)
+        !*symmetric
+            && direction.as_ref() == Some(&self.first.direction)
             && spacing == &self.first.spacing
             && count == &self.first.count
             && second == &self.second

@@ -67,6 +67,9 @@ pub(crate) enum DesignFeatureFamily {
     SheetMetalEdgeFlange,
     SheetMetalHem,
     SheetMetalBend,
+    SheetMetalContourFlange,
+    SheetMetalUnfold,
+    SheetMetalRefold,
 }
 
 /// Return the canonical operation family for a selected feature kind.
@@ -109,6 +112,9 @@ pub(crate) fn design_feature_family(
         Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
         Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
         Kind::Bend => Some(DesignFeatureFamily::SheetMetalBend),
+        Kind::ContourFlange => Some(DesignFeatureFamily::SheetMetalContourFlange),
+        Kind::Unfold => Some(DesignFeatureFamily::SheetMetalUnfold),
+        Kind::Refold => Some(DesignFeatureFamily::SheetMetalRefold),
         Kind::SpherePrimitive
         | Kind::TorusPrimitive
         | Kind::BoxPrimitive
@@ -139,6 +145,7 @@ pub(crate) fn design_feature_family(
         | Kind::Modify
         | Kind::DeleteFace
         | Kind::SurfaceDeleteFace
+        | Kind::SurfaceUntrim
         | Kind::UnStitch
         | Kind::RemoveBody
         | Kind::ReverseNormal

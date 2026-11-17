@@ -11,7 +11,7 @@ fn sweep_history_keeps_branches_and_body_links_without_inventing_policies() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("two body-writing sweep branches");
     let ir = decoded.ir();
-    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies.len(), 1);
     let sweeps = ir
         .model
         .features

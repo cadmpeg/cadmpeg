@@ -141,7 +141,7 @@ fn first_instance_cone_prototype_transfers_its_complete_model_space_frame() {
         .expect("decode");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str().ends_with("#7"))
@@ -223,7 +223,7 @@ fn later_positional_spline_replay_transfers_as_a_nurbs_surface() {
     for surface_id in [7, 8] {
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{surface_id}"))
@@ -252,7 +252,7 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
         .expect("decode");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -303,7 +303,7 @@ fn first_instance_torus_radii_are_in_millimeters_at_ir_admission() {
         )
         .expect("torus prototype transfer");
     });
-    let surface = ir.model.surfaces.first().expect("torus carrier");
+    let surface = ir.geometry.surfaces.first().expect("torus carrier");
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) = &surface.geometry else {
         panic!("torus carrier changed family");
     };
@@ -452,7 +452,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .expect("legacy analytic surface decode");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
@@ -485,7 +485,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         .expect("non-visible legacy analytic surface decode");
     let nonvisible_surface = nonvisible_result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:novisgeom:surface#42")
@@ -551,7 +551,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         .expect("legacy cone decode");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
@@ -620,7 +620,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,3FF0000000000000,4000000000000000,4008000000000000
         .expect("legacy analytic plane decode");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")
@@ -715,7 +715,7 @@ ${}
         .expect("legacy spline surface decode");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#42")

@@ -1,7 +1,60 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [
+        {
+          "id": "usd:stage:body#/Arm/Base/Geom",
+          "kind": "general",
+          "name": "Geom"
+        },
+        {
+          "id": "usd:stage:body#/Arm/Slider/Geom",
+          "kind": "general",
+          "name": "Geom"
+        },
+        {
+          "id": "usd:stage:body#/Arm/Upper/Geom",
+          "kind": "general",
+          "name": "Geom"
+        }
+      ],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -10,20 +63,54 @@
           "id": "usd:stage:articulation#/Arm",
           "native_ref": "/Arm",
           "root": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm"
+            }
           }
         }
       ],
       "assembly_joints": [
         {
+          "drives": [],
           "id": "usd:stage:joint#/Arm/Joints/Anchor",
           "native_ref": "/Arm/Joints/Anchor",
           "operands": {
-            "arity": "grounded",
-            "connector": {
-              "detached": false,
-              "frame": [
+            "kind": "grounded",
+            "value": {
+              "connector": {
+                "detached": false,
+                "frame": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                ],
+                "operand": {
+                  "container": {
+                    "kind": "occurrence",
+                    "occurrence": "usd:stage:occurrence#/Arm/Base",
+                    "occurrence_path": []
+                  },
+                  "object": "/Arm/Base",
+                  "subelements": []
+                }
+              },
+              "offset_frame": [
                 [
                   1.0,
                   0.0,
@@ -42,35 +129,8 @@
                   1.0,
                   0.0
                 ]
-              ],
-              "operand": {
-                "container": {
-                  "container": "occurrence",
-                  "occurrence": "usd:stage:occurrence#/Arm/Base"
-                },
-                "object": "/Arm/Base"
-              }
-            },
-            "offset_frame": [
-              [
-                1.0,
-                0.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                1.0,
-                0.0,
-                0.0
-              ],
-              [
-                0.0,
-                0.0,
-                1.0,
-                0.0
               ]
-            ]
+            }
           },
           "suppressed": false
         },
@@ -89,75 +149,81 @@
           "id": "usd:stage:joint#/Arm/Joints/Rail",
           "native_ref": "/Arm/Joints/Rail",
           "operands": {
-            "arity": "pair",
-            "connectors": [
-              {
-                "detached": false,
-                "frame": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
+            "kind": "pair",
+            "value": {
+              "connectors": [
+                {
+                  "detached": false,
+                  "frame": [
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      1.0,
+                      100.0
+                    ]
                   ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
+                  "operand": {
+                    "container": {
+                      "kind": "occurrence",
+                      "occurrence": "usd:stage:occurrence#/Arm/Upper",
+                      "occurrence_path": []
+                    },
+                    "object": "/Arm/Upper",
+                    "subelements": []
+                  }
+                },
+                {
+                  "detached": false,
+                  "frame": [
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      1.0,
+                      0.0
+                    ]
                   ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    100.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "container": "occurrence",
-                    "occurrence": "usd:stage:occurrence#/Arm/Upper"
-                  },
-                  "object": "/Arm/Upper"
+                  "operand": {
+                    "container": {
+                      "kind": "occurrence",
+                      "occurrence": "usd:stage:occurrence#/Arm/Slider",
+                      "occurrence_path": []
+                    },
+                    "object": "/Arm/Slider",
+                    "subelements": []
+                  }
                 }
-              },
-              {
-                "detached": false,
-                "frame": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "container": "occurrence",
-                    "occurrence": "usd:stage:occurrence#/Arm/Slider"
-                  },
-                  "object": "/Arm/Slider"
+              ],
+              "kind": {
+                "kind": "slider",
+                "linear_limits": {
+                  "kind": "range",
+                  "maximum": 50.0,
+                  "minimum": 0.0
                 }
-              }
-            ],
-            "kind": {
-              "kind": "slider",
-              "linear_limits": {
-                "bounds": "range",
-                "maximum": 50.0,
-                "minimum": 0.0
               }
             }
           },
@@ -180,103 +246,89 @@
           "id": "usd:stage:joint#/Arm/Joints/Shoulder",
           "native_ref": "/Arm/Joints/Shoulder",
           "operands": {
-            "arity": "pair",
-            "connectors": [
-              {
-                "detached": false,
-                "frame": [
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
+            "kind": "pair",
+            "value": {
+              "connectors": [
+                {
+                  "detached": false,
+                  "frame": [
+                    [
+                      0.0,
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      1.0,
+                      0.0
+                    ],
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      20.0
+                    ]
                   ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
+                  "operand": {
+                    "container": {
+                      "kind": "occurrence",
+                      "occurrence": "usd:stage:occurrence#/Arm/Base",
+                      "occurrence_path": []
+                    },
+                    "object": "/Arm/Base",
+                    "subelements": []
+                  }
+                },
+                {
+                  "detached": false,
+                  "frame": [
+                    [
+                      0.0,
+                      1.0,
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      0.0,
+                      0.0,
+                      1.0,
+                      0.0
+                    ],
+                    [
+                      1.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ]
                   ],
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    20.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "container": "occurrence",
-                    "occurrence": "usd:stage:occurrence#/Arm/Base"
-                  },
-                  "object": "/Arm/Base"
+                  "operand": {
+                    "container": {
+                      "kind": "occurrence",
+                      "occurrence": "usd:stage:occurrence#/Arm/Upper",
+                      "occurrence_path": []
+                    },
+                    "object": "/Arm/Upper",
+                    "subelements": []
+                  }
                 }
-              },
-              {
-                "detached": false,
-                "frame": [
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
-                  ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ],
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ]
-                ],
-                "operand": {
-                  "container": {
-                    "container": "occurrence",
-                    "occurrence": "usd:stage:occurrence#/Arm/Upper"
-                  },
-                  "object": "/Arm/Upper"
-                }
+              ],
+              "kind": {
+                "angular_limits": {
+                  "kind": "range",
+                  "maximum": 0.7853981633974483,
+                  "minimum": -1.5707963267948966
+                },
+                "kind": "revolute"
               }
-            ],
-            "kind": {
-              "angular_limits": {
-                "bounds": "range",
-                "maximum": 0.7853981633974483,
-                "minimum": -1.5707963267948966
-              },
-              "kind": "revolute"
             }
           },
           "suppressed": false
         }
       ],
+      "assets": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "usd:stage:body#/Arm/Base/Geom",
-          "kind": "general",
-          "name": "Geom",
-          "regions": []
-        },
-        {
-          "id": "usd:stage:body#/Arm/Slider/Geom",
-          "kind": "general",
-          "name": "Geom",
-          "regions": []
-        },
-        {
-          "id": "usd:stage:body#/Arm/Upper/Geom",
-          "kind": "general",
-          "name": "Geom",
-          "regions": []
-        }
-      ],
-      "coedges": [],
       "colliders": [
         {
           "enabled": true,
@@ -287,8 +339,10 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Base/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Base/Geom",
+              "kind": "body"
+            }
           }
         },
         {
@@ -300,8 +354,10 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Slider/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Slider/Geom",
+              "kind": "body"
+            }
           }
         },
         {
@@ -313,18 +369,20 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Upper/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Upper/Geom",
+              "kind": "body"
+            }
           }
         }
       ],
       "configurations": [],
-      "curves": [],
+      "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
-      "loops": [],
+      "history_bodies": [],
       "mass_properties": [
         {
           "center_of_mass": {
@@ -343,8 +401,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Base",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           }
         },
         {
@@ -364,8 +424,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Slider",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            }
           }
         },
         {
@@ -385,8 +447,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Upper",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            }
           }
         }
       ],
@@ -401,7 +465,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Arm",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -440,7 +504,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Arm/Base",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -479,7 +543,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Arm/Base/Geom",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -518,7 +582,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Arm/Slider",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -557,7 +621,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Arm/Slider/Geom",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -596,7 +660,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Arm/Upper",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -635,7 +699,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Arm/Upper/Geom",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -665,7 +729,6 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
       "physical_materials": [
         {
           "density": 7849.999703466891,
@@ -677,75 +740,94 @@
           "static_friction": 0.6000000238418579
         }
       ],
+      "physics_scenes": [],
       "pmi": [],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Arm",
           "kind": "group",
           "native_ref": "/Arm",
+          "sketches": [],
           "source_name": "Arm"
         },
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base",
           "kind": "group",
           "native_ref": "/Arm/Base",
+          "sketches": [],
           "source_name": "Base"
         },
         {
           "bodies": [
             "usd:stage:body#/Arm/Base/Geom"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base/Geom",
           "kind": "object",
           "native_ref": "/Arm/Base/Geom",
+          "sketches": [],
           "source_name": "Geom"
         },
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Slider",
           "kind": "group",
           "native_ref": "/Arm/Slider",
+          "sketches": [],
           "source_name": "Slider"
         },
         {
           "bodies": [
             "usd:stage:body#/Arm/Slider/Geom"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Slider/Geom",
           "kind": "object",
           "native_ref": "/Arm/Slider/Geom",
+          "sketches": [],
           "source_name": "Geom"
         },
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Upper",
           "kind": "group",
           "native_ref": "/Arm/Upper",
+          "sketches": [],
           "source_name": "Upper"
         },
         {
           "bodies": [
             "usd:stage:body#/Arm/Upper/Geom"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Upper/Geom",
           "kind": "object",
           "native_ref": "/Arm/Upper/Geom",
+          "sketches": [],
           "source_name": "Geom"
         }
       ],
-      "regions": [],
       "rigid_bodies": [
         {
           "enabled": true,
           "id": "usd:stage:rigid-body#/Arm/Base",
           "kinematic": false,
           "native_ref": "/Arm/Base",
+          "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           }
         },
         {
@@ -753,9 +835,12 @@
           "id": "usd:stage:rigid-body#/Arm/Slider",
           "kinematic": false,
           "native_ref": "/Arm/Slider",
+          "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            }
           }
         },
         {
@@ -763,26 +848,30 @@
           "id": "usd:stage:rigid-body#/Arm/Upper",
           "kinematic": false,
           "native_ref": "/Arm/Upper",
+          "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            }
           }
         }
       ],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [
         {
           "body": "usd:stage:body#/Arm/Base/Geom",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "usd:stage:tessellation#/Arm/Base/Geom",
           "mesh": {
             "kind": "list",
@@ -830,11 +919,16 @@
                 "z": 20.0
               }
             ]
-          }
+          },
+          "texture_assignments": [],
+          "texture_coordinates": [],
+          "triangle_groups": []
         },
         {
           "body": "usd:stage:body#/Arm/Slider/Geom",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "usd:stage:tessellation#/Arm/Slider/Geom",
           "mesh": {
             "kind": "list",
@@ -882,11 +976,16 @@
                 "z": 30.0
               }
             ]
-          }
+          },
+          "texture_assignments": [],
+          "texture_coordinates": [],
+          "triangle_groups": []
         },
         {
           "body": "usd:stage:body#/Arm/Upper/Geom",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "usd:stage:tessellation#/Arm/Upper/Geom",
           "mesh": {
             "kind": "list",
@@ -934,13 +1033,33 @@
                 "z": 100.0
               }
             ]
-          }
+          },
+          "texture_assignments": [],
+          "texture_coordinates": [],
+          "triangle_groups": []
         }
       ],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Arm",
@@ -948,17 +1067,19 @@
         "up_axis": "Z"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "version": "0.8.0"
             },
             "dialect": "usd:usdc-0.8.0"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -966,31 +1087,47 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "version": "0.8.0"
           },
           "dialect": "usd:usdc-0.8.0"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "518c694e8d9aad605943b67240eade1c9587de82d4de608d1f13507b26e58391",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

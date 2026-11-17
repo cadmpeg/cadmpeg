@@ -26,6 +26,7 @@ fn is_linear_pattern_accepts_linear_and_rejects_mirror_and_native_features() {
                 count: 2,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             },
             true,
         ),
@@ -753,6 +754,7 @@ fn project_fixture_with_spacings(
             second,
             count,
             omitted_instances,
+            ..
         } = &mut transform
         else {
             panic!("linear pattern");
@@ -1104,6 +1106,7 @@ fn rectangular_patterns_keep_exact_seeds_and_both_directions() {
                 count,
                 second: actual,
                 omitted_instances,
+                ..
             } = pattern.definition()
             else {
                 panic!("linear pattern");

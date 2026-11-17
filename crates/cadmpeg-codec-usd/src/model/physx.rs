@@ -178,7 +178,9 @@ impl super::Builder<'_, '_, '_, '_> {
                         .iter()
                         .map(|path| self.physx_target(path))
                         .collect::<Option<Vec<_>>>()
-                        .map(|targets| SolverValue::Targets { targets }),
+                        .map(|targets| SolverValue::Targets {
+                            targets: targets.into_iter().map(Into::into).collect(),
+                        }),
                 };
                 match value {
                     Some(value) => {
@@ -194,7 +196,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 id: crate::ids::solver_settings(&pending.path, &pending.schema),
                 solver: SOLVER.to_owned(),
                 schema: pending.schema,
-                target: pending.target,
+                target: pending.target.into(),
                 values,
                 native_ref: Some(pending.path),
             });

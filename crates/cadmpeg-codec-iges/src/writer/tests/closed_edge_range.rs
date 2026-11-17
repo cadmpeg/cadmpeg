@@ -21,15 +21,16 @@ fn vertices_at(positions: &[Point3]) -> CadIr {
     let mut ir = CadIr::empty();
     for (index, position) in positions.iter().enumerate() {
         let point = PointId::mint(format!("test:model:point#v{index}")).expect("identity grammar");
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point.clone(),
             FinitePoint3::new(*position).expect("finite position"),
             None,
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: VertexId::mint(format!("test:model:vertex#v{index}")).expect("identity grammar"),
             point,
             tolerance: None,
+            native_ref: None,
         });
     }
     ir
@@ -154,7 +155,8 @@ fn closed_edge_on_a_line_without_range_is_refused() {
 fn open_circle_edge_without_range_is_refused() {
     let ir = vertices_at(&[Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)]);
     let mut edge = closed_edge("arc", "circle", "v0");
-    edge.end = VertexId::mint("test:model:vertex#v1").expect("identity grammar");
+    edge.ends.as_mut().expect("edge has vertices").end =
+        VertexId::mint("test:model:vertex#v1").expect("identity grammar");
     assert!(refusal(&ir, &edge, &circle()).starts_with(MISSING_RANGE));
 }
 

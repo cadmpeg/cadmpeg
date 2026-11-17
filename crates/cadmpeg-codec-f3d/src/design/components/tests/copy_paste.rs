@@ -99,7 +99,7 @@ fn product_occurrence(carrier: &DesignComponentOccurrence) -> Occurrence {
     serde_json::from_value(serde_json::json!({
         "id": crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
         "native_ref": carrier.id.clone(),
-        "prototype": {"scope": "local", "definition": crate::ids::neutral_component_id(&carrier.component_guid)},
+        "prototype": {"kind": "local", "definition": crate::ids::neutral_component_id(&carrier.component_guid)},
         "parent": {"kind": "root"},
         "ordinal": 0,
         "transform": [[1.0, 0.0, 0.0, 60.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],

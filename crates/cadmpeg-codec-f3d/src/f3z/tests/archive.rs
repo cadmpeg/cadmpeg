@@ -86,25 +86,25 @@ fn f3z_archive_merges_identity_occurrences() {
         .iter()
         .any(|note| note.contains("merged 1 external occurrence")));
     assert_eq!(
-        decoded.ir().model.bodies.len(),
-        component_alone.ir().model.bodies.len()
+        decoded.ir().geometry.bodies.len(),
+        component_alone.ir().geometry.bodies.len()
     );
     assert_eq!(
-        decoded.ir().model.faces.len(),
-        component_alone.ir().model.faces.len()
+        decoded.ir().geometry.faces.len(),
+        component_alone.ir().geometry.faces.len()
     );
     assert_eq!(
-        decoded.ir().model.points.len(),
-        component_alone.ir().model.points.len()
+        decoded.ir().geometry.points.len(),
+        component_alone.ir().geometry.points.len()
     );
     let prefix = format!("f3d:xref/role-{XREF_ROLE}/reference-0/");
-    let body = &decoded.ir().model.bodies[0];
+    let body = &decoded.ir().geometry.bodies[0];
     assert!(
         body.id.as_str().starts_with(&prefix),
         "{}",
         body.id.as_str()
     );
-    for shell_owner in &decoded.ir().model.shells {
+    for shell_owner in &decoded.ir().geometry.shells {
         assert!(
             shell_owner.id.as_str().starts_with(&prefix),
             "occurrence graph must stay internally consistent: {}",
@@ -213,9 +213,9 @@ fn duplicate_role_references_keep_archive_occurrences_disjoint() {
         )
         .expect("admitted duplicate-role references remain independently mergeable"),
     );
-    assert_eq!(decoded.ir().model.bodies.len(), 2);
-    let first = decoded.ir().model.bodies[0].id.as_str();
-    let second = decoded.ir().model.bodies[1].id.as_str();
+    assert_eq!(decoded.ir().geometry.bodies.len(), 2);
+    let first = decoded.ir().geometry.bodies[0].id.as_str();
+    let second = decoded.ir().geometry.bodies[1].id.as_str();
     assert!(first.contains(&format!("role-{XREF_ROLE}/reference-0/occurrence-0/")));
     assert!(second.contains(&format!("role-{XREF_ROLE}/reference-1/occurrence-0/")));
     assert_ne!(first, second);
@@ -426,15 +426,15 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
     .unwrap();
 
     assert_eq!(
-        decoded.ir().model.bodies.len(),
-        component_alone.ir().model.bodies.len()
+        decoded.ir().geometry.bodies.len(),
+        component_alone.ir().geometry.bodies.len()
     );
     assert!(decoded
         .report()
         .notes
         .iter()
         .any(|note| note.contains("merged 2 external occurrence")));
-    let body_id = &decoded.ir().model.bodies[0].id.as_str();
+    let body_id = &decoded.ir().geometry.bodies[0].id.as_str();
     assert!(body_id.contains(&format!(
         "xref/role-{XREF_ROLE}/reference-0/occurrence-0/xref/role-{CHILD_ROLE}/reference-0/occurrence-0/"
     )));
@@ -555,8 +555,8 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
         .expect("resolved nested occurrence transform");
     assert_eq!(resolved.rows()[0][3], 10.0);
     assert_eq!(resolved.rows()[1][3], 20.0);
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert!(decoded.ir().model.bodies[0].transform.is_none());
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert!(decoded.ir().geometry.bodies[0].transform.is_none());
     let cadmpeg_ir::products::PrototypeReference::Local { definition } = &child.prototype else {
         panic!("merged member must have a local prototype");
     };
@@ -569,7 +569,7 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
             .find(|item| &item.id == definition)
             .unwrap()
             .bodies,
-        [decoded.ir().model.bodies[0].id.clone()]
+        [decoded.ir().geometry.bodies[0].id.clone()]
     );
 }
 
@@ -665,8 +665,8 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
                 .rows(),
             expected
         );
-        assert_eq!(ir.model.bodies.len(), 1);
-        assert!(ir.model.bodies[0].transform.is_none());
+        assert_eq!(ir.geometry.bodies.len(), 1);
+        assert!(ir.geometry.bodies[0].transform.is_none());
         let cadmpeg_ir::products::PrototypeReference::Local { definition } = &child.prototype
         else {
             panic!("merged member must have a local prototype");
@@ -678,7 +678,7 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
                 .find(|item| &item.id == definition)
                 .unwrap()
                 .bodies,
-            [ir.model.bodies[0].id.clone()]
+            [ir.geometry.bodies[0].id.clone()]
         );
     }
 }

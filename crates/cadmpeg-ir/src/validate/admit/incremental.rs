@@ -5,7 +5,7 @@ use super::native_unknown_order;
 use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
-use crate::document::{CadIr, Model};
+use crate::document::CadIr;
 use crate::drawings::Drawing;
 use crate::features::{
     DesignConfiguration, DesignParameter, Feature, FeatureInputTopology, FeatureResultTopology,
@@ -41,7 +41,7 @@ pub(crate) enum CandidateScope {
 #[derive(Debug)]
 pub(crate) struct AdmittedState {
     identities: BTreeMap<String, bool>,
-    pub(crate) lengths: [usize; crate::schema::EntityKind::ALL.len()],
+    pub(crate) lengths: [usize; crate::document::MODEL_ARENA_COUNT],
     pub(crate) annotations_admitted: bool,
     dirty_unknowns: BTreeSet<usize>,
 }
@@ -50,13 +50,13 @@ impl AdmittedState {
     pub(crate) fn build(ir: &CadIr, format: &str, unknowns: &[UnknownRecord]) -> Self {
         let mut state = Self {
             identities: BTreeMap::new(),
-            lengths: lengths(&ir.model),
+            lengths: lengths(ir),
             annotations_admitted: true,
             dirty_unknowns: BTreeSet::new(),
         };
         macro_rules! add_neutral {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                for entity in &ir.model.$field { insert(&mut state.identities, entity.identity(), false); }
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                for entity in &ir.$home.$field { insert(&mut state.identities, entity.identity(), false); }
             )*};
         }
         crate::document::arena_registry!(add_neutral);
@@ -88,17 +88,14 @@ impl AdmittedState {
         (format, unknowns): (&str, &[UnknownRecord]),
         changes: &Annotations,
         allowed: &[Check],
-        (starts, scope): (
-            [usize; crate::schema::EntityKind::ALL.len()],
-            CandidateScope,
-        ),
+        (starts, scope): ([usize; crate::document::MODEL_ARENA_COUNT], CandidateScope),
     ) -> Result<Option<Result<ValidationReport, NativeConvertError>>, CodecError> {
         let mut selected = (|| {
             let mut selected = BTreeMap::new();
             macro_rules! add_selected {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                     let start = starts[<$ty as EntitySchema>::KIND.index()];
-                    for entity in ir.model.$field.get(start..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? {
+                    for entity in ir.$home.$field.get(start..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? {
                         insert(&mut selected, entity.identity(), false);
                     }
                 )*};
@@ -109,8 +106,8 @@ impl AdmittedState {
         let mut closed = (matches!(scope, CandidateScope::Appended) || ir.native.0.is_empty())
             && !ir.model.has_feature_regeneration_parents();
         macro_rules! check_selected {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                for entity in &ir.model.$field[starts[<$ty as EntitySchema>::KIND.index()]..] {
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                for entity in &ir.$home.$field[starts[<$ty as EntitySchema>::KIND.index()]..] {
                     if lookup(&self.identities, entity.identity()).is_some() { closed = false; }
                     entity.visit_references(ctx, &mut |target| {
                         if lookup(&selected, target).is_none() {
@@ -176,8 +173,8 @@ impl AdmittedState {
             Ok::<_, CodecError>(())
         })()?;
         macro_rules! take_appended {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                candidate.model.$field.extend(ir.model.$field.drain(starts[<$ty as EntitySchema>::KIND.index()]..));
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                candidate.$home.$field.extend(ir.$home.$field.drain(starts[<$ty as EntitySchema>::KIND.index()]..));
             )*};
         }
         crate::document::arena_registry!(take_appended);
@@ -187,20 +184,21 @@ impl AdmittedState {
             super::admit(ctx, &candidate, allowed, Vec::new())
         };
         // No fallible operation may precede restoration after the split.
+        ir.geometry.append(candidate.geometry);
         ir.model.append(candidate.model);
         result.map(|report| Some(Ok(report)))
     }
 
     pub(crate) fn rewind(
         &mut self,
-        model: &Model,
+        ir: &CadIr,
         checkpoint: &crate::draft::ModelCheckpoint,
     ) -> Result<(), CodecError> {
         macro_rules! remove_suffix {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                 let slot = <$ty as EntitySchema>::KIND.index();
                 let start = self.lengths[slot].min(checkpoint.arena_len::<$ty>());
-                for entity in model.$field.get(start..self.lengths[slot]).ok_or_else(|| CodecError::malformed("admitted suffix was removed before invalidation"))? {
+                for entity in ir.$home.$field.get(start..self.lengths[slot]).ok_or_else(|| CodecError::malformed("admitted suffix was removed before invalidation"))? {
                     self.identities.remove(entity.identity());
                 }
                 self.lengths[slot] = start;
@@ -213,14 +211,14 @@ impl AdmittedState {
     pub(crate) fn accept(&mut self, ir: &CadIr) -> Result<(), CodecError> {
         (|| {
             macro_rules! accept_appended {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
-                    for entity in ir.model.$field.get(self.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { insert(&mut self.identities, entity.identity(), false); }
+                ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
+                    for entity in ir.$home.$field.get(self.lengths[<$ty as EntitySchema>::KIND.index()]..).ok_or_else(|| CodecError::malformed("admitted prefix was removed"))? { insert(&mut self.identities, entity.identity(), false); }
                 )*};
             }
             crate::document::arena_registry!(accept_appended);
             Ok::<_, CodecError>(())
         })()?;
-        self.lengths = lengths(&ir.model);
+        self.lengths = lengths(ir);
         self.dirty_unknowns.clear();
         Ok(())
     }
@@ -242,9 +240,9 @@ impl AdmittedState {
     }
 }
 
-fn lengths(model: &Model) -> [usize; crate::schema::EntityKind::ALL.len()] {
+fn lengths(ir: &CadIr) -> [usize; crate::document::MODEL_ARENA_COUNT] {
     macro_rules! lengths {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {[$(model.$field.len()),*]};
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {[$(ir.$home.$field.len()),*]};
     }
     crate::document::arena_registry!(lengths)
 }

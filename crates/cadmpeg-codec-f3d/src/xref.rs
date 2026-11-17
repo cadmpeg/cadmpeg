@@ -641,6 +641,9 @@ pub(crate) fn project_occurrences(
                 + cadmpeg_core::decode::u64_from_index(projection.occurrences.len());
             if used >= sources.limits.max_entities {
                 return Err(cadmpeg_core::decode::ResourceLimit {
+                    scope: cadmpeg_core::decode::LimitScope::for_dimension(
+                        cadmpeg_core::decode::ResourceDimension::Entities,
+                    ),
                     dimension: cadmpeg_core::decode::ResourceDimension::Entities,
                     reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
                     limit: sources.limits.max_entities,
@@ -1902,7 +1905,6 @@ fn same_external_target(
                 target: a,
                 segment: sa,
                 asset_guid: aa,
-                target_type_guid: ta,
                 link_name: ra,
                 version: va,
                 ..
@@ -1911,7 +1913,6 @@ fn same_external_target(
                 target: b,
                 segment: sb,
                 asset_guid: ab,
-                target_type_guid: tb,
                 link_name: rb,
                 version: vb,
                 ..
@@ -1920,7 +1921,10 @@ fn same_external_target(
             a == b
                 && sa == sb
                 && aa.eq_ignore_ascii_case(ab)
-                && ta.eq_ignore_ascii_case(tb)
+                && left
+                    .document_type()
+                    .zip(right.document_type())
+                    .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
                 && ra == rb
                 && match (va, vb) {
                     (None, None) => true,
@@ -2329,8 +2333,14 @@ impl ClosingOccurrenceChain<'_> {
             return false;
         }
         let mut at = 0;
-        matches!(take_reference(self.references.window(), &mut at), Some(Reference::Local { target, inline_type_guid }) if target == placement && inline_type_guid.is_none_or(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)))
-            && matches!(take_reference(self.references.window(), &mut at), Some(Reference::CrossDocument { target: record, target_type_guid, link_name, .. }) if record == target && target_type_guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID) && link_name.eq_str(role))
+        if !matches!(take_reference(self.references.window(), &mut at), Some(Reference::Local { target, inline_type_guid }) if target == placement && inline_type_guid.is_none_or(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)))
+        {
+            return false;
+        }
+        let Some(reference) = take_reference(self.references.window(), &mut at) else {
+            return false;
+        };
+        matches!(&reference, Reference::CrossDocument { target: record, link_name, .. } if *record == target && reference.document_type().is_some_and(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)) && link_name.eq_str(role))
     }
 }
 
@@ -2538,16 +2548,11 @@ fn cross_document_target<'a>(
 ) -> Option<(u64, &'a str)> {
     match reference {
         Reference::CrossDocument {
-            target,
-            inline_type_guid,
-            target_type_guid,
-            link_name,
-            ..
+            target, link_name, ..
         } if *target != 0
-            && target_type_guid.eq_ignore_ascii_case(type_guid)
-            && inline_type_guid
-                .as_deref()
-                .is_none_or(|inline| inline.eq_ignore_ascii_case(target_type_guid)) =>
+            && reference
+                .document_type()
+                .is_some_and(|guid| guid.eq_ignore_ascii_case(type_guid)) =>
         {
             Some((*target, link_name.as_str()))
         }

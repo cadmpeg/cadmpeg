@@ -375,7 +375,7 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
         "reference_side_code":4, "height_datum":"outer_faces", "bend_position":"inside"
     })).unwrap();
     if let DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
-        *slot = Some(operation);
+        *slot = Some(operation).into();
     }
     let wire = serde_json::to_value(&scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(wire.clone()).unwrap();
@@ -414,7 +414,10 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
     };
     assert!(findings(decoded).is_empty());
     let mut invalid = scope.clone();
-    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+    if let DesignScopePayloadMut::EdgeFlange(
+        crate::records::feature::sheet_metal::edge::DesignEdgeFlangeScope::Legacy(operation),
+    ) = invalid.payload_mut()
+    {
         operation.bend_radius_offset += 1;
     }
     assert!(!findings(invalid).is_empty());
@@ -432,13 +435,19 @@ fn corner_flange_scope_round_trip_and_layout_validation() {
         .unwrap();
     assert!(!findings(invalid).is_empty());
     let mut invalid = scope.clone();
-    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+    if let DesignScopePayloadMut::EdgeFlange(
+        crate::records::feature::sheet_metal::edge::DesignEdgeFlangeScope::Legacy(operation),
+    ) = invalid.payload_mut()
+    {
         operation.height_datum =
             crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum::InnerFaces;
     }
     assert!(!findings(invalid).is_empty());
     let mut invalid = scope;
-    if let DesignScopePayloadMut::EdgeFlange(Some(operation)) = invalid.payload_mut() {
+    if let DesignScopePayloadMut::EdgeFlange(
+        crate::records::feature::sheet_metal::edge::DesignEdgeFlangeScope::Legacy(operation),
+    ) = invalid.payload_mut()
+    {
         operation.bend_position = crate::records::feature::sheet_metal::DesignBendPosition::Outside;
     }
     assert!(!findings(invalid).is_empty());

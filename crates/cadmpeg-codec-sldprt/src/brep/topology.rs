@@ -4515,9 +4515,9 @@ mod tests {
         let decoded = crate::SldprtCodec
             .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(decoded.ir().model.faces.len(), 1);
-        assert_eq!(decoded.ir().model.loops.len(), 1);
-        assert_eq!(decoded.ir().model.coedges.len(), 3);
+        assert_eq!(decoded.ir().geometry.faces.len(), 1);
+        assert_eq!(decoded.ir().geometry.loops.len(), 1);
+        assert_eq!(decoded.ir().geometry.coedges.len(), 3);
         let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
         let original = scan(&body);
         assert_eq!(original.edge_uses.len(), 3);

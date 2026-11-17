@@ -23,8 +23,11 @@ pub(super) fn resolve(
     let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
         return Ok(None);
     };
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
     let mut rings = Vec::new();
-    for region in &selection.regions {
+    for region in regions {
         let mut members = Vec::new();
         for member in &region.members {
             let Some(entity) =
@@ -43,6 +46,7 @@ pub(super) fn resolve(
         sketch,
         entities,
         &rings,
+        &unnamed_curves(curves, sketch, entities),
         resolution.linear_tolerance,
         resolution.profile_work,
         resolution.ctx,
@@ -67,6 +71,31 @@ pub(super) fn resolve(
     Ok(profile)
 }
 
+/// The entities of `sketch` whose curve records carry tail marker `1`. A
+/// counted region member list never names them.
+fn unnamed_curves(
+    curves: &[SketchCurveIdentity],
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+) -> std::collections::HashSet<cadmpeg_ir::sketches::SketchEntityId> {
+    let marked = curves
+        .iter()
+        .filter(|curve| curve.tail_marker == Some(1))
+        .map(|curve| curve.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id)
+        .filter(|entity| {
+            entity
+                .native_ref
+                .as_deref()
+                .is_some_and(|native| marked.contains(native))
+        })
+        .map(|entity| entity.id().clone())
+        .collect()
+}
+
 pub(super) fn resolve_stale(
     stream: &str,
     profile: &DesignSketchProfileOperand,
@@ -83,8 +112,11 @@ pub(super) fn resolve_stale(
         return Ok(None);
     };
     let mut stale = false;
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
     let mut owned = Vec::new();
-    for region in &selection.regions {
+    for region in regions {
         let mut members = Vec::new();
         for member in &region.members {
             let has_identity = curves.iter().any(|curve| {

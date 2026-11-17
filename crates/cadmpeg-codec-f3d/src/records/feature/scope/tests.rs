@@ -825,3 +825,59 @@ fn captured_position_scope_wire_checks_exact_row_extent_and_offsets() {
             .contains("captured_positions")
     );
 }
+
+#[test]
+fn a_chamfer_scope_with_fixed_lanes_and_a_set_list_round_trips_as_one_payload() {
+    let chamfer = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "id": "f3d:test/Design/BulkStream.dat:scope", "byte_offset": 0, "class_tag": "300",
+            "record_index": 1, "frame_length": 200, "kind": "Chamfer", "kind_offset": 32,
+            "feature_ordinal": 1, "feature_ordinal_offset": 128,
+            "history_state_id": 8, "history_state_id_offset": 24,
+            "previous_history_state_id": 7, "previous_history_state_id_offset": 158,
+            "reference_count_offset": 9, "reference_members": [283], "reference_member_offsets": [14],
+            "fixed_chamfer_parameters": {
+                "kind": "equal_distance",
+                "distance": {"value": 0.2, "record_index": 202, "value_offset": 2020}
+            },
+            "chamfer_sets": {
+                "form": "current", "corner_type": "miter", "entry_count": 1,
+                "sets": [{
+                    "record_index": 290, "byte_offset": 34500, "frame_length": 93,
+                    "group_record_index": 283,
+                    "spec": {"kind": "distance_angle", "distance_owner_record_index": 292, "angle_owner_record_index": 295},
+                    "auxiliary_record_index": 297, "entry_count": 1, "tangent_chain": true
+                }]
+            },
+            "paired_class_tag": "261", "paired_byte_offset": 200
+        });
+        for (key, field) in extra.as_object().unwrap() {
+            value[key] = field.clone();
+        }
+        value
+    };
+    let value = chamfer(serde_json::json!({}));
+    let scope: super::DesignParameterScope = serde_json::from_value(value.clone()).unwrap();
+    assert!(scope.fixed_chamfer_parameters().is_some());
+    assert!(scope.chamfer_sets().is_some());
+    let written = serde_json::to_value(&scope).unwrap();
+    assert_eq!(
+        written["fixed_chamfer_parameters"],
+        value["fixed_chamfer_parameters"]
+    );
+    assert_eq!(written["chamfer_sets"], value["chamfer_sets"]);
+    let reread: super::DesignParameterScope = serde_json::from_value(written).unwrap();
+    assert_eq!(reread.chamfer_sets(), scope.chamfer_sets());
+
+    let mixed = chamfer(serde_json::json!({
+        "fixed_fillet_parameters": { "groups": [{
+            "radii": [0.3], "radius_record_indexes": [5], "radius_offsets": [0],
+            "intermediate_parameters": [], "intermediate_parameter_record_indexes": [],
+            "intermediate_parameter_offsets": []
+        }] }
+    }));
+    let error = serde_json::from_value::<super::DesignParameterScope>(mixed)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("more than one payload family: fixed_fillet_parameters, chamfer"));
+}

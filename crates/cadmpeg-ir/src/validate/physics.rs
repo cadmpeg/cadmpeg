@@ -27,7 +27,7 @@ impl<'ir> Arenas<'ir> {
         let model = &ir.model;
         Self {
             bodies: BorrowedIdentities::build(|add| {
-                for body in &model.bodies {
+                for body in &ir.geometry.bodies {
                     add(body.id.as_str(), ());
                 }
             }),
@@ -127,7 +127,7 @@ pub(super) fn check_physics(ir: &CadIr, findings: &mut Vec<Finding>) {
     for record in &model.mass_properties {
         let owner = record.id.as_str();
         for gap in [
-            arenas.missing(&record.target),
+            arenas.missing(&record.target.entity),
             material(record.material.as_ref()),
         ]
         .into_iter()
@@ -137,14 +137,14 @@ pub(super) fn check_physics(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for record in &model.rigid_bodies {
-        if let Some(gap) = arenas.missing(&record.target) {
+        if let Some(gap) = arenas.missing(&record.target.entity) {
             missing(findings, record.id.as_str(), gap);
         }
     }
     for record in &model.colliders {
         let owner = record.id.as_str();
         for gap in [
-            arenas.missing(&record.target),
+            arenas.missing(&record.target.entity),
             material(record.material.as_ref()),
         ]
         .into_iter()
@@ -154,7 +154,7 @@ pub(super) fn check_physics(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for record in &model.articulations {
-        if let Some(gap) = arenas.missing(&record.root) {
+        if let Some(gap) = arenas.missing(&record.root.entity) {
             missing(findings, record.id.as_str(), gap);
         }
     }
@@ -167,7 +167,7 @@ pub(super) fn check_physics(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         for target in targets {
-            if let Some(gap) = arenas.missing_solver_target(target) {
+            if let Some(gap) = arenas.missing_solver_target(&target.entity) {
                 missing(findings, owner, gap);
             }
         }
