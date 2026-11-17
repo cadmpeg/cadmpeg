@@ -19,6 +19,18 @@ fn reference(bytes: &mut Vec<u8>, index: u32) {
 }
 
 fn fixture(count: u32, marker_one: bool, tail_length: usize) -> (Vec<u8>, usize) {
+    ordered_fixture(count, marker_one, tail_length, false)
+}
+
+/// An `OffsetFaces` scope whose ordered references name the face group 301
+/// and its members 302, 303, ..., and the distance scalar 71 either last or,
+/// with `distance_first`, first.
+fn ordered_fixture(
+    count: u32,
+    marker_one: bool,
+    tail_length: usize,
+    distance_first: bool,
+) -> (Vec<u8>, usize) {
     let mut bytes = Vec::new();
     header(&mut bytes, b"277", 71);
     bytes.resize(104, 0);
@@ -39,10 +51,11 @@ fn fixture(count: u32, marker_one: bool, tail_length: usize) -> (Vec<u8>, usize)
     for ordinal in 0..count {
         reference(
             &mut bytes,
-            if ordinal + 1 == count {
-                71
-            } else {
-                301 + ordinal
+            match (distance_first, ordinal) {
+                (true, 0) => 71,
+                (true, _) => 300 + ordinal,
+                (false, _) if ordinal + 1 == count => 71,
+                (false, _) => 301 + ordinal,
             },
         );
     }
@@ -137,6 +150,51 @@ fn offset_faces_counted_member_runs_refuse_truncation() {
             for end in 0..bytes.len() {
                 assert!(!decodes(&bytes[..end], start), "{count} {marker_one} {end}");
             }
+        }
+    }
+}
+
+#[test]
+fn offset_faces_distance_first_member_runs_decode() {
+    for count in [3, 4, 5, 10] {
+        for marker_one in [false, true] {
+            for tail_length in [77, 78] {
+                let (bytes, start) = ordered_fixture(count, marker_one, tail_length, true);
+                assert!(decodes(&bytes, start), "{count} {marker_one} {tail_length}");
+            }
+        }
+    }
+}
+
+#[test]
+fn offset_faces_distance_first_member_runs_refuse_mutations() {
+    for count in [3, 10] {
+        for marker_one in [false, true] {
+            let (bytes, start) = ordered_fixture(count, marker_one, 78, true);
+            let marker = if marker_one { 25 } else { 21 };
+            for (offset, value) in [
+                (20, u8::from(!marker_one)),
+                (marker, 0),
+                (marker + 1, 72),
+                (marker + 11, 2),
+                (marker + 15, 0),
+                // The face-group reference names the third ordered reference.
+                (marker + 16, 46),
+            ] {
+                let mut changed = bytes.clone();
+                changed[start + offset] = value;
+                assert!(!decodes(&changed, start), "{count} {marker_one} {offset}");
+            }
+        }
+    }
+}
+
+#[test]
+fn offset_faces_distance_first_member_runs_refuse_truncation() {
+    for marker_one in [false, true] {
+        let (bytes, start) = ordered_fixture(5, marker_one, 78, true);
+        for end in 0..bytes.len() {
+            assert!(!decodes(&bytes[..end], start), "{marker_one} {end}");
         }
     }
 }

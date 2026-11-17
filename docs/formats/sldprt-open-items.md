@@ -1066,6 +1066,22 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
 
+### EV-26. Sketch curve type `0xffff`
+
+**Question.** What curve does a sketch curve record of type `0xffff` in the arc layout define?
+
+**Known.** `sldprt.md` §2.3 "A *text record* has a curve record's fields" gives the record the arc's layout: two endpoint indices, u16 `0`, a centre index and four i32 `-2`. A type-`1` arc with distinct endpoint indices is the minor arc about its centre between its endpoints.
+
+**Need.** Type-`0xffff` records whose curves bound faces of a stored solid, compared with the counterclockwise and clockwise readings.
+
+### EV-27. Sketch curve records with selector bit 0 set
+
+**Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
+
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. In the layout with the eight zero bytes at +56 and selector `4` or `12`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record with the eight zero bytes at +56"). Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+
+**Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
@@ -1113,3 +1129,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** Establish the class-scoped operation carrier and the configuration-local state against producing-face orientation and body ownership.
 
 **Note.** Withheld operations retain their existing losses.
+
+### DI-71. Profile chains of marker sketches with dimensioned circles
+
+**Question.** Which feature-input records give the complete closed curve set of a marker-backed sketch whose only closed curve is a dimensioned circle?
+
+**Known.** A circular dimension on a point handle projects one circle with the dimension radius, centered on the handle. The sketch then has no profile chain, and an extrusion that names its sketch feature keeps the feature reference. The affected set has 36 extrusion and revolution features in 36 parts and 30 independent designs. Of 39 extrusions whose sketch has exactly one circle, 25 have a cylinder face that is coaxial with the circle and has its radius. In the other 14, no cylinder face has both the axis and the radius. Other coordinate handles of the same sketch lie at radii of further coaxial cylinder faces.
+
+**Need.** Establish the records that give every circle and curve of these sketches, so that a profile chain is admitted only when the sketch curve set is complete. Prove each chain against the produced side faces.
+
+**Conflict.** One dimensioned circle can be one of several concentric profile circles. A whole-sketch profile from that circle alone fills the region inside the outer circle.

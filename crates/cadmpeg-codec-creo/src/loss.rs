@@ -112,6 +112,9 @@ pub(crate) enum CreoLossCode {
     PmiDimensionKindInferred,
     /// An angular dimension uses the default stored-radian assumption.
     PmiAngularUnitAssumed,
+    /// A dimension's limit attributes are read as absolute bounds or as
+    /// deviations from the nominal without a saving release that selects the form.
+    PmiDimensionLimitFormAssumed,
     /// Primitive triangle-strip records carry disagreeing position representations.
     TriangleStripRepresentationConflict,
     /// General model B-rep transfer remains incomplete for later instances.
@@ -347,6 +350,7 @@ impl CreoLossCode {
             Self::PmiDatumDefinitionSlotAssumed => "pmi.datum-definition-slot-assumed",
             Self::PmiDimensionKindInferred => "pmi.dimension-kind-inferred",
             Self::PmiAngularUnitAssumed => "pmi.angular-unit-assumed",
+            Self::PmiDimensionLimitFormAssumed => "pmi.dimension-limit-form-assumed",
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
             Self::BrepCompactFrameComponentUnresolved => {
@@ -527,6 +531,7 @@ impl CreoLossCode {
             | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
             | Self::PmiAngularUnitAssumed
+            | Self::PmiDimensionLimitFormAssumed
             | Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
@@ -645,7 +650,8 @@ impl CreoLossCode {
             | Self::PmiDatumLabelUnresolved
             | Self::PmiDatumTargetUnresolved
             | Self::PmiTargetNamespaceAmbiguous => LossTaxonomy::PmiOmitted,
-            Self::PmiLengthUnitAssumed
+            Self::PmiDimensionLimitFormAssumed
+            | Self::PmiLengthUnitAssumed
             | Self::PmiAttributeUnitAssumed
             | Self::PmiTextMagnitudeInferred
             | Self::PmiDatumIdentityInferred
@@ -829,6 +835,7 @@ mod tests {
                 "pmi.datum-definition-slot-assumed",
                 "pmi.dimension-kind-inferred",
                 "pmi.angular-unit-assumed",
+                "pmi.dimension-limit-form-assumed",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
                 "geometry.brep-compact-frame-component-unresolved",

@@ -95,6 +95,30 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-catia/src/container.rs` — The parser's directory magic matches the stated `file[diroff : diroff+16]` value.
 
+## `visible_body_roster_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 4 B
+
+The count is followed by count positive u32le allocation ends and four zero u32le words.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/container/body_selection.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | <count:u32le> |
+
+## `visible_body_roster_suffix`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/container/body_selection.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `zero` | `bytes[16]` | little | spec | <zero:u32le[4]> |
+
 ## `vertex_roster_row`
 
 Spec §3.5 · layout: byte offsets · size: 7 B
@@ -1092,6 +1116,21 @@ Offsets are relative to the payload after the 4+w-byte B-family frame header. He
 | 2 | 16 | `point_xy` | `f64[2]` | little | spec | `+2` point XY (`2×f64le`) |
 | 18 | 16 | `direction_xy` | `f64[2]` | little | spec | `+18` direction XY (`2×f64le`) |
 | 34 | 32 | `bounds` | `f64[4]` | little | spec | the 66-byte two-component direction payload has bounds at `+34` |
+
+## `consolidated_plane_spatial_signed_y_payload`
+
+Spec §6.3 · layout: byte offsets · size: 66 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `+0` marker `b4` |
+| 1 | 1 | `selector` | `u8` | little | spec | `+1` selector |
+| 2 | 24 | `origin` | `f64[3]` | little | spec | `+2` origin XYZ (`3×f64le`) |
+| 26 | 8 | `direction_y` | `f64` | little | spec | `+26` signed Y component (`f64le`) |
+| 34 | 32 | `bounds` | `f64[4]` | little | spec | \| `(0,direction_y,0)` \| `+34` \| 66 \| |
 
 ## `consolidated_packed_plane_implicit_u_payload`
 
