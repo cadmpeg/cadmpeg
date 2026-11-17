@@ -28,6 +28,8 @@ pub(super) struct EdgeInventory {
     pub(super) generated_sources: Option<HashMap<u32, SourceNames>>,
     pub(super) generated_sources_complete: bool,
     pub(super) historical: HashMap<(String, u32), historical::SelectedEdge>,
+    /// The generator array of the selector of each historical edge.
+    pub(super) historical_generators: HashMap<(String, u32), Vec<u32>>,
     pub(super) faces: HashMap<(String, u32), super::face_selection::SelectedFace>,
 }
 
@@ -608,7 +610,7 @@ pub(super) fn inventory(
     let Some(token) = tokens.into_iter().next() else {
         return Ok(EdgeInventory::default());
     };
-    let historical = if archive_complete {
+    let historical: HashMap<_, _> = if archive_complete {
         historical::selected(ctx, &records, &stored_selectors, carrier.schema)?
             .into_iter()
             .map(|(source, edge)| ((token.clone(), source), edge))
@@ -616,6 +618,12 @@ pub(super) fn inventory(
     } else {
         HashMap::new()
     };
+    let historical_generators = stored_selectors
+        .iter()
+        .map(|selector| ((token.clone(), selector.source), selector))
+        .filter(|(key, _)| historical.contains_key(key))
+        .map(|(key, selector)| (key, selector.generators.clone()))
+        .collect();
     let faces = if archive_complete {
         super::face_selection::selected(&records, &face_selectors, carrier.schema)
             .into_iter()
@@ -635,6 +643,7 @@ pub(super) fn inventory(
             generated_sources,
             generated_sources_complete,
             historical,
+            historical_generators,
             faces,
             ..EdgeInventory::default()
         });
@@ -650,6 +659,7 @@ pub(super) fn inventory(
     };
     Ok(EdgeInventory {
         historical,
+        historical_generators,
         faces,
         generated_sources,
         generated_sources_complete,
