@@ -44,6 +44,11 @@ const SELECTOR: usize = 37;
 /// sketch. Selectors `68` and `132` mark the link-bearing forms, and an odd
 /// selector is open item EV-27.
 const ROSTER_SELECTORS: [u16; 2] = [4, 12];
+/// Where a record stores its four-byte locus.
+const LOCUS: usize = 23;
+/// The geometry locus whose endpoint values plus one are point-object
+/// indices.
+const OBJECT_INDEX_LOCUS: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
 /// Where a current-layout line record stores its endpoint trailer u32: `1`
 /// selects direct point-object identifiers.
 const LINE_TRAILER: usize = 84;
@@ -270,11 +275,14 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
 /// The form of the curve record at `offset`, when its type is a line or an
 /// arc in its arc layout and its fields are positions in the point records of
 /// its own sketch: the current layout with its eight zero bytes, a roster
-/// selector, and for a line no object-identifier trailer. The layout before
+/// selector, a locus other than the object-index locus, and for a line no
+/// object-identifier trailer. The layout before
 /// `swVersion` 11000 keeps the readings of `super::endpoints`.
 pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
     let fields = curve_fields(payload, offset)?;
+    let locus = offset.checked_add(LOCUS)?;
     if fields != offset.checked_add(CURRENT_FIELDS)?
+        || payload.get(locus..locus.checked_add(4)?)? == OBJECT_INDEX_LOCUS
         || !ROSTER_SELECTORS.contains(&View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?)
     {
         return None;

@@ -374,3 +374,17 @@ fn a_curve_without_the_eight_zero_bytes_stays_unresolved() {
         assert!(curve_stays_unresolved(&payload, offset));
     }
 }
+
+/// `docs/formats/sldprt.md` §2: for locus `05 00 01 00` each endpoint value
+/// plus one is the object index of a point marker, not a point-record
+/// position.
+#[test]
+fn a_curve_with_the_object_index_locus_stays_unresolved() {
+    let mut sample = sample();
+    for offset in [sample.line, sample.arc, sample.circle] {
+        sample.payload[offset + LOCUS..offset + LOCUS + 4].copy_from_slice(&OBJECT_INDEX_LOCUS);
+    }
+    for offset in [sample.line, sample.arc, sample.circle] {
+        assert!(curve_stays_unresolved(&sample.payload, offset));
+    }
+}

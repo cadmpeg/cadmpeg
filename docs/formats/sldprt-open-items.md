@@ -1086,7 +1086,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
 
-**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. In the layout with the eight zero bytes at +56 and selector `4` or `12`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record with the eight zero bytes at +56"). Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. In the layout with the eight zero bytes at +56, selector `4` or `12` and a locus other than `05 00 01 00`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record with the eight zero bytes at +56"). Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
 
 **Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
 
