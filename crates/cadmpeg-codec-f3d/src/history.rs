@@ -1218,6 +1218,9 @@ pub(crate) fn bind_feature_outputs(
     let mut feature_edge_midpoints = HashMap::<usize, Vec<cadmpeg_ir::math::Point3>>::new();
     let mut state_deleted_bodies = HashMap::<(usize, i64), Vec<i64>>::new();
     let mut state_solid_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
+    // Every body slot of a measured state, solid or not: a body that a state still holds
+    // is not deleted by the feature that produced the state.
+    let mut state_present_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
     let mut state_body_centers =
         HashMap::<(usize, i64), Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
     let mut state_incomplete_body_centers = HashMap::<(usize, i64), BTreeSet<i64>>::new();
@@ -1463,6 +1466,7 @@ pub(crate) fn bind_feature_outputs(
                 if !bounds_list.is_empty() {
                     state_body_bounds.insert(state_key, bounds_list);
                 }
+                state_present_bodies.insert(state_key, topology.bodies.iter().copied().collect());
                 state_solid_bodies.insert(state_key, solid_edges.into_keys().collect());
             }
             let mut next_deletions = None;
@@ -1815,9 +1819,13 @@ pub(crate) fn bind_feature_outputs(
             .or(prev_feat_solid);
         let after_solid = cur_key.and_then(|k| state_solid_bodies.get(&k));
         let mut deleted_set = BTreeSet::new();
+        let after_present = cur_key.and_then(|k| state_present_bodies.get(&k));
+        let still_present = |b: &i64| after_present.is_some_and(|present| present.contains(b));
         if let (Some(before), Some(after)) = (before_solid, after_solid) {
             for &b in before.difference(after) {
-                deleted_set.insert(b);
+                if !still_present(&b) {
+                    deleted_set.insert(b);
+                }
             }
         } else if let Some(del) = cur_key.and_then(|k| state_deleted_bodies.get(&k)) {
             for &b in del {
@@ -1826,7 +1834,9 @@ pub(crate) fn bind_feature_outputs(
         }
         if let (Some(prev_feat), Some(after)) = (prev_feat_solid, after_solid) {
             for &b in prev_feat.difference(after) {
-                deleted_set.insert(b);
+                if !still_present(&b) {
+                    deleted_set.insert(b);
+                }
             }
         }
         deleted_set.extend(newly_absorbed.iter().copied());
