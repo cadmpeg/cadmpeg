@@ -23,7 +23,7 @@ pub(super) struct PointDirectionCarrier<'a> {
     pub(super) bounding_box_index: u32,
     pub(super) position: Option<[FiniteReal; 3]>,
     pub(super) position_at: usize,
-    pub(super) direction: [FiniteReal; 3],
+    pub(super) direction: Option<[FiniteReal; 3]>,
     pub(super) direction_at: usize,
     pub(super) point_parameters: Option<[FiniteReal; 2]>,
     pub(super) point_parameters_at: usize,
@@ -99,38 +99,36 @@ pub(super) fn point_direction_carrier_at<'a>(
         return Ok(Some(carrier));
     };
     let capacity = bounded.get();
-    let bytes_needed = capacity
-        .checked_mul(std::mem::size_of::<Located<Reference<&str, Utf16View<'_>>>>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
-        .ok_or_else(|| {
-            CodecError::Malformed("point-direction input allocation overflows".into())
-        })?;
-    ctx.retain_bytes(bytes_needed, "point-direction inputs")?;
+    let read_reference = |cursor: &mut usize| match boundary {
+        PointDirectionBoundary::Registered(_) => take_reference_lossless(body, cursor),
+        PointDirectionBoundary::Indexed(_) => take_reference(body, cursor),
+    };
+    let mut read = 0;
+    for _ in 0..capacity {
+        if read_reference(&mut cursor).is_none() {
+            break;
+        }
+        read += 1;
+    }
     let mut inputs = ctx.alloc_filled(
-        capacity,
+        read,
         Located {
             value: Reference::Null,
             offset: 0,
         },
         "point-direction inputs",
     )?;
-    let mut read = 0;
+    let mut retained_cursor = after_count;
     for slot in &mut inputs {
-        let reference_at = cursor;
-        let reference = match boundary {
-            PointDirectionBoundary::Registered(_) => take_reference_lossless(body, &mut cursor),
-            PointDirectionBoundary::Indexed(_) => take_reference(body, &mut cursor),
-        };
-        let Some(reference) = reference else {
-            break;
-        };
+        let reference_at = retained_cursor;
+        let value = read_reference(&mut retained_cursor).ok_or_else(|| {
+            CodecError::Malformed("point-direction reference prefix changed while reading".into())
+        })?;
         *slot = Located {
-            value: reference,
+            value,
             offset: u64_from_index(reference_at),
         };
-        read += 1;
     }
-    inputs.truncate(read);
     carrier.inputs_complete = u64_from_index(read) == u64::from(count)
         && match boundary {
             PointDirectionBoundary::Registered(_) => cursor == paired_at,
@@ -185,6 +183,7 @@ fn point_direction_prefix_at(
     cursor = cursor.checked_add(24)?;
     let direction_at = cursor;
     cursor = cursor.checked_add(24)?;
+    body.get(direction_at..cursor)?;
     let point_parameters_at = cursor;
     cursor = cursor.checked_add(16)?;
     let reference_type_at = cursor;
@@ -194,7 +193,7 @@ fn point_direction_prefix_at(
         bounding_box_index,
         position: finite_reals_at(body, position_at),
         position_at,
-        direction: finite_reals_at(body, direction_at)?,
+        direction: finite_reals_at(body, direction_at),
         direction_at,
         point_parameters: finite_reals_at(body, point_parameters_at),
         point_parameters_at,
@@ -206,7 +205,8 @@ fn point_direction_prefix_at(
         inputs_complete: false,
     };
     if matches!(boundary, PointDirectionBoundary::Indexed(_))
-        && (carrier.position.is_none()
+        && (carrier.direction.is_none()
+            || carrier.position.is_none()
             || carrier.point_parameters.is_none()
             || carrier.reference_type.is_none())
     {

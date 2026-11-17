@@ -591,7 +591,10 @@ fn split_face_native_operation(
                 offset: 213,
             }),
         inputs_complete: direction.is_some(),
-        direction,
+        direction: direction.map(|value| crate::records::identity::Located {
+            value: Some(value.value),
+            offset: value.offset,
+        }),
         inputs: inputs
             .into_iter()
             .map(|input| crate::records::identity::Located {
@@ -1338,4 +1341,66 @@ fn along_vector_distinguishes_partial_and_complete_input_runs() {
         assert_eq!(native_input_count, Some(count));
         assert_eq!(native_inputs_complete, complete);
     }
+}
+
+#[test]
+fn split_face_projects_inputs_when_the_direction_value_is_unavailable() {
+    use crate::records::feature::split_face::{
+        DesignSplitFaceDirectionReference, DesignSplitFaceMethod,
+    };
+    use crate::records::identity::Located;
+    use cadmpeg_ir::features::surfaces::SplitFaceMethod;
+    let (mut scope, groups) = split_face_fixture(DesignOperandRole::ROLE_0X9);
+    let finite = |value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
+    let mut operation = split_face_native_operation(
+        DesignSplitFaceMethod::AlongVector,
+        DesignSplitFaceDirectionReference::Local {
+            target: Located {
+                value: 700,
+                offset: 22,
+            },
+            inline_type_guid: None,
+        },
+        Some(Located {
+            value: [finite(2.5), finite(0.0), finite(0.0)],
+            offset: 169,
+        }),
+        vec![Located {
+            value: 88,
+            offset: 218,
+        }],
+    );
+    operation.direction.as_mut().unwrap().value = None;
+    set_split_face_operation(&mut scope, operation);
+    let projected = project_split_face(
+        &scope,
+        std::slice::from_ref(&scope),
+        &groups,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let FeatureDefinition::Operation(FeatureOperation::SplitFace {
+        method:
+            SplitFaceMethod::AlongVector {
+                direction,
+                native_inputs,
+                native_input_count,
+                native_inputs_complete,
+                ..
+            },
+        ..
+    }) = projected.definition
+    else {
+        panic!("AlongVector")
+    };
+    assert_eq!(direction, None);
+    assert_eq!(native_input_count, Some(1));
+    assert!(native_inputs_complete);
+    assert_eq!(native_inputs.len(), 1);
+    assert!(native_inputs[0]
+        .as_ref()
+        .unwrap()
+        .ends_with("design-record#88"));
 }

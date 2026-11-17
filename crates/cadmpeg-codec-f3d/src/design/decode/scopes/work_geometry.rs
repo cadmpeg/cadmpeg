@@ -404,7 +404,7 @@ fn work_axis_from_point_direction_carrier(
         return None;
     }
     let origin = position;
-    let displacement = carrier.direction;
+    let displacement = carrier.direction?;
     let displacement_length = displacement[0]
         .get()
         .hypot(displacement[1].get())

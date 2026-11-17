@@ -8,7 +8,11 @@ cadmpeg_core::named_optional_field!(
     DesignSplitFaceCarrierFrame,
     "carrier_frame"
 );
-cadmpeg_core::named_optional_field!(deserialize_direction, Located<[FiniteReal; 3]>, "direction");
+cadmpeg_core::named_optional_field!(
+    deserialize_direction,
+    Located<Option<[FiniteReal; 3]>>,
+    "direction"
+);
 cadmpeg_core::named_optional_field!(deserialize_input_count, Located<u32>, "input_count");
 cadmpeg_core::named_optional_field!(
     deserialize_same_document_asset,
@@ -38,7 +42,7 @@ pub(crate) struct DesignSplitFaceOperation {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_direction"
     )]
-    pub(crate) direction: Option<Located<[FiniteReal; 3]>>,
+    pub(crate) direction: Option<Located<Option<[FiniteReal; 3]>>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) inputs: Vec<Located<DesignSplitFaceDirectionReference>>,
     #[serde(
@@ -331,6 +335,8 @@ impl DesignSplitFaceDirectionReference {
             } => {
                 if !crate::bytes::is_guid_hyphenated(target_type_guid)
                     || inline.is_none() && !external_type_guid_present
+                    || !external_type_guid_present
+                        && inline.is_some_and(|guid| !guid.eq_ignore_ascii_case(target_type_guid))
                 {
                     return None;
                 }

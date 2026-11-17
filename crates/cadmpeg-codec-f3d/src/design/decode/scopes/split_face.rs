@@ -3,7 +3,7 @@ use super::point_direction::{
     point_direction_carrier_at, PointDirectionBoundary, PointDirectionCarrier,
 };
 use crate::bytes::utf16::Utf16View;
-use crate::bytes::{take_reference, Reference};
+use crate::bytes::{take_reference_lossless, Reference};
 use crate::design::decode::meta::DesignPrimaryFrame;
 use crate::layout::split_face_method_flags as flags;
 use crate::layout::split_face_scope_prefix as prefix;
@@ -56,7 +56,7 @@ pub(super) fn split_face_operation(
         ))));
     };
     let direction_reference_at = cursor;
-    let Some(reference) = take_reference(body, &mut cursor) else {
+    let Some(reference) = take_reference_lossless(body, &mut cursor) else {
         return Ok(Some(DesignSplitFaceOperation::unresolved(u64_from_index(
             direction_reference_at,
         ))));
@@ -84,6 +84,15 @@ pub(super) fn split_face_operation(
         });
         operation.input_count = carrier.input_count;
         operation.inputs_complete = carrier.inputs_complete;
+        let retained = carrier
+            .inputs
+            .len()
+            .checked_mul(std::mem::size_of::<
+                Located<DesignSplitFaceDirectionReference>,
+            >())
+            .and_then(|size| u64::try_from(size).ok())
+            .ok_or_else(|| CodecError::Malformed("SplitFace retained inputs overflow".into()))?;
+        ctx.retain_bytes(retained, "SplitFace carrier inputs")?;
         let mut inputs = ctx.alloc_filled(
             carrier.inputs.len(),
             Located {

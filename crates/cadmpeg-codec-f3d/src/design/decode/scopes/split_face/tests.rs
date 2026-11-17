@@ -258,6 +258,7 @@ fn split_face_typed_local_carrier_keeps_qualifier_vector_and_width() {
                 .as_ref()
                 .unwrap()
                 .value
+                .unwrap()
                 .map(cadmpeg_ir::scalar::FiniteReal::get),
             [2.4, 0.0, 0.0]
         );
@@ -285,7 +286,10 @@ fn along_vector_reads_the_registered_non_unit_vector_despite_fake_same_id_header
         assert_eq!(operation.method(), DesignSplitFaceMethod::AlongVector);
         let direction = operation.direction.unwrap();
         assert_eq!(
-            direction.value.map(cadmpeg_ir::scalar::FiniteReal::get),
+            direction
+                .value
+                .unwrap()
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             [2.4, 0.0, 0.0]
         );
         assert_eq!(direction.offset, 169);
@@ -378,7 +382,10 @@ fn along_vector_survives_malformed_or_truncated_input_references() {
         let operation = decode_registered_carrier(&bytes, &meta);
         let direction = operation.direction.expect("readable vector");
         assert_eq!(
-            direction.value.map(cadmpeg_ir::scalar::FiniteReal::get),
+            direction
+                .value
+                .unwrap()
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
             [2.4, 0.0, 0.0]
         );
         assert_eq!(direction.offset, 169);
@@ -435,6 +442,7 @@ fn carrier_preserves_null_typed_local_and_external_inputs() {
             .direction
             .unwrap()
             .value
+            .unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         [2.4, 0.0, 0.0]
     );
@@ -549,9 +557,16 @@ fn carrier_admits_both_inline_document_type_spellings_at_their_exact_ends() {
         }
         crate::test_support::lp_utf16(&mut reference, "link");
         reference.push(0);
-        let (bytes, meta) = with_carrier_input(&reference);
+        reference.push(0);
+        let (mut bytes, meta) = with_carrier_input(&reference);
+        bytes[213..217].copy_from_slice(&2_u32.to_le_bytes());
         let operation = decode_registered_carrier(&bytes, &meta);
         assert!(operation.inputs_complete);
+        assert_eq!(operation.inputs.len(), 2);
+        assert_eq!(
+            operation.inputs[1].value,
+            DesignSplitFaceDirectionReference::Null
+        );
         assert!(operation.scope_offsets_valid(0, 120));
         let DesignSplitFaceDirectionReference::CrossDocument {
             external_type_guid_present,
@@ -571,6 +586,7 @@ fn carrier_admits_both_inline_document_type_spellings_at_their_exact_ends() {
                 .as_ref()
                 .unwrap()
                 .value
+                .unwrap()
                 .map(cadmpeg_ir::scalar::FiniteReal::get),
             [2.4, 0.0, 0.0]
         );
@@ -590,7 +606,7 @@ fn carrier_admits_both_inline_document_type_spellings_at_their_exact_ends() {
         .unwrap();
         let matching = external.is_none_or(|external| external == guid);
         assert_eq!(indexed.inputs_complete, matching);
-        assert_eq!(indexed.inputs.len(), usize::from(matching));
+        assert_eq!(indexed.inputs.len(), if matching { 2 } else { 0 });
         for shift in [1, 11] {
             let mut invalid = operation.clone();
             invalid.carrier_frame.as_mut().unwrap().secondary_offset += shift;
@@ -615,6 +631,7 @@ fn carrier_keeps_vector_when_the_input_count_is_absent() {
             .direction
             .unwrap()
             .value
+            .unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         [2.4, 0.0, 0.0]
     );
@@ -776,6 +793,7 @@ fn vector_survives_truncated_or_nonfinite_unrelated_fields() {
             .direction
             .unwrap()
             .value
+            .unwrap()
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         [2.4, 0.0, 0.0]
     );
@@ -794,6 +812,7 @@ fn vector_survives_truncated_or_nonfinite_unrelated_fields() {
                 .direction
                 .unwrap()
                 .value
+                .unwrap()
                 .map(cadmpeg_ir::scalar::FiniteReal::get),
             [2.4, 0.0, 0.0]
         );
@@ -827,6 +846,7 @@ fn registered_nonfinite_tangent_preserves_direction_and_input_run() {
                 .direction
                 .unwrap()
                 .value
+                .unwrap()
                 .map(cadmpeg_ir::scalar::FiniteReal::get),
             [2.4, 0.0, 0.0]
         );
@@ -888,4 +908,153 @@ fn registered_nonfinite_tangent_preserves_direction_and_input_run() {
         assert!(truncated.input_count.is_none());
         assert!(!truncated.inputs_complete);
     }
+}
+
+#[test]
+fn unrelated_duplicate_registration_preserves_the_registered_carrier() {
+    let bytes = carrier_bytes(false);
+    let meta = metadata(
+        &[
+            (
+                crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID,
+                1,
+                &[55],
+            ),
+            ("00000000-0000-0000-0000-000000000002", 1, &[1, 999, 999]),
+        ],
+        &[(1, 0), (55, 120)],
+        &[(55, 228)],
+    );
+    let operation = decode_registered_carrier(&bytes, &meta);
+    assert_eq!(
+        operation
+            .direction
+            .unwrap()
+            .value
+            .unwrap()
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        [2.4, 0.0, 0.0]
+    );
+    assert_eq!(operation.input_count.unwrap().value, 1);
+    assert_eq!(operation.inputs[0].value.local_record_index(), Some(88));
+    assert!(operation.inputs_complete);
+}
+
+#[test]
+fn nonfinite_direction_retains_registered_input_slots_and_location() {
+    let meta = carrier_metadata(
+        crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID,
+        1,
+        &[(55, 228)],
+    );
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let mut bytes = carrier_bytes(false);
+        bytes[169..177].copy_from_slice(&value.to_le_bytes());
+        let operation = decode_registered_carrier(&bytes, &meta);
+        let direction = operation.direction.as_ref().unwrap();
+        assert_eq!(direction.offset, 169);
+        assert_eq!(direction.value, None);
+        assert_eq!(operation.input_count.unwrap().value, 1);
+        assert_eq!(operation.inputs[0].value.local_record_index(), Some(88));
+        assert!(operation.inputs_complete);
+        let mut scope = split_face_scope();
+        scope
+            .try_edit(|draft| {
+                let crate::records::feature::scope::DesignScopePayload::SplitFace(slot) =
+                    &mut draft.payload
+                else {
+                    panic!("SplitFace")
+                };
+                *slot = Some(operation.clone());
+            })
+            .unwrap();
+        let wire = serde_json::to_vec(&scope).unwrap();
+        let decoded: DesignParameterScope = serde_json::from_slice(&wire).unwrap();
+        assert_eq!(decoded.split_face_operation(), Some(&operation));
+        crate::test_support::split_face::assert_native_scope(&decoded);
+    }
+}
+
+#[test]
+fn scope_document_type_disagreement_retains_the_method_controls() {
+    let mut bytes = method_bytes(0, 1, 0, None, false);
+    bytes.resize(488, 0);
+    let mut reference = vec![1];
+    reference.extend_from_slice(&88_u64.to_le_bytes());
+    reference.extend_from_slice(&36_u32.to_le_bytes());
+    reference.extend_from_slice(b"00000000-0000-0000-0000-000000000099");
+    reference.push(1);
+    reference.extend_from_slice(&7_u32.to_le_bytes());
+    crate::test_support::lp_utf16(&mut reference, "");
+    reference.push(0);
+    reference.extend_from_slice(&36_u32.to_le_bytes());
+    reference.extend_from_slice(b"00000000-0000-0000-0000-000000000098");
+    crate::test_support::lp_utf16(&mut reference, "");
+    reference.push(0);
+    assert_eq!(reference.len(), 104);
+    bytes[21..125].copy_from_slice(&reference);
+    bytes[125..131].copy_from_slice(&[0, 0, 0, 0, 1, 0]);
+    let mut scope = split_face_scope();
+    scope
+        .try_edit(|draft| {
+            draft.reference_count_offset = 200;
+            draft.kind_offset = 223;
+            draft.feature_ordinal_offset = 410;
+            draft.paired_byte_offset = 488;
+            draft.frame_length = 488;
+            draft.reference_members = ReferenceRun::located(vec![Located {
+                value: 9,
+                offset: 205,
+            }]);
+        })
+        .unwrap();
+    let operation = crate::test_support::with_decode_context(|ctx| {
+        split_face_operation(ctx, &bytes, &scope, &[])
+    })
+    .unwrap()
+    .unwrap();
+    assert_eq!(operation.method(), DesignSplitFaceMethod::AlongVector);
+    assert_eq!(operation.method_offset, 125);
+    assert!(operation.scope_offsets_valid(0, 200));
+    let DesignSplitFaceDirectionReference::CrossDocument {
+        inline_type_guid,
+        target_type_guid,
+        external_type_guid_present,
+        ..
+    } = operation.direction_reference
+    else {
+        panic!("document")
+    };
+    assert_eq!(
+        inline_type_guid.as_deref(),
+        Some("00000000-0000-0000-0000-000000000099")
+    );
+    assert_eq!(target_type_guid, "00000000-0000-0000-0000-000000000098");
+    assert!(external_type_guid_present);
+}
+
+#[test]
+fn unreadable_temporary_input_slots_do_not_consume_retained_output_budget() {
+    let mut bytes = carrier_bytes(false);
+    bytes.truncate(217);
+    bytes[213..217].copy_from_slice(&128_u32.to_le_bytes());
+    bytes.extend_from_slice(&[255; 128]);
+    crate::test_support::indexed_header(&mut bytes, *b"257", 55);
+    crate::test_support::with_decode_context(|ctx| {
+        let before = ctx.retained_bytes_available();
+        let carrier = super::super::point_direction::point_direction_carrier_at(
+            ctx,
+            &bytes,
+            120,
+            super::super::point_direction::PointDirectionBoundary::Registered(345),
+            55,
+            1,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(carrier.input_count.unwrap().value, 128);
+        assert!(carrier.inputs.is_empty());
+        assert!(!carrier.inputs_complete);
+        assert_eq!(ctx.retained_bytes_available(), before);
+    });
 }

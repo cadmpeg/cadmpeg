@@ -874,11 +874,13 @@ pub(crate) struct RegisteredFaceOperandFrame {
     header: DesignRecordHeader,
     offsets: [usize; 5],
     next_record_index: u32,
+    recipe_frame: Option<crate::records::topology::face::RegisteredFaceRecipeFrame>,
 }
 
 fn registered_face_operand_frame(
     stream: &str,
     frames: &[DesignPrimaryFrame<'_>],
+    meta: &crate::metastream::MetaStream,
     ordinal: usize,
 ) -> Option<RegisteredFaceOperandFrame> {
     let chain = frames.get(ordinal..ordinal.checked_add(4)?)?;
@@ -896,14 +898,31 @@ fn registered_face_operand_frame(
             return None;
         }
     }
-    let (end, next_record_index) = if recipe.member_end < recipe.end {
-        (recipe.member_end, u32::try_from(recipe.entity_id).ok()?)
+    let (end, next_record_index, recipe_frame) = if recipe.member_end < recipe.end {
+        let record_index = u32::try_from(recipe.entity_id).ok()?;
+        (
+            recipe.member_end,
+            record_index,
+            Some(crate::records::topology::face::RegisteredFaceRecipeFrame {
+                record_index,
+                primary_offset: u64::try_from(recipe.start).ok()?,
+                secondary_offset: u64::try_from(recipe.member_end).ok()?,
+                end_offset: u64::try_from(recipe.end).ok()?,
+                next_primary_index: meta
+                    .records
+                    .binary_search_by_key(&u64::try_from(recipe.end).ok()?, |record| {
+                        record.bulk_offset
+                    })
+                    .ok()
+                    .map(|index| meta.records[index].entity_id),
+            }),
+        )
     } else {
         let next = frames.get(ordinal.checked_add(chain.len())?)?;
         if recipe.end != next.start {
             return None;
         }
-        (next.start, u32::try_from(next.entity_id).ok()?)
+        (next.start, u32::try_from(next.entity_id).ok()?, None)
     };
     let byte_offset = u64::try_from(primary.start).ok()?;
     Some(RegisteredFaceOperandFrame {
@@ -927,6 +946,7 @@ fn registered_face_operand_frame(
             end,
         ],
         next_record_index,
+        recipe_frame,
     })
 }
 
@@ -981,7 +1001,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         for ordinal in 0..frames.len() {
-            if let Some(frame) = registered_face_operand_frame(stream, &frames, ordinal) {
+            if let Some(frame) = registered_face_operand_frame(stream, &frames, &meta, ordinal) {
                 split_face_frames.insert((stream, frame.header.record_index), frame);
             }
         }
@@ -7261,6 +7281,9 @@ pub(super) fn parse_face_operand(
         resolved_active_face: None,
         next_record_index,
         next_byte_offset,
+    })
+    .and_then(|operand| {
+        operand.with_registered_recipe_frame(registered_frame.and_then(|frame| frame.recipe_frame))
     })
     .ok()
     .map(Ok)

@@ -229,3 +229,21 @@ fn split_face_optional_wire_fields_use_omission_and_nullable_references() {
     missing.as_object_mut().unwrap().remove("inline_type_guid");
     assert!(serde_json::from_value::<DesignSplitFaceDirectionReference>(missing).is_err());
 }
+
+#[test]
+fn absent_external_type_cannot_claim_a_different_effective_guid() {
+    let mut wire = serde_json::to_value(scope()).unwrap();
+    let input = serde_json::json!({"kind":"cross_document","target":{"value":88,"offset":218},"inline_type_guid":"00000000-0000-0000-0000-000000000099","segment":7,"asset_guid":"asset","target_type_guid":"00000000-0000-0000-0000-000000000099","external_type_guid_present":false,"link_name":"link","version":null});
+    wire["split_face_operation"]["inputs"][0]["value"] = input;
+    wire["split_face_operation"]["carrier_frame"]["secondary_offset"] = serde_json::json!(299);
+    wire["split_face_operation"]["carrier_frame"]["end_offset"] = serde_json::json!(310);
+    assert!(serde_json::from_value::<DesignParameterScope>(wire.clone()).is_ok());
+    wire["split_face_operation"]["inputs"][0]["value"]["target_type_guid"] =
+        serde_json::json!("00000000-0000-0000-0000-000000000098");
+    assert!(serde_json::from_value::<DesignParameterScope>(wire.clone()).is_err());
+    wire["split_face_operation"]["inputs"][0]["value"]["external_type_guid_present"] =
+        serde_json::json!(true);
+    wire["split_face_operation"]["carrier_frame"]["secondary_offset"] = serde_json::json!(339);
+    wire["split_face_operation"]["carrier_frame"]["end_offset"] = serde_json::json!(350);
+    assert!(serde_json::from_value::<DesignParameterScope>(wire).is_ok());
+}

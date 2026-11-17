@@ -636,15 +636,12 @@ pub(super) fn unambiguous_design_primary_frames<'a>(
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
     use crate::layout::indexed_design_record_header as header;
 
-    let frames = design_primary_frames(bytes, meta)?;
-    let mut registered = HashSet::new();
+    let mut frames = design_primary_frames(bytes, meta)?;
+    let mut registered = HashMap::<u64, usize>::new();
     for entity_id in meta.types.iter().flat_map(|row| row.entities.values()) {
-        if !registered.insert(*entity_id) {
-            return Err(CodecError::malformed(
-                "F3D Design entity has ambiguous type registrations",
-            ));
-        }
+        *registered.entry(*entity_id).or_default() += 1;
     }
+    frames.retain(|frame| registered.get(&frame.entity_id) == Some(&1));
     for frame in &frames {
         if frame
             .start

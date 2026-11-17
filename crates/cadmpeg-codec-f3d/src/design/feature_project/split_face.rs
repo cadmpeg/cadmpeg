@@ -43,9 +43,10 @@ pub(super) fn project_split_face(
             }
             DesignSplitFaceMethod::ClosestPoint => SplitFaceMethod::ClosestPoint {},
             DesignSplitFaceMethod::AlongVector => {
-                let direction = operation.direction.as_ref().map(|value| {
-                    let [x, y, z] = value.value;
-                    FiniteVector3::from_components(x, y, z)
+                let direction = operation.direction.as_ref().and_then(|value| {
+                    value
+                        .value
+                        .map(|[x, y, z]| FiniteVector3::from_components(x, y, z))
                 });
                 let stream =
                     crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);

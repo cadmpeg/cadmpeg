@@ -69,15 +69,15 @@ pub(in crate::design::decode) fn exact_hole_construction(
             else {
                 continue;
             };
-            let (Some(position), Some(point_parameters), Some(reference_type)) = (
+            let (Some(position), Some(direction), Some(point_parameters), Some(reference_type)) = (
                 carrier.position,
+                carrier.direction,
                 carrier.point_parameters,
                 carrier.reference_type,
             ) else {
                 continue;
             };
-            let direction_norm = carrier
-                .direction
+            let direction_norm = direction
                 .iter()
                 .map(|component| component.get() * component.get())
                 .sum::<f64>();
@@ -103,7 +103,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
                 point_record_byte_offset: cadmpeg_core::decode::u64_from_index(start),
                 position,
                 position_offset: cadmpeg_core::decode::u64_from_index(carrier.position_at),
-                direction: carrier.direction,
+                direction,
                 direction_offset: cadmpeg_core::decode::u64_from_index(carrier.direction_at),
                 point_parameters,
                 point_parameter_offsets: [

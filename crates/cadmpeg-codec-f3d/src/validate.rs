@@ -7598,6 +7598,22 @@ fn validate_face_operands<'a>(
             )
         })
         .collect::<std::collections::HashMap<_, _>>();
+    let mut header_offsets_by_stream = std::collections::HashMap::<&str, Vec<u64>>::new();
+    if native
+        .design_face_operands
+        .iter()
+        .any(|operand| operand.registered_recipe_frame().is_some())
+    {
+        for header in records_by_index.values() {
+            header_offsets_by_stream
+                .entry(design_stream(&header.id))
+                .or_default()
+                .push(header.byte_offset);
+        }
+        for offsets in header_offsets_by_stream.values_mut() {
+            offsets.sort_unstable();
+        }
+    }
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
@@ -7675,13 +7691,65 @@ fn validate_face_operands<'a>(
             .collect::<Vec<_>>();
         expected_alternate_selector_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_alternate_selector_faces.dedup();
-        let next_header_matches = face_operand_next_header_matches(
-            header_indices_by_offset
-                .get(&(native_stream, operand.next_byte_offset()))
-                .copied(),
-            operand.next_record_index,
-            records_by_index.contains_key(&(native_stream, operand.next_record_index)),
-        );
+        let next_header_matches = match operand.registered_recipe_frame() {
+            Some(frame) => {
+                scope.is_some_and(|scope| {
+                    scope.kind() == records::feature::scope::DesignFeatureKind::SplitFace
+                }) && frame.record_index == operand.recipe_record_index()
+                    && frame.primary_offset == operand.recipe_record_byte_offset()
+                    && frame.record_index == operand.next_record_index
+                    && frame.secondary_offset == operand.next_byte_offset()
+                    && frame.primary_offset < frame.secondary_offset
+                    && frame
+                        .secondary_offset
+                        .checked_add(u64_from_index(
+                            crate::layout::indexed_design_record_header::LEN,
+                        ))
+                        .is_some_and(|end| end <= frame.end_offset)
+                    && records_by_index
+                        .get(&(native_stream, frame.record_index))
+                        .is_none_or(|header| header.byte_offset == frame.primary_offset)
+                    && header_indices_by_offset
+                        .get(&(native_stream, frame.primary_offset))
+                        .is_none_or(|index| *index == frame.record_index)
+                    && match frame.next_primary_index {
+                        Some(index) => {
+                            index != u64::from(frame.record_index)
+                                && u32::try_from(index)
+                                    .ok()
+                                    .and_then(|index| records_by_index.get(&(native_stream, index)))
+                                    .is_none_or(|header| header.byte_offset == frame.end_offset)
+                                && header_indices_by_offset
+                                    .get(&(native_stream, frame.end_offset))
+                                    .is_none_or(|actual| u64::from(*actual) == index)
+                        }
+                        None => header_offsets_by_stream
+                            .get(native_stream)
+                            .is_none_or(|offsets| {
+                                offsets
+                                    .last()
+                                    .is_none_or(|offset| *offset < frame.end_offset)
+                            }),
+                    }
+                    && header_offsets_by_stream
+                        .get(native_stream)
+                        .is_none_or(|offsets| {
+                            offsets
+                                .get(
+                                    offsets
+                                        .partition_point(|offset| *offset <= frame.primary_offset),
+                                )
+                                .is_none_or(|offset| *offset >= frame.end_offset)
+                        })
+            }
+            None => face_operand_next_header_matches(
+                header_indices_by_offset
+                    .get(&(native_stream, operand.next_byte_offset()))
+                    .copied(),
+                operand.next_record_index,
+                records_by_index.contains_key(&(native_stream, operand.next_record_index)),
+            ),
+        };
         let expected_node_offsets = operand
             .recipe_program
             .windows(3)
