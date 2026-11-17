@@ -311,11 +311,12 @@ pub(super) fn decode(
             };
         }
         let values = characteristic_values.get(&id);
-        let dimension = |kind: DimensionKind| {
+        let limits = values.and_then(|values| values.limits.clone());
+        let dimension = |kind: &DimensionKind, limits: Option<_>| {
             PmiDimension::new(
-                kind,
+                kind.clone(),
                 values.and_then(|values| values.nominal),
-                values.and_then(|values| values.limits.clone()),
+                limits,
             )
             .and_then(|dimension| {
                 dimension.with_modifiers(
@@ -325,24 +326,47 @@ pub(super) fn decode(
                 )
             })
         };
-        let definition = match dimension(kind.clone()) {
-            Ok(definition) => definition,
-            Err(error) if !matches!(kind, DimensionKind::Other(_)) => {
-                let entity_kind = DimensionKind::Other(dimension_name.to_ascii_lowercase());
-                let definition = dimension(entity_kind).map_err(|error| {
-                    CodecError::malformed(format_args!("dimension #{id}: {error}"))
-                })?;
-                losses.push(StepLossCode::PmiDimensionKindQuantityMismatch.note(format!(
-                    "dimension #{id}: {error}; the dimension keeps the kind {} in place of {kind:?}",
-                    dimension_name.to_ascii_lowercase()
-                )));
-                definition
+        let entity_kind = DimensionKind::Other(dimension_name.to_ascii_lowercase());
+        let replaceable = !matches!(kind, DimensionKind::Other(_));
+        let attempts = [
+            (&kind, limits.clone(), false, false),
+            (&entity_kind, limits.clone(), true, false),
+            (&kind, None, false, true),
+            (&entity_kind, None, true, true),
+        ];
+        let mut first_error = None;
+        let mut definition = None;
+        for (attempt_kind, attempt_limits, replaces_kind, omits_limits) in attempts {
+            if (replaces_kind && !replaceable) || (omits_limits && limits.is_none()) {
+                continue;
             }
-            Err(error) => {
-                return Err(CodecError::malformed(format_args!(
-                    "dimension #{id}: {error}"
-                )));
+            match dimension(attempt_kind, attempt_limits) {
+                Ok(built) => {
+                    let error = first_error.take().unwrap_or_default();
+                    if replaces_kind {
+                        losses.push(StepLossCode::PmiDimensionKindQuantityMismatch.note(format!(
+                            "dimension #{id}: {error}; the dimension keeps the kind {} in place of {kind:?}",
+                            dimension_name.to_ascii_lowercase()
+                        )));
+                    }
+                    if omits_limits {
+                        losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(
+                            "dimension #{id}: {error}; the dimension keeps no limits"
+                        )));
+                    }
+                    definition = Some(built);
+                    break;
+                }
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
             }
+        }
+        let Some(definition) = definition else {
+            return Err(CodecError::malformed(format_args!(
+                "dimension #{id}: {}",
+                first_error.unwrap_or_default()
+            )));
         };
         let aspect_ids = record
             .partials
