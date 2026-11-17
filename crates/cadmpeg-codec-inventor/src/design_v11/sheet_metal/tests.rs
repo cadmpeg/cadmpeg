@@ -133,7 +133,10 @@ fn sheet_metal_unitless_k_text_states_allowance() {
 fn sheet_metal_absent_or_equation_k_has_no_allowance() {
     let (rules, losses) = projected_with_losses(&[style(20)], None);
     assert_eq!(rules[0].allowance, None);
-    assert!(losses.is_empty());
+    assert_eq!(
+        codes(&losses),
+        ["feature.sheet-metal-unfold-rule-unresolved"]
+    );
     for factor in ["Thickness * 0.5", "table.csv"] {
         let (rules, losses) = projected_with_losses(&[style(20), style(30)], Some(factor));
         assert!(rules.iter().all(|rule| rule.allowance.is_none()));
@@ -189,6 +192,173 @@ fn sheet_metal_decimal_k_or_no_style_charges_no_unfold_loss() {
     assert!(projected_with_losses(&[], Some("Thickness * 0.5"))
         .1
         .is_empty());
+}
+
+/// Project one style through the document path with the given unfold
+/// records and an optional style `KFactor` parameter value.
+fn projected_document(
+    unfold_rules: Vec<unfold::Rule>,
+    selections: Vec<unfold::Selection>,
+    style_factor: Option<f64>,
+) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
+    use crate::design::{PmDcParameter, PmDcParameterPayload};
+    use crate::pmdc::PmDcContentHeader;
+    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+
+    let mut ir = CadIr::empty();
+    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+    })).expect("part"));
+    let null = PmDcReference::from_packed(0);
+    let mut parameters: Vec<PmDcParameter> = Vec::new();
+    if let Some(value) = style_factor {
+        let value = FiniteReal::new(value).expect("K");
+        let raw: PmDcParameter = Located::new(
+            PmDcParameterPayload {
+                save_version_major: 19,
+                header: PmDcContentHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    next: null,
+                    flags: 0,
+                    flags_extension: None,
+                    context: null,
+                    source_index: 0,
+                    stamps: Vec::new(),
+                },
+                name: STYLE_FACTOR_NAME.into(),
+                name_value: 0,
+                unit: null,
+                formula: null,
+                nominal_value: value,
+                model_value: value,
+                tolerance: 0,
+                terminal_value: 0,
+            },
+            RecordTypeId::from_bytes(crate::pmdc::inventor_id(0x9087_4d26)),
+            IdentityKey::try_new("fixture").expect("token"),
+            70,
+        );
+        ir.model.parameters.push(DesignParameter {
+            product_definition: None,
+            id: ParameterId::mint("inventor:design:parameter#kfactor").expect("id"),
+            owner: None,
+            ordinal: 0,
+            name: STYLE_FACTOR_NAME.into(),
+            expression: "0.44".into(),
+            display: None,
+            value: Some(ParameterValue::Real(value)),
+            dependencies: DistinctMembers::default(),
+            properties: BTreeMap::default(),
+            pmi: None,
+            native_ref: Some(raw.id()),
+        });
+        parameters.push(raw);
+    }
+    let mut inventory = FeatureInventory::default();
+    inventory.sheet_metal_styles.push(style(20));
+    inventory.sheet_metal_unfold_rules = unfold_rules;
+    inventory.sheet_metal_unfold_selections = selections;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut losses = Vec::new();
+    project(&ctx, &mut ir, &inventory, &parameters, &mut losses).expect("project");
+    (ir.design.sheet_metal_rules, losses)
+}
+
+fn k_allowance(value: f64) -> BendAllowance {
+    BendAllowance::KFactor(Dimension::Literal(FiniteReal::new(value).expect("K")))
+}
+
+#[test]
+fn sheet_metal_no_unfold_rule_takes_style_k_parameter() {
+    let (rules, losses) = projected_document(Vec::new(), Vec::new(), Some(0.44));
+    assert_eq!(rules[0].allowance, Some(k_allowance(0.44)));
+    assert_eq!(
+        codes(&losses),
+        [
+            "feature.sheet-metal-unfold-rule-unresolved",
+            "feature.sheet-metal-style-factor-assumed"
+        ]
+    );
+}
+
+#[test]
+fn sheet_metal_no_unfold_rule_without_style_k_parameter_has_no_allowance() {
+    let (rules, losses) = projected_document(Vec::new(), Vec::new(), None);
+    assert_eq!(rules[0].allowance, None);
+    assert_eq!(
+        codes(&losses),
+        ["feature.sheet-metal-unfold-rule-unresolved"]
+    );
+}
+
+#[test]
+fn sheet_metal_several_unfold_entries_take_style_k_parameter() {
+    use unfold::tests::{rule, selection, RULE_ORDINAL};
+    let entries = [("Unfold_A", RULE_ORDINAL + 1), ("Unfold_B", 40)];
+    for selections in [
+        vec![selection(&entries)],
+        vec![selection(&entries[..1]), selection(&entries[..1])],
+    ] {
+        let (rules, losses) =
+            projected_document(vec![rule("Unfold_A", "0.37 ul")], selections, Some(0.44));
+        assert_eq!(rules[0].allowance, Some(k_allowance(0.44)));
+        assert_eq!(
+            codes(&losses),
+            [
+                "feature.sheet-metal-unfold-rule-unresolved",
+                "feature.sheet-metal-style-factor-assumed"
+            ]
+        );
+    }
+}
+
+#[test]
+fn sheet_metal_unfold_entry_naming_no_rule_is_unresolved() {
+    use unfold::tests::{rule, selection, RULE_ORDINAL};
+    for (entry, factor) in [
+        (("Unfold_B", RULE_ORDINAL + 1), Some(0.44)),
+        (("Unfold_A", RULE_ORDINAL), None),
+    ] {
+        let (rules, losses) = projected_document(
+            vec![rule("Unfold_A", "0.37 ul")],
+            vec![selection(&[entry])],
+            factor,
+        );
+        assert_eq!(rules[0].allowance, factor.map(k_allowance));
+        let mut expected = vec!["feature.sheet-metal-unfold-rule-unresolved"];
+        if factor.is_some() {
+            expected.push("feature.sheet-metal-style-factor-assumed");
+        }
+        assert_eq!(codes(&losses), expected, "{entry:?}");
+    }
+}
+
+#[test]
+fn sheet_metal_active_rule_and_equal_style_k_parameter_charge_no_loss() {
+    use unfold::tests::{rule, selection, RULE_ORDINAL};
+    let (rules, losses) = projected_document(
+        vec![rule("Unfold_A", "0.44 ul")],
+        vec![selection(&[("Unfold_A", RULE_ORDINAL + 1)])],
+        Some(0.44),
+    );
+    assert_eq!(rules[0].allowance, Some(k_allowance(0.44)));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn sheet_metal_no_unfold_rule_with_unresolved_style_k_parameter_is_a_conflict() {
+    let (rules, losses) = projected_with_style_factor(&[style(20)], None, StyleFactor::Unresolved);
+    assert_eq!(rules[0].allowance, None);
+    assert_eq!(
+        codes(&losses),
+        [
+            "feature.sheet-metal-unfold-rule-unresolved",
+            "feature.sheet-metal-style-factor-conflict"
+        ]
+    );
 }
 
 #[test]

@@ -152,6 +152,11 @@ fn rules(
             rule.id, rule.expression
         )));
     }
+    if active.is_none() && !styles.is_empty() {
+        losses.push(InventorLossCode::FeatureSheetMetalUnfoldRuleUnresolved.note(
+            "No active unfold rule resolves: the document has no single SheetMetalUnfold category with one entry that names an unfold rule by name and index; the unfold records stay native.",
+        ));
+    }
     let mut rules = Vec::new();
     for style in styles {
         ctx.charge_entities(1, "project Inventor v11 sheet-metal rule")?;
@@ -163,10 +168,10 @@ fn rules(
         let id =
             SheetMetalRuleId::mint(crate::feature::history_feature_id(&style.identity)?.as_str())
                 .map_err(CodecError::malformed)?;
-        let allowance = match (factor, style_factor(style)) {
-            (Some(rule), StyleFactor::Absent) => Some(rule),
-            (Some(rule), StyleFactor::Value(parameter)) if parameter == rule => Some(rule),
-            (Some(rule), other) => {
+        let allowance = match (active.is_some(), factor, style_factor(style)) {
+            (_, Some(rule), StyleFactor::Absent) => Some(rule),
+            (_, Some(rule), StyleFactor::Value(parameter)) if parameter == rule => Some(rule),
+            (_, Some(rule), other) => {
                 let parameter = match other {
                     StyleFactor::Value(value) => format!("value {}", value.get()),
                     _ => "an unresolved value".to_owned(),
@@ -177,7 +182,20 @@ fn rules(
                 )));
                 None
             }
-            (None, _) => None,
+            (false, None, StyleFactor::Value(value)) => {
+                losses.push(InventorLossCode::FeatureSheetMetalStyleFactorAssumed.note(format!(
+                    "Sheet-metal rule {id} takes K-factor {} from its style KFactor parameter because no active unfold rule resolves.",
+                    value.get()
+                )));
+                Some(value)
+            }
+            (false, None, StyleFactor::Unresolved) => {
+                losses.push(InventorLossCode::FeatureSheetMetalStyleFactorConflict.note(format!(
+                    "Sheet-metal rule {id} has a style KFactor parameter with an unresolved value and no active unfold rule; the rule keeps no bend allowance."
+                )));
+                None
+            }
+            (false, None, StyleFactor::Absent) | (true, None, _) => None,
         };
         rules.push(SheetMetalRule {
             id,

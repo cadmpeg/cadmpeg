@@ -309,4 +309,4 @@ pub(crate) fn active_rule<'a>(rules: &'a [Rule], selections: &[Selection]) -> Op
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

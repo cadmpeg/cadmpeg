@@ -5,7 +5,7 @@ use crate::test_support::test_fixtures::parse;
 use cadmpeg_ir::ids::IdentityKey;
 
 const VERSION: u8 = 29;
-const RULE_ORDINAL: u32 = 12;
+pub(crate) const RULE_ORDINAL: u32 = 12;
 
 fn text(bytes: &mut Vec<u8>, value: &str) {
     let units: Vec<u16> = value.encode_utf16().collect();
@@ -70,7 +70,7 @@ fn token() -> IdentityKey {
     IdentityKey::try_new("fixture").expect("token")
 }
 
-fn rule(name: &str, expression: &str) -> Rule {
+pub(crate) fn rule(name: &str, expression: &str) -> Rule {
     let payload = parse(&rule_bytes(name, expression), |ctx, view| {
         parse_rule(ctx, view, VERSION)
     })
@@ -83,7 +83,7 @@ fn rule(name: &str, expression: &str) -> Rule {
     )
 }
 
-fn selection(entries: &[(&str, u32)]) -> Selection {
+pub(crate) fn selection(entries: &[(&str, u32)]) -> Selection {
     let payload = parse(
         &selection_bytes("SheetMetalUnfold", entries),
         parse_selection,

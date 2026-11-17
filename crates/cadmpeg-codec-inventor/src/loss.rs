@@ -165,6 +165,10 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalUnfoldFactorNative,
     /// A style `KFactor` parameter differs from the active unfold-rule K-factor; the rule keeps no allowance.
     FeatureSheetMetalStyleFactorConflict,
+    /// No active unfold rule resolves in a part with sheet-metal styles.
+    FeatureSheetMetalUnfoldRuleUnresolved,
+    /// A sheet-metal rule takes its K-factor from the style `KFactor` parameter without an active unfold rule.
+    FeatureSheetMetalStyleFactorAssumed,
     /// An attached plate stays native; the note names the first refused admission check.
     FeatureSheetMetalPlateRefused,
     /// Projected contour flanges retain construction controls and their bend and corner records natively.
@@ -393,6 +397,8 @@ impl InventorLossCode {
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureSheetMetalUnfoldFactorNative,
         Self::FeatureSheetMetalStyleFactorConflict,
+        Self::FeatureSheetMetalUnfoldRuleUnresolved,
+        Self::FeatureSheetMetalStyleFactorAssumed,
         Self::FeatureSheetMetalPlateRefused,
         Self::FeatureSheetMetalContourControlsRetained,
         Self::FeatureSheetMetalContourFlangeRefused,
@@ -566,6 +572,10 @@ impl InventorLossCode {
             Self::FeatureSheetMetalStyleFactorConflict => {
                 "feature.sheet-metal-style-factor-conflict"
             }
+            Self::FeatureSheetMetalUnfoldRuleUnresolved => {
+                "feature.sheet-metal-unfold-rule-unresolved"
+            }
+            Self::FeatureSheetMetalStyleFactorAssumed => "feature.sheet-metal-style-factor-assumed",
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
             Self::FeatureSheetMetalContourControlsRetained => {
                 "feature.sheet-metal-contour-controls-retained"
@@ -723,6 +733,8 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureSheetMetalUnfoldFactorNative
             | Self::FeatureSheetMetalStyleFactorConflict
+            | Self::FeatureSheetMetalUnfoldRuleUnresolved
+            | Self::FeatureSheetMetalStyleFactorAssumed
             | Self::FeatureSheetMetalPlateRefused
             | Self::FeatureSheetMetalContourControlsRetained
             | Self::FeatureSheetMetalContourFlangeRefused
@@ -909,6 +921,8 @@ mod tests {
                 "feature.sheet-metal-style-forms-native",
                 "feature.sheet-metal-unfold-factor-native",
                 "feature.sheet-metal-style-factor-conflict",
+                "feature.sheet-metal-unfold-rule-unresolved",
+                "feature.sheet-metal-style-factor-assumed",
                 "feature.sheet-metal-plate-refused",
                 "feature.sheet-metal-contour-controls-retained",
                 "feature.sheet-metal-contour-flange-refused",
