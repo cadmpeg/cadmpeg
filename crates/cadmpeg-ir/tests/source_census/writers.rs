@@ -52,6 +52,12 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str, Option<&str>)] = &[
         None,
     ),
     (
+        "crates/cadmpeg-ir/src/features/replace_face.rs",
+        "ReplaceFaceOperandsWire",
+        "ReplaceFaceOperands",
+        None,
+    ),
+    (
         "crates/cadmpeg-ir/src/geometry/nurbs.rs",
         "NurbsSurfaceWire",
         "NurbsSurface",

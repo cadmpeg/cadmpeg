@@ -979,7 +979,10 @@ pub(crate) fn decode_face_operands(
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft);
         let is_replace_face_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::ReplaceFace)
-            && group.role() == DesignOperandRole::ROLE_0X10;
+            && matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10
+            );
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
             && group.role() == DesignOperandRole::PROFILE;
@@ -1152,6 +1155,18 @@ pub(crate) fn decode_face_operands(
             else {
                 continue;
             };
+            if scope.kind() == crate::records::feature::scope::DesignFeatureKind::ReplaceFace
+                && groups.iter().any(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == scope.record_index
+                        && group
+                            .members()
+                            .iter()
+                            .any(|member| member.value == record_index)
+                })
+            {
+                continue;
+            }
             if !seen.insert((stream, scope.record_index, record_index)) {
                 continue;
             }

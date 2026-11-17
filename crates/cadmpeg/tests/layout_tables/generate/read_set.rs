@@ -176,11 +176,15 @@ struct Imports {
 }
 
 fn resolve(path: &[String], imports: &Imports) -> Vec<String> {
+    let absolute = path.first().is_some_and(|part| part == "crate");
     let path = path
         .iter()
         .skip_while(|part| matches!(part.as_str(), "crate" | "self" | "super"))
         .cloned()
         .collect::<Vec<_>>();
+    if absolute {
+        return path;
+    }
     if let Some(bound) = path.first().and_then(|name| imports.paths.get(name)) {
         bound.iter().chain(path.iter().skip(1)).cloned().collect()
     } else {
@@ -542,6 +546,10 @@ mod tests {
 
     #[test]
     fn layout_reads_keep_scoped_aliases_and_macro_paths() -> Result<(), String> {
+        assert_eq!(
+            reads("use crate::layout::header as layout; use crate::layout::row as flagged; layout::LEN; flagged::OFFSET;")?,
+            expected(&[("header", "LEN"), ("row", "OFFSET")])
+        );
         assert_eq!(reads("use crate::layout::header as h; fn f() { use crate::layout::row as h; m!(h::OFFSET); } h::LEN;")?, expected(&[("header", "LEN"), ("row", "OFFSET")]));
         assert_eq!(
             reads("use crate::layout::header as h; mod tests { use super::h; h::LEN; }")?,

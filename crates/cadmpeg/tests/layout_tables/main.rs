@@ -129,6 +129,8 @@ struct TokenDecl {
 #[serde(deny_unknown_fields)]
 struct Record {
     name: String,
+    #[serde(default)]
+    rust_doc_attributes: bool,
     /// `byte` = absolute byte offsets; `slot` = ordered typed slots with no
     /// stated offsets; `column` = 1-based inclusive character columns.
     kind: RecordKind,

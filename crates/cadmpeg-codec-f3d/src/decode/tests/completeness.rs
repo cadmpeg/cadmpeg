@@ -352,7 +352,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     };
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 resolved("target"),
                 resolved("replacement"),
             )
@@ -361,7 +361,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 FaceSelection::Native("native:target".into()),
                 resolved("replacement"),
             )
@@ -370,7 +370,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 resolved("target"),
                 FaceSelection::Native("native:replacement".into()),
             )

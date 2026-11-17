@@ -65,6 +65,10 @@ use sheet_metal::SheetMetalBendLinesConstruction;
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
+#[doc = "Face replacement operands and tangent-chain settings."]
+pub mod replace_face;
+use replace_face::ReplaceFaceOperands;
+
 #[doc = "Surface operation settings and constructors."]
 pub mod surfaces;
 use surfaces::UntrimLoops;
@@ -2478,16 +2482,7 @@ selection_operands!(
     |_: &FaceSelection| true,
     face_selections_overlap
 );
-selection_operands!(
-    ReplaceFaceOperands,
-    ReplaceFaceOperandsWire,
-    FaceSelection,
-    targets,
-    replacements,
-    |_: &FaceSelection| true,
-    face_selections_overlap,
-    try_edit
-);
+
 selection_operands!(
     SectionOperands,
     SectionOperandsWire,
@@ -2521,13 +2516,6 @@ impl CombineOperands {
     /// Move both selections out of this admitted pair.
     pub fn into_parts(self) -> (BodySelection, BodySelection) {
         (self.target, self.tools)
-    }
-}
-
-impl ReplaceFaceOperands {
-    /// Move both selections out of this admitted pair.
-    pub fn into_parts(self) -> (FaceSelection, FaceSelection) {
-        (self.targets, self.replacements)
     }
 }
 
