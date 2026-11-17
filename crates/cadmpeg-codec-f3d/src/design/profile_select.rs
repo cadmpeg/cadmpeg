@@ -5347,20 +5347,28 @@ fn resolved_spatial_sketch_profile_regions(
     spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
     resolution: &SketchProfileResolution<'_>,
 ) -> Option<Vec<u32>> {
-    let Some(selection) = profile.region_selection.as_ref() else {
-        if spatial_sketch.profiles.is_empty() {
-            return None;
-        }
-        let mut profiles = Vec::new();
-        for index in 0..spatial_sketch.profiles.len() {
-            let Ok(index) = u32::try_from(index) else {
-                return None;
-            };
-            profiles.push(index);
-        }
-        return Some(profiles);
+    let frame = spatial_regions::SpatialFrame {
+        stream,
+        operand: profile,
+        sketch: spatial_sketch,
+        curve_identities: resolution.curve_identities,
+        entities: resolution.spatial_sketch_entities,
+        histories: &[],
+        state_ids: None,
+        linear_tolerance: resolution.linear_tolerance,
+        angular_tolerance: resolution.angular_tolerance,
     };
-    if selection.has_extended_incidence() {
+    let Some(selection) = profile.region_selection.as_ref() else {
+        // Without a stored selection, only a Sketch with one distinct
+        // profile proves the section.
+        let count = u32::try_from(spatial_sketch.profiles.len()).ok()?;
+        let all: Vec<u32> = (0..count).collect();
+        return match spatial_regions::distinct_profiles(&frame, &all)?.as_slice() {
+            [only] => Some(vec![*only]),
+            _ => None,
+        };
+    };
+    if selection.has_extended_incidence() || !spatial_regions::regions_without_holes(selection) {
         return None;
     }
     let Ok(owner_reference) = u32::try_from(profile.entity_id.suffix()) else {
@@ -5436,7 +5444,7 @@ fn resolved_spatial_sketch_profile_regions(
         }
         resolved.push(profile_index);
     }
-    (!resolved.is_empty()).then_some(resolved)
+    spatial_regions::distinct_profiles(&frame, &resolved)
 }
 
 fn spatial_profile_containing_entity(
