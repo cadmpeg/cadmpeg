@@ -34,7 +34,10 @@ pub mod subset_lowering;
 pub mod target;
 
 use carried::{EntityLocation, FindingLocator};
-pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
+pub use coverage::{
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
+    ProcessArenaDispositions,
+};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// How much of its source a document must record for an encoder to plan it.

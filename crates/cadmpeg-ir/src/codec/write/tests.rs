@@ -316,7 +316,11 @@ fn write_path_structurally_authors_fidelity_resolution() {
 macro_rules! uniform_dispositions {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
         fn uniform_dispositions(disposition: ArenaDisposition) -> ArenaDispositions {
-            ArenaDispositions { $($field: disposition,)* }
+            ArenaDispositions {
+                $($field: disposition,)*
+                design: super::DesignArenaDispositions::uniform(disposition),
+                process: super::ProcessArenaDispositions::uniform(disposition),
+            }
         }
     };
 }
@@ -343,6 +347,134 @@ fn coverage_losses(ir: &CadIr, coverage: ArenaCoverage) -> Vec<crate::report::lo
         .report()
         .losses
         .clone()
+}
+
+/// While a document holds a v10 design record, an omitted design-home arena
+/// restates what the v10 path writes and is charged nothing.
+#[test]
+fn an_omitted_design_arena_is_charged_only_without_v10_design_records() {
+    let sheet = |key: &str| {
+        crate::design::spreadsheet::Spreadsheet::new(
+            crate::spreadsheets::SpreadsheetId::mint(format!("test:design:spreadsheet#{key}"))
+                .unwrap(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap()
+    };
+    let mut ir = CadIr::empty();
+    ir.design.spreadsheets.push(sheet("v11"));
+    let omitted = ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Omitted));
+    let losses = coverage_losses(&ir, omitted);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("`design.spreadsheets`"),
+        "{losses:?}"
+    );
+
+    ir.model.spreadsheets.push(
+        crate::spreadsheets::Spreadsheet::new(
+            crate::spreadsheets::SpreadsheetId::mint("test:design:spreadsheet#v10").unwrap(),
+            crate::features::FeatureId::mint("test:design:feature#v10").unwrap(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        )
+        .unwrap(),
+    );
+    let losses = coverage_losses(&ir, omitted);
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(losses[0].message.contains("`spreadsheets`"), "{losses:?}");
+}
+
+/// An omitted sketch arena of the design home is charged as an omitted
+/// parametric record, and a written one is not.
+#[test]
+fn an_omitted_design_sketch_arena_is_charged() {
+    use crate::design::evaluation::EvaluationStatus;
+    use crate::design::ops::sketch::{Sketch, SketchPlane, SketchSolve, SpatialSketch};
+    use crate::design::options::NativeOptions;
+
+    let solve = || SketchSolve {
+        state: None,
+        status: EvaluationStatus::Current,
+    };
+    let owner = crate::features::FeatureId::mint("test:design:feature#1").unwrap();
+    let mut ir = CadIr::empty();
+    ir.design.sketches.push(Sketch {
+        id: crate::sketches::SketchId::mint("test:design:sketch#1").unwrap(),
+        owner: owner.clone(),
+        name: None,
+        plane: SketchPlane::Block,
+        solve: solve(),
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+        native_ref: None,
+    });
+    ir.design.spatial_sketches.push(SpatialSketch {
+        id: crate::sketches::SpatialSketchId::mint("test:design:spatial-sketch#1").unwrap(),
+        owner,
+        name: None,
+        solve: solve(),
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+        native_ref: None,
+    });
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Omitted);
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 2, "{losses:?}");
+    for (loss, arena) in losses
+        .iter()
+        .zip(["design.sketches", "design.spatial_sketches"])
+    {
+        assert!(loss.message.contains(&format!("`{arena}`")), "{losses:?}");
+        assert_eq!(
+            loss.code.taxonomy(),
+            crate::report::loss::LossTaxonomy::ParametricRecordOmitted
+        );
+    }
+    dispositions.design.spatial_sketches = ArenaDisposition::Written;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("`design.sketches`"),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn an_omitted_process_arena_is_charged_as_a_process_record() {
+    let mut ir = CadIr::empty();
+    ir.process
+        .groups
+        .push(crate::process::groups::ProcessGroup {
+            id: crate::design::ids::ProcessGroupId::try_from("test:process:group#1".to_owned())
+                .unwrap(),
+            kind: crate::process::groups::GroupKind::Method,
+            name: None,
+            parent: None,
+            native_ref: None,
+        });
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Written);
+    dispositions.process.groups = ArenaDisposition::Omitted;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert_eq!(losses[0].code.local_code(), "arena.omitted");
+    assert_eq!(
+        losses[0].code.taxonomy(),
+        crate::report::loss::LossTaxonomy::ProcessRecordOmitted
+    );
+    assert!(losses[0].message.contains("`process.groups`"), "{losses:?}");
+    assert!(coverage_losses(
+        &ir,
+        ArenaCoverage::Declared(uniform_dispositions(ArenaDisposition::Written))
+    )
+    .is_empty());
 }
 
 #[test]
