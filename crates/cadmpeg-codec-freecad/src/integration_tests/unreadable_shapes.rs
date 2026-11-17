@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! An unreadable shape payload drops the objects that need it and keeps the
-//! rest of the document.
+//! An unreadable shape payload drops the Geometry properties that need it and
+//! keeps the rest of the document.
 
 use std::collections::BTreeSet;
 use std::io::Cursor;

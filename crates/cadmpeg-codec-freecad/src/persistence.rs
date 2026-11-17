@@ -65,15 +65,24 @@ pub(crate) struct UnreadableDrops {
     pub(crate) records: Vec<String>,
 }
 
-/// The side files a Geometry property needs to hold its value.
-fn required_side_files(property: &PropertyRecord) -> Vec<&str> {
+/// The side files a Geometry property needs to hold its value. An exact
+/// shape needs only the entry of its direct `Part` carrier.
+fn payload_side_files(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Vec<String>, CodecError> {
     let crate::native::PropertyBody::Persisted { values, .. } = &property.body else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if property.family != PropertyFamily::Geometry {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    values
+    if property.type_name == "Part::PropertyPartShape" {
+        return Ok(crate::brep::direct_shape_entry(ctx, property)?
+            .into_iter()
+            .collect());
+    }
+    Ok(values
         .iter()
         .filter(|value| {
             !matches!(
@@ -83,25 +92,26 @@ fn required_side_files(property: &PropertyRecord) -> Vec<&str> {
         })
         .flat_map(|value| &value.attributes)
         .filter(|(key, name)| matches!(key.as_str(), "file" | "File") && !name.is_empty())
-        .map(|(_, name)| name.as_str())
-        .collect()
+        .map(|(_, name)| name.clone())
+        .collect())
 }
 
 /// Drops every Geometry property whose payload is in an unreadable archive
 /// entry. The owning object keeps every other property it read.
 pub(crate) fn drop_unreadable(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &mut Graph,
     unreadable: &std::collections::BTreeSet<String>,
-) -> std::collections::BTreeMap<String, UnreadableDrops> {
+) -> Result<std::collections::BTreeMap<String, UnreadableDrops>, CodecError> {
     let mut drops = std::collections::BTreeMap::<String, UnreadableDrops>::new();
     let mut dropped = HashSet::new();
     for property in &graph.properties {
-        for entry in required_side_files(property)
+        for entry in payload_side_files(ctx, property)?
             .into_iter()
-            .filter(|name| unreadable.contains(*name))
+            .filter(|name| unreadable.contains(name))
         {
             drops
-                .entry(entry.to_owned())
+                .entry(entry)
                 .or_default()
                 .records
                 .push(property.id.clone());
@@ -115,7 +125,7 @@ pub(crate) fn drop_unreadable(
         entry.records.sort_unstable();
         entry.records.dedup();
     }
-    drops
+    Ok(drops)
 }
 
 /// Required property payload references must resolve. Missing naming sidecars

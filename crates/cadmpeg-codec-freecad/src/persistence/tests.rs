@@ -825,3 +825,26 @@ fn external_file_links_do_not_become_archive_side_entry_requirements() {
         .unwrap();
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
 }
+
+#[test]
+fn an_unreadable_entry_outside_the_direct_part_carrier_drops_no_exact_shape() {
+    let property = r#"<Property name="Shape" type="Part::PropertyPartShape"><Part file="Box.Shape.brp"/><X file="Note.bin"/></Property>"#;
+    let document = format!(
+        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+    );
+    for (unreadable, dropped) in [("Note.bin", false), ("Box.Shape.brp", true)] {
+        let (drops, remaining) =
+            crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+                let mut graph = parse(document.as_bytes(), "4", ctx).expect("exact-shape document");
+                let drops = super::drop_unreadable(
+                    ctx,
+                    &mut graph,
+                    &std::collections::BTreeSet::from([unreadable.to_owned()]),
+                )
+                .expect("bounded exact-shape carrier");
+                (drops, graph.properties.len())
+            });
+        assert_eq!(drops.contains_key(unreadable), dropped, "{unreadable}");
+        assert_eq!(remaining, usize::from(!dropped), "{unreadable}");
+    }
+}

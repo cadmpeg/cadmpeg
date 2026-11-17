@@ -154,7 +154,7 @@ containers are invalid. `Properties.Count` equals the number of `Property` recor
 Property names are unique across both record kinds within one container. A property family is
 selected by an exact registered runtime type. An unregistered runtime type does not select a family
 from a substring of its name.
-A missing unrelated file attachment does not supply admitted side-entry data. Required shape payloads must remain readable. A malformed link-property payload has source-only XML and no admitted values or links; no empty link or replacement scalar is inferred.
+A missing unrelated file attachment does not supply admitted side-entry data. An unreadable side entry drops each Geometry property whose payload it holds; an absent one refuses the document. A malformed link-property payload has source-only XML and no admitted values or links; no empty link or replacement scalar is inferred.
 
 A `Property` contains its runtime-type-specific value XML. A `_Property` has no persisted value.
 Status and dynamic-property metadata are optional record attributes. Property container dispatch
