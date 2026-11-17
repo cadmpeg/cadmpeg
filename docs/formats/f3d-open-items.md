@@ -3289,3 +3289,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-657. Design role of saved free edges
+
+**Question.** Which Design meaning does a saved free edge of an ASM BREP blob have: visible model geometry of the component, or an edge that the kernel keeps for a timeline feature?
+
+**Known.** A saved free edge is an `edge` record in the saved top-level range of the ASM stream with a null owner coedge (`asm.md` §5.2 "**Edge (98 B):**"). No coedge, loop, or face uses it. The public RailCore Mini archive stores 1790 saved free edges in eleven designs, from 4 to 912 in one design. The decoder emits each one as one wire body, and the count per design equals the count of null-owner-coedge `edge` records in the selected BREP blob. No Design body binding, body member, or body visibility record names a saved free edge. The `affected_saved_edges` property of 31 Extrude, Fillet, Chamfer, and Thread transitions lists them. 989 of the 1790 edges have the same end positions as an edge of a body with faces in the same design. 709 are closed edges.
+
+**Need.** A Design record that names a saved free edge, or a rule that relates a saved free edge to the feature that creates it, and the visibility of that edge in the component.
+
+**Note.** `f3d.md` §3.1 "A local occurrence is a child of each occurrence" excludes saved free-edge bodies from component body coverage. A saved free-edge body without a product-definition owner is reported as `assembly.saved-free-edge-body-unowned`.
