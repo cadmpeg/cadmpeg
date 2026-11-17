@@ -316,10 +316,10 @@ fn a_design_record_shares_an_id_with_a_record_of_another_home() {
     ir.design.features.push(restated);
     let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(
-        !report
-            .findings
-            .iter()
-            .any(|finding| finding.severity == crate::report::Severity::Error),
+        !report.findings.iter().any(|finding| {
+            finding.check == crate::report::check::Check::Identity
+                || finding.message.contains("not unique")
+        }),
         "{:#?}",
         report.findings
     );

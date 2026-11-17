@@ -32,6 +32,7 @@ mod face_support;
 mod fallback_face;
 pub(crate) mod fillet_blends;
 pub(crate) mod fragment_edge;
+mod generated_bodies;
 pub(crate) mod history_bodies;
 mod hole_support;
 mod loop_index;
@@ -39,6 +40,7 @@ mod move_face;
 mod output_blob;
 mod output_chain;
 mod output_properties;
+mod pattern_bodies;
 pub(crate) mod pipe_section;
 mod recipe_index;
 mod reference_edge;
@@ -54,6 +56,7 @@ mod treatment_index;
 use body_candidates::BodyCandidates;
 use body_index::CompleteBodyIndex;
 use cache::SnapshotCache;
+pub(crate) use generated_bodies::bind_generated_body_selections;
 use loop_index::LoopIndex;
 use output_properties::{
     classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
@@ -63,6 +66,7 @@ use output_properties::{
     EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2, EPS_HISTORY_BODY_BBOX_GROWTH_E3,
     EPS_HISTORY_BODY_BBOX_UNCHANGED_E4, EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4,
 };
+use pattern_bodies::bind_pattern_body_selections;
 use recipe_index::RecipeTopologyCache;
 use topology_cache::{TopologyQueryCache, VertexBoundaryIndex};
 use treatment_index::TreatmentCache;
@@ -2448,10 +2452,28 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Operation(
-                FeatureOperation::DeleteBody { bodies, .. }
-                | FeatureOperation::ReverseShape { source: bodies },
-            ) = definition
+            if let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) =
+                definition
+            {
+                if let Some(previous_state_id) = scope.previous_history_state_id() {
+                    bind_body_recipe_body_selection(
+                        bodies,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                } else {
+                    let native = bodies.clone();
+                    bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
+                    // The recipe identity of the operands outranks a face match.
+                    generated_bodies::keep_recipe_body_slots(bodies, native, scope, inputs);
+                }
+                break 'feature_edit;
+            }
+            if let FeatureDefinition::Operation(FeatureOperation::ReverseShape { source: bodies }) =
+                definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
@@ -2827,95 +2849,6 @@ fn historical_body_slot(id: &str) -> Option<i64> {
         .1
         .parse()
         .ok()
-}
-
-fn bind_pattern_body_selections<'a>(
-    features: &mut [cadmpeg_ir::features::Feature],
-    inputs: &FeatureBodySelectionInputs<'a>,
-    body_candidates: &mut BodyCandidates<'a>,
-) {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
-
-    let scopes = inputs.scopes;
-    let groups = inputs.groups;
-    let body_recipe_operands = inputs.body_recipe_operands;
-
-    for feature in features {
-        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-            feature.evaluation.definition()
-        else {
-            continue;
-        };
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-        let Some(scope) = matching_scopes.next() else {
-            continue;
-        };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
-        let stream = crate::ids::native_stream(&scope.id);
-        let mut matching_groups = groups.iter().filter(|group| {
-            group.scope_record_index == scope.record_index
-                && group.role() == DesignOperandRole::BODIES_B
-                && !group.members().is_empty()
-                && crate::ids::native_stream(&group.id) == stream
-        });
-        let Some(group) = matching_groups.next() else {
-            continue;
-        };
-        if matching_groups.next().is_some() {
-            continue;
-        }
-        let mut seed = if seeds.is_empty() {
-            Some(PatternSeed::Bodies(BodySelection::Native(group.id.clone())))
-        } else {
-            None
-        };
-        let feature_id = &feature.id;
-        feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = definition
-            else {
-                return;
-            };
-            if let Some(seed) = seed.take() {
-                seeds.push(seed);
-            }
-            let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
-                return;
-            };
-            if let Some(previous_state_id) = scope.previous_history_state_id() {
-                bind_body_recipe_body_selection(
-                    selection,
-                    feature_id,
-                    previous_state_id,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                );
-            } else {
-                bind_direct_body_recipe_body_selection(selection, scope, inputs, body_candidates);
-                // A scope that stores no preceding state takes it from its
-                // history state, where the operands bound their body slots.
-                if let Some(previous_state_id) =
-                    effective_scope_previous_history_state_id(scope, inputs.histories)
-                {
-                    bind_body_recipe_body_selection(
-                        selection,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        body_recipe_operands,
-                    );
-                }
-            }
-        });
-    }
 }
 
 fn bind_body_recipe_body_selection(
@@ -6793,6 +6726,21 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     }
                 }
                 resolve_body_recipe_operand_preceding_body(operand);
+                // A body operand of this B-rep selects the only body of a state
+                // that holds one body.
+                if operand.resolved_body_slot.is_none() {
+                    if let [body] = topology.bodies.as_slice() {
+                        let in_source = operand.references().iter().any(|reference| {
+                            reference
+                                .candidate_faces
+                                .iter()
+                                .any(|face| active_brep_face_matches_source(face, source))
+                        });
+                        if in_source {
+                            operand.resolved_body_slot = Some(*body);
+                        }
+                    }
+                }
                 let Some(body_slot) = operand.resolved_body_slot else {
                     continue;
                 };
