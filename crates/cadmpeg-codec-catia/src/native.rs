@@ -5433,7 +5433,7 @@ fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaR
     };
     let CatiaEntitySuffixPayload::Evaluation {
         opcode_offset,
-        evaluation,
+        ref evaluation,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     } = suffix.payload
     else {

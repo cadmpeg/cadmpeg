@@ -328,7 +328,7 @@ pub(crate) fn transfer_parameters(
                             )?;
                             let output_expression = expression.expression.value.clone();
                             let output_native_ref = output.id.clone();
-                            let (output_value, output_literal) =
+                            let (published_value, output_literal) =
                                 published_output_value(value, evaluated_expression);
                             transferred.push(FormulaParameterCandidate {
                                 literal: false,
@@ -341,7 +341,7 @@ pub(crate) fn transfer_parameters(
                                     name: output_name,
                                     expression: output_expression,
                                     display: None,
-                                    value: output_value,
+                                    value: published_value,
                                     dependencies: output_dependencies,
                                     properties: parameter_properties(
                                         parameter_type.as_str(),
@@ -1643,7 +1643,7 @@ fn relation_program_output_candidate<'a>(
     let output_native_ref = output_entity.id.clone();
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
     output_dependencies.extend(dependencies.iter().cloned());
-    let (output_value, output_literal) = published_output_value(value, evaluated_expression);
+    let (published_value, output_literal) = published_output_value(value, evaluated_expression);
     let candidate = FormulaParameterCandidate {
         literal: false,
         literal_value: output_literal,
@@ -1655,7 +1655,7 @@ fn relation_program_output_candidate<'a>(
             name: output_name,
             expression: output_expression,
             display: None,
-            value: output_value,
+            value: published_value,
             dependencies: output_dependencies,
             properties: parameter_properties(
                 parameter_type.as_str(),
