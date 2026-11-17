@@ -148,3 +148,10 @@ fn a_chain_far_past_the_ceiling_is_refused_one_past_it() {
     tip_first.reverse();
     refused_past(tip_first, &limits);
 }
+
+/// `CadIr::from_json` walks the chains as every other read does.
+#[test]
+fn from_json_walks_the_chains_as_reading_does() {
+    assert!(CadIr::from_json(&document(chain(3))).is_ok());
+    assert!(CadIr::from_json(&document(vec![evaluation(1, on(1))])).is_err());
+}

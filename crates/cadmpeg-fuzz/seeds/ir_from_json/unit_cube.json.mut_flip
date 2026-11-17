@@ -481,9 +481,9 @@
           ]
         },
         "ends": {
-ß         "start": "synthetic:cube:vertex#3",
+          "start": "synthetic:cube:vertex#3",
           "end": "synthetic:cube:vertex#0"
-        }
+ß       }
       },
       {
         "id": "synthetic:cube:edge#4",
@@ -1093,6 +1093,12 @@
     "scopes": [],
     "containers": [],
     "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "parameters": [],
     "spreadsheets": [],
     "sheet_metal_rules": [],

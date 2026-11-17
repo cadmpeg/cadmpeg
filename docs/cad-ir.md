@@ -537,7 +537,9 @@ The generated document begins with this complete hierarchy and representative ra
   },
   "model": { "features": [] },
   "design": {
-    "scopes": [], "containers": [], "features": [], "parameters": [],
+    "scopes": [], "containers": [], "features": [], "sketches": [],
+    "sketch_entities": [], "sketch_constraints": [], "spatial_sketches": [],
+    "spatial_sketch_entities": [], "spatial_sketch_constraints": [], "parameters": [],
     "spreadsheets": [], "sheet_metal_rules": [], "programs": [], "configurations": [],
     "arrangements": [], "publications": [], "evaluations": [], "names": []
   },

@@ -119,6 +119,18 @@ pub enum EntityKind {
     DesignContainer,
     /// Feature of the `design` home.
     DesignFeature,
+    /// Planar sketch of the `design` home.
+    DesignSketch,
+    /// Planar sketch entity of the `design` home.
+    DesignSketchEntity,
+    /// Planar sketch constraint of the `design` home.
+    DesignSketchConstraint,
+    /// Spatial sketch of the `design` home.
+    DesignSpatialSketch,
+    /// Spatial sketch entity of the `design` home.
+    DesignSpatialSketchEntity,
+    /// Spatial sketch constraint of the `design` home.
+    DesignSpatialSketchConstraint,
     /// Parameter of the `design` home.
     DesignParameter,
     /// Spreadsheet of the `design` home.
@@ -195,19 +207,25 @@ impl EntityKind {
             Self::DesignScope => 51,
             Self::DesignContainer => 52,
             Self::DesignFeature => 53,
-            Self::DesignParameter => 54,
-            Self::DesignSpreadsheet => 55,
-            Self::DesignSheetMetalRule => 56,
-            Self::DesignProgram => 57,
-            Self::DesignConfiguration => 58,
-            Self::DesignArrangement => 59,
-            Self::DesignPublication => 60,
-            Self::DesignEvaluation => 61,
+            Self::DesignSketch => 54,
+            Self::DesignSketchEntity => 55,
+            Self::DesignSketchConstraint => 56,
+            Self::DesignSpatialSketch => 57,
+            Self::DesignSpatialSketchEntity => 58,
+            Self::DesignSpatialSketchConstraint => 59,
+            Self::DesignParameter => 60,
+            Self::DesignSpreadsheet => 61,
+            Self::DesignSheetMetalRule => 62,
+            Self::DesignProgram => 63,
+            Self::DesignConfiguration => 64,
+            Self::DesignArrangement => 65,
+            Self::DesignPublication => 66,
+            Self::DesignEvaluation => 67,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 62] = [
+    pub const ALL: [Self; 68] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -262,6 +280,12 @@ impl EntityKind {
         Self::DesignScope,
         Self::DesignContainer,
         Self::DesignFeature,
+        Self::DesignSketch,
+        Self::DesignSketchEntity,
+        Self::DesignSketchConstraint,
+        Self::DesignSpatialSketch,
+        Self::DesignSpatialSketchEntity,
+        Self::DesignSpatialSketchConstraint,
         Self::DesignParameter,
         Self::DesignSpreadsheet,
         Self::DesignSheetMetalRule,
@@ -309,6 +333,32 @@ macro_rules! impl_design_record {
 impl_design_record!(crate::design::scope::DesignScope, DesignScope, definition);
 impl_design_record!(crate::design::container::Container, DesignContainer, id());
 impl_design_record!(crate::design::feature::Feature, DesignFeature, id);
+impl_design_record!(crate::design::ops::sketch::Sketch, DesignSketch, id);
+impl_design_record!(
+    crate::design::ops::sketch::SketchEntity<crate::design::ops::sketch::Planar>,
+    DesignSketchEntity,
+    id
+);
+impl_design_record!(
+    crate::design::ops::sketch::SketchConstraint<crate::design::ops::sketch::Planar>,
+    DesignSketchConstraint,
+    id
+);
+impl_design_record!(
+    crate::design::ops::sketch::SpatialSketch,
+    DesignSpatialSketch,
+    id
+);
+impl_design_record!(
+    crate::design::ops::sketch::SketchEntity<crate::design::ops::sketch::Spatial>,
+    DesignSpatialSketchEntity,
+    id
+);
+impl_design_record!(
+    crate::design::ops::sketch::SketchConstraint<crate::design::ops::sketch::Spatial>,
+    DesignSpatialSketchConstraint,
+    id
+);
 impl_design_record!(
     crate::design::parameter::DesignParameter,
     DesignParameter,

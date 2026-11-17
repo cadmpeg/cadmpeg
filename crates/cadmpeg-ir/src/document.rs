@@ -137,6 +137,12 @@ macro_rules! classified_arena_registry {
             scopes: crate::design::scope::DesignScope, design, design, "The design scopes, one per product definition that has a design.", [];
             containers: crate::design::container::Container, design, design, "The ordered and unordered containers of the scopes' histories.", [];
             features: crate::design::feature::Feature, design, design, "The features of the scopes' histories.", [];
+            sketches: crate::design::ops::sketch::Sketch, design, design, "The planar sketches.", [];
+            sketch_entities: crate::design::ops::sketch::SketchEntity<crate::design::ops::sketch::Planar>, design, design, "The entities of the planar sketches.", [];
+            sketch_constraints: crate::design::ops::sketch::SketchConstraint<crate::design::ops::sketch::Planar>, design, design, "The constraints of the planar sketches.", [];
+            spatial_sketches: crate::design::ops::sketch::SpatialSketch, design, design, "The spatial sketches.", [];
+            spatial_sketch_entities: crate::design::ops::sketch::SketchEntity<crate::design::ops::sketch::Spatial>, design, design, "The entities of the spatial sketches.", [];
+            spatial_sketch_constraints: crate::design::ops::sketch::SketchConstraint<crate::design::ops::sketch::Spatial>, design, design, "The constraints of the spatial sketches.", [];
             parameters: crate::design::parameter::DesignParameter, design, design, "The design parameters.", [];
             spreadsheets: crate::design::spreadsheet::Spreadsheet, design, design, "The sheets that own some of the design parameters.", [];
             sheet_metal_rules: crate::design::ops::sheet_metal::SheetMetalRule, design, design, "The sheet-metal defaults that several features and bodies share.", [];
@@ -936,7 +942,7 @@ macro_rules! declare_model {
 
 macro_rules! declare_design {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-        /// The design class's arenas: scopes, containers, features,
+        /// The design class's arenas: scopes, containers, features, sketches,
         /// parameters, spreadsheets, programs, configurations, arrangements,
         /// publications, and evaluations, and the names of the current
         /// geometry.
@@ -2416,9 +2422,7 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<CadIrReadWire>(s)?
-            .try_into()
-            .map_err(<serde_json::Error as serde::de::Error>::custom)
+        serde_json::from_str::<Self>(s)
     }
 
     /// Sort geometry, model, design, native, and unknown-record arenas by

@@ -11,7 +11,7 @@ use serde_json::json;
 use super::shared::{angle_sides, angle_spacings, length_sides, length_spacings};
 use super::{
     angle, bound, construction, id, length, lit, native_options, point2, point3, positive,
-    positive_real, real, refuses, selection, text, to_value, unread, Report,
+    positive_real, real, refuses, round_trip, selection, text, to_value, unread, Report,
 };
 use crate::design::construction::{kinds, Construction, FrameValue, ScalarDimension};
 use crate::design::evaluation::EvaluationStatus;
@@ -30,6 +30,7 @@ use crate::design::ops::sketch::{
 };
 use crate::design::options::{NativeOptions, ProjectionDirection};
 use crate::design::selection::PrincipalEntity;
+use crate::document::{CadIr, Design};
 use crate::features::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
 use crate::geometry::SolvedCurveGeometry;
@@ -1077,4 +1078,90 @@ fn each_space_names_its_own_records() {
         to_value(&circular),
         json!({"kind": "circular", "value": {"center": {"kind": "frame", "value": "origin"}, "spacing": {"kind": "fit", "value": {"count": {"kind": "literal", "value": 6}}}}})
     );
+}
+
+/// The keys of the design root's sketch arenas, in the order it writes them.
+const SKETCH_ARENAS: [&str; 6] = [
+    "sketches",
+    "sketch_entities",
+    "sketch_constraints",
+    "spatial_sketches",
+    "spatial_sketch_entities",
+    "spatial_sketch_constraints",
+];
+
+/// A design whose sketch arenas each hold populated records and whose other
+/// arenas are empty.
+pub(in crate::design) fn sketch_arenas() -> Design {
+    Design {
+        sketches: sketches(),
+        sketch_entities: sketch_entities::<Planar>(),
+        sketch_constraints: sketch_constraints::<Planar>(),
+        spatial_sketches: spatial_sketches(),
+        spatial_sketch_entities: sketch_entities::<Spatial>(),
+        spatial_sketch_constraints: sketch_constraints::<Spatial>(),
+        ..Design::default()
+    }
+}
+
+fn values<T: serde::Serialize>(records: &[T]) -> serde_json::Value {
+    json!(records.iter().map(to_value).collect::<Vec<_>>())
+}
+
+/// §5: planar and spatial sketches, their entities, and their constraints
+/// are arenas of the design root, and a document holding them reads back.
+#[test]
+fn the_sketch_arenas_are_arenas_of_the_design_root() {
+    let design = sketch_arenas();
+    let value = to_value(&design);
+    assert_eq!(value["sketches"], values(&sketches()));
+    assert_eq!(
+        value["sketch_entities"],
+        values(&sketch_entities::<Planar>())
+    );
+    assert_eq!(
+        value["sketch_constraints"],
+        values(&sketch_constraints::<Planar>())
+    );
+    assert_eq!(value["spatial_sketches"], values(&spatial_sketches()));
+    assert_eq!(
+        value["spatial_sketch_entities"],
+        values(&sketch_entities::<Spatial>())
+    );
+    assert_eq!(
+        value["spatial_sketch_constraints"],
+        values(&sketch_constraints::<Spatial>())
+    );
+    for arena in SKETCH_ARENAS {
+        assert!(!value[arena].as_array().unwrap().is_empty(), "{arena}");
+    }
+    round_trip(&design).unwrap();
+
+    let mut ir = CadIr::empty();
+    ir.design = design;
+    round_trip(&ir).unwrap();
+    for arena in SKETCH_ARENAS {
+        assert!(
+            ir.census()[format!("design.{arena}").as_str()] > 0,
+            "{arena}"
+        );
+    }
+}
+
+/// §2.5: each sketch arena of the design root refuses omission, `null`, and
+/// an unknown key in a record.
+#[test]
+fn each_sketch_arena_reads_strictly() {
+    let written = to_value(&sketch_arenas());
+    for arena in SKETCH_ARENAS {
+        let mut omitted = written.clone();
+        omitted.as_object_mut().unwrap().remove(arena);
+        refuses::<Design>(&omitted.to_string());
+        let mut null = written.clone();
+        null[arena] = serde_json::Value::Null;
+        refuses::<Design>(&null.to_string());
+        let mut unknown = written.clone();
+        unknown[arena][0]["colour"] = json!(3);
+        refuses::<Design>(&unknown.to_string());
+    }
 }
