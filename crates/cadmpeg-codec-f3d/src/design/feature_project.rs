@@ -1268,10 +1268,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     pitch: cadmpeg_ir::scalar::PositiveLength::new(
                                         construction.pitch.get() * DESIGN_LENGTH_TO_MILLIMETRE,
                                     ),
-                                    modeled: construction
-                                        .extended
-                                        .as_ref()
-                                        .map(|extended| extended.modeled),
+                                    modeled: Some(construction.modeled),
                                     extent,
                                 },
                             ))
