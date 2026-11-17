@@ -5259,10 +5259,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Draft) => {
-                    matches!(
-                        group.role(),
-                        DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
-                    ) && group.extrude_role().is_none()
+                    (matches!(group.role(), DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21)
+                        || (group.role() == DesignOperandRole::BODIES_B
+                            && scope.draft_operation().and_then(|operation| operation.flags)
+                                .and_then(|flags| flags.parting).is_some_and(|parting| {
+                                    parting.tool.value == group.record_index
+                                        || parting.fixed_edges.is_some_and(|fixed| fixed.value == group.record_index)
+                                }))) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::ReplaceFace) => {
                     matches!(

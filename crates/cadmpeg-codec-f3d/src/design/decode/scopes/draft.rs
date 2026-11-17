@@ -115,9 +115,8 @@ fn draft_flags(
 ) -> Result<Option<DesignDraftFlags>, ()> {
     let start = usize::try_from(scope.byte_offset()).map_err(|_| ())?;
     let length = usize::try_from(scope.frame_length()).map_err(|_| ())?;
-    let frame = bytes
-        .get(start..start.checked_add(length).ok_or(())?)
-        .ok_or(())?;
+    let end = start.checked_add(length).ok_or(())?.min(bytes.len());
+    let frame = bytes.get(start..end).ok_or(())?;
     let names_lanes = frame.get(prefix::ZERO_RUN_10..prefix::FORM) == Some(&[0; 10])
         && View::u32_le_at(frame, prefix::FORM) == Some(prefix::FORM_VALUE)
         && matches!(View::u32_le_at(frame, prefix::ANCHOR_KIND), Some(1..=3))
