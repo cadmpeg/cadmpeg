@@ -3290,7 +3290,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
 
-### DR-657. Design role of saved free edges
+### DR-790. Design role of saved free edges
 
 **Question.** Which Design meaning does a saved free edge of an ASM BREP blob have: visible model geometry of the component, or an edge that the kernel keeps for a timeline feature?
 
