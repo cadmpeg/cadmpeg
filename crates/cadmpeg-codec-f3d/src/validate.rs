@@ -7753,7 +7753,7 @@ fn validate_face_operands<'a>(
                                     .and_then(|index| {
                                         header_offset_claims.get(&(native_stream, index))
                                     })
-                                    .is_none_or(|range| range.0 >= frame.end_offset)
+                                    .is_none_or(|range| range.0 == frame.end_offset)
                                 && header_index_claims
                                     .get(&(native_stream, frame.end_offset))
                                     .is_none_or(|range| {
