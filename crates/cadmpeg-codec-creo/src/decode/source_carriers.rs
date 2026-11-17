@@ -1170,7 +1170,10 @@ mod tests {
             25.4
         );
         assert_eq!(
-            ir.model.occurrences[0].transform.unwrap().affine_rows()[0][3],
+            ir.model.occurrences[0]
+                .transform
+                .expect("occurrence transform")
+                .affine_rows()[0][3],
             50.8
         );
     }

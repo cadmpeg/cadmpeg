@@ -855,7 +855,8 @@ pub(crate) struct Expanded {
 
 /// Expands the instance tree of `definitions` and `occurrences` as
 /// [`own_once`] found it, each instance at the values its top-level
-/// occurrence's overrides give it.
+/// occurrence's overrides give it. An expansion past the default entity
+/// limit, which bounds the decoder's own, is refused.
 pub(crate) fn expand(
     definitions: &[ProductDefinition],
     occurrences: &[Occurrence],
@@ -899,6 +900,7 @@ pub(crate) fn expand(
         })
         .collect::<Vec<_>>();
     stack.reverse();
+    let limits = cadmpeg_core::decode::ResourceLimits::default();
     let mut seen = BTreeSet::new();
     while let Some(pending) = stack.pop() {
         let Some(&occurrence) = occurrence_at.get(pending.occurrence.as_str()) else {
@@ -912,8 +914,13 @@ pub(crate) fn expand(
                 mint(format!("{namespace}#{parent}:{own}"))?
             }
         };
-        if seen.len() >= occurrences.len().saturating_mul(64) || !seen.insert(instance.clone()) {
+        if !seen.insert(instance.clone()) {
             continue;
+        }
+        if cadmpeg_core::decode::u64_from_index(seen.len()) > limits.max_entities {
+            return Err(CodecError::malformed(
+                "the expanded F3D instance tree exceeds the entity limit",
+            ));
         }
         let mut copy = occurrence.clone();
         copy.id = instance.clone();

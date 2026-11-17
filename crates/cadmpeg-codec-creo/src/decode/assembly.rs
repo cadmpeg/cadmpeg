@@ -21,7 +21,7 @@ use super::native::annotate;
 use super::source_carriers::SourceUnitCarriers;
 
 /// Whether the `#UGC:2` header line declares an assembly model.
-pub(crate) fn declares_assembly(version_line: &str) -> bool {
+pub(super) fn declares_assembly(version_line: &str) -> bool {
     version_line.split_ascii_whitespace().nth(1) == Some("ASSEMBLY")
 }
 
