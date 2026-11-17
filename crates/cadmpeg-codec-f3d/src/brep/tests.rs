@@ -36,7 +36,7 @@ fn generic_tag_attribute(
 ) -> SourceAttribute {
     SourceAttribute {
         id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
-        target,
+        target: target.into(),
         name: "ATTRIB_CUSTOM-attrib".into(),
         values: [
             AttributeValue::String("generic_tag_attrib_def".into()),

@@ -386,7 +386,7 @@ fn legacy_model() -> CadIr {
         model.model.attributes.iter_mut().zip(attributes)
     {
         attribute.name = class.into();
-        attribute.target = face(target);
+        attribute.target = face(target).into();
         attribute.values.truncate(5);
         attribute.values.extend(
             [38, 1, generator, -1]
@@ -454,7 +454,8 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     let mut side = duplicate_side.model.attributes[2].clone();
     side.target = AttributeTarget::Face(
         serde_json::from_value(json!("test:model:face#f3")).expect("face id"),
-    );
+    )
+    .into();
     side.values[7] = AttributeValue::Integer(17);
     duplicate_side.model.attributes[3] = side;
     assert!(check(&duplicate_side).is_none());

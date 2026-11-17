@@ -31,11 +31,9 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         if refs_valid {
             'groups: for targets in drawing.relationships.values() {
                 for target in targets {
-                    if let Some(id) = target.local_target() {
-                        if !all_ids.contains(id) {
-                            refs_valid = false;
-                            break 'groups;
-                        }
+                    if !target.target.resolves(ir, |id| all_ids.contains(id)) {
+                        refs_valid = false;
+                        break 'groups;
                     }
                 }
             }

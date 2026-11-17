@@ -730,7 +730,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
     for over in &body_overrides {
         if bindings.iter().any(
-            |binding| matches!(&binding.target, AppearanceTarget::Body(body) if body == &over.body),
+            |binding| matches!(&binding.target.entity, AppearanceTarget::Body(body) if body == &over.body),
         ) {
             continue;
         }
@@ -742,7 +742,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 over.entity_suffix,
                 over.visual_guid.identity_key(),
             ),
-            target: AppearanceTarget::Body(over.body.clone()),
+            target: AppearanceTarget::Body(over.body.clone()).into(),
             appearance: appearance.id.clone(),
             source_entity_id: None,
             object_type: (object_types.get(&over.entity_suffix).map(String::as_str))
@@ -1540,7 +1540,7 @@ fn bind_bodies(
                     "F3D appearance binding identity is invalid: {error}"
                 ))
             })?,
-            target: AppearanceTarget::Body(body),
+            target: AppearanceTarget::Body(body).into(),
             appearance: appearance.id.clone(),
             source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
             object_type: (object_types

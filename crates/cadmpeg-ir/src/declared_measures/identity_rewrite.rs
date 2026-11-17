@@ -6,7 +6,8 @@ use super::{DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, Declar
 rewrite_enum!(DeclaredTarget, []; {
     Definition {definition},
     Bodies {bodies},
-    Unresolved {},
+    State(field0),
+    Unresolved,
 });
 rewrite_enum!(DeclaredQuantity, []; {
     Volume {value},

@@ -221,7 +221,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Curve(_)
         )));
     assert!(result
@@ -230,7 +230,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Surface(_)
         )));
     assert!(result
@@ -239,7 +239,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Point(_)
         )));
     assert!(!result
@@ -268,7 +268,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            &binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Source { source_id } if source_id == "#6"
         )));
     assert!(result.ir().geometry.curves.iter().any(|curve| matches!(

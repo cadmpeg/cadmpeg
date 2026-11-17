@@ -474,7 +474,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, &owner, "appearance", binding.appearance.as_str());
         }
-        match &binding.target {
+        match &binding.target.entity {
             AppearanceTarget::Body(body)
                 if ids
                     .bodies(body.as_str(), crate::index::StandardIndex)
@@ -550,12 +550,34 @@ pub(super) fn check_references(
             _ => {}
         }
     }
+    let configurations = ir
+        .design
+        .configurations
+        .iter()
+        .map(|configuration| configuration.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let parameters = ir
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
     for attribute in &ir.model.attributes {
-        use crate::attributes::AttributeTarget;
+        use crate::attributes::{AttributeTarget, AttributeValue};
 
         let owner = attribute.id.as_str();
-        match &attribute.target {
+        for value in &attribute.values {
+            if let AttributeValue::Parameter(id) = value {
+                if !parameters.contains(id.as_str()) {
+                    ref_error(findings, owner, "parameter", id.as_str());
+                }
+            }
+        }
+        match &attribute.target.entity {
             AttributeTarget::Document => {}
+            AttributeTarget::Configuration(id) if !configurations.contains(id.as_str()) => {
+                ref_error(findings, owner, "configuration", id.as_str());
+            }
             AttributeTarget::Body(id)
                 if ids
                     .bodies(id.as_str(), crate::index::StandardIndex)
