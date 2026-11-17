@@ -3469,40 +3469,26 @@ pub(crate) fn bind_sketch_feature_geometry(
                 let Some(spatial) = spatial else {
                     break 'feature_edit;
                 };
-                if spatial.profiles.is_empty() {
-                    let Some(profile_operand) = scope.extrude_profile() else {
-                        break 'feature_edit;
-                    };
-                    let Some(stream) = native_stream(&scope.id) else {
-                        break 'feature_edit;
-                    };
-                    // The spatial carrier has no closed loop that can be represented
-                    // by a profile index. Keep the exact profile frame as a native
-                    // selection instead of retaining the provisional planar ID.
-                    let sketch_id = spatial.id.clone();
-                    let selection = format!(
-                        "{}{}{}",
-                        stream,
-                        ":design-record-header#",
-                        profile_operand.byte_offset()
-                    );
-                    *profile =
-                        match ProfileRef::spatial_sketch_selection(sketch_id, vec![selection]) {
-                            Ok(profile) => profile,
-                            Err(_) => {
-                                ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
-                            }
-                        };
-                    break 'feature_edit;
-                }
-                let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
+                let Some(profile_operand) = scope.extrude_profile() else {
+                    // Without a profile operand, the selection groups of the
+                    // scope resolve the spatial profiles later.
                     break 'feature_edit;
                 };
-                let mut profiles = Vec::new();
-                for profile_index in 0..profile_count {
-                    profiles.push(profile_index);
-                }
-                *profile = match ProfileRef::spatial_sketch_profiles(spatial.id.clone(), profiles) {
+                let Some(stream) = native_stream(&scope.id) else {
+                    break 'feature_edit;
+                };
+                // Keep the exact profile frame as a native selection instead of
+                // the provisional planar ID. Profile-selection binding replaces
+                // it with spatial profile indices only when the stored region
+                // selection and the Extrude transition prove them.
+                let sketch_id = spatial.id.clone();
+                let selection = format!(
+                    "{}{}{}",
+                    stream,
+                    ":design-record-header#",
+                    profile_operand.byte_offset()
+                );
+                *profile = match ProfileRef::spatial_sketch_selection(sketch_id, vec![selection]) {
                     Ok(profile) => profile,
                     Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())),
                 };
