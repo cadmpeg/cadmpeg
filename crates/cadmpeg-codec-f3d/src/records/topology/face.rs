@@ -523,7 +523,11 @@ struct DesignFaceOperandWire {
     next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     next_byte_offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_registered_recipe_frame"
+    )]
     registered_recipe_frame: Option<RegisteredFaceRecipeFrame>,
 }
 
@@ -942,6 +946,12 @@ fn deserialize_face_recipe_postlude<'de, D: serde::Deserializer<'de>>(
         )),
     }
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_registered_recipe_frame,
+    RegisteredFaceRecipeFrame,
+    "registered_recipe_frame"
+);
 
 cadmpeg_core::named_optional_field!(deserialize_group_record_index, u32, "group_record_index");
 

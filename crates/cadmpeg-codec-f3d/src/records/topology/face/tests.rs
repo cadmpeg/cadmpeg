@@ -225,6 +225,9 @@ fn registered_recipe_frame_borrowed_and_owned_wire_match() {
         serde_json::to_vec(&operand).unwrap(),
         serde_json::to_vec(&owned).unwrap()
     );
+    let mut null = serde_json::to_value(&operand).unwrap();
+    null["registered_recipe_frame"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<super::DesignFaceOperand>(null).is_err());
 }
 
 #[test]
