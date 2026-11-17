@@ -3146,6 +3146,7 @@ mod tests {
                 })
                 .collect(),
             changed_preceding_face_slots: Vec::new(),
+            preceding_surface: None,
         }
     }
 

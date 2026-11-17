@@ -33,7 +33,7 @@ fn member_scoped_literal_fact_does_not_invent_a_configuration_name_or_cached_val
     let (rows, notes, losses) = facts(&[(MEMBER, source.as_bytes())]);
     assert!(losses.is_empty());
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].target, AttributeTarget::Document);
+    assert_eq!(rows[0].target, AttributeTarget::Document.into());
     assert_eq!(rows[0].name, ATTRIBUTE_NAME);
     assert_eq!(
         rows[0].values,
@@ -267,7 +267,7 @@ fn legacy_compound_saved_strings_keep_physical_namespaces_and_withhold_formula_b
     );
     assert_eq!(rows.len(), 4);
     for row in &rows {
-        assert_eq!(row.target, AttributeTarget::Document);
+        assert_eq!(row.target, AttributeTarget::Document.into());
         assert_eq!(row.name, ATTRIBUTE_NAME);
         assert_ne!(row.values[4], AttributeValue::String("Mass".into()));
         assert_eq!(row.values[2], AttributeValue::String(FMTID.into()));

@@ -770,7 +770,7 @@ impl<'a> SemanticIndex<'a> {
                     faces: annotation
                         .targets
                         .iter()
-                        .filter_map(|target| match target {
+                        .filter_map(|target| match &target.entity {
                             PmiTarget::Face { face } => Some(face),
                             _ => None,
                         })

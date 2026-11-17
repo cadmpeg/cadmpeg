@@ -90,7 +90,7 @@ pub(super) fn check_presentation(ids: &ModelIndex<'_>, findings: &mut Vec<Findin
     });
     for layer in &ir.model.presentation_layers {
         for item in &layer.items {
-            let resolved = match item {
+            let resolved = match &item.entity {
                 PresentationItem::Body { body } => {
                     ids.bodies(body.as_str(), StandardIndex).is_some()
                 }

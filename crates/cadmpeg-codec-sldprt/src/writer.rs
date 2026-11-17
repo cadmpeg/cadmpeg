@@ -509,6 +509,7 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         solver_settings: Omitted,
         declared_measures: Omitted,
         design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 }
 
@@ -1362,7 +1363,7 @@ fn patch_retained_swobjects_metadata(
             Ok(())
         };
         if attribute.name == "configuration_manager"
-            && attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+            && attribute.target.entity == cadmpeg_ir::attributes::AttributeTarget::Document
             && crate::metadata::configuration_manager::values(payload, offset)
                 .is_some_and(|values| attribute.values == values.map(AttributeValue::Integer))
         {
@@ -2126,7 +2127,7 @@ fn metadata_payloads(
     let mut objects = Vec::new();
     let mut unit_code = None;
     for attribute in metadata_attributes(ir) {
-        if attribute.target != AttributeTarget::Document {
+        if attribute.target.entity != AttributeTarget::Document {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer does not support entity attributes".into(),
             ));
@@ -2865,7 +2866,7 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
         .collect::<HashMap<_, _>>();
     let mut selected: Option<(&str, Color)> = None;
     for binding in &ir.model.appearance_bindings {
-        let AppearanceTarget::Body(_) = &binding.target else {
+        let AppearanceTarget::Body(_) = &binding.target.entity else {
             continue;
         };
         let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
@@ -3678,7 +3679,7 @@ pub(crate) fn face_colors(
         .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))
         .collect::<HashMap<_, _>>();
     for binding in &ir.model.appearance_bindings {
-        let AppearanceTarget::Face(face) = &binding.target else {
+        let AppearanceTarget::Face(face) = &binding.target.entity else {
             continue;
         };
         let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
@@ -4537,7 +4538,8 @@ mod nurbs_write_tests {
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
                 source_id: cadmpeg_core::text::NonBlankString::new("F1")
                     .expect("nonempty source identity"),
-            }],
+            }
+            .into()],
             definition: cadmpeg_ir::PmiDefinition::Datum {
                 identification: "A".into(),
             },

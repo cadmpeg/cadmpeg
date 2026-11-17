@@ -58,8 +58,10 @@
           "id": "usd:stage:appearance-binding#/Root/Panel",
           "source_entity_id": "/Root/Looks/Red",
           "target": {
-            "kind": "tessellation",
-            "value": "usd:stage:tessellation#/Root/Panel"
+            "entity": {
+              "kind": "tessellation",
+              "value": "usd:stage:tessellation#/Root/Panel"
+            }
           }
         },
         {
@@ -68,10 +70,12 @@
           "id": "usd:stage:subset-binding#/Root/Panel:/Root/Panel/Left",
           "source_entity_id": "/Root/Looks/Textured",
           "target": {
-            "kind": "triangle_group",
-            "value": {
-              "group": "/Root/Panel/Left",
-              "tessellation": "usd:stage:tessellation#/Root/Panel"
+            "entity": {
+              "kind": "triangle_group",
+              "value": {
+                "group": "/Root/Panel/Left",
+                "tessellation": "usd:stage:tessellation#/Root/Panel"
+              }
             }
           }
         }
@@ -493,7 +497,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
