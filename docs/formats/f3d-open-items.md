@@ -2924,11 +2924,11 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which vector defines the signed `Side1Offset` of a one-sided face-target Extrude, and how is travel selected when the target lies behind the start plane?
 
-**Known.** The Runice GT2 20T B5 9mm design stores Extrude record `1424` with profile normal `+Z`, profile offset `0.75` cm, direction `1`, direction reversal `0`, and `Side1Offset = -0.15` cm. Its ASM transition from state `6` to state `22` inserts plane face `709` at z=7.5 mm, plane face `394` at z=18.5 mm, and 120 cylindrical side faces with boundary z coordinates from 7.5 to 18.5 mm. The input state has planar annular faces `3465` at z=0 and `3484` at z=20 mm. The termination operand carries both faces among its recipe candidates. The decoder projects face `3465` as the historical termination. The rear vertex upper brace design stores Extrude record `4140` with profile normal `+Z`, target face `4051` at z=8 mm, and `Side1Offset = 1.6` cm; its transition inserts plane face `4744` at z=24 mm. The travel, profile normal, and target surface normal are parallel in that case.
+**Known.** The Runice GT2 20T B5 9mm design stores Extrude record `1424` with profile normal `+Z`, profile offset `0.75` cm, direction `1`, direction reversal `0`, and `Side1Offset = -0.15` cm. Its ASM transition from state `6` to state `22` inserts plane face `709` at z=7.5 mm, plane face `394` at z=18.5 mm, and 120 cylindrical side faces with boundary z coordinates from 7.5 to 18.5 mm. The input state has planar annular faces `3465` at z=0 and `3484` at z=20 mm. The termination operand carries both faces among its recipe candidates. The decoder projects face `3484` as the historical termination: the z=20 mm target with a displacement of -1.5 mm along `+Z` gives the inserted z=18.5 mm cap. The rear vertex upper brace design stores Extrude record `4140` with profile normal `+Z`, target face `4051` at z=8 mm, and `Side1Offset = 1.6` cm; its transition inserts plane face `4744` at z=24 mm. The travel, profile normal, and target surface normal are parallel in that case.
 
-**Need.** A termination-recipe rule that selects the target from these candidates, and independent transitions with a nonzero offset whose profile normal, oriented travel, and target surface normal distinguish the possible sign rules. A target behind the start plane must also distinguish the direction-reversal setting from travel toward the target.
+**Need.** Independent transitions with a nonzero offset whose profile normal, oriented travel, and target surface normal distinguish the possible sign rules. A target behind the start plane must also distinguish the direction-reversal setting from travel toward the target.
 
-**Conflict.** The projected z=0 target and a signed displacement of magnitude 1.5 mm give termination planes at z=-1.5 or z=+1.5 mm. The transition terminates at z=18.5 mm. The z=20 candidate gives that plane with a displacement of -1.5 mm along `+Z`.
+**Conflict.** None.
 
 **Note.** The transition travels along `+Z` and agrees with direction reversal `0`. The decoder source property `extrude_to_distance = 7.5` equals the start-plane offset in this transition.
 
@@ -3306,21 +3306,11 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which record carries the curve of a profile loop entry when no sketch-curve record of the owning Sketch has the entry's primary identity?
 
-**Known.** A public RailCore II 300ZL design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds curve records for every identity except 231. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 with the same absence. A third design lists fifteen entries under owner 1977; the curve records that carry those identities name owner 1014.
+**Known.** A public RailCore II 300ZL design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds line records for every identity except 231, and one further line record with identity 245 that no entry names. Without 231 the six remaining lines form one closed boundary once the lines 228 and 238 end at the line 241. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 as the only entry of a loop. The Sketch holds circle records with primary identities 352 to 390 in steps of two and none with 392. A third design lists fifteen entries with the even primary identities 314 to 342 under owner 1977. No Sketch placement, curve record, or point record names owner 1977. Five of its identities (326, 330, 332, 340, 342) are carried by curve records of owner 1014, a Sketch with its own placement and selection.
 
-**Need.** A stored carrier or a derivation rule for the absent curves, and the owner join for the third design.
+**Need.** A stored carrier or a derivation rule for the absent curves, and the Sketch that owner 1977 names.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
-
-### DR-656. Sketch curve records with a nested geometry record
-
-**Question.** Which field of a sketch-curve record that stores no inline geometry gives the curve's geometry?
-
-**Known.** Public RailCore II 300ZL curve records of a class with `crv_primary_id` and `crv_secondary_id` followed by eight `0xff` bytes, a nested class record, and typed references store no f64 line or arc values at the geometry offset. Their profile selections resolve to identities that have no neutral sketch entity.
-
-**Need.** The geometry carrier of these records.
-
-**Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
 
 ### DR-791. Placement carriers of 393- and 399-byte Component Insert scopes
 
@@ -3352,6 +3342,16 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder resolves a planar frame whose nested selection has a member with a nonzero secondary identity as a frame without a nested selection.
 
+### DR-810. ReplaceFace control and partial support selections
+
+**Question.** Does the prologue Boolean expand the target selection to tangent faces, and which selection applies when a referenced support definition is incomplete or names a construction plane, and what does the trailing identifier select?
+
+**Known.** The prologue retains a Boolean, separate ordered replacement and target group runs, and a trailing identifier. Replacement groups use roles `0x09` or `0x21`; target groups use role `0x10`.
+
+**Need.** Controlled saves that change tangent chaining, construction-plane support and the trailing identifier independently, with complete definitions for each selected group.
+
+**Note.** `feature.replace-face-tangent-chain-assumed` retains the Boolean as target tangent expansion. `feature.replace-face-frame-assumed` uses owned group roles when the prefix is unresolved. `feature.replace-face-selection-assumed` keeps scope selections for incomplete or ambiguous definitions. `feature.replace-face-groups-aggregated-assumed` keeps several group references as one scope selection. `feature.replace-face-overlap-unresolved` retains native selectors when the resolved memberships overlap. `feature.replace-face-support-assumed` retains entity support through its native group. `feature.replace-face-identity-assumed` retains a nonnull identifier as auxiliary metadata.
+
 ### DR-665. Planar face of an Extrude profile selection with an unbound member identity
 
 **Question.** Which planar face does an Extrude profile selection member select when its local identity is bound to no ASM entity of the history?
@@ -3372,12 +3372,12 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** `f3d.md` §3.1 "A local occurrence is a child of each occurrence" excludes saved free-edge bodies from component body coverage. A saved free-edge body without a product-definition owner is reported as `assembly.saved-free-edge-body-unowned`.
 
-### DR-810. ReplaceFace control and partial support selections
+### DR-796. Healed DeleteFace transitions that delete more faces than the group has members
 
-**Question.** Does the prologue Boolean expand the target selection to tangent faces, and which selection applies when a referenced support definition is incomplete or names a construction plane, and what does the trailing identifier select?
+**Question.** Which deleted faces does a one-member healed `DeleteFace` group select when its transition deletes several faces?
 
-**Known.** The prologue retains a Boolean, separate ordered replacement and target group runs, and a trailing identifier. Replacement groups use roles `0x09` or `0x21`; target groups use role `0x10`.
+**Known.** A public RailCore II ZL design stores a healed `DeleteFace` whose role-`0x0000001000000000` group has one bounded-face member. Its single transition deletes four faces of the preceding state, three on planes and one on a cylinder, and updates seven other faces. The member's recipe has four nodes and binds to no complete face boundary of the preceding state. Its recipe references name two of the deleted faces and faces that the transition keeps.
 
-**Need.** Controlled saves that change tangent chaining, construction-plane support and the trailing identifier independently, with complete definitions for each selected group.
+**Need.** The binding rule of this recipe form, or a stored field that separates the selected faces from the faces that healing removes.
 
-**Note.** `feature.replace-face-tangent-chain-assumed` retains the Boolean as target tangent expansion. `feature.replace-face-frame-assumed` uses owned group roles when the prefix is unresolved. `feature.replace-face-selection-assumed` keeps scope selections for incomplete or ambiguous definitions. `feature.replace-face-groups-aggregated-assumed` keeps several group references as one scope selection. `feature.replace-face-overlap-unresolved` retains native selectors when the resolved memberships overlap. `feature.replace-face-support-assumed` retains entity support through its native group. `feature.replace-face-identity-assumed` retains a nonnull identifier as auxiliary metadata.
+**Note.** The group stays native and the decoder reports `feature.face-selection-native`.
