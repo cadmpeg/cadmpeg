@@ -49,9 +49,12 @@ fn placeholder(kind: &str) -> SketchGeometry {
     SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(kind).unwrap())
 }
 
-/// The entities `project_marker_backed_sketches` emits for `markers` of one
-/// sketch feature whose lane holds `payload`.
-fn projected_entities(markers: Vec<SketchInputEntity>, payload: Vec<u8>) -> Vec<SketchEntity> {
+/// The entities and held arc handles `project_marker_backed_sketches` emits
+/// for `markers` of one sketch feature whose lane holds `payload`.
+fn projected_entities(
+    markers: Vec<SketchInputEntity>,
+    payload: Vec<u8>,
+) -> (Vec<SketchEntity>, Vec<SketchEntity>) {
     let histories = vec![FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -112,6 +115,7 @@ fn projected_entities(markers: Vec<SketchInputEntity>, payload: Vec<u8>) -> Vec<
     }];
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
+    let mut held = Vec::new();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -124,16 +128,17 @@ fn projected_entities(markers: Vec<SketchInputEntity>, payload: Vec<u8>) -> Vec<
         &mut features,
         &mut sketches,
         &mut entities,
+        &mut held,
         &histories,
         &lanes,
     )
     .expect("marker profile projection fits service policy");
-    entities
+    (entities, held)
 }
 
 #[test]
 fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
-    let mut entities = projected_entities(
+    let (mut entities, held) = projected_entities(
         vec![
             input_marker("point", 0, SketchInputKind::Point, Some([0.001, 0.002])),
             input_marker("curve", 1, SketchInputKind::LineOrCircle, None),
@@ -150,7 +155,7 @@ fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
         .collect::<Vec<_>>();
 
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&mut entities, &mut losses);
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
 
     assert_eq!(
         entities
@@ -197,12 +202,9 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
             "degenerate",
             placeholder("sldprt:marker-geometry:degenerate-line"),
         ),
-        entity("point", placeholder("sldprt:marker-geometry:0")),
-        entity("constrained", placeholder("sldprt:marker-geometry:3")),
-        entity("other", placeholder("sldprt:marker-geometry:9")),
     ];
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&mut entities, &mut losses);
+    finalize_unread_marker_entities(&mut entities, Vec::new(), &mut losses);
 
     assert_eq!(entities[0].geometry, line);
     assert_eq!(entities[1].geometry, source_native);
@@ -211,12 +213,6 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
         Some("sldprt:line-or-circle-handle")
     );
     assert_eq!(native_kind(&entities[3]), Some("sldprt:arc-handle"));
-    assert_eq!(native_kind(&entities[5]), Some("sldprt:point-handle"));
-    assert_eq!(
-        native_kind(&entities[6]),
-        Some("sldprt:constrained-point-handle")
-    );
-    assert_eq!(native_kind(&entities[7]), Some("sldprt:marker-handle"));
     assert_eq!(
         native_kind(&entities[4]),
         Some("sldprt:line-or-circle-handle")
@@ -230,9 +226,6 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
             SldprtLossCode::SketchHandleUnresolved.kind(),
             SldprtLossCode::SketchHandleUnresolved.kind(),
             SldprtLossCode::SketchLineDegenerate.kind(),
-            SldprtLossCode::SketchHandleUnresolved.kind(),
-            SldprtLossCode::SketchHandleUnresolved.kind(),
-            SldprtLossCode::SketchHandleUnresolved.kind(),
         ]
     );
     assert!(losses[2].message.contains("marker-degenerate coincide"));
@@ -266,10 +259,15 @@ fn inline_arc_record(center: [f64; 2], start: [f64; 2], end: [f64; 2]) -> Vec<u8
 
 #[test]
 fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
-    let arc_marker = || input_marker("arc", 0, SketchInputKind::Arc, Some([0.0, 0.0]));
+    let markers = || {
+        vec![
+            input_marker("arc", 0, SketchInputKind::Arc, Some([0.0, 0.0])),
+            input_marker("point", 1, SketchInputKind::Point, Some([0.002, 0.003])),
+        ]
+    };
 
-    let resolved = projected_entities(
-        vec![arc_marker()],
+    let (resolved, _) = projected_entities(
+        markers(),
         inline_arc_record([0.0, 0.0], [0.001, 0.0], [0.0, 0.001]),
     );
     assert!(
@@ -285,18 +283,28 @@ fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
 
     // The end lies 1e-12 mm from the start: distinct when read, one point at
     // the sketch quantum, so center and endpoints define no minor arc.
-    let mut entities = projected_entities(
-        vec![arc_marker()],
+    let (mut entities, held) = projected_entities(
+        markers(),
         inline_arc_record([0.0, 0.0], [0.001, 0.0], [0.001, 1.0e-15]),
     );
+    assert!(
+        entities
+            .iter()
+            .all(|entity| entity.native_ref.as_deref() != Some("arc")),
+        "the sketch-geometry passes never see the arc handle"
+    );
+    let [held_arc] = held.as_slice() else {
+        panic!("the arc handle keeps its entity");
+    };
+    assert_eq!(held_arc.native_ref.as_deref(), Some("arc"));
+    let id = held_arc.id().clone();
+
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
     let arc = entities
         .iter()
         .position(|entity| entity.native_ref.as_deref() == Some("arc"))
-        .expect("the arc handle keeps its entity");
-    let id = entities[arc].id().clone();
-
-    let mut losses = Vec::new();
-    finalize_unread_marker_entities(&mut entities, &mut losses);
+        .expect("finalize adds the held arc handle to its sketch");
 
     assert_eq!(entities[arc].id(), &id);
     assert_eq!(native_kind(&entities[arc]), Some("sldprt:arc-handle"));
