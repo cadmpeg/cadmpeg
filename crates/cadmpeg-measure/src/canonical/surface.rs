@@ -247,6 +247,32 @@ impl<'ir> NurbsChart<'ir> {
         })
     }
 
+    /// The model points to which a whole `v` side of the pole grid
+    /// collapses: along such a side the surface is one point and `u` is not
+    /// defined.
+    pub(crate) fn collapsed_v_sides(&self, tolerance: f64) -> Vec<Point3> {
+        let (columns, rows) = (self.surface.u_count(), self.surface.v_count());
+        let mut points = Vec::new();
+        let Some(last) = rows.checked_sub(1) else {
+            return points;
+        };
+        for side in [0, last] {
+            let Some(first) = self.surface.pole(0, side) else {
+                continue;
+            };
+            let first = self.placement.point(first.get());
+            let collapsed = (1..columns).all(|column| {
+                self.surface.pole(column, side).is_some_and(|pole| {
+                    self.placement.point(pole.get()).distance(first) <= tolerance
+                })
+            });
+            if collapsed && !points.contains(&first) {
+                points.push(first);
+            }
+        }
+        points
+    }
+
     pub(crate) fn closed_domain(&self, tolerance: f64) -> bool {
         let counts = [self.surface.u_count(), self.surface.v_count()];
         let degrees = [self.surface.u_degree(), self.surface.v_degree()];
@@ -724,16 +750,26 @@ impl Chart<'_> {
         }
     }
 
-    /// Whether `point` lies within `tolerance` of a point where `u` is not
-    /// defined: a cone apex or a sphere pole.
-    pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
+    /// The points where `u` is not defined: a cone apex, the poles of a
+    /// closed chart, and the points to which a whole `v` side of a NURBS
+    /// pole grid collapses within `tolerance`.
+    pub(crate) fn singular_points(&self, tolerance: f64) -> impl Iterator<Item = Point3> {
+        let collapsed = match self {
+            Self::Nurbs(nurbs) => nurbs.collapsed_v_sides(tolerance),
+            _ => Vec::new(),
+        };
         self.apex()
-            .is_some_and(|(_, apex)| apex.distance(point) <= tolerance)
-            || self.poles().is_some_and(|poles| {
-                poles
-                    .iter()
-                    .any(|(_, pole)| pole.distance(point) <= tolerance)
-            })
+            .map(|(_, apex)| apex)
+            .into_iter()
+            .chain(self.poles().into_iter().flatten().map(|(_, pole)| pole))
+            .chain(collapsed)
+    }
+
+    /// Whether `point` lies within `tolerance` of one of the
+    /// [`singular_points`](Self::singular_points).
+    pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
+        self.singular_points(tolerance)
+            .any(|singular| singular.distance(point) <= tolerance)
     }
 
     /// The profile span of a closed chart.

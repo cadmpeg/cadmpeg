@@ -719,6 +719,14 @@ pub(crate) enum F3dLossCode {
     FeatureFaceGroupsMethodUnmapped,
     FeatureFaceGroupsBoundaryDistanceAssumed,
     FeatureFaceGroupsSettingUnassigned,
+    ReplaceFaceFrameAssumed,
+    ReplaceFaceGroupsAggregatedAssumed,
+    ReplaceFaceOverlapUnresolved,
+    ReplaceFaceSelectionAssumed,
+    ReplaceFaceTangentChainAssumed,
+    ReplaceFaceSupportAssumed,
+    ReplaceFaceIdentityAssumed,
+    ReplaceFaceFlaggedPrefixWordAssumed,
     SurfaceUntrimFrameAssumed,
     SurfaceUntrimGroupSelectionAssumed,
     SurfaceUntrimStoredLoopGroupsAssumed,
@@ -755,6 +763,12 @@ pub(crate) enum F3dLossCode {
     FeatureCombineToolConsumptionAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
+    #[doc = "A Fillet selection has no decoded radius law or dimension."]
+    FeatureFilletRadiusUnresolved,
+    #[doc = "Fillet source references do not establish complete dimensional bindings."]
+    FeatureFilletReferencesUnresolved,
+    #[doc = "A structurally identified full-round Fillet has an unresolved center."]
+    FeatureFilletFullRoundCenterUnresolved,
     /// A parameter-owned Fillet scope's set list is not an admitted form; its operand groups have no radius assignment.
     FeatureFilletSetListNative,
     /// Extrude scope retains an unassigned extent payload.
@@ -1506,6 +1520,14 @@ impl F3dLossCode {
         Self::FeatureFaceGroupsMethodUnmapped,
         Self::FeatureFaceGroupsBoundaryDistanceAssumed,
         Self::FeatureFaceGroupsSettingUnassigned,
+        Self::ReplaceFaceFrameAssumed,
+        Self::ReplaceFaceGroupsAggregatedAssumed,
+        Self::ReplaceFaceOverlapUnresolved,
+        Self::ReplaceFaceSelectionAssumed,
+        Self::ReplaceFaceTangentChainAssumed,
+        Self::ReplaceFaceSupportAssumed,
+        Self::ReplaceFaceIdentityAssumed,
+        Self::ReplaceFaceFlaggedPrefixWordAssumed,
         Self::SurfaceUntrimFrameAssumed,
         Self::SurfaceUntrimGroupSelectionAssumed,
         Self::SurfaceUntrimStoredLoopGroupsAssumed,
@@ -1529,6 +1551,9 @@ impl F3dLossCode {
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
+        Self::FeatureFilletRadiusUnresolved,
+        Self::FeatureFilletReferencesUnresolved,
+        Self::FeatureFilletFullRoundCenterUnresolved,
         Self::FeatureFilletSetListNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureExtrudeTerminationMissing,
@@ -2388,6 +2413,18 @@ impl F3dLossCode {
             Self::FeatureFaceGroupsSettingUnassigned => {
                 "feature.mesh-face-groups-setting-unassigned"
             }
+            Self::ReplaceFaceFrameAssumed => "feature.replace-face-frame-assumed",
+            Self::ReplaceFaceGroupsAggregatedAssumed => {
+                "feature.replace-face-groups-aggregated-assumed"
+            }
+            Self::ReplaceFaceOverlapUnresolved => "feature.replace-face-overlap-unresolved",
+            Self::ReplaceFaceSelectionAssumed => "feature.replace-face-selection-assumed",
+            Self::ReplaceFaceTangentChainAssumed => "feature.replace-face-tangent-chain-assumed",
+            Self::ReplaceFaceSupportAssumed => "feature.replace-face-support-assumed",
+            Self::ReplaceFaceIdentityAssumed => "feature.replace-face-identity-assumed",
+            Self::ReplaceFaceFlaggedPrefixWordAssumed => {
+                "feature.replace-face-flagged-prefix-word-assumed"
+            }
             Self::SurfaceUntrimFrameAssumed => "feature.surface-untrim-frame-assumed",
             Self::SurfaceUntrimGroupSelectionAssumed => {
                 "feature.surface-untrim-group-selection-assumed"
@@ -2431,6 +2468,11 @@ impl F3dLossCode {
                 "feature.combine-tool-consumption-assumed"
             }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
+            Self::FeatureFilletRadiusUnresolved => "feature.fillet-radius-unresolved",
+            Self::FeatureFilletReferencesUnresolved => "feature.fillet-references-unresolved",
+            Self::FeatureFilletFullRoundCenterUnresolved => {
+                "feature.fillet-full-round-center-unresolved"
+            }
             Self::FeatureFilletSetListNative => "feature.fillet-set-list-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
@@ -3123,6 +3165,14 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::ReplaceFaceFrameAssumed
+            | Self::ReplaceFaceGroupsAggregatedAssumed
+            | Self::ReplaceFaceOverlapUnresolved
+            | Self::ReplaceFaceSelectionAssumed
+            | Self::ReplaceFaceTangentChainAssumed
+            | Self::ReplaceFaceSupportAssumed
+            | Self::ReplaceFaceIdentityAssumed
+            | Self::ReplaceFaceFlaggedPrefixWordAssumed
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
             | Self::SurfaceUntrimStoredLoopGroupsAssumed
@@ -3146,6 +3196,9 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
+            | Self::FeatureFilletRadiusUnresolved
+            | Self::FeatureFilletReferencesUnresolved
+            | Self::FeatureFilletFullRoundCenterUnresolved
             | Self::FeatureFilletSetListNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
@@ -3723,6 +3776,14 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::ReplaceFaceFrameAssumed
+            | Self::ReplaceFaceGroupsAggregatedAssumed
+            | Self::ReplaceFaceOverlapUnresolved
+            | Self::ReplaceFaceSelectionAssumed
+            | Self::ReplaceFaceTangentChainAssumed
+            | Self::ReplaceFaceSupportAssumed
+            | Self::ReplaceFaceIdentityAssumed
+            | Self::ReplaceFaceFlaggedPrefixWordAssumed
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
             | Self::SurfaceUntrimStoredLoopGroupsAssumed
@@ -3746,6 +3807,9 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
+            | Self::FeatureFilletRadiusUnresolved
+            | Self::FeatureFilletReferencesUnresolved
+            | Self::FeatureFilletFullRoundCenterUnresolved
             | Self::FeatureFilletSetListNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
@@ -4440,6 +4504,14 @@ mod tests {
                 "feature.mesh-face-groups-method-unmapped",
                 "feature.mesh-face-groups-boundary-distance-assumed",
                 "feature.mesh-face-groups-setting-unassigned",
+                "feature.replace-face-frame-assumed",
+                "feature.replace-face-groups-aggregated-assumed",
+                "feature.replace-face-overlap-unresolved",
+                "feature.replace-face-selection-assumed",
+                "feature.replace-face-tangent-chain-assumed",
+                "feature.replace-face-support-assumed",
+                "feature.replace-face-identity-assumed",
+                "feature.replace-face-flagged-prefix-word-assumed",
                 "feature.surface-untrim-frame-assumed",
                 "feature.surface-untrim-group-selection-assumed",
                 "feature.surface-untrim-stored-loop-groups-assumed",
@@ -4463,6 +4535,9 @@ mod tests {
                 "feature.combine-operand-list-refused",
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
+                "feature.fillet-radius-unresolved",
+                "feature.fillet-references-unresolved",
+                "feature.fillet-full-round-center-unresolved",
                 "feature.fillet-set-list-native",
                 "feature.extrude-extent-native",
                 "feature.extrude-termination-missing",
