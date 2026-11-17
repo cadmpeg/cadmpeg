@@ -738,7 +738,7 @@ impl ExternalReferenceRecord {
                 path: Some(path.clone()),
                 document_id: self
                     .document_id()
-                    .and_then(|id| cadmpeg_core::text::NonBlankString::new(id)),
+                    .and_then(cadmpeg_core::text::NonBlankString::new),
                 ..ExternalDocument::default()
             },
             ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument {

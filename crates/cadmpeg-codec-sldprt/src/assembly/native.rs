@@ -185,7 +185,7 @@ impl NativeDefinition {
     }
 
     /// The model of the document being decoded, the root definition.
-    pub(super) fn as_root(mut self) -> Self {
+    pub(super) fn into_root(mut self) -> Self {
         self.root = true;
         self
     }
