@@ -5,13 +5,15 @@
 //! PMI, drawing, or presentation record, or a neutral record by its arena;
 //! the `native_ref` of each record; and the expressions an attribute states.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::appearance::AppearanceTarget;
 use crate::attributes::{AttributeTarget, AttributeValue};
 use crate::design::dimension::{ParameterRef, RefTarget};
+use crate::design::edit::eval::{check_types, Type};
 use crate::design::expr::{BinaryOp, Expression, ExpressionToken, MeasureTarget, Neutral, Node};
 use crate::design::selection::Anchor;
+use crate::design::units::ValueKind;
 use crate::document::design_records::DesignRecords;
 use crate::document::CadIr;
 use crate::index::{ModelIndex, StandardIndex};
@@ -27,6 +29,12 @@ pub(super) fn check_appearance_attributes(
     check_native_refs(ir, ids, findings);
     let records = DesignRecords::of(ir);
     let model = ModelRecords::of(ir);
+    let kinds: BTreeMap<&str, &ValueKind> = ir
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| (parameter.id.as_str(), &parameter.kind))
+        .collect();
     for binding in &ir.model.appearance_bindings {
         let owner = binding.id.as_str();
         match &binding.target.entity {
@@ -48,7 +56,14 @@ pub(super) fn check_appearance_attributes(
         }
         for value in attribute.values.iter().flatten() {
             if let AttributeValue::Expression(expression) = value {
-                check_expression(&expression.expression, &records, &model, owner, findings);
+                check_expression(
+                    &expression.expression,
+                    &records,
+                    &model,
+                    &kinds,
+                    owner,
+                    findings,
+                );
             }
         }
     }
@@ -254,12 +269,16 @@ fn check_native_refs(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Findin
 /// parameter: its references resolve; a `Source` text holds a text token; a
 /// `Text` node is a comparison's operand, a branch, or the root; no law
 /// parameter or bend variable occurs, since an attribute is neither a law nor
-/// an angle range; and a measure is anchored `Pinned` or `Current`, since no
-/// feature owns an attribute.
+/// an angle range; a measure is anchored `Pinned` or `Current`, since no
+/// feature owns an attribute; and a neutral tree type-checks, every branch of
+/// an `if` included. An attribute declares no kind, so any root type is
+/// admitted. `kinds` gives the kind of each design-root parameter; a v10
+/// parameter or an `External` reference has an unknown type.
 fn check_expression(
     expression: &Expression,
     records: &DesignRecords<'_>,
     model: &ModelRecords<'_>,
+    kinds: &BTreeMap<&str, &ValueKind>,
     owner: &str,
     findings: &mut Vec<Finding>,
 ) {
@@ -296,8 +315,11 @@ fn check_expression(
         }
         Expression::Neutral(Neutral(root)) => root,
     };
+    let mut misplaced = false;
     let mut pending = vec![(root, true)];
     while let Some((node, text_admitted)) = pending.pop() {
+        misplaced |= matches!(node, Node::LawParameter | Node::Bend(_))
+            || matches!(node, Node::Text(_) if !text_admitted);
         match node {
             Node::Text(_) if !text_admitted => error(
                 findings,
@@ -344,6 +366,23 @@ fn check_expression(
             }
             _ => pending.extend(node.operands().map(|operand| (operand, false))),
         }
+    }
+    if misplaced {
+        return;
+    }
+    let type_of = |reference: &ParameterRef| match &reference.target {
+        RefTarget::Parameter(id) => kinds.get(id.as_str()).map_or(Ok(Type::Unknown), |kind| {
+            Type::of_kind(kind)
+                .ok_or_else(|| format!("{id} has the kind {kind:?}, with no neutral value"))
+        }),
+        RefTarget::External { .. } => Ok(Type::Unknown),
+    };
+    if let Err(reason) = check_types(root, &type_of) {
+        error(
+            findings,
+            owner,
+            format_args!("expression does not type-check: {reason}"),
+        );
     }
 }
 
