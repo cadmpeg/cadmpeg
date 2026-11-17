@@ -954,10 +954,14 @@ pub(crate) mod fillet_set_compact_constant {
     pub(crate) const EDGE_GROUP_REFERENCE: usize = 27;
     /// Offset of `radius_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const RADIUS_OWNER_REFERENCE: usize = 59;
+    /// Offset of `radius_owner_padding` (`bytes[4]`). Spec §3.1.
+    pub(crate) const RADIUS_OWNER_PADDING: usize = 70;
     /// Offset of `set_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const SET_ORDINAL: usize = 74;
     /// Offset of `tangency_weight_owner_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const TANGENCY_WEIGHT_OWNER_REFERENCE: usize = 78;
+    /// Offset of `tangency_weight_owner_padding` (`bytes[4]`). Spec §3.1.
+    pub(crate) const TANGENCY_WEIGHT_OWNER_PADDING: usize = 89;
 }
 
 /// Byte offsets for the `thicken_scope_prologue` record.

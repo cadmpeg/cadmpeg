@@ -507,11 +507,13 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
                         region_ordinal: 0,
+                        hole: false,
                         members: vec![profile_region_member(100)],
                     },
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
                         region_ordinal: 0,
+                        hole: false,
                         members: vec![
                             profile_region_member(200),
                             profile_region_member(201),
@@ -1020,11 +1022,13 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
                         region_ordinal: 0,
+                        hole: false,
                         members: vec![profile_region_member(200)],
                     },
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
                         region_ordinal: 0,
+                        hole: false,
                         members: vec![profile_region_member(100)],
                     },
                 ],
