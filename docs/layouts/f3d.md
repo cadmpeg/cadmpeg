@@ -6089,6 +6089,51 @@ Unstated regions:
 
 - `52..131` (79 B): The fixed native prologue continues to its ordered-reference count.
 
+## `move_face_typed_marker_zero_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 211 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The inline-typed marker-zero prologue |
+| 11 | 9 | `prefix_fields` | `bytes[9]` | little | spec | The inline-typed marker-zero prologue |
+| 20 | 1 | `marker` | `u8` | little | spec | The inline-typed marker-zero prologue · value `0` |
+| 21 | 1 | `transform_flag` | `u8` | little | spec | The inline-typed marker-zero prologue · value `1` |
+| 22 | 51 | `transform_reference` | `bytes[51]` | little | spec | The inline-typed marker-zero prologue |
+| 73 | 4 | `reference_flag` | `u32` | little | spec | The inline-typed marker-zero prologue · value `1` |
+| 77 | 51 | `group_reference` | `bytes[51]` | little | spec | The inline-typed marker-zero prologue |
+| 207 | 4 | `reference_count` | `u32` | little | spec | The inline-typed marker-zero prologue |
+
+Unstated regions:
+
+- `128..207` (79 B): The fixed native prologue continues to its ordered-reference count.
+
+## `move_face_typed_marker_one_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 215 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The inline-typed marker-one prologue |
+| 11 | 9 | `prefix_fields` | `bytes[9]` | little | spec | The inline-typed marker-one prologue |
+| 20 | 1 | `marker` | `u8` | little | spec | The inline-typed marker-one prologue · value `1` |
+| 21 | 4 | `zero_word` | `u32` | little | spec | The inline-typed marker-one prologue · value `0` |
+| 25 | 1 | `transform_flag` | `u8` | little | spec | The inline-typed marker-one prologue · value `1` |
+| 26 | 51 | `transform_reference` | `bytes[51]` | little | spec | The inline-typed marker-one prologue |
+| 77 | 4 | `reference_flag` | `u32` | little | spec | The inline-typed marker-one prologue · value `1` |
+| 81 | 51 | `group_reference` | `bytes[51]` | little | spec | The inline-typed marker-one prologue |
+| 211 | 4 | `reference_count` | `u32` | little | spec | The inline-typed marker-one prologue |
+
+Unstated regions:
+
+- `132..211` (79 B): The fixed native prologue continues to its ordered-reference count.
+
 ## `move_marked_transform_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 47 B
