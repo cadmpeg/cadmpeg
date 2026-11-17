@@ -77,8 +77,8 @@
         "geometry": {
           "kind": "solved",
           "value": {
- ÿÿÿÿ       "kind": "line",
-            "origin": {
+            "kind": "line",
+            "origÿÿÿÿ {
               "x": 0.0,
               "y": 0.0,
               "z": 0.0
@@ -271,6 +271,12 @@
     "scopes": [],
     "containers": [],
     "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "parameters": [],
     "spreadsheets": [],
     "sheet_metal_rules": [],

@@ -391,6 +391,61 @@ fn an_omitted_design_arena_is_charged_only_without_v10_design_records() {
     assert!(losses[0].message.contains("`spreadsheets`"), "{losses:?}");
 }
 
+/// An omitted sketch arena of the design home is charged as an omitted
+/// parametric record, and a written one is not.
+#[test]
+fn an_omitted_design_sketch_arena_is_charged() {
+    use crate::design::evaluation::EvaluationStatus;
+    use crate::design::ops::sketch::{Sketch, SketchPlane, SketchSolve, SpatialSketch};
+    use crate::design::options::NativeOptions;
+
+    let solve = || SketchSolve {
+        state: None,
+        status: EvaluationStatus::Current,
+    };
+    let owner = crate::features::FeatureId::mint("test:design:feature#1").unwrap();
+    let mut ir = CadIr::empty();
+    ir.design.sketches.push(Sketch {
+        id: crate::sketches::SketchId::mint("test:design:sketch#1").unwrap(),
+        owner: owner.clone(),
+        name: None,
+        plane: SketchPlane::Block,
+        solve: solve(),
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+        native_ref: None,
+    });
+    ir.design.spatial_sketches.push(SpatialSketch {
+        id: crate::sketches::SpatialSketchId::mint("test:design:spatial-sketch#1").unwrap(),
+        owner,
+        name: None,
+        solve: solve(),
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+        native_ref: None,
+    });
+    let mut dispositions = uniform_dispositions(ArenaDisposition::Omitted);
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 2, "{losses:?}");
+    for (loss, arena) in losses
+        .iter()
+        .zip(["design.sketches", "design.spatial_sketches"])
+    {
+        assert!(loss.message.contains(&format!("`{arena}`")), "{losses:?}");
+        assert_eq!(
+            loss.code.taxonomy(),
+            crate::report::loss::LossTaxonomy::ParametricRecordOmitted
+        );
+    }
+    dispositions.design.spatial_sketches = ArenaDisposition::Written;
+    let losses = coverage_losses(&ir, ArenaCoverage::Declared(dispositions));
+    assert_eq!(losses.len(), 1, "{losses:?}");
+    assert!(
+        losses[0].message.contains("`design.sketches`"),
+        "{losses:?}"
+    );
+}
+
 #[test]
 fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
     let ir = unit_cube().expect("valid unit cube fixture");

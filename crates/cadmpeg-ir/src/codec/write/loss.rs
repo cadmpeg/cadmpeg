@@ -80,6 +80,12 @@ impl ExportLossCode {
             | EntityKind::DesignScope
             | EntityKind::DesignContainer
             | EntityKind::DesignFeature
+            | EntityKind::DesignSketch
+            | EntityKind::DesignSketchEntity
+            | EntityKind::DesignSketchConstraint
+            | EntityKind::DesignSpatialSketch
+            | EntityKind::DesignSpatialSketchEntity
+            | EntityKind::DesignSpatialSketchConstraint
             | EntityKind::DesignParameter
             | EntityKind::DesignSpreadsheet
             | EntityKind::DesignSheetMetalRule

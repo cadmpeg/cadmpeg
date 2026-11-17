@@ -12,4 +12,4 @@ pub mod surface;
 pub mod swept;
 
 #[cfg(test)]
-mod tests;
+pub(in crate::design) mod tests;
