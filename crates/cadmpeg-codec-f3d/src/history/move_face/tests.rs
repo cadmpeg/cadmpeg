@@ -593,3 +593,16 @@ fn moved_faces_of_two_surfaces_or_two_members_state_no_shared_selection() {
     assert_eq!(select_shared(&[1], &[40, 41, 42], &[40, 41, 42]), None);
     assert_eq!(select_shared(&[1, 2], &[40, 41], &[40, 41]), None);
 }
+
+#[test]
+fn a_member_recipe_selection_takes_precedence_over_the_shared_surface_reading() {
+    let shared = || Some(vec![40, 41]);
+    assert_eq!(
+        super::group_selection(None, Some(vec![40]), shared),
+        Some(vec![40])
+    );
+    assert_eq!(
+        super::group_selection(None, None, shared),
+        Some(vec![40, 41])
+    );
+}

@@ -272,6 +272,22 @@ fn recipe_face_selection(
 
 /// The selection that the transitions and the member recipes state. Two
 /// different selections state none.
+/// The selection of a group from its direct transition reading, its member
+/// recipes, and the shared-surface reading. The shared-surface reading is
+/// taken only when neither of the others states a selection.
+fn group_selection(
+    direct: Option<Vec<i64>>,
+    recipes: Option<Vec<i64>>,
+    shared: impl FnOnce() -> Option<Vec<i64>>,
+) -> Option<Vec<i64>> {
+    let moved = match (direct, &recipes) {
+        (Some(direct), _) => Some(direct),
+        (None, None) => shared(),
+        (None, Some(_)) => None,
+    };
+    agreed_selection(moved, recipes)
+}
+
 fn agreed_selection(moved: Option<Vec<i64>>, recipes: Option<Vec<i64>>) -> Option<Vec<i64>> {
     match (moved, recipes) {
         (Some(moved), Some(recipes)) => (moved == recipes).then_some(moved),
@@ -328,15 +344,17 @@ pub(super) fn bind_move_face_selection(
                 && operand.group_record_index() == Some(group.record_index)
         })
         .collect();
-    let moved = history.topology(state).and_then(|output| {
-        let updated = updated_faces(histories, history, state, previous.state_id)?;
-        moved_face_selection(&members, motion, &updated, input, output).or_else(|| {
-            let moved = moved_faces(motion, &updated, input, output)?;
-            shared_surface_selection(&members, &moved, &group_operands, input)
-        })
-    });
     let recipes = recipe_face_selection(&members, &group_operands, input);
-    let Some(faces) = agreed_selection(moved, recipes) else {
+    let output = history.topology(state);
+    let updated = output.and_then(|_| updated_faces(histories, history, state, previous.state_id));
+    let direct = output.zip(updated.as_ref()).and_then(|(output, updated)| {
+        moved_face_selection(&members, motion, updated, input, output)
+    });
+    let Some(faces) = group_selection(direct, recipes, || {
+        let (output, updated) = output.zip(updated.as_ref())?;
+        let moved = moved_faces(motion, updated, input, output)?;
+        shared_surface_selection(&members, &moved, &group_operands, input)
+    }) else {
         return;
     };
     let prefix = crate::ids::feature_input_prefix(feature_id, previous.state_id);
