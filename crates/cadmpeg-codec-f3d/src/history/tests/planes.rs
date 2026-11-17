@@ -415,6 +415,24 @@ fn bound_mirror_plane_with(
     face: i64,
     design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<crate::records::feature::patterns::DesignPlane> {
+    bound_mirror_plane_in(
+        primary_identity,
+        persistent_identity,
+        face,
+        design_types,
+        true,
+    )
+}
+
+/// `bound_mirror_plane_with` for a scope that stores its preceding state
+/// when `stored_previous` is set, and otherwise leaves it to the history.
+fn bound_mirror_plane_in(
+    primary_identity: u64,
+    persistent_identity: Option<u64>,
+    face: i64,
+    design_types: &[crate::records::entity_header::SegmentType],
+    stored_previous: bool,
+) -> Option<crate::records::feature::patterns::DesignPlane> {
     use crate::history_records::AsmHistoricalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -425,7 +443,7 @@ fn bound_mirror_plane_with(
     scope
         .try_edit(|draft| {
             draft.history_state_id = Some(2);
-            draft.previous_history_state_id = Some(1);
+            draft.previous_history_state_id = stored_previous.then_some(1);
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -1180,4 +1198,21 @@ fn an_origin_plane_selection_outranks_a_face_reading_with_a_later_recipe() {
         Some(cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(plane(20), None);
+}
+
+#[test]
+fn a_mirror_scope_without_a_stored_preceding_state_takes_it_from_its_history() {
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let meta = "f3d:Design/MetaStream.dat";
+    let origin = crate::test_support::origin_types::origin_design_types(meta, 39);
+    // Identity 44 is the YZ origin plane.
+    let yz = bound_mirror_plane_in(44, None, 10, &origin, false).expect("origin plane");
+    assert_eq!(*yz.normal().as_raw(), Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(yz.origin().get(), Point3::new(0.0, 0.0, 0.0));
+    // A historical face resolves in the header's preceding state.
+    assert_eq!(
+        bound_mirror_plane_in(10, None, 10, &origin, false),
+        bound_mirror_plane_in(10, None, 10, &origin, true),
+    );
+    assert!(bound_mirror_plane_in(10, None, 10, &origin, false).is_some());
 }
