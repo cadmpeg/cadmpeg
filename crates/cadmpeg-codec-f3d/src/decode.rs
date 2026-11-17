@@ -1753,7 +1753,7 @@ fn design_projection_gaps(
                     profile,
                     ProfileRef::Planar(
                         PlanarProfileRef::Native(_) | PlanarProfileRef::SketchSelection { .. }
-                    )
+                    ) | ProfileRef::SpatialSketchSelection { .. }
                 ) {
                     gaps.profile_selections += 1;
                 }

@@ -1073,7 +1073,7 @@ fn sketch_profile_region_selection_retains_partial_curve_incidence_words() {
     let first_member =
         selection_at + crate::layout::sketch_profile_region_selection_prefix::LEN + 4;
     let incidence = first_member
-        + crate::layout::sketch_profile_region_member::ZERO_WORDS_3
+        + crate::layout::sketch_profile_region_member::ZERO_WORD_AFTER_PRIMARY
         + std::mem::size_of::<[u32; 3]>();
     bytes[incidence + 4..incidence + 8].copy_from_slice(&11u32.to_le_bytes());
     bytes[incidence + 8..incidence + 12].copy_from_slice(&12u32.to_le_bytes());
@@ -1083,6 +1083,33 @@ fn sketch_profile_region_selection_retains_partial_curve_incidence_words() {
     for offset in [incidence + 4, incidence + 8] {
         let mut invalid = bytes.clone();
         invalid[offset..offset + 4].copy_from_slice(&0u32.to_le_bytes());
+        assert!(parse_sketch_profile_region_selection(&invalid, 100, 0).is_none());
+    }
+}
+
+#[test]
+fn sketch_profile_region_member_retains_its_secondary_curve_identity() {
+    use crate::layout::sketch_profile_region_member as member;
+    let (mut bytes, selection_at, _, _) = region_selection_frame();
+    let first_member =
+        selection_at + crate::layout::sketch_profile_region_selection_prefix::LEN + 4;
+    let secondary = first_member + member::CURVE_SECONDARY_ID;
+    bytes[secondary..secondary + 4].copy_from_slice(&247u32.to_le_bytes());
+    let selection = parse_sketch_profile_region_selection(&bytes, 100, 0).unwrap();
+    let parsed = &selection.regions[0].members[0];
+    assert_eq!(
+        parsed.curve_secondary_id.map(std::num::NonZeroU32::get),
+        Some(247)
+    );
+    let round_trip: crate::records::topology::sketch_profile::DesignSketchProfileRegionMember =
+        serde_json::from_value(serde_json::to_value(parsed).unwrap()).unwrap();
+    assert_eq!(&round_trip, parsed);
+    for zero in [
+        member::ZERO_WORD_AFTER_PRIMARY,
+        member::ZERO_WORD_AFTER_SECONDARY,
+    ] {
+        let mut invalid = bytes.clone();
+        invalid[first_member + zero..first_member + zero + 4].copy_from_slice(&1u32.to_le_bytes());
         assert!(parse_sketch_profile_region_selection(&invalid, 100, 0).is_none());
     }
 }

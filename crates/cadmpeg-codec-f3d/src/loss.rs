@@ -651,6 +651,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections assume that an inserted region's holes belong to the selected
     /// profile.
     FeatureProfileRegionHoleInferred,
+    /// Extrude profile selections stated the stored spatial profiles of a
+    /// spatial Sketch frame that the Extrude transition did not certify.
+    FeatureSpatialProfileTransitionAssumed,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -1445,6 +1448,7 @@ impl F3dLossCode {
         Self::FeatureProfileCapCarrierAssumed,
         Self::FeatureProfileHoleBoundaryInferred,
         Self::FeatureProfileRegionHoleInferred,
+        Self::FeatureSpatialProfileTransitionAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::DeleteFaceFrameControlsAssumed,
@@ -2283,6 +2287,9 @@ impl F3dLossCode {
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
             Self::FeatureProfileHoleBoundaryInferred => "feature.profile-hole-boundary-inferred",
             Self::FeatureProfileRegionHoleInferred => "feature.profile-region-hole-inferred",
+            Self::FeatureSpatialProfileTransitionAssumed => {
+                "feature.spatial-profile-transition-assumed"
+            }
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::DeleteFaceFrameControlsAssumed => "feature.delete-face-frame-controls-assumed",
@@ -3058,6 +3065,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeatureProfileRegionHoleInferred
+            | Self::FeatureSpatialProfileTransitionAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::DeleteFaceFrameControlsAssumed
@@ -3656,6 +3664,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeatureProfileRegionHoleInferred
+            | Self::FeatureSpatialProfileTransitionAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::DeleteFaceFrameControlsAssumed
@@ -4371,6 +4380,7 @@ mod tests {
                 "feature.profile-cap-carrier-assumed",
                 "feature.profile-hole-boundary-inferred",
                 "feature.profile-region-hole-inferred",
+                "feature.spatial-profile-transition-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.delete-face-frame-controls-assumed",

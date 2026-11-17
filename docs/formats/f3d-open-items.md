@@ -3395,6 +3395,26 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder retains the uniquely registered point-direction carrier and its readable vector as the most likely interpretation, preserves the original qualifier, and records `feature.split-face-carrier-type-assumed`.
 
+### DR-780. Spatial Sketch frames without a nested region selection
+
+**Question.** Which profiles does an Extrude sketch-profile frame on a spatial Sketch select when the frame stores no nested region selection?
+
+**Known.** Each of seventeen Extrude frames on spatial Sketches in seven public designs stores a nested region selection. Their selected regions include hole loops, loops of projected curves with nonzero secondary identities that bound no spatial profile and loops of two coincident full circles.
+
+**Need.** A frame on a spatial Sketch without a nested selection, and the stored body of its Extrude transition.
+
+**Note.** On a Sketch with more than one profile, the decoder states every distinct profile of such a frame only when the far caps of the Extrude transition certify their union; otherwise the frame stays a native spatial-Sketch selection with `feature.profile-selection-native`. On a Sketch with one profile, and for profiles that the selection groups or a nested region selection name, the decoder states the profiles when the far caps do not certify them, with `feature.spatial-profile-transition-assumed`.
+
+### DR-781. Planar Sketch selections with secondary curve identities
+
+**Question.** Does a nested profile-region selection of a planar Sketch frame whose members store nonzero secondary identities name planar profile loops the same way as one whose members store zero?
+
+**Known.** Such selections occur in planar Sketch frames of twelve or more public designs. A member's primary and secondary values match a curve record's persistent identity pair in the spatial Sketch frames examined.
+
+**Need.** Planar frames with nonzero secondary members whose selected regions are proven against the stored Extrude bodies.
+
+**Note.** The decoder resolves a planar frame whose nested selection has a member with a nonzero secondary identity as a frame without a nested selection.
+
 ### DR-665. Planar face of an Extrude profile selection with an unbound member identity
 
 **Question.** Which planar face does an Extrude profile selection member select when its local identity is bound to no ASM entity of the history?

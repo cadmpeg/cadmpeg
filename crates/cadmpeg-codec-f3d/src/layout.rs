@@ -2859,8 +2859,12 @@ pub(crate) mod sketch_profile_region_member {
     pub(crate) const LEN: usize = 40;
     /// Offset of `curve_primary_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const CURVE_PRIMARY_ID: usize = 4;
-    /// Offset of `zero_words_3` (`u32[3]`, little-endian). Spec §3.1.
-    pub(crate) const ZERO_WORDS_3: usize = 8;
+    /// Offset of `zero_word_after_primary` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD_AFTER_PRIMARY: usize = 8;
+    /// Offset of `curve_secondary_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURVE_SECONDARY_ID: usize = 12;
+    /// Offset of `zero_word_after_secondary` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD_AFTER_SECONDARY: usize = 16;
 }
 
 /// Byte offsets for the `base_feature_class_377_prefix` record.
