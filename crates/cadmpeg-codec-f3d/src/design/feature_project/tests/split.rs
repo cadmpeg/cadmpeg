@@ -766,7 +766,8 @@ fn split_face_conflicting_carrier_qualifier_charges_assumption_and_keeps_vector(
         DesignSplitFaceDirectionReference, DesignSplitFaceMethod,
     };
     use crate::records::identity::Located;
-    use cadmpeg_ir::features::{FeatureOperation, SplitFaceMethod};
+    use cadmpeg_ir::features::surfaces::SplitFaceMethod;
+    use cadmpeg_ir::features::FeatureOperation;
     for (guid, assumed) in [
         ("F2A7590D-6654-4674-B393-A2AEF4FEC48A", false),
         ("00000000-0000-0000-0000-000000000099", true),

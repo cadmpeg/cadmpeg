@@ -330,7 +330,6 @@ impl DesignSplitFaceDirectionReference {
                 ..
             } => {
                 if !crate::bytes::is_guid_hyphenated(target_type_guid)
-                    || inline.is_some_and(|guid| !guid.eq_ignore_ascii_case(target_type_guid))
                     || inline.is_none() && !external_type_guid_present
                 {
                     return None;

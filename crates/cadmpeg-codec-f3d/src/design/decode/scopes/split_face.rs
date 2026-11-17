@@ -62,7 +62,7 @@ pub(super) fn split_face_operation(
         ))));
     };
     let direction_reference =
-        split_face_direction_reference(ctx, body, &reference, direction_reference_at)?;
+        split_face_direction_reference(ctx, &reference, direction_reference_at)?;
     let method_offset = u64_from_index(cursor);
     let control = read_method_control(body, cursor);
     let carrier = direction_carrier(ctx, bytes, &direction_reference, frames)?;
@@ -97,7 +97,7 @@ pub(super) fn split_face_operation(
                 CodecError::Malformed("SplitFace reference offset exceeds usize".into())
             })?;
             *slot = Located {
-                value: split_face_direction_reference(ctx, bytes, &input.value, at)?,
+                value: split_face_direction_reference(ctx, &input.value, at)?,
                 offset: input.offset,
             };
         }
@@ -116,37 +116,12 @@ fn read_method_control(bytes: &[u8], at: usize) -> Option<DesignSplitFaceMethodC
 
 fn split_face_direction_reference(
     ctx: &DecodeContext<'_>,
-    bytes: &[u8],
     reference: &Reference<&str, Utf16View<'_>>,
     at: usize,
 ) -> Result<DesignSplitFaceDirectionReference, CodecError> {
     if matches!(reference, Reference::Null) {
         return Ok(DesignSplitFaceDirectionReference::Null);
     }
-    let inline = match reference {
-        Reference::Local {
-            inline_type_guid, ..
-        }
-        | Reference::CrossSegment {
-            inline_type_guid, ..
-        }
-        | Reference::CrossDocument {
-            inline_type_guid, ..
-        } => inline_type_guid.is_some(),
-        Reference::Null => false,
-    };
-    let flags_at = at
-        .checked_add(9)
-        .and_then(|after| after.checked_add(if inline { 40 } else { 0 }))
-        .ok_or_else(|| CodecError::Malformed("SplitFace reference flags overflow".into()))?;
-    let asset = || -> Result<(Utf16View<'_>, usize), CodecError> {
-        let at = flags_at
-            .checked_add(5)
-            .ok_or_else(|| CodecError::Malformed("SplitFace asset offset overflows".into()))?;
-        crate::bytes::lp_utf16_bounded_view(bytes, at, 0..=64).ok_or_else(|| {
-            CodecError::Malformed("SplitFace reference asset is truncated or invalid".into())
-        })
-    };
     let target_at = at
         .checked_add(1)
         .map(u64_from_index)
@@ -170,15 +145,12 @@ fn split_face_direction_reference(
             target: value,
             inline_type_guid,
             segment,
+            asset_guid,
         } => DesignSplitFaceDirectionReference::CrossSegment {
             target: target(*value),
             inline_type_guid: inline_type_guid.map(guid).transpose()?,
             segment: *segment,
-            same_document_asset: if bytes.get(flags_at) == Some(&1) {
-                Some(text(asset()?.0)?)
-            } else {
-                None
-            },
+            same_document_asset: asset_guid.map(text).transpose()?,
         },
         Reference::CrossDocument {
             target: value,
@@ -193,21 +165,10 @@ fn split_face_direction_reference(
             inline_type_guid: inline_type_guid.map(guid).transpose()?,
             segment: *segment,
             asset_guid: text(*asset_guid)?,
-            target_type_guid: guid(target_type_guid)?,
-            external_type_guid_present: {
-                let (_, end) = asset()?;
-                let cursor = end.checked_add(1).ok_or_else(|| {
-                    CodecError::Malformed("SplitFace type offset overflows".into())
-                })?;
-                View::u32_le_at(bytes, cursor) == Some(36)
-                    && cursor
-                        .checked_add(4)
-                        .and_then(|start| {
-                            start.checked_add(36).and_then(|end| bytes.get(start..end))
-                        })
-                        .and_then(|raw| std::str::from_utf8(raw).ok())
-                        .is_some_and(crate::bytes::is_guid_hyphenated)
-            },
+            target_type_guid: guid(target_type_guid.or(*inline_type_guid).ok_or_else(|| {
+                CodecError::Malformed("SplitFace document reference has no target type".into())
+            })?)?,
+            external_type_guid_present: target_type_guid.is_some(),
             link_name: text(*link_name)?,
             version: version
                 .map(|(key, value)| Ok::<_, CodecError>((text(key)?, text(value)?)))

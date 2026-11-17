@@ -215,7 +215,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
 #[test]
 fn split_face_recovery_and_final_admission_do_not_leave_an_unresolved_selection_loss() {
     let (mut features, face_id, _) = split_face_case();
-    let mut face = cadmpeg_ir::examples::unit_cube().unwrap().model.faces[0].clone();
+    let mut face = cadmpeg_ir::examples::unit_cube().unwrap().geometry.faces[0].clone();
     face.id = face_id;
     let mut losses = Vec::new();
     crate::history::face_admission::admit_feature_input_faces(

@@ -530,7 +530,11 @@ fn carrier_preserves_the_asset_prefixed_same_document_form() {
 #[test]
 fn carrier_admits_both_inline_document_type_spellings_at_their_exact_ends() {
     let guid = "00000000-0000-0000-0000-000000000099";
-    for repeated in [false, true] {
+    for external in [
+        None,
+        Some(guid),
+        Some("00000000-0000-0000-0000-000000000098"),
+    ] {
         let mut reference = vec![1];
         reference.extend_from_slice(&88_u64.to_le_bytes());
         reference.extend_from_slice(&36_u32.to_le_bytes());
@@ -539,9 +543,9 @@ fn carrier_admits_both_inline_document_type_spellings_at_their_exact_ends() {
         reference.extend_from_slice(&7_u32.to_le_bytes());
         crate::test_support::lp_utf16(&mut reference, "asset");
         reference.push(0);
-        if repeated {
+        if let Some(external) = external {
             reference.extend_from_slice(&36_u32.to_le_bytes());
-            reference.extend_from_slice(guid.as_bytes());
+            reference.extend_from_slice(external.as_bytes());
         }
         crate::test_support::lp_utf16(&mut reference, "link");
         reference.push(0);
@@ -551,12 +555,25 @@ fn carrier_admits_both_inline_document_type_spellings_at_their_exact_ends() {
         assert!(operation.scope_offsets_valid(0, 120));
         let DesignSplitFaceDirectionReference::CrossDocument {
             external_type_guid_present,
+            inline_type_guid,
+            target_type_guid,
             ..
-        } = operation.inputs[0].value
+        } = &operation.inputs[0].value
         else {
             panic!("document reference")
         };
-        assert_eq!(external_type_guid_present, repeated);
+        assert_eq!(*external_type_guid_present, external.is_some());
+        assert_eq!(inline_type_guid.as_deref(), Some(guid));
+        assert_eq!(target_type_guid, external.unwrap_or(guid));
+        assert_eq!(
+            operation
+                .direction
+                .as_ref()
+                .unwrap()
+                .value
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
+            [2.4, 0.0, 0.0]
+        );
         for shift in [1, 11] {
             let mut invalid = operation.clone();
             invalid.carrier_frame.as_mut().unwrap().secondary_offset += shift;
