@@ -169,7 +169,11 @@ impl ContourRefusal {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AttachmentEdges {
     pub(crate) selection: PmDcReference,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_attachment_state"
+    )]
     pub(crate) state: Option<crate::feature::history_states::StateRef>,
     pub(crate) edges: Vec<AttachmentEdge>,
 }
@@ -179,9 +183,21 @@ pub(crate) struct AttachmentEdge {
     pub(crate) item: PmDcReference,
     pub(crate) selector_source: u32,
     pub(crate) entity_index: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_attachment_revision"
+    )]
     pub(crate) revision: Option<i64>,
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_attachment_state,
+    crate::feature::history_states::StateRef,
+    "state"
+);
+cadmpeg_core::named_optional_field!(deserialize_attachment_revision, i64, "revision");
 
 fn attachment_edges<'a>(
     plate: &PmDcFeature,

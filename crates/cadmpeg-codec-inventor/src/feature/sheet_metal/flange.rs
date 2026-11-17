@@ -56,9 +56,18 @@ pub(crate) struct FlangePayload {
     state: i32,
     pub(crate) children: PmDcReferenceList,
     value: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_attachment_edges"
+    )]
     pub(crate) attachment_edges: Option<super::contour::AttachmentEdges>,
 }
+cadmpeg_core::named_optional_field!(
+    deserialize_attachment_edges,
+    super::contour::AttachmentEdges,
+    "attachment_edges"
+);
 
 impl RecordPayload for FlangePayload {
     const KIND: &'static str = "sheet-metal-flange";
