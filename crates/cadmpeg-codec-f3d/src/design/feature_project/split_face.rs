@@ -27,10 +27,9 @@ pub(super) fn project_split_face(
     };
 
     let mut losses = Vec::new();
-    if scope
-        .split_face_operation()
-        .is_some_and(|operation| operation.carrier_type_assumed())
-    {
+    if scope.split_face_operation().is_some_and(
+        crate::records::feature::split_face::DesignSplitFaceOperation::carrier_type_assumed,
+    ) {
         losses.push(crate::loss::F3dLossCode::FeatureSplitFaceCarrierTypeAssumed.note(format!(
             "{}: the registered point-direction carrier is retained despite its conflicting inline type qualifier (DR-575).",
             scope.id

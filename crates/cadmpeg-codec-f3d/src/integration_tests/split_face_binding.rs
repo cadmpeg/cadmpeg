@@ -134,7 +134,7 @@ fn split_face_binding_requires_target_membership_through_final_admission() {
                 entity_operands: &[],
                 body_recipe_operands: &[],
                 histories,
-                scope_histories: &Default::default(),
+                scope_histories: &std::collections::HashMap::default(),
             },
         );
     };

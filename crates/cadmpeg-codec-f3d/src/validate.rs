@@ -4514,9 +4514,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             );
         }
         if split_face_link
-            && scope
-                .split_face_operation()
-                .is_some_and(|operation| operation.carrier_type_assumed())
+            && scope.split_face_operation().is_some_and(
+                crate::records::feature::split_face::DesignSplitFaceOperation::carrier_type_assumed,
+            )
         {
             findings.push(Finding {
                 related: Vec::new(),

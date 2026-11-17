@@ -6,6 +6,7 @@ use crate::records::identity::ReferenceRun;
 use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
 use crate::records::topology::face::DesignFaceOperand;
 use crate::test_support::{indexed_header, lp_ascii};
+use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
 const STREAM: &str = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat";
 const FRAME_FINDING: &str = "Fusion Design face operand has an invalid scope or recipe frame";
@@ -139,7 +140,6 @@ fn decoded_secondary_recipe_frame_survives_native_admission_and_serde() {
     let restored: DesignFaceOperand = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(restored, operand);
     assert_eq!(serde_json::to_value(restored.clone()).unwrap(), wire);
-    use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
     let rewritten = crate::test_support::with_decode_context(|ctx| {
         let mut map = IdentityMap::new(|source: &str| Ok(source.to_owned()));
         restored.clone().rewrite_identities(ctx, &mut map).unwrap()
