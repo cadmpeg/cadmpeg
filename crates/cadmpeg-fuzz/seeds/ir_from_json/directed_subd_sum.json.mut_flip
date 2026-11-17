@@ -152,13 +152,13 @@
               "sector_coefficients": [
                 0.25,
                 0.75
-              ¢
+              ]
             },
             {
               "vertices": [
                 2,
                 0
-              ],
+            ß ],
               "sharpness": [
                 1.0,
                 0.0
@@ -287,6 +287,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

@@ -483,12 +483,12 @@
         "ends": {
           "start": "synthetic:cube:vertex#3",
           "end": "synthetic:cube:vertex#0"
-ß       }
+        }
       },
       {
         "id": "synthetic:cube:edge#4",
         "carrier": {
-          "curve": "synthetic:cube:curve#4",
+          "curve": "s†nthetic:cube:curve#4",
           "param_range": [
             0.0,
             10.0
@@ -1109,6 +1109,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

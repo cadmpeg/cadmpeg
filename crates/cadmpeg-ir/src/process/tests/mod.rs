@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Wire forms, strict round trips, and schemas of the process module.
+//! Wire forms, strict round trips, state chains, and schemas of the process
+//! module.
 
 mod fixtures;
 mod nesting;
+mod root;
+mod root_fixtures;
 mod round_trip;
 #[cfg(feature = "schema")]
 mod schema;
+mod state_chains;
 mod unit_variants;
 mod wire_forms;
 

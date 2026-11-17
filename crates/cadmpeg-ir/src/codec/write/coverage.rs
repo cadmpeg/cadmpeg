@@ -76,10 +76,13 @@ fn arena_kind<T: ArenaRecord>(_: &[T]) -> EntityKind {
 }
 
 /// A disposition field of [`ArenaDispositions`]: the arenas of the `design`
-/// home are fields of its `design` member.
+/// and `process` homes are fields of its `design` and `process` members.
 macro_rules! disposition {
     ($dispositions:expr, $field:ident, design) => {
         $dispositions.design.$field
+    };
+    ($dispositions:expr, $field:ident, process) => {
+        $dispositions.process.$field
     };
     ($dispositions:expr, $field:ident, $home:ident) => {
         $dispositions.$field
@@ -87,13 +90,16 @@ macro_rules! disposition {
 }
 
 macro_rules! split_arena_dispositions {
-    ([$($model:ident)*] [$($design:ident)*] $field:ident: design; $($rest:tt)*) => {
-        split_arena_dispositions! { [$($model)*] [$($design)* $field] $($rest)* }
+    ([$($model:ident)*] [$($design:ident)*] [$($process:ident)*] $field:ident: design; $($rest:tt)*) => {
+        split_arena_dispositions! { [$($model)*] [$($design)* $field] [$($process)*] $($rest)* }
     };
-    ([$($model:ident)*] [$($design:ident)*] $field:ident: $home:ident; $($rest:tt)*) => {
-        split_arena_dispositions! { [$($model)* $field] [$($design)*] $($rest)* }
+    ([$($model:ident)*] [$($design:ident)*] [$($process:ident)*] $field:ident: process; $($rest:tt)*) => {
+        split_arena_dispositions! { [$($model)*] [$($design)*] [$($process)* $field] $($rest)* }
     };
-    ([$($model:ident)*] [$($design:ident)*]) => {
+    ([$($model:ident)*] [$($design:ident)*] [$($process:ident)*] $field:ident: $home:ident; $($rest:tt)*) => {
+        split_arena_dispositions! { [$($model)* $field] [$($design)*] [$($process)*] $($rest)* }
+    };
+    ([$($model:ident)*] [$($design:ident)*] [$($process:ident)*]) => {
         /// One disposition for every arena.
         ///
         /// Every field is required and the type has no default, so a new arena
@@ -106,6 +112,25 @@ macro_rules! split_arena_dispositions {
             )*
             /// Dispositions of the arenas of the `design` home.
             pub design: DesignArenaDispositions,
+            /// Dispositions of the arenas of the `process` home.
+            pub process: ProcessArenaDispositions,
+        }
+
+        /// One disposition for every arena of the `process` home.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct ProcessArenaDispositions {
+            $(
+                #[doc = concat!("Disposition of the `process.", stringify!($process), "` arena.")]
+                pub $process: ArenaDisposition,
+            )*
+        }
+
+        impl ProcessArenaDispositions {
+            /// One disposition for every arena of the `process` home.
+            #[must_use]
+            pub const fn uniform(disposition: ArenaDisposition) -> Self {
+                Self { $($process: disposition,)* }
+            }
         }
 
         /// One disposition for every arena of the `design` home.
@@ -129,7 +154,7 @@ macro_rules! split_arena_dispositions {
 
 macro_rules! declare_arena_dispositions {
     ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-        split_arena_dispositions! { [] [] $($field: $home;)* }
+        split_arena_dispositions! { [] [] [] $($field: $home;)* }
 
         impl ArenaDispositions {
             /// Whether the payload may carry a record of this arena.
