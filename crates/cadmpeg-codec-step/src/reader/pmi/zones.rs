@@ -252,10 +252,14 @@ fn projection(
     Ok(Some((
         zone,
         ToleranceProjection {
-            boundaries,
+            boundaries: boundaries
+                .into_iter()
+                .map(cadmpeg_ir::references::InstanceTarget::new)
+                .collect(),
             end: PmiTarget::ShapeAspect {
                 source_id: super::super::step_source_id(end),
-            },
+            }
+            .into(),
             length,
             offset: offset.flatten(),
         },

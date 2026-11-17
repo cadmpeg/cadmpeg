@@ -39,6 +39,22 @@ pub enum EntityRef {
     Subd(SubdId),
 }
 
+impl EntityRef {
+    /// The entity's record id.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Body(id) => id.as_str(),
+            Self::Face(id) => id.as_str(),
+            Self::Edge(id) => id.as_str(),
+            Self::Vertex(id) => id.as_str(),
+            Self::Surface(id) => id.as_str(),
+            Self::Curve(id) => id.as_str(),
+            Self::Subd(id) => id.as_str(),
+        }
+    }
+}
+
 /// A record of any `Topology` arena, one variant per arena, for a delta's
 /// `removed` list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -83,7 +99,7 @@ pub enum RecordRef {
 }
 
 /// A configuration, of this document or by the source's name for it.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -99,7 +115,7 @@ pub enum ConfigurationRef {
 }
 
 /// A member of a design container: a feature or a nested container.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -115,7 +131,7 @@ pub enum Member {
 }
 
 /// A position in a design container.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -132,7 +148,7 @@ pub enum Position {
 
 /// What an evaluation evaluates: the state at a position, or a tool body of
 /// a feature.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -148,7 +164,7 @@ pub enum Evaluated {
 }
 
 /// A state, by the evaluation that holds it, in a configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct StateRef {

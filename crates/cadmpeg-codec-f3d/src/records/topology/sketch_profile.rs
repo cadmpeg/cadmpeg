@@ -330,6 +330,10 @@ pub(crate) struct DesignSketchProfileRegion {
     /// Zero-based selected region that owns the loop.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub(crate) region_ordinal: u32,
+    /// The loop is a hole of the preceding outer loop of its region: its
+    /// exterior byte is `0`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) hole: bool,
 }
 
 /// One atomic region of a selected region in a nested sketch-profile
@@ -345,6 +349,10 @@ pub(crate) struct DesignSketchProfileAtomicRegion {
 }
 
 // Serde requires `skip_serializing_if` predicates to borrow the field.
+fn is_false<T: Copy + Into<bool>>(value: &T) -> bool {
+    !(*value).into()
+}
+
 fn is_zero<T: Copy + Into<u64>>(value: &T) -> bool {
     (*value).into() == 0
 }
@@ -389,6 +397,17 @@ impl DesignSketchProfileRegionSelection {
             rings.extend(atomic);
         }
         Some(rings)
+    }
+
+    /// Whether the selection holds more than one selected region, atomic
+    /// regions, or a hole loop before its last loop. Such a selection names a
+    /// union of arrangement faces, which the member rings of one face cannot
+    /// be compared with, so it does not veto the profile that the Extrude
+    /// selection group resolves.
+    pub(crate) fn is_beyond_one_face_rings(&self) -> bool {
+        !self.atomic_regions.is_empty()
+            || self.regions.iter().any(|region| region.region_ordinal != 0)
+            || self.regions.iter().rev().skip(1).any(|region| region.hole)
     }
 
     pub(crate) fn has_extended_incidence(&self) -> bool {

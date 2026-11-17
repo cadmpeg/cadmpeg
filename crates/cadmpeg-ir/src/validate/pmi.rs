@@ -41,7 +41,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
             _ => Vec::new(),
         };
         for target in annotation.targets.iter().chain(zone_targets) {
-            let resolved = match target {
+            let resolved = match &target.entity {
                 PmiTarget::Body { body } => bodies.contains(body.as_str()),
                 PmiTarget::Face { face } => faces.contains(face.as_str()),
                 PmiTarget::Edge { edge } => edges.contains(edge.as_str()),

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{ArenaName, CensusKey};
+use super::CensusKey;
 use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::native::view::NativeView;
 
@@ -17,7 +17,7 @@ macro_rules! define_census {
                 // that predates the arena unchanged.
                 if stringify!($field) != "history_bodies" || !view.ir.$home.$field.is_empty() {
                     counts.insert(
-                        CensusKey::model(ArenaName::registered(stringify!($field), super::arena_class!($class), super::arena_home!($home))),
+                        CensusKey::model(super::arena_name!($field, $class, $home)),
                         view.ir.$home.$field.len(),
                     );
                 }
@@ -59,7 +59,7 @@ mod tests {
         let standard = ir.census();
         assert_eq!(standard["native.future.records"], 1);
         assert!(!standard.contains_key("native.future.empty"));
-        for name in super::ArenaName::ALL {
+        for name in crate::document::ArenaName::ALL {
             if name.as_str() == "history_bodies" {
                 assert!(!standard.contains_key(name.as_str()));
             } else {
