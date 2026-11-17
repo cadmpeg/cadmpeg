@@ -119,6 +119,18 @@ pub enum EntityKind {
     DesignContainer,
     /// Feature of the `design` home.
     DesignFeature,
+    /// Planar sketch of the `design` home.
+    DesignSketch,
+    /// Planar sketch entity of the `design` home.
+    DesignSketchEntity,
+    /// Planar sketch constraint of the `design` home.
+    DesignSketchConstraint,
+    /// Spatial sketch of the `design` home.
+    DesignSpatialSketch,
+    /// Spatial sketch entity of the `design` home.
+    DesignSpatialSketchEntity,
+    /// Spatial sketch constraint of the `design` home.
+    DesignSpatialSketchConstraint,
     /// Parameter of the `design` home.
     DesignParameter,
     /// Spreadsheet of the `design` home.
@@ -217,30 +229,36 @@ impl EntityKind {
             Self::DesignScope => 51,
             Self::DesignContainer => 52,
             Self::DesignFeature => 53,
-            Self::DesignParameter => 54,
-            Self::DesignSpreadsheet => 55,
-            Self::DesignSheetMetalRule => 56,
-            Self::DesignProgram => 57,
-            Self::DesignConfiguration => 58,
-            Self::DesignArrangement => 59,
-            Self::DesignPublication => 60,
-            Self::DesignEvaluation => 61,
-            Self::ProcessSetup => 62,
-            Self::ProcessOperation => 63,
-            Self::ProcessFeature => 64,
-            Self::ProcessGroup => 65,
-            Self::ProcessTool => 66,
-            Self::ProcessPreset => 67,
-            Self::ProcessMachine => 68,
-            Self::ProcessProgram => 69,
-            Self::ProcessParameter => 70,
-            Self::ProcessToolpath => 71,
-            Self::ProcessState => 72,
+            Self::DesignSketch => 54,
+            Self::DesignSketchEntity => 55,
+            Self::DesignSketchConstraint => 56,
+            Self::DesignSpatialSketch => 57,
+            Self::DesignSpatialSketchEntity => 58,
+            Self::DesignSpatialSketchConstraint => 59,
+            Self::DesignParameter => 60,
+            Self::DesignSpreadsheet => 61,
+            Self::DesignSheetMetalRule => 62,
+            Self::DesignProgram => 63,
+            Self::DesignConfiguration => 64,
+            Self::DesignArrangement => 65,
+            Self::DesignPublication => 66,
+            Self::DesignEvaluation => 67,
+            Self::ProcessSetup => 68,
+            Self::ProcessOperation => 69,
+            Self::ProcessFeature => 70,
+            Self::ProcessGroup => 71,
+            Self::ProcessTool => 72,
+            Self::ProcessPreset => 73,
+            Self::ProcessMachine => 74,
+            Self::ProcessProgram => 75,
+            Self::ProcessParameter => 76,
+            Self::ProcessToolpath => 77,
+            Self::ProcessState => 78,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 73] = [
+    pub const ALL: [Self; 79] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -295,6 +313,12 @@ impl EntityKind {
         Self::DesignScope,
         Self::DesignContainer,
         Self::DesignFeature,
+        Self::DesignSketch,
+        Self::DesignSketchEntity,
+        Self::DesignSketchConstraint,
+        Self::DesignSpatialSketch,
+        Self::DesignSpatialSketchEntity,
+        Self::DesignSpatialSketchConstraint,
         Self::DesignParameter,
         Self::DesignSpreadsheet,
         Self::DesignSheetMetalRule,
@@ -353,6 +377,32 @@ macro_rules! impl_arena_record {
 impl_arena_record!(crate::design::scope::DesignScope, DesignScope, definition);
 impl_arena_record!(crate::design::container::Container, DesignContainer, id());
 impl_arena_record!(crate::design::feature::Feature, DesignFeature, id);
+impl_arena_record!(crate::design::ops::sketch::Sketch, DesignSketch, id);
+impl_arena_record!(
+    crate::design::ops::sketch::SketchEntity<crate::design::ops::sketch::Planar>,
+    DesignSketchEntity,
+    id
+);
+impl_arena_record!(
+    crate::design::ops::sketch::SketchConstraint<crate::design::ops::sketch::Planar>,
+    DesignSketchConstraint,
+    id
+);
+impl_arena_record!(
+    crate::design::ops::sketch::SpatialSketch,
+    DesignSpatialSketch,
+    id
+);
+impl_arena_record!(
+    crate::design::ops::sketch::SketchEntity<crate::design::ops::sketch::Spatial>,
+    DesignSpatialSketchEntity,
+    id
+);
+impl_arena_record!(
+    crate::design::ops::sketch::SketchConstraint<crate::design::ops::sketch::Spatial>,
+    DesignSpatialSketchConstraint,
+    id
+);
 impl_arena_record!(
     crate::design::parameter::DesignParameter,
     DesignParameter,

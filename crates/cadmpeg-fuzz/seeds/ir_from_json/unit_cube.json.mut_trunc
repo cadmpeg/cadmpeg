@@ -485,3 +485,7 @@
           "end": "synthetic:cube:vertex#0"
         }
       },
+      {
+        "id": "synthetic:cube:edge#4",
+        "carrier": {
+          "curve": "s

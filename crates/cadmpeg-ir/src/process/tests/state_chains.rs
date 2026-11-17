@@ -211,6 +211,12 @@ fn from_json_walks_the_chains() {
     );
     let error = CadIr::from_json(&document(Vec::new(), vec![state(1, on(1))])).unwrap_err();
     assert!(error.to_string().contains("its own ancestor"), "{error}");
+    let error = CadIr::from_json(&document(
+        Vec::new(),
+        vec![state(1, on(2)), state(2, on(1))],
+    ))
+    .unwrap_err();
+    assert!(error.to_string().contains("its own ancestor"), "{error}");
     let mut evaluation = evaluations(1);
     if let Some(content) = &mut evaluation[0].content {
         content.base = StateBase::Evaluation(id("evaluation", 1));

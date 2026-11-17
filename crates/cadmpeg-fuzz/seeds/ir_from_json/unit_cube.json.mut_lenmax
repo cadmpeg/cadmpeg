@@ -250,7 +250,8 @@
       {
         "id": "synthetic:cube:coedge#bottom:1",
         "owner_loop": "synthetic:cube:loop#bottom",
-        "edge": "synthetic:cube:edge#ÿÿÿÿ        "radial_next": "synthetic:cube:coedge#left:0",
+        "edge": "synthetic:cube:edge#3",
+        "radial_next": "synthetic:cube:cÿÿÿÿe#left:0",
         "sense": "reversed",
         "pcurves": []
       },
@@ -1092,6 +1093,12 @@
     "scopes": [],
     "containers": [],
     "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "parameters": [],
     "spreadsheets": [],
     "sheet_metal_rules": [],

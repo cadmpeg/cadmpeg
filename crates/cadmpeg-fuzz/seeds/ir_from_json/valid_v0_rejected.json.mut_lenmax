@@ -29,8 +29,8 @@
     "surfaces": [],
     "curves": [],
     "subds": [],
-ÿÿÿÿ"pcurves": [],
-    "procedural_surfaces": [],
+    "pcurves": [],
+    "procedural_surfaces":ÿÿÿÿ
     "procedural_curves": []
   },
   "model": {
@@ -75,6 +75,12 @@
     "scopes": [],
     "containers": [],
     "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "parameters": [],
     "spreadsheets": [],
     "sheet_metal_rules": [],

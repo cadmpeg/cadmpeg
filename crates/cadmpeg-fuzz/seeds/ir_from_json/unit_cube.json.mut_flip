@@ -485,10 +485,10 @@
           "end": "synthetic:cube:vertex#0"
         }
       },
-ß     {
+      {
         "id": "synthetic:cube:edge#4",
         "carrier": {
-          "curve": "synthetic:cube:curve#4",
+          "curve": "s†nthetic:cube:curve#4",
           "param_range": [
             0.0,
             10.0
@@ -1093,6 +1093,12 @@
     "scopes": [],
     "containers": [],
     "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "parameters": [],
     "spreadsheets": [],
     "sheet_metal_rules": [],
