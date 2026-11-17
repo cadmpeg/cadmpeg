@@ -4073,7 +4073,8 @@ order. In positional dimension rows, a bare
 compact `ext_id`.
 The positional `value` lane uses the positive DICT lane of the seven-byte DICT
 form for prefixes `51` and `53..a3`, and the following six bytes complete the value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
-`31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero. Unresolved `00 XX YY` and `01 XX YY ZZ`
+`31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero.
+Every other value prefix uses the `var_arr` coordinate lane. Unresolved `00 XX YY` and `01 XX YY ZZ`
 value forms occupy three and four bytes respectively. Compact `0e` is `-0.5`, so
 the following one-byte `direct`, `aux_value`, and compact `ext_id` fields remain
 aligned. Each unresolved form is a bounded token distinct from a scalar value
@@ -5718,8 +5719,8 @@ set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
 followed by `tail6`.
 The `28` and `41` forms reconstruct `[3f, tail7]`; the fixed `2c`, `4c..4d`,
 `50`, and `54` forms reconstruct
-`[3f, tail6, 00]`. The `46` and `2d` forms retain their eight-byte
-`[40, tail7]` and `[c0, tail7]` forms. Each complete token consumes one
+`[3f, tail6, 00]`. The `2d` and `46` forms retain their eight-byte
+`[40, tail7]` and `[c0, tail7]` forms, respectively. Each complete token consumes one
 coordinate slot; a missing or incomplete token leaves the outline unresolved.
 The `41` scalar form therefore occupies eight bytes: the prefix followed by
 seven payload bytes. The seven-byte `45` and `5c` tokens consume one slot but
