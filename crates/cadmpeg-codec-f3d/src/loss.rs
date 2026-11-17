@@ -549,6 +549,8 @@ pub(crate) enum F3dLossCode {
     /// A feature with no bound history, whose state pair several histories
     /// hold, takes the one history of the BREP blob that holds its outputs.
     HistoricalOutputBlobHistoryInferred,
+    /// A scope takes the unique history whose blob agrees with its edge recipe faces.
+    HistoricalEdgeRecipeHistoryInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
     /// A `Fillet` edge is the one of several shared support edges along the
@@ -1394,6 +1396,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeSelectionDeletedSetAssumed,
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
+        Self::HistoricalEdgeRecipeHistoryInferred,
         Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalFilletEdgeCovering,
         Self::HistoricalBodyBoundsUnresolved,
@@ -2211,6 +2214,7 @@ impl F3dLossCode {
             }
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
+            Self::HistoricalEdgeRecipeHistoryInferred => "history.edge-recipe-history-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalFilletEdgeCovering => "history.fillet-edge-covering",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
@@ -3004,6 +3008,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
+            | Self::HistoricalEdgeRecipeHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalFilletEdgeCovering
@@ -3601,6 +3606,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeSelectionDeletedSetAssumed
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
+            | Self::HistoricalEdgeRecipeHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalFilletEdgeCovering
@@ -4312,6 +4318,7 @@ mod tests {
                 "history.edge-selection-deleted-set-assumed",
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
+                "history.edge-recipe-history-inferred",
                 "history.fillet-edge-ambiguous",
                 "history.fillet-edge-covering",
                 "history.body-bounds-unresolved",
