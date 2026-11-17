@@ -240,15 +240,26 @@ fn operation_pose_cannot_move_a_carrier_selected_descendant() {
 fn operation_pose_registration_refuses_other_versions_and_duplicate_targets() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let stream = "Design/BulkStream.dat";
-    for version in [None, Some(2), Some(3), Some(4)] {
+    for version in [None, Some(LAST_VERSION + 1)] {
         let mut table = OperationTables::default();
         register(&ctx, &mut table, stream, &frame(6, true), version).unwrap();
         assert!(table.poses.is_empty());
         assert_eq!(table.native, 1);
     }
-    for version in [0, 1] {
+    for version in 0..=LAST_VERSION {
         let mut table = OperationTables::default();
         let prefix = if version == 0 { 2 } else { 6 };
+        let mut other_run = OperationTables::default();
+        register(
+            &ctx,
+            &mut other_run,
+            stream,
+            &frame(8 - prefix, true),
+            Some(version),
+        )
+        .unwrap();
+        assert!(other_run.poses.is_empty());
+        assert_eq!(other_run.native, 1);
         register(
             &ctx,
             &mut table,
@@ -450,4 +461,24 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
     assert!(losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::OperationPoseDisagrees.kind()));
+}
+
+#[test]
+fn direct_table_targets_follow_the_zero_run_of_each_version() {
+    let two = frame(2, true);
+    let six = frame(6, false);
+    assert_eq!(
+        direct_table_targets([(0, two.as_slice())]),
+        std::collections::HashSet::from([10])
+    );
+    for version in 1..=LAST_VERSION {
+        assert_eq!(
+            direct_table_targets([(version, six.as_slice())]),
+            std::collections::HashSet::from([10])
+        );
+        assert!(direct_table_targets([(version, two.as_slice())]).is_empty());
+    }
+    assert!(
+        direct_table_targets([(0, six.as_slice()), (LAST_VERSION + 1, six.as_slice())]).is_empty()
+    );
 }

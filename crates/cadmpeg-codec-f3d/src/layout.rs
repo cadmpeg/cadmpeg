@@ -6797,6 +6797,20 @@ pub(crate) mod legacy_occurrence_target_reference {
     pub(crate) const SOURCE_OCCURRENCE_IDENTITY: usize = 10;
 }
 
+/// Byte offsets for the `legacy_compact_occurrence_placement_prefix` record.
+///
+/// Spec §1.4. Record length 307 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header. Identity flag `0` stores a 128-byte matrix after the flag; the closing tail is that of the legacy envelope.
+/// ```
+pub(crate) mod legacy_compact_occurrence_placement_prefix {
+    /// Offset of `path_terminator` (`u8`). Spec §1.4.
+    pub(crate) const PATH_TERMINATOR: usize = 88;
+    /// Stated value of `path_terminator` (`u8`). Spec §1.4.
+    pub(crate) const PATH_TERMINATOR_VALUE: u8 = 0;
+}
+
 /// Byte offsets for the `local_component_occurrence_attributed_prefix` record.
 ///
 /// Spec §3.1. Record length 44 B.
@@ -7666,6 +7680,58 @@ pub(crate) mod component_insert_matrix_scope_400_prefix {
     pub(crate) const TRANSFORM: usize = 50;
     /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
     pub(crate) const NULL_GUID: usize = 178;
+}
+
+/// Byte offsets for the `component_insert_typed_matrix_scope_584_prefix` record.
+///
+/// Spec §3.1. Record length 290 B.
+///
+/// ```text
+/// The frame is 584 bytes; this record covers the prefix through the null GUID.
+/// ```
+pub(crate) mod component_insert_typed_matrix_scope_584_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 290;
+    /// Offset of `zero_prefix` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `occurrence_identity` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_IDENTITY: usize = 21;
+    /// Offset of `zero_after_identity` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_IDENTITY: usize = 29;
+    /// Offset of `relation_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const RELATION_REFERENCE: usize = 33;
+    /// Offset of `matrix_markers` (`bytes[2]`). Spec §3.1.
+    pub(crate) const MATRIX_MARKERS: usize = 84;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 86;
+    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const NULL_GUID: usize = 214;
+}
+
+/// Byte offsets for the `component_insert_typed_relation_177` record.
+///
+/// Spec §3.1. Record length 177 B.
+///
+/// ```text
+/// The paired indexed header begins at offset 177.
+/// ```
+pub(crate) mod component_insert_typed_relation_177 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 177;
+    /// Offset of `zero_prefix` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `carrier_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const CARRIER_REFERENCE: usize = 21;
+    /// Offset of `zero_after_carrier` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_CARRIER: usize = 72;
+    /// Offset of `companion_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const COMPANION_REFERENCE: usize = 74;
+    /// Offset of `zero_after_companion` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_COMPANION: usize = 125;
+    /// Stated value of `zero_after_companion` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_AFTER_COMPANION_VALUE: u8 = 0;
+    /// Offset of `scope_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 126;
 }
 
 /// Byte offsets for the `emboss_scope_reference_table_prefix` record.

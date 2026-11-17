@@ -3108,6 +3108,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     (261, "266", None) if scope.class_tag.as_str() == "434" => true,
                     (257 | 261 | 267, "264", None) if scope.class_tag.as_str() == "414" => true,
                     (257, "262", None) if scope.class_tag.as_str() == "283" => true,
+                    (261, _, None)
+                        if crate::records::feature::assembly_features::legacy_identity_insert_class(
+                            scope.class_tag.as_str(),
+                        ) =>
+                    {
+                        true
+                    }
                     (385, "262", Some(matrix)) if scope.class_tag.as_str() == "283" => {
                         scope
                             .byte_offset()
@@ -3124,12 +3131,43 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 .carrier_offset
                                 .is_some_and(|offset| offset < construction.neutron_role_offset)
                     }
+                    (393, _, Some(matrix)) => {
+                        scope.byte_offset().checked_add(54).is_some_and(|expected_offset| {
+                            matrix.scope.offset == expected_offset
+                        }) && matrix
+                            .carrier_offset
+                            .is_some_and(|offset| offset < construction.neutron_role_offset)
+                    }
+                    (399, _, Some(matrix))
+                        if matrix
+                            .carrier_offset
+                            .is_some_and(|offset| offset < construction.neutron_role_offset) =>
+                    {
+                        scope.byte_offset().checked_add(50).is_some_and(|expected_offset| {
+                            matrix.scope.offset == expected_offset
+                        })
+                    }
+                    (
+                        crate::records::feature::assembly_features::TYPED_COMPONENT_INSERT_FRAME_LENGTH,
+                        _,
+                        Some(matrix),
+                    ) if matrix.carrier_offset.is_none() => {
+                        scope.byte_offset().checked_add(u64_from_index(
+                            crate::layout::component_insert_typed_matrix_scope_584_prefix::TRANSFORM,
+                        )) == Some(matrix.scope.offset)
+                    }
                     (frame_length, paired, Some(matrix)) => {
                         let scope_delta = match (frame_length, paired) {
                             (399, _) => Some(50),
                             (381, _) => Some(49),
                             (395, _) => Some(46),
                             (389, "264") if scope.class_tag.as_str() == "414" => Some(50),
+                            (
+                                crate::records::feature::assembly_features::TYPED_COMPONENT_INSERT_FRAME_LENGTH,
+                                _,
+                            ) => Some(u64_from_index(
+                                crate::layout::component_insert_typed_matrix_scope_584_prefix::TRANSFORM,
+                            )),
                             _ => None,
                         };
                         scope_delta.is_some_and(|delta| {

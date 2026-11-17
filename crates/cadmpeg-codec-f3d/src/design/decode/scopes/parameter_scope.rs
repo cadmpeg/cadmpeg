@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-mod family;
+pub(super) mod family;
 
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
@@ -135,6 +135,8 @@ pub(crate) fn decode_parameter_scopes(
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
+        let posed =
+            super::component_constructions::operation_table_targets(bytes, &records, &stream_types);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
@@ -757,7 +759,8 @@ pub(crate) fn decode_parameter_scopes(
                 alignment.form = Some(form);
             }
             {
-                let construction = exact_component_insert_construction(bytes, &records, &scope)?;
+                let construction =
+                    exact_component_insert_construction(bytes, &records, &scope, &posed)?;
                 let unresolved_placement = construction
                     .is_none()
                     .then(|| {
