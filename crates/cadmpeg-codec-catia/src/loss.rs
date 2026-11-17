@@ -117,6 +117,10 @@ pub(crate) enum CatiaLossCode {
     TopologyB5GraphUnclosed,
     /// Fitted face subsets represent only part of a native body.
     TopologyOwnedPatchSubset,
+    /// Unselected native body rosters stay outside the neutral bounded subset.
+    TopologyUnselectedBodiesRetained,
+    /// Visible body references lack one complete allocation-scope resolution.
+    TopologyBodySelectionUnresolved,
     /// Non-rolling-ball face sense uses inferred roster and chart parity.
     TopologyOwnedPatchSenseInferred,
     /// An endpoint station admits both first-scalar and final-scalar tag readings.
@@ -196,6 +200,8 @@ impl CatiaLossCode {
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
         Self::TopologyOwnedPatchSubset,
+        Self::TopologyUnselectedBodiesRetained,
+        Self::TopologyBodySelectionUnresolved,
         Self::TopologyOwnedPatchSenseInferred,
         Self::TopologyEndpointStationReadingInferred,
         Self::TopologySharedBoundaryReconciled,
@@ -260,6 +266,8 @@ impl CatiaLossCode {
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
             Self::TopologyOwnedPatchSubset => "topology.owned-patch-subset",
+            Self::TopologyUnselectedBodiesRetained => "topology.unselected-bodies-retained",
+            Self::TopologyBodySelectionUnresolved => "topology.body-selection-unresolved",
             Self::TopologyOwnedPatchSenseInferred => "topology.owned-patch-sense-inferred",
             Self::TopologyEndpointStationReadingInferred => {
                 "topology.endpoint-station-reading-inferred"
@@ -345,6 +353,7 @@ impl CatiaLossCode {
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
             | Self::TopologyOwnedPatchSubset
+            | Self::TopologyBodySelectionUnresolved
             | Self::TopologySheetPatchSearchBounded
             | Self::TopologyB5FacesWithheld
             | Self::TopologyB5PopulationBounded
@@ -367,6 +376,7 @@ impl CatiaLossCode {
             | Self::HistoryConfigurationRowOrderBounded
             | Self::HistoryRelationDependenciesBounded
             | Self::HistoryDefinitionChainsRetained => LossTaxonomy::FeatureHistoryRetained,
+            Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -438,6 +448,8 @@ mod tests {
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
                 "topology.owned-patch-subset",
+                "topology.unselected-bodies-retained",
+                "topology.body-selection-unresolved",
                 "topology.owned-patch-sense-inferred",
                 "topology.endpoint-station-reading-inferred",
                 "topology.shared-boundary-reconciled",
