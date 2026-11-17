@@ -11,28 +11,31 @@
         "property_specs": "39",
         "upAxis": "Z"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "layer",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 3299
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "version": "0.8.0"
         },
         "dialect": "usd:usdc-0.8.0"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "prim types: BasisCurves 1, Material 1, Mesh 2, NurbsPatch 1, Scope 1, Shader 1, Xform 3, untyped 2"
   ]

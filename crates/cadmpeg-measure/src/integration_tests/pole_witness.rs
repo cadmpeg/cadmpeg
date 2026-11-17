@@ -158,7 +158,7 @@ fn a_synthesized_pole_crossing_keeps_the_cap_unconfirmed() {
 #[test]
 fn a_placed_cap_uses_its_model_space_pole() {
     let mut ir = cap(10.0, true, false, true);
-    ir.model.bodies[0].transform = Transform::affine([
+    ir.geometry.bodies[0].transform = Transform::affine([
         [0.0, 0.0, 1.0, 100.0],
         [0.0, 1.0, 0.0, -20.0],
         [-1.0, 0.0, 0.0, 30.0],
@@ -203,7 +203,7 @@ fn orientation_findings_use_owned_poles_without_face_rows() {
         assert_eq!(
             findings.iter().any(|finding| {
                 finding.check == cadmpeg_ir::report::check::Check::Orientation
-                    && finding.entity.as_deref() == Some(ir.model.faces[0].id.as_str())
+                    && finding.entity.as_deref() == Some(ir.geometry.faces[0].id.as_str())
             }),
             reversed
         );
@@ -215,14 +215,14 @@ fn orientation_findings_use_owned_poles_without_face_rows() {
 fn an_unresolved_closed_edge_at_a_pole_cannot_confirm_the_face() {
     let mut ir = cap(10.0, true, false, true);
     let pole_edge = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| !coedge.pcurves.is_empty())
         .unwrap()
         .edge
         .clone();
-    ir.model
+    ir.geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == pole_edge)
@@ -250,9 +250,9 @@ fn a_sampled_nurbs_trim_does_not_certify_pole_clearance() {
     use cadmpeg_ir::math::Point3;
 
     let mut ir = cap(10.0, true, false, true);
-    let circle_edge = &ir.model.coedges.last().unwrap().edge;
+    let circle_edge = &ir.geometry.coedges.last().unwrap().edge;
     let circle_curve = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| &edge.id == circle_edge)
@@ -289,7 +289,7 @@ fn a_sampled_nurbs_trim_does_not_certify_pole_clearance() {
         false,
     )
     .unwrap();
-    ir.model
+    ir.geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == circle_curve)
@@ -326,7 +326,7 @@ fn a_degenerate_carrier_away_from_its_vertex_cannot_witness_the_pole() {
 
     let mut ir = cap(10.0, true, false, true);
     let pole_edge = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| !coedge.pcurves.is_empty())
@@ -334,15 +334,16 @@ fn a_degenerate_carrier_away_from_its_vertex_cannot_witness_the_pole() {
         .edge
         .clone();
     let curve = CurveId::mint("test:misplaced:curve#pole").unwrap();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
             DegenerateCurve::try_new(Point3::new(0.0, 0.0, -10.0)).unwrap(),
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
-    ir.model
+    ir.geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == pole_edge)

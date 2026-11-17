@@ -10,7 +10,7 @@ use cadmpeg_ir::tessellation::Tessellation;
 
 #[test]
 fn cone_support_binds_display_list_face() {
-    let mut model = model_with_body();
+    let mut ir = model_with_body();
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -25,7 +25,7 @@ fn cone_support_binds_display_list_face() {
     let v = 2.0;
     let local_radius = 3.0 + v * std::f64::consts::FRAC_PI_4.tan();
     let face = add_face(
-        &mut model,
+        &mut ir,
         "cone",
         cone,
         [
@@ -35,8 +35,8 @@ fn cone_support_binds_display_list_face() {
             Point3::new(0.0, -local_radius * 0.5, v),
         ],
     );
-    set_shell_faces(&mut model, vec![face.clone()]);
-    model.tessellations.push(
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#cone-mesh")
                 .expect("valid identity"),
@@ -54,19 +54,19 @@ fn cone_support_binds_display_list_face() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#cone-mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
     assert_eq!(
-        model.tessellations[0].body,
+        ir.model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
 
 #[test]
 fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
-    let mut model = model_with_body();
+    let mut ir = model_with_body();
     let cone = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
@@ -81,7 +81,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     let axial = 2.0;
     let surface_radius = 3.0 + axial * std::f64::consts::FRAC_PI_4.tan();
     let face = add_face(
-        &mut model,
+        &mut ir,
         "cone-cache",
         cone.clone(),
         [
@@ -91,7 +91,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
             Point3::new(0.0, -surface_radius * 0.5, axial),
         ],
     );
-    set_shell_faces(&mut model, vec![face.clone()]);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     let cache_radius = surface_radius - 0.1;
     let vertices = vec![
         Point3::new(cache_radius, 0.0, axial),
@@ -106,7 +106,7 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
             })
             .collect(),
     );
-    model.tessellations.push(
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#cone-cache-mesh",
@@ -124,15 +124,15 @@ fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#cone-cache-mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
     assert_eq!(
-        model.tessellations[0].body,
+        ir.model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
-    assert!(model.tessellations[0]
+    assert!(ir.model.tessellations[0]
         .chordal_deflection()
         .is_some_and(|deflection| deflection.get() > 0.09 && deflection.get() < 0.11));
 }

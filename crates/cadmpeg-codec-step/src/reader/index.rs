@@ -31,7 +31,7 @@ pub(super) struct CarrierIndex {
 impl CarrierIndex {
     /// Index newly admitted surfaces without copying existing carrier maps.
     pub(super) fn refresh_surfaces(&mut self, ir: &CadIr) {
-        for (index, surface) in ir.model.surfaces.iter().enumerate() {
+        for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
             if let Some(id) = step_instance_id(surface.id.as_str()) {
                 self.surfaces.insert(id, SurfaceIndex(index));
             }
@@ -40,13 +40,13 @@ impl CarrierIndex {
 
     pub(super) fn from_ir(ir: &CadIr) -> CarrierIndex {
         let mut curves = HashMap::new();
-        for (index, curve) in ir.model.curves.iter().enumerate() {
+        for (index, curve) in ir.geometry.curves.iter().enumerate() {
             if let Some(id) = step_instance_id(curve.id.as_str()) {
                 curves.insert(id, CurveIndex(index));
             }
         }
         let mut points = HashMap::new();
-        for (index, point) in ir.model.points.iter().enumerate() {
+        for (index, point) in ir.geometry.points.iter().enumerate() {
             if let Some(id) = step_instance_id(point.id.as_str()) {
                 points.insert(
                     id,
@@ -58,7 +58,7 @@ impl CarrierIndex {
             }
         }
         let mut surfaces = HashMap::new();
-        for (index, surface) in ir.model.surfaces.iter().enumerate() {
+        for (index, surface) in ir.geometry.surfaces.iter().enumerate() {
             if let Some(id) = step_instance_id(surface.id.as_str()) {
                 surfaces.insert(id, SurfaceIndex(index));
             }
@@ -94,7 +94,7 @@ mod tests {
 
     fn carriers() -> CadIr {
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 1)),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -102,13 +102,14 @@ mod tests {
                     .expect("finite line"),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::from(crate::ids::data(crate::ids::kind!("point"), 2)),
             cadmpeg_ir::features::FinitePoint3::ZERO,
             None,
         ));
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::from(crate::ids::data(crate::ids::kind!("surface"), 3)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 PlaneSurface::try_new(
@@ -119,6 +120,7 @@ mod tests {
                 .expect("finite plane"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir
     }
@@ -127,9 +129,9 @@ mod tests {
     fn surface_extension_reuses_existing_carrier_entries() {
         let mut ir = carriers();
         let mut index = CarrierIndex::from_ir(&ir);
-        let mut surface = ir.model.surfaces[0].clone();
+        let mut surface = ir.geometry.surfaces[0].clone();
         surface.id = SurfaceId::from(crate::ids::data(crate::ids::kind!("surface"), 4));
-        ir.model.surfaces.push(surface);
+        ir.geometry.surfaces.push(surface);
         index.refresh_surfaces(&ir);
         index.refresh_surfaces(&ir);
         assert_eq!(index.curves[&1].0, 0);

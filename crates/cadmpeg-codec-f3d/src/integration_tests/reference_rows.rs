@@ -57,13 +57,13 @@ fn derived_dependency_keeps_xref_merge_without_its_target() {
                 Some(archive.as_slice())
             );
         }
-        assert_eq!(merged.ir().model.bodies.len(), usize::from(mixed));
+        assert_eq!(merged.ir().geometry.bodies.len(), usize::from(mixed));
         assert_eq!(merged.ir().model.occurrences.len(), usize::from(mixed));
         let native = f3d_native(merged.ir());
         assert_eq!(native.derived_references.len(), 1);
         assert_eq!(native.xref_references.len(), usize::from(mixed));
         if mixed {
-            assert!(merged.ir().model.bodies[0]
+            assert!(merged.ir().geometry.bodies[0]
                 .id
                 .as_str()
                 .contains("reference-1/occurrence-0/"));

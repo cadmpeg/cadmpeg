@@ -43,39 +43,31 @@ pub(crate) fn attach_test_body_surface(
 
     let region_id = RegionId::mint(format!("{body_id}:region")).expect("identity grammar");
     let shell_id = ShellId::mint(format!("{body_id}:shell")).expect("identity grammar");
-    if !ir.model.bodies.iter().any(|body| body.id == *body_id) {
-        ir.model.bodies.push(Body {
+    if !ir.geometry.bodies.iter().any(|body| body.id == *body_id) {
+        ir.geometry.bodies.push(Body {
             id: body_id.clone(),
             kind: BodyKind::Solid,
-            regions: vec![region_id.clone()],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
             shells: vec![shell_id.clone()],
+            native_ref: None,
         });
     }
-    let face_id =
-        FaceId::mint(format!("{body_id}:face:{}", ir.model.faces.len())).expect("identity grammar");
-    if let Some(shell) = ir
-        .model
-        .shells
-        .iter_mut()
-        .find(|shell| shell.id == shell_id)
-    {
-        shell.add_face(face_id.clone());
-    } else {
-        ir.model.shells.push(Shell::with_face(
-            shell_id.clone(),
-            region_id,
-            face_id.clone(),
-        ));
+    let face_id = FaceId::mint(format!("{body_id}:face:{}", ir.geometry.faces.len()))
+        .expect("identity grammar");
+    if !ir.geometry.shells.iter().any(|shell| shell.id == shell_id) {
+        ir.geometry
+            .shells
+            .push(Shell::new(shell_id.clone(), region_id));
     }
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: face_id,
         shell: shell_id,
         surface,
@@ -84,6 +76,7 @@ pub(crate) fn attach_test_body_surface(
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
 }
 

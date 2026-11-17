@@ -4,7 +4,7 @@
 mod arenas;
 mod coverage;
 pub(super) mod ir;
-mod ir_features;
+pub(super) mod ir_features;
 mod ir_geometry;
 mod meta;
 mod passthrough;

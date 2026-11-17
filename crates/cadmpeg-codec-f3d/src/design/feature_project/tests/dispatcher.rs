@@ -1307,13 +1307,13 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     }];
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::form_cages::project_forms(
+            crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                 ctx,
-                scan,
                 std::slice::from_ref(&scope),
                 &mut features,
                 &cages,
@@ -1450,13 +1450,13 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
             source_object: None,
             cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
         }];
 
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
-                crate::design::feature_project::form_cages::project_forms(
+                crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                     ctx,
-                    scan,
                     std::slice::from_ref(&scope),
                     &mut features,
                     &cages,

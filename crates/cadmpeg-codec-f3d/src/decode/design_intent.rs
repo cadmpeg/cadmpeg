@@ -727,9 +727,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut losses,
     )?;
 
-    crate::design::feature_project::form_cages::project_forms(
+    crate::design::feature_project::form_cages::FormProjection::new(scan).project(
         ctx,
-        scan,
         &design.design_parameter_scopes,
         &mut model.features,
         geometry.subds,
@@ -861,6 +860,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             bodies: geometry.bodies,
             regions: geometry.regions,
             shells: geometry.shells,
+            faces: geometry.faces,
         },
     ));
     losses.extend(crate::history::combine_history_tools::bind(

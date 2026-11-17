@@ -315,7 +315,7 @@ fn projection_emits_the_first_refused_sweep_check() {
 fn validator_refuses_unrepresented_sweep_controls() {
     for field in ["path_tangent", "linearize"] {
         let mut value = serde_json::to_value(definition()).expect("definition");
-        value[field] = serde_json::json!(true);
+        value["value"]["value"][field] = serde_json::json!(true);
         let value = serde_json::from_value(value).expect("changed definition");
         assert!(!Fixture::new().validates(&value));
     }

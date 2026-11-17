@@ -467,6 +467,8 @@ pub(crate) enum F3dLossCode {
     FeatureBaseFeatureNullFlagAssumed,
     /// A Base Feature suffix result-body frame with more than one body reads its body, repeated, and result entries as three consecutive runs.
     FeatureBaseFeatureSuffixRunOrderAssumed,
+    /// A compact Fillet flag run or set frame stores nonzero bytes in its padding positions, which are read as padding.
+    FeatureFilletPaddingAssumed,
     HoleStandardSizingAssumed,
     /// A clearance Hole's specification takes fixed values for the fields it does not store.
     HoleClearanceFieldsAssumed,
@@ -668,6 +670,13 @@ pub(crate) enum F3dLossCode {
     FeatureFormCageBindingAmbiguous,
     FeatureFormBodyReferencesPartialAssumed,
     FeatureFormBodyRegistrationUnsupported,
+    FeatureFormReferenceTypeConflict,
+    FeatureFormForeignReferenceUnresolved,
+    FeatureFormTrackingOwnerConflict,
+    FeatureFormTrackingRunUnresolved,
+    FeatureFormTrackingFixedSlotsAssumed,
+    FeatureFormSerializerReferenceUnresolved,
+    FeatureFormMembershipConflict,
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
@@ -998,8 +1007,6 @@ pub(crate) enum F3dLossCode {
     KernelHeaderMetadataUnresolved,
     /// A bounded descriptive manifest payload is unreadable.
     ManifestMetadataUnresolved,
-    /// An optional bounded archive payload is unreadable.
-    ArchiveEntryUnreadable,
     /// A Design `BulkStream` stores a record run after its last indexed
     /// record; the run is not decoded and its bytes are retained natively.
     UnindexedRecordsRetained,
@@ -1333,6 +1340,7 @@ impl F3dLossCode {
         Self::HoleTaperTappedBoreCylindrical,
         Self::FeatureBaseFeatureNullFlagAssumed,
         Self::FeatureBaseFeatureSuffixRunOrderAssumed,
+        Self::FeatureFilletPaddingAssumed,
         Self::HoleStandardSizingAssumed,
         Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
@@ -1444,6 +1452,13 @@ impl F3dLossCode {
         Self::FeatureFormCageBindingAmbiguous,
         Self::FeatureFormBodyReferencesPartialAssumed,
         Self::FeatureFormBodyRegistrationUnsupported,
+        Self::FeatureFormReferenceTypeConflict,
+        Self::FeatureFormForeignReferenceUnresolved,
+        Self::FeatureFormTrackingOwnerConflict,
+        Self::FeatureFormTrackingRunUnresolved,
+        Self::FeatureFormTrackingFixedSlotsAssumed,
+        Self::FeatureFormSerializerReferenceUnresolved,
+        Self::FeatureFormMembershipConflict,
         Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureScaleMatrixWordAssumed,
         Self::FeatureScaleUnlistedGroupsAssumed,
@@ -1640,7 +1655,6 @@ impl F3dLossCode {
         Self::KernelHeaderToleranceUnresolved,
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
-        Self::ArchiveEntryUnreadable,
         Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
         Self::BodyDisplayNameAmbiguous,
@@ -2149,6 +2163,7 @@ impl F3dLossCode {
             Self::FeatureBaseFeatureSuffixRunOrderAssumed => {
                 "feature.base-feature-suffix-run-order-assumed"
             }
+            Self::FeatureFilletPaddingAssumed => "feature.fillet-padding-assumed",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
@@ -2282,6 +2297,19 @@ impl F3dLossCode {
             Self::FeatureFormBodyRegistrationUnsupported => {
                 "feature.form-body-registration-unsupported"
             }
+            Self::FeatureFormReferenceTypeConflict => "feature.form-reference-type-conflict",
+            Self::FeatureFormForeignReferenceUnresolved => {
+                "feature.form-foreign-reference-unresolved"
+            }
+            Self::FeatureFormTrackingOwnerConflict => "feature.form-tracking-owner-conflict",
+            Self::FeatureFormTrackingRunUnresolved => "feature.form-tracking-run-unresolved",
+            Self::FeatureFormTrackingFixedSlotsAssumed => {
+                "feature.form-tracking-fixed-slots-assumed"
+            }
+            Self::FeatureFormSerializerReferenceUnresolved => {
+                "feature.form-serializer-reference-unresolved"
+            }
+            Self::FeatureFormMembershipConflict => "feature.form-membership-conflict",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
             Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
@@ -2552,7 +2580,6 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => "brep.header-tolerance-unresolved",
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
-            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
             Self::BodyDisplayNameAmbiguous => "design.body-display-name-ambiguous",
@@ -2908,6 +2935,7 @@ impl F3dLossCode {
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
+            | Self::FeatureFilletPaddingAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3021,6 +3049,13 @@ impl F3dLossCode {
             | Self::FeatureFormCageBindingAmbiguous
             | Self::FeatureFormBodyReferencesPartialAssumed
             | Self::FeatureFormBodyRegistrationUnsupported
+            | Self::FeatureFormReferenceTypeConflict
+            | Self::FeatureFormForeignReferenceUnresolved
+            | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormTrackingRunUnresolved
+            | Self::FeatureFormTrackingFixedSlotsAssumed
+            | Self::FeatureFormSerializerReferenceUnresolved
+            | Self::FeatureFormMembershipConflict
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureScaleMatrixWordAssumed
             | Self::FeatureScaleUnlistedGroupsAssumed
@@ -3187,7 +3222,6 @@ impl F3dLossCode {
             | Self::KernelHeaderToleranceUnresolved
             | Self::KernelHeaderMetadataUnresolved
             | Self::ManifestMetadataUnresolved
-            | Self::ArchiveEntryUnreadable
             | Self::UnindexedRecordsRetained
             | Self::BodyDisplayNameAmbiguous
             | Self::WorkPlaneDisplayNameAmbiguous
@@ -3497,6 +3531,7 @@ impl F3dLossCode {
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
+            | Self::FeatureFilletPaddingAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3605,6 +3640,13 @@ impl F3dLossCode {
             | Self::FeatureFormCageBindingAmbiguous
             | Self::FeatureFormBodyReferencesPartialAssumed
             | Self::FeatureFormBodyRegistrationUnsupported
+            | Self::FeatureFormReferenceTypeConflict
+            | Self::FeatureFormForeignReferenceUnresolved
+            | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormTrackingRunUnresolved
+            | Self::FeatureFormTrackingFixedSlotsAssumed
+            | Self::FeatureFormSerializerReferenceUnresolved
+            | Self::FeatureFormMembershipConflict
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureScaleMatrixWordAssumed
             | Self::FeatureScaleUnlistedGroupsAssumed
@@ -3828,9 +3870,7 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::ArchiveEntryUnreadable | Self::UnindexedRecordsRetained => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::UnindexedRecordsRetained => LossTaxonomy::RecordNotTyped,
         }
     }
 
@@ -4196,6 +4236,7 @@ mod tests {
                 "feature.hole-taper-tapped-bore-cylindrical",
                 "feature.base-feature-null-flag-assumed",
                 "feature.base-feature-suffix-run-order-assumed",
+                "feature.fillet-padding-assumed",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",
@@ -4307,6 +4348,13 @@ mod tests {
                 "feature.form-cage-binding-ambiguous",
                 "feature.form-body-references-partial-assumed",
                 "feature.form-body-registration-unsupported",
+                "feature.form-reference-type-conflict",
+                "feature.form-foreign-reference-unresolved",
+                "feature.form-tracking-owner-conflict",
+                "feature.form-tracking-run-unresolved",
+                "feature.form-tracking-fixed-slots-assumed",
+                "feature.form-serializer-reference-unresolved",
+                "feature.form-membership-conflict",
                 "feature.scale-frame-length-form-assumed",
                 "feature.scale-matrix-word-assumed",
                 "feature.scale-unlisted-groups-assumed",
@@ -4503,7 +4551,6 @@ mod tests {
                 "brep.header-tolerance-unresolved",
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
-                "source.archive-entry-unreadable",
                 "source.unindexed-records-retained",
                 "design.intent-undecoded",
                 "design.body-display-name-ambiguous",

@@ -59,7 +59,7 @@ fn prims_become_definitions_and_occurrences() {
         .collect();
     assert!(kinds.contains(&ProductDefinitionKind::Part));
     assert!(kinds.contains(&ProductDefinitionKind::Object));
-    assert_eq!(ir.model.bodies[0].kind, BodyKind::General);
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::General);
     assert!(has_loss(&result, UsdLossCode::PrimTypeNotTransferred));
     assert!(has_loss(&result, UsdLossCode::MeshSubdivisionNotApplied));
 }
@@ -107,12 +107,15 @@ fn curves_become_wire_bodies() {
         "#usda 1.0\n(\n    metersPerUnit = 0.001\n)\ndef BasisCurves \"C\"\n{\n    uniform token type = \"linear\"\n    int[] curveVertexCounts = [2, 3]\n    point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 0, 1), (1, 0, 1), (0, 0, 1)]\n}\n",
     );
     let ir = result.ir();
-    assert_eq!(ir.model.bodies[0].kind, BodyKind::Wire);
-    assert_eq!(ir.model.edges.len(), 2);
-    assert_eq!(ir.model.curves.len(), 2);
-    let closed = &ir.model.edges[1];
-    assert_eq!(closed.start, closed.end);
-    assert_eq!(ir.model.vertices.len(), 3);
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(ir.geometry.edges.len(), 2);
+    assert_eq!(ir.geometry.curves.len(), 2);
+    let closed = &ir.geometry.edges[1];
+    assert_eq!(
+        closed.ends.as_ref().unwrap().start,
+        closed.ends.as_ref().unwrap().end
+    );
+    assert_eq!(ir.geometry.vertices.len(), 3);
 }
 
 #[test]
@@ -121,12 +124,12 @@ fn a_patch_becomes_a_sheet_body_face() {
         "#usda 1.0\ndef NurbsPatch \"P\"\n{\n    int uVertexCount = 2\n    int vVertexCount = 2\n    int uOrder = 2\n    int vOrder = 2\n    double[] uKnots = [0, 0, 1, 1]\n    double[] vKnots = [0, 0, 1, 1]\n    uniform token orientation = \"leftHanded\"\n    point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0)]\n    int[] trimCurve:counts = [1]\n    int[] trimCurve:orders = [2]\n    int[] trimCurve:vertexCounts = [2]\n    double[] trimCurve:knots = [0, 0, 1, 1]\n    double3[] trimCurve:points = [(0, 0, 1), (1, 1, 1)]\n}\n",
     );
     let ir = result.ir();
-    assert_eq!(ir.model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(
-        ir.model.faces[0].sense,
+        ir.geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
-    assert!(ir.model.faces[0].loops.is_empty());
+    assert!(ir.geometry.faces[0].loops.is_empty());
     assert!(has_loss(&result, UsdLossCode::NurbsTrimNotTransferred));
 }
 

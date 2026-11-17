@@ -3,7 +3,7 @@
 fn active_body() -> cadmpeg_ir::topology::Body {
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
-        .model
+        .geometry
         .bodies
         .remove(0);
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
@@ -1915,6 +1915,7 @@ fn feature_output_equal_endpoints_preserve_an_existing_output_proof() {
     assert_eq!(feature.evaluation.outputs(), &[body.id]);
 }
 
+mod deleted_bodies;
 mod edge_midpoints;
 mod saved_edges;
 mod split_plane;

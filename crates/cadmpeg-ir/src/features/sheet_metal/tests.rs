@@ -5,16 +5,15 @@ use serde_json::json;
 fn edge_partial_extent_inputs_keep_each_known_member() {
     use crate::features::FeatureOperation;
     for width in [
-        json!({"kind":"symmetric_per_edge","value":{"widths":[{"width":3.0},{"width":7.0},{}]}}),
-        json!({"kind":"two_sides_per_edge","value":{"widths":[{"first":4.0},{"second":2.0}]}}),
-        json!({"kind":"symmetric","value":{"width":3.0}}),
-        json!({"kind":"two_sides","value":{"second":2.0}}),
+        json!({"kind":"symmetric_per_edge","widths":[{"width":3.0},{"width":7.0},{}]}),
+        json!({"kind":"two_sides_per_edge","widths":[{"first":4.0},{"second":2.0}]}),
+        json!({"kind":"symmetric","width":3.0}),
+        json!({"kind":"two_sides","second":2.0}),
     ] {
-        let wire = json!({
-            "definition":"sheet_metal_edge_flange",
+        let wire = json!({"kind": "sheet_metal_edge_flange", "value": {
             "height":{"kind":"to_object","value":{"target":{"kind":"native","value":"test:target"}}},
             "width":width
-        });
+        }});
         let value: FeatureOperation =
             serde_json::from_value(wire.clone()).expect("independent extent inputs");
         assert_eq!(serde_json::to_value(value).expect("extent wire"), wire);
@@ -44,7 +43,7 @@ fn edge_partial_extent_inputs_keep_each_known_member() {
     }
     assert!(
         serde_json::from_value::<crate::features::SheetMetalFlangeWidth>(
-            json!({"kind":"two_sides_per_edge","value":{"widths":[]}})
+            json!({"kind":"two_sides_per_edge","widths":[]})
         )
         .is_err()
     );
@@ -54,9 +53,9 @@ fn edge_partial_extent_inputs_keep_each_known_member() {
 fn edge_complete_extent_laws_keep_their_existing_wire() {
     use crate::features::{SheetMetalFlangeHeight, SheetMetalFlangeWidth};
     for wire in [
-        json!({"kind":"symmetric","value":{"width":3.0}}),
-        json!({"kind":"two_sides","value":{"first":4.0,"second":2.0}}),
-        json!({"kind":"two_sides_per_edge","value":{"widths":[{"first":4.0,"second":2.0}]}}),
+        json!({"kind":"symmetric","width":3.0}),
+        json!({"kind":"two_sides","first":4.0,"second":2.0}),
+        json!({"kind":"two_sides_per_edge","widths":[{"first":4.0,"second":2.0}]}),
     ] {
         let value: SheetMetalFlangeWidth =
             serde_json::from_value(wire.clone()).expect("complete width law");
@@ -78,8 +77,7 @@ fn edge_complete_extent_laws_keep_their_existing_wire() {
 fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
     use super::SheetMetalEdgeFlangeConstruction;
     use crate::features::FeatureOperation;
-    let wire = json!({
-        "definition": "sheet_metal_edge_flange",
+    let wire = json!({"kind": "sheet_metal_edge_flange", "value": {
         "edges": {"kind": "native", "value": "test:edges"},
         "height": {"kind": "distance", "value": 5.0},
         "angle": 1.2,
@@ -87,11 +85,11 @@ fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
         "bend_position": "inside",
         "width": {"kind": "full_edge"},
         "bend_radius": 0.5
-    });
+    }});
     let operation: FeatureOperation =
         serde_json::from_value(wire.clone()).expect("complete edge wire");
     assert_eq!(serde_json::to_value(operation).expect("edge wire"), wire);
-    let sparse = json!({"definition": "sheet_metal_edge_flange"});
+    let sparse = json!({"kind": "sheet_metal_edge_flange", "value": {}});
     let operation: FeatureOperation =
         serde_json::from_value(sparse.clone()).expect("sparse edge wire");
     assert_eq!(
@@ -112,17 +110,17 @@ fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
         "bend_radius",
     ] {
         let mut invalid = wire.clone();
-        invalid[key] = serde_json::Value::Null;
+        invalid["value"][key] = serde_json::Value::Null;
         let error = serde_json::from_value::<FeatureOperation>(invalid)
             .expect_err("null construction member")
             .to_string();
         assert!(error.contains(key), "{error}");
     }
     let mut unknown = wire.clone();
-    unknown["extra"] = json!(true);
+    unknown["value"]["extra"] = json!(true);
     assert!(serde_json::from_value::<FeatureOperation>(unknown).is_err());
     let mut zero_radius = wire;
-    zero_radius["bend_radius"] = json!(0.0);
+    zero_radius["value"]["bend_radius"] = json!(0.0);
     assert!(serde_json::from_value::<FeatureOperation>(zero_radius).is_ok());
 }
 
@@ -130,15 +128,15 @@ fn edge_construction_keeps_complete_flat_wire_and_accepts_sparse_inputs() {
 fn edge_offset_rows_keep_signed_and_missing_members() {
     use super::SheetMetalFlangeOffset;
     use crate::features::SheetMetalFlangeWidth;
-    let wire = json!({"kind": "two_offsets_per_edge", "value": {"offsets": [
+    let wire = json!({"kind": "two_offsets_per_edge", "offsets": [
         {"first": 0.0, "second": -7.5, "first_reference": "test:boundary#first", "second_reference": "test:boundary#second"},
         {"first": -5.0}
-    ]}});
+    ]});
     let width: SheetMetalFlangeWidth =
         serde_json::from_value(wire.clone()).expect("signed source offsets");
     assert_eq!(serde_json::to_value(width).expect("offset wire"), wire);
     assert!(serde_json::from_value::<SheetMetalFlangeWidth>(
-        json!({"kind":"two_offsets_per_edge","value":{"offsets":[]}})
+        json!({"kind":"two_offsets_per_edge","offsets":[]})
     )
     .is_err());
     for key in ["first", "second", "first_reference", "second_reference"] {

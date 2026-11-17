@@ -8,6 +8,7 @@ use cadmpeg_core::decode::{DecodeDepth, InspectOptions};
 use cadmpeg_core::dialect::Admission;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::unknown::part::record_unreadable_kind;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::loss::PvzLossCode;
@@ -117,16 +118,19 @@ fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect::<Vec<_>>(),
-        [
-            ("geometry_member_count", "1"),
-            ("structure_member", "model.pvs")
-        ]
+        [("structure_member", "model.pvs")]
     );
 
     assert!(!result.report().geometry_transferred());
-    assert_eq!(
-        loss_codes(&result),
-        [PvzLossCode::StructureMemberMalformed.kind()]
+    assert_eq!(loss_codes(&result), [record_unreadable_kind()]);
+    let message = &result.report().losses[0].message;
+    assert!(
+        message.starts_with("part archive-entry \"model.pvs\" stream=\"\" offset=")
+            && message.ends_with(
+                "; the package carries no product structure, and none of its 1 .ol geometry \
+                 members was placed; dropped=[]"
+            ),
+        "{message}"
     );
     assert!(result.ir().model.product_definitions.is_empty());
     assert!(result.ir().model.tessellations.is_empty());
@@ -147,11 +151,12 @@ fn every_structure_signature_decodes_the_assembly() {
         let result = decode(&assembly(signature));
         assert_eq!(primary_dialect(&result), dialect);
         let model = &result.ir().model;
+        let geometry = &result.ir().geometry;
         assert_eq!(
             (
                 model.product_definitions.len(),
                 model.occurrences.len(),
-                model.bodies.len(),
+                geometry.bodies.len(),
                 model.tessellations.len(),
                 model.appearances.len(),
                 model.appearance_bindings.len(),
@@ -275,7 +280,7 @@ fn a_malformed_geometry_member_is_reported_and_the_rest_decodes() {
         ("plate.ol", &plate_member()),
     ]);
     let result = decode(&bytes);
-    assert!(loss_codes(&result).contains(&PvzLossCode::GeometryMemberMalformed.kind()));
+    assert!(loss_codes(&result).contains(&record_unreadable_kind()));
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.occurrences.len(), 4);
 }
@@ -295,14 +300,37 @@ fn a_geometry_member_that_does_not_open_is_reported_and_the_rest_decodes() {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == PvzLossCode::GeometryMemberMalformed.kind())
+        .filter(|loss| loss.code == record_unreadable_kind())
         .collect();
     assert_eq!(malformed.len(), 1);
     assert!(malformed[0]
         .message
-        .starts_with("geometry member \"bracket.ol\" did not open"));
+        .starts_with("part archive-entry \"bracket.ol\" stream=\"\" offset="));
+    assert!(malformed[0].message.ends_with("; dropped=[]"));
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert_eq!(result.ir().model.occurrences.len(), 4);
+    let stubs = result.ir().native_unknowns("pvz").unwrap();
+    let [stub] = stubs.as_slice() else {
+        panic!("one stub: {stubs:?}");
+    };
+    let [link] = stub.links.as_slice() else {
+        panic!("the stub links the definition that names the member");
+    };
+    assert!(result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| cadmpeg_ir::ids::Identity::from(definition.id.clone()) == *link));
+    assert!(malformed[0]
+        .message
+        .contains(&format!("record={}", stub.id)));
+    let (_, _, fidelity) = result.into_parts();
+    let retained = fidelity.retained_record(stub.id.as_str()).unwrap();
+    assert_eq!(retained.data(), Some(b"not a bzip2 stream".as_slice()));
+    let model = std::collections::BTreeSet::from([cadmpeg_core::decode::ArenaClass::Model]);
+    assert_eq!(retained.untyped(), &model);
+    assert_eq!(fidelity.unrepresented(), model);
 }
 
 #[test]
@@ -332,7 +360,7 @@ fn an_unknown_structure_signature_is_residual_and_charged() {
         loss_codes(&result),
         [
             PvzLossCode::SourceDialectUnverified.kind(),
-            PvzLossCode::StructureMemberMalformed.kind(),
+            record_unreadable_kind(),
         ]
     );
 }
@@ -352,7 +380,7 @@ fn an_unreadable_central_directory_is_recovered_and_charged() {
         loss_codes(&result),
         [
             PvzLossCode::ContainerDirectoryRecovered.kind(),
-            PvzLossCode::StructureMemberMalformed.kind(),
+            record_unreadable_kind(),
         ]
     );
 }
@@ -385,8 +413,9 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
 
     let result = decode(&exact_assembly());
     let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let body = |member: &str| {
-        model
+        geometry
             .bodies
             .iter()
             .find(|body| body.id.as_str() == format!("pvz:model:body#{member}"))
@@ -396,8 +425,8 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         let cube = body(member);
         assert_eq!(cube.kind, BodyKind::Solid);
         assert_eq!(cube.name.as_deref(), Some(member));
-        assert_eq!(cube.regions.len(), 1);
-        let faces = model
+        assert_eq!(geometry.body_regions(&cube.id).count(), 1);
+        let faces = geometry
             .faces
             .iter()
             .filter(|face| face.id.as_str().contains(&format!("#{member}:")))
@@ -412,8 +441,8 @@ fn exact_streams_become_solids_that_keep_their_tessellation() {
         assert_eq!(meshes[0].triangle_count(), 12);
     }
     assert_eq!(body("plate.ol").kind, BodyKind::General);
-    assert!(body("plate.ol").regions.is_empty());
-    assert_eq!(model.bodies.len(), 3);
+    assert!(geometry.body_regions(&body("plate.ol").id).next().is_none());
+    assert_eq!(geometry.bodies.len(), 3);
     for definition in &model.product_definitions[1..] {
         assert_eq!(definition.bodies.len(), 1);
     }
@@ -445,8 +474,9 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
 
     let result = decode(&cube_and_sheet_assembly());
     let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let of_kind = |kind: BodyKind| {
-        let found: Vec<_> = model
+        let found: Vec<_> = geometry
             .bodies
             .iter()
             .filter(|body| body.kind == kind)
@@ -455,15 +485,15 @@ fn closed_and_open_shells_of_one_member_become_a_solid_and_a_sheet() {
         found[0]
     };
     let (solid, sheet) = (of_kind(BodyKind::Solid), of_kind(BodyKind::Sheet));
-    assert_eq!(model.bodies.len(), 2);
+    assert_eq!(geometry.bodies.len(), 2);
     for body in [solid, sheet] {
         assert_eq!(body.name.as_deref(), Some("part.ol"));
     }
     let shells = |body: &cadmpeg_ir::topology::Body| -> usize {
-        model
+        geometry
             .regions
             .iter()
-            .filter(|region| body.regions.contains(&region.id))
+            .filter(|region| region.body == body.id)
             .map(|region| region.shells.len())
             .sum()
     };

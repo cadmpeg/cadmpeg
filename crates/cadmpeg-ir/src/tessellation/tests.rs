@@ -653,14 +653,14 @@ fn a_strip_run_outside_the_mesh_is_an_unknown_key() {
     }
 }
 
-// The domain is the wire's tag, so the selector table exists only on the two
+// The domain is the wire's `kind` tag, so the selector table exists only on the two
 // domains that address one. A vertex channel has no `indices` key to carry,
 // and the payload length is the data itself, not a restated `count`.
 #[test]
 fn a_channel_states_its_addressing_by_name() {
     let value = TessellationChannel::new(ChannelAddressing::Vertex {}, 1, 0, 0, vec![7]).unwrap();
     let wire = serde_json::to_value(&value).unwrap();
-    assert_eq!(wire["addressing"], serde_json::json!({"domain": "vertex"}));
+    assert_eq!(wire["addressing"], serde_json::json!({"kind": "vertex"}));
     assert!(wire.get("indices").is_none());
     assert!(wire.get("count").is_none());
     assert_eq!(
@@ -681,7 +681,7 @@ fn a_channel_states_its_addressing_by_name() {
     let corner_wire = serde_json::to_value(&corner).unwrap();
     assert_eq!(
         corner_wire["addressing"],
-        serde_json::json!({"domain": "corner", "indices": [0, 0, 0]})
+        serde_json::json!({"kind": "corner", "indices": [0, 0, 0]})
     );
     assert_eq!(
         serde_json::from_value::<TessellationChannel>(corner_wire).unwrap(),
@@ -689,9 +689,9 @@ fn a_channel_states_its_addressing_by_name() {
     );
 
     for orphan in [
-        serde_json::json!({"domain": "vertex", "indices": [0]}),
-        serde_json::json!({"domain": "corner"}),
-        serde_json::json!({"domain": "triangle"}),
+        serde_json::json!({"kind": "vertex", "indices": [0]}),
+        serde_json::json!({"kind": "corner"}),
+        serde_json::json!({"kind": "triangle"}),
     ] {
         let mut invalid = wire.clone();
         invalid["addressing"] = orphan;
@@ -820,4 +820,23 @@ fn texture_coordinates_hold_one_value_per_vertex_or_corner_under_unique_names() 
         assert!(mesh().with_texture_coordinates(invalid).is_err());
     }
     rejects_wire_field("texture_coordinates", vec![coordinates("st", Vertex, 3)]);
+}
+
+#[test]
+fn a_tessellation_writes_the_state_it_names_and_refuses_a_null_one() {
+    let mut value = mesh();
+    assert!(serde_json::to_value(&value).unwrap().get("state").is_none());
+    value.state = Some(crate::design::refs::StateRef {
+        configuration: None,
+        of: crate::design::refs::Evaluated::Tool(
+            crate::features::FeatureId::mint("test:design:feature#3").unwrap(),
+        ),
+    });
+    let wire = serde_json::to_value(&value).unwrap();
+    assert_eq!(
+        wire["state"],
+        serde_json::json!({"of": {"kind": "tool", "value": "test:design:feature#3"}})
+    );
+    assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
+    rejects_wire_field("state", serde_json::Value::Null);
 }

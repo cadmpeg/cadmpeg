@@ -244,8 +244,8 @@ fn assert_authored_view(
         "{name}"
     );
     assert_eq!(
-        view.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", source).as_str()),
+        view.relationships["Source"][0].native_text(),
+        Some(source),
         "{name} source"
     );
 }
@@ -275,7 +275,8 @@ fn assert_authored_dimension(
     assert!(
         page.relationships["Views"]
             .iter()
-            .any(|reference| reference.local_target() == Some(dimension_drawing.id.as_str())),
+            .any(|reference| reference.native_text()
+                == Some(crate::native::id_key(&dimension_drawing.object))),
         "Page.Views owns {name}"
     );
 
@@ -286,24 +287,26 @@ fn assert_authored_dimension(
         .find(|annotation| annotation.object.ends_with(&format!("#{name}")))
         .unwrap();
     assert_eq!(annotation.position.unwrap().get(), position, "{name}");
-    let references = &annotation.references["References2D"];
-    assert_eq!(references.len(), expected_references.len(), "{name}");
-    for (reference, (view_name, subelements)) in references.iter().zip(expected_references) {
-        assert_eq!(
-            reference.local_target(),
-            Some(drawing(view_name).id.as_str()),
-            "{name} reference view"
-        );
-        assert_eq!(
-            reference
-                .subelements
+    let references = annotation.references["References2D"]
+        .iter()
+        .map(cadmpeg_ir::ReferenceSelection::native_text)
+        .collect::<Vec<_>>();
+    let expected = expected_references
+        .iter()
+        .flat_map(|(view_name, subelements)| {
+            subelements
                 .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            *subelements,
-            "{name} reference subelements"
-        );
-    }
+                .map(move |subelement| format!("{view_name}.{subelement}"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        references,
+        expected
+            .iter()
+            .map(|text| Some(text.as_str()))
+            .collect::<Vec<_>>(),
+        "{name} references"
+    );
     let anchors = annotation
         .reference_anchors
         .iter()
@@ -367,8 +370,7 @@ fn physical_page_template_and_saved_dimension_are_exact() {
     let [reference] = dimension.references["References2D"].as_slice() else {
         panic!("Length must have one 2D reference")
     };
-    assert_eq!(reference.local_target(), Some(drawing("Front").id.as_str()));
-    assert_eq!(reference.subelements, ["Edge3"]);
+    assert_eq!(reference.native_text(), Some("Front.Edge3"));
     assert_eq!(
         dimension
             .reference_anchors
@@ -380,7 +382,10 @@ fn physical_page_template_and_saved_dimension_are_exact() {
     let page_views = &page.relationships["Views"];
     assert_eq!(page_views.len(), 4);
     for (reference, name) in page_views.iter().zip(["Front", "Top", "Length", "Note"]) {
-        assert_eq!(reference.local_target(), Some(drawing(name).id.as_str()));
+        assert_eq!(
+            reference.native_text(),
+            Some(crate::native::id_key(&drawing(name).object))
+        );
     }
     for (name, position, scale, direction) in [
         ("Front", [65.0, 180.0], 2.0, [0.0, -1.0, 0.0]),
@@ -391,10 +396,7 @@ fn physical_page_template_and_saved_dimension_are_exact() {
         assert_eq!(view.position.unwrap().get(), position);
         assert_eq!(view.scale.unwrap().get(), scale);
         assert_eq!(view.direction.unwrap().as_raw(), &direction);
-        assert_eq!(
-            view.relationships["Source"][0].local_target(),
-            Some(crate::native::native_id("object", "Box").as_str())
-        );
+        assert_eq!(view.relationships["Source"][0].native_text(), Some("Box"));
     }
     let note = ir
         .model
@@ -448,9 +450,8 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
         "TriangleView",
     ] {
         assert!(
-            page_views
-                .iter()
-                .any(|reference| reference.local_target() == Some(drawing(name).id.as_str())),
+            page_views.iter().any(|reference| reference.native_text()
+                == Some(crate::native::id_key(&drawing(name).object))),
             "Page.Views owns {name}"
         );
     }
@@ -475,8 +476,8 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
     );
     assert_eq!(triangle_view.rotation_degrees.unwrap().get(), 30.0);
     assert_eq!(
-        triangle_view.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Triangle").as_str())
+        triangle_view.relationships["Source"][0].native_text(),
+        Some("Triangle")
     );
     for (name, kind, value) in [
         ("Euclidean", DimensionKind::Distance {}, 30.0),
@@ -494,40 +495,34 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
 
     let projection = drawing("Projection");
     assert_eq!(
-        projection.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Box").as_str())
+        projection.relationships["Source"][0].native_text(),
+        Some("Box")
     );
 
     let front = drawing("Front");
     assert_eq!(front.position.unwrap().get(), [65.0, 180.0]);
     assert_eq!(front.scale.unwrap().get(), 2.0);
     assert_eq!(front.direction.unwrap().as_raw(), &[0.0, -1.0, 0.0]);
-    assert_eq!(
-        front.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Box").as_str())
-    );
+    assert_eq!(front.relationships["Source"][0].native_text(), Some("Box"));
     let top = drawing("Top");
     assert_eq!(top.position.unwrap().get(), [65.0, 230.0]);
     assert_eq!(top.scale.unwrap().get(), 1.0);
     assert_eq!(top.direction.unwrap().as_raw(), &[0.0, 0.0, 1.0]);
-    assert_eq!(
-        top.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Box").as_str())
-    );
+    assert_eq!(top.relationships["Source"][0].native_text(), Some("Box"));
 
     let section = drawing("Section");
     assert_eq!(
-        section.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Box").as_str())
+        section.relationships["Source"][0].native_text(),
+        Some("Box")
     );
     assert_eq!(
-        section.relationships["BaseView"][0].local_target(),
-        Some(front.id.as_str())
+        section.relationships["BaseView"][0].native_text(),
+        Some(crate::native::id_key(&front.object))
     );
     let detail = drawing("Detail");
     assert_eq!(
-        detail.relationships["BaseView"][0].local_target(),
-        Some(front.id.as_str())
+        detail.relationships["BaseView"][0].native_text(),
+        Some(crate::native::id_key(&front.object))
     );
     let properties = ir
         .native
@@ -638,7 +633,10 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
         let [reference] = page.relationships["Views"].as_slice() else {
             panic!("{name} page must own exactly one view")
         };
-        assert_eq!(reference.local_target(), Some(view.id.as_str()));
+        assert_eq!(
+            reference.native_text(),
+            Some(crate::native::id_key(&view.object))
+        );
     }
 }
 

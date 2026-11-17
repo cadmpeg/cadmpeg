@@ -628,6 +628,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
                 .expect("identity grammar"),
             geometry: surface_geometry.clone(),
             source_object: None,
+            native_ref: None,
         })
         .to_vec();
     let points = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];

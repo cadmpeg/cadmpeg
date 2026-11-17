@@ -89,9 +89,12 @@ fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
 #[test]
 fn encoder_writes_authored_with_retained_native_envelope_ir() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -130,10 +133,10 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 6);
-    assert_eq!(decoded.ir().model.edges.len(), 12);
-    assert_eq!(decoded.ir().model.vertices.len(), 8);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 6);
+    assert_eq!(decoded.ir().geometry.edges.len(), 12);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 8);
 }
 
 #[test]
@@ -141,18 +144,21 @@ fn semantic_writer_emits_face_records_deterministically() {
     use cadmpeg_ir::topology::Color;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
-    for (index, face) in ir.model.faces.iter_mut().enumerate() {
+    for (index, face) in ir.geometry.faces.iter_mut().enumerate() {
         face.color = Some(
             Color::new(
-                f32::from(u16::try_from(index).expect("index fits u16")) / 10.0,
-                f32::from(u16::try_from(index + 1).expect("index fits u16")) / 10.0,
-                f32::from(u16::try_from(index + 2).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index + 1).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index + 2).expect("index fits u16")) / 10.0,
                 1.0,
             )
             .expect("valid color"),
@@ -248,9 +254,12 @@ fn encoder_writes_authored_with_retained_native_envelope_line_sketches() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -737,9 +746,12 @@ fn encoder_writes_authored_with_retained_native_envelope_spatial_point_and_line_
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -969,7 +981,7 @@ fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
     let attribute = SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:default_reference_plane#0")
             .unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "default_reference_plane".into(),
         values: vec![
             AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap(),
@@ -999,7 +1011,7 @@ fn patched_retained_metadata(
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint(&id).unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: name.into(),
         values,
     });
@@ -1105,7 +1117,7 @@ fn configuration_manager_metadata_cannot_be_patched_or_generated() {
     let attribute = SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:configuration_manager#0:0")
             .unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "configuration_manager".into(),
         values,
     };
@@ -1141,7 +1153,7 @@ fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
         let id = "sldprt:metadata:part_record#0:6";
         ir.model.attributes.push(SourceAttribute {
             id: cadmpeg_ir::ids::AttributeId::mint(id).unwrap(),
-            target: AttributeTarget::Document,
+            target: AttributeTarget::Document.into(),
             name: "part_record".into(),
             values,
         });
@@ -1170,7 +1182,7 @@ fn generated_part_metadata_requires_retained_root_serializer() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:part_record#0:6").unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "part_record".into(),
         values: vec![AttributeValue::Integer(17)],
     });
@@ -1258,13 +1270,13 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
             };
             *value += 1;
         } else if change == 5 {
-            let body = ir.model.bodies[0].id.clone();
+            let body = ir.geometry.bodies[0].id.clone();
             ir.model
                 .attributes
                 .iter_mut()
                 .find(|a| a.name == "configuration_manager")
                 .unwrap()
-                .target = AttributeTarget::Body(body);
+                .target = AttributeTarget::Body(body).into();
         }
         let records = crate::source_records(&ir, &fidelity).unwrap();
         let mut written = Vec::new();

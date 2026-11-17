@@ -122,14 +122,17 @@ impl JsonSchema for SketchFontWeight {
 /// Horizontal placement of sketch text about its text anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "native_value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SketchTextHorizontalAlignment {
     /// Align the text's left edge with its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Left,
     /// Center the text about its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Center,
     /// Align the text's right edge with its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Right,
     /// Source alignment ordinal without an assigned neutral meaning.
     Native(u32),
@@ -138,14 +141,17 @@ pub enum SketchTextHorizontalAlignment {
 /// Vertical placement of sketch text about its text anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "native_value", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SketchTextVerticalAlignment {
     /// Align the text's top with its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Top,
     /// Center the text about its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Middle,
     /// Align the text's bottom with its anchor.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Bottom,
     /// Source alignment ordinal without an assigned neutral meaning.
     Native(u32),
@@ -194,7 +200,6 @@ pub struct Sketch {
     /// Placement of sketch coordinates in model space.
     pub placement: SketchPlacement,
     /// Ordered closed or open profile chains.
-    #[serde(default, skip_serializing_if = "SketchProfiles::is_empty")]
     pub profiles: SketchProfiles,
     /// Identifier of the full-fidelity native input lane.
     #[serde(
@@ -421,7 +426,6 @@ pub struct SketchEntityUse {
     /// Referenced sketch entity.
     pub entity: SketchEntityId,
     /// Whether traversal opposes the entity's stored direction.
-    #[serde(default)]
     pub reversed: bool,
 }
 
@@ -435,7 +439,6 @@ pub struct SketchEntity {
     /// Owning sketch.
     pub sketch: SketchId,
     /// Whether the entity is construction geometry.
-    #[serde(default)]
     pub construction: bool,
     /// Source-native geometry record represented by this entity.
     #[serde(
@@ -452,7 +455,6 @@ pub struct SketchEntity {
     )]
     pub geometry_ref: Option<String>,
     /// Source-native endpoint records in stored entity direction.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub endpoint_refs: Vec<String>,
     /// Solved two-dimensional geometry.
     pub geometry: SketchGeometry,
@@ -1211,7 +1213,6 @@ pub enum SketchGeometryDefinition<
         #[serde(deserialize_with = "deserialize_object")]
         object: NonBlankString,
         /// Ordered source subelement selectors.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subelements: Vec<String>,
     },
     /// Source-native geometry not yet reduced to a neutral family.
@@ -1262,7 +1263,6 @@ pub struct SpatialSketch {
     )]
     pub visible: Option<bool>,
     /// Ordered closed profile loops with profile-local planes.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<SpatialSketchProfile>,
     /// Identifier of the full-fidelity native input lane.
     #[serde(
@@ -1425,7 +1425,6 @@ pub struct SpatialSketchEntityUse {
     /// Referenced spatial-sketch entity.
     pub entity: SpatialSketchEntityId,
     /// Whether traversal opposes the entity's stored direction.
-    #[serde(default)]
     pub reversed: bool,
 }
 
@@ -1439,7 +1438,6 @@ pub struct SpatialSketchEntity {
     /// Owning spatial sketch.
     pub sketch: SpatialSketchId,
     /// Whether the entity is construction geometry.
-    #[serde(default)]
     pub construction: bool,
     /// Source-native geometry record represented by this entity.
     #[serde(
@@ -1456,7 +1454,6 @@ pub struct SpatialSketchEntity {
     )]
     pub geometry_ref: Option<String>,
     /// Source-native endpoint records in stored entity direction.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub endpoint_refs: Vec<String>,
     /// Solved model-space geometry.
     pub geometry: SpatialSketchGeometry,
@@ -1675,7 +1672,6 @@ pub enum SpatialSketchConstraintDefinitionInput<U = Vector3, L = crate::scalar::
         )]
         parameter: Option<crate::features::ParameterId>,
         /// Full-fidelity source operands in field order.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         operands: Vec<SketchNativeOperand>,
     },
     /// Two model-space sketch points occupy the same solved position.
@@ -2307,7 +2303,7 @@ pub struct SketchConstraint {
 /// A geometric locus on a sketch entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "entity", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SketchLocus {
     /// The complete entity.
@@ -2389,7 +2385,6 @@ pub struct SketchOffsetPair {
     /// Entity produced at the shared signed offset distance.
     pub result: SketchEntityId,
     /// Reverse the source's stored traversal before selecting its left normal.
-    #[serde(default)]
     pub source_reversed: bool,
 }
 
@@ -2949,7 +2944,7 @@ pub enum SketchInternalAlignment {
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "alignment", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum SketchInternalAlignmentWire {
     /// Major diameter helper for an ellipse.
     EllipseMajorDiameter {},
@@ -3831,7 +3826,6 @@ pub enum SketchConstraintDefinitionInput {
         )]
         native_flags: Option<u64>,
         /// Exact source-native scalar properties not represented by common state or flags.
-        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         native_properties: BTreeMap<String, String>,
         /// Referenced entities.
@@ -3844,7 +3838,6 @@ pub enum SketchConstraintDefinitionInput {
         )]
         parameter: Option<ParameterId>,
         /// Native operands whose neutral loci are unresolved.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         operands: Vec<SketchNativeOperand>,
     },
 }

@@ -128,8 +128,8 @@ fn selected_plane_source(ambiguous: bool, invalid_sign: bool) -> Vec<u8> {
 fn selected_shell_plane_parity_changes_only_the_oriented_face_normal() {
     let baseline = decode(baseline_source());
     let corrected = decode(selected_plane_source(false, false));
-    assert_eq!(baseline.ir().model.faces.len(), 4);
-    let mut expected = baseline.ir().model.clone();
+    assert_eq!(baseline.ir().geometry.faces.len(), 4);
+    let mut expected = baseline.ir().geometry.clone();
     let face = expected
         .faces
         .iter_mut()
@@ -137,16 +137,18 @@ fn selected_shell_plane_parity_changes_only_the_oriented_face_normal() {
         .expect("plane face");
     assert_eq!(face.sense, Sense::Reversed);
     face.sense = Sense::Forward;
-    assert_eq!(corrected.ir().model, expected);
+    assert_eq!(corrected.ir().geometry, expected);
+    assert_eq!(corrected.ir().model, baseline.ir().model);
     assert_valid(&corrected);
 }
 
 #[test]
 fn ambiguous_or_malformed_shell_owner_preserves_the_existing_standard_model() {
     let baseline = decode(baseline_source());
-    assert_eq!(baseline.ir().model.faces.len(), 4);
+    assert_eq!(baseline.ir().geometry.faces.len(), 4);
     for (ambiguous, invalid_sign) in [(true, false), (false, true)] {
         let result = decode(selected_plane_source(ambiguous, invalid_sign));
+        assert_eq!(result.ir().geometry, baseline.ir().geometry);
         assert_eq!(result.ir().model, baseline.ir().model);
         assert_valid(&result);
     }

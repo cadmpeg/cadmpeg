@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 32988,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 3242
@@ -21,8 +21,8 @@
         "data_offset": "3327",
         "header_offset": "3284"
       },
-      "compression": "deflate",
       "expanded": 3471,
+      "kind": "deflate",
       "name": "PartShape.brp",
       "role": "brep",
       "stored": 511
@@ -34,8 +34,8 @@
         "data_offset": "3882",
         "header_offset": "3838"
       },
-      "compression": "deflate",
       "expanded": 663,
+      "kind": "deflate",
       "name": "PartShape1.brp",
       "role": "brep",
       "stored": 185
@@ -47,8 +47,8 @@
         "data_offset": "4111",
         "header_offset": "4067"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "PartShape2.brp",
       "role": "brep",
       "stored": 2
@@ -60,8 +60,8 @@
         "data_offset": "4157",
         "header_offset": "4113"
       },
-      "compression": "deflate",
       "expanded": 2423,
+      "kind": "deflate",
       "name": "PartShape3.brp",
       "role": "brep",
       "stored": 433
@@ -73,8 +73,8 @@
         "data_offset": "4634",
         "header_offset": "4590"
       },
-      "compression": "deflate",
       "expanded": 2645,
+      "kind": "deflate",
       "name": "PartShape4.brp",
       "role": "brep",
       "stored": 454
@@ -86,19 +86,20 @@
         "data_offset": "5132",
         "header_offset": "5088"
       },
-      "compression": "deflate",
       "expanded": 470,
+      "kind": "deflate",
       "name": "PartShape5.brp",
       "role": "brep",
       "stored": 170
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "0.21R33771 (Git)",
@@ -106,8 +107,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

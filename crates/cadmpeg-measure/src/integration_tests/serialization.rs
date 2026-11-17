@@ -97,7 +97,7 @@ fn a_face_report_serializes_members_in_contract_order() {
     let surfaces = measure(
         &ir,
         &Selection {
-            surfaces: vec![ir.model.surfaces[0].id.clone()],
+            surfaces: vec![ir.geometry.surfaces[0].id.clone()],
             ..Selection::default()
         },
     );
