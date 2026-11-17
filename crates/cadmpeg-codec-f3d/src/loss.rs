@@ -3983,6 +3983,11 @@ mod tests {
             codes,
             [
                 "scene.override-refused",
+                "feature.base-face-regions-native",
+                "feature.base-face-source-carrier-unresolved",
+                "feature.base-face-thickness-unresolved",
+                "feature.base-face-material-side-unresolved",
+                "feature.base-face-result-choice-unresolved",
                 "feature.contour-vector-owner-distance-role-assumed",
                 "feature.contour-profile-native",
                 "feature.contour-default-side-one-left-assumed",
