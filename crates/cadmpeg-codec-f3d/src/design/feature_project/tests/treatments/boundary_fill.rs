@@ -44,9 +44,21 @@ fn boundary_fill_projects_body_region_groups() {
             ..
         })) if tool_selection == &tools.id
             && cell_selections.as_slice() == [cadmpeg_ir::features::BoundaryFillCell::BodyRegion(
-                cadmpeg_ir::features::BodySelection::Native(cell.id)
+                cadmpeg_ir::features::BodySelection::Native(cell.id.clone())
             )]
     ));
+    let wire = serde_json::to_value(&projected).unwrap();
+    assert_eq!(wire["value"]["value"]["plane_tools"], serde_json::json!([]));
+    assert_eq!(
+        wire["value"]["value"]["cells"][0],
+        serde_json::json!({"kind":"body_region","value":{"kind":"native","value":cell.id}})
+    );
+    let mut missing_planes = wire;
+    missing_planes["value"]["value"]
+        .as_object_mut()
+        .unwrap()
+        .remove("plane_tools");
+    assert!(serde_json::from_value::<FeatureDefinition>(missing_planes).is_err());
 }
 
 #[test]
@@ -69,7 +81,7 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
                 operation_word: 4,
                 operands: Some(DesignBoundaryFillOperands {
                     body_groups: vec![NonZeroU32::new(100)],
-                    plane_tools: vec![NonZeroU32::new(301)],
+                    plane_tools: vec![NonZeroU32::new(301), None],
                     cells: vec![NonZeroU32::new(777), None],
                     settings: NonZeroU32::new(400).unwrap(),
                     removal: Some(DesignBoundaryFillRemoval {
@@ -110,16 +122,23 @@ fn boundary_fill_projects_recorded_cells_and_removal_control() {
         wire["value"]["value"]["tools"]["value"],
         "f3d:native/BulkStream.dat:construction-group#100"
     );
-    assert_eq!(wire["value"]["value"]["operation"], "new_body");
-    assert_eq!(wire["value"]["value"]["remove_tools"], false);
+    let operation = &wire["value"]["value"];
+    assert_eq!(operation["operation"], "new_body");
+    assert_eq!(operation["remove_tools"], false);
     assert_eq!(
-        wire["value"]["value"]["cells"][1],
-        serde_json::json!({"record":null})
+        operation["plane_tools"],
+        serde_json::json!(["f3d:native/BulkStream.dat:design-record#301", null])
     );
-    assert!(wire["value"]["value"]["cells"][0]["record"]
-        .as_str()
-        .unwrap()
-        .ends_with(":design-record#777"));
+    assert_eq!(
+        operation["cells"],
+        serde_json::json!([
+            {"kind":"recorded","value":{"record":"f3d:native/BulkStream.dat:design-record#777"}},
+            {"kind":"recorded","value":{}}
+        ])
+    );
+    let mut null_record = wire.clone();
+    null_record["value"]["value"]["cells"][1]["value"]["record"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<FeatureDefinition>(null_record).is_err());
     assert_eq!(
         serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
         projected

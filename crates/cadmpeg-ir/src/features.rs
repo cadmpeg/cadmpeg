@@ -3818,7 +3818,6 @@ pub enum FeatureOperation {
         #[serde(deserialize_with = "deserialize_local_cells")]
         cells: NonEmptyMembers<BoundaryFillCell>,
         /// Construction-plane selectors in source order, including empty source slots.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         plane_tools: Vec<Option<SelectionReference>>,
         /// Boolean effect of the selected cells.
         #[serde(
@@ -7940,18 +7939,28 @@ pub enum SurfaceProjectionMode {
 /// A selected region of a boundary fill.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum BoundaryFillCell {
     /// Cell selected through a body region.
     BodyRegion(BodySelection),
     /// Cell selected through a source record.
     Recorded {
-        /// Source cell identity. A null denotes an empty source slot.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        /// Source cell identity. Omitted for an empty source slot.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_cell_record"
+        )]
         record: Option<SelectionReference>,
     },
 }
 
+cadmpeg_core::named_optional_field!(deserialize_cell_record, SelectionReference, "record");
 cadmpeg_core::named_optional_field!(deserialize_boundary_fill_operation, BooleanOp, "operation");
 cadmpeg_core::named_optional_field!(deserialize_boundary_fill_remove_tools, bool, "remove_tools");
 
