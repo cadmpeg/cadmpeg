@@ -134,19 +134,8 @@
           "id": "usd:stage:occurrence#/Root",
           "name": "Root",
           "native_ref": "/Root",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Root",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Root",
           "transform": [
             [
               1.0,
@@ -172,20 +161,8 @@
           "id": "usd:stage:occurrence#/Root/Cover",
           "name": "Cover",
           "native_ref": "/Root/Cover",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Root/Cover",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Root/Cover",
           "transform": [
             [
               1.0,
@@ -211,20 +188,8 @@
           "id": "usd:stage:occurrence#/Root/Plate",
           "name": "Plate",
           "native_ref": "/Root/Plate",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Root/Plate",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Root/Plate",
           "transform": [
             [
               1.0,
@@ -259,10 +224,19 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Root",
+          "occurrences": [
+            "usd:stage:occurrence#/Root/Plate",
+            "usd:stage:occurrence#/Root/Cover"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Root"
+          "source_name": "Root",
+          "storage": {
+            "kind": "embedded"
+          }
         },
         {
           "bodies": [
@@ -270,10 +244,16 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root/Cover",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Root/Cover",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Cover"
+          "source_name": "Cover",
+          "storage": {
+            "kind": "embedded"
+          }
         },
         {
           "bodies": [
@@ -281,10 +261,31 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root/Plate",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Root/Plate",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Plate"
+          "source_name": "Plate",
+          "storage": {
+            "kind": "embedded"
+          }
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Root"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
         }
       ],
       "rigid_bodies": [],

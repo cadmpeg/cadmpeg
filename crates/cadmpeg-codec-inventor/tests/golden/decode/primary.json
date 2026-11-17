@@ -68,8 +68,15 @@
           "bodies": [],
           "bom_properties": {},
           "id": "inventor:document:product#root",
+          "instance_bodies": [],
           "kind": "part",
-          "sketches": []
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          }
         }
       ],
       "rigid_bodies": [],
