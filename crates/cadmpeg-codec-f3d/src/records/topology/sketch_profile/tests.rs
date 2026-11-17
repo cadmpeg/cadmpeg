@@ -96,7 +96,19 @@ fn profile_region_member_preserves_fixed_words_and_nonzero_incidence_values() {
         .expect_err("nonzero u32 identity");
         assert!(error.to_string().contains("curve_primary_id"));
     }
-    for index in 0..8 {
+    // The word at index 1 is the secondary curve identity.
+    let json = wire(3, 1, [0, 3, 0, 0, 1, 1, 0, 0]);
+    let member: super::DesignSketchProfileRegionMember =
+        serde_json::from_str(&json).expect("region member with a secondary identity");
+    assert_eq!(
+        member.curve_secondary_id.map(std::num::NonZeroU32::get),
+        Some(3)
+    );
+    assert_eq!(
+        serde_json::to_string(&member).expect("region member wire"),
+        json
+    );
+    for index in [0, 2, 3, 4, 5, 6, 7] {
         let mut words = [0, 0, 0, 0, 1, 1, 0, 0];
         words[index] = if matches!(index, 4 | 5) { 0 } else { 3 };
         let error =

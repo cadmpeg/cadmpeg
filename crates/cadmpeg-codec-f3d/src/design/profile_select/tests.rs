@@ -223,6 +223,7 @@ fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMemb
         kind_offset: 0,
         curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
         curve_primary_id_offset: 0,
+        curve_secondary_id: None,
         incidence_flag: false,
         incidence_values:
             [crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(1).unwrap();
