@@ -2,6 +2,7 @@
 //! The body or body-face target of a one-sided to-object `Revolve`.
 
 use super::unique_feature_match;
+use crate::design::decode::meta::{OriginClassification, OriginEntity};
 use crate::design::face_resolve::{resolved_body_recipe_selection, resolved_historical_face_group};
 use crate::ids::native_stream;
 use crate::records::feature::scope::DesignParameterScope;
@@ -36,6 +37,7 @@ pub(super) struct RevolveTargetInputs<'a> {
 pub(super) fn bind_revolve_shape_target(
     definition: &mut FeatureDefinition,
     inputs: &RevolveTargetInputs<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let RevolveTargetInputs {
         scope,
@@ -76,10 +78,19 @@ pub(super) fn bind_revolve_shape_target(
     };
     if let Some(target) = resolved_body_recipe_selection(scope, group, body_recipe_operands) {
         *termination = AngularTermination::ToShape { target };
-    } else if let Some((plane, source)) = selected_target_plane(inputs, group) {
+    } else if let Some((plane, work_plane)) = selected_target_plane(inputs, group) {
         let Some(native) = cadmpeg_core::text::NonBlankString::new(native.clone()) else {
             return;
         };
+        let source = work_plane.map(|work_plane| {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureRevolvePlaneWorkPlaneAssumed.note(format!(
+                    "Revolve scope {} reads its target plane from WorkPlane scope {}, the record after its plane selection identity (DR-400).",
+                    scope.id, work_plane.id
+                )),
+            );
+            PlaneTargetSource::WorkPlane
+        });
         *termination = AngularTermination::ToPlane {
             plane,
             native,
@@ -99,12 +110,13 @@ pub(super) fn bind_revolve_shape_target(
 
 /// Return the frame of the plane a target group's sole entity selection
 /// names in a Design stream that binds one component: the `WorkPlane` scope
-/// at the next record, or an origin plane. An identity that has both
-/// readings names no plane.
-fn selected_target_plane(
-    inputs: &RevolveTargetInputs<'_>,
+/// at the next record, returned with the frame, or an origin plane. The
+/// `WorkPlane` reading requires an identity that the Design type table rules
+/// out as an origin entity.
+fn selected_target_plane<'a>(
+    inputs: &RevolveTargetInputs<'a>,
     group: &DesignConstructionOperandGroup,
-) -> Option<(FeatureSupportPlaneFrame, Option<PlaneTargetSource>)> {
+) -> Option<(FeatureSupportPlaneFrame, Option<&'a DesignParameterScope>)> {
     let RevolveTargetInputs {
         scope,
         scopes,
@@ -118,13 +130,13 @@ fn selected_target_plane(
     }
     match (
         super::selected_work_plane(scope, group, entity_selection_operands, scopes),
-        super::selected_origin_plane(scope, group, entity_selection_operands, design_types),
+        super::selected_origin_class(scope, group, entity_selection_operands, design_types)?,
     ) {
-        (Some(work_plane), None) => {
+        (Some(work_plane), OriginClassification::NotOrigin) => {
             let frame = super::work_plane_support_frame(work_plane.work_plane_transform()?.into())?;
-            Some((frame, Some(PlaneTargetSource::WorkPlane)))
+            Some((frame, Some(work_plane)))
         }
-        (None, Some((ordinal, _))) => {
+        (None, OriginClassification::Origin(OriginEntity::Plane(ordinal))) => {
             let frame = crate::history::selection::design_geometry_origin_plane_frame(ordinal)?;
             Some((frame, None))
         }

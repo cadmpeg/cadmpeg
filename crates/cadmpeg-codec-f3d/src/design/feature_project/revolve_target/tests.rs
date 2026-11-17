@@ -200,6 +200,18 @@ fn bound_plane(
     scopes: &[DesignParameterScope],
     components: u64,
 ) -> RevolveExtent {
+    bound_plane_with_losses(extent, faces, bodies, selections, scopes, components).0
+}
+
+fn bound_plane_with_losses(
+    extent: RevolveExtent,
+    faces: &[DesignFaceOperand],
+    bodies: &[DesignBodyRecipeOperand],
+    selections: &[DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
+    components: u64,
+) -> (RevolveExtent, Vec<String>) {
+    let mut losses = Vec::new();
     let mut definition = revolve(extent);
     let scope = scope();
     let spaces = (1..=components).map(naming_space).collect::<Vec<_>>();
@@ -219,12 +231,19 @@ fn bound_plane(
             ),
             component_naming_spaces: &spaces,
         },
+        &mut losses,
     );
     let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) = definition
     else {
         panic!("expected a revolve");
     };
-    construction.extent().cloned().expect("extent")
+    (
+        construction.extent().cloned().expect("extent"),
+        losses
+            .iter()
+            .map(|loss| loss.code.local_code().to_owned())
+            .collect::<Vec<_>>(),
+    )
 }
 
 fn one_sided() -> RevolveExtent {
@@ -382,18 +401,20 @@ fn plane_termination(extent: RevolveExtent) -> AngularTermination {
 
 #[test]
 fn a_work_plane_target_ends_at_its_frame() {
-    let AngularTermination::ToPlane {
-        plane,
-        native,
-        source,
-    } = plane_termination(bound_plane(
+    let (extent, losses) = bound_plane_with_losses(
         one_sided(),
         &[],
         &[],
         &[plane_selection(282, false)],
         &[work_plane_scope(283)],
         1,
-    ))
+    );
+    assert_eq!(losses, ["feature.revolve-plane-work-plane-assumed"]);
+    let AngularTermination::ToPlane {
+        plane,
+        native,
+        source,
+    } = plane_termination(extent)
     else {
         panic!("expected a plane target");
     };
@@ -406,14 +427,10 @@ fn a_work_plane_target_ends_at_its_frame() {
 
 #[test]
 fn an_origin_plane_target_ends_at_its_canonical_frame() {
-    let AngularTermination::ToPlane { plane, source, .. } = plane_termination(bound_plane(
-        one_sided(),
-        &[],
-        &[],
-        &[plane_selection(44, false)],
-        &[],
-        1,
-    )) else {
+    let (extent, losses) =
+        bound_plane_with_losses(one_sided(), &[], &[], &[plane_selection(44, false)], &[], 1);
+    assert!(losses.is_empty(), "{losses:?}");
+    let AngularTermination::ToPlane { plane, source, .. } = plane_termination(extent) else {
         panic!("expected a plane target");
     };
     assert_eq!(plane.origin().get(), Point3::new(0.0, 0.0, 0.0));
@@ -432,6 +449,7 @@ fn an_unproven_plane_target_stays_native() {
             1,
         ),
         (plane_selection(40, false), Vec::new(), 1),
+        (plane_selection(40, false), vec![work_plane_scope(41)], 1),
         (plane_selection(44, true), Vec::new(), 1),
         (plane_selection(282, true), vec![work_plane_scope(283)], 1),
         (plane_selection(44, false), Vec::new(), 2),
@@ -440,8 +458,8 @@ fn an_unproven_plane_target_stays_native() {
         (plane_selection(282, false), vec![work_plane_scope(283)], 2),
     ] {
         assert_eq!(
-            bound_plane(one_sided(), &[], &[], &[selection], &scopes, components),
-            one_sided()
+            bound_plane_with_losses(one_sided(), &[], &[], &[selection], &scopes, components),
+            (one_sided(), Vec::new())
         );
     }
 }

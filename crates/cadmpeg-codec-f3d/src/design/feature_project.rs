@@ -852,6 +852,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             design_types,
                             component_naming_spaces,
                         },
+                        &mut projection_losses,
                     );
                     definition
                 }
@@ -3985,12 +3986,14 @@ fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {
 ///
 /// The type table identifies the origin plane. An ASM entity can share its
 /// number, and such historical candidates describe unrelated topology.
-fn selected_origin_plane(
+/// What the Design type table states about the identity of a group's sole
+/// entity selection.
+fn selected_origin_class(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     design_types: &[crate::records::entity_header::SegmentType],
-) -> Option<(usize, Vector3)> {
+) -> Option<crate::design::decode::meta::OriginClassification> {
     let stream = native_stream(&scope.id)?;
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
         return None;
@@ -4005,13 +4008,22 @@ fn selected_origin_plane(
     if selection.secondary().is_some() {
         return None;
     }
-    let crate::design::decode::meta::OriginClassification::Origin(
-        crate::design::decode::meta::OriginEntity::Plane(ordinal),
-    ) = crate::design::decode::meta::classify_origin_entity(
+    Some(crate::design::decode::meta::classify_origin_entity(
         design_types,
         stream,
         selection.primary_identity,
-    )
+    ))
+}
+
+fn selected_origin_plane(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    design_types: &[crate::records::entity_header::SegmentType],
+) -> Option<(usize, Vector3)> {
+    let crate::design::decode::meta::OriginClassification::Origin(
+        crate::design::decode::meta::OriginEntity::Plane(ordinal),
+    ) = selected_origin_class(scope, group, entity_selection_operands, design_types)?
     else {
         return None;
     };
