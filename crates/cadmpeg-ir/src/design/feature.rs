@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 use super::construction::{kinds, Construction};
 use super::dimension::Dimension;
 use super::names::NativeName;
+use super::ops::assembly::{
+    AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
+};
 use super::ops::body::{
     Combine, DeleteBodies, DeleteFaces, Extract, Flex, Graft, MoveFaces, Pattern, ReplaceFaces,
     Split, TemplateInstance, TransformBodies,
@@ -22,6 +25,7 @@ use super::ops::datum::Datum;
 use super::ops::dressup::{
     Chamfer, Decal, Dome, Draft, Emboss, Fillet, Hole, Offset, ShellFeature, Thicken, Thread,
 };
+use super::ops::shared::Joint;
 use super::ops::sheet_metal::SheetMetal;
 use super::ops::surface::{
     BoundaryFill, CurveFeature, Extend, Form, ImplicitSweep, Knit, MeshFeature, Patch, Unsew,
@@ -156,10 +160,8 @@ pub enum FuzzyTolerance {
     Explicit(Dimension<PositiveLength>),
 }
 
-/// The operation of a feature.
-///
-/// The arms of the feature families (§6.1 to §6.7) are added with each
-/// family's types.
+/// The operation of a feature: an arm per operation of the feature families
+/// (§6.1 to §6.7), and the stored, unresolved, and native forms.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
@@ -259,6 +261,20 @@ pub enum FeatureOperation {
     SheetMetal(Box<SheetMetal>),
     /// A mesh feature (§6.6).
     Mesh(Box<MeshFeature>),
+    /// A placement of one occurrence (§6.7).
+    Place(Box<Place>),
+    /// A placement of several occurrences in one feature (§6.7).
+    PlaceSet(Box<PlaceSet>),
+    /// A joint between two occurrences (§6.7).
+    Joint(Box<Joint>),
+    /// Occurrences held in their relative placement (§6.7).
+    RigidGroup(Box<RigidGroup>),
+    /// Components repeated along a layout (§6.7).
+    ComponentPattern(Box<ComponentPattern>),
+    /// Components mirrored across a plane (§6.7).
+    MirrorComponents(Box<MirrorComponents>),
+    /// An operation run in the assembly over its participants (§6.7).
+    AssemblyFeature(Box<AssemblyFeature>),
     /// A design feature whose removed volume is the volume a manufacturing
     /// operation machines.
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]

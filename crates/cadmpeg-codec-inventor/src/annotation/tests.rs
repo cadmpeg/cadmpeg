@@ -436,7 +436,8 @@ fn diameter_transfers_symmetric_tolerance_basic_modifier_and_face() {
         annotation.targets,
         [PmiTarget::Face {
             face: cadmpeg_ir::ids::FaceId::mint(FACE).expect("face id")
-        }]
+        }
+        .into()]
     );
     assert!(losses(&outcome).is_empty());
 }
@@ -1218,7 +1219,10 @@ fn run_features(fixture: &Fixture, features: &[u32]) -> (Vec<PmiTarget>, Outcome
             )
         })
         .expect("geometric tolerance")
-        .targets;
+        .targets
+        .into_iter()
+        .map(|target| target.entity)
+        .collect();
     (targets, outcome)
 }
 

@@ -45,7 +45,7 @@ mod selection_overlap;
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
 
-#[doc(hidden)]
+#[doc = include_str!("features/form-api.md")]
 pub mod form;
 
 pub mod holes;
@@ -2822,8 +2822,7 @@ pub enum FeatureOperation {
     /// The source may also model the helical form in the body geometry;
     /// `modeled` states whether it does, and absent means unproven. A field
     /// that the source encoding does not prove stays absent. F3D threads set
-    /// `standard`, `designation` and `pitch`, set `modeled` in the extended
-    /// standard form, and stay definition-incomplete while `modeled` is absent;
+    /// `standard`, `designation`, `pitch` and `modeled`;
     /// the `nx`, `sldprt`, and `inventor` codecs do not set the four new fields.
     CosmeticThread {
         /// Cylindrical face carrying the thread.
@@ -6593,6 +6592,7 @@ pub enum FaceSelection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
+#[cfg_attr(feature = "schema", schemars(extend("minItems" = 1)))]
 pub struct NonEmptyMembers<T>(Vec<T>);
 
 impl<T> TryFrom<Vec<T>> for NonEmptyMembers<T> {

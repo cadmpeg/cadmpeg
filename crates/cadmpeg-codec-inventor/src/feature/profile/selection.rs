@@ -142,6 +142,57 @@ impl ProfileIndex<'_> {
         matches.next().is_none().then_some(piece)
     }
 
+    /// The whole sketch curves that the named edges of the wire `ordinal`
+    /// run along, in wire order, when they form one open path of `sketch`.
+    /// An unnamed edge between two named edges selects no sketch curve. The
+    /// first and last edges are named.
+    pub(in crate::feature) fn named_open_path(
+        &self,
+        token: &str,
+        ordinal: u32,
+        sketch_ordinal: u32,
+        sketch: &Sketch,
+    ) -> Option<Vec<cadmpeg_ir::sketches::SketchEntityId>> {
+        if self
+            .incomplete_sketches
+            .contains_key(&(token, sketch_ordinal))
+        {
+            return None;
+        }
+        let (link, wire) = self.wire(token, ordinal)?;
+        if wire.edges.first()?.name.is_none() || wire.edges.last()?.name.is_none() {
+            return None;
+        }
+        let mut names: Vec<i64> = Vec::new();
+        for name in wire.edges.iter().filter_map(|edge| edge.name) {
+            if name.naming_type != i64::from(link.entity_type) {
+                return None;
+            }
+            if names.last() != Some(&name.associative_id) {
+                names.push(name.associative_id);
+            }
+        }
+        let curves = names
+            .iter()
+            .map(|name| {
+                let id = self
+                    .curves
+                    .get(&(token, sketch_ordinal, *name))?
+                    .as_deref()?;
+                let entity = *self.by_id.get(id)?;
+                (entity.sketch == sketch.id && !entity.construction).then_some(entity)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let distinct = curves
+            .iter()
+            .map(|entity| entity.id())
+            .collect::<std::collections::HashSet<_>>();
+        if distinct.len() != curves.len() || !super::open_chain(&curves) {
+            return None;
+        }
+        Some(curves.iter().map(|entity| entity.id().clone()).collect())
+    }
+
     pub(in crate::feature) fn selected_path(
         &self,
         token: &str,

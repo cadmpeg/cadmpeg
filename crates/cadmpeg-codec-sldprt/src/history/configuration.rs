@@ -719,11 +719,13 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 &mut losses,
             )?;
+            let mut held_handles = Vec::new();
             crate::resolved_features::profiles::project_marker_backed_sketches(
                 ctx,
                 &mut features,
                 &mut ir.model.sketches,
                 &mut ir.model.sketch_entities,
+                &mut held_handles,
                 histories,
                 scoped_lanes,
             )?;
@@ -800,6 +802,11 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
+            crate::resolved_features::profiles::finalize_unread_marker_entities(
+                &mut ir.model.sketch_entities,
+                held_handles,
+                &mut losses,
+            );
             crate::resolved_features::relation_geometry::project_relation_bindings(
                 ctx,
                 &mut ir.model.sketch_constraints,
@@ -868,6 +875,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
+            crate::history::bind::bind_bound_sketch_profiles(&mut features, &ir.model.sketches);
             for feature in features {
                 let Some(state) = ir.model.configurations[configuration_index]
                     .feature_states

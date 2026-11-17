@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -3311,8 +3317,10 @@
           "channels": {},
           "id": "pvz:model:appearance-binding#cube32.ol:0",
           "target": {
-            "kind": "tessellation",
-            "value": "pvz:model:tessellation#cube32.ol:0"
+            "entity": {
+              "kind": "tessellation",
+              "value": "pvz:model:tessellation#cube32.ol:0"
+            }
           }
         },
         {
@@ -3320,8 +3328,10 @@
           "channels": {},
           "id": "pvz:model:appearance-binding#cube64.ol:0",
           "target": {
-            "kind": "tessellation",
-            "value": "pvz:model:tessellation#cube64.ol:0"
+            "entity": {
+              "kind": "tessellation",
+              "value": "pvz:model:tessellation#cube64.ol:0"
+            }
           }
         }
       ],
@@ -4179,7 +4189,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

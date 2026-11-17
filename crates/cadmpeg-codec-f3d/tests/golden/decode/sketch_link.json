@@ -274,8 +274,10 @@
         {
           "id": "f3d:brep:attribute#19",
           "target": {
-            "kind": "coedge",
-            "value": "f3d:brep:entity#7"
+            "entity": {
+              "kind": "coedge",
+              "value": "f3d:brep:entity#7"
+            }
           },
           "name": "ATTRIB_CUSTOM-attrib",
           "values": [
@@ -323,6 +325,12 @@
       "scopes": [],
       "containers": [],
       "features": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
       "parameters": [],
       "spreadsheets": [],
       "sheet_metal_rules": [],
@@ -333,7 +341,19 @@
       "evaluations": [],
       "names": []
     },
-    "process": {},
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
+    },
     "native": {
       "f3d": {
         "act_component_links": [],
