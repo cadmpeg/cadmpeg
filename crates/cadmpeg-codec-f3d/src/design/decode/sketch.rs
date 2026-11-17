@@ -4814,23 +4814,50 @@ fn decode_legacy_sketch_nurbs(
     payload: &[u8],
     record_at: usize,
 ) -> Option<Result<(SketchCurveGeometry, usize), CodecError>> {
+    decode_reference_run_sketch_nurbs(payload, record_at, false)
+        .or_else(|| decode_reference_run_sketch_nurbs(payload, record_at, true))
+}
+
+/// Bytes the four typed local references add over the four plain ones in the
+/// NURBS reference run: each is 40 bytes longer.
+const TYPED_REFERENCE_RUN_EXTRA: usize = 4 * (51 - 11);
+
+/// Decode the NURBS record whose four local references precede the degree.
+/// The references are all plain (eleven bytes) or all typed (51 bytes). The
+/// fifth byte after the fit tolerance is `01` in the typed form and zero in
+/// the plain form.
+fn decode_reference_run_sketch_nurbs(
+    payload: &[u8],
+    record_at: usize,
+    typed: bool,
+) -> Option<Result<(SketchCurveGeometry, usize), CodecError>> {
     let base = 133usize;
     let carrier = View::u64_le_at(payload, base)?;
     let carrier_reference = (carrier != u64::MAX).then_some(carrier);
+    let (reference_len, shift) = if typed {
+        (51, TYPED_REFERENCE_RUN_EXTRA)
+    } else {
+        (11, 0)
+    };
+    // Offsets of the four references, the fit tolerance and the flags.
+    let first = base + 27;
+    let tolerance_at = first + reference_len + 4;
+    let second = tolerance_at + 8 + 5;
+    let third = second + reference_len;
+    let fourth = third + reference_len;
+    let flags_at = base + 88 + shift;
     if View::u32_le_at(payload, base + 8) != Some(3)
         || payload.get(base + 19..base + 27) != Some(&[0; 8])
-        || payload.get(base + 27) != Some(&1)
-        || payload.get(base + 32..base + 42) != Some(&[0; 10])
-        || payload.get(base + 50..base + 55) != Some(&[0; 5])
-        || payload.get(base + 55) != Some(&1)
-        || payload.get(base + 60..base + 66) != Some(&[0; 6])
-        || payload.get(base + 66) != Some(&1)
-        || payload.get(base + 71..base + 77) != Some(&[0; 6])
-        || payload.get(base + 77) != Some(&1)
-        || payload.get(base + 80..base + 88) != Some(&[0; 8])
-        || payload.get(base + 88).is_none_or(|value| *value > 1)
-        || payload.get(base + 89).is_none_or(|value| *value > 1)
-        || payload.get(base + 94..base + 102)
+        || [first, second, third, fourth]
+            .iter()
+            .any(|at| crate::bytes::local_reference_target(payload, *at, typed).is_none())
+        || payload.get(first + reference_len..tolerance_at) != Some(&[0; 4])
+        || payload.get(tolerance_at + 8..second - 1) != Some(&[0; 4])
+        || payload.get(second - 1) != Some(&u8::from(typed))
+        || (!typed && payload.get(fourth + 3..fourth + 11) != Some(&[0; 8]))
+        || payload.get(flags_at).is_none_or(|value| *value > 1)
+        || payload.get(flags_at + 1).is_none_or(|value| *value > 1)
+        || payload.get(flags_at + 6..flags_at + 14)
             != Some(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e])
     {
         return None;
@@ -4840,19 +4867,19 @@ fn decode_legacy_sketch_nurbs(
         .to_string();
     let subtype_class_tag =
         crate::records::references::DesignClassTag::try_from(subtype_class_tag).ok()?;
-    let degree = View::u32_le_at(payload, base + 90)?;
-    let fit_tolerance = View::f64_le_at(payload, base + 42)?;
-    let knot_count = usize::try_from(View::u32_le_at(payload, base + 102)?).ok()?;
-    let knot_capacity = usize::try_from(View::u32_le_at(payload, base + 106)?).ok()?;
+    let degree = View::u32_le_at(payload, base + 90 + shift)?;
+    let fit_tolerance = View::f64_le_at(payload, tolerance_at)?;
+    let knot_count = usize::try_from(View::u32_le_at(payload, base + 102 + shift)?).ok()?;
+    let knot_capacity = usize::try_from(View::u32_le_at(payload, base + 106 + shift)?).ok()?;
     if degree == 0
         || knot_capacity < knot_count
-        || View::u32_le_at(payload, base + 110)? != 8
+        || View::u32_le_at(payload, base + 110 + shift)? != 8
         || knot_capacity > 100_000
     {
         return None;
     }
-    let knots = sketch_scalar_values(payload, base + 114, knot_count)?;
-    let weights_at = base + 114 + knot_count * 8;
+    let knots = sketch_scalar_values(payload, base + 114 + shift, knot_count)?;
+    let weights_at = base + 114 + shift + knot_count * 8;
     let weight_count = usize::try_from(View::u32_le_at(payload, weights_at)?).ok()?;
     let weight_capacity = usize::try_from(View::u32_le_at(payload, weights_at + 4)?).ok()?;
     if weight_capacity < weight_count
