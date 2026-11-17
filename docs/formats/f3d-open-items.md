@@ -219,7 +219,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-273. Scale frame whose payload length matches no form
 
-**Question.** Which form does a legacy `Scale` scope store when its payload length matches none of the 297-, 299- and 308-byte forms?
+**Question.** Which form does a legacy uniform `Scale` scope store when its payload length falls outside the documented forms?
 
 **Known.** The legacy uniform prefix has five-reference payloads of 297, 298, and 299 bytes and six-reference payloads of 308 bytes or 310 bytes with a named tail. The payload count excludes the kind and label code units. The decoder also reads a 307- or 309-byte frame with five references or a 318-byte frame with six according to the form that has that length under the English spelling. In a 309-byte frame it checks the null GUID, reference table, and tail at the English offsets of the 299-byte payload form. It reports `feature.scale-frame-length-form-assumed`.
 
