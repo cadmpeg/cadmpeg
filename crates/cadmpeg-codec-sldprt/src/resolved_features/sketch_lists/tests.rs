@@ -94,12 +94,19 @@ fn sample() -> Sample {
 
 /// Metres to millimetres, no other change.
 fn millimetres(point: [f64; 2]) -> Option<Point2> {
-    Some(Point2::new(point[0] * 1000.0, point[1] * 1000.0))
+    scaled(point, 1.0)
 }
 
 /// Metres to millimetres with the v axis mirrored.
 fn mirrored(point: [f64; 2]) -> Option<Point2> {
-    Some(Point2::new(point[0] * 1000.0, -point[1] * 1000.0))
+    scaled(point, -1.0)
+}
+
+/// Metres to millimetres with the v axis scaled by `v_sign`; `None` for a
+/// coordinate that does not stay finite.
+fn scaled(point: [f64; 2], v_sign: f64) -> Option<Point2> {
+    let (u, v) = (point[0] * 1000.0, v_sign * point[1] * 1000.0);
+    (u.is_finite() && v.is_finite()).then_some(Point2::new(u, v))
 }
 
 fn geometry(sample: &Sample, offset: usize) -> Option<SketchGeometry> {
