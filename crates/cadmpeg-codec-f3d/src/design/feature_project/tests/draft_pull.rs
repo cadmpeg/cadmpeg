@@ -639,6 +639,56 @@ fn parting_scope(form: u32) -> DesignParameterScope {
 }
 
 #[test]
+fn legacy_parting_groups_keep_the_work_plane_and_tool_selection() {
+    let mut scope = parting_scope(2);
+    if let DesignScopePayloadMut::Draft(Some(operation)) = scope.payload_mut() {
+        operation.opposite_angle = Some(cadmpeg_ir::scalar::Angle::new(0.0).unwrap());
+        let parting = operation.flags.as_mut().unwrap().parting.as_mut().unwrap();
+        parting.mode = 1;
+        parting.pull.value = 103;
+        parting.tool.value = 102;
+    }
+    let [faces, plane_group] = groups();
+    let tool = group(103, 113, DesignOperandRole::ROLE_0X21);
+    let expected_tool = FaceSelection::Native(tool.id.clone());
+    let construction_groups = [faces, plane_group, tool];
+    crate::design::decode::scopes::draft::preserve_legacy_parting_groups(
+        &mut scope,
+        &construction_groups,
+    );
+    let operation = scope.draft_operation().unwrap();
+    assert_eq!(operation.flags, None);
+    assert_eq!(operation.opposite_angle, None);
+    let plane = work_plane_scope();
+    let expected_plane = crate::ids::neutral_feature_id(&plane);
+    let mut losses = Vec::new();
+    let definition = super::super::draft::project(
+        &scope,
+        &super::super::ProjectInputs {
+            scopes: &[scope.clone(), plane],
+            construction_groups: &construction_groups,
+            entity_selection_operands: &[selection(282, &[])],
+            ..Default::default()
+        },
+        &mut losses,
+    )
+    .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::Draft {
+        anchor: DraftAnchor::PartingLine { tool, pull },
+        angle,
+        ..
+    }) = definition
+    else {
+        panic!("expected the resolved parting-line Draft");
+    };
+    assert_eq!(tool, expected_tool);
+    assert_eq!(pull.plane, Some(expected_plane));
+    assert_eq!(pull.direction.get(), Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(angle.unwrap().get(), 0.25);
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn parting_draft_retains_origin_pull_faces_and_tool_with_a_named_control_loss() {
     for form in [2, 3] {
         for flipped in [false, true] {

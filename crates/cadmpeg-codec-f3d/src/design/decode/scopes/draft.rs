@@ -14,15 +14,55 @@ use crate::records::feature::direct_face::DesignDraftFlags;
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::direct_face::DesignDraftParting;
 use crate::records::feature::direct_face::DesignDraftTwoSided;
-use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::scope::{DesignParameterScope, DesignScopePayloadMut};
 use crate::records::identity::Located;
 use crate::records::parameters::DesignParameterOwner;
+use crate::records::topology::construction::DesignConstructionOperandGroup;
+use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
 
 const MODE_SINGLE_ANGLE: u32 = 1;
 const MARKED_REFERENCE_LEN: usize = 11;
+
+pub(in crate::design) fn preserve_legacy_parting_groups(
+    scope: &mut DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) {
+    let DesignScopePayloadMut::Draft(Some(operation)) = scope.payload_mut() else {
+        return;
+    };
+    let Some(parting) = operation.flags.and_then(|flags| flags.parting) else {
+        return;
+    };
+    if parting.form != 2
+        || parting.mode != MODE_SINGLE_ANGLE
+        || parting.fixed_edges.is_some()
+        || !operation
+            .opposite_angle
+            .is_some_and(|angle| angle.get() == 0.0)
+    {
+        return;
+    }
+    let mut legacy_groups = groups
+        .iter()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X21 && !group.members().is_empty())
+        .map(|group| group.record_index);
+    let (Some(first), Some(second), None) = (
+        legacy_groups.next(),
+        legacy_groups.next(),
+        legacy_groups.next(),
+    ) else {
+        return;
+    };
+    if [first, second] == [parting.pull.value, parting.tool.value]
+        || [second, first] == [parting.pull.value, parting.tool.value]
+    {
+        operation.flags = None;
+        operation.opposite_angle = None;
+    }
+}
 
 pub(super) fn exact_draft_operation_with_owners(
     bytes: &[u8],
