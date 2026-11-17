@@ -2182,14 +2182,15 @@ partial name, retains the source datum identity as a shape-aspect target, and
 does not use the first complex partial as an attribute source. A complex datum
 therefore retains its `identification` even when a recoverable noncanonical
 partial order places `DATUM` after another partial.
-A dimension is a `DIMENSIONAL_SIZE` or a `DIMENSIONAL_LOCATION`, or an
-instance of one of their subtypes. The subtypes include `ANGULAR_SIZE`, `DIMENSIONAL_SIZE_WITH_PATH`,
-`DIMENSIONAL_SIZE_WITH_DATUM_FEATURE`, `ANGULAR_LOCATION`,
-`DIRECTED_DIMENSIONAL_LOCATION`, `DIMENSIONAL_LOCATION_WITH_PATH`, and
-`DIMENSIONAL_LOCATION_WITH_DATUM_FEATURE`. A `DIRECTED_DIMENSIONAL_LOCATION` is
-a location dimension directed from its `relating_shape_aspect` to its
-`related_shape_aspect`. A record named `DIAMETER_SIZE` or `RADIUS_SIZE` is a
-diameter or radius size dimension.
+A dimension is an instance of `DIMENSIONAL_SIZE`, `DIMENSIONAL_LOCATION`,
+`ANGULAR_SIZE`, `ANGULAR_LOCATION`, `DIRECTED_DIMENSIONAL_LOCATION`, or an entity
+whose name begins with `DIMENSIONAL_SIZE_`, `DIMENSIONAL_LOCATION_`,
+`ANGULAR_SIZE_`, or `ANGULAR_LOCATION_`, such as `DIMENSIONAL_SIZE_WITH_PATH` or
+`DIMENSIONAL_LOCATION_WITH_DATUM_FEATURE`. A record named `DIAMETER_SIZE` or
+`RADIUS_SIZE` is a diameter or radius size dimension. A
+`DIRECTED_DIMENSIONAL_LOCATION` is a location dimension directed from its
+`relating_shape_aspect` to its `related_shape_aspect`; its CADIR dimension kind
+is `other` with the name `directed_dimensional_location`.
 A complex dimension uses its dimensional partial for its kind and all inherited
 partials for its name, targets, and characteristic value.
 ISO 10303-47 defines `DIMENSIONAL_CHARACTERISTIC_REPRESENTATION` as the
