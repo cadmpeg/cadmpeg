@@ -6,6 +6,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
 mod partial_placement;
+mod typed_insert;
 
 fn tested_component_insert_construction(
     bytes: &[u8],

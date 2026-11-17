@@ -3491,11 +3491,13 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -3567,6 +3569,11 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut sketch_entities,
+        held_handles,
+        &mut pmi_losses,
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut sketch_constraints,
@@ -3771,6 +3778,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &all_lanes,
     )?;
+    crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
@@ -4736,11 +4744,13 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -4897,6 +4907,11 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut ir.model.sketch_entities,
+        held_handles,
+        &mut pmi_losses,
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut ir.model.sketch_constraints,
@@ -4920,6 +4935,7 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
+    crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,

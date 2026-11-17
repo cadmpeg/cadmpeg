@@ -13,6 +13,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -77,7 +78,7 @@ pub struct Place {
 }
 
 /// What a `Place` feature's `placement` is relative to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PlacementBase {
@@ -119,7 +120,7 @@ pub struct RigidGroup {
     /// The members, as paths from the definition that owns the group; the
     /// empty path is that definition's own origin.
     #[serde(with = "cadmpeg_core::distinct_keys::set")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<OccurrencePath>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<OccurrencePath>"))]
     pub members: BTreeSet<OccurrencePath>,
     /// Source options whose meaning is not established, and the values of
     /// typed facts whose carrier is unread.
@@ -231,7 +232,7 @@ pub enum MirrorOrientation {
 }
 
 /// The axis of the seed's own frame a mirror copy reverses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum MirrorReversal {
@@ -246,7 +247,7 @@ pub enum MirrorReversal {
 }
 
 /// The point a mirror copy's reversal is through.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum MirrorPivot {

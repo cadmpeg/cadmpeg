@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source tessellation retained alongside exact boundary representation.
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -967,7 +968,7 @@ pub struct TessellationTextureAssignment {
 }
 
 /// The mesh element that each value of a texture-coordinate set belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TextureCoordinateAddressing {

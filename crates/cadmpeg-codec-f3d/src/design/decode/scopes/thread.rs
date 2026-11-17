@@ -19,6 +19,7 @@ use crate::records::feature::thread;
 use crate::records::feature::thread::DesignThreadConstruction;
 use crate::records::feature::thread::DesignThreadForm;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) fn exact_thread_construction(
     bytes: &[u8],
@@ -180,6 +181,21 @@ fn extended_standard_face_groups(
     }
     let groups = DesignThreadForm::extended_standard_face_groups(&references, (offset, length));
     (entries == 0 || entries == groups.len()).then_some(groups)
+}
+
+pub(super) fn thread_modeled_flag_loss(
+    scope: &DesignParameterScope,
+    construction: &DesignThreadConstruction,
+) -> Option<LossNote> {
+    (construction.extended.is_none()
+        && !construction.modeled
+        && scope.history_state_id().is_none())
+    .then(|| {
+        crate::loss::F3dLossCode::ThreadModeledFlagAssumed.note(format!(
+            "Thread scope {} has no extended prefix, commits no history state, and stores modeled flag 0; it is read as a cosmetic thread, and a modeled thread stores the same value in such a scope (DR-142).",
+            scope.id
+        ))
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,49 +361,49 @@ pub(super) fn parse_thread_payload(
         }
         let zero_flag_trailer = bytes.get(after_profile + thread_tail::STANDARD_TRAILER)
             == Some(&extended_standard::ZERO_FLAG_VALUE);
-        let (pitch_marker, trailer_kind, full_length) =
+        let stated_modeled = match bytes.get(after_profile + thread_tail::MODELED_FLAG)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        let modeled = match extended {
+            Some(prefix) if stated_modeled && !prefix.modeled => return None,
+            Some(prefix) => prefix.modeled,
+            None => stated_modeled,
+        };
+        let (trailer_kind, full_length) =
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
-                (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1 | 2, 0, 0, 0])
+                (ThreadPrefix::Extended(_), [flag @ (0 | 1), 1 | 2, 0, 0, 0])
                     if zero_flag_trailer =>
                 {
-                    // The modeled marker of a modeled thread is 0 while the scope has no result.
-                    let stated = *bytes.get(after_profile + thread_tail::PITCH_MARKER)?;
-                    if stated > u8::from(prefix.modeled) {
-                        return None;
-                    }
-                    (
-                        stated,
-                        ThreadTrailerKind::ExtendedStandard,
-                        Some(*flag == 1),
-                    )
+                    (ThreadTrailerKind::ExtendedStandard, Some(*flag == 1))
                 }
                 (ThreadPrefix::CompactOwned, [0, 1, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::CompactOwnersLeading, None)
+                    (ThreadTrailerKind::CompactOwnersLeading, None)
                 }
                 (ThreadPrefix::CompactOwned, [0, 2, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::CompactOwnersTrailing, None)
+                    (ThreadTrailerKind::CompactOwnersTrailing, None)
                 }
-                (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard, None),
+                (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (ThreadTrailerKind::Standard, None),
                 (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::StandardLegacy, None)
+                    (ThreadTrailerKind::StandardLegacy, None)
                 }
                 (ThreadPrefix::Standard, [1, 2, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::StandardCompact, None)
+                    (ThreadTrailerKind::StandardCompact, None)
                 }
-                (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (0, ThreadTrailerKind::Compact, None),
+                (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (ThreadTrailerKind::Compact, None),
                 (ThreadPrefix::Extended(prefix), [1, 2, 0, 0, 0]) if !prefix.modeled => {
-                    (0, ThreadTrailerKind::Compact, None)
+                    (ThreadTrailerKind::Compact, None)
                 }
                 (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::CompactLegacy, None)
+                    (ThreadTrailerKind::CompactLegacy, None)
                 }
                 _ => return None,
             };
         let nominal_size = thread::DesignThreadNominalSize::try_from(nominal_size_text).ok()?;
         let major_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MAJOR_DIAMETER)?;
         let minor_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MINOR_DIAMETER)?;
-        let pitch = (bytes.get(after_profile + thread_tail::PITCH_MARKER) == Some(&pitch_marker))
-            .then(|| View::f64_le_at(bytes, after_profile + thread_tail::PITCH))??;
+        let pitch = View::f64_le_at(bytes, after_profile + thread_tail::PITCH)?;
         let pitch_diameter = View::f64_le_at(bytes, after_profile + thread_tail::PITCH_DIAMETER)?;
         let trailer_at = match trailer_kind {
             ThreadTrailerKind::Standard => thread_tail::STANDARD_TRAILER,
@@ -498,6 +514,7 @@ pub(super) fn parse_thread_payload(
             nominal_size,
             profile: cadmpeg_core::text::NonBlankString::new(profile)?,
             pitch: cadmpeg_ir::scalar::PositiveReal::new(pitch)?,
+            modeled,
             face_group_record_indices,
             diameters: thread::DesignThreadDiameters::new(
                 major_diameter,
@@ -507,7 +524,6 @@ pub(super) fn parse_thread_payload(
             extended: extended.map(|prefix| thread::DesignThreadExtended {
                 class: prefix.class.clone(),
                 external: prefix.external,
-                modeled: prefix.modeled,
                 full_length,
                 right_handed,
             }),
