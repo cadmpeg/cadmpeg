@@ -3341,3 +3341,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A Design record that names a saved free edge, or a rule that relates a saved free edge to the feature that creates it, and the visibility of that edge in the component.
 
 **Note.** `f3d.md` §3.1 "A local occurrence is a child of each occurrence" excludes saved free-edge bodies from component body coverage. A saved free-edge body without a product-definition owner is reported as `assembly.saved-free-edge-body-unowned`.
+
+### DR-800. Short compact Coil controls
+
+**Question.** Which options do the two control bytes of the 454-byte ten-reference Coil scope encode?
+
+**Known.** The scope stores `1,1` in the control pair and uses the compact operation, extent, left-hand, section-position, and section-shape lanes. The parameter owners identify the driving dimensions. The reference table names a body-target group, its member, a persistent support selection, and a solved placement construction.
+
+**Need.** Fusion-authored paired saves that vary each control independently while retaining the extent, section, placement, and Boolean result.
+
+**Conflict.** None.
+
+**Note.** The decoder applies the compact discriminator meanings and reports `feature.coil-short-controls-assumed`. It retains signed driving dimensions and the checked solved placement. An unbound placement remains native. A missing or ambiguous target group retains the Coil with an unresolved Boolean selection and reports `feature.coil-target-unresolved`.

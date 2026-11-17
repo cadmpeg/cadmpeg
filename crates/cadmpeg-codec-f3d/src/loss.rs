@@ -138,6 +138,8 @@ pub(crate) enum F3dLossCode {
     ChamferParameterUnitAssumed,
     /// A Coil's Boolean target group whose member count is not one is read as one body selection.
     CoilTargetMembersAssumed,
+    CoilShortControlsAssumed,
+    CoilTargetUnresolved,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -1120,6 +1122,8 @@ impl F3dLossCode {
         Self::ChamferParameterKindAssumed,
         Self::ChamferParameterUnitAssumed,
         Self::CoilTargetMembersAssumed,
+        Self::CoilShortControlsAssumed,
+        Self::CoilTargetUnresolved,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -1796,6 +1800,8 @@ impl F3dLossCode {
             Self::ChamferParameterKindAssumed => "feature.chamfer-parameter-kind-assumed",
             Self::ChamferParameterUnitAssumed => "feature.chamfer-parameter-unit-assumed",
             Self::CoilTargetMembersAssumed => "feature.coil-target-members-assumed",
+            Self::CoilTargetUnresolved => "feature.coil-target-unresolved",
+            Self::CoilShortControlsAssumed => "feature.coil-short-controls-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -2728,6 +2734,8 @@ impl F3dLossCode {
             | Self::ChamferParameterKindAssumed
             | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
+            | Self::CoilShortControlsAssumed
+            | Self::CoilTargetUnresolved
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -3325,6 +3333,8 @@ impl F3dLossCode {
             | Self::ChamferParameterKindAssumed
             | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
+            | Self::CoilShortControlsAssumed
+            | Self::CoilTargetUnresolved
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative

@@ -3734,6 +3734,11 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn coil_has_short_compact_prologue(&self) -> bool {
+        self.frame_length() == crate::layout::coil_short_ten_reference_compact_scope::LEN
+            && self.coil_has_ten_reference_compact_prologue()
+    }
+
     fn coil_has_ten_reference_compact_prologue(&self) -> bool {
         self.kind() == DesignFeatureKind::CoilPrimitive
             && self.reference_members().len() == 10
