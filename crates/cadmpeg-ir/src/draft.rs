@@ -1107,6 +1107,7 @@ fn stage_committed_identities(
         geometry,
         model,
         design: &base.design,
+        process: &base.process,
     };
     macro_rules! stage_model {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(

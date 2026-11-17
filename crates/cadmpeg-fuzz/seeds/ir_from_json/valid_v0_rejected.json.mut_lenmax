@@ -28,9 +28,9 @@
     "points": [],
     "surfaces": [],
     "curves": [],
-    "suÿÿÿÿ: [],
+    "subds": [],
     "pcurves": [],
-    "procedural_surfaces": [],
+    "procedural_surfaces":ÿÿÿÿ
     "procedural_curves": []
   },
   "model": {
@@ -91,6 +91,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

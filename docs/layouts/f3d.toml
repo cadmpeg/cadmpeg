@@ -2728,11 +2728,11 @@ source = "spec"
 anchor = "`+59: Radius owner reference`"
 
 [[record.field]]
-name = "zero_run_4_at_70"
+name = "radius_owner_padding"
 offset = 70
 type = "bytes[4]"
 source = "spec"
-anchor = "Every byte that the form does not name is zero"
+anchor = "`+70: four bytes`"
 
 [[record.field]]
 name = "set_ordinal"
@@ -2749,11 +2749,11 @@ source = "spec"
 anchor = "`+78: TangencyWeight owner reference`"
 
 [[record.field]]
-name = "zero_run_4_at_89"
+name = "tangency_weight_owner_padding"
 offset = 89
 type = "bytes[4]"
 source = "spec"
-anchor = "Every byte that the form does not name is zero"
+anchor = "`+89: four bytes`"
 
 [[record]]
 name = "thicken_scope_prologue"
@@ -24967,35 +24967,35 @@ name = "marker"
 offset = 20
 type = "u8"
 source = "spec"
-anchor = "It uses the marker-one prologue through offset 33"
+anchor = "It uses the marker-one prologue through offset 32"
 
 [[record.field]]
 name = "zero_value"
 offset = 21
 type = "u32"
 source = "spec"
-anchor = "It uses the marker-one prologue through offset 33"
+anchor = "It uses the marker-one prologue through offset 32"
 
 [[record.field]]
 name = "operation"
 offset = 25
 type = "u32"
 source = "spec"
-anchor = "It uses the marker-one prologue through offset 33"
+anchor = "It uses the marker-one prologue through offset 32"
 
 [[record.field]]
 name = "extent_kind"
 offset = 29
 type = "u32"
 source = "spec"
-anchor = "It uses the marker-one prologue through offset 33"
+anchor = "It uses the marker-one prologue through offset 32"
 
 [[record.field]]
 name = "direction_kind"
 offset = 33
 type = "u8"
 source = "spec"
-anchor = "It uses the marker-one prologue through offset 33"
+anchor = "offset 33 stores direction kind `0` or `1`"
 
 [[record.field]]
 name = "project_axis"

@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -21,6 +22,42 @@ pub(crate) struct DesignHistoricalFaceSupportContext {
     pub(crate) preceding_face_boundaries: Vec<DesignHistoricalFaceBoundaryContext>,
     /// Preceding owners deleted or updated by the feature transition.
     pub(crate) changed_preceding_face_slots: Vec<i64>,
+    /// Plane or cylinder geometry of the surface carrier in the preceding state.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_preceding_surface"
+    )]
+    pub(crate) preceding_surface: Option<DesignHistoricalSurfaceGeometry>,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_preceding_surface,
+    DesignHistoricalSurfaceGeometry,
+    "preceding_surface"
+);
+
+/// Plane or right-circular cylinder geometry of one surface carrier in one
+/// historical state, in the state's B-rep length units.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum DesignHistoricalSurfaceGeometry {
+    /// A plane through `origin` with unit `normal`.
+    Plane {
+        /// A point of the plane.
+        origin: Point3,
+        /// The plane normal.
+        normal: Vector3,
+    },
+    /// A right-circular cylinder about the line through `origin` along `axis`.
+    Cylinder {
+        /// A point of the axis.
+        origin: Point3,
+        /// The axis direction.
+        axis: Vector3,
+        /// The radius.
+        radius: f64,
+    },
 }
 
 /// Historical edge-boundary context for one ordered edge-recipe prefix reference.
