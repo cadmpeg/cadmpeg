@@ -8458,6 +8458,45 @@ Parsed by:
 | 52 | 2 | `identity_markers` | `bytes[2]` | little | spec | All subsequent fields move four bytes later |
 | 54 | 76 | `null_guid` | `bytes[76]` | little | spec | All subsequent fields move four bytes later |
 
+## `component_insert_typed_matrix_scope_584_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 290 B
+
+The frame is 584 bytes; this record covers the prefix through the null GUID.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The typed-reference Component Insert scope is written by the container generation |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20, the occurrence identity u64 at offset 21 |
+| 21 | 8 | `occurrence_identity` | `u64` | little | spec | the occurrence identity u64 at offset 21 |
+| 29 | 4 | `zero_after_identity` | `bytes[4]` | little | spec | four zero bytes at offsets 29 through 32, and a 51-byte typed relation reference |
+| 33 | 51 | `relation_reference` | `bytes[51]` | little | spec | a 51-byte typed relation reference at offset 33 |
+| 84 | 2 | `matrix_markers` | `bytes[2]` | little | spec | Bytes `01 00` at offset 84 |
+| 86 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid transform at offset 86 |
+| 214 | 76 | `null_guid` | `bytes[76]` | little | spec | The LP-UTF16 null GUID starts at offset 214 |
+
+## `component_insert_typed_relation_177`
+
+Spec §3.1 · layout: byte offsets · size: 177 B
+
+The paired indexed header begins at offset 177.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The typed relation is 177 bytes |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | It stores ten zero bytes after its indexed header and typed references at offsets 21, 74, and 126 |
+| 21 | 51 | `carrier_reference` | `bytes[51]` | little | spec | typed references at offsets 21, 74, and 126 |
+| 72 | 2 | `zero_after_carrier` | `bytes[2]` | little | spec | Two zero bytes follow the first reference |
+| 74 | 51 | `companion_reference` | `bytes[51]` | little | spec | typed references at offsets 21, 74, and 126 |
+| 125 | 1 | `zero_after_companion` | `u8` | little | spec | one zero byte follows the second · value `0` |
+| 126 | 51 | `scope_reference` | `bytes[51]` | little | spec | typed references at offsets 21, 74, and 126 |
+
 ## `component_insert_identity_carrier`
 
 Spec §3.1 · layout: byte offsets · size: 420 B

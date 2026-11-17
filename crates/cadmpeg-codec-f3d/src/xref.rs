@@ -2900,6 +2900,15 @@ pub(crate) fn identity_component_insert_carrier(
 /// not an admission key: the type-table identity and exact member framing are
 /// the stable discriminators.
 fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f64; 4]; 4]>)> {
+    legacy_occurrence_placement_details(body)
+        .map(|(link_name, _, transform)| (link_name, transform.map(|(_, matrix)| matrix)))
+}
+
+/// The legacy typed placement with the payload offset of its role and the
+/// offset of its matrix, relative to the record header.
+type LegacyPlacementDetails<'a> = (Utf16View<'a>, usize, Option<(usize, [[f64; 4]; 4])>);
+
+fn legacy_occurrence_placement_details(body: &[u8]) -> Option<LegacyPlacementDetails<'_>> {
     let (mut at, targets_match) = legacy_occurrence_prefix(body, false)?;
     if !targets_match {
         return None;
@@ -2910,8 +2919,9 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         1 => None,
         0 => {
             let matrix = decode_rigid_matrix(body, at)?;
+            let offset = at;
             at = at.checked_add(128)?;
-            Some(matrix)
+            Some((offset, matrix))
         }
         _ => return None,
     };
@@ -2919,6 +2929,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         return None;
     }
     at += 4;
+    let role_offset = at.checked_add(4)?;
     let (link_name, after_role) = lp_utf16_bounded_view(body, at, 36..=36)?;
     if !link_name.is_guid_relaxed() {
         return None;
@@ -2928,7 +2939,35 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         return None;
     }
     at += 12;
-    (at == body.len()).then_some((link_name, transform))
+    (at == body.len()).then_some((link_name, role_offset, transform))
+}
+
+/// Bind a legacy typed occurrence placement to a Component Insert scope
+/// through its relation record. The carrier ends at the relation record, and
+/// its placement equals the scope transform.
+pub(crate) fn legacy_typed_component_insert_carrier(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+    expected_transform: [[f64; 4]; 4],
+) -> Option<(String, usize, Option<usize>)> {
+    let body = bytes.get(carrier_at..relation_at)?;
+    if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
+        return None;
+    }
+    let (role, role_offset, transform) = legacy_occurrence_placement_details(body)?;
+    let matrix = transform.map_or(
+        cadmpeg_ir::transform::Transform::identity().rows(),
+        |(_, matrix)| matrix,
+    );
+    (matrix == expected_transform).then(|| {
+        (
+            role.to_string(),
+            carrier_at + role_offset,
+            transform.map(|(offset, _)| carrier_at + offset),
+        )
+    })
 }
 
 /// Return the role from a structurally valid legacy placement prefix.
