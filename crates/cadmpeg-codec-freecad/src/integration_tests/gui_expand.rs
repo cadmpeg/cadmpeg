@@ -190,7 +190,7 @@ fn a_provider_stored_true_that_expand_does_not_name_keeps_its_value_with_a_loss(
 }
 
 #[test]
-fn a_provider_without_an_object_keeps_its_stored_flag_without_a_conflict_loss() {
+fn a_provider_without_an_object_charges_no_false_conflict_loss() {
     let result = decode_with(
         r#"<ViewProvider name="Body"><Properties Count="0"/></ViewProvider><ViewProvider name="Ghost" expanded="0"><Properties Count="0"/></ViewProvider>"#,
         r#"<Expand count="1"><Expand name="Ghost"/></Expand>"#,
@@ -202,4 +202,42 @@ fn a_provider_without_an_object_keeps_its_stored_flag_without_a_conflict_loss() 
             .all(|message| !message.contains("the item is read as expanded")),
         "{losses:?}"
     );
+}
+
+#[test]
+fn a_provider_without_an_object_charges_no_true_conflict_loss() {
+    let result = decode_with(
+        r#"<ViewProvider name="Body"><Properties Count="0"/></ViewProvider><ViewProvider name="Ghost" expanded="1"><Properties Count="0"/></ViewProvider>"#,
+        "<Expand/>",
+    );
+    let losses = unresolved_gui_losses(&result);
+    assert!(
+        losses
+            .iter()
+            .all(|message| !message.contains("does not name Ghost")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn a_provider_flag_that_agrees_with_expand_charges_no_loss() {
+    for (provider, expand) in [
+        (
+            r#"<ViewProvider name="Body" expanded="1"><Properties Count="0"/></ViewProvider>"#,
+            r#"<Expand count="1"><Expand name="Body"/></Expand>"#,
+        ),
+        (
+            r#"<ViewProvider name="Body" expanded="0"><Properties Count="0"/></ViewProvider>"#,
+            r#"<Expand count="1"><Expand name="Pad"/></Expand>"#,
+        ),
+    ] {
+        let result = decode_with(provider, expand);
+        let losses = unresolved_gui_losses(&result);
+        assert!(
+            losses
+                .iter()
+                .all(|message| !message.contains("Body,") && !message.contains("name Body")),
+            "{provider} {expand}: {losses:?}"
+        );
+    }
 }

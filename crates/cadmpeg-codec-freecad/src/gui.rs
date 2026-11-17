@@ -775,7 +775,7 @@ fn transfer_neutral_presentation(
             && !expanded_names.contains(provider.name.as_str())
     }) {
         state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
-            "GUI Expand does not name {}, whose view provider stores expanded=true; the item is read as expanded",
+            "GUI Expand does not name {}, whose view provider of an object stores expanded=true; the item is read as expanded",
             provider.name
         )));
     }
