@@ -10,10 +10,10 @@ use cadmpeg_ir::tessellation::Tessellation;
 
 #[test]
 fn circular_arc_trim_disambiguates_coincident_planar_supports() {
-    let mut model = model_with_body();
-    let target = add_square_face(&mut model, "arc-target", 0.0);
+    let mut ir = model_with_body();
+    let target = add_square_face(&mut ir, "arc-target", 0.0);
     let competitor = add_face(
-        &mut model,
+        &mut ir,
         "arc-competitor",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -34,7 +34,7 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
         ("synthetic:test:curve#curve-arc-competitor-0", 2.0),
         ("synthetic:test:curve#curve-arc-competitor-2", 1.0),
     ] {
-        model
+        ir.geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id.as_str() == curve_id)
@@ -49,8 +49,8 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
             .unwrap(),
         ));
     }
-    set_shell_faces(&mut model, vec![target.clone(), competitor]);
-    model.tessellations.push(
+    set_shell_faces(&mut ir, &[target.clone(), competitor]);
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#arc-trim-mesh",
@@ -70,12 +70,12 @@ fn circular_arc_trim_disambiguates_coincident_planar_supports() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#arc-trim-mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![target]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![target]);
     assert_eq!(
-        model.tessellations[0].body,
+        ir.model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }

@@ -90,10 +90,10 @@ fn unresolved_a8_maps_create_no_neutral_geometry() {
     let decoded = crate::CatiaCodec
         .decode(&mut std::io::Cursor::new(input), &DecodeOptions::default())
         .expect("decode unresolved sampled map");
-    let model = &decoded.ir().model;
-    assert!(model.curves.is_empty() && model.procedural_curves.is_empty());
-    assert!(model.surfaces.is_empty() && model.procedural_surfaces.is_empty());
-    assert!(model.edges.is_empty() && model.faces.is_empty());
+    let geometry = &decoded.ir().geometry;
+    assert!(geometry.curves.is_empty() && geometry.procedural_curves.is_empty());
+    assert!(geometry.surfaces.is_empty() && geometry.procedural_surfaces.is_empty());
+    assert!(geometry.edges.is_empty() && geometry.faces.is_empty());
     assert_eq!(
         decoded
             .ir()

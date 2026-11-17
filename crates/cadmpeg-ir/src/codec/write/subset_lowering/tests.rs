@@ -40,7 +40,11 @@ fn add_subset(
     let subset = SubsetCurveConstruction::try_new(source.clone(), range, sense, None).unwrap();
     let cache = cached
         .then(|| {
-            let source = ir.model.curves.iter().find(|curve| curve.id == *source)?;
+            let source = ir
+                .geometry
+                .curves
+                .iter()
+                .find(|curve| curve.id == *source)?;
             subset.local_cache(source.geometry.solved()?)
         })
         .flatten();
@@ -58,13 +62,14 @@ fn add_subset(
             cache: None,
         },
     };
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: id(name),
         geometry,
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
-    ir.model
+    ir.geometry
         .add_procedural_curve(&id(name), ProceduralCurve::new(construction, definition))
         .unwrap();
 }
@@ -73,11 +78,12 @@ fn add_subset(
 /// subset of a line, over the outer local range `[0, 1]`.
 fn nested(inner_sense: bool, outer_sense: bool, inner_cached: bool) -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: id("root"),
         geometry: CurveGeometry::Solved(line()),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     add_subset(
         &mut ir,
@@ -95,7 +101,7 @@ fn nested(inner_sense: bool, outer_sense: bool, inner_cached: bool) -> CadIr {
         outer_sense,
         false,
     );
-    let edge = &mut ir.model.edges[0];
+    let edge = &mut ir.geometry.edges[0];
     edge.set_curve(Some(id("outer"))).unwrap();
     edge.set_param_range(Some(ParameterInterval::new([0.0, 1.0]).unwrap()));
     ir
@@ -114,7 +120,7 @@ fn model_point(ir: &CadIr, curve: &CurveId, parameter: f64) -> Point3 {
 
 fn cache_point(ir: &CadIr, curve: &CurveId, parameter: f64) -> Point3 {
     let curve = ir
-        .model
+        .geometry
         .curves
         .iter()
         .find(|item| item.id == *curve)
@@ -141,23 +147,35 @@ fn assert_close(actual: Point3, expected: Point3) {
 fn assert_lowered_edge(ir: &CadIr, lowered: &CadIr, forward: bool) {
     let start = model_point(ir, &id("outer"), 0.0);
     let end = model_point(ir, &id("outer"), 1.0);
-    let edge = &lowered.model.edges[0];
+    let edge = &lowered.geometry.edges[0];
     let [a, b] = edge.param_range().unwrap().get();
     let (at_a, at_b) = if forward { (start, end) } else { (end, start) };
     assert_close(cache_point(lowered, &id("outer"), a), at_a);
     assert_close(cache_point(lowered, &id("outer"), b), at_b);
-    let original = &ir.model.edges[0];
+    let original = &ir.geometry.edges[0];
     let expected = if forward {
-        (&original.start, &original.end)
+        (
+            &original.ends.as_ref().unwrap().start,
+            &original.ends.as_ref().unwrap().end,
+        )
     } else {
-        (&original.end, &original.start)
+        (
+            &original.ends.as_ref().unwrap().end,
+            &original.ends.as_ref().unwrap().start,
+        )
     };
-    assert_eq!((&edge.start, &edge.end), expected);
+    assert_eq!(
+        (
+            &edge.ends.as_ref().unwrap().start,
+            &edge.ends.as_ref().unwrap().end
+        ),
+        expected
+    );
     assert!(ir
-        .model
+        .geometry
         .coedges
         .iter()
-        .zip(&lowered.model.coedges)
+        .zip(&lowered.geometry.coedges)
         .filter(|(_, coedge)| coedge.edge == edge.id)
         .all(|(before, after)| (before.sense == after.sense) == forward));
 }
@@ -171,11 +189,11 @@ fn a_lowered_chain_states_its_edges_on_the_root_parameter_in_both_senses() {
             let forward = inner_sense == outer_sense;
             assert_lowered_edge(&ir, &lowered, forward);
             let Some(ProceduralCurveDefinition::Subset(definition)) = lowered
-                .model
+                .geometry
                 .procedural_curves
                 .iter()
                 .find(|procedural| {
-                    lowered.model.procedural_curve_owner(&procedural.id) == Some(&id("outer"))
+                    lowered.geometry.procedural_curve_owner(&procedural.id) == Some(&id("outer"))
                 })
                 .map(ProceduralCurve::definition)
             else {
@@ -185,7 +203,7 @@ fn a_lowered_chain_states_its_edges_on_the_root_parameter_in_both_senses() {
             assert_eq!(*definition.sense(), forward);
             assert_eq!(
                 definition.parameter_range().endpoints(),
-                lowered.model.edges[0].param_range().unwrap().get()
+                lowered.geometry.edges[0].param_range().unwrap().get()
             );
         }
     }
@@ -234,20 +252,21 @@ fn a_spline_cache_moves_back_onto_the_source_parameter() {
     .unwrap();
     for sense in [true, false] {
         let mut ir = crate::examples::unit_cube().unwrap();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: id("root"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(root.clone())),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         add_subset(&mut ir, "outer", &id("root"), [1.25, 2.25], sense, true);
-        let edge = &mut ir.model.edges[0];
+        let edge = &mut ir.geometry.edges[0];
         edge.set_curve(Some(id("outer"))).unwrap();
         edge.set_param_range(Some(ParameterInterval::new([0.0, 1.0]).unwrap()));
         let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
         assert_lowered_edge(&ir, &lowered, sense);
         let curve = lowered
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == id("outer"))

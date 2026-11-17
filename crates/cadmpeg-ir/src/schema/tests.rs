@@ -218,12 +218,12 @@ fn schema_constrains_version_and_requires_subd_arena() {
         Some(&serde_json::json!(crate::IR_VERSION))
     );
     assert!(schema
-        .pointer("/properties/model/$ref")
+        .pointer("/properties/geometry/$ref")
         .and_then(serde_json::Value::as_str)
         .is_some());
 
-    let model_schema = schema.pointer("/$defs/Model").unwrap();
-    assert!(model_schema
+    let topology_schema = schema.pointer("/$defs/Topology").unwrap();
+    assert!(topology_schema
         .pointer("/required")
         .and_then(serde_json::Value::as_array)
         .unwrap()
@@ -232,7 +232,7 @@ fn schema_constrains_version_and_requires_subd_arena() {
 
     let mut value = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     value
-        .pointer_mut("/model")
+        .pointer_mut("/geometry")
         .unwrap()
         .as_object_mut()
         .unwrap()
@@ -366,6 +366,7 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
         id: "test:model:vertex#owner".try_into().unwrap(),
         point: "test:model:point#target".try_into().unwrap(),
         tolerance: None,
+        native_ref: None,
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     let limit = ResourceLimit::allocation_failed(

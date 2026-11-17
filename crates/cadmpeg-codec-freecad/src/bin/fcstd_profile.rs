@@ -628,7 +628,10 @@ fn collect_native_observations(
         }
     }
     for feature in &ir.model.features {
-        if let Ok(Value::Object(definition)) = serde_json::to_value(feature.evaluation.definition())
+        if let Some(definition) = serde_json::to_value(feature.evaluation.definition())
+            .ok()
+            .as_ref()
+            .and_then(family_beside_fields)
         {
             insert_string(&definition, "definition", &mut observed.feature_definitions);
             if let Some(Value::Object(operation)) = definition.get("operation") {
@@ -652,6 +655,27 @@ fn collect_native_observations(
         }
     }
     Ok(())
+}
+
+/// A feature definition with its operation family beside its fields, under
+/// `definition`, and the same for a post-processed definition's `operation`.
+fn family_beside_fields(definition: &Value) -> Option<serde_json::Map<String, Value>> {
+    fn flattened(tagged: &Value) -> Option<serde_json::Map<String, Value>> {
+        let family = tagged.get("kind")?.as_str()?;
+        let mut fields = match tagged.get("value") {
+            Some(Value::Object(fields)) => fields.clone(),
+            _ => serde_json::Map::new(),
+        };
+        if let Some(operation) = fields.get("operation").and_then(flattened) {
+            fields.insert("operation".to_owned(), Value::Object(operation));
+        }
+        fields.insert("definition".to_owned(), Value::String(family.to_owned()));
+        Some(fields)
+    }
+    match definition.get("kind")?.as_str()? {
+        "operation" => flattened(definition.get("value")?),
+        _ => flattened(definition),
+    }
 }
 
 /// Record every non-default branch a feature definition selects, keyed by
@@ -906,7 +930,7 @@ fn appearance_checks(
         else {
             return Ok(false);
         };
-        let (kind, target, precedence) = match &binding.target {
+        let (kind, target, precedence) = match &binding.target.entity {
             AppearanceTarget::Body(id) => ("body", id.as_str(), None),
             AppearanceTarget::Face(id) => ("face", id.as_str(), Some("face_over_object")),
             AppearanceTarget::Edge(id) => (
@@ -998,7 +1022,7 @@ fn design_census_matches_projection(ir: &CadIr) -> Result<bool, Box<dyn std::err
             }
             FeatureDefinition::Operation(operation) => (serde_json::to_value(operation)?, false),
         };
-        let semantic_kind = operation.get("definition").and_then(Value::as_str);
+        let semantic_kind = operation.get("kind").and_then(Value::as_str);
         if matching[0].get("semantic_kind").and_then(Value::as_str) != semantic_kind
             || matching[0].get("post_processed").and_then(Value::as_bool) != Some(post_processed)
             || matching[0].get("neutral").and_then(Value::as_bool)
@@ -1087,8 +1111,6 @@ fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::erro
 
 fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(source) = &mut ir.source {
-        source.attributes.remove("physical_archive_bytes");
-        source.attributes.remove("physical_ledger_spans");
         source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
     }
     if let Some(namespace) = ir.native.0.get_mut("fcstd") {
@@ -1675,7 +1697,8 @@ mod tests {
         for feature in &mut native_only.model.features {
             feature.evaluation.set_definition(
                 serde_json::from_value(serde_json::json!({
-                    "definition":"native", "kind":"retained_operation", "parameters":{}
+                    "kind": "operation",
+                    "value": {"kind": "native", "value": {"kind": "retained_operation", "parameters": {}}}
                 }))
                 .expect("native definition"),
             );

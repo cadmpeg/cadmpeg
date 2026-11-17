@@ -1,14 +1,22 @@
 {
-  "ir_version": "10",
-  "decode_depth": "full",
+  "ir_version": "11",
+  "fragment": false,
+  "scope": {
+    "model": true,
+    "design": true,
+    "process": true
+  },
   "units": {
-    "length": "millimeter"
+    "length": "millimeter",
+    "angle": "radian",
+    "mass": "kilogram",
+    "time": "second"
   },
   "tolerances": {
     "linear": 1e-6,
     "angular": 1e-10
   },
-  "model": {
+  "geometry": {
     "bodies": [],
     "regions": [],
     "shells": [],
@@ -22,21 +30,24 @@
       {
         "id": "synthetic:v2:surface#sum-cache",
         "geometry": {
-          "kind": "plane",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "normal": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 1.0
-          },
-          "u_axis": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       }
@@ -45,32 +56,38 @@
       {
         "id": "synthetic:v2:curve#u",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
           }
         }
       },
       {
         "id": "synthetic:v2:curve#v",
         "geometry": {
-          "kind": "line",
-          "origin": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "direction": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
+          "kind": "solved",
+          "value": {
+            "kind": "line",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "direction": {
+              "x": 0.0,
+              "y": 1.0,
+              "z": 0.0
+            }
           }
         }
       }
@@ -117,4 +134,28 @@
                 0.75
               ],
               "tag": "crease",
-              "secto
+              "sector_coefficients": [
+                0.125,
+                0.875
+              ]
+            },
+            {
+              "vertices": [
+                1,
+                2
+              ],
+              "sharpness": [
+                0.0,
+                0.5
+              ],
+              "tag": "smooth_x",
+              "sector_coefficients": [
+                0.25,
+                0.75
+              ]
+            },
+            {
+              "vertices": [
+                2,
+                0
+            

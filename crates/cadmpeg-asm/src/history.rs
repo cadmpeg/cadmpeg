@@ -430,6 +430,57 @@ pub fn decode_record_archive(
     }))
 }
 
+/// Re-key the framed records of a history stream by revision identifier, with
+/// each record's index and each non-negative reference moved from revision
+/// identifiers to entity slots. Returns `None` when a revision identifier
+/// repeats, a revision names no entity slot, or a reference names a revision
+/// that no change places.
+pub fn historical_record_archive(
+    states: &[DeltaStateView<'_>],
+    frames: RecordArchiveFrames,
+) -> Option<HashMap<i64, Record>> {
+    let active_count = i64::try_from(frames.active.len()).ok()?;
+    let mut revision_entities = HashMap::new();
+    for entity_ref in 0..active_count {
+        revision_entities.insert(entity_ref, entity_ref);
+    }
+    for change in states.iter().flat_map(|state| &state.changes) {
+        let Some(old_ref) = change.old_ref() else {
+            continue;
+        };
+        let entity_ref = change.new_ref().unwrap_or(old_ref);
+        if revision_entities.insert(old_ref, entity_ref).is_some() {
+            return None;
+        }
+    }
+    let mut records = HashMap::new();
+    for (revision, record) in frames.active.into_iter().enumerate() {
+        records.insert(i64::try_from(revision).ok()?, record);
+    }
+    for (revision_id, framed) in frames.archived {
+        if records.insert(revision_id, framed).is_some() {
+            return None;
+        }
+    }
+    if records.len() != revision_entities.len() {
+        return None;
+    }
+    for (&revision_ref, record) in &mut records {
+        let &entity_ref = revision_entities.get(&revision_ref)?;
+        record.index = usize::try_from(entity_ref).ok()?;
+        for token in std::sync::Arc::make_mut(&mut record.tokens) {
+            let Token::Ref(reference) = token else {
+                continue;
+            };
+            if *reference >= 0 {
+                let &entity_ref = revision_entities.get(reference)?;
+                *reference = entity_ref;
+            }
+        }
+    }
+    Some(records)
+}
+
 /// Marker that opens a `delta_state` record: terminator, identifier tag, and the
 /// 11-byte class name.
 const DELTA_STATE_MARKER: &[u8] = b"\x11\x0d\x0bdelta_state";

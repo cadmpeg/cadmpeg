@@ -4,7 +4,8 @@
 mod endpoint_sites;
 mod witnesses;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
@@ -16,7 +17,8 @@ use crate::wire::records::{
 };
 
 use super::roster::{
-    allocation_width, legacy_body, logical_bytes, payload, sheet_references, wide_roster, Member,
+    allocation_width, legacy_body, logical_bytes, payload, sheet_references, wide_roster,
+    BodyRoots, Member, SheetMembers,
 };
 use super::trimmed_face::Source;
 use super::{boundary, fit, CadIr, Patch, Stream};
@@ -411,28 +413,143 @@ fn add_site(sites: &mut Sites, body: (usize, usize), id: usize, point: Point3) {
         .or_insert(Some(point));
 }
 
+pub(super) struct SelectedGroups {
+    pub(super) source: usize,
+    groups: BTreeSet<usize>,
+    pub(super) legacy_bodies: BTreeSet<super::roster::RecordKey>,
+    legacy_roots: BodyRoots,
+}
+
+pub(super) struct Sheets {
+    pub(super) patches: Vec<Patch>,
+    pub(super) members: SheetMembers,
+    pub(super) selection: Option<SelectedGroups>,
+    pub(super) roots: BodyRoots,
+}
+
+fn selected_indices(alloc: &Allocations, ends: &[usize]) -> Option<Vec<usize>> {
+    ends.iter()
+        .map(|&end| {
+            let index = alloc.ending_before(end)?;
+            let frame = &alloc.records[index];
+            (frame.class() == 0x5b && frame.flag() == Flag::Flag13).then_some(index)
+        })
+        .collect()
+}
+
+fn selected_groups(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    sources: &[Vec<SourceExtent>],
+    records: &[ConsolidatedRecord],
+    selection: &crate::container::body_selection::BodySelection,
+) -> Result<Option<SelectedGroups>, cadmpeg_core::CodecError> {
+    let source = selection.source;
+    let extents = &sources[source];
+    let bytes = logical_bytes(ctx, data, extents)?;
+    let mut selected = None;
+    let mut end = 0;
+    for candidate in records.iter().filter(|r| r.source_index() == source) {
+        let start = candidate.source_range().start;
+        if start < end {
+            continue;
+        }
+        let alloc = Allocations::read(&bytes, start, Some(bytes.len()));
+        end = alloc
+            .records
+            .last()
+            .map_or(start + 1, |r| r.source_range().end);
+        let Some(indices) = selected_indices(&alloc, &selection.allocation_ends) else {
+            continue;
+        };
+        let groups = indices
+            .iter()
+            .map(|&index| alloc.records[index].source_range().start)
+            .collect::<BTreeSet<_>>();
+        let mut legacy_bodies = BTreeSet::new();
+        let mut legacy_roots = BodyRoots::new();
+        for index in indices {
+            let next = index + 1;
+            if payload(&bytes, &alloc.records[index])
+                .and_then(shell_slots)
+                .as_deref()
+                == Some(&[0])
+                && alloc
+                    .records
+                    .get(next..next + 3)
+                    .is_some_and(|r| legacy_body(r, &bytes))
+            {
+                if let Some(body) = file_offset(extents, alloc.records[next].byte_offset()) {
+                    legacy_bodies.insert((source, body));
+                    if let Some(root) = file_offset(extents, alloc.records[index].byte_offset()) {
+                        legacy_roots.entry((source, body)).or_default().insert(root);
+                    }
+                }
+            }
+        }
+        if let Some(prior) = &selected {
+            let prior: &SelectedGroups = prior;
+            if prior.groups != groups {
+                return Ok(None);
+            }
+        }
+        selected = Some(SelectedGroups {
+            source,
+            groups,
+            legacy_bodies,
+            legacy_roots,
+        });
+    }
+    Ok(selected)
+}
+
 pub(super) fn patches(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     stream: &Stream<'_>,
     carriers: &std::collections::BTreeMap<usize, usize>,
     refusal: &mut crate::nurbs::LaneRefusals,
-) -> Result<(Vec<Patch>, BTreeSet<usize>), cadmpeg_core::CodecError> {
+) -> Result<Sheets, cadmpeg_core::CodecError> {
     let &Stream {
         data,
         sources,
         records,
+        selection,
     } = stream;
+    let selected = selection
+        .map(|selection| selected_groups(ctx, data, sources, records, selection))
+        .transpose()?
+        .flatten();
+    if selection.is_some() && selected.is_none() {
+        refusal.push_body_selection(false, 0);
+    }
     let mut output = Vec::new();
-    let mut backward_sources = BTreeSet::new();
+    let mut roots = selected
+        .as_ref()
+        .map(|s| s.legacy_roots.clone())
+        .unwrap_or_default();
+    let mut sheet_members = SheetMembers::new();
     let mut allocation_starts = BTreeMap::new();
+    let mut source_bytes = BTreeMap::new();
+    let mut mixed_allocations = BTreeMap::new();
+    let mut excluded_groups = 0;
     for group in records
         .iter()
         .filter(|frame| root(frame, data) || backward_root(frame, data))
     {
         let source = group.source_index();
+        if selected.as_ref().is_some_and(|selected| {
+            selected.source == source && !selected.groups.contains(&group.source_range().start)
+        }) {
+            excluded_groups += 1;
+            continue;
+        }
         let extents = &sources[source];
-        let bytes = logical_bytes(ctx, data, extents)?;
+        let bytes = match source_bytes.entry(source) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(logical_bytes(ctx, data, extents)?),
+        };
+        let bytes = bytes.as_ref();
         let backward = backward_root(group, data);
         let mut end_anchored = backward;
         let (alloc, members) = if backward {
@@ -445,22 +562,26 @@ pub(super) fn patches(
             };
             let seed = seed[0].source_range().start;
             let start = *allocation_starts.entry((source, seed)).or_insert_with(|| {
-                allocation_run_start(&bytes, records, source, seed).unwrap_or(seed)
+                allocation_run_start(bytes, records, source, seed).unwrap_or(seed)
             });
-            let alloc = Allocations::read(&bytes, start, Some(group.source_range().end));
-            let members = alloc.backward_faces(&bytes, group);
+            let alloc = Rc::new(Allocations::read(
+                bytes,
+                start,
+                Some(group.source_range().end),
+            ));
+            let members = alloc.backward_faces(bytes, group);
             (alloc, members)
         } else {
-            let alloc = Allocations::read(&bytes, group.source_range().end, None);
+            let alloc = Rc::new(Allocations::read(bytes, group.source_range().end, None));
             let members = payload(data, group)
                 .and_then(shell_slots)
-                .and_then(|shells| alloc.faces(&bytes, &shells));
+                .and_then(|shells| alloc.faces(bytes, &shells));
             if members.is_some() {
                 (alloc, members)
             } else {
                 let mixed = alloc.records.first().is_some_and(|frame| {
                     frame.class() == 0x61
-                        && payload(&bytes, frame)
+                        && payload(bytes, frame)
                             .and_then(|p| sheet_references(p, frame.family()))
                             .is_some_and(|(refs, _)| {
                                 refs.iter().any(|r| {
@@ -484,10 +605,13 @@ pub(super) fn patches(
                 };
                 let seed = seed[0].source_range().start;
                 let start = *allocation_starts.entry((source, seed)).or_insert_with(|| {
-                    allocation_run_start(&bytes, records, source, seed).unwrap_or(seed)
+                    allocation_run_start(bytes, records, source, seed).unwrap_or(seed)
                 });
-                let alloc = Allocations::read(&bytes, start, Some(bytes.len()));
-                let members = alloc.mixed_faces(&bytes, group);
+                let alloc =
+                    Rc::clone(mixed_allocations.entry((source, start)).or_insert_with(|| {
+                        Rc::new(Allocations::read(bytes, start, Some(bytes.len())))
+                    }));
+                let members = alloc.mixed_faces(bytes, group);
                 end_anchored = true;
                 (alloc, members)
             }
@@ -495,9 +619,6 @@ pub(super) fn patches(
         let Some(members) = members else {
             continue;
         };
-        if backward {
-            backward_sources.insert(source);
-        }
         let resolve = |index, reference, family, class| {
             let target = alloc.resolve(index, reference, end_anchored)?;
             let frame = alloc.records.get(target)?;
@@ -515,13 +636,13 @@ pub(super) fn patches(
             .cloned()
             .collect::<Vec<_>>();
         let tensors = crate::families::a5a8::records::a5_owned_surfaces_from_records(
-            &bytes, &uncached, refusal,
+            bytes, &uncached, refusal,
         )?
         .into_iter()
         .map(|surface| (surface.pos, surface.geometry))
         .collect();
         let trim_source = Source {
-            bytes: &bytes,
+            bytes,
             records: &alloc.records,
             resolve: |index, reference| alloc.resolve(index, reference, end_anchored),
             physical,
@@ -543,8 +664,18 @@ pub(super) fn patches(
                 body: (source, shell_pos),
                 forward,
             };
+            roots
+                .entry(member.body)
+                .or_default()
+                .insert(group.byte_offset());
+            let owners = sheet_members
+                .entry((source, alloc.records[face].source_range().start))
+                .or_default();
+            if !owners.contains(&member) {
+                owners.push(member);
+            }
             native_faces.insert(face_pos, (face, member));
-            let rectangle = boundary(&bytes, &alloc.records, face, resolve, physical, true)
+            let rectangle = boundary(bytes, &alloc.records, face, resolve, physical, true)
                 .and_then(|boundary| {
                     fit(
                         ir,
@@ -682,13 +813,62 @@ pub(super) fn patches(
         );
         endpoints.resolve(&mut output[start..]);
     }
-    Ok((output, backward_sources))
+    if excluded_groups != 0 {
+        refusal.push_body_selection(true, excluded_groups);
+    }
+    Ok(Sheets {
+        patches: output,
+        members: sheet_members,
+        selection: selected,
+        roots,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::wire::records::parse_consolidated_record;
+
+    #[test]
+    fn visible_body_addresses_select_allocation_ends_and_require_body_types() {
+        let bytes = [
+            0xb2, 0x13, 0x5b, 0, 5, 0xb2, 3, 0x25, 0, 0x0d, 0xb2, 0x13, 0x5b, 0, 5,
+        ];
+        let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
+        assert_eq!(selected_indices(&alloc, &[5]), Some(vec![2]));
+        assert_eq!(selected_indices(&alloc, &[1, 5]), Some(vec![0, 2]));
+        assert!(selected_indices(&alloc, &[1, 4]).is_none());
+        assert!(selected_indices(&alloc, &[3]).is_none());
+    }
+
+    #[test]
+    fn visible_body_addresses_accept_wide_family_body_frames() {
+        let bytes = [
+            0xb2, 0x13, 0x5b, 0, 5, 0xa5, 0x13, 0x5b, 0, 0, 0, 0, 5, 0xa5, 3, 0x5b, 0, 0, 0, 0, 5,
+        ];
+        let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
+        assert_eq!(selected_indices(&alloc, &[1, 2]), Some(vec![0, 1]));
+        assert!(selected_indices(&alloc, &[1, 3]).is_none());
+    }
+
+    #[test]
+    fn visible_body_selection_rejects_competing_allocation_sequences() {
+        let bytes = [0xb2, 0x13, 0x5b, 0, 5, 0xff, 0xb2, 0x13, 0x5b, 0, 5];
+        let sources = vec![vec![
+            SourceExtent::within(&bytes, 0, bytes.len()).expect("source")
+        ]];
+        let records = crate::wire::records::consolidated_records_in_sources(&bytes, &sources)
+            .expect("records");
+        let selection = crate::container::body_selection::BodySelection {
+            source: 0,
+            allocation_ends: vec![1],
+        };
+        crate::test_support::with_service_context(|ctx| {
+            assert!(selected_groups(ctx, &bytes, &sources, &records, &selection)
+                .expect("selection")
+                .is_none());
+        });
+    }
 
     #[test]
     fn sheet_references_reach_allocations_before_the_legacy_body() {

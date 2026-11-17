@@ -78,7 +78,7 @@ fn an_mdl_preset_keeps_its_module_and_shares_the_omni_pbr_parameters() {
         Some("Library/Aluminium_Brushed_A.mdl")
     );
     let base = source.base_color.expect("a base color");
-    assert!((f64::from(base.r()) - 0.1).abs() < 1e-6, "{base:?}");
+    assert!((base.r() - 0.1).abs() < 1e-6, "{base:?}");
     let (text, _) = crate::test_support::encode(decode(PRESET).ir());
     assert!(
         text.contains("uniform asset info:mdl:sourceAsset = @Library/Aluminium_Brushed_A.mdl@"),

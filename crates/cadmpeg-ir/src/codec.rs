@@ -24,11 +24,12 @@ use crate::report::{
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
-    WholeInput,
+    ArenaClass, ContentScope, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
+    InspectOptions, View, WholeInput,
 };
 use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -58,7 +59,7 @@ impl fmt::Display for FormatId {
 }
 
 /// How confident a codec is that it can handle a given byte prefix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -261,27 +262,26 @@ impl DecodeResult {
     /// the report body, then canonicalizing the IR and source fidelity.
     ///
     /// A document without source metadata yields an unclassified report for
-    /// `format`, the codec's registry format. The document records the depth
-    /// the backend's transfer state reports; a depth shallower than
-    /// `requested` adds an error loss.
+    /// `format`, the codec's registry format. The document records the scope
+    /// of the depth the backend's transfer state reports, less each class
+    /// `requested` excludes that the document leaves empty; each class
+    /// `requested` names that the document lacks adds an error loss.
     fn new(decoded: Decoded, format: FormatId, requested: DecodeDepth) -> Result<Self, CodecError> {
         let Decoded {
             mut ir,
             mut body,
             source_fidelity,
         } = decoded;
-        let delivered = body.transfer.depth();
-        ir.set_decode_depth(delivered);
-        ir.check_decode_depth().map_err(|error| {
+        let scope = recorded_scope(&ir, body.transfer.depth().scope(), requested.scope());
+        ir.set_scope(scope).map_err(|error| {
             CodecError::malformed(format_args!("codec {format:?} decoded {error}"))
         })?;
-        if delivered < requested {
-            body.losses.push(
-                DecodeLossCode::DepthNotDelivered { delivered }.note(format!(
-                    "requested {requested} depth but the {format} decoder delivered \
-                     {delivered} depth, so the records only {requested} depth carries are absent"
-                )),
-            );
+        for class in scope.missing_from(requested.scope()) {
+            body.losses
+                .push(DecodeLossCode::DepthNotDelivered { class }.note(format!(
+                    "requested {requested} depth but the {format} decoder did not deliver \
+                     the {class} class, so its records are absent"
+                )));
         }
         let classification = match ir.source.as_ref() {
             Some(source) => match source.classification() {
@@ -579,3 +579,23 @@ pub mod write;
 
 #[cfg(test)]
 mod tests;
+
+/// The scope a decode records: the delivered scope, less each class the
+/// request excludes whose arenas the document leaves empty.
+fn recorded_scope(ir: &CadIr, delivered: ContentScope, requested: ContentScope) -> ContentScope {
+    ArenaClass::ALL
+        .into_iter()
+        .rev()
+        .fold(delivered, |scope, class| {
+            let withdrawn = scope.with(class, false);
+            if scope.holds(class)
+                && !requested.holds(class)
+                && ir.populated_arena(class).is_none()
+                && withdrawn.unmet_requirement().is_none()
+            {
+                withdrawn
+            } else {
+                scope
+            }
+        })
+}

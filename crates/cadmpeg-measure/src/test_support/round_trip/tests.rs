@@ -22,7 +22,7 @@ fn assert_states_no_document_text(message: &str, documents: &[&CadIr]) {
         "the failure message prints a number"
     );
     for document in documents {
-        for body in &document.model.bodies {
+        for body in &document.geometry.bodies {
             assert!(
                 !message.contains(body.id.as_str()),
                 "the failure message prints a body identity"

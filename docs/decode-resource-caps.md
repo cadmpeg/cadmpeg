@@ -26,11 +26,18 @@ from the name of the constant.
    Rhino `checked_count_bytes`). Excess refuses that record or that decode as
    malformed or unsupported, or skips that record. A per-input bound does not
    set the session fuse.
-3. **Session ceiling.** Only the six `ResourceLimits` fields are session
-   ceilings: `max_input_bytes`, `max_decompressed_bytes_total`,
-   `max_decompressed_bytes_per_expand`, `max_retained_bytes`,
-   `max_entities`, and `max_recursion_depth`. `DecodeContext` charges them.
-   Excess refuses the session and sets the fuse.
+3. **Session ceiling.** Only the `ResourceLimits` fields are session
+   ceilings. `DecodeContext` charges six of them: `max_input_bytes`,
+   `max_decompressed_bytes_total`, `max_decompressed_bytes_per_expand`,
+   `max_retained_bytes`, `max_entities`, and `max_recursion_depth`. Excess
+   refuses the session and sets the fuse. Reading CADIR design values
+   (`cadmpeg_ir::design::read::from_str`) enforces four as nesting
+   ceilings: `max_expression_depth`, `max_name_depth`, `max_pick_depth`, and
+   `max_construction_depth`. Reading a document enforces
+   `max_state_chain_depth` on each chain of state bases its evaluations
+   and process states form, and refuses a cycle as malformed. Excess refuses that read with
+   `CodecError::ResourceLimit` (`RecursionDepth`, `BudgetExceeded`); it sets
+   no fuse.
 4. **Local work cap.** The limit bounds a search, an iteration, a
    convergence loop, a walk over derived data, or the size of derived output.
    A `WorkBudget` or a local counter enforces it. At exhaustion the decoder
@@ -281,6 +288,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-inventor` | `src/property_set.rs`                              | `MAX_PROPERTIES`                          | `65_536`                                                | 2    | Section property count, dictionary entry count and vector element count. Excess is `Malformed`; entries are read one at a time against the section window.                                                                                                                   |
 | `cadmpeg-codec-inventor` | `src/feature/history_states.rs`                    | `MAX_STATE_SCAN_WORK`                     | `1 << 24`                                               | 4    | Live records inspected by one state-index read of the active carrier history: the state count times the live record count. A scan that passes it yields no states and reports `source.kernel-history-bounded`.                                                               |
 | `cadmpeg-codec-inventor` | `src/feature/edge_selection/historical.rs`         | `MAX_SELECTOR_GENERATORS`                 | `4`                                                     | 1    | Generator array length of a direct edge selector. A longer array is another selector form, and its feature keeps a native selection. |
+| `cadmpeg-codec-inventor` | `src/feature/history_bodies.rs`                    | `MAX_HISTORY_BODIES`                      | `8`                                                     | 4    | History bodies of one part. Each materializes and decodes a whole history state. A request past the cap gets no history body and `feature.history-body-bounded` counts it. |
+| `cadmpeg-codec-inventor` | `src/feature/history_bodies.rs`                    | `MAX_HISTORY_BODY_WORK`                   | `1 << 21`                                               | 4    | Records materialized for the history bodies of one part, a `WorkBudget`. A state that passes it gets no history body and `feature.history-body-bounded` counts it. |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_SKETCH_RECORDS`                      | `1_000_000`                                             | 2    | Declared sketch, spreadsheet, dimension and record counts (excess is `Malformed`); spline pole, knot and multiplicity counts, binary point and value lists checked with `View::counted`, and pattern occurrence counts (excess returns `None` and the item is not built).    |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_PROFILE_ENDPOINT_CANDIDATES`         | `1 << 24`                                               | 4    | Per-sketch `WorkBudget` for the endpoint candidates sketch profile chaining examines. Exhaustion keeps the sketch, its entities and constraints, with no profiles, and reports `sketch.profile-matching-bounded`.                                                            |
 | `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_LINK_ARRAY_ELEMENTS`                 | `1_000_000`                                             | 2    | Stated or inferred element count of one link array. Excess is `Malformed`. The link occurrences the arrays project are admitted against `max_entities` before any is built.                                                                                                  |
@@ -329,6 +338,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_MESH_FACE_SOURCE_IDS`                | `1 << 24`                                               | 2    | Face-source correspondence count. Excess fails the userdata.                                                                                                                                                                                                                 |
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_BUFFER_OUTPUT`                       | `256 * 1024 * 1024`                                     | 2    | Declared size of one mesh buffer, before the copy or `inflate`. Excess fails the mesh; the decode continues. Inflation also charges the session decompression ceilings.                                                                                                      |
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_DOCUMENT_BUFFER_OUTPUT`              | `256 * 1024 * 1024`                                     | 4    | `MeshBudget`: stored plus inflated mesh-buffer bytes across the document. At the limit the mesh fails with `document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)`, the session is not fused, and later meshes still decode.                                     |
+| `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODIES` | `64` | 4 | History bodies per document, across all of its components. `MAX_HISTORY_BODY_WORK` bounds their total materialization. Excess reports `feature.history-body-bounded`. |
+| `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODY_WORK` | `1 << 21` | 4 | Archive records scanned for subtype definitions and records materialized for history bodies per document. Excess reports `feature.history-body-bounded`. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_PATH_ELEMENTS` | `1024` | 2 | Exclusive bound on the even scene path element count, checked before allocation. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_STRING_UNITS` | `128` | 2 | Bound on scene UTF-16 name and pointer code-unit counts. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                                  | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`                                      | 2    | Declared byte count of one paramesh stream, checked before `begin_expand`. Excess returns `NotImplemented` without fusing; the container is recorded as failed and the decode continues. The expansion also charges the session.                                             |
@@ -406,6 +417,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/swift.rs`                                     | `MAX_DEPTH`                               | `32`                                                    | 2    | SWIFT entity nesting depth. A feature walk that meets a feature only past it leaves the targets or nominal it feeds unresolved and reports `pmi.swift-feature-walk-capped`.                                                                                                  |
 | `cadmpeg-codec-sldprt` | `src/swift/presentation.rs` | `MAX_PATH_FEATURES` | `8` | 1 | Largest feature count of a SWIFT presentation feature path. A larger count does not frame a path. |
 | `cadmpeg-codec-sldprt` | `src/swift/presentation/faces.rs` | `MAX_REFERENCE_HOPS` | `64` | 1 | Largest hop count of a presentation-archive identity reference header. A larger count does not frame a header. |
+| `cadmpeg-codec-sldprt` | `src/resolved_features/sketch_lists.rs` | `MAX_SKETCH_POINTS` | `4096` | 2 | Largest point count read as an `sgSketch` header. A larger count frames no sketch list, and its markers keep native geometry. |
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
 | `cadmpeg-codec-sldprt` | `src/metadata/configuration_manager.rs` | `MAX_FILETIME` | `157_469_184_000_000_000` | 1 | Reader's window for the configuration-manager FILETIME scalar, the end of 2099 UTC. A later value does not frame the record. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_SHORT_POINTER_INDEX` | `0x7fff` | 1 | Largest admitted short-form topology pointer; larger values require an extended reference frame. |
@@ -452,10 +464,11 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/edge_alignment.rs` | `MAX_ENDPOINT_SEED_GAP_MM` | `0.005` | N | Maximum endpoint distance in mm for a corroborated shared-trim alignment seed. The fitted curve and surface lifts meet the ordinary edge gap. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_SHARED_EDGE_SEED_GAP_MM` | `0.005` | N | Maximum sampled boundary separation in mm for a retry using the admitted shared edge. Reprojection must meet the surface lift gap. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_CORROBORATED_VERTEX_GAP_MM` | `0.005` | N | Maximum distance in mm for a vertex repair corroborated by an incident matching edge. Larger discrepancies retain the conflicting vertex. |
-| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_SPANS` | `48` | 4 | Knot spans per axis of a fitted tensor surface. A larger grid rejects the fit. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_CELLS` | `48 * 48` | 4 | Grid cells of a fitted tensor surface. Each refinement step checks the product of the U and V knot spans before surface evaluation. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_REFINEMENTS` | `9` | 4 | Refinements of a tensor surface grid after the initial fit. A remaining residual rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ALTERNATE_LINES` | `4` | 4 | Ambiguous line stations admitted to the alternate boundary search. Excess skips the search. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ROLLING_BOUNDARY_EXCURSION` | `0.001` | N | Maximum normalized transverse excursion for a rolling-ball boundary retry. A larger excursion rejects the retry. |
+| `cadmpeg-codec-catia` | `src/families/freeform/parameter_cache.rs` | `MAX_CACHED_PARAMETERS` | `32_768` | N | Cached parameter evaluations per function. At capacity, existing entries remain available and new parameters are evaluated without caching. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_CHART_ENDPOINT_SLACK` | `0.00001` | N | Absolute parameter slack for clamping a station to the chart boundary. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_ERROR_MM` | `0.001` | N | Maximum sampled edge fit residual in mm. Larger residuals request subdivision. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_SPANS` | `128` | 4 | Spans in one fitted edge. Excess rejects the fit. |
@@ -551,26 +564,26 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 336.
+Production `MAX_*` constants: 342.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
-| 2    | Per-input bound            | 76    |
+| 2    | Per-input bound            | 77    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 166   |
-| N    | Not a decode bound         | 52    |
-|      | Total                      | 336   |
+| 4    | Local work cap             | 170   |
+| N    | Not a decode bound         | 53    |
+|      | Total                      | 342   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
-`cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 5,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 24,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 37,
-`cadmpeg-codec-catia` 78, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 7,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 26,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
+`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

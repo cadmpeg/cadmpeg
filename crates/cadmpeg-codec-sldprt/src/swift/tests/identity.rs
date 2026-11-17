@@ -233,7 +233,11 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .annotations;
     let first = projected.first().expect("projected datum");
     assert_eq!(
-        first.targets,
+        first
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
         [PmiTarget::Face {
             face: "sldprt:brep:face#42".try_into().expect("valid identity")
         }]
@@ -258,7 +262,11 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .annotations;
     let first = projected.first().expect("projected datum");
     assert_eq!(
-        first.targets,
+        first
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
         [PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("F10")
                 .expect("nonempty source identity")
@@ -274,11 +282,11 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     let body = Body {
         id: BodyId::mint("sldprt:brep:body#11").expect("identity grammar"),
         kind: BodyKind::default(),
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let face = Face {
         id: FaceId::mint("sldprt:brep:face#22").expect("identity grammar"),
@@ -289,18 +297,23 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let edge = Edge {
         id: EdgeId::mint("sldprt:brep:edge#33").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-        start: VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
-        end: VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("sldprt:brep:vertex#1").expect("identity grammar"),
+            VertexId::mint("sldprt:brep:vertex#2").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertex = Vertex {
         id: VertexId::mint("sldprt:brep:vertex#44").expect("identity grammar"),
         point: PointId::mint("sldprt:brep:point#44").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     };
     let index = TopologyIdentityIndex::from_model(
         crate::swift::PrimaryTopology {
@@ -690,7 +703,14 @@ fn position_missing_compound_hole_reference_preserves_aspect_and_loss() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("missing-hole")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("missing-hole")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -744,7 +764,14 @@ fn position_compound_hole_rejects_non_face_topology_targets() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("schema:505")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("schema:505")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -797,7 +824,14 @@ fn position_compound_hole_reference_class_mismatch_preserves_the_reference() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("hole")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -852,7 +886,14 @@ fn position_pattern_mismatched_subfeature_reference_preserves_pattern_aspect() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("pattern")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("pattern")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -905,7 +946,14 @@ fn position_pattern_reference_class_mismatch_preserves_pattern_aspect() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("pattern")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("pattern")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -1000,7 +1048,14 @@ fn malformed_position_pattern_class_edges_preserve_pattern_aspect() {
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
         };
-        assert_eq!(annotation.targets, vec![shape_aspect("pattern")]);
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .map(|target| target.entity.clone())
+                .collect::<Vec<_>>(),
+            vec![shape_aspect("pattern")]
+        );
         assert_eq!(projection.unresolved_position_targets, 1);
         let mut losses = Vec::new();
         projection.append_losses(&mut losses);
@@ -1070,7 +1125,14 @@ fn duplicate_position_pattern_subfeature_names_preserve_pattern_aspect() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("pattern")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("pattern")]
+    );
     assert_eq!(projection.unresolved_position_targets, 1);
     let mut losses = Vec::new();
     projection.append_losses(&mut losses);
@@ -1413,7 +1475,14 @@ fn malformed_position_compound_hole_ownership_retains_semantic_pmi() {
                 ..
             }
         ));
-        assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .map(|target| target.entity.clone())
+                .collect::<Vec<_>>(),
+            vec![shape_aspect("hole")]
+        );
         assert!(projection.unsupported.is_empty());
         assert_eq!(projection.unresolved_position_targets, 1);
         let mut losses = Vec::new();
@@ -1483,7 +1552,14 @@ fn position_compound_hole_without_applied_cylinder_retains_semantic_pmi() {
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
         };
-        assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .map(|target| target.entity.clone())
+                .collect::<Vec<_>>(),
+            vec![shape_aspect("hole")]
+        );
         assert!(projection.unsupported.is_empty());
         assert_eq!(projection.unresolved_position_targets, 1);
         let mut losses = Vec::new();
@@ -1559,7 +1635,14 @@ fn compound_hole_applied_and_cad_reference_caps_retain_position_and_record_the_c
         let [annotation] = projection.annotations.as_slice() else {
             panic!("position annotation is retained")
         };
-        assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+        assert_eq!(
+            annotation
+                .targets
+                .iter()
+                .map(|target| target.entity.clone())
+                .collect::<Vec<_>>(),
+            vec![shape_aspect("hole")]
+        );
         assert!(projection.unsupported.is_empty());
         assert_eq!(projection.unresolved_position_targets, 1);
         assert_eq!(projection.walk_caps.work, 1);
@@ -1671,7 +1754,14 @@ fn compound_hole_applied_child_scan_cap_retains_position_and_records_the_cap() {
     let [annotation] = projection.annotations.as_slice() else {
         panic!("position annotation is retained")
     };
-    assert_eq!(annotation.targets, vec![shape_aspect("hole")]);
+    assert_eq!(
+        annotation
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
+        vec![shape_aspect("hole")]
+    );
     assert!(projection.unsupported.is_empty());
     assert_eq!(projection.unresolved_position_targets, 1);
     assert_eq!(projection.walk_caps.work, 1);

@@ -69,15 +69,16 @@ impl Builder {
                 let key = format!("{index}-{side}");
                 let position =
                     FinitePoint3::new(on_plane(start, angle)).expect("finite profile point");
-                self.ir.model.points.push(Point::new(
+                self.ir.geometry.points.push(Point::new(
                     id(PointId::mint, "point", &key),
                     position,
                     None,
                 ));
-                self.ir.model.vertices.push(Vertex {
+                self.ir.geometry.vertices.push(Vertex {
                     id: id(VertexId::mint, "vertex", &key),
                     point: id(PointId::mint, "point", &key),
                     tolerance: None,
+                    native_ref: None,
                 });
             }
         }
@@ -90,20 +91,24 @@ impl Builder {
         range: [f64; 2],
         ends: [String; 2],
     ) {
-        self.ir.model.curves.push(Curve {
+        self.ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: id(CurveId::mint, "curve", key),
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
         let [start, end] = ends;
-        self.ir.model.edges.push(Edge {
+        self.ir.geometry.edges.push(Edge {
             id: id(EdgeId::mint, "edge", key),
             carrier: EdgeCarrier::new(Some(id(CurveId::mint, "curve", key)), Some(range))
                 .expect("bounded edge"),
-            start: id(VertexId::mint, "vertex", &start),
-            end: id(VertexId::mint, "vertex", &end),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                id(VertexId::mint, "vertex", &start),
+                id(VertexId::mint, "vertex", &end),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -146,16 +151,17 @@ impl Builder {
         sense: Sense,
         uses: &[(String, Sense)],
     ) {
-        self.ir.model.surfaces.push(Surface {
+        self.ir.geometry.surfaces.push(Surface {
             id: id(SurfaceId::mint, "surface", key),
             geometry: SurfaceGeometry::Solved(carrier),
             source_object: None,
+            native_ref: None,
         });
         let mut ring = Vec::with_capacity(uses.len());
         for (edge, use_sense) in uses {
             let coedge = format!("{key}-{edge}");
             ring.push(id(CoedgeId::mint, "coedge", &coedge));
-            self.ir.model.coedges.push(Coedge {
+            self.ir.geometry.coedges.push(Coedge {
                 id: id(CoedgeId::mint, "coedge", &coedge),
                 owner_loop: id(LoopId::mint, "loop", key),
                 edge: id(EdgeId::mint, "edge", edge),
@@ -163,14 +169,16 @@ impl Builder {
                 sense: *use_sense,
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
         }
-        self.ir.model.loops.push(Loop {
+        self.ir.geometry.loops.push(Loop {
             id: id(LoopId::mint, "loop", key),
             face: id(FaceId::mint, "face", key),
             boundary: LoopBoundary::Ring(LoopRing::new(ring, Vec::new()).expect("non-empty ring")),
+            native_ref: None,
         });
-        self.ir.model.faces.push(Face {
+        self.ir.geometry.faces.push(Face {
             id: id(FaceId::mint, "face", key),
             shell: id(ShellId::mint, "shell", "wedge"),
             surface: id(SurfaceId::mint, "surface", key),
@@ -179,6 +187,7 @@ impl Builder {
             name: Some(key.to_owned()),
             color: None,
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -221,36 +230,24 @@ impl Builder {
     }
 
     fn body(&mut self) {
-        let faces = self
-            .ir
-            .model
-            .faces
-            .iter()
-            .map(|face| face.id.clone())
-            .collect();
-        self.ir.model.shells.push(
-            Shell::new(
-                id(ShellId::mint, "shell", "wedge"),
-                id(RegionId::mint, "region", "wedge"),
-                faces,
-                Vec::new(),
-                Vec::new(),
-            )
-            .expect("shell with faces"),
-        );
-        self.ir.model.regions.push(Region {
+        self.ir.geometry.shells.push(Shell::new(
+            id(ShellId::mint, "shell", "wedge"),
+            id(RegionId::mint, "region", "wedge"),
+        ));
+        self.ir.geometry.regions.push(Region {
             id: id(RegionId::mint, "region", "wedge"),
             body: id(BodyId::mint, "body", "wedge"),
             shells: vec![id(ShellId::mint, "shell", "wedge")],
+            native_ref: None,
         });
-        self.ir.model.bodies.push(Body {
+        self.ir.geometry.bodies.push(Body {
             id: id(BodyId::mint, "body", "wedge"),
             kind: BodyKind::Solid,
-            regions: vec![id(RegionId::mint, "region", "wedge")],
             transform: None,
             name: Some("wedge".into()),
             color: None,
             visible: None,
+            native_ref: None,
         });
     }
 }
@@ -379,12 +376,12 @@ pub(crate) fn revolved_wedge(start: Meridian, pieces: &[Piece], angles: [f64; 2]
 /// Each edge has two uses; each names the other as its radial partner.
 fn pair_radial_uses(ir: &mut CadIr) {
     let mut first_use = std::collections::HashMap::new();
-    for index in 0..ir.model.coedges.len() {
-        let edge = ir.model.coedges[index].edge.clone();
+    for index in 0..ir.geometry.coedges.len() {
+        let edge = ir.geometry.coedges[index].edge.clone();
         if let Some(other) = first_use.insert(edge, index) {
-            let [left, right] = [other, index].map(|at: usize| ir.model.coedges[at].id.clone());
-            ir.model.coedges[other].radial_next = right;
-            ir.model.coedges[index].radial_next = left;
+            let [left, right] = [other, index].map(|at: usize| ir.geometry.coedges[at].id.clone());
+            ir.geometry.coedges[other].radial_next = right;
+            ir.geometry.coedges[index].radial_next = left;
         }
     }
 }

@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 23144,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 2417
@@ -21,8 +21,8 @@
         "data_offset": "2503",
         "header_offset": "2459"
       },
-      "compression": "deflate",
       "expanded": 6021,
+      "kind": "deflate",
       "name": "Body.Shape.brp",
       "role": "brep",
       "stored": 587
@@ -34,8 +34,8 @@
         "data_offset": "3138",
         "header_offset": "3090"
       },
-      "compression": "deflate",
       "expanded": 265,
+      "kind": "deflate",
       "name": "Body.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 136
@@ -47,8 +47,8 @@
         "data_offset": "3331",
         "header_offset": "3274"
       },
-      "compression": "deflate",
       "expanded": 8717,
+      "kind": "deflate",
       "name": "AdditiveBox.AddSubShape.brp",
       "role": "brep",
       "stored": 716
@@ -60,8 +60,8 @@
         "data_offset": "4098",
         "header_offset": "4047"
       },
-      "compression": "deflate",
       "expanded": 8938,
+      "kind": "deflate",
       "name": "AdditiveBox.Shape.brp",
       "role": "brep",
       "stored": 732
@@ -73,19 +73,20 @@
         "data_offset": "4891",
         "header_offset": "4830"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "AdditiveBox.SuppressedShape.brp",
       "role": "brep",
       "stored": 2
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.0R39319 (Git)",
@@ -93,8 +94,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

@@ -73,6 +73,7 @@ fn mirror_construction_recognizes_patterns_and_shapes() {
                 count: 2,
                 second: None,
                 omitted_instances: Vec::new(),
+                symmetric: false,
             })
             .expect("linear pattern"),
         },

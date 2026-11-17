@@ -164,8 +164,16 @@ impl Sampler<'_, '_> {
             .index
             .curves(curve.as_str(), StandardIndex)
             .and_then(|curve| curve.geometry.solved());
-        let start = self.vertex_point(&edge.start)?;
-        let end = self.vertex_point(&edge.end)?;
+        let Some(ends) = &edge.ends else {
+            return geometry
+                .and_then(natural_domain)
+                .map(|(domain, _)| domain)
+                .ok_or_else(|| {
+                    Refusal::new(format!("the edge {} has no parameter range", edge.id))
+                });
+        };
+        let start = self.vertex_point(&ends.start)?;
+        let end = self.vertex_point(&ends.end)?;
         if let Some(SolvedCurveGeometry::Line(line)) = geometry {
             let origin = line.origin().get();
             let direction = cadmpeg_ir::math::Vector3::from(line.direction());
@@ -178,7 +186,7 @@ impl Sampler<'_, '_> {
         let first = self
             .nearest(curve, start, domain)?
             .ok_or_else(|| Refusal::new(format!("the edge {} start is off its curve", edge.id)))?;
-        if edge.start == edge.end {
+        if ends.start == ends.end {
             return Ok(if periodic {
                 [first, first + (domain[1] - domain[0])]
             } else {
@@ -204,15 +212,37 @@ impl Sampler<'_, '_> {
         if let Some(samples) = cache.edges.get(edge.id.as_str()) {
             return Ok(Rc::clone(samples));
         }
-        let start = self.vertex_point(&edge.start)?;
-        let end = self.vertex_point(&edge.end)?;
-        let samples = match edge.curve() {
-            None => EdgeSamples {
+        let samples = match (edge.curve(), &edge.ends) {
+            (None, Some(ends)) => EdgeSamples {
                 params: Vec::new(),
-                points: vec![start, end],
+                points: vec![
+                    self.vertex_point(&ends.start)?,
+                    self.vertex_point(&ends.end)?,
+                ],
                 degenerate: true,
             },
-            Some(curve) => self.sample(edge, curve, start, end)?,
+            (None, None) => {
+                return Err(Refusal::new(format!(
+                    "the edge {} has neither a curve nor a vertex",
+                    edge.id
+                )));
+            }
+            (Some(curve), Some(ends)) => self.sample(
+                edge,
+                curve,
+                self.vertex_point(&ends.start)?,
+                self.vertex_point(&ends.end)?,
+            )?,
+            (Some(curve), None) => {
+                let [low, _] = self.range(edge, curve)?;
+                let seam = self.curve_point(curve, low)?.ok_or_else(|| {
+                    Refusal::new(format!(
+                        "the curve of edge {} has no point at {low}",
+                        edge.id
+                    ))
+                })?;
+                self.sample(edge, curve, seam, seam)?
+            }
         };
         let samples = Rc::new(samples);
         cache

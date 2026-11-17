@@ -19,6 +19,7 @@ use crate::records::feature::thread;
 use crate::records::feature::thread::DesignThreadConstruction;
 use crate::records::feature::thread::DesignThreadForm;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) fn exact_thread_construction(
     bytes: &[u8],
@@ -56,8 +57,7 @@ pub(super) fn exact_thread_construction(
     )?;
     if matches!(
         construction.form,
-        DesignThreadForm::StandardExtended
-            | DesignThreadForm::CompactExtended(_)
+        DesignThreadForm::CompactExtended(_)
             | DesignThreadForm::CompactOwnersLeading
             | DesignThreadForm::CompactOwnersTrailing
     ) {
@@ -68,10 +68,16 @@ pub(super) fn exact_thread_construction(
             .collect::<Vec<_>>();
         construction.face_group_record_indices = construction.form.face_groups(&references);
     }
-    if matches!(
+    if construction.form == DesignThreadForm::StandardExtended {
+        let entries = match &prefix_form {
+            ThreadPrefix::Extended(prefix) => prefix.entry_count,
+            _ => return None,
+        };
+        construction.face_group_record_indices =
+            extended_standard_face_groups(bytes, scope, owners, designation_at, entries)?;
+    } else if matches!(
         construction.form,
-        DesignThreadForm::StandardExtended
-            | DesignThreadForm::CompactExtended(_)
+        DesignThreadForm::CompactExtended(_)
             | DesignThreadForm::CompactOwnersLeading
             | DesignThreadForm::CompactOwnersTrailing
     ) {
@@ -80,7 +86,7 @@ pub(super) fn exact_thread_construction(
         let (_, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
         let trailer = after_profile.checked_add(thread_tail::STANDARD_TRAILER)?;
         let (length_at, offset_at, length_ordinal, offset_ordinal) = match construction.form {
-            DesignThreadForm::StandardExtended | DesignThreadForm::CompactOwnersTrailing => (
+            DesignThreadForm::CompactOwnersTrailing => (
                 extended_standard::LENGTH_REFERENCE,
                 extended_standard::OFFSET_REFERENCE,
                 reference_count.checked_sub(1)?,
@@ -132,6 +138,66 @@ pub(super) fn exact_thread_construction(
     Some(construction)
 }
 
+/// The face-selection groups of an extended standard scope.
+///
+/// The trailer's length and offset references each name one scope reference,
+/// the owner with local ordinal `1` and `0`. The other references are the
+/// ordered `(group, member)` pairs. A modeled prefix holds one entry for each
+/// pair.
+fn extended_standard_face_groups(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owners: &[crate::records::parameters::DesignParameterOwner],
+    designation_at: usize,
+    entries: usize,
+) -> Option<Vec<u32>> {
+    let (_, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
+    let (_, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
+    let (_, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
+    let trailer = after_profile.checked_add(thread_tail::STANDARD_TRAILER)?;
+    let references = scope
+        .reference_members()
+        .values()
+        .copied()
+        .collect::<Vec<_>>();
+    let ordinal_of = |at: usize| {
+        let record =
+            super::shared_frames::marked_record_reference(bytes, trailer.checked_add(at)?)?;
+        let mut ordinals = references
+            .iter()
+            .enumerate()
+            .filter(|(_, reference)| **reference == record)
+            .map(|(ordinal, _)| ordinal);
+        let ordinal = ordinals.next()?;
+        ordinals.next().is_none().then_some(ordinal)
+    };
+    let length = ordinal_of(extended_standard::LENGTH_REFERENCE)?;
+    let offset = ordinal_of(extended_standard::OFFSET_REFERENCE)?;
+    if length == offset
+        || DesignThreadForm::StandardExtended.owner_ordinals(scope, owners)
+            != Some((offset, length))
+    {
+        return None;
+    }
+    let groups = DesignThreadForm::extended_standard_face_groups(&references, (offset, length));
+    (entries == 0 || entries == groups.len()).then_some(groups)
+}
+
+pub(super) fn thread_modeled_flag_loss(
+    scope: &DesignParameterScope,
+    construction: &DesignThreadConstruction,
+) -> Option<LossNote> {
+    (construction.extended.is_none()
+        && !construction.modeled
+        && scope.history_state_id().is_none())
+    .then(|| {
+        crate::loss::F3dLossCode::ThreadModeledFlagAssumed.note(format!(
+            "Thread scope {} has no extended prefix, commits no history state, and stores modeled flag 0; it is read as a cosmetic thread, and a modeled thread stores the same value in such a scope (DR-142).",
+            scope.id
+        ))
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ThreadPrefix {
     Standard,
@@ -145,9 +211,14 @@ pub(super) enum ThreadPrefix {
 pub(super) struct ExtendedThreadPrefix {
     external: bool,
     modeled: bool,
+    /// Count of the 16-byte entries: one for each modeled face.
+    entry_count: usize,
     class: String,
     designation_copy: String,
 }
+
+/// Most 16-byte entries that an extended Thread prefix admits.
+const EXTENDED_PREFIX_ENTRY_LIMIT: usize = 4096;
 
 /// Byte length of each counted entry in an extended Thread prefix.
 const EXTENDED_PREFIX_ENTRY_LEN: usize = 16;
@@ -225,12 +296,12 @@ fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
         1 => true,
         _ => return None,
     };
-    let modeled = match View::u32_le_at(bytes, count_at)? {
-        0 => false,
-        1 => true,
-        _ => return None,
-    };
-    let class_at = entries_at + usize::from(modeled) * EXTENDED_PREFIX_ENTRY_LEN;
+    let entry_count = usize::try_from(View::u32_le_at(bytes, count_at)?).ok()?;
+    if entry_count > EXTENDED_PREFIX_ENTRY_LIMIT {
+        return None;
+    }
+    let modeled = entry_count != 0;
+    let class_at = entries_at.checked_add(entry_count.checked_mul(EXTENDED_PREFIX_ENTRY_LEN)?)?;
     let (class, copy_at) = lp_utf16_bounded(bytes, class_at, 1..=THREAD_CLASS_UNITS)?;
     let (designation_copy, designation_at) = lp_utf16_bounded(bytes, copy_at, 0..=128)?;
     if !designation_copy.is_empty()
@@ -242,6 +313,7 @@ fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
         ThreadPrefix::Extended(ExtendedThreadPrefix {
             external,
             modeled,
+            entry_count,
             class,
             designation_copy,
         }),
@@ -287,40 +359,51 @@ pub(super) fn parse_thread_payload(
         }) {
             return None;
         }
-        let (pitch_marker, trailer_kind, full_length) =
+        let zero_flag_trailer = bytes.get(after_profile + thread_tail::STANDARD_TRAILER)
+            == Some(&extended_standard::ZERO_FLAG_VALUE);
+        let stated_modeled = match bytes.get(after_profile + thread_tail::MODELED_FLAG)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        let modeled = match extended {
+            Some(prefix) if stated_modeled && !prefix.modeled => return None,
+            Some(prefix) => prefix.modeled,
+            None => stated_modeled,
+        };
+        let (trailer_kind, full_length) =
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
-                (ThreadPrefix::Extended(prefix), [flag @ (0 | 1), 1, 0, 0, 0]) => (
-                    u8::from(prefix.modeled),
-                    ThreadTrailerKind::ExtendedStandard,
-                    Some(*flag == 1),
-                ),
+                (ThreadPrefix::Extended(_), [flag @ (0 | 1), 1 | 2, 0, 0, 0])
+                    if zero_flag_trailer =>
+                {
+                    (ThreadTrailerKind::ExtendedStandard, Some(*flag == 1))
+                }
                 (ThreadPrefix::CompactOwned, [0, 1, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::CompactOwnersLeading, None)
+                    (ThreadTrailerKind::CompactOwnersLeading, None)
                 }
                 (ThreadPrefix::CompactOwned, [0, 2, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::CompactOwnersTrailing, None)
+                    (ThreadTrailerKind::CompactOwnersTrailing, None)
                 }
-                (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard, None),
+                (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (ThreadTrailerKind::Standard, None),
                 (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::StandardLegacy, None)
+                    (ThreadTrailerKind::StandardLegacy, None)
                 }
                 (ThreadPrefix::Standard, [1, 2, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::StandardCompact, None)
+                    (ThreadTrailerKind::StandardCompact, None)
                 }
-                (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (0, ThreadTrailerKind::Compact, None),
+                (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (ThreadTrailerKind::Compact, None),
                 (ThreadPrefix::Extended(prefix), [1, 2, 0, 0, 0]) if !prefix.modeled => {
-                    (0, ThreadTrailerKind::Compact, None)
+                    (ThreadTrailerKind::Compact, None)
                 }
                 (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => {
-                    (0, ThreadTrailerKind::CompactLegacy, None)
+                    (ThreadTrailerKind::CompactLegacy, None)
                 }
                 _ => return None,
             };
         let nominal_size = thread::DesignThreadNominalSize::try_from(nominal_size_text).ok()?;
         let major_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MAJOR_DIAMETER)?;
         let minor_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MINOR_DIAMETER)?;
-        let pitch = (bytes.get(after_profile + thread_tail::PITCH_MARKER) == Some(&pitch_marker))
-            .then(|| View::f64_le_at(bytes, after_profile + thread_tail::PITCH))??;
+        let pitch = View::f64_le_at(bytes, after_profile + thread_tail::PITCH)?;
         let pitch_diameter = View::f64_le_at(bytes, after_profile + thread_tail::PITCH_DIAMETER)?;
         let trailer_at = match trailer_kind {
             ThreadTrailerKind::Standard => thread_tail::STANDARD_TRAILER,
@@ -333,14 +416,27 @@ pub(super) fn parse_thread_payload(
             | ThreadTrailerKind::CompactOwnersTrailing => thread_tail::STANDARD_TRAILER,
         };
         let trailer_offset = after_profile.checked_add(trailer_at)?;
+        let right_handed = match trailer_kind {
+            ThreadTrailerKind::ExtendedStandard => {
+                match bytes.get(trailer_offset + extended_standard::RIGHT_HANDED)? {
+                    0 => Some(false),
+                    1 => Some(true),
+                    _ => return None,
+                }
+            }
+            _ => None,
+        };
         let form = match trailer_kind {
             ThreadTrailerKind::ExtendedStandard
-            | ThreadTrailerKind::CompactOwnersLeading
-            | ThreadTrailerKind::CompactOwnersTrailing
+                if bytes.get(trailer_offset + extended_standard::ZERO_FLAG)
+                    == Some(&extended_standard::ZERO_FLAG_VALUE) =>
+            {
+                DesignThreadForm::StandardExtended
+            }
+            ThreadTrailerKind::CompactOwnersLeading | ThreadTrailerKind::CompactOwnersTrailing
                 if bytes.get(trailer_offset + extended_standard::ZERO_FLAG)
                     == Some(&extended_standard::ZERO_FLAG_VALUE)
-                    && bytes.get(trailer_offset + extended_standard::END_FLAG)
-                        == Some(&extended_standard::END_FLAG_VALUE) =>
+                    && bytes.get(trailer_offset + extended_standard::RIGHT_HANDED) == Some(&1) =>
             {
                 match trailer_kind {
                     ThreadTrailerKind::CompactOwnersLeading => {
@@ -418,6 +514,7 @@ pub(super) fn parse_thread_payload(
             nominal_size,
             profile: cadmpeg_core::text::NonBlankString::new(profile)?,
             pitch: cadmpeg_ir::scalar::PositiveReal::new(pitch)?,
+            modeled,
             face_group_record_indices,
             diameters: thread::DesignThreadDiameters::new(
                 major_diameter,
@@ -427,8 +524,8 @@ pub(super) fn parse_thread_payload(
             extended: extended.map(|prefix| thread::DesignThreadExtended {
                 class: prefix.class.clone(),
                 external: prefix.external,
-                modeled: prefix.modeled,
                 full_length,
+                right_handed,
             }),
         })
     })()

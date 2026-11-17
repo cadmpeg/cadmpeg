@@ -47,8 +47,8 @@ pub(crate) enum QueryView {
     /// One record by id.
     ///
     /// Arena names are the dotted keys from `query counts --json`
-    /// (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
-    /// `model.<arena>`). IDs match exactly, or as a unique suffix of the
+    /// (`<home>.<arena>` or `native.<codec>.<arena>`; a bare name means
+    /// the arena in its home). IDs match exactly, or as a unique suffix of the
     /// JSON-string `id` field. With no IDs, prints the first record;
     /// `--head N` prints the first N. Default output is pretty-printed JSON
     /// (blank-line separated), not TSV — nested records do not fit the other
@@ -64,8 +64,8 @@ pub(crate) enum QueryView {
     /// every variant of a tagged union (`FaceSelection`'s `value` is
     /// absent, a string, an array, or an object depending on `kind`; the
     /// discriminator of a feature's `definition` is
-    /// `.definition.definition`). Bare `query schema` lists every model
-    /// arena and its element type; `sidecar` prints the
+    /// `.definition.definition`). Bare `query schema` lists every
+    /// `<home>.<arena>` and its element type; `sidecar` prints the
     /// `<stem>.fidelity.json` decode-sidecar shape.
     ///
     /// Native arena records are per-document. `query schema file FILE ARENA`
@@ -78,7 +78,7 @@ pub(crate) enum QueryView {
     /// Walk identity references from start records.
     ///
     /// Accepts a CADIR document. Arena names and ID selection match
-    /// `query item` (`model.<arena>` or `native.<codec>.<arena>`; suffix
+    /// `query item` (`<home>.<arena>` or `native.<codec>.<arena>`; suffix
     /// IDs; `--head` when IDs are omitted). `--hops N` (default 1) is the
     /// maximum edge length from a start; `0` emits only the starts.
     /// Default walk follows every string that equals another record's `id`
@@ -309,7 +309,7 @@ struct ExportReportProbe {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "payload", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 enum ExportIdentityProbe {
     Cadir {},
     Native { target: String },
@@ -336,7 +336,7 @@ struct DecodeReportProbe {
 #[derive(Deserialize)]
 struct DecodeTransferProbe {
     #[serde(default)]
-    transfer: Option<String>,
+    kind: Option<String>,
     #[serde(default)]
     geometry_transferred: Option<bool>,
 }
@@ -373,16 +373,22 @@ struct LossProbe {
     message: Option<String>,
 }
 
-/// Wire loss code: `{ namespace, code, kind }`; `kind` is not projected.
+/// Wire loss code: `{ kind, value: { namespace, code, kind } }`; the loss
+/// kind is not projected.
 #[derive(Deserialize)]
 struct LossCodeProbe {
+    value: NamespacedLossCodeProbe,
+}
+
+#[derive(Deserialize)]
+struct NamespacedLossCodeProbe {
     namespace: String,
     code: String,
 }
 
 impl LossCodeProbe {
     fn display(&self) -> String {
-        format!("{}/{}", self.namespace, self.code)
+        format!("{}/{}", self.value.namespace, self.value.code)
     }
 }
 
@@ -412,12 +418,12 @@ mod tests {
                 "primary": {
                     "dialect": "f3d:archive-2",
                     "declared": {"manifest_version": "2"},
-                    "admission": "admitted"
+                    "admission": {"kind": "admitted"}
                 },
                 "extra": [{
                     "dialect": "acis:sab-22300",
                     "declared": {"save_format": "22300"},
-                    "admission": {"unverified": {"using": "sab-22200"}},
+                    "admission": {"kind": "unverified", "using": "sab-22200"},
                     "instance": "member:model.sab"
                 }]
             }
@@ -461,9 +467,27 @@ struct CadirProbe {
     #[serde(default)]
     source: Option<SourceMeta>,
     #[serde(default)]
+    geometry: BTreeMap<String, ArenaLen>,
+    #[serde(default)]
     model: BTreeMap<String, ArenaLen>,
     #[serde(default)]
+    design: BTreeMap<String, ArenaLen>,
+    #[serde(default)]
+    process: BTreeMap<String, ArenaLen>,
+    #[serde(default)]
     native: BTreeMap<String, BTreeMap<String, ArenaLen>>,
+}
+
+impl CadirProbe {
+    /// The arena homes in wire order, each with its arenas.
+    fn homes(&self) -> [(&'static str, &BTreeMap<String, ArenaLen>); 4] {
+        [
+            ("geometry", &self.geometry),
+            ("model", &self.model),
+            ("design", &self.design),
+            ("process", &self.process),
+        ]
+    }
 }
 
 /// Bounded decode-sidecar projection. Retained payload bytes are not
@@ -792,7 +816,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                     if let Some(transfer) = decode
                         .transfer
                         .as_ref()
-                        .and_then(|state| state.transfer.as_ref())
+                        .and_then(|state| state.kind.as_ref())
                     {
                         rows.push(("decode_transfer".to_owned(), cell(transfer).into()));
                     }
@@ -874,20 +898,18 @@ fn summary(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 }
                 None => rows.push(("source".to_owned(), "null".to_owned().into())),
             }
-            rows.push((
-                "model_arenas".to_owned(),
-                cadir.model.len().to_string().into(),
-            ));
-            rows.push((
-                "model_entities".to_owned(),
-                cadir
-                    .model
-                    .values()
-                    .map(|len| len.0)
-                    .sum::<u64>()
-                    .to_string()
-                    .into(),
-            ));
+            for (home, arenas) in cadir.homes() {
+                rows.push((format!("{home}_arenas"), arenas.len().to_string().into()));
+                rows.push((
+                    format!("{home}_entities"),
+                    arenas
+                        .values()
+                        .map(|len| len.0)
+                        .sum::<u64>()
+                        .to_string()
+                        .into(),
+                ));
+            }
             for (namespace, arenas) in &cadir.native {
                 rows.push((
                     format!("native.{namespace}.arenas"),
@@ -1298,9 +1320,13 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     match artifact {
         Artifact::Cadir(cadir) => {
             let mut rows: Vec<(String, String, u64)> = cadir
-                .model
-                .iter()
-                .map(|(arena, len)| ("model".to_owned(), arena.clone(), len.0))
+                .homes()
+                .into_iter()
+                .flat_map(|(home, arenas)| {
+                    arenas
+                        .iter()
+                        .map(move |(arena, len)| (home.to_owned(), arena.clone(), len.0))
+                })
                 .collect();
             for (namespace, arenas) in &cadir.native {
                 for (arena, len) in arenas {
@@ -1338,7 +1364,11 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
             } else {
                 println!("namespace\tarena\tentries");
                 for (arena, entries) in entity_counts {
-                    println!("model\t{}\t{entries}", cell(arena));
+                    let (home, key) = cadmpeg_ir::ArenaName::parse(arena)
+                        .map_or(("model", arena.as_str()), |name| {
+                            (name.home().as_str(), name.key())
+                        });
+                    println!("{home}\t{}\t{entries}", cell(key));
                 }
             }
             if let Some(note) = note {

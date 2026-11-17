@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container IR bootstrap and model-entity assembly.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -44,7 +44,7 @@ use crate::decode::source_carriers::SourceUnitCarriers;
 pub(in super::super) struct BuiltIr {
     pub(in super::super) ir: CadIr,
     pub(in super::super) annotations: cadmpeg_ir::Annotations,
-    pub(in super::super) unknowns: Vec<UnknownRecord>,
+    pub(in super::super) unknowns: Vec<(UnknownRecord, BTreeSet<cadmpeg_core::decode::ArenaClass>)>,
     pub(in super::super) coverage: cadmpeg_ir::report::decode::Coverage,
     pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
     pub(in super::super) transfer_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -267,6 +267,7 @@ fn transfer_reference_lines(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -349,6 +350,7 @@ fn transfer_reference_circles(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -434,6 +436,7 @@ fn transfer_reference_ellipses(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -620,6 +623,7 @@ fn transfer_datum_plane_surfaces(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -678,7 +682,7 @@ fn transfer_placed_planes(
             &crate::identity::VISIBGEOM_SURFACE,
             surface_id,
         )?;
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+        if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
         let positional = scan
@@ -742,6 +746,7 @@ fn transfer_placed_planes(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+                native_ref: None,
             },
         )?;
     }
@@ -806,6 +811,7 @@ pub(in super::super) fn build_ir(
         &mut annotations,
         &mut coverage,
         &mut source_carriers,
+        &mut transfer_losses,
     )?;
     attach_expanded_sections(ctx, scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(ctx, scan, &mut ir, &mut annotations, &brep_diagnostics)?;

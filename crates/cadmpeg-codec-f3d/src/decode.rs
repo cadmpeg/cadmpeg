@@ -604,6 +604,35 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             FeatureOperation::ReferenceImage { .. } | FeatureOperation::DatumPrincipalPlane { .. },
         ) => false,
         FeatureDefinition::Operation(FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. }) => true,
+        FeatureDefinition::Operation(FeatureOperation::MeshModify {
+            source,
+            modification: cadmpeg_ir::features::mesh::MeshModification::Separate { separation },
+        }) | FeatureDefinition::PostProcess {
+            operation: FeatureOperation::MeshModify {
+                source,
+                modification: cadmpeg_ir::features::mesh::MeshModification::Separate { separation },
+            },
+            ..
+        } => {
+            !matches!(source, cadmpeg_ir::features::mesh::MeshSelection::Tessellations(_))
+                || separation.method != Some(cadmpeg_ir::features::mesh::MeshSeparationMethod::Shells)
+                || separation.keep_body.is_none()
+        }
+        FeatureDefinition::Operation(FeatureOperation::MeshModify {
+            source,
+            modification: cadmpeg_ir::features::mesh::MeshModification::PlaneCut { cut },
+        }) => {
+            use cadmpeg_ir::features::mesh::{MeshPlaneCutMode, MeshSelection};
+            !matches!(source, MeshSelection::Tessellations(_))
+                || cut.origin.is_none()
+                || cut.normal.is_none()
+                || match cut.mode {
+                    Some(MeshPlaneCutMode::Trim) => cut.fill.is_none() || cut.retained_side.is_none(),
+                    Some(MeshPlaneCutMode::SplitBodies) => cut.fill.is_none(),
+                    Some(MeshPlaneCutMode::SplitFaces) => false,
+                    None => true,
+                }
+        }
         FeatureDefinition::Operation(
             FeatureOperation::MeshImport {
                 tessellations: source,
@@ -870,7 +899,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block, .. }) => {
             block.is_none()
         }
-        FeatureDefinition::Operation(FeatureOperation::Form { cages }) => cages.is_empty(),
+        FeatureDefinition::Operation(FeatureOperation::Form(construction)) => !construction.membership_is_complete() || construction.committed_cages().next().is_none(),
         FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) => {
             !base_feature_body_selection_is_resolved(bodies)
         }
@@ -1014,19 +1043,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile, ..
         }) => !planar_profile_ref_is_resolved(profile),
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
-            edges,
-            height,
-            ..
-        }) => {
-            !edge_selection_is_resolved(edges)
-                || matches!(
-                    height,
-                    cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject {
-                        target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_),
-                        ..
-                    }
-                )
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
+            !construction.has_all_inputs()
+                || construction.edges.as_ref().is_none_or(|edges| !edge_selection_is_resolved(edges))
+                || matches!(&construction.height, Some(cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject(target)) if matches!(target.target, Some(cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_))))
+                || matches!(construction.width, Some(cadmpeg_ir::features::SheetMetalFlangeWidth::TwoOffsetsPerEdge { .. }))
         }
         FeatureDefinition::Operation(FeatureOperation::SheetMetalHem {
             edges,
@@ -1719,7 +1740,7 @@ fn design_projection_gaps(
                     profile,
                     ProfileRef::Planar(
                         PlanarProfileRef::Native(_) | PlanarProfileRef::SketchSelection { .. }
-                    )
+                    ) | ProfileRef::SpatialSketchSelection { .. }
                 ) {
                     gaps.profile_selections += 1;
                 }
@@ -1916,10 +1937,16 @@ fn design_projection_gaps(
             }) => {
                 gaps.profile_selections += usize::from(!planar_profile_ref_is_resolved(profile));
             }
-            FeatureDefinition::Operation(
-                FeatureOperation::SheetMetalEdgeFlange { edges, .. }
-                | FeatureOperation::SheetMetalHem { edges, .. },
-            ) => edge_selection(edges),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
+                if let Some(edges) = &construction.edges {
+                    edge_selection(edges);
+                } else {
+                    edge_selection(&EdgeSelection::Unresolved);
+                }
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalHem { edges, .. }) => {
+                edge_selection(edges);
+            }
             FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => {
                 face_selection(faces);
             }
@@ -2041,6 +2068,22 @@ fn report_parameter_trailer_flags(
             format_args!(
                 "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
                 parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
+fn report_parameter_owner_trailer_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for owners in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterOwnerTrailerFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter owner(s) in {} set the final byte of the compact trailer before the companion reference; the flag is not interpreted.",
+                owners.count, owners.stream
             ),
         );
     }
@@ -2481,7 +2524,7 @@ fn report_design_projection_gaps(
             &mut report.losses,
             F3dLossCode::HistoryOnlyBodyOmitted,
             format_args!(
-                "{} Design body-map pair(s) name a body outside the current model: every Body container omits its entity and its browser node is hidden. The body stays in the named BREP blob and in the native body map, and does not reach `model.bodies`.",
+                "{} Design body-map pair(s) name a body outside the current model: every Body container omits its entity and its browser node is hidden. The body stays in the named BREP blob and in the native body map, and does not reach `geometry.bodies`.",
                 gaps.history_only_body_bindings
             ),
         );
@@ -2953,7 +2996,7 @@ enum SessionPath {
 enum DesignState {
     /// Phase 2 ran. Its native records wait for finalization.
     Projected(Box<design_intent::DesignNative>),
-    /// No phase-2 output: the request is below [`DecodeDepth::Full`], or
+    /// No phase-2 output: the request is below [`DecodeDepth::Design`], or
     /// phase 2 failed and the containment loss and a native
     /// [`design_intent::DesignIntentFailure`] say so. The design reports read
     /// phase-2 records, so they do not run.
@@ -2967,14 +3010,16 @@ enum FinalizePath {
 }
 
 pub(crate) fn saved_free_edge_bodies_loss(
-    model: &cadmpeg_ir::document::Model,
+    ir: &cadmpeg_ir::CadIr,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    let owned = model
+    let owned = ir
+        .model
         .product_definitions
         .iter()
         .flat_map(|definition| &definition.bodies)
         .collect::<std::collections::BTreeSet<_>>();
-    let count = model
+    let count = ir
+        .geometry
         .bodies
         .iter()
         .filter(|body| {
@@ -3018,6 +3063,8 @@ struct F3dDecodeSession<'a> {
     report: DecodeBody,
     report_scope: crate::report::ReportScope,
     unknowns: Vec<UnknownRecord>,
+    /// Classes of the content the source image holds that no arena carries.
+    untyped: std::collections::BTreeSet<cadmpeg_core::decode::ArenaClass>,
     admitted_entities: u64,
     component_definitions_by_record:
         std::collections::BTreeMap<(String, u64), cadmpeg_ir::ids::ProductDefinitionId>,
@@ -3037,6 +3084,18 @@ impl<'a> F3dDecodeSession<'a> {
             admitted_entities: _,
             report_scope,
         } = session_state;
+        let mut untyped = std::collections::BTreeSet::new();
+        let stats = &brep.asm.stats;
+        if undecoded_candidates != 0
+            || stats.missing_face_surfaces() != 0
+            || stats.unknown_surface_faces() != 0
+            || stats.procedural_curve_edges() != 0
+            || stats.undecoded_pcurve_refs() != 0
+            || stats.partial_procedural_supports != 0
+            || stats.other_records() != 0
+        {
+            untyped.insert(cadmpeg_core::decode::ArenaClass::Model);
+        }
         let mut report = crate::report::build_decode_report(
             scan,
             cadmpeg_ir::report::decode::DecodeTransfer::at(ctx.depth(), true),
@@ -3069,20 +3128,20 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
-        let mut admitted_entities = u64_from_index(ir.model.entity_count());
+        let mut admitted_entities = u64_from_index(ir.entity_count());
         let AsmTransferRemainder {
             unknowns,
             stats: _,
             annotation_records,
         } = asm_remainder;
         let (subds, subd_losses) = crate::tsm::decode(ctx, scan)?;
-        ir.model.subds = subds;
+        ir.geometry.subds = subds;
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         report.losses.extend(subd_losses);
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
         ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
+            u64_from_index(ir.entity_count()),
             &mut admitted_entities,
             "admit F3D geometry entities",
         )?;
@@ -3096,6 +3155,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report,
                 report_scope,
                 unknowns,
+                untyped,
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
             },
@@ -3132,6 +3192,12 @@ impl<'a> F3dDecodeSession<'a> {
             container_losses(scan, brep_outcome),
         )?;
         let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        let mut untyped = std::collections::BTreeSet::new();
+        if container::design_breps(scan).next().is_some()
+            || container::text_brep_names(scan).next().is_some()
+        {
+            untyped.insert(cadmpeg_core::decode::ArenaClass::Model);
+        }
         Ok((
             Self {
                 ctx,
@@ -3142,6 +3208,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report,
                 report_scope,
                 unknowns,
+                untyped,
                 admitted_entities,
                 component_definitions_by_record: std::collections::BTreeMap::new(),
             },
@@ -3154,7 +3221,7 @@ impl<'a> F3dDecodeSession<'a> {
 
     fn admit_model_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
         self.ctx.admit_entities(
-            u64_from_index(self.ir.model.entity_count()),
+            u64_from_index(self.ir.entity_count()),
             &mut self.admitted_entities,
             operation,
         )
@@ -3173,6 +3240,10 @@ impl<'a> F3dDecodeSession<'a> {
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
+        report_parameter_owner_trailer_flags(
+            &mut self.report,
+            &prereqs.design_parameter_owner_trailer_flags,
+        );
         report_unparsed_parameter_owners(
             &mut self.report,
             prereqs.design_parameter_owner_unparsed.len(),
@@ -3214,9 +3285,9 @@ impl<'a> F3dDecodeSession<'a> {
     ///
     /// This is the one point that decides whether design intent enters the
     /// document. Phase 2 does not run when the phase-1 timelines did not
-    /// decode, nor below [`DecodeDepth::Full`] where
+    /// decode, nor below [`DecodeDepth::Design`] where
     /// [`Self::cuts_design_intent`] holds; where it does not, phase 2 runs and
-    /// the session delivers `Full`. [`DesignState::Absent`] leaves a complete
+    /// the session delivers `Design`. [`DesignState::Absent`] leaves a complete
     /// product and geometry document from phase 1. A resource refusal, or any
     /// error after the session fused, still refuses the document.
     fn decode_design_state(
@@ -3224,12 +3295,13 @@ impl<'a> F3dDecodeSession<'a> {
         path: &FinalizePath,
         prereqs: &prereqs::ProductPrereqs,
     ) -> Result<DesignState, CodecError> {
-        if self.ctx.depth() < DecodeDepth::Full {
+        if self.ctx.depth() < DecodeDepth::Design {
             if self.cuts_design_intent(path, prereqs) {
+                self.note_undecoded_design()?;
                 return Ok(DesignState::Absent);
             }
             self.report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(
-                DecodeDepth::Full,
+                DecodeDepth::Design,
                 self.report.transfer.geometry_transferred(),
             );
         }
@@ -3262,7 +3334,40 @@ impl<'a> F3dDecodeSession<'a> {
                 id: crate::ids::DESIGN_INTENT_FAILURE_ID.to_owned(),
                 reason: failure,
             });
+        self.note_undecoded_design()?;
         Ok(DesignState::Absent)
+    }
+
+    fn note_undecoded_design(&mut self) -> Result<(), CodecError> {
+        if source_has_design_records(self.scan)? {
+            self.untyped
+                .insert(cadmpeg_core::decode::ArenaClass::Design);
+        }
+        Ok(())
+    }
+
+    /// Note design content held in typed native envelopes whose payload the
+    /// decoder did not interpret.
+    fn note_uninterpreted_design(&mut self) {
+        if self
+            .native
+            .design_parameter_scopes
+            .iter()
+            .any(|scope| scope.payload().is_uninterpreted())
+            || self
+                .native
+                .sketch_curve_identities
+                .iter()
+                .any(|curve| curve.geometry.is_none())
+            || self
+                .native
+                .asm_histories
+                .iter()
+                .any(|history| history.binding_budget_exceeded)
+        {
+            self.untyped
+                .insert(cadmpeg_core::decode::ArenaClass::Design);
+        }
     }
 
     /// Whether a decode below full depth can stop before phase 2; see
@@ -3313,6 +3418,7 @@ impl<'a> F3dDecodeSession<'a> {
         timelines: &[crate::records::entity_header::DesignFeatureTimeline],
     ) -> Result<design_intent::DesignOutputs, CodecError> {
         let model = &self.ir.model;
+        let geometry = &self.ir.geometry;
         design_intent::decode(&design_intent::DesignInputs {
             ctx: self.ctx,
             scan: self.scan,
@@ -3329,12 +3435,12 @@ impl<'a> F3dDecodeSession<'a> {
                     FinalizePath::Geometry(index) => Some(&index.primary_model_brep_name),
                     FinalizePath::Bodyless(_) => None,
                 },
-                bodies: &model.bodies,
-                regions: &model.regions,
-                shells: &model.shells,
-                faces: &model.faces,
-                surfaces: &model.surfaces,
-                subds: &model.subds,
+                bodies: &geometry.bodies,
+                regions: &geometry.regions,
+                shells: &geometry.shells,
+                faces: &geometry.faces,
+                surfaces: &geometry.surfaces,
+                subds: &geometry.subds,
                 assets: &model.assets,
                 tolerances: &self.ir.tolerances,
                 persistent_design_links: &self.native.persistent_design_links,
@@ -3392,6 +3498,9 @@ impl<'a> F3dDecodeSession<'a> {
         let finalize_path = match path {
             SessionPath::Geometry(geometry_path) => {
                 let GeometrySessionPath { index, materials } = *geometry_path;
+                if materials.untyped_distance_properties != 0 {
+                    self.untyped.insert(cadmpeg_core::decode::ArenaClass::Model);
+                }
                 report_untyped_material_distances(
                     &mut self.report,
                     materials.untyped_distance_properties,
@@ -3434,6 +3543,9 @@ impl<'a> F3dDecodeSession<'a> {
                 model_body_maps_empty,
             } => {
                 let decoded_materials = materials::decode(self.ctx, scan)?;
+                if decoded_materials.untyped_distance_properties != 0 {
+                    self.untyped.insert(cadmpeg_core::decode::ArenaClass::Model);
+                }
                 report_untyped_material_distances(
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
@@ -3469,14 +3581,14 @@ impl<'a> F3dDecodeSession<'a> {
                 &local_components,
             ));
         let bodies = finalize_path.component_bodies(
-            &self.ir.model.bodies,
+            &self.ir.geometry.bodies,
             !prereqs.design_body_members.is_empty()
                 || !prereqs.design_body_bindings.is_empty()
                 || container::text_brep_names(scan).next().is_some(),
         );
         let hidden_bodies = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .filter(|body| body.visible == Some(false))
@@ -3508,6 +3620,14 @@ impl<'a> F3dDecodeSession<'a> {
         }
         self.ir.model.product_definitions.extend(local.definitions);
         self.ir.model.occurrences.extend(local.occurrences);
+        crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
+            &mut self.ir.model.occurrences,
+            &prereqs.design_component_occurrences,
+            prereqs
+                .xref_table()
+                .map_or(&[], |table| table.references.as_slice()),
+            &prereqs.design_hidden_occurrences,
+        );
         self.report.losses.extend(local.losses);
         let mut component_inserts = crate::design::components::ComponentInserts::decide(
             &prereqs.design_parameter_scopes,
@@ -3605,7 +3725,7 @@ impl<'a> F3dDecodeSession<'a> {
                     crate::design::owners::attach(
                         scan,
                         &self.native,
-                        &mut self.ir.model,
+                        &mut self.ir,
                         &mut self.report.losses,
                     )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
@@ -3640,7 +3760,7 @@ impl<'a> F3dDecodeSession<'a> {
                         crate::design::owners::attach(
                             scan,
                             &self.native,
-                            &mut self.ir.model,
+                            &mut self.ir,
                             &mut self.report.losses,
                         )?;
                         true
@@ -3653,7 +3773,7 @@ impl<'a> F3dDecodeSession<'a> {
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
                 }
                 ctx.admit_entities(
-                    u64_from_index(self.ir.model.entity_count()),
+                    u64_from_index(self.ir.entity_count()),
                     &mut self.admitted_entities,
                     "admit F3D entities",
                 )?;
@@ -3695,6 +3815,7 @@ impl<'a> F3dDecodeSession<'a> {
                     Ok(None) => {}
                     Err(error) => report_xref_parse_loss(&mut self.report, &error),
                 }
+                self.note_uninterpreted_design();
                 self.native
                     .store(ctx, self.ir.native.namespace_mut("f3d"))?;
                 let annotations =
@@ -3711,6 +3832,7 @@ impl<'a> F3dDecodeSession<'a> {
                         annotations,
                         unknowns: self.unknowns,
                         source_image,
+                        untyped: self.untyped,
                         source_attributes: self.source_attributes,
                     },
                     &mut admitted_entities,
@@ -3719,10 +3841,11 @@ impl<'a> F3dDecodeSession<'a> {
         };
 
         ctx.admit_entities(
-            u64_from_index(self.ir.model.entity_count()),
+            u64_from_index(self.ir.entity_count()),
             &mut self.admitted_entities,
             "admit F3D entities",
         )?;
+        self.note_uninterpreted_design();
         self.native
             .store(ctx, self.ir.native.namespace_mut("f3d"))?;
         let annotations = populate_annotations(
@@ -3747,6 +3870,7 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 unknowns: self.unknowns,
                 source_image,
+                untyped: self.untyped,
                 source_attributes: self.source_attributes,
             },
             &mut admitted_entities,
@@ -3862,6 +3986,15 @@ fn decode_scanned_document<'a>(
     )?;
 
     if ctx.container_only() {
+        let mut untyped = std::collections::BTreeSet::new();
+        if container::design_breps(scan).next().is_some()
+            || container::text_brep_names(scan).next().is_some()
+        {
+            untyped.insert(cadmpeg_core::decode::ArenaClass::Model);
+        }
+        if source_has_design_records(scan)? {
+            untyped.insert(cadmpeg_core::decode::ArenaClass::Design);
+        }
         let MetadataIr {
             ir,
             mut source_attributes,
@@ -3895,6 +4028,7 @@ fn decode_scanned_document<'a>(
                 annotations,
                 unknowns,
                 source_image,
+                untyped,
                 source_attributes,
             },
             &mut admitted_entities,
@@ -4876,6 +5010,8 @@ struct RetainedArtifacts {
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
+    /// Classes of the content the source image holds that no arena carries.
+    untyped: std::collections::BTreeSet<cadmpeg_core::decode::ArenaClass>,
     source_attributes: std::collections::BTreeMap<String, String>,
 }
 
@@ -4891,14 +5027,21 @@ fn decode_result(
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
     ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
+        u64_from_index(ir.entity_count()),
         admitted_entities,
         "admit F3D entities",
     )?;
-    report.losses.extend(saved_free_edge_bodies_loss(&ir.model));
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(retained.annotations);
+    report.losses.extend(saved_free_edge_bodies_loss(&ir));
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        retained.annotations,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(scan.source_image),
+    );
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
+    commit_given_up_parts(ctx, scan, &mut ir, &mut source_fidelity)?;
+    if !retained.untyped.is_empty() {
+        source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
+    }
     let mut source = crate::report::classify_document(
         scan,
         report_scope,
@@ -4927,6 +5070,83 @@ fn decode_result(
         body: report,
         source_fidelity,
     })
+}
+
+/// Commits each archive entry the scan gave up, its stub linked to the
+/// product definition of the file that holds the archive.
+/// `header_losses` already put each part's loss in the report.
+pub(crate) fn commit_given_up_parts(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    ir: &mut CadIr,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
+) -> Result<(), CodecError> {
+    let owner = file_definition(&ir.model).map(cadmpeg_ir::ids::Identity::from);
+    for given_up in scan.given_up.iter().cloned() {
+        let given_up = match &owner {
+            Some(owner) => given_up.contained_in(owner.clone()),
+            None => given_up,
+        };
+        given_up.commit(ctx, ir, fidelity)?;
+    }
+    Ok(())
+}
+
+/// The definition the decoded file holds at its top: the prototype of its
+/// root occurrences the source places, or with none, of the decoder's
+/// stored-frame root occurrences, or with none, the one definition no
+/// occurrence places. A stored-frame occurrence places a definition the
+/// source holds in the file's design without an occurrence, so beside a
+/// source root it is held by that root's definition. Definitions of merged
+/// archive members belong to their own files.
+fn file_definition(
+    model: &cadmpeg_ir::document::Model,
+) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
+    use cadmpeg_ir::ids::ProductDefinitionId;
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+    use std::collections::BTreeSet;
+    fn local(occurrence: &cadmpeg_ir::products::Occurrence) -> Option<&ProductDefinitionId> {
+        match &occurrence.prototype {
+            PrototypeReference::Local { definition } => Some(definition),
+            _ => None,
+        }
+    }
+    let own = |definition: &&ProductDefinitionId| !definition.as_str().starts_with("f3d:xref/");
+    let root_prototypes = |stored_frame: bool| {
+        model
+            .occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter(move |occurrence| {
+                crate::design::components::is_stored_frame_occurrence(occurrence) == stored_frame
+            })
+            .filter_map(local)
+            .filter(own)
+            .collect::<BTreeSet<_>>()
+    };
+    let mut top = root_prototypes(false);
+    if top.is_empty() {
+        top = root_prototypes(true);
+    }
+    if top.is_empty() {
+        let placed = model
+            .occurrences
+            .iter()
+            .filter_map(local)
+            .collect::<std::collections::BTreeSet<_>>();
+        top = model
+            .product_definitions
+            .iter()
+            .map(|definition| &definition.id)
+            .filter(|definition| !placed.contains(definition))
+            .filter(own)
+            .collect();
+    }
+    let mut top = top.into_iter();
+    match (top.next(), top.next()) {
+        (Some(definition), None) => Some(definition.clone()),
+        _ => None,
+    }
 }
 
 pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
@@ -5248,6 +5468,33 @@ fn trailing_offset(id: &str) -> u64 {
         .unwrap_or(0)
 }
 
+fn source_has_design_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
+    Ok(scan
+        .entries
+        .iter()
+        .any(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+        || source_has_history_records(scan)?)
+}
+
+/// A bare EOF delta-state identifier is an empty partition boundary, not a
+/// historical record. Every other declared history tail remains conservative.
+fn source_has_history_records(scan: &ContainerScan<'_>) -> Result<bool, CodecError> {
+    for brep in container::history_breps(scan) {
+        let Some(limit) = brep
+            .kernel
+            .as_ref()
+            .and_then(crate::container::KernelFraming::solved_record_limit)
+        else {
+            return Ok(true);
+        };
+        let bytes = scan.entry_bytes(&brep.name)?;
+        if bytes.get(limit..) != Some(b"\x0d\x0bdelta_state".as_slice()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Frame and decode one Design-selected or explicit fallback BREP SAB stream.
 ///
 /// Return `None` when the header or record framing cannot be read.
@@ -5374,21 +5621,9 @@ fn source_attributes_and_tolerances(
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
     {
         let copy = primary_model_brep.name.clone();
         attributes.insert("active_brep".to_owned(), copy);
-    }
-    {
-        let copy = primary_model_brep.sha256.as_str().to_owned();
-        attributes.insert("active_brep_sha256".to_owned(), copy);
-    }
-    if let Some(off) = primary_model_brep
-        .kernel
-        .as_ref()
-        .and_then(crate::container::KernelFraming::solved_record_limit)
-    {
-        attributes.insert("solved_record_len".to_owned(), off.to_string());
     }
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
@@ -5597,7 +5832,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    attributes.insert("zip_entry_count".to_owned(), scan.entries.len().to_string());
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
@@ -5606,17 +5840,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
         {
             let copy = brep.name.clone();
             attributes.insert("active_brep".to_owned(), copy);
-        }
-        {
-            let copy = brep.sha256.as_str().to_owned();
-            attributes.insert("active_brep_sha256".to_owned(), copy);
-        }
-        if let Some(off) = brep
-            .kernel
-            .as_ref()
-            .and_then(crate::container::KernelFraming::solved_record_limit)
-        {
-            attributes.insert("solved_record_len".to_owned(), off.to_string());
         }
         if let Some(h) = brep
             .kernel
@@ -5838,7 +6061,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         std::collections::BTreeMap::<&str, Vec<&cadmpeg_ir::ids::FaceId>>::new();
     let mut guid_by_face = std::collections::BTreeMap::<&cadmpeg_ir::ids::FaceId, &str>::new();
     for attribute in &ir.model.attributes {
-        let AttributeTarget::Face(face) = &attribute.target else {
+        let AttributeTarget::Face(face) = &attribute.target.entity else {
             continue;
         };
         let strings = || {
@@ -5897,14 +6120,14 @@ pub(crate) fn resolve_face_appearance_bindings(
         .appearance_bindings
         .iter()
         .filter_map(|binding| {
-            let AppearanceTarget::Face(face) = &binding.target else {
+            let AppearanceTarget::Face(face) = &binding.target.entity else {
                 return None;
             };
             Some((face, &binding.appearance))
         })
         .collect::<std::collections::HashMap<_, _>>();
     let mut face_indices = std::collections::HashMap::new();
-    for (index, face) in ir.model.faces.iter().enumerate() {
+    for (index, face) in ir.geometry.faces.iter().enumerate() {
         let id = face.id.as_str().to_owned();
         face_indices.insert(id, index);
     }
@@ -5927,7 +6150,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         for face in faces {
             if let Some(color) = assignment.color {
                 if let Some(index) = face_indices.get(face.as_str()).copied() {
-                    let target = &mut ir.model.faces[index];
+                    let target = &mut ir.geometry.faces[index];
                     if target.color.is_none() {
                         target.color = Some(color);
                     }
@@ -5963,7 +6186,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 // reaches every face carrying it, so the assignment pair alone
                 // repeats across those faces.
                 id,
-                target,
+                target: target.into(),
                 appearance: appearance_id,
                 source_entity_id: None,
                 object_type: None,
@@ -6006,18 +6229,18 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
         let Some(color) = colors.get(&binding.appearance).copied() else {
             continue;
         };
-        match &binding.target {
+        match &binding.target.entity {
             AppearanceTarget::Body(id) => insert_appearance_color(&mut body_colors, id, color),
             AppearanceTarget::Face(id) => insert_appearance_color(&mut face_colors, id, color),
             _ => {}
         }
     }
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         if body.color.is_none() {
             body.color = body_colors.get(&body.id).copied().flatten();
         }
     }
-    for face in &mut ir.model.faces {
+    for face in &mut ir.geometry.faces {
         if face.color.is_none() {
             face.color = face_colors.get(&face.id).copied().flatten();
         }
@@ -6134,7 +6357,7 @@ pub(crate) fn apply_body_presentation_names(
         }
     }
 
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         if let Some(Some(name)) = body_names.get(&body.id) {
             if body.name.is_none() {
                 body.name = Some(name.clone());

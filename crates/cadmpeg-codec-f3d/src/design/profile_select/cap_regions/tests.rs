@@ -588,10 +588,10 @@ fn a_cut_plane_compares_the_faces_it_deleted_with_the_faces_it_inserted() {
 
 /// A planar face parallel to the XY sketch: its slot, its height, and its
 /// loops as corner rings.
-type PlaneFace = (i64, f64, Vec<Vec<(f64, f64)>>);
+pub(super) type PlaneFace = (i64, f64, Vec<Vec<(f64, f64)>>);
 
 /// Faces whose edges all have straight carriers.
-fn plane_faces(faces: &[PlaneFace]) -> AsmHistoricalTopology {
+pub(super) fn plane_faces(faces: &[PlaneFace]) -> AsmHistoricalTopology {
     plane_faces_from(faces, 10_000)
 }
 

@@ -3,21 +3,21 @@
   "entries": [
     {
       "attributes": {},
-      "compression": "stored",
+      "kind": "stored",
       "name": "Manifest.dat",
       "role": "manifest",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 571
       }
     },
     {
       "attributes": {},
-      "compression": "stored",
+      "kind": "stored",
       "name": "FusionAssetName[Active]/Manifest.dat",
       "role": "manifest",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 589
       }
     },
@@ -38,21 +38,22 @@
         "sha256": "226396f63ca9281b2f7e83af1ea9d69e7cf86181ba6d43c16ecb9decf9876894",
         "solved_record_len": "2313"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
       "role": "brep-smbh",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 2326
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [
         {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "carrier": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
             "reference_width": "8",
@@ -63,14 +64,18 @@
         }
       ],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "top_level_manifest_version": "3-2-0-0"
         },
         "dialect": "f3d:manifest-3-2-0-0"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "Design asset folder (from manifests): FusionAssetName[Active]",
     "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",

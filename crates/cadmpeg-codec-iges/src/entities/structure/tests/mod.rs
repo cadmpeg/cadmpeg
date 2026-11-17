@@ -1530,12 +1530,12 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
             )
             .unwrap();
         assert_eq!(
-            result.ir().model.faces.len(),
+            result.ir().geometry.faces.len(),
             1,
             "IGES {version}: {:#?}",
             result.report().losses
         );
-        let face = &result.ir().model.faces[0];
+        let face = &result.ir().geometry.faces[0];
         assert_eq!(
             face.surface,
             "iges:model:surface#D1".try_into().expect("valid identity")

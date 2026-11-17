@@ -391,7 +391,7 @@ fn empty_model_maps_with_outgoing_references_are_an_assembly_without_docstruct()
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(!decoded.report().geometry_transferred());
     assert!(decoded
         .report()

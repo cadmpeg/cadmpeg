@@ -50,7 +50,7 @@ pub(super) fn validate_mirrors(
         &data.body_wrapper_links,
         &data.active_carrier,
         &data.body_native_keys,
-        &ir.model,
+        &ir.geometry,
         &crate::feature::body_selection::Scope {
             metadata: &data.metadata,
             roots: &data.pm_dc_model_roots,

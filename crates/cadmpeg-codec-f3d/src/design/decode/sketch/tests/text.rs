@@ -795,7 +795,7 @@ fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     // as the other form.
     assert_eq!(
         text.color,
-        cadmpeg_ir::topology::Color::new(0.0, 0.3, 1.0, 1.0).expect("valid color")
+        cadmpeg_ir::topology::Color::new(0.0, f64::from(0.3_f32), 1.0, 1.0).expect("valid color")
     );
     assert_eq!(
         (match text.layout {

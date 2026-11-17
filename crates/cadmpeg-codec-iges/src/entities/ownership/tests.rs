@@ -16,7 +16,7 @@ fn failed_trim_marks_its_support_before_any_neutral_owner_exists() {
     };
     let independent = crate::test_support::decode(owned_test_file(&[support()]));
     assert_eq!(
-        independent.ir().model.surfaces[0]
+        independent.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .unwrap()
@@ -33,10 +33,10 @@ fn failed_trim_marks_its_support_before_any_neutral_owner_exists() {
             parameters: "144,1,2,0,0;".into(),
         },
     ]));
-    assert!(failed.ir().model.faces.is_empty());
-    assert_eq!(failed.ir().model.surfaces.len(), 1);
+    assert!(failed.ir().geometry.faces.is_empty());
+    assert_eq!(failed.ir().geometry.surfaces.len(), 1);
     assert_eq!(
-        failed.ir().model.surfaces[0]
+        failed.ir().geometry.surfaces[0]
             .source_object
             .as_ref()
             .unwrap()
@@ -65,7 +65,7 @@ fn logical_group_members_keep_their_independent_geometry_role() {
         },
     ]));
     assert_eq!(
-        result.ir().model.curves[0]
+        result.ir().geometry.curves[0]
             .source_object
             .as_ref()
             .unwrap()
@@ -120,9 +120,9 @@ fn unreadable_owner_flag_keeps_its_readable_support_pointer() {
         let result = crate::IgesCodec
             .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.surfaces.len(), 1);
+        assert_eq!(result.ir().geometry.surfaces.len(), 1);
         assert_eq!(
-            result.ir().model.surfaces[0]
+            result.ir().geometry.surfaces[0]
                 .source_object
                 .as_ref()
                 .unwrap()

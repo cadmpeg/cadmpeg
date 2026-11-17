@@ -229,7 +229,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             let records = profile_refusal.take_records();
             if !records.is_empty() {
                 let body_id = extrusion_id!(BodyId, "body");
-                if !ir.model.bodies.iter().any(|body| body.id == body_id) {
+                if !ir.geometry.bodies.iter().any(|body| body.id == body_id) {
                     push_rejected_extrusion(
                         diagnostics,
                         body_id,
@@ -243,7 +243,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             continue;
         };
         let body_id = extrusion_id!(BodyId, "body");
-        if ir.model.bodies.iter().any(|body| body.id == body_id) {
+        if ir.geometry.bodies.iter().any(|body| body.id == body_id) {
             continue;
         }
         let mut refusal = crate::lane_refusal::LaneRefusals::new();
@@ -363,19 +363,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 ));
             }
         }
-        let shell = match Shell::new(
-            copy_id!(shell_id),
-            copy_id!(region_id),
-            shell_faces,
-            Vec::new(),
-            Vec::new(),
-        ) {
-            Ok(shell) => shell,
-            Err(error) => {
-                push_rejected_extrusion(diagnostics, body_id, error);
-                continue;
-            }
-        };
+        let shell = Shell::new(copy_id!(shell_id), copy_id!(region_id));
         let bottom_surface = extrusion_id!(SurfaceId, "surface:bottom");
         let top_surface = extrusion_id!(SurfaceId, "surface:top");
         for (id, offset) in [
@@ -409,6 +397,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     )),
                     source_object: None,
+                    native_ref: None,
                 },
             )?;
         }
@@ -454,6 +443,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             id: copy_id!(vertex_id),
                             point: point_id,
                             tolerance: None,
+                            native_ref: None,
                         },
                     )?;
                     arena.push(vertex_id);
@@ -560,6 +550,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             id: copy_id!(curve_id),
                             geometry: curve,
                             source_object: None,
+                            native_ref: None,
                         },
                     )?;
                     let param_range = match geometry {
@@ -598,9 +589,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 param_range,
                             )
                             .map_err(cadmpeg_core::CodecError::malformed)?,
-                            start: copy_id!(vertices[index]),
-                            end: copy_id!(vertices[next]),
+                            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                                copy_id!(vertices[index]),
+                                copy_id!(vertices[next]),
+                            )),
                             tolerance: None,
+                            native_ref: None,
                         },
                     )?;
                     arena.push(edge_id);
@@ -627,6 +621,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                         )),
                         source_object: None,
+                        native_ref: None,
                     },
                 )?;
                 ctx.charge_entities(1, "admit Creo model edges")?;
@@ -640,9 +635,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             Some([0.0, length]),
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
-                        start: copy_id!(bottom_vertices[index]),
-                        end: copy_id!(top_vertices[index]),
+                        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                            copy_id!(bottom_vertices[index]),
+                            copy_id!(top_vertices[index]),
+                        )),
                         tolerance: None,
+                        native_ref: None,
                     },
                 )?;
                 vertical_edges.push(edge_id);
@@ -656,7 +654,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 cap_coedge_ids(feature_id, profile_index, count, "bottom-cap", true)?;
             let top_coedges = cap_coedge_ids(feature_id, profile_index, count, "top-cap", false)?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
+            ir.geometry.loops.push(IrLoop {
                 id: copy_id!(bottom_loop),
                 face: copy_id!(bottom_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -666,9 +664,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
+                native_ref: None,
             });
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ir.model.loops.push(IrLoop {
+            ir.geometry.loops.push(IrLoop {
                 id: copy_id!(top_loop),
                 face: copy_id!(top_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -678,6 +677,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
+                native_ref: None,
             });
             let caps = &cap_pcurves[profile_index];
             for ring_index in 0..count {
@@ -718,6 +718,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             parameter_range: None,
                         }],
                         use_curve: None,
+                        native_ref: None,
                     },
                 )?;
                 let id = copy_id!(top_coedges[ring_index]);
@@ -751,6 +752,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             parameter_range: None,
                         }],
                         use_curve: None,
+                        native_ref: None,
                     },
                 )?;
             }
@@ -798,6 +800,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         id: copy_id!(surface_id),
                         geometry: surface_geometry,
                         source_object: None,
+                        native_ref: None,
                     },
                 )?;
                 let face_id = extrusion_id!(FaceId, "face:{}:side:{}", profile_index, index);
@@ -819,7 +822,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ),
                 ];
                 ctx.charge_entities(1, "admit Creo model loops")?;
-                ir.model.loops.push(IrLoop {
+                ir.geometry.loops.push(IrLoop {
                     id: copy_id!(loop_id),
                     face: copy_id!(face_id),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -829,6 +832,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         )
                         .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
+                    native_ref: None,
                 });
                 let edge_uses: [(EdgeId, Sense); 4] = [
                     (copy_id!(bottom_edges[index]), Sense::Forward),
@@ -898,6 +902,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 parameter_range: None,
                             }],
                             use_curve: None,
+                            native_ref: None,
                         },
                     )?;
                 }
@@ -917,6 +922,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         name: None,
                         color: None,
                         tolerance: None,
+                        native_ref: None,
                     },
                 )?;
             }
@@ -937,6 +943,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model faces")?;
@@ -955,15 +962,17 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             },
         )?;
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ir.model.shells.push(shell);
+        ir.geometry.shells.push(shell);
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ir.model.regions.push(Region {
+        ir.geometry.regions.push(Region {
             id: copy_id!(region_id),
             body: copy_id!(body_id),
             shells: vec![shell_id],
+            native_ref: None,
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
@@ -971,11 +980,11 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: vec![region_id],
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             },
         )?;
         transferred += 1;

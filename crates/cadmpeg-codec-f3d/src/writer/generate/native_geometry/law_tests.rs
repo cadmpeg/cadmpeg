@@ -38,7 +38,8 @@ fn document(revision: bool) -> CadIr {
 }
 
 fn layout(ir: &CadIr) -> SweepSurfaceLayout {
-    let ProceduralSurfaceDefinition::Sweep(payload) = ir.model.procedural_surfaces[0].definition()
+    let ProceduralSurfaceDefinition::Sweep(payload) =
+        ir.geometry.procedural_surfaces[0].definition()
     else {
         panic!("sweep construction")
     };
@@ -46,7 +47,7 @@ fn layout(ir: &CadIr) -> SweepSurfaceLayout {
 }
 
 fn edit_layout(ir: &mut CadIr, edit: impl FnOnce(&mut SweepSurfaceLayout)) {
-    let procedural = &mut ir.model.procedural_surfaces[0];
+    let procedural = &mut ir.geometry.procedural_surfaces[0];
     let ProceduralSurfaceDefinition::Sweep(payload) = procedural.definition() else {
         panic!("sweep construction")
     };
@@ -161,7 +162,8 @@ fn formula_variables_refuse_text_including_nested_text() {
 }
 
 fn recursive_expressions(ir: &CadIr) -> Vec<LawExpression> {
-    let ProceduralSurfaceDefinition::Sweep(payload) = ir.model.procedural_surfaces[0].definition()
+    let ProceduralSurfaceDefinition::Sweep(payload) =
+        ir.geometry.procedural_surfaces[0].definition()
     else {
         panic!("sweep construction")
     };
