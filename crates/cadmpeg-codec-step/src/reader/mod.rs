@@ -35,6 +35,7 @@ pub(crate) mod geometry;
 mod groups;
 mod index;
 mod ownership;
+mod plant_dimensions;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
@@ -378,6 +379,8 @@ fn decode_exchange_mode(
     }
     session.charge_pending_ir_entities("step_geometry_decode")?;
     let (mut geometry, carrier_index) = geometry::decode(exchange, &mut session.ir, session.ctx)?;
+    let mut unit_contradictions = plant_dimensions::check(exchange, session.ctx)?;
+    geometry.losses.append(&mut unit_contradictions);
     session.charge_pending_ir_entities("step_dependency_decode")?;
     let mut dependencies = dependencies::decode(exchange)?;
     session.charge_pending_ir_entities("step_carrier_index")?;

@@ -6,6 +6,7 @@ mod closed_faces;
 mod csg_solids;
 mod declared_measures;
 mod partial_geometry;
+mod plant_units;
 mod pmi_scope;
 mod tolerance_zones;
 

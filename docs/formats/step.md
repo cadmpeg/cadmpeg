@@ -1116,6 +1116,29 @@ loss for the unit record, with the stated factor and π/180. The 10⁻⁹ bound
 lies far above the rounding of π/180 to the digits an exchange writes and far
 below the `1/57.3` approximation, whose relative error is about 7.4·10⁻⁵.
 
+An ISO 10303-227 plant item states its end-to-end length as a
+`MEASURE_WITH_UNIT` item named `end to end length` of a
+`SHAPE_DIMENSION_REPRESENTATION`. A `DIMENSIONAL_CHARACTERISTIC_REPRESENTATION`
+relates that representation to a `DIMENSIONAL_LOCATION` between two
+`PLANT_ITEM_CONNECTOR`s. A `PROPERTY_DEFINITION` of each connector carries a
+representation whose `CARTESIAN_POINT` named `connect point` is the connector's
+point. The connector's `of_shape` is the plant item's
+`PRODUCT_DEFINITION_SHAPE`, and the shape representation of that shape states
+the geometry context in whose length unit the connect points lie.
+
+CADIR decision: for each such length with one connect point at each
+connector, the reader takes the ratio of the length, in millimetres by its own
+unit, to the connect-point distance, in millimetres by the geometry context's
+declared unit. When the median ratio of a context lies beyond a factor of 1.1
+from one, and at least three quarters of the context's ratios lie within 10⁻⁶
+of the median, relative to it, the decode reports one
+`geometry.length-unit-contradicted` loss for the context. The loss names the
+context, its declared length unit and scale, the implied scale (the declared
+scale times the median ratio), and the count of agreeing lengths out of the
+compared lengths. The decode keeps the declared unit. The factor 1.1 lies far
+below the 2.54 between the closest common length units, and the 10⁻⁶ bound
+lies far above the single-precision step of plant coordinates.
+
 ISO 10303-43
 defines uncertainty at three scopes. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`
 applies to representations that share its context,

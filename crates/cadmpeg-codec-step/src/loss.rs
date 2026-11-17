@@ -397,6 +397,9 @@ pub(crate) enum StepLossCode {
     /// A plane-angle unit named degree states a radian factor other than
     /// `π/180`; the reader reads it as `π/180`.
     AngleUnitFactorCorrected,
+    /// The end-to-end lengths of a context's plant items agree on a length
+    /// unit other than the one the context declares.
+    LengthUnitContradicted,
     /// A CSG item's attributes do not resolve; it has no feature and no body.
     CsgItemUnresolved,
     /// A plant CSG shape lists several plant item orientations, so its items
@@ -592,6 +595,7 @@ impl StepLossCode {
         Self::NonManifoldEdgeSplit,
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
+        Self::LengthUnitContradicted,
         Self::CsgItemUnresolved,
         Self::CsgPlantOrientationAmbiguous,
         Self::CsgSolidUnsynthesized,
@@ -802,6 +806,7 @@ impl StepLossCode {
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
+            Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
             Self::CsgItemUnresolved => "csg.item-unresolved",
             Self::CsgPlantOrientationAmbiguous => "csg.plant-orientation-ambiguous",
             Self::CsgSolidUnsynthesized => "csg.solid-unsynthesized",
@@ -1016,9 +1021,9 @@ impl StepLossCode {
             Self::CsgItemUnresolved | Self::CsgSolidUnsynthesized | Self::CsgBooleanUnevaluated => {
                 LossTaxonomy::GeometryNotTransferred
             }
-            Self::CsgProfileGapClosed | Self::AngleUnitFactorCorrected => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::CsgProfileGapClosed
+            | Self::AngleUnitFactorCorrected
+            | Self::LengthUnitContradicted => LossTaxonomy::DecodeDiagnostic,
             Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
@@ -1274,6 +1279,7 @@ mod tests {
                 "topology.non-manifold-edge-split",
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
+                "geometry.length-unit-contradicted",
                 "csg.item-unresolved",
                 "csg.plant-orientation-ambiguous",
                 "csg.solid-unsynthesized",
