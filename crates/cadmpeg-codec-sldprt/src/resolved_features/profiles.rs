@@ -47,6 +47,7 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
+use super::sketch_lists::{listed_record_geometry, SketchRecordLists};
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -1180,6 +1181,7 @@ pub(crate) fn project_marker_backed_sketches(
     for lane in lanes {
         let plane_frames = lane_sketch_plane_frames(features, histories, lane);
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
+        let record_lists = SketchRecordLists::new(&lane.native_payload);
         let mut markers_by_id = HashMap::new();
         for marker in &lane.sketch_entities {
             markers_by_id.insert(marker.id(), marker);
@@ -2071,6 +2073,23 @@ pub(crate) fn project_marker_backed_sketches(
                     {
                         return Err(MarkerGeometryFailure::Absent);
                     }
+                    let geometry = if matches!(
+                        geometry.definition(),
+                        SketchGeometryDefinition::Native { .. }
+                    ) {
+                        index_from_u64(marker.offset())
+                            .and_then(|offset| {
+                                listed_record_geometry(
+                                    &lane.native_payload,
+                                    &record_lists,
+                                    offset,
+                                    &project_coordinates,
+                                )
+                            })
+                            .unwrap_or(geometry)
+                    } else {
+                        geometry
+                    };
                     let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
                         (marker_is_selected_construction_line(&lane.native_payload, offset)
                             || current_compact_roster_selected_axis(&lane.native_payload, offset))

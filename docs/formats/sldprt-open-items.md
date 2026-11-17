@@ -1066,6 +1066,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
 
+### EV-26. Sketch curve type `0xffff`
+
+**Question.** What curve does a sketch curve record of type `0xffff` in the arc layout define?
+
+**Known.** `sldprt.md` §2 "Sketch objects" gives the record the arc's layout: two endpoint indices, u16 `0`, a centre index and four i32 `-2`. A type-`1` arc runs counterclockwise about its centre from its first endpoint to its second.
+
+**Need.** Type-`0xffff` records whose curves bound faces of a stored solid, compared with the counterclockwise and clockwise readings.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
