@@ -848,3 +848,36 @@ fn an_unreadable_entry_outside_the_direct_part_carrier_drops_no_exact_shape() {
         assert_eq!(remaining, usize::from(!dropped), "{unreadable}");
     }
 }
+
+#[test]
+fn only_the_direct_part_entry_of_an_exact_shape_must_resolve() {
+    let property = r#"<Property name="Shape" type="Part::PropertyPartShape"><Part file="Box.Shape.brp"/><X file="Note.bin"/></Property>"#;
+    let document = format!(
+        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+    );
+    let payload = b"brep".to_vec();
+    for (present, resolves) in [("Box.Shape.brp", true), ("Note.bin", false)] {
+        let (result, losses) =
+            crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+                let mut graph = parse(document.as_bytes(), "4", ctx).expect("exact-shape document");
+                let entries = std::collections::BTreeMap::from([(
+                    present.to_owned(),
+                    cadmpeg_core::decode::View::over_retained(&payload),
+                )]);
+                let mut losses = Vec::new();
+                let result =
+                    super::resolve_side_entries(ctx, &mut graph.properties, &entries, &mut losses);
+                (result.is_ok(), losses)
+            });
+        assert_eq!(result, resolves, "{present}");
+        if resolves {
+            assert!(losses.iter().any(|loss| {
+                loss.code
+                    == crate::loss::FreecadLossCode::PersistenceSideEntryUnresolved
+                        .note("")
+                        .code
+                    && loss.message.contains("Note.bin")
+            }));
+        }
+    }
+}

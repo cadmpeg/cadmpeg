@@ -965,7 +965,12 @@ impl CodecBackend for FcstdCodec {
             scan.losses.extend(std::mem::take(&mut graph.losses));
             unreadable_drops =
                 persistence::drop_unreadable(ctx, &mut graph, &scan.unreadable_names)?;
-            persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
+            persistence::resolve_side_entries(
+                ctx,
+                &mut graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
