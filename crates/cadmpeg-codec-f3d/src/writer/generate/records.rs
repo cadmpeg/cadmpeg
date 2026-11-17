@@ -154,6 +154,8 @@ pub(super) fn encode_design_bulkstream(
                 histories: &native.asm_histories,
                 face_boundaries: &native.asm_face_boundaries,
                 sheet_metal_settings: &native.design_sheet_metal_settings,
+                construction_recipes: &native.construction_recipes,
+                persistent_subentity_tags: &native.persistent_subentity_tags,
             },
         )?
         .parameters;

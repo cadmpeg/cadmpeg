@@ -656,6 +656,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             histories: &design.asm_histories,
             face_boundaries: &design.asm_face_boundaries,
             sheet_metal_settings: &design.design_sheet_metal_settings,
+            construction_recipes: &prereqs.construction_recipes,
+            persistent_subentity_tags: geometry.persistent_subentity_tags,
         },
     )?;
     losses.extend(
@@ -760,6 +762,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
+        crate::history::edge_recipe_faces::EdgeRecipeFaces {
+            operands: &design.design_edge_operands,
+            recipes: &prereqs.construction_recipes,
+            tags: geometry.persistent_subentity_tags,
+        },
         &design.asm_histories,
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
@@ -1917,10 +1924,23 @@ fn extend_related_design_records(
         &prereqs.design_body_bindings,
         &design.asm_histories,
     );
+    design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
+        ctx,
+        scan,
+        &design.design_parameter_scopes,
+        &design.design_construction_operand_groups,
+        &design.design_record_headers,
+        &prereqs.construction_recipes,
+    )?;
     let mut scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
+        crate::history::edge_recipe_faces::EdgeRecipeFaces {
+            operands: &design.design_edge_operands,
+            recipes: &prereqs.construction_recipes,
+            tags: geometry.persistent_subentity_tags,
+        },
         &design.asm_histories,
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
@@ -1954,14 +1974,6 @@ fn extend_related_design_records(
         &scope_histories,
         &lineage_scopes,
     );
-    design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &prereqs.construction_recipes,
-    )?;
     crate::design::decode::operands::bind_edge_operand_candidates(
         &mut design.design_edge_operands,
         &prereqs.construction_recipes,

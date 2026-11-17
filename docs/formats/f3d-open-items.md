@@ -3299,3 +3299,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-760. Structured Chamfer recipes on faces with several deleted boundary edges
+
+**Question.** Which input edge does a member of a counted Chamfer group select when its standard edge recipe has a two-sided recipe structure and its primary-reference faces own several boundary edges that the operation transition deletes?
+
+**Known.** `f3d.md` §3.1 "A body-map entity suffix between a history-bearing parameter scope" binds the scope to one ASM history through the BREP of its edge-recipe faces. The member recipe then resolves against the input state of that history. Each side of the recipe structure lists boundary-edge counts and topology triplets of incident edges and vertices. A member whose primary-reference faces own exactly one candidate edge resolves to that edge. The other members name two faces, or a face set, whose boundaries hold eight or more edges of the transition-deleted set, and no recipe proof selects one of them. The projector retains the resolved edges and the unresolved operand identities in a partial historical selection.
+
+**Need.** A rule that maps the side entries and topology triplets of the recipe structure to one boundary edge of the input topology, or a group rule that assigns every transition-deleted edge to one member.
+
+**Conflict.** None.
+
+**Note.** DR-342 tracks chamfer recipes whose transition selections conflict.

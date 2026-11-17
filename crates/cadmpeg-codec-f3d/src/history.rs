@@ -23,6 +23,7 @@ mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
+pub(crate) mod edge_recipe_faces;
 mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
@@ -5282,6 +5283,7 @@ pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
+    edge_recipes: edge_recipe_faces::EdgeRecipeFaces<'_>,
     histories: &[AsmHistory],
 ) -> HashMap<String, String> {
     let mut candidates = Vec::new();
@@ -5363,6 +5365,22 @@ pub(crate) fn bind_scope_histories(
                     candidate_faces
                         .clone()
                         .any(|face| active_brep_face_matches_source(face, source))
+                })
+            });
+            if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
+                insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+                continue;
+            }
+        }
+        // Every active face that the scope's edge recipes name lies in the
+        // BREP blob of one candidate history.
+        let edge_faces = edge_recipes.scope_faces(scope);
+        if !edge_faces.is_empty() {
+            let mut matching = candidates.iter().filter(|history| {
+                historical_brep_source(&history.id).is_some_and(|source| {
+                    edge_faces
+                        .iter()
+                        .all(|face| entity_in_brep_source(face.as_str(), source))
                 })
             });
             if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
