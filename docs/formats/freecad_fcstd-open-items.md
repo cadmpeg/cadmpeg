@@ -82,8 +82,10 @@ names, at any nesting depth, as expanded, and reads a provider's own attribute f
 objects. When a provider stores `expanded` false for an object that `Expand` names, the decoder
 reads the object as expanded and charges `source.gui-metadata-unresolved`. When an `Expand`
 element is present and a provider stores `expanded` true for an object that it does not name, the
-decoder keeps the provider's value and charges the same loss. The neutral flag is per object; the
-native `Expand` state keeps the tree path.
+decoder keeps the provider's value and charges the same loss. An `Expand` name with no view provider
+of an object, and an `Expand` item without a name, charge the same loss and set no flag; the named
+children of an unnamed item are read. The neutral flag is per object and comes from any tree path;
+the native GUI document record keeps the tree, and no neutral presentation state carries it.
 
 **Need.** A FreeCAD restore source, or a saved document in which the two carriers disagree,
 together with the tree FreeCAD shows after it opens that document.

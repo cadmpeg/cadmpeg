@@ -740,7 +740,7 @@ fn transfer_neutral_presentation(
                 expanded_names.insert(name.as_str());
             }
             None => state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(
-                "GUI Expand holds an item without a name; the item stays in the native Expand state",
+                "GUI Expand holds an item without a name; the item stays in the native GUI document record",
             )),
         }
     }
@@ -755,11 +755,13 @@ fn transfer_neutral_presentation(
         .filter(|name| !resolved_names.contains(**name))
     {
         state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
-            "GUI Expand names {name}, which resolves to no object; the name stays in the native Expand state"
+            "GUI Expand names {name}, which names no view provider of an object; the name stays in the native GUI document record"
         )));
     }
     for provider in graph.providers.iter().filter(|provider| {
-        provider.expanded == Some(false) && expanded_names.contains(provider.name.as_str())
+        provider.object.is_some()
+            && provider.expanded == Some(false)
+            && expanded_names.contains(provider.name.as_str())
     }) {
         state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
             "GUI Expand names {}, whose view provider stores expanded=false; the item is read as expanded",
@@ -768,6 +770,7 @@ fn transfer_neutral_presentation(
     }
     for provider in graph.providers.iter().filter(|provider| {
         expand_present
+            && provider.object.is_some()
             && provider.expanded == Some(true)
             && !expanded_names.contains(provider.name.as_str())
     }) {

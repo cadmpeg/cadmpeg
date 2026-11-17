@@ -129,7 +129,7 @@ fn an_expand_name_whose_provider_has_no_object_charges_a_loss() {
     assert!(
         losses
             .iter()
-            .any(|message| message.contains("Ghost, which resolves to no object")),
+            .any(|message| message.contains("Ghost, which names no view provider of an object")),
         "{losses:?}"
     );
 }
@@ -187,4 +187,19 @@ fn a_provider_stored_true_that_expand_does_not_name_keeps_its_value_with_a_loss(
     assert!(unresolved_gui_losses(&result)
         .iter()
         .all(|message| !message.contains("does not name Body")));
+}
+
+#[test]
+fn a_provider_without_an_object_keeps_its_stored_flag_without_a_conflict_loss() {
+    let result = decode_with(
+        r#"<ViewProvider name="Body"><Properties Count="0"/></ViewProvider><ViewProvider name="Ghost" expanded="0"><Properties Count="0"/></ViewProvider>"#,
+        r#"<Expand count="1"><Expand name="Ghost"/></Expand>"#,
+    );
+    let losses = unresolved_gui_losses(&result);
+    assert!(
+        losses
+            .iter()
+            .all(|message| !message.contains("the item is read as expanded")),
+        "{losses:?}"
+    );
 }
