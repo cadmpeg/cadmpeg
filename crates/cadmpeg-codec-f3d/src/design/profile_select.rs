@@ -1029,76 +1029,17 @@ pub(crate) fn bind_extrude_profile_selections(
                                     direction,
                                     extent,
                                 };
-                                let candidate = if cut {
-                                    cap_regions::compact::removed_candidate(
-                                        sketch,
-                                        scoped_resolution,
-                                        states,
-                                        sweep,
-                                    )?
-                                } else {
-                                    cap_regions::compact::added_candidate(
-                                        sketch,
-                                        scoped_resolution,
-                                        states,
-                                        sweep,
-                                    )?
-                                };
-                                match candidate {
-                                    Some(candidate) => {
-                                        if !selects_whole_sketch(&candidate, sketch) {
-                                            *profile = ProfileRef::Planar(candidate);
-                                        }
-                                    }
-                                    None => {
-                                        // No certificate selects regions. The inserted
-                                        // or removed faces still contradict the whole
-                                        // Sketch when they select only some profiles.
-                                        let inferred_before =
-                                            scoped_resolution.profile_work.inferred_counts();
-                                        let assumed_before =
-                                            scoped_resolution.profile_work.assumed_flags();
-                                        let subset = match transition_profile_selection(
-                                            sketch,
-                                            scoped_resolution,
-                                            states.0,
-                                            states.1,
-                                        )? {
-                                            Some(ResolvedProfileSelection::Loops(mut loops)) => {
-                                                loops.sort_unstable();
-                                                loops.dedup();
-                                                !sketch.profiles.is_empty()
-                                                    && loops.len() < sketch.profiles.len()
-                                            }
-                                            Some(ResolvedProfileSelection::Regions(regions)) => {
-                                                PlanarProfileRef::sketch_regions(
-                                                    sketch.id.clone(),
-                                                    regions,
-                                                )
-                                                .is_ok_and(|selection| {
-                                                    !sketch.profiles.is_empty()
-                                                        && !selects_whole_sketch(&selection, sketch)
-                                                })
-                                            }
-                                            None => false,
-                                        };
-                                        scoped_resolution
-                                            .profile_work
-                                            .set_inferred_counts(inferred_before);
-                                        scoped_resolution
-                                            .profile_work
-                                            .set_assumed_flags(assumed_before);
-                                        if subset {
-                                            *profile = ProfileRef::Planar(
-                                                PlanarProfileRef::sketch_selection(
-                                                    sketch.id.clone(),
-                                                    vec![scope.id.clone()],
-                                                )
-                                                .unwrap_or_else(|_| {
-                                                    PlanarProfileRef::Native(scope.id.clone())
-                                                }),
-                                            );
-                                        }
+                                // A Cut's removed planes cannot see a profile over no
+                                // material, so only a Join or New Body far cap narrows
+                                // the whole Sketch.
+                                if let Some(candidate) = cap_regions::compact::added_candidate(
+                                    sketch,
+                                    scoped_resolution,
+                                    states,
+                                    sweep,
+                                )? {
+                                    if !selects_whole_sketch(&candidate, sketch) {
+                                        *profile = ProfileRef::Planar(candidate);
                                     }
                                 }
                             }
