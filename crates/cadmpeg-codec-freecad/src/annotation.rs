@@ -1248,7 +1248,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             semantic_dimension.references["References2D"][0].native_text(),
-            Some("View.Edge1")
+            Some("Model.Edge1")
         );
         let semantic_note = result
             .ir()

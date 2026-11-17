@@ -18,6 +18,12 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, decode_inline_result};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+fn entities(
+    targets: &[cadmpeg_ir::references::InstanceTarget<cadmpeg_ir::pmi::PmiTarget>],
+) -> Vec<cadmpeg_ir::pmi::PmiTarget> {
+    targets.iter().map(|target| target.entity.clone()).collect()
+}
+
 mod aspect_scope;
 mod depth_limits;
 mod shared_walks;
@@ -187,11 +193,7 @@ fn complex_datum_feature_remains_a_dimension_target() {
         .expect("complex datum feature dimension");
     assert!(matches!(&dimension.definition, PmiDefinition::Dimension(_)));
     assert_eq!(
-        dimension
-            .targets
-            .iter()
-            .map(|target| target.entity.clone())
-            .collect::<Vec<_>>(),
+        entities(&dimension.targets),
         vec![PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("#6")
                 .expect("nonempty source identity")
@@ -225,11 +227,7 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
             .find(|annotation| annotation.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing dimension {name}"));
         assert_eq!(
-            dimension
-                .targets
-                .iter()
-                .map(|target| target.entity.clone())
-                .collect::<Vec<_>>(),
+            entities(&dimension.targets),
             vec![PmiTarget::ShapeAspect {
                 source_id: cadmpeg_core::text::NonBlankString::new(source_id)
                     .expect("nonempty source identity")
@@ -263,11 +261,7 @@ fn datum_target_transfers_form_and_identification() {
             .find(|annotation| annotation.name.as_deref() == Some(name))
             .unwrap_or_else(|| panic!("missing datum target {name}"));
         assert_eq!(
-            target
-                .targets
-                .iter()
-                .map(|target| target.entity.clone())
-                .collect::<Vec<_>>(),
+            entities(&target.targets),
             [PmiTarget::ShapeAspect {
                 source_id: cadmpeg_core::text::NonBlankString::new(source_id)
                     .expect("nonempty source identity")
@@ -313,11 +307,7 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
                 && relation.nominal().is_some_and(|value| value.quantity == PmiQuantity::Length && value.value.get() == 5.0)
     ));
     assert_eq!(
-        dimension
-            .targets
-            .iter()
-            .map(|target| target.entity.clone())
-            .collect::<Vec<_>>(),
+        entities(&dimension.targets),
         vec![cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("#6")
                 .expect("nonempty source identity")
@@ -1481,11 +1471,7 @@ fn complex_datum_reads_identification_from_its_named_partial() {
         PmiDefinition::Datum { identification } if identification == "A"
     ));
     assert_eq!(
-        datum
-            .targets
-            .iter()
-            .map(|target| target.entity.clone())
-            .collect::<Vec<_>>(),
+        entities(&datum.targets),
         vec![PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("#7")
                 .expect("nonempty source identity")
@@ -1898,11 +1884,7 @@ fn datum_target_writes_and_round_trips() {
         .find(|annotation| annotation.name.as_deref() == Some("datum target"))
         .expect("datum target annotation");
     assert_eq!(
-        target
-            .targets
-            .iter()
-            .map(|target| target.entity.clone())
-            .collect::<Vec<_>>(),
+        entities(&target.targets),
         [PmiTarget::ShapeAspect {
             source_id: cadmpeg_core::text::NonBlankString::new("#30")
                 .expect("nonempty source identity")

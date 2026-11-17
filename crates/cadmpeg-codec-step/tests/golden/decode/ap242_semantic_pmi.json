@@ -93,8 +93,10 @@
           "name": "width",
           "targets": [
             {
-              "kind": "shape_aspect",
-              "source_id": "#6"
+              "entity": {
+                "kind": "shape_aspect",
+                "source_id": "#6"
+              }
             }
           ]
         },
@@ -117,8 +119,10 @@
           "name": "surface flatness",
           "targets": [
             {
-              "kind": "shape_aspect",
-              "source_id": "#6"
+              "entity": {
+                "kind": "shape_aspect",
+                "source_id": "#6"
+              }
             }
           ]
         },
@@ -145,8 +149,10 @@
           "name": "datum feature size",
           "targets": [
             {
-              "kind": "shape_aspect",
-              "source_id": "#6"
+              "entity": {
+                "kind": "shape_aspect",
+                "source_id": "#6"
+              }
             }
           ]
         },
@@ -158,8 +164,10 @@
           "id": "step:presentation:pmi#7",
           "targets": [
             {
-              "kind": "shape_aspect",
-              "source_id": "#7"
+              "entity": {
+                "kind": "shape_aspect",
+                "source_id": "#7"
+              }
             }
           ]
         },

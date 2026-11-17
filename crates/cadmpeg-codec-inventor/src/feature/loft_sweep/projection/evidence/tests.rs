@@ -23,7 +23,7 @@ fn model() -> CadIr {
             values.push(json!({"kind":"string","value":"INV_NMX_SWEEPGENERATED_TAG"}));
             values.extend([1,44,1,17,-1].into_iter().map(|value|json!({"kind":"integer","value":value})));
             values.extend(match i {0=>vec![0,0,4],1=>vec![0,0,12],_=>vec![8,9,20]}.into_iter().chain([0;7]).map(|value|json!({"kind":"integer","value":value})));
-            json!({"id":format!("test:model:attribute#a{i}"),"name":"ATTRIB_CUSTOM-attrib","target":{"kind":"face","value":format!("test:model:face#f{i}")},"values":values})
+            json!({"id":format!("test:model:attribute#a{i}"),"name":"ATTRIB_CUSTOM-attrib","target":{"entity":{"kind":"face","value":format!("test:model:face#f{i}")}},"values":values})
         }).collect::<Vec<_>>()
     });
     let partial = partial.as_object_mut().expect("partial model");

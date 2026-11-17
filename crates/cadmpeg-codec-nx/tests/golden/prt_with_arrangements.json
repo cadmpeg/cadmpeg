@@ -177,7 +177,9 @@
             "id": "nx:part-attributes-2:attribute#0:neutral",
             "name": "NX_Arrangement",
             "target": {
-              "kind": "document"
+              "entity": {
+                "kind": "document"
+              }
             },
             "values": [
               {

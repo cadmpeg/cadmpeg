@@ -99,7 +99,7 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
     assert_eq!(template.side_entries, ["page.svg"]);
     assert_eq!(
         view.sources[0].as_ref().expect("source").object(),
-        Some("Model")
+        Some("fcstd:native:object#Model")
     );
     assert!(view.parameters.contains_key("Direction"));
     assert_eq!(

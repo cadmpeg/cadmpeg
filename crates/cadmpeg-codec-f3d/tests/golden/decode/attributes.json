@@ -274,8 +274,10 @@
         {
           "id": "f3d:brep:attribute#19",
           "target": {
-            "kind": "body",
-            "value": "f3d:brep:entity#1"
+            "entity": {
+              "kind": "body",
+              "value": "f3d:brep:entity#1"
+            }
           },
           "name": "ATTRIB_CUSTOM-attrib",
           "values": [
@@ -372,8 +374,10 @@
         {
           "id": "f3d:brep:attribute#20",
           "target": {
-            "kind": "body",
-            "value": "f3d:brep:entity#1"
+            "entity": {
+              "kind": "body",
+              "value": "f3d:brep:entity#1"
+            }
           },
           "name": "ATTRIB_CUSTOM-attrib",
           "values": [

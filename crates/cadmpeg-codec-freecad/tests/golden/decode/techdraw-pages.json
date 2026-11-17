@@ -65,19 +65,29 @@
           "relationships": {
             "Template": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "FirstTemplate"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#FirstTemplate:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Views": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "FirstNote"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#FirstNote:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -110,7 +120,6 @@
           "relationships": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -240,19 +249,29 @@
           "relationships": {
             "Template": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "SecondTemplate"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#SecondTemplate:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Views": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "SecondNote"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#SecondNote:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -285,7 +304,6 @@
           "relationships": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -453,7 +471,6 @@
           "references": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -505,7 +522,6 @@
           "references": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
