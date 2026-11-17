@@ -1027,7 +1027,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let replacements = operands.replacements();
             !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements)
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool, .. }) => {
             !body_selection_is_resolved(targets)
                 || match tool {
                     cadmpeg_ir::features::SplitBodyTool::Faces(faces) => {

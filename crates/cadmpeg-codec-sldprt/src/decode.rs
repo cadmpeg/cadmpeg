@@ -1939,7 +1939,7 @@ pub(crate) fn append_design_losses(
                     incomplete_body_selection(targets)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
                 }
-                FeatureOperation::SplitBody { targets, tool } => {
+                FeatureOperation::SplitBody { targets, tool, .. } => {
                     incomplete_body_selection(targets)
                         || match tool {
                             SplitBodyTool::Faces(faces) => incomplete_face_selection(faces),

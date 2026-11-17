@@ -47,6 +47,7 @@ mod sheet_metal_rule;
 pub(in crate::design) mod shell_observation;
 mod solid_primitive;
 mod sphere;
+mod split;
 mod surfaces;
 mod thicken_shell;
 mod thread;

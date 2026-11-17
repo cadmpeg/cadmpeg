@@ -459,6 +459,25 @@ impl ScopePayloadCompleteness for DesignEdgeFlangeScope {
     }
 }
 
+cadmpeg_core::named_optional_field!(
+    deserialize_split_tool_extension,
+    crate::records::identity::Located<bool>,
+    "split_tool_extension"
+);
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DesignSplitScope {
+    pub(crate) extend_tool: Option<crate::records::identity::Located<bool>>,
+}
+
+rewrite_native_record!(DesignSplitScope, []; {extend_tool});
+
+impl ScopePayloadCompleteness for DesignSplitScope {
+    fn is_uninterpreted(&self) -> bool {
+        false
+    }
+}
+
 impl ScopePayloadCompleteness for DesignCombineScope {
     fn is_uninterpreted(&self) -> bool {
         self.operation.is_none() && self.named_tail.is_none()
@@ -758,6 +777,7 @@ design_feature_kinds! {
         Fillet => "Fillet": super::fillet_set::DesignFilletScope,
         Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
         Combine => "Combine": DesignCombineScope,
+        Split => "Split": DesignSplitScope,
         Draft => "Draft": Option<DesignDraftOperation>,
         CPattern => "C-Pattern": Option<DesignCircularPatternConstruction>,
         CircularPattern => "Circular Pattern": Option<DesignCircularPatternConstruction>,
@@ -816,7 +836,6 @@ design_feature_kinds! {
         ReplaceFace => "ReplaceFace",
         SurfaceTrim => "SurfaceTrim",
         BoundaryFill => "BoundaryFill",
-        Split => "Split",
         Canvas => "Canvas",
         Decal => "Decal",
         BaseMeshFeature => "Base Mesh Feature",
@@ -1155,6 +1174,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_mesh_face_groups"
     )]
     mesh_face_groups: Option<super::mesh_face_groups::DesignMeshFaceGroups>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_split_tool_extension"
+    )]
+    split_tool_extension: Option<crate::records::identity::Located<bool>>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(
         default,
@@ -1960,6 +1985,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.path_pattern_settings.is_some() {
             present.push("path_pattern_settings");
         }
+        if wire.split_tool_extension.is_some() {
+            present.push("split_tool_extension");
+        }
         if wire.surface_stitch_operation.is_some() {
             present.push("surface_stitch_operation");
         }
@@ -2234,7 +2262,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     extent: wire.hole_extent.take(),
                 })
             }
-            DesignFeatureKind::Split => DesignScopePayload::Split,
+            DesignFeatureKind::Split => DesignScopePayload::Split(DesignSplitScope {
+                extend_tool: wire.split_tool_extension.take(),
+            }),
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
             DesignFeatureKind::ReverseNormal => {
                 DesignScopePayload::ReverseNormal(wire.reverse_normal_operation.take())
@@ -2388,6 +2418,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.unfold_operation.is_some()
             || wire.refold_operation.is_some()
             || wire.mesh_face_groups.is_some()
+            || wire.split_tool_extension.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
             || wire.surface_untrim_operation.is_some()
@@ -2578,6 +2609,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             unfold_operation: None,
             refold_operation: None,
             mesh_face_groups: None,
+            split_tool_extension: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
             surface_untrim_operation: None,
@@ -2760,9 +2792,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.hole_construction = value.point;
                 wire.hole_extent = value.extent;
             }
+            DesignScopePayload::Split(value) => wire.split_tool_extension = value.extend_tool,
             DesignScopePayload::SurfaceTrim
             | DesignScopePayload::BoundaryFill
-            | DesignScopePayload::Split
             | DesignScopePayload::Canvas
             | DesignScopePayload::Decal
             | DesignScopePayload::BaseMeshFeature
@@ -2821,6 +2853,23 @@ impl DesignParameterScope {
             DesignParameterScopePayloadError(format!("invalid parameter scope {field}"))
         };
         let kind = draft.payload.kind_name();
+        if let DesignScopePayload::Split(DesignSplitScope {
+            extend_tool: Some(extension),
+        }) = &draft.payload
+        {
+            let without_properties =
+                u64_from_index(crate::layout::split_body_scope_prefix::LEN + 1);
+            let with_empty_properties = without_properties + u64_from_index(size_of::<u32>());
+            let relative = extension.offset.checked_sub(draft.byte_offset);
+            let reference = extension
+                .offset
+                .checked_add(u64_from_index(crate::layout::split_body_extension::LEN));
+            if (relative != Some(without_properties) && relative != Some(with_empty_properties))
+                || reference.is_none_or(|at| at >= draft.reference_count_offset)
+            {
+                return Err(fail("split_tool_extension"));
+            }
+        }
         if let DesignScopePayload::SurfacePatch(DesignSurfacePatchScope {
             normal: Some(DesignSurfacePatchNormalState::Explicit { reversed }),
             ..
