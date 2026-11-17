@@ -80,14 +80,25 @@ class DenyCensusTests(unittest.TestCase):
             output = io.StringIO()
             # The absent-key rule has its own scope, the whole crates tree.
             # These fixtures state the unknown-key rule only, so that pass is
-            # held out here and exercised by `run_absent_key_census` below.
+            # held out here and exercised by `run_absent_key_census` below,
+            # and the set rule by `run_set_census`.
             with patch.object(census, "source_files", return_value=paths), \
                     patch.object(census, "EXCEPTIONS", {}), \
                     patch.object(census, "absent_key_failures", return_value=[]), \
+                    patch.object(census, "set_spelling_failures", return_value=[]), \
                     patch.object(census, "trait_impl_source_files", return_value=[]), \
                     contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 status = census.main()
             return status, output.getvalue()
+
+    def run_set_census(self, files: dict[str, str]) -> list[str]:
+        """The set rule's findings over one fixture crate."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_workspace(root, root, "fixture")
+            paths = write_fixture(root / "src", files)
+            with patch.object(census, "source_files", return_value=paths):
+                return [message for _, _, message in census.set_spelling_failures()]
 
     def run_absent_key_census(self, files: dict[str, str]) -> list[str]:
         """The absent-key rule's findings over one fixture tree."""
@@ -543,6 +554,191 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
     def name_read(self, derive="DeserializeName",
                   imported="use cadmpeg_derive::DeserializeName;") -> str:
         return self.NAME_READ.replace("IMPORT", imported).replace("DERIVE", derive)
+
+    SET_PRELUDE = '''
+        use std::collections::{BTreeMap, BTreeSet};
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Class { Model, Process }
+    '''
+
+    def test_a_set_or_map_read_by_serde_states_a_second_spelling(self) -> None:
+        unsorted = "in any order and merges a repeated member"
+        last = "keeping the last value of a repeated key"
+        cases = {
+            "a transparent newtype over a set": ('''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(std::collections::BTreeSet<Class>);
+            ''', f"ArenaClasses.0: serde reads the BTreeSet in std::collections::BTreeSet<Class> {unsorted}"),
+            "an optional set field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine { #[serde(default)] axes: Option<BTreeSet<Class>> }
+            ''', f"Machine.axes: serde reads the BTreeSet in Option<BTreeSet<Class>> {unsorted}"),
+            "a map field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { names: BTreeMap<String, u8> }
+            ''', f"Holder.names: serde reads the BTreeMap in BTreeMap<String, u8> {last}"),
+            "a JSON object field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { context: serde_json::Map<String, serde_json::Value> }
+            ''', "Holder.context: serde reads the serde_json::Map"),
+            "a newtype variant": ('''
+                #[derive(Deserialize)] #[serde(tag = "kind", content = "value")]
+                enum Holder { Classes(BTreeSet<Class>) }
+            ''', f"Holder::Classes.0: serde reads the BTreeSet in BTreeSet<Class> {unsorted}"),
+            "a struct variant": ('''
+                #[derive(Deserialize)] #[serde(tag = "kind")]
+                enum Holder { Classes { members: Vec<BTreeSet<Class>> } }
+            ''', f"Holder::Classes.members: serde reads the BTreeSet in Vec<BTreeSet<Class>> {unsorted}"),
+            "an alias": ('''
+                type Classes = BTreeSet<Class>;
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { classes: Classes }
+            ''', f"Holder.classes: serde reads the BTreeSet in Classes {unsorted}"),
+            "a set inside a distinct map": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    by_name: BTreeMap<String, BTreeSet<Class>>,
+                }
+            ''', f"Holder.by_name: serde reads the BTreeSet in BTreeSet<Class> {unsorted}"),
+            "an integer key in a JSON object": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    by_index: BTreeMap<u32, u8>,
+                }
+            ''', "Holder.by_index: a JSON object key u32 is not a JSON string"),
+            "a reader that reads serde's set": ('''
+                fn read_classes<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeSet<Class>, D::Error> {
+                    BTreeSet::deserialize(d)
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { #[serde(deserialize_with = "read_classes")] classes: BTreeSet<Class> }
+            ''', "Holder.classes: the reader read_classes calls no cadmpeg_core::distinct_keys reader"),
+            "a shim over a hand-written set reader": ('''
+                struct Distinct<T>(BTreeSet<T>);
+                impl<'de, T: Deserialize<'de> + Ord> Deserialize<'de> for Distinct<T> {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        Ok(Distinct(BTreeSet::from_iter(Vec::<T>::deserialize(d)?)))
+                    }
+                }
+                impl<T> From<Distinct<T>> for BTreeSet<T> {
+                    fn from(set: Distinct<T>) -> Self { set.0 }
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_axes")]
+                    axes: Option<BTreeSet<Class>>,
+                }
+                cadmpeg_core::named_optional_field!(read_axes, Distinct<Class> as BTreeSet<Class>, "axes");
+            ''', "Distinct: a hand-written reader of a type holding a BTreeSet calls no "
+                 "cadmpeg_core::distinct_keys reader"),
+            "a set reader whose root binds another item": ('''
+                mod cadmpeg_core { pub mod distinct_keys { pub mod set {} } }
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct Classes(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+            ''', "spells cadmpeg_core where it can bind another item"),
+        }
+        for case, (source, expected) in cases.items():
+            with self.subTest(case=case):
+                findings = self.run_set_census({"lib.rs": self.SET_PRELUDE + source})
+                self.assertEqual(len(findings), 1, findings)
+                self.assertIn(expected, findings[0])
+
+    def test_a_set_or_map_read_by_a_distinct_keys_reader_has_one_spelling(self) -> None:
+        cases = {
+            "a transparent newtype over a set": '''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(
+                    #[serde(with = "cadmpeg_core::distinct_keys::set")] std::collections::BTreeSet<Class>,
+                );
+            ''',
+            "maps by their key": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    names: BTreeMap<String, u8>,
+                    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
+                    by_index: BTreeMap<u32, u8>,
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::json_object")]
+                    context: serde_json::Map<String, serde_json::Value>,
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
+                    classes: BTreeSet<Class>,
+                }
+            ''',
+            "a shim over a set newtype": '''
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct AxisSet(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+                impl From<AxisSet> for BTreeSet<Class> {
+                    fn from(AxisSet(axes): AxisSet) -> Self { axes }
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_axes")]
+                    axes: Option<BTreeSet<Class>>,
+                }
+                cadmpeg_core::named_optional_field!(read_axes, AxisSet as BTreeSet<Class>, "axes");
+            ''',
+            "a reader that forwards to a shim": '''
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct Centers(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+                fn read_centers<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<Class>>, D::Error> {
+                    read_center_set(d).map(|centers| centers.map(|Centers(set)| set))
+                }
+                cadmpeg_core::named_optional_field!(read_center_set, Centers, "centers");
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_centers")]
+                    centers: Option<BTreeSet<Class>>,
+                }
+            ''',
+            "a hand-written reader that reads a checked wire type": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct StatsWire {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    kinds: BTreeMap<String, usize>,
+                }
+                struct Stats { kinds: BTreeMap<String, usize> }
+                impl<'de> Deserialize<'de> for Stats {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let wire = StatsWire::deserialize(d)?;
+                        Ok(Stats { kinds: wire.kinds })
+                    }
+                }
+            ''',
+            "an associated type and serde_json's value": '''
+                trait Kind { type Value; }
+                struct Classes;
+                impl Kind for Classes { type Value = BTreeSet<Class>; }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder<K: Kind> { value: K::Value, raw: serde_json::Value }
+            ''',
+            "a skipped field": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { #[serde(skip)] cache: BTreeSet<Class> }
+            ''',
+        }
+        for case, source in cases.items():
+            with self.subTest(case=case):
+                self.assertEqual(self.run_set_census({"lib.rs": self.SET_PRELUDE + source}), [])
+
+    def test_the_whole_census_fails_on_a_set_read_by_serde(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_workspace(root, root, "fixture")
+            paths = write_fixture(root / "src", {"lib.rs": self.SET_PRELUDE + '''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(BTreeSet<Class>);
+            '''})
+            output = io.StringIO()
+            with patch.object(census, "source_files", return_value=paths), \
+                    patch.object(census, "absent_key_failures", return_value=[]), \
+                    patch.object(census, "trait_impl_source_files", return_value=[]), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                status = census.main()
+        self.assertEqual(status, 1, output.getvalue())
+        self.assertIn("ArenaClasses.0: serde reads the BTreeSet", output.getvalue())
 
     def test_a_data_free_enum_read_by_serde_states_a_second_spelling(self) -> None:
         for case, (source, name) in {
