@@ -11939,6 +11939,41 @@ Unstated regions:
 
 - `0..21` (21 B): Indexed header and mesh scope prefix.
 
+## `replace_face_fixed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Flag-00 fixed prefix. Flag 01 inserts a u32 word before the Boolean control; its fixed prefix is 30 bytes. Counted group references and the identifier follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ReplaceFace prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The ReplaceFace prologue |
+| 20 | 1 | `prefix_flag` | `u8` | little | spec | The ReplaceFace prologue |
+| 21 | 1 | `tangent_chain` | `u8` | little | spec | The ReplaceFace prologue |
+| 22 | 4 | `replacement_group_count` | `u32` | little | spec | The ReplaceFace prologue |
+
+## `replace_face_flagged_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Flag-01 fixed prefix. Flag 00 omits the u32 word and has a 26-byte fixed prefix. Counted group references and the identifier follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ReplaceFace prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The ReplaceFace prologue |
+| 20 | 1 | `prefix_flag` | `u8` | little | spec | The ReplaceFace prologue |
+| 21 | 4 | `word` | `u32` | little | spec | The ReplaceFace prologue |
+| 25 | 1 | `tangent_chain` | `u8` | little | spec | The ReplaceFace prologue |
+| 26 | 4 | `replacement_group_count` | `u32` | little | spec | The ReplaceFace prologue |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
