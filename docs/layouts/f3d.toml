@@ -39065,3 +39065,39 @@ offset = 161
 type = "u8"
 source = "spec"
 anchor = "and a control byte"
+
+[[record]]
+name = "replace_face_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The ReplaceFace prologue"
+size = 26
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "tangent_chain"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "replacement_group_count"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "The ReplaceFace prologue"

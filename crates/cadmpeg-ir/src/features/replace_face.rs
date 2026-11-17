@@ -16,6 +16,7 @@ pub struct ReplaceFaceOperands {
     #[doc = "Faces supplying replacement surface geometry."]
     replacements: FaceSelection,
     #[doc = "Whether tangent faces join the target selection."]
+    #[cfg_attr(feature = "schema", schemars(with = "bool"))]
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

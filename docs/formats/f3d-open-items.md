@@ -3311,3 +3311,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-810. ReplaceFace control and partial support selections
+
+**Question.** Does the prologue Boolean expand the target selection to tangent faces, and which selection applies when a referenced support definition is incomplete or names a construction plane?
+
+**Known.** The prologue retains a Boolean, separate ordered replacement and target group runs, and a trailing identifier. Replacement groups use roles `0x09` or `0x21`; target groups use role `0x10`.
+
+**Need.** Controlled saves that change tangent chaining, construction-plane support and the trailing identifier independently, with complete definitions for each selected group.
+
+**Note.** `feature.replace-face-tangent-chain-assumed` retains the Boolean as target tangent expansion. `feature.replace-face-frame-assumed` uses owned group roles when the prefix is unresolved. `feature.replace-face-selection-assumed` keeps scope selections for incomplete or ambiguous definitions. `feature.replace-face-groups-aggregated-assumed` keeps several group references as one scope selection. `feature.replace-face-overlap-unresolved` retains native selectors when the resolved memberships overlap. `feature.replace-face-support-assumed` retains entity support through its native group. `feature.replace-face-identity-assumed` retains a nonnull identifier as auxiliary metadata.

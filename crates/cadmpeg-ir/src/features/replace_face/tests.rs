@@ -3,6 +3,17 @@
 use super::ReplaceFaceOperands;
 use crate::features::FaceSelection;
 
+#[cfg(feature = "schema")]
+#[test]
+fn tangent_chain_schema_is_optional_boolean() {
+    let schema = serde_json::to_value(schemars::schema_for!(ReplaceFaceOperands)).unwrap();
+    assert_eq!(schema["properties"]["tangent_chain"]["type"], "boolean");
+    assert!(!schema["required"]
+        .as_array()
+        .unwrap()
+        .contains(&serde_json::json!("tangent_chain")));
+}
+
 #[test]
 fn optional_tangent_chain_preserves_legacy_wire_forms_and_refuses_null() {
     for tangent_chain in [None, Some(false), Some(true)] {

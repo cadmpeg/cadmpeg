@@ -11797,6 +11797,20 @@ Unstated regions:
 
 - `0..21` (21 B): Indexed header and mesh scope prefix.
 
+## `replace_face_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ReplaceFace prologue |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The ReplaceFace prologue |
+| 21 | 1 | `tangent_chain` | `u8` | little | spec | The ReplaceFace prologue |
+| 22 | 4 | `replacement_group_count` | `u32` | little | spec | The ReplaceFace prologue |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

@@ -10259,3 +10259,15 @@ pub(crate) mod mesh_plane_cut_scope_prefix {
     /// Offset of `fill_selector` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FILL_SELECTOR: usize = 157;
 }
+
+/// Byte offsets for the `replace_face_prologue` record.
+///
+/// Spec §3.1. Record length 26 B.
+pub(crate) mod replace_face_prologue {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `tangent_chain` (`u8`). Spec §3.1.
+    pub(crate) const TANGENT_CHAIN: usize = 21;
+    /// Offset of `replacement_group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REPLACEMENT_GROUP_COUNT: usize = 22;
+}

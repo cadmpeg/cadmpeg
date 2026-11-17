@@ -40,6 +40,7 @@ pub(crate) mod pipe;
 pub(super) mod point_data;
 mod point_direction;
 pub(crate) mod position;
+mod replace_face;
 mod reverse_normal;
 pub(in crate::design) mod shared_frames;
 pub(crate) mod sheet_metal;

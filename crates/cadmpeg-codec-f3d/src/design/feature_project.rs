@@ -93,6 +93,7 @@ mod delete_face;
 mod edge_flange;
 mod extrude;
 mod fold;
+mod replace_face;
 
 use extrude::{bind_extrude_work_plane_targets, project_extrude};
 
@@ -822,13 +823,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::ReplaceFace) => project_replace_face(
+                Some(DesignFeatureFamily::ReplaceFace) => replace_face::project_replace_face(
                     scope,
                     construction_groups,
                     face_operands,
                     body_recipe_operands,
-                )
-                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                    &mut projection_losses,
+                )?,
                 Some(DesignFeatureFamily::Revolve) => {
                     let mut definition = project_fixed_revolve_with_entities(
                         scope,
@@ -8891,75 +8892,6 @@ fn hole_clearance_specification(
         depth: cadmpeg_ir::features::holes::HoleThreadDepth::HoleDepth,
         clearance: None,
     })
-}
-
-fn project_replace_face(
-    scope: &DesignParameterScope,
-    construction_groups: &[DesignConstructionOperandGroup],
-    face_operands: &[DesignFaceOperand],
-    body_recipe_operands: &[DesignBodyRecipeOperand],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-
-    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::ReplaceFace
-        || scope.class_tag.as_str() != "301"
-        || scope.paired_class_tag.as_str() != "258"
-        || scope.frame_length() != 290
-        || scope.reference_members().len() != 4
-    {
-        return None;
-    }
-    let stream = native_stream(&scope.id)?;
-    let mut groups = construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    });
-    let (Some(first), Some(second), None) = (groups.next(), groups.next(), groups.next()) else {
-        return None;
-    };
-    let (replacement_group, target_group) =
-        if first.scope_reference_ordinal <= second.scope_reference_ordinal {
-            (first, second)
-        } else {
-            (second, first)
-        };
-    let references = scope.reference_members().values_array::<4>();
-    let references = references?.map(|value| *value);
-    if replacement_group.scope_reference_ordinal != 0
-        || replacement_group.record_index != references[0]
-        || replacement_group.role() != DesignOperandRole::ROLE_0X9
-        || !replacement_group
-            .members()
-            .iter()
-            .map(|member| member.value)
-            .eq(references[1..2].iter().copied())
-        || target_group.scope_reference_ordinal != 2
-        || target_group.record_index != references[2]
-        || target_group.role() != DesignOperandRole::ROLE_0X10
-        || !target_group
-            .members()
-            .iter()
-            .map(|member| member.value)
-            .eq(references[3..4].iter().copied())
-    {
-        return None;
-    }
-    let replacements =
-        resolved_body_recipe_selection(scope, replacement_group, body_recipe_operands)?;
-    let targets = resolved_historical_face_group(
-        scope,
-        scope.previous_history_state_id(),
-        target_group,
-        face_operands,
-    )?;
-    Some(FeatureDefinition::Operation(
-        FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
-                targets,
-                replacements,
-            )
-            .ok()?,
-        },
-    ))
 }
 
 /// Project the source selections of a `SurfaceTrim` scope.
