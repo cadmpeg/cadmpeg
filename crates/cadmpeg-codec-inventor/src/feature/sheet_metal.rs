@@ -939,7 +939,7 @@ pub(crate) fn retained_control_losses<'a>(
             FeatureDefinition::Operation(FeatureOperation::SheetMetalContourFlange { .. }) => {
                 return vec![
                     InventorLossCode::FeatureSheetMetalContourControlsRetained.note(format!(
-                        "Projected {} with the type-9 attachment modes, second attachment direction, attachment Booleans and state bytes, relief, transition, corner control, plate-side enumeration, and the bend and corner records retained in its native records; the thickness side and the neutral factor stay unresolved.",
+                        "Projected {} with the type-9 attachment modes, second attachment direction, attachment Booleans and state bytes, relief, transition, corner control, plate-side enumeration, and the bend and corner records retained in its native records; the neutral factor stays unresolved.",
                         feature.id
                     )),
                     InventorLossCode::FeatureSheetMetalStyleFormsNative.note(format!(

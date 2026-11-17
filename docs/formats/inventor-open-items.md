@@ -320,11 +320,11 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 ### DE-18. Contour-flange thickness side
 
-**Question.** Which contour-flange operands place the sheet thickness relative to the open profile, and which values select the other side or a centered sheet?
+**Question.** Which thickness distributions do other contour plate-side values and attachment modes select?
 
-**Known.** Section 13.5 defines the contour plate, contour attachment control, bend, and corner. In the two known contour flanges, plate slot 2 is the plate-side enumeration `(2, 0)` and the attachment modes are `(9, 1)` and `(9, 4)`. In the measured one, the sheet lies opposite the consumed sketch normal crossed with the first profile tangent. The reader states no thickness side for a contour flange.
+**Known.** Section 13.5 defines the Right thickness side for plate-side enumeration `(2, 0)` with attachment modes `(9, 1)` and `(9, 4)`.
 
-**Need.** Contour flanges with other plate-side values, other attachment modes, or a reversed profile order, and the side of the sheet for each, before a side rule can map these operands to a thickness side.
+**Need.** Thickness-side mappings for other plate-side values and attachment-mode pairs.
 
 ## 5. Adjacent envelopes
 

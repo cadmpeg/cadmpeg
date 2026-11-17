@@ -87,8 +87,25 @@ fn contour_operands_read_travel_distance_thickness_and_radius() {
         construction.inside_radius.map(NonNegativeLength::get),
         Some(11.0)
     );
-    assert_eq!(construction.side, None);
+    assert_eq!(
+        construction.side,
+        Some(SheetMetalContourThicknessSide::Right)
+    );
     assert_eq!(construction.neutral_factor, None);
+}
+
+#[test]
+fn contour_other_plate_side_keeps_thickness_side_unresolved() {
+    let mut fixture = ContourFixture::new();
+    fixture.edit(3, |kind| {
+        *kind = Kind::Enumeration {
+            family: EnumFamily::PlateSide,
+            type_value: 2,
+            value: 1,
+        };
+    });
+    assert_eq!(thickness_side(fixture.property(reference(3))), None);
+    assert_eq!(fixture.operands(), Err(ContourRefusal::Side));
 }
 
 #[test]
@@ -521,7 +538,7 @@ fn projected_contours_report_retained_controls_and_style_forms() {
     assert_eq!(losses.len(), 2);
     let text = serde_json::to_string(&losses).expect("losses");
     assert!(text.contains("feature.sheet-metal-contour-controls-retained"));
-    assert!(text.contains("thickness side and the neutral factor stay unresolved"));
+    assert!(text.contains("neutral factor stays unresolved"));
     assert!(text.contains("feature.sheet-metal-style-forms-native"));
 }
 

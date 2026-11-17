@@ -7,9 +7,10 @@ use std::collections::{BTreeMap, HashSet};
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    sheet_metal::SheetMetalContourFlangeConstruction, DistinctMembers, ExtrudeExtent, ExtrudeSide,
-    Feature, FeatureContent, FeatureDefinition, FeatureDirection3, FeatureEvaluation, FeatureId,
-    FeatureOperation, FeatureResultTopology, LinearTermination, PlanarProfileRef,
+    sheet_metal::{SheetMetalContourFlangeConstruction, SheetMetalContourThicknessSide},
+    DistinctMembers, ExtrudeExtent, ExtrudeSide, Feature, FeatureContent, FeatureDefinition,
+    FeatureDirection3, FeatureEvaluation, FeatureId, FeatureOperation, FeatureResultTopology,
+    LinearTermination, PlanarProfileRef,
 };
 use cadmpeg_ir::scalar::{Length, NonNegativeLength, NonZeroLength, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
@@ -171,11 +172,11 @@ pub(crate) struct ContourOperands {
     pub(crate) thickness: PositiveLength,
     /// Inside bend radius, the attachment radius.
     pub(crate) inside_radius: NonNegativeLength,
+    side: SheetMetalContourThicknessSide,
 }
 
 impl ContourOperands {
-    /// The construction these operands state for `profile`. The thickness
-    /// side and the neutral factor stay unresolved.
+    /// The construction these operands state for `profile`.
     pub(crate) fn construction(
         self,
         profile: PlanarProfileRef,
@@ -193,7 +194,7 @@ impl ContourOperands {
             }),
             thickness: Some(self.thickness),
             inside_radius: Some(self.inside_radius),
-            side: None,
+            side: Some(self.side),
             neutral_factor: None,
         })
     }
@@ -361,17 +362,7 @@ pub(crate) fn operands<'a>(
         same(directions[0], slots[1]) && stored(directions[1]),
         ContourRefusal::AttachmentDirection,
     )?;
-    require(
-        matches!(
-            property(slots[2]).map(|p| &p.kind),
-            Some(PmDcFeaturePropertyKind::Enumeration {
-                family: PmDcFeatureEnumFamily::PlateSide,
-                type_value: 2,
-                value: 0,
-            })
-        ),
-        ContourRefusal::Side,
-    )?;
+    let side = thickness_side(property(slots[2])).refuse(ContourRefusal::Side)?;
     let travel = direction(slots[1]).refuse(ContourRefusal::Direction)?;
     require(
         travel.as_raw().dot(*normal.as_raw()).abs() >= 1.0 - EPS_TRAVEL_NORMAL,
@@ -409,7 +400,22 @@ pub(crate) fn operands<'a>(
         distance,
         thickness: sheet_thickness,
         inside_radius,
+        side,
     })
+}
+
+fn thickness_side(
+    property: Option<&PmDcFeatureProperty>,
+) -> Option<SheetMetalContourThicknessSide> {
+    matches!(
+        property.map(|p| &p.kind),
+        Some(PmDcFeaturePropertyKind::Enumeration {
+            family: PmDcFeatureEnumFamily::PlateSide,
+            type_value: 2,
+            value: 0,
+        })
+    )
+    .then_some(SheetMetalContourThicknessSide::Right)
 }
 
 fn feature_dimensions(property: Option<&PmDcFeatureProperty>) -> bool {
