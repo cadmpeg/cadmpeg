@@ -822,10 +822,10 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
     };
 
     assert!(!feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {"cages": {"kind": "complete", "value": ["test:model:subd#1"]}, "inputs": {"parameters": {}, "references": [], "lists": []}}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {"cages": {"kind": "complete", "value": ["test:model:subd#1"]}, "inputs": cadmpeg_ir::features::form::FormInputs::default()}}}),
     )));
     assert!(feature_definition_is_incomplete(&definition(
-        serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {"cages": {"kind": "complete", "value": []}, "inputs": {"parameters": {}, "references": [], "lists": []}}}}),
+        serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {"cages": {"kind": "complete", "value": []}, "inputs": cadmpeg_ir::features::form::FormInputs::default()}}}),
     )));
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({"kind": "operation", "value": {"kind": "block", "value": {"dimensions": [30.0, 40.0, 20.0],

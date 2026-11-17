@@ -667,7 +667,7 @@ fn form_candidate_cages_participate_in_referential_validation() {
                 "observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#candidate"}}],
                 "membership":{"kind":"partial","order":"unknown","members":[]}
             }},
-            "inputs":{"parameters":{},"references":[],"lists":[]}
+            "inputs":crate::features::form::FormInputs::default()
         }}}
     })).unwrap());
     let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;

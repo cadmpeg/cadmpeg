@@ -2,7 +2,10 @@
 //! Resolve a topology-preserving Thread selection in its active BREP member.
 
 use super::output_chain::OutputChain;
-use crate::history_records::{AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory};
+use crate::history_records::{
+    AsmHistoricalRow, AsmHistoricalRowDelta, AsmHistoricalTopologyDelta, AsmHistoricalTransition,
+    AsmHistory,
+};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_ir::features::{
     FaceSelection, Feature, FeatureDefinition, FeatureInputTopology, FeatureOperation,
@@ -69,6 +72,32 @@ fn preserves_graph(delta: &AsmHistoricalTopologyDelta) -> bool {
         ]
         .into_iter()
         .all(|family| *family == empty)
+}
+
+fn row_names<R: AsmHistoricalRow>(rows: &AsmHistoricalRowDelta<R>, slot: i64) -> bool {
+    rows.removed.contains(&slot) || rows.set.iter().any(|row| row.key() == slot)
+}
+
+/// Whether one later transition keeps the face slot and its surface binding,
+/// and keeps the bound surface record and its geometry rows.
+fn keeps_face_surface(transition: &AsmHistoricalTransition, face: i64, surface: i64) -> bool {
+    let delta = &transition.topology;
+    let rows = &transition.rows;
+    !delta.faces.inserted.contains(&face)
+        && !delta.faces.deleted.contains(&face)
+        && !row_names(&rows.face_surfaces, face)
+        && [
+            &delta.surfaces.inserted,
+            &delta.surfaces.deleted,
+            &delta.surfaces.updated,
+        ]
+        .into_iter()
+        .all(|slots| !slots.contains(&surface))
+        && !row_names(&rows.surface_repeats, surface)
+        && !row_names(&rows.surface_radii, surface)
+        && !row_names(&rows.surface_cylinders, surface)
+        && !row_names(&rows.surface_planes, surface)
+        && !row_names(&rows.surface_axes, surface)
 }
 
 fn live_faces(
@@ -141,6 +170,8 @@ fn live_faces(
             .filter(|member| member.previous_ref.is_none()),
     )
     .ok_or("the active history head is ambiguous")?;
+    // Later transitions to the active head, when they rewrite the graph.
+    let mut later = Vec::new();
     if head.state_id != result {
         let following = OutputChain::resolve(
             std::slice::from_ref(history),
@@ -159,7 +190,7 @@ fn live_faces(
             .and_then(|member| member.transition.as_ref())
             .ok_or("a later transition is ambiguous")?;
             if !preserves_graph(&transition.topology) {
-                return Err("a later transition rewrites topology or geometry");
+                later.push(transition);
             }
         }
     }
@@ -191,6 +222,24 @@ fn live_faces(
                 }
         }))
         .ok_or("the stable slot has no unique live face in its BREP member")?;
+        if !later.is_empty() {
+            let surface = super::stable_ref(face.surface.as_str())
+                .filter(|_| {
+                    let surface = face.surface.as_str();
+                    if surface.starts_with("f3d:brep:entity#") {
+                        member.is_some() && member == input.primary_brep
+                    } else {
+                        super::entity_in_brep_source(surface, source)
+                    }
+                })
+                .ok_or("the live face surface has no stable slot in its BREP member")?;
+            if !later
+                .iter()
+                .all(|transition| keeps_face_surface(transition, slot, surface))
+            {
+                return Err("a later transition rewrites the selected face or its surface");
+            }
+        }
         resolved.push(face.id.clone());
     }
     Ok(resolved)

@@ -1164,6 +1164,26 @@ fn is_name_byte(b: u8) -> bool {
 
 const DEPDB_ROOT_RECORD: &[u8] = b"\xe0\x00p_dep_db\0\xe3";
 
+/// Major product release in the binary-generation `#Creo  TM  <release>` banner.
+pub(crate) fn banner_release_major(data: &[u8]) -> Option<u32> {
+    let toc = find(data, TOC_START, 0)?;
+    let header = data.get(..toc)?;
+    let header_end = find(header, UGC_HEADER_END, 0)?;
+    let banner = header
+        .get(header_end + UGC_HEADER_END.len()..)?
+        .strip_prefix(
+            b"
+",
+        )?
+        .strip_prefix(b"#Creo  TM  ")?;
+    let release = banner.split(u8::is_ascii_whitespace).next()?;
+    let major = release.split(|byte| *byte == b'.').next()?;
+    if major.is_empty() || !major.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(major).ok()?.parse().ok()
+}
+
 fn legacy_product_release(banner: &[u8]) -> Result<Option<String>, CodecError> {
     let mut words = banner
         .split(u8::is_ascii_whitespace)

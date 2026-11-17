@@ -490,7 +490,7 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
             .count(),
         1
     );

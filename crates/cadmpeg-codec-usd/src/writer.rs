@@ -124,6 +124,8 @@ const COVERAGE: ArenaDispositions = {
         physics_scenes: Written,
         solver_settings: Written,
         declared_measures: Omitted,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 };
 
@@ -314,7 +316,7 @@ impl<'ir> Writer<'ir> {
     fn new(ir: &'ir CadIr, version: &'static str) -> Self {
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
-            let key = match &binding.target {
+            let key = match &binding.target.entity {
                 AppearanceTarget::Tessellation(id) => id.clone(),
                 AppearanceTarget::Body(id) => id.to_string(),
                 AppearanceTarget::Face(id) => id.to_string(),
@@ -1703,7 +1705,7 @@ impl<'ir> Writer<'ir> {
             .iter()
             .filter(|binding| {
                 !matches!(
-                    binding.target,
+                    binding.target.entity,
                     AppearanceTarget::Tessellation(_)
                         | AppearanceTarget::Body(_)
                         | AppearanceTarget::TriangleGroup { .. }

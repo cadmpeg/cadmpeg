@@ -41,7 +41,7 @@ pub(crate) enum CandidateScope {
 #[derive(Debug)]
 pub(crate) struct AdmittedState {
     identities: BTreeMap<String, bool>,
-    pub(crate) lengths: [usize; crate::schema::EntityKind::ALL.len()],
+    pub(crate) lengths: [usize; crate::document::MODEL_ARENA_COUNT],
     pub(crate) annotations_admitted: bool,
     dirty_unknowns: BTreeSet<usize>,
 }
@@ -88,10 +88,7 @@ impl AdmittedState {
         (format, unknowns): (&str, &[UnknownRecord]),
         changes: &Annotations,
         allowed: &[Check],
-        (starts, scope): (
-            [usize; crate::schema::EntityKind::ALL.len()],
-            CandidateScope,
-        ),
+        (starts, scope): ([usize; crate::document::MODEL_ARENA_COUNT], CandidateScope),
     ) -> Result<Option<Result<ValidationReport, NativeConvertError>>, CodecError> {
         let mut selected = (|| {
             let mut selected = BTreeMap::new();
@@ -243,7 +240,7 @@ impl AdmittedState {
     }
 }
 
-fn lengths(ir: &CadIr) -> [usize; crate::schema::EntityKind::ALL.len()] {
+fn lengths(ir: &CadIr) -> [usize; crate::document::MODEL_ARENA_COUNT] {
     macro_rules! lengths {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {[$(ir.$home.$field.len()),*]};
     }

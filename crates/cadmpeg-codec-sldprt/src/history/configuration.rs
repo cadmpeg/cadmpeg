@@ -868,6 +868,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 scoped_lanes,
             )?;
+            crate::history::bind::bind_bound_sketch_profiles(&mut features, &ir.model.sketches);
             for feature in features {
                 let Some(state) = ir.model.configurations[configuration_index]
                     .feature_states

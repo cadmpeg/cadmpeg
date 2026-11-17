@@ -66,9 +66,29 @@ impl Serialize for SpreadsheetRange {
     }
 }
 
-struct Dimensions<'a> {
+/// Writes row heights or column widths, each named by its row number or
+/// column letters.
+pub(crate) struct Dimensions<'a> {
     dimensions: &'a [SpreadsheetDimension],
     columns: bool,
+}
+
+impl<'a> Dimensions<'a> {
+    /// Column widths.
+    pub(crate) const fn columns(dimensions: &'a [SpreadsheetDimension]) -> Self {
+        Self {
+            dimensions,
+            columns: true,
+        }
+    }
+
+    /// Row heights.
+    pub(crate) const fn rows(dimensions: &'a [SpreadsheetDimension]) -> Self {
+        Self {
+            dimensions,
+            columns: false,
+        }
+    }
 }
 
 struct DimensionName {
@@ -121,20 +141,8 @@ impl Serialize for Spreadsheet {
         wire.serialize_field("id", &self.id)?;
         wire.serialize_field("feature", &self.feature)?;
         wire.serialize_field("cells", &self.cells)?;
-        wire.serialize_field(
-            "column_widths",
-            &Dimensions {
-                dimensions: &self.column_widths,
-                columns: true,
-            },
-        )?;
-        wire.serialize_field(
-            "row_heights",
-            &Dimensions {
-                dimensions: &self.row_heights,
-                columns: false,
-            },
-        )?;
+        wire.serialize_field("column_widths", &Dimensions::columns(&self.column_widths))?;
+        wire.serialize_field("row_heights", &Dimensions::rows(&self.row_heights))?;
         wire.serialize_field("merged_ranges", &self.merged_ranges)?;
         if let Some(native_ref) = &self.native_ref {
             wire.serialize_field("native_ref", native_ref)?;

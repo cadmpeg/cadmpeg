@@ -427,6 +427,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-measure",
+ "cadmpeg-tessellate",
  "cadmpeg-test-support",
  "encoding_rs",
  "hdf5-reader",

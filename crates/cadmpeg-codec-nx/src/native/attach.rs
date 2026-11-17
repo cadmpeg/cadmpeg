@@ -608,7 +608,7 @@ fn attach_part_attributes<'a>(
 
         ir.model.attributes.push(SourceAttribute {
             id,
-            target: AttributeTarget::Document,
+            target: AttributeTarget::Document.into(),
             name: attribute_title.to_string(),
             values: vec![AttributeValue::String(attribute_value.to_string())],
         });
@@ -749,7 +749,8 @@ fn attach_rm_appearances(
             id: binding_id,
             target: AppearanceTarget::Source {
                 source_id: binding.source_id.clone(),
-            },
+            }
+            .into(),
             appearance: appearance_id,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),
@@ -5386,7 +5387,7 @@ fn push_topology_attribute(
 ) {
     ir.model.attributes.push(SourceAttribute {
         id,
-        target: context.target.clone(),
+        target: context.target.clone().into(),
         name,
         values,
     });

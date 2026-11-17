@@ -171,14 +171,14 @@ fn form_completeness_requires_complete_membership_with_a_committed_cage() {
                     "observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#1"}}],
                     "membership":{"kind":"partial","cardinality":2,"order":"unknown","members":members}
                 }},
-                "inputs": {"parameters": {}, "references": [], "lists": []}
+                "inputs": cadmpeg_ir::features::form::FormInputs::default()
             }}})
         )));
     }
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {
             "cages": {"kind": "complete", "value": ["test:model:subd#1"]},
-            "inputs": {"parameters": {}, "references": [], "lists": []},
+            "inputs": cadmpeg_ir::features::form::FormInputs::default(),
             "cage_inputs":{"observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#1"}}],"membership":{"kind":"complete","members":[0],"order":"assumed","certainty":"assumed"}}}}})
     )));
 }

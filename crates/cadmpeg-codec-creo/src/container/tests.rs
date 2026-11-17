@@ -13,6 +13,64 @@ fn topology_face_ids_deduplicate_repeated_nodes() {
 }
 
 #[test]
+fn banner_release_major_reads_the_creo_banner() {
+    let header = b"#UGC:2 PART 2149 1860 800 1 1 15 4100 2023294 000002cc \
+#-END_OF_UGC_HEADER
+";
+    let toc = b"#UGC_TOC 2 32 81 17
+";
+    for (banner, release) in [
+        (
+            &b"#Creo  TM  10.0  (c) 2023 by PTC Inc.  All Rights Reserved. 10.0.2.0
+"[..],
+            Some(10),
+        ),
+        (
+            &b"#Creo  TM  12  (c) 2025 by PTC Inc.  All Rights Reserved. 12.4.1.0
+"[..],
+            Some(12),
+        ),
+        (
+            &b"#Creo  TM  4.0  (c) 2017 by PTC Inc.  All Rights Reserved. M050
+"[..],
+            Some(4),
+        ),
+        (
+            &b"#Pro/ENGINEER  TM  Wildfire 5.0  (c) 2009
+"[..],
+            None,
+        ),
+        (
+            &b"#Creo  TM  x.0  (c)
+"[..],
+            None,
+        ),
+    ] {
+        let mut data = header.to_vec();
+        data.extend_from_slice(banner);
+        data.extend_from_slice(toc);
+        assert_eq!(super::banner_release_major(&data), release);
+    }
+    let mut after_toc = b"#UGC:2 PART
+"
+    .to_vec();
+    after_toc.extend_from_slice(toc);
+    after_toc.extend_from_slice(
+        b"#-END_OF_UGC_HEADER
+#Creo  TM  4.0
+",
+    );
+    assert_eq!(super::banner_release_major(&after_toc), None);
+    let mut no_newline = header[..header.len() - 1].to_vec();
+    no_newline.extend_from_slice(
+        b"#Creo  TM  4.0
+",
+    );
+    no_newline.extend_from_slice(toc);
+    assert_eq!(super::banner_release_major(&no_newline), None);
+}
+
+#[test]
 fn named_datum_plane_aggregates_one_plane() {
     let payload = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
     let section = super::Section::scan("ActDatums".to_string(), 0, payload.len(), None, payload)

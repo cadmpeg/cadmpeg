@@ -1,6 +1,25 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
@@ -333,8 +352,10 @@
           "id": "step:presentation:binding#47:0-0",
           "source_entity_id": "#47",
           "target": {
-            "kind": "face",
-            "value": "step:data:face#29"
+            "entity": {
+              "kind": "face",
+              "value": "step:data:face#29"
+            }
           }
         },
         {
@@ -343,8 +364,10 @@
           "id": "step:presentation:binding#68:0-0",
           "source_entity_id": "#68",
           "target": {
-            "kind": "edge",
-            "value": "step:data:edge#19"
+            "entity": {
+              "kind": "edge",
+              "value": "step:data:edge#19"
+            }
           }
         }
       ],
@@ -402,8 +425,10 @@
           "id": "step:presentation:layer#48",
           "items": [
             {
-              "face": "step:data:face#29",
-              "kind": "face"
+              "entity": {
+                "face": "step:data:face#29",
+                "kind": "face"
+              }
             }
           ],
           "name": "machined faces"
@@ -424,7 +449,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

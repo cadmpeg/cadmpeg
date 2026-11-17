@@ -112,6 +112,9 @@ pub(crate) enum CreoLossCode {
     PmiDimensionKindInferred,
     /// An angular dimension uses the default stored-radian assumption.
     PmiAngularUnitAssumed,
+    /// A dimension's limit attributes are read as absolute bounds or as
+    /// deviations from the nominal without a saving release that selects the form.
+    PmiDimensionLimitFormAssumed,
     /// Primitive triangle-strip records carry disagreeing position representations.
     TriangleStripRepresentationConflict,
     /// General model B-rep transfer remains incomplete for later instances.
@@ -252,6 +255,11 @@ pub(crate) enum CreoLossCode {
     FeatureNativeSemantics,
     /// Same-ID operation candidates disagree and have no current-state selector.
     FeatureStateSelectionUnresolved,
+    /// A feature's recipe parent is the feature itself, or does not precede
+    /// it after feature ordering, which places each parent before its child
+    /// and leaves the features of a dependency cycle in storage order; the
+    /// edge is dropped.
+    FeatureRegenerationParentDropped,
     /// Typed history features retain an explicitly unresolved construction.
     FeatureConstructionUnresolved,
     /// Declared section segment rows did not decode.
@@ -348,6 +356,7 @@ impl CreoLossCode {
             Self::PmiDatumDefinitionSlotAssumed => "pmi.datum-definition-slot-assumed",
             Self::PmiDimensionKindInferred => "pmi.dimension-kind-inferred",
             Self::PmiAngularUnitAssumed => "pmi.angular-unit-assumed",
+            Self::PmiDimensionLimitFormAssumed => "pmi.dimension-limit-form-assumed",
             Self::TriangleStripRepresentationConflict => "geometry.triangle-strip-conflict",
             Self::BrepTransferIncomplete => "geometry.brep-incomplete",
             Self::BrepCompactFrameComponentUnresolved => {
@@ -440,6 +449,7 @@ impl CreoLossCode {
             Self::FeatureRecognizedIncomplete => "feature.recognized-incomplete",
             Self::FeatureNativeSemantics => "feature.native-semantics",
             Self::FeatureStateSelectionUnresolved => "feature.state-selection-unresolved",
+            Self::FeatureRegenerationParentDropped => "feature.regeneration-parent-dropped",
             Self::FeatureConstructionUnresolved => "feature.construction-unresolved",
             Self::SectionSegmentMissing => "section.segment-missing",
             Self::SectionRelationMissing => "section.relation-missing",
@@ -531,6 +541,7 @@ impl CreoLossCode {
             | Self::PmiDatumDefinitionSlotAssumed
             | Self::PmiDimensionKindInferred
             | Self::PmiAngularUnitAssumed
+            | Self::PmiDimensionLimitFormAssumed
             | Self::SectionSplineUnresolved
             | Self::CompressedSectionUnexpanded
             | Self::PhysicalGeometryOwnerUnresolved
@@ -587,6 +598,7 @@ impl CreoLossCode {
             | Self::FeatureRecognizedIncomplete
             | Self::FeatureNativeSemantics
             | Self::FeatureStateSelectionUnresolved
+            | Self::FeatureRegenerationParentDropped
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
             | Self::SectionRelationMissing
@@ -648,7 +660,8 @@ impl CreoLossCode {
             | Self::PmiDatumLabelUnresolved
             | Self::PmiDatumTargetUnresolved
             | Self::PmiTargetNamespaceAmbiguous => LossTaxonomy::PmiOmitted,
-            Self::PmiLengthUnitAssumed
+            Self::PmiDimensionLimitFormAssumed
+            | Self::PmiLengthUnitAssumed
             | Self::PmiAttributeUnitAssumed
             | Self::PmiTextMagnitudeInferred
             | Self::PmiDatumIdentityInferred
@@ -731,6 +744,7 @@ impl CreoLossCode {
             | Self::FeatureRecognizedIncomplete
             | Self::FeatureNativeSemantics
             | Self::FeatureStateSelectionUnresolved
+            | Self::FeatureRegenerationParentDropped
             | Self::FeatureConstructionUnresolved
             | Self::SectionSegmentMissing
             | Self::SectionRelationMissing
@@ -833,6 +847,7 @@ mod tests {
                 "pmi.datum-definition-slot-assumed",
                 "pmi.dimension-kind-inferred",
                 "pmi.angular-unit-assumed",
+                "pmi.dimension-limit-form-assumed",
                 "geometry.triangle-strip-conflict",
                 "geometry.brep-incomplete",
                 "geometry.brep-compact-frame-component-unresolved",
@@ -909,6 +924,7 @@ mod tests {
                 "feature.recognized-incomplete",
                 "feature.native-semantics",
                 "feature.state-selection-unresolved",
+                "feature.regeneration-parent-dropped",
                 "feature.construction-unresolved",
                 "section.segment-missing",
                 "section.relation-missing",

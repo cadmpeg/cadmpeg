@@ -138,6 +138,8 @@ pub(crate) enum F3dLossCode {
     ChamferParameterUnitAssumed,
     /// A Coil's Boolean target group whose member count is not one is read as one body selection.
     CoilTargetMembersAssumed,
+    CoilShortControlsAssumed,
+    CoilTargetUnresolved,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -357,6 +359,8 @@ pub(crate) enum F3dLossCode {
     FeatureMeshSeparateMembershipUnresolved,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
+    /// A Thread scope without the extended prefix stores modeled flag `0`, which is read as a cosmetic thread.
+    ThreadModeledFlagAssumed,
     /// A stored-body operation has an empty proven body set.
     FeatureStoredBodiesEmpty,
     /// A decoded body snapshot supplies no construction recipe.
@@ -467,6 +471,8 @@ pub(crate) enum F3dLossCode {
     FeatureBaseFeatureNullFlagAssumed,
     /// A Base Feature suffix result-body frame with more than one body reads its body, repeated, and result entries as three consecutive runs.
     FeatureBaseFeatureSuffixRunOrderAssumed,
+    /// A compact Fillet flag run or set frame stores nonzero bytes in its padding positions, which are read as padding.
+    FeatureFilletPaddingAssumed,
     HoleStandardSizingAssumed,
     /// A clearance Hole's specification takes fixed values for the fields it does not store.
     HoleClearanceFieldsAssumed,
@@ -613,6 +619,8 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeProfileDeletedFacesInferred,
     /// An Extrude face profile stays native because its end caps or deleted faces contradict a face set.
     FeatureExtrudeProfileFaceSetDisputed,
+    /// An Extrude face profile stays native because the face its selection names is on a curved carrier.
+    FeatureExtrudeProfileFaceCurved,
     FeatureSketchProfileFlagsAssumed,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
@@ -647,6 +655,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections assume that an inserted region's holes belong to the selected
     /// profile.
     FeatureProfileRegionHoleInferred,
+    /// Extrude profile selections stated the stored spatial profiles of a
+    /// spatial Sketch frame that the Extrude transition did not certify.
+    FeatureSpatialProfileTransitionAssumed,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -668,6 +679,13 @@ pub(crate) enum F3dLossCode {
     FeatureFormCageBindingAmbiguous,
     FeatureFormBodyReferencesPartialAssumed,
     FeatureFormBodyRegistrationUnsupported,
+    FeatureFormReferenceTypeConflict,
+    FeatureFormForeignReferenceUnresolved,
+    FeatureFormTrackingOwnerConflict,
+    FeatureFormTrackingRunUnresolved,
+    FeatureFormTrackingFixedSlotsAssumed,
+    FeatureFormSerializerReferenceUnresolved,
+    FeatureFormMembershipConflict,
     /// A legacy Scale form is selected by the frame length of its English
     /// spelling; its payload length matches no form.
     FeatureScaleFrameLengthFormAssumed,
@@ -1109,6 +1127,8 @@ impl F3dLossCode {
         Self::ChamferParameterKindAssumed,
         Self::ChamferParameterUnitAssumed,
         Self::CoilTargetMembersAssumed,
+        Self::CoilShortControlsAssumed,
+        Self::CoilTargetUnresolved,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -1251,6 +1271,7 @@ impl F3dLossCode {
         Self::FeatureMeshSeparateReferenceRolesAssumed,
         Self::FeatureMeshSeparateMembershipUnresolved,
         Self::ThreadLiveFaceUnproven,
+        Self::ThreadModeledFlagAssumed,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureHistoryBodyBounded,
@@ -1331,6 +1352,7 @@ impl F3dLossCode {
         Self::HoleTaperTappedBoreCylindrical,
         Self::FeatureBaseFeatureNullFlagAssumed,
         Self::FeatureBaseFeatureSuffixRunOrderAssumed,
+        Self::FeatureFilletPaddingAssumed,
         Self::HoleStandardSizingAssumed,
         Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
@@ -1411,6 +1433,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileCapFacesInferred,
         Self::FeatureExtrudeProfileDeletedFacesInferred,
         Self::FeatureExtrudeProfileFaceSetDisputed,
+        Self::FeatureExtrudeProfileFaceCurved,
         Self::FeatureSketchProfileFlagsAssumed,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileDensificationCapped,
@@ -1426,6 +1449,7 @@ impl F3dLossCode {
         Self::FeatureProfileCapCarrierAssumed,
         Self::FeatureProfileHoleBoundaryInferred,
         Self::FeatureProfileRegionHoleInferred,
+        Self::FeatureSpatialProfileTransitionAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::DeleteFaceFrameControlsAssumed,
@@ -1442,6 +1466,13 @@ impl F3dLossCode {
         Self::FeatureFormCageBindingAmbiguous,
         Self::FeatureFormBodyReferencesPartialAssumed,
         Self::FeatureFormBodyRegistrationUnsupported,
+        Self::FeatureFormReferenceTypeConflict,
+        Self::FeatureFormForeignReferenceUnresolved,
+        Self::FeatureFormTrackingOwnerConflict,
+        Self::FeatureFormTrackingRunUnresolved,
+        Self::FeatureFormTrackingFixedSlotsAssumed,
+        Self::FeatureFormSerializerReferenceUnresolved,
+        Self::FeatureFormMembershipConflict,
         Self::FeatureScaleFrameLengthFormAssumed,
         Self::FeatureScaleMatrixWordAssumed,
         Self::FeatureScaleUnlistedGroupsAssumed,
@@ -1776,6 +1807,8 @@ impl F3dLossCode {
             Self::ChamferParameterKindAssumed => "feature.chamfer-parameter-kind-assumed",
             Self::ChamferParameterUnitAssumed => "feature.chamfer-parameter-unit-assumed",
             Self::CoilTargetMembersAssumed => "feature.coil-target-members-assumed",
+            Self::CoilTargetUnresolved => "feature.coil-target-unresolved",
+            Self::CoilShortControlsAssumed => "feature.coil-short-controls-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -2065,6 +2098,7 @@ impl F3dLossCode {
                 "feature.mesh-conversion-output-unresolved"
             }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
+            Self::ThreadModeledFlagAssumed => "feature.thread-modeled-flag-assumed",
             Self::FeatureMeshSeparateScopeUnparsed => "feature.mesh-separate-scope-unparsed",
             Self::FeatureMeshSeparateTailPartial => "feature.mesh-separate-tail-partial",
             Self::FeatureMeshSeparateReferenceUnresolved => {
@@ -2146,6 +2180,7 @@ impl F3dLossCode {
             Self::FeatureBaseFeatureSuffixRunOrderAssumed => {
                 "feature.base-feature-suffix-run-order-assumed"
             }
+            Self::FeatureFilletPaddingAssumed => "feature.fillet-padding-assumed",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
@@ -2232,6 +2267,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeProfileFaceSetDisputed => {
                 "feature.extrude-profile-face-set-disputed"
             }
+            Self::FeatureExtrudeProfileFaceCurved => "feature.extrude-profile-face-curved",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
@@ -2249,6 +2285,9 @@ impl F3dLossCode {
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
             Self::FeatureProfileHoleBoundaryInferred => "feature.profile-hole-boundary-inferred",
             Self::FeatureProfileRegionHoleInferred => "feature.profile-region-hole-inferred",
+            Self::FeatureSpatialProfileTransitionAssumed => {
+                "feature.spatial-profile-transition-assumed"
+            }
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::DeleteFaceFrameControlsAssumed => "feature.delete-face-frame-controls-assumed",
@@ -2279,6 +2318,19 @@ impl F3dLossCode {
             Self::FeatureFormBodyRegistrationUnsupported => {
                 "feature.form-body-registration-unsupported"
             }
+            Self::FeatureFormReferenceTypeConflict => "feature.form-reference-type-conflict",
+            Self::FeatureFormForeignReferenceUnresolved => {
+                "feature.form-foreign-reference-unresolved"
+            }
+            Self::FeatureFormTrackingOwnerConflict => "feature.form-tracking-owner-conflict",
+            Self::FeatureFormTrackingRunUnresolved => "feature.form-tracking-run-unresolved",
+            Self::FeatureFormTrackingFixedSlotsAssumed => {
+                "feature.form-tracking-fixed-slots-assumed"
+            }
+            Self::FeatureFormSerializerReferenceUnresolved => {
+                "feature.form-serializer-reference-unresolved"
+            }
+            Self::FeatureFormMembershipConflict => "feature.form-membership-conflict",
             Self::FeatureScaleFrameLengthFormAssumed => "feature.scale-frame-length-form-assumed",
             Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
             Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
@@ -2693,6 +2745,8 @@ impl F3dLossCode {
             | Self::ChamferParameterKindAssumed
             | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
+            | Self::CoilShortControlsAssumed
+            | Self::CoilTargetUnresolved
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -2904,6 +2958,8 @@ impl F3dLossCode {
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
+            | Self::FeatureFilletPaddingAssumed
+            | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -2986,6 +3042,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileCapFacesInferred
             | Self::FeatureExtrudeProfileDeletedFacesInferred
             | Self::FeatureExtrudeProfileFaceSetDisputed
+            | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
@@ -3001,6 +3058,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeatureProfileRegionHoleInferred
+            | Self::FeatureSpatialProfileTransitionAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::DeleteFaceFrameControlsAssumed
@@ -3017,6 +3075,13 @@ impl F3dLossCode {
             | Self::FeatureFormCageBindingAmbiguous
             | Self::FeatureFormBodyReferencesPartialAssumed
             | Self::FeatureFormBodyRegistrationUnsupported
+            | Self::FeatureFormReferenceTypeConflict
+            | Self::FeatureFormForeignReferenceUnresolved
+            | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormTrackingRunUnresolved
+            | Self::FeatureFormTrackingFixedSlotsAssumed
+            | Self::FeatureFormSerializerReferenceUnresolved
+            | Self::FeatureFormMembershipConflict
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureScaleMatrixWordAssumed
             | Self::FeatureScaleUnlistedGroupsAssumed
@@ -3281,6 +3346,8 @@ impl F3dLossCode {
             | Self::ChamferParameterKindAssumed
             | Self::ChamferParameterUnitAssumed
             | Self::CoilTargetMembersAssumed
+            | Self::CoilShortControlsAssumed
+            | Self::CoilTargetUnresolved
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
@@ -3492,6 +3559,8 @@ impl F3dLossCode {
             | Self::HoleTaperTappedBoreCylindrical
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
+            | Self::FeatureFilletPaddingAssumed
+            | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3569,6 +3638,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileCapFacesInferred
             | Self::FeatureExtrudeProfileDeletedFacesInferred
             | Self::FeatureExtrudeProfileFaceSetDisputed
+            | Self::FeatureExtrudeProfileFaceCurved
             | Self::FeatureSketchProfileFlagsAssumed
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
@@ -3584,6 +3654,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeatureProfileRegionHoleInferred
+            | Self::FeatureSpatialProfileTransitionAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::DeleteFaceFrameControlsAssumed
@@ -3600,6 +3671,13 @@ impl F3dLossCode {
             | Self::FeatureFormCageBindingAmbiguous
             | Self::FeatureFormBodyReferencesPartialAssumed
             | Self::FeatureFormBodyRegistrationUnsupported
+            | Self::FeatureFormReferenceTypeConflict
+            | Self::FeatureFormForeignReferenceUnresolved
+            | Self::FeatureFormTrackingOwnerConflict
+            | Self::FeatureFormTrackingRunUnresolved
+            | Self::FeatureFormTrackingFixedSlotsAssumed
+            | Self::FeatureFormSerializerReferenceUnresolved
+            | Self::FeatureFormMembershipConflict
             | Self::FeatureScaleFrameLengthFormAssumed
             | Self::FeatureScaleMatrixWordAssumed
             | Self::FeatureScaleUnlistedGroupsAssumed
@@ -3967,6 +4045,8 @@ mod tests {
                 "feature.chamfer-parameter-kind-assumed",
                 "feature.chamfer-parameter-unit-assumed",
                 "feature.coil-target-members-assumed",
+                "feature.coil-short-controls-assumed",
+                "feature.coil-target-unresolved",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
@@ -4109,6 +4189,7 @@ mod tests {
                 "feature.mesh-separate-reference-roles-assumed",
                 "feature.mesh-separate-membership-unresolved",
                 "feature.thread-live-face-unproven",
+                "feature.thread-modeled-flag-assumed",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.history-body-bounded",
@@ -4189,6 +4270,7 @@ mod tests {
                 "feature.hole-taper-tapped-bore-cylindrical",
                 "feature.base-feature-null-flag-assumed",
                 "feature.base-feature-suffix-run-order-assumed",
+                "feature.fillet-padding-assumed",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",
@@ -4269,6 +4351,7 @@ mod tests {
                 "feature.extrude-profile-cap-faces-inferred",
                 "feature.extrude-profile-deleted-faces-inferred",
                 "feature.extrude-profile-face-set-disputed",
+                "feature.extrude-profile-face-curved",
                 "feature.sketch-profile-flags-assumed",
                 "feature.profile-arrangement-capped",
                 "feature.profile-densification-capped",
@@ -4284,6 +4367,7 @@ mod tests {
                 "feature.profile-cap-carrier-assumed",
                 "feature.profile-hole-boundary-inferred",
                 "feature.profile-region-hole-inferred",
+                "feature.spatial-profile-transition-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.delete-face-frame-controls-assumed",
@@ -4300,6 +4384,13 @@ mod tests {
                 "feature.form-cage-binding-ambiguous",
                 "feature.form-body-references-partial-assumed",
                 "feature.form-body-registration-unsupported",
+                "feature.form-reference-type-conflict",
+                "feature.form-foreign-reference-unresolved",
+                "feature.form-tracking-owner-conflict",
+                "feature.form-tracking-run-unresolved",
+                "feature.form-tracking-fixed-slots-assumed",
+                "feature.form-serializer-reference-unresolved",
+                "feature.form-membership-conflict",
                 "feature.scale-frame-length-form-assumed",
                 "feature.scale-matrix-word-assumed",
                 "feature.scale-unlisted-groups-assumed",

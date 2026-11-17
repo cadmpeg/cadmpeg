@@ -44,7 +44,7 @@ fn saved_aliases_preserve_localized_names_blank_strings_and_scalar_types() {
     assert!(find("日期").id.as_str().ends_with(":5:%E6%97%A5%E6%9C%9F"));
     assert!(rows
         .iter()
-        .all(|row| row.target == AttributeTarget::Document));
+        .all(|row| row.target == AttributeTarget::Document.into()));
     assert_eq!(notes.provenance.len(), 6);
     assert!(losses.is_empty());
     assert!(find("Absent").values.is_empty());
