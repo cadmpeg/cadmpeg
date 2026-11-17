@@ -339,3 +339,34 @@ fn assumed_spatial_transitions_report_one_loss_counting_selections() {
     );
     assert!(loss.message.starts_with("2 extrude profile selection(s)"));
 }
+
+#[test]
+fn a_selected_region_with_more_than_one_loop_has_holes() {
+    let one_loop = operand(&[
+        vec![vec![(1, 0), (2, 0), (3, 0), (4, 0)]],
+        vec![vec![(5, 0)]],
+    ]);
+    assert!(super::regions_without_holes(
+        one_loop.region_selection.as_ref().unwrap()
+    ));
+    let holed = operand(&[vec![
+        vec![(1, 0), (2, 0), (3, 0), (4, 0)],
+        vec![(7, 70), (8, 80), (9, 90), (10, 100)],
+    ]]);
+    assert!(!super::regions_without_holes(
+        holed.region_selection.as_ref().unwrap()
+    ));
+}
+
+#[test]
+fn only_one_distinct_profile_leaves_a_single_candidate() {
+    let (mut sketch, entities, identities) = fixture();
+    let operand = operand(&[vec![vec![(5, 0)]]]);
+    // The square and the circle drawn twice are two distinct regions.
+    let both = frame(&operand, &sketch, &entities, &identities);
+    assert_eq!(distinct_profiles(&both, &[0, 1, 2]), Some(vec![0, 1]));
+    // The circle drawn twice alone is one region.
+    sketch.profiles.remove(0);
+    let circles = frame(&operand, &sketch, &entities, &identities);
+    assert_eq!(distinct_profiles(&circles, &[0, 1]), Some(vec![0]));
+}
