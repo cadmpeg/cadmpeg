@@ -19,8 +19,9 @@ fn reads_back<T: DeserializeOwned + Serialize>(wire: &Value) -> T {
 
 /// The value is refused, and the refusal names `named`.
 fn refused<T: DeserializeOwned + std::fmt::Debug>(wire: Value, named: &str) {
-    let error = serde_json::from_value::<T>(wire.clone()).unwrap_err();
-    assert!(error.to_string().contains(named), "{wire}: {error}");
+    let text = wire.to_string();
+    let error = serde_json::from_value::<T>(wire).unwrap_err();
+    assert!(error.to_string().contains(named), "{text}: {error}");
 }
 
 fn path(occurrence: &str) -> Value {
