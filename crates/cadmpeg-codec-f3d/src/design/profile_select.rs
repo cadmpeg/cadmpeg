@@ -873,6 +873,16 @@ pub(crate) fn bind_extrude_profile_selections(
                                 *profile = ProfileRef::Planar(selected);
                                 break 'feature_edit;
                             }
+                            if let Some(states) = scope.history_state_id().zip(effective_previous_history_state_id) {
+                                if let Some(selected) = region_members::resolve_certified(
+                                    stream, operand, sketch, curve_resolution.curve_identities,
+                                    scoped_resolution, states,
+                                    cap_regions::compact::Sweep { operation: op, start, direction, extent },
+                                )? {
+                                    *profile = ProfileRef::Planar(selected);
+                                    break 'feature_edit;
+                                }
+                            }
                             unresolved_region_operand = Some((operand, stream));
                         }
                     }
@@ -1082,6 +1092,35 @@ pub(crate) fn bind_extrude_profile_selections(
                         }
                     }
                     if matching_groups.is_empty() {
+                        if scope
+                            .extrude_profile()
+                            .is_none_or(|operand| operand.region_selection.is_none())
+                        {
+                            if let Some(states) = scope
+                                .history_state_id()
+                                .zip(effective_previous_history_state_id)
+                            {
+                                let sweep = cap_regions::compact::Sweep {
+                                    operation: op,
+                                    start,
+                                    direction,
+                                    extent,
+                                };
+                                // A Cut's removed planes cannot see a profile over no
+                                // material, so only a Join or New Body far cap narrows
+                                // the whole Sketch.
+                                if let Some(candidate) = cap_regions::compact::added_candidate(
+                                    sketch,
+                                    scoped_resolution,
+                                    states,
+                                    sweep,
+                                )? {
+                                    if !selects_whole_sketch(&candidate, sketch) {
+                                        *profile = ProfileRef::Planar(candidate);
+                                    }
+                                }
+                            }
+                        }
                         break 'feature_edit;
                     }
                     let group_ids: Vec<_> = matching_groups
@@ -1182,6 +1221,58 @@ pub(crate) fn bind_extrude_profile_selections(
         resolution.profile_work.finish_selection();
     }
     Ok(losses)
+}
+
+fn sorted(
+    mut entities: Vec<&cadmpeg_ir::sketches::SketchEntityId>,
+) -> Vec<&cadmpeg_ir::sketches::SketchEntityId> {
+    entities.sort_unstable();
+    entities
+}
+
+/// Whether `selection` names every Sketch profile as its own filled region,
+/// which is what the whole Sketch means. A trimmed region counts as a profile
+/// when it has no hole and bounds the same curves.
+fn selects_whole_sketch(
+    selection: &cadmpeg_ir::features::PlanarProfileRef,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> bool {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    let cadmpeg_ir::features::PlanarProfileRef::SketchRegions { regions, .. } = selection else {
+        return false;
+    };
+    let mut taken = Vec::new();
+    for region in regions.as_slice() {
+        let index = match region {
+            SketchProfileRegion::Loops { loops } if loops.holes().is_empty() => {
+                usize::try_from(loops.outer()).ok()
+            }
+            SketchProfileRegion::Trimmed {
+                outer_boundary,
+                hole_boundaries,
+            } if hole_boundaries.is_empty() => {
+                let boundary = sorted(outer_boundary.iter().map(|use_| &use_.entity).collect());
+                (0..sketch.profiles.len()).find(|&index| {
+                    !taken.contains(&index)
+                        && sorted(
+                            sketch.profiles[index]
+                                .iter()
+                                .map(|use_| &use_.entity)
+                                .collect(),
+                        ) == boundary
+                })
+            }
+            _ => None,
+        };
+        match index {
+            Some(index) if index < sketch.profiles.len() && !taken.contains(&index) => {
+                taken.push(index);
+            }
+            _ => return false,
+        }
+    }
+    taken.len() == sketch.profiles.len()
 }
 
 pub(crate) fn unprofiled_region_losses(
