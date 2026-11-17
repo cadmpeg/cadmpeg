@@ -32,6 +32,7 @@ fn replacement_missing_definitions_retains_control_and_typed_selections() {
         *value = Some(
             crate::records::feature::surface_ops::DesignReplaceFaceOperation {
                 tangent_chain: true,
+                flagged_prefix_word: Some(0x1122_3344),
                 replacement_group_record_indices: vec![44],
                 target_group_record_indices: vec![50],
                 trailing_identity: crate::records::mesh::DesignRelaxedGuidText::try_from(
@@ -58,8 +59,11 @@ fn replacement_missing_definitions_retains_control_and_typed_selections() {
         operands.replacements(),
         &FaceSelection::Native("f3d:test:scope#40".into())
     );
-    assert_eq!(losses.len(), 3);
+    assert_eq!(losses.len(), 4);
     assert!(losses.iter().all(|loss| [
+        crate::loss::F3dLossCode::ReplaceFaceFlaggedPrefixWordAssumed
+            .note("x")
+            .code,
         crate::loss::F3dLossCode::ReplaceFaceTangentChainAssumed
             .note("x")
             .code,

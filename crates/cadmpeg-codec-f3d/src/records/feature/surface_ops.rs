@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignReplaceFaceOperation {
     pub(crate) tangent_chain: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) flagged_prefix_word: Option<u32>,
     pub(crate) replacement_group_record_indices: Vec<u32>,
     pub(crate) target_group_record_indices: Vec<u32>,
     pub(crate) trailing_identity: DesignRelaxedGuidText,

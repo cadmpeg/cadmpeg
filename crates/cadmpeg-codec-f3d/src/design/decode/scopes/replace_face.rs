@@ -2,6 +2,7 @@
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::layout::replace_face_fixed_prefix as layout;
+use crate::layout::replace_face_flagged_prefix as flagged;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::feature::surface_ops::DesignReplaceFaceOperation;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
@@ -44,6 +45,7 @@ pub(super) fn exact_replace_face_operation(
     };
     Ok(Some(DesignReplaceFaceOperation {
         tangent_chain: frame.tangent_chain,
+        flagged_prefix_word: frame.flagged_prefix_word,
         replacement_group_record_indices: copy(frame.replacements)?,
         target_group_record_indices: copy(frame.targets)?,
         trailing_identity: identity,
@@ -52,6 +54,7 @@ pub(super) fn exact_replace_face_operation(
 
 struct ReplaceFaceFrame<'a> {
     tangent_chain: bool,
+    flagged_prefix_word: Option<u32>,
     replacements: &'a [u8],
     targets: &'a [u8],
     identity_at: usize,
@@ -62,24 +65,34 @@ fn frame<'a>(bytes: &'a [u8], scope: &DesignParameterScope) -> Option<ReplaceFac
     let end = usize::try_from(scope.reference_count_offset()).ok()?;
     let bytes = bytes.get(start..end)?;
     if bytes
-        .get(layout::ZERO_RUN..layout::TANGENT_CHAIN)?
+        .get(layout::ZERO_RUN..layout::PREFIX_FLAG)?
         .iter()
         .any(|v| *v != 0)
     {
         return None;
     }
-    let tangent_chain = match *bytes.get(layout::TANGENT_CHAIN)? {
+    let (flagged_prefix_word, control_at, groups_at) = match *bytes.get(layout::PREFIX_FLAG)? {
+        0 => (None, layout::TANGENT_CHAIN, layout::REPLACEMENT_GROUP_COUNT),
+        1 => (
+            Some(View::u32_le_at(bytes, flagged::WORD)?),
+            flagged::TANGENT_CHAIN,
+            flagged::REPLACEMENT_GROUP_COUNT,
+        ),
+        _ => return None,
+    };
+    let tangent_chain = match *bytes.get(control_at)? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let mut view = View::over_retained(bytes.get(layout::REPLACEMENT_GROUP_COUNT..)?);
+    let mut view = View::over_retained(bytes.get(groups_at..)?);
     let replacements = reference_run(&mut view)?;
     let targets = reference_run(&mut view)?;
     let identity_at = bytes.len().checked_sub(view.remaining())?;
     let (_, after_identity) = crate::design::decode::text::fixed_guid_ascii(bytes, identity_at)?;
     (bytes.get(after_identity..)? == [0, 0, 0]).then_some(ReplaceFaceFrame {
         tangent_chain,
+        flagged_prefix_word,
         replacements,
         targets,
         identity_at: start.checked_add(identity_at)?,

@@ -714,6 +714,7 @@ pub(crate) enum F3dLossCode {
     ReplaceFaceTangentChainAssumed,
     ReplaceFaceSupportAssumed,
     ReplaceFaceIdentityAssumed,
+    ReplaceFaceFlaggedPrefixWordAssumed,
     SurfaceUntrimFrameAssumed,
     SurfaceUntrimGroupSelectionAssumed,
     SurfaceUntrimStoredLoopGroupsAssumed,
@@ -1501,6 +1502,7 @@ impl F3dLossCode {
         Self::ReplaceFaceTangentChainAssumed,
         Self::ReplaceFaceSupportAssumed,
         Self::ReplaceFaceIdentityAssumed,
+        Self::ReplaceFaceFlaggedPrefixWordAssumed,
         Self::SurfaceUntrimFrameAssumed,
         Self::SurfaceUntrimGroupSelectionAssumed,
         Self::SurfaceUntrimStoredLoopGroupsAssumed,
@@ -2385,6 +2387,9 @@ impl F3dLossCode {
             Self::ReplaceFaceTangentChainAssumed => "feature.replace-face-tangent-chain-assumed",
             Self::ReplaceFaceSupportAssumed => "feature.replace-face-support-assumed",
             Self::ReplaceFaceIdentityAssumed => "feature.replace-face-identity-assumed",
+            Self::ReplaceFaceFlaggedPrefixWordAssumed => {
+                "feature.replace-face-flagged-prefix-word-assumed"
+            }
             Self::SurfaceUntrimFrameAssumed => "feature.surface-untrim-frame-assumed",
             Self::SurfaceUntrimGroupSelectionAssumed => {
                 "feature.surface-untrim-group-selection-assumed"
@@ -3120,6 +3125,7 @@ impl F3dLossCode {
             | Self::ReplaceFaceTangentChainAssumed
             | Self::ReplaceFaceSupportAssumed
             | Self::ReplaceFaceIdentityAssumed
+            | Self::ReplaceFaceFlaggedPrefixWordAssumed
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
             | Self::SurfaceUntrimStoredLoopGroupsAssumed
@@ -3720,6 +3726,7 @@ impl F3dLossCode {
             | Self::ReplaceFaceTangentChainAssumed
             | Self::ReplaceFaceSupportAssumed
             | Self::ReplaceFaceIdentityAssumed
+            | Self::ReplaceFaceFlaggedPrefixWordAssumed
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
             | Self::SurfaceUntrimStoredLoopGroupsAssumed
@@ -4437,6 +4444,7 @@ mod tests {
                 "feature.replace-face-tangent-chain-assumed",
                 "feature.replace-face-support-assumed",
                 "feature.replace-face-identity-assumed",
+                "feature.replace-face-flagged-prefix-word-assumed",
                 "feature.surface-untrim-frame-assumed",
                 "feature.surface-untrim-group-selection-assumed",
                 "feature.surface-untrim-stored-loop-groups-assumed",

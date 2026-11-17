@@ -80,6 +80,11 @@ pub(super) fn project_replace_face(
     let (replacement_indices, target_indices, tangent_chain) = if let Some(operation) =
         scope.replace_face_operation()
     {
+        if let Some(word) = operation.flagged_prefix_word {
+            losses.push(F3dLossCode::ReplaceFaceFlaggedPrefixWordAssumed.note(format!(
+                "ReplaceFace {} retains flagged prefix word {word} as auxiliary metadata while applying its selections (DR-810).", scope.id
+            )));
+        }
         losses.push(F3dLossCode::ReplaceFaceTangentChainAssumed.note(format!(
             "ReplaceFace {} reads its prefix Boolean as tangent-chain expansion of its target faces (DR-810).", scope.id
         )));

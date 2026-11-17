@@ -9,7 +9,7 @@ use super::{
     DesignSurfaceUntrimLoops, DesignSurfaceUntrimOperation,
 };
 
-rewrite_native_record!(DesignReplaceFaceOperation, []; {tangent_chain, replacement_group_record_indices, target_group_record_indices, trailing_identity});
+rewrite_native_record!(DesignReplaceFaceOperation, []; {tangent_chain, flagged_prefix_word, replacement_group_record_indices, target_group_record_indices, trailing_identity});
 rewrite_native_scalar!(DesignPatchContinuity);
 rewrite_native_scalar!(DesignRuledSurfaceCorner);
 rewrite_native_scalar!(DesignRuledSurfaceMethod);
