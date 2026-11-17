@@ -3371,3 +3371,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A Design record that names a saved free edge, or a rule that relates a saved free edge to the feature that creates it, and the visibility of that edge in the component.
 
 **Note.** `f3d.md` §3.1 "A local occurrence is a child of each occurrence" excludes saved free-edge bodies from component body coverage. A saved free-edge body without a product-definition owner is reported as `assembly.saved-free-edge-body-unowned`.
+
+### DR-796. Healed DeleteFace transitions that delete more faces than the group has members
+
+**Question.** Which deleted faces does a one-member healed `DeleteFace` group select when its transition deletes several faces?
+
+**Known.** A public RailCore II ZL design stores a healed `DeleteFace` whose role-`0x0000001000000000` group has one bounded-face member. Its single transition deletes four faces of the preceding state, three on planes and one on a cylinder, and updates seven other faces. The member's recipe has four nodes and binds to no complete face boundary of the preceding state. Its recipe references name two of the deleted faces and faces that the transition keeps.
+
+**Need.** The binding rule of this recipe form, or a stored field that separates the selected faces from the faces that healing removes.
+
+**Note.** The group stays native and the decoder reports `feature.face-selection-native`.
