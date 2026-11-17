@@ -5,9 +5,13 @@
 //! The candidate profiles come from the stored selection: the scope's
 //! selection groups, the frame's nested region selection, or every profile
 //! when the frame has neither. Profiles whose boundaries trace the same
-//! geometry as an earlier candidate are one region and are named once. The
-//! candidates are stated only when the far caps of the Extrude transition
-//! certify their union; otherwise the frame stays native.
+//! geometry as an earlier candidate are one region and are named once. When
+//! the far caps of the Extrude transition certify the union of the
+//! candidates, the candidates are stated as certified. Candidates from the
+//! selection groups or the nested region selection, and the one profile of a
+//! Sketch with one profile, are stated as assumed when the transition does
+//! not certify them. Every profile of a Sketch with more than one profile, an
+//! unresolved ring, and an unresolved group keep the frame native.
 
 use super::cap_regions::spatial::profiles_agree;
 use super::{coincident_spatial_profile_geometry, spatial_profile_member_entity};
@@ -32,31 +36,48 @@ pub(super) struct SpatialFrame<'a> {
     pub(super) angular_tolerance: f64,
 }
 
-/// The certified spatial profile indices of `frame`, from `grouped` when the
-/// scope's selection groups resolved them. `None` keeps the frame native.
+/// The spatial profile indices of a frame, and whether the Extrude
+/// transition certified them.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum SpatialFrameProfiles {
+    /// The far caps of the Extrude transition certify the union of the
+    /// profiles.
+    Certified(Vec<u32>),
+    /// The stored selection, or the only profile of the Sketch, names the
+    /// profiles; the transition does not certify them.
+    Assumed(Vec<u32>),
+}
+
+/// The spatial profile indices of `frame`, from `grouped` when the scope's
+/// selection groups resolved them. `None` keeps the frame native.
 pub(super) fn certified_profiles(
     frame: &SpatialFrame<'_>,
     grouped: Option<Vec<u32>>,
-) -> Option<Vec<u32>> {
-    let candidates = match grouped {
-        Some(grouped) => grouped,
-        None if frame.operand.region_selection.is_some() => stored_region_profiles(frame)?,
+) -> Option<SpatialFrameProfiles> {
+    let (candidates, stored) = match grouped {
+        Some(grouped) => (grouped, true),
+        None if frame.operand.region_selection.is_some() => (stored_region_profiles(frame)?, true),
         None => {
             let count = u32::try_from(frame.sketch.profiles.len()).ok()?;
-            (0..count).collect()
+            ((0..count).collect(), count == 1)
         }
     };
     let distinct = distinct_profiles(frame, &candidates)?;
-    let state_ids = frame.state_ids?;
-    profiles_agree(
-        frame.sketch,
-        frame.entities,
-        &distinct,
-        frame.histories,
-        state_ids,
-        frame.linear_tolerance,
-    )
-    .then_some(distinct)
+    let certified = frame.state_ids.is_some_and(|state_ids| {
+        profiles_agree(
+            frame.sketch,
+            frame.entities,
+            &distinct,
+            frame.histories,
+            state_ids,
+            frame.linear_tolerance,
+        )
+    });
+    if certified {
+        Some(SpatialFrameProfiles::Certified(distinct))
+    } else {
+        stored.then_some(SpatialFrameProfiles::Assumed(distinct))
+    }
 }
 
 /// The profiles that the nested region selection names, in selection order.

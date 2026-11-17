@@ -8,7 +8,10 @@ use cadmpeg_ir::sketches::{
 };
 use serde_json::json;
 
-use super::{distinct_profiles, stored_region_profiles, SpatialFrame};
+use super::{
+    certified_profiles, distinct_profiles, stored_region_profiles, SpatialFrame,
+    SpatialFrameProfiles,
+};
 use crate::ids::neutral_spatial_sketch_curve_id;
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
@@ -264,9 +267,75 @@ fn a_profile_drawn_twice_is_named_once() {
 }
 
 #[test]
-fn a_frame_without_a_transition_is_not_certified() {
+fn a_stored_ring_without_a_transition_is_stated_as_assumed() {
     let (sketch, entities, identities) = fixture();
     let operand = operand(&[vec![vec![(1, 0), (2, 0), (3, 0), (4, 0)]]]);
     let frame = frame(&operand, &sketch, &entities, &identities);
-    assert_eq!(super::certified_profiles(&frame, None), None);
+    assert_eq!(
+        certified_profiles(&frame, None),
+        Some(SpatialFrameProfiles::Assumed(vec![0]))
+    );
+}
+
+#[test]
+fn stored_groups_without_a_transition_are_stated_as_assumed() {
+    let (sketch, entities, identities) = fixture();
+    let mut operand = operand(&[]);
+    operand.region_selection = None;
+    let frame = frame(&operand, &sketch, &entities, &identities);
+    // Profile 2 traces the same circle as profile 1 and is named once.
+    assert_eq!(
+        certified_profiles(&frame, Some(vec![1, 2])),
+        Some(SpatialFrameProfiles::Assumed(vec![1]))
+    );
+}
+
+#[test]
+fn an_unresolved_ring_without_a_transition_stays_native() {
+    let (sketch, entities, identities) = fixture();
+    let operand = operand(&[vec![vec![(1, 0), (2, 0), (3, 0)]]]);
+    let frame = frame(&operand, &sketch, &entities, &identities);
+    assert_eq!(certified_profiles(&frame, None), None);
+}
+
+#[test]
+fn the_one_profile_of_a_sketch_without_a_transition_is_stated_as_assumed() {
+    let (mut sketch, entities, identities) = fixture();
+    sketch.profiles.truncate(1);
+    let mut operand = operand(&[]);
+    operand.region_selection = None;
+    let frame = frame(&operand, &sketch, &entities, &identities);
+    assert_eq!(
+        certified_profiles(&frame, None),
+        Some(SpatialFrameProfiles::Assumed(vec![0]))
+    );
+}
+
+#[test]
+fn every_profile_of_a_sketch_without_a_transition_stays_native() {
+    let (sketch, entities, identities) = fixture();
+    let mut operand = operand(&[]);
+    operand.region_selection = None;
+    let frame = frame(&operand, &sketch, &entities, &identities);
+    assert_eq!(certified_profiles(&frame, None), None);
+}
+
+#[test]
+fn assumed_spatial_transitions_report_one_loss_counting_selections() {
+    use crate::loss::F3dLossCode;
+    let work = crate::design::geometry::ProfileGeometryWork::new();
+    work.note_spatial_transition_assumed();
+    work.finish_selection();
+    work.finish_selection();
+    work.note_spatial_transition_assumed();
+    work.finish_selection();
+    let losses = work.losses();
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::FeatureSpatialProfileTransitionAssumed.kind()
+    );
+    assert!(loss.message.starts_with("2 extrude profile selection(s)"));
 }

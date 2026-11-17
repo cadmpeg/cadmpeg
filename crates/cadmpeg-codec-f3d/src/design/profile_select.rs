@@ -716,13 +716,25 @@ pub(crate) fn bind_extrude_profile_selections(
                             linear_tolerance: scoped_resolution.linear_tolerance,
                             angular_tolerance: scoped_resolution.angular_tolerance,
                         };
-                        if let Some(profiles) = spatial_regions::certified_profiles(&frame, grouped)
-                        {
-                            if let Ok(resolved) = ProfileRef::spatial_sketch_profiles(
-                                spatial_sketch.id.clone(),
-                                profiles,
-                            ) {
-                                *profile = resolved;
+                        let (profiles, assumed) =
+                            match spatial_regions::certified_profiles(&frame, grouped) {
+                                Some(spatial_regions::SpatialFrameProfiles::Certified(
+                                    profiles,
+                                )) => (profiles, false),
+                                Some(spatial_regions::SpatialFrameProfiles::Assumed(profiles)) => {
+                                    (profiles, true)
+                                }
+                                None => break 'feature_edit,
+                            };
+                        if let Ok(resolved) = ProfileRef::spatial_sketch_profiles(
+                            spatial_sketch.id.clone(),
+                            profiles,
+                        ) {
+                            *profile = resolved;
+                            if assumed {
+                                scoped_resolution
+                                    .profile_work
+                                    .note_spatial_transition_assumed();
                             }
                         }
                         break 'feature_edit;

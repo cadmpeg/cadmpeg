@@ -3320,7 +3320,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Need.** A frame on a spatial Sketch without a nested selection, and the stored body of its Extrude transition.
 
-**Note.** The decoder states every distinct profile of such a frame only when the far caps of the Extrude transition certify their union. Otherwise the frame stays a native spatial-Sketch selection with `feature.profile-selection-native`.
+**Note.** On a Sketch with more than one profile, the decoder states every distinct profile of such a frame only when the far caps of the Extrude transition certify their union; otherwise the frame stays a native spatial-Sketch selection with `feature.profile-selection-native`. On a Sketch with one profile, and for profiles that the selection groups or a nested region selection name, the decoder states the profiles when the far caps do not certify them, with `feature.spatial-profile-transition-assumed`.
 
 ### DR-781. Planar Sketch selections with secondary curve identities
 
