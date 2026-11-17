@@ -67,6 +67,7 @@ name = "cadmpeg-asm"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "serde",
  "serde-value",
@@ -264,6 +265,7 @@ dependencies = [
 name = "cadmpeg-core"
 version = "0.6.12"
 dependencies = [
+ "cadmpeg-derive",
  "flate2",
  "memchr",
  "roxmltree",
@@ -272,6 +274,10 @@ dependencies = [
  "serde_json",
  "thiserror",
 ]
+
+[[package]]
+name = "cadmpeg-derive"
+version = "0.6.12"
 
 [[package]]
 name = "cadmpeg-fuzz"
@@ -307,6 +313,7 @@ version = "0.6.12"
 dependencies = [
  "base64",
  "cadmpeg-core",
+ "cadmpeg-derive",
  "libm",
  "serde",
  "serde-value",

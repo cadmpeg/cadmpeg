@@ -1941,11 +1941,12 @@ fn base_feature_output_blob_selects_its_complete_output_chain() {
         &Default::default(),
         None,
     )
-    .unwrap();
-    assert!(losses.losses.iter().any(|note| {
+    .unwrap()
+    .losses;
+    assert!(losses.iter().any(|note| {
         note.code == crate::loss::F3dLossCode::HistoricalOutputBlobHistoryInferred.kind()
     }));
-    assert!(!losses.losses.iter().any(|note| {
+    assert!(!losses.iter().any(|note| {
         note.code == crate::loss::F3dLossCode::FeatureOutputStateChainUnbound.kind()
     }));
     assert_eq!(feature.evaluation.outputs(), &[body.id]);
