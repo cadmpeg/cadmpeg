@@ -350,6 +350,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** The record or rule that identifies the joined edge of the existing sheet, so that the plate can carry an exact attachment selection.
 
+### DE-22. Corner seam and relief fields
+
+**Question.** Which fields of the corner control `83ce7786a946cde11ebd99b4fe02afb2` store the seam option (gap, overlap, or no overlap), the overlap side, the corner relief shape, and the relief size?
+
+**Known.** Section 13.5 defines the corner control layout: `control`, `gap`, `size`, `relief_form`, `corner_form`, `secondary_form`, `jacobi_radius`, `value`, and `option`. `gap`, `size`, and `jacobi_radius` reference length parameters. `relief_form` and `secondary_form` reference enumeration type 304 or 501. `corner_form` references enumeration type 8. The record has no ratio or percentage operand. In 308 corners, `corner_form` is `(8, 3)` in 307 corners and `(8, 5)` in 1 corner, `value` is 0, `option` is true, and `secondary_form` has value 303. `relief_form` has value 103 in type 304, and value 100, 101, 102, 103, or 106 in type 501. 14 corners in 13 designs change the body: their source index occurs in generated names. The other corners leave the body unchanged.
+
+**Need.** Controlled parts that change one option at a time: each seam option, each overlap side, each relief shape, and two relief sizes. Each part needs its stored body, so that the gap or overlap distance and the relief shape can be measured on the faces.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions
