@@ -536,17 +536,25 @@ pub(crate) fn decode_parameter_scopes(
                     exact_surface_extend_operation(bytes, &records, &scope, &mut losses);
                 if let Some(operation) = &construction {
                     let distance = operation.distance.get();
-                    losses.push(
-                        if cadmpeg_ir::scalar::PositiveLength::new(distance * 10.0).is_some() {
-                            crate::loss::F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
+                    use crate::loss::F3dLossCode;
+                    match operation.distance_mm() {
+                        Some(length) if length.get() > 0.0 => losses.push(
+                            F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
                                 format!("SurfaceExtend scope {} projects with an unresolved extension method (DR-311).", scope.id),
-                            )
-                        } else {
-                            crate::loss::F3dLossCode::FeatureSurfaceExtendDistanceNonpositive.note(
-                                format!("SurfaceExtend scope {} stores extension distance {distance} cm and stays native (DR-312).", scope.id),
-                            )
-                        },
-                    );
+                            ),
+                        ),
+                        Some(_) => {}
+                        None if distance == 0.0 => losses.push(
+                            F3dLossCode::FeatureSurfaceExtendDistanceNonpositive.note(
+                                format!("SurfaceExtend scope {} stores a zero extension distance and stays native.", scope.id),
+                            ),
+                        ),
+                        None => losses.push(
+                            F3dLossCode::FeatureSurfaceExtendDistanceOutOfRange.note(
+                                format!("SurfaceExtend scope {} stores extension distance {distance} cm outside the finite millimetre range and stays native.", scope.id),
+                            ),
+                        ),
+                    }
                 }
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
                     *slot = construction;

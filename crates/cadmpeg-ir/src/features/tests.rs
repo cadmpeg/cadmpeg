@@ -70,6 +70,32 @@ fn a_face_maker_is_its_class_and_carries_no_mode_key() {
 }
 
 #[test]
+fn extend_surface_distance_keeps_its_signed_wire_value() {
+    use crate::features::FeatureOperation;
+    use serde_json::{from_value, json, to_value};
+
+    let unresolved = json!({"kind": "extend_surface", "value": {
+        "faces": {"kind": "unresolved"},
+        "method": "perpendicular",
+    }});
+    let operation = from_value::<FeatureOperation>(unresolved.clone()).unwrap();
+    assert_eq!(to_value(operation).unwrap(), unresolved);
+
+    for distance in [-2.5, 2.5] {
+        let mut wire = unresolved.clone();
+        wire["value"]["distance"] = json!(distance);
+        let operation = from_value::<FeatureOperation>(wire.clone()).unwrap();
+        assert_eq!(to_value(operation).unwrap(), wire);
+    }
+
+    for invalid in [json!(0.0), json!(-0.0), json!(null), json!("-2.5")] {
+        let mut wire = unresolved.clone();
+        wire["value"]["distance"] = invalid;
+        assert!(from_value::<FeatureOperation>(wire).is_err());
+    }
+}
+
+#[test]
 fn draft_anchor_round_trips_as_a_nested_key() {
     use crate::features::{DraftAnchor, FeatureDefinition, FeatureOperation};
 

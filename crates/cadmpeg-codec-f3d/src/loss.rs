@@ -811,8 +811,10 @@ pub(crate) enum F3dLossCode {
     FeatureLoftCenterlineAssumed,
     /// A `SurfaceExtend` scope projects with an unresolved extension method.
     FeatureSurfaceExtendMethodUnresolved,
-    /// A `SurfaceExtend` scope stores a nonpositive extension distance and stays native.
+    /// A `SurfaceExtend` scope stores a zero extension distance and stays native.
     FeatureSurfaceExtendDistanceNonpositive,
+    /// A `SurfaceExtend` scope has a distance outside the finite millimetre range.
+    FeatureSurfaceExtendDistanceOutOfRange,
     FeatureSurfaceBoundaryFlagRecordAssumed,
     FeaturePathPatternFeatureSeedAssumed,
     FeaturePathPatternReorderedSettingsAssumed,
@@ -1579,6 +1581,7 @@ impl F3dLossCode {
         Self::FeatureLoftCenterlineAssumed,
         Self::FeatureSurfaceExtendMethodUnresolved,
         Self::FeatureSurfaceExtendDistanceNonpositive,
+        Self::FeatureSurfaceExtendDistanceOutOfRange,
         Self::FeatureSurfaceBoundaryFlagRecordAssumed,
         Self::FeaturePathPatternFeatureSeedAssumed,
         Self::FeaturePathPatternReorderedSettingsAssumed,
@@ -2503,6 +2506,9 @@ impl F3dLossCode {
             Self::FeatureSurfaceExtendDistanceNonpositive => {
                 "feature.surface-extend-distance-nonpositive"
             }
+            Self::FeatureSurfaceExtendDistanceOutOfRange => {
+                "feature.surface-extend-distance-out-of-range"
+            }
             Self::FeatureSurfaceBoundaryFlagRecordAssumed => {
                 "feature.surface-boundary-flag-record-assumed"
             }
@@ -3218,6 +3224,7 @@ impl F3dLossCode {
             | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureSurfaceExtendDistanceOutOfRange
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternFeatureSeedAssumed
             | Self::FeaturePathPatternReorderedSettingsAssumed
@@ -3826,6 +3833,7 @@ impl F3dLossCode {
             | Self::FeatureLoftCenterlineAssumed
             | Self::FeatureSurfaceExtendMethodUnresolved
             | Self::FeatureSurfaceExtendDistanceNonpositive
+            | Self::FeatureSurfaceExtendDistanceOutOfRange
             | Self::FeatureSurfaceBoundaryFlagRecordAssumed
             | Self::FeaturePathPatternFeatureSeedAssumed
             | Self::FeaturePathPatternReorderedSettingsAssumed
@@ -4551,6 +4559,7 @@ mod tests {
                 "feature.loft-centerline-assumed",
                 "feature.surface-extend-method-unresolved",
                 "feature.surface-extend-distance-nonpositive",
+                "feature.surface-extend-distance-out-of-range",
                 "feature.surface-boundary-flag-record-assumed",
                 "feature.path-pattern-feature-seed-assumed",
                 "feature.path-pattern-reordered-settings-assumed",

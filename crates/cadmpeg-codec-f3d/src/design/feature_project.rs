@@ -906,7 +906,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SurfaceExtend) => {
                     if let Some((operation, distance)) =
                         scope.surface_extend_operation().and_then(|operation| {
-                            cadmpeg_ir::scalar::PositiveLength::new(operation.distance.get() * 10.0)
+                            operation.distance_mm()
                                 .map(|distance| (operation, distance))
                         })
                     {
@@ -918,7 +918,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 u64::from(operation.boundary_record_index)
                             )),
                             distance: Some(distance),
-                            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+                            method: if distance.get() < 0.0 {
+                                cadmpeg_ir::features::SurfaceExtension::Perpendicular
+                            } else {
+                                cadmpeg_ir::features::SurfaceExtension::Unresolved
+                            },
                         })
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1658,6 +1662,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::Form(_) | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
+                    || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::ExtendSurface { method: cadmpeg_ir::features::SurfaceExtension::Perpendicular, .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
                     || retain_chamfer_records

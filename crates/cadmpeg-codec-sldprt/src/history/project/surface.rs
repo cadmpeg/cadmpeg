@@ -122,7 +122,7 @@ pub(super) fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
             .parameters
             .get("Distance")
             .or_else(|| feature.parameters.get("D1"))
-            .and_then(|value| parse_positive_length_mm(value)),
+            .and_then(|value| parse_positive_length_mm(value).map(Into::into)),
         method: feature
             .properties
             .get("Method")

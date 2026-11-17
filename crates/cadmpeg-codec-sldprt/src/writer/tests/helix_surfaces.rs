@@ -1392,6 +1392,7 @@ fn semantic_writer_round_trips_trim_surface() {
 
 #[test]
 fn semantic_writer_round_trips_extend_surface() {
+    use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, SurfaceExtension,
     };
@@ -1423,7 +1424,7 @@ fn semantic_writer_round_trips_extend_surface() {
         }) if (faces == std::slice::from_ref(&face_id) && native == &face) && actual_distance.get() == 2.0
     ));
 
-    {
+    for distance_mm in [-4.5, 4.5] {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
@@ -1435,34 +1436,39 @@ fn semantic_writer_round_trips_extend_surface() {
                 panic!("typed extended surface");
             };
             *faces = FaceSelection::Faces(vec![face_id.clone()]);
-            *distance = Some(cadmpeg_ir::scalar::PositiveLength::new(4.5).unwrap());
+            *distance = Some(cadmpeg_ir::scalar::NonZeroLength::new(distance_mm).unwrap());
             *method = SurfaceExtension::Linear;
         });
+        drop(ir_edit);
+        let mut encoded = Vec::new();
+        let result = crate::test_support::serialize_history_in_native_envelope_after_refusal(
+            decoded.ir(),
+            decoded.source_fidelity(),
+            &mut encoded,
+        );
+        if distance_mm < 0.0 {
+            assert!(matches!(result, Err(CodecError::NotImplemented(_))));
+            assert!(encoded.is_empty());
+            continue;
+        }
+        result.unwrap();
+        let regenerated = SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap();
+        let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
+        assert_eq!(native.properties["Faces"], face_id.as_str());
+        assert_eq!(native.properties["Method"], "Linear");
+        assert_eq!(native.properties["CornerMode"], "Merge");
+        assert_eq!(native.parameters["Distance"], "4.5mm");
+        assert!(matches!(
+            regenerated.ir().model.features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+                distance: Some(actual_distance),
+                method: SurfaceExtension::Linear,
+                ..
+            }) if actual_distance.get() == 4.5
+        ));
     }
-
-    let mut encoded = Vec::new();
-    crate::test_support::serialize_history_in_native_envelope_after_refusal(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap();
-    let regenerated = SldprtCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .unwrap();
-    let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
-    assert_eq!(native.properties["Faces"], face_id.as_str());
-    assert_eq!(native.properties["Method"], "Linear");
-    assert_eq!(native.properties["CornerMode"], "Merge");
-    assert_eq!(native.parameters["Distance"], "4.5mm");
-    assert!(matches!(
-        regenerated.ir().model.features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-            distance: Some(actual_distance),
-            method: SurfaceExtension::Linear,
-            ..
-        }) if actual_distance.get() == 4.5
-    ));
 }
 
 #[test]

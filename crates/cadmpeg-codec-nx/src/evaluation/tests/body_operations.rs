@@ -814,7 +814,7 @@ fn complete_surface_edits_preserve_every_declared_body_identity() {
         2,
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces,
-            distance: Some(cadmpeg_ir::scalar::PositiveLength::new(0.5).unwrap()),
+            distance: Some(cadmpeg_ir::scalar::NonZeroLength::new(0.5).unwrap()),
             method: SurfaceExtension::Natural,
         }),
     );

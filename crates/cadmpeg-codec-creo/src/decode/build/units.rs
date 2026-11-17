@@ -536,9 +536,13 @@ fn scale_feature_operation(
         FeatureOperation::SewBodies { gap_tolerance, .. } => {
             scale_optional_positive_length(gap_tolerance, scale)?;
         }
-        FeatureOperation::ExtendSurface { distance, .. } => {
-            scale_optional_positive_length(distance, scale)?;
+        FeatureOperation::ExtendSurface {
+            distance: Some(distance),
+            ..
+        } => {
+            scale_nonzero_length(distance, scale)?;
         }
+        FeatureOperation::ExtendSurface { distance: None, .. } => {}
         FeatureOperation::RuledSurface { mode, .. } => scale_ruled_surface_mode(mode, scale)?,
         FeatureOperation::Draft { .. } => {}
         FeatureOperation::MoveFace { motion, .. } => scale_face_motion(motion, scale)?,

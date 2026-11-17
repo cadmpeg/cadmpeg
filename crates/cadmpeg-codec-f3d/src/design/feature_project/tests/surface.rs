@@ -70,15 +70,35 @@ fn dispatcher_projects_surface_extend_with_an_unresolved_method() {
 }
 
 #[test]
-fn dispatcher_keeps_a_negative_surface_extend_native() {
+fn dispatcher_projects_a_negative_surface_extend_as_perpendicular() {
     let features = surface_extend_features(-0.02);
     let [Feature { evaluation, .. }] = features.as_slice() else {
         panic!("SurfaceExtend did not project as one feature");
     };
-    assert!(matches!(
-        evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "SurfaceExtend"
-    ));
+    let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+        faces: FaceSelection::Native(native),
+        distance: Some(distance),
+        method: cadmpeg_ir::features::SurfaceExtension::Perpendicular,
+    }) = evaluation.definition()
+    else {
+        panic!("SurfaceExtend did not project as a perpendicular extension");
+    };
+    assert!(native.ends_with(":design-record#500"));
+    assert!((distance.get() + 0.2).abs() < EPS_SURFACE_DISTANCE_MM);
+}
+
+#[test]
+fn dispatcher_keeps_an_unrepresentable_surface_extend_native() {
+    for invalid in [0.0, -0.0, f64::MAX, -f64::MAX] {
+        let features = surface_extend_features(invalid);
+        let [Feature { evaluation, .. }] = features.as_slice() else {
+            panic!("SurfaceExtend did not project as one feature");
+        };
+        assert!(matches!(
+            evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native { kind, .. }) if kind.as_str() == "SurfaceExtend"
+        ));
+    }
 }
 
 fn grouped_surface_offset_scope() -> DesignParameterScope {
