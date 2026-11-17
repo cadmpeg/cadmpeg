@@ -587,7 +587,22 @@ pub(crate) fn decode_parameter_scopes(
                     parameters,
                     parameter_owners,
                 );
-                let sets = fillet_set_list(bytes, &records, &scope, parameters, parameter_owners);
+                let sets = fillet_set_list(
+                    bytes,
+                    &records,
+                    &scope,
+                    parameters,
+                    parameter_owners,
+                )
+                .map(|(sets, padding_holds_bytes)| {
+                    if padding_holds_bytes {
+                        losses.push(crate::loss::F3dLossCode::FeatureFilletPaddingAssumed.note(format!(
+                            "Fillet {} stores nonzero bytes in the padding of its compact flag run or set frames; they are read as padding (DR-390).",
+                            scope.id
+                        )));
+                    }
+                    sets
+                });
                 if let scope::DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
                     *slot = crate::records::feature::fillet_set::DesignFilletScope::admit(
                         construction,
