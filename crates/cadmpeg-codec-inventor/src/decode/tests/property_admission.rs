@@ -43,7 +43,7 @@ fn parsed_property_records_are_projected() {
         }),
     });
 
-    let decoded = decode_container(&setup_ctx, &container).expect("property projection");
+    let decoded = decode_container(&setup_ctx, root, &container).expect("property projection");
     let namespace = decoded
         .ir
         .native

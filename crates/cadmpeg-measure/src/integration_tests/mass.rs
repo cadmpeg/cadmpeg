@@ -290,7 +290,7 @@ fn without_a_density_a_cube_has_second_moments_and_no_mass() {
 #[test]
 fn an_unavailable_volume_leaves_the_mass_properties_unavailable() {
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
-    cube.model.faces[0].sense = match cube.model.faces[0].sense {
+    cube.geometry.faces[0].sense = match cube.geometry.faces[0].sense {
         Sense::Forward => Sense::Reversed,
         Sense::Reversed => Sense::Forward,
     };

@@ -97,10 +97,16 @@ fn parameter_nesting_follows_the_session_depth() {
             assert!(exchange.records().contains_key(&1));
         });
         with_policy_context(source.as_bytes(), &depth_policy(200), |source, ctx| {
-            let error = crate::parse::parse(source, ctx).expect_err("the session refuses");
-            assert!(matches!(error, CodecError::ResourceLimit(refusal)
-                if refusal.dimension == ResourceDimension::RecursionDepth
-                    && refusal.operation == "step_parse_parameter_nesting"));
+            let (exchange, _) =
+                crate::parse::parse(source, ctx).expect("the record is given up alone");
+            assert!(exchange.records().is_empty());
+            assert!(matches!(
+                exchange.given_up(),
+                [statement] if matches!(statement.cause,
+                    crate::parse::GiveUpCause::Resource(refusal)
+                        if refusal.dimension == ResourceDimension::RecursionDepth
+                            && refusal.operation == "step_parse_parameter_nesting")
+            ));
         });
     });
 }
@@ -714,15 +720,15 @@ fn repeated_large_reference_string_stops_at_the_payload_allowance() {
 }
 
 #[test]
-fn unknown_record_omits_non_finite_real_at_lex_admission() {
+fn unknown_record_gives_up_non_finite_real_at_lex_admission() {
     const SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1.E9999);ENDSEC;END-ISO-10303-21;";
     with_service_context(SOURCE, |source, ctx| {
-        let (exchange, diagnostics) =
+        let (exchange, _) =
             crate::parse::parse(source, ctx).expect("literal failure has a bounded record");
         assert!(exchange.records().is_empty());
-        assert!(diagnostics.iter().any(|diagnostic| {
-            diagnostic.kind == crate::parse::ParseDiagnosticKind::RecordOmitted
-                && diagnostic.message.contains("finite binary64 range")
-        }));
+        assert!(exchange.given_up().iter().any(|statement| matches!(
+            &statement.cause,
+            crate::parse::GiveUpCause::Syntax(message) if message.contains("finite binary64 range")
+        )));
     });
 }

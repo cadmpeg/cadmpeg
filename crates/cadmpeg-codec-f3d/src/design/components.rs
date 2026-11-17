@@ -177,6 +177,18 @@ pub(crate) fn project_local_components_with_types(
     projector.finish()
 }
 
+/// Identity suffix of the occurrence [`place_uninstanced_definitions`] mints.
+const STORED_FRAME_OCCURRENCE_SUFFIX: &str = "/stored-frame-occurrence";
+
+/// Whether `occurrence` is the decoder's placement of a definition that no
+/// source occurrence instances, rather than a placement the source stores.
+pub(crate) fn is_stored_frame_occurrence(occurrence: &Occurrence) -> bool {
+    occurrence
+        .id
+        .as_str()
+        .ends_with(STORED_FRAME_OCCURRENCE_SUFFIX)
+}
+
 /// Place each body-owning definition that no occurrence instances once
 /// below the document root with the identity transform. Its bodies then
 /// keep their stored frames, as the unplaced and fallback-owner rules
@@ -203,7 +215,7 @@ fn place_uninstanced_definitions(
         .map(|definition| definition.id.clone())
         .collect::<Vec<_>>();
     for definition in &uninstanced {
-        let id = OccurrenceId::mint(format!("{definition}/stored-frame-occurrence"))
+        let id = OccurrenceId::mint(format!("{definition}{STORED_FRAME_OCCURRENCE_SUFFIX}"))
             .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
         occurrences.insert(
             id.as_str().to_owned(),

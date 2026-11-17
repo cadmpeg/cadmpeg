@@ -77,7 +77,7 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
     let nurbs = |id: &str| {
         result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
@@ -127,7 +127,7 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
     let nurbs = |id: &str| {
         result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == id)
@@ -182,7 +182,7 @@ fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
     );
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#7")
@@ -208,7 +208,7 @@ fn excessive_nurbs_degree_is_rejected_before_knot_allocation() {
 #2=CARTESIAN_POINT('',(1.,0.,0.));
 #3=B_SPLINE_CURVE_WITH_KNOTS('',4294967295,(#1,#2),.UNSPECIFIED.,.F.,.F.,(4294967298),(0.),.UNSPECIFIED.);",
     );
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
 }
 
 #[test]
@@ -227,13 +227,13 @@ fn deferred_curve_dependencies_resolve_independent_of_record_order() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.id.as_str() == "step:data:curve#5"));
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.id.as_str() == "step:data:curve#7"));
@@ -261,17 +261,17 @@ fn deferred_surface_dependencies_resolve_independent_of_record_order() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#6"));
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "step:data:surface#7"));
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -284,13 +284,14 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     };
 
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("test:model:curve#unknown").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("test:model:curve#composite").expect("identity grammar"),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -305,6 +306,7 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
             self_intersect: Some(false),
         }),
         source_object: None,
+        native_ref: None,
     });
     let output = export(&ir);
     assert!(!output.contains("COMPOSITE_CURVE("));
@@ -334,7 +336,7 @@ fn a_weight_lane_shorter_than_its_pole_lane_is_stated_as_a_loss() {
     assert!(
         result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .all(|curve| curve.id.as_str() != "step:data:curve#7"),

@@ -180,7 +180,7 @@ pub struct WeightedPole3<P = Point3> {
 // whose positions are `FinitePoint3` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum NurbsPoles3<P = Point3> {
     /// A polynomial curve: its poles carry no weight.
@@ -498,7 +498,7 @@ impl<P: Copy> NurbsPoles3<P> {
 // whose positions are `FinitePoint3` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum NurbsPoleGrid<P = Point3> {
     /// A polynomial surface: its poles carry no weight.
@@ -705,7 +705,6 @@ pub struct NurbsSurface {
     #[cfg_attr(feature = "schema", schemars(with = "NurbsPoleGrid"))]
     poles: NurbsPoleGrid<FinitePoint3>,
     /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     normal_reversed: bool,
     /// Whether the surface is periodic in u.
     u_periodic: bool,
@@ -1359,7 +1358,6 @@ struct NurbsSurfaceWire {
     u_knots: Vec<f64>,
     v_knots: Vec<f64>,
     poles: NurbsPoleGrid,
-    #[serde(default)]
     normal_reversed: bool,
     u_periodic: bool,
     v_periodic: bool,

@@ -68,8 +68,8 @@ fn kernel_loss(host: &str) -> Value {
 
 fn report_view(layers: &DialectLayers, losses: &[Value]) -> Value {
     json!({
-        "identity": {"classification": "classified", "dialects": layers},
-        "transfer": {"transfer": "full", "geometry_transferred": true},
+        "identity": {"kind": "classified", "dialects": layers},
+        "transfer": {"kind": "full", "geometry_transferred": true},
         "losses": losses,
         "notes": []
     })
@@ -77,7 +77,7 @@ fn report_view(layers: &DialectLayers, losses: &[Value]) -> Value {
 
 fn inspect_view(layers: &DialectLayers, losses: &[Value]) -> Value {
     json!({
-        "identity": {"classification": "classified", "dialects": layers},
+        "identity": {"kind": "classified", "dialects": layers},
         "container_kind": "flat",
         "entries": [],
         "losses": losses,
@@ -87,7 +87,7 @@ fn inspect_view(layers: &DialectLayers, losses: &[Value]) -> Value {
 
 fn source_view(layers: &DialectLayers) -> Value {
     json!({
-        "identity": {"classification": "classified", "dialects": layers},
+        "identity": {"kind": "classified", "dialects": layers},
         "attributes": {}
     })
 }

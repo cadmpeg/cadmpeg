@@ -36,9 +36,9 @@ fn tolerance_matches(actual: Option<&DimensionTolerance>, expected: Expected) ->
 
 /// The radius of the cylinder of a target face, or of the circle of a target
 /// edge.
-fn target_radius(model: &Value, target: &PmiTarget) -> Option<f64> {
+fn target_radius(topology: &Value, target: &PmiTarget) -> Option<f64> {
     let find = |arena: &str, id: &str| {
-        model[arena]
+        topology[arena]
             .as_array()?
             .iter()
             .find(|entry| entry["id"] == id)
@@ -55,7 +55,7 @@ fn target_radius(model: &Value, target: &PmiTarget) -> Option<f64> {
         }
         _ => return None,
     };
-    geometry["radius"].as_f64()
+    geometry["value"]["radius"].as_f64()
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
     let result = InventorCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode Inventor specimen");
-    let model = serde_json::to_value(&result.ir().model).expect("serialize model");
+    let topology = serde_json::to_value(&result.ir().geometry).expect("serialize geometry");
     let half_degree = 0.5_f64.to_radians();
     let expected = [
         (
@@ -139,7 +139,7 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
                 let [target] = pmi.targets.as_slice() else {
                     panic!("{} has {} targets", pmi.id.as_str(), pmi.targets.len());
                 };
-                let radius = target_radius(&model, target).expect("target radius");
+                let radius = target_radius(&topology, &target.entity).expect("target radius");
                 assert!(
                     (2.0 * radius - nominal).abs() < 1.0e-9,
                     "{}",

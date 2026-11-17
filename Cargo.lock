@@ -427,6 +427,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "cadmpeg-measure",
+ "cadmpeg-tessellate",
  "cadmpeg-test-support",
  "encoding_rs",
  "hdf5-reader",
@@ -578,6 +579,7 @@ version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",

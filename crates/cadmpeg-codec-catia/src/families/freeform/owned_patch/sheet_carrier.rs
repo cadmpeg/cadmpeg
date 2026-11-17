@@ -426,6 +426,16 @@ impl SpatialPlane {
             | (0xc4, 0x30 | 0x38 | 0x3c, None)
             | (0xd4, 0xa0, None)
             | (0xe4, 0x50, None) => (direction(mask)?, direction(layout & 0x70)?),
+            (0xb4, 0xd0, None) => {
+                let y = view.f64_le()?;
+                if y.abs() != 1.0 {
+                    return None;
+                }
+                (
+                    UnitVector3::new(Vector3::new(0.0, y, 0.0))?,
+                    UnitVector3::Z_AXIS,
+                )
+            }
             (0xb4, 0xd6, None) => (direction(mask)?, UnitVector3::Z_AXIS),
             (0x08, 0, Some(0x18)) => (direction(0)?, direction(0)?),
             (0x08, 0xe8, Some(0x1d)) => (UnitVector3::X_AXIS, UnitVector3::Y_AXIS),
@@ -568,6 +578,23 @@ pub(super) fn analytic_bridge(bytes: &[u8]) -> Option<(AllocationReference, u8, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spatial_plane_retains_the_mirrored_chart_direction() {
+        let mut bytes = vec![0xb4, 0xd0];
+        for value in [3.0_f64, 4.0, 5.0, -1.0, -2.0, 3.0, 0.0, 4.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        let plane = SpatialPlane::read(&bytes).expect("bounded mirrored plane");
+        assert_eq!(plane.bounds, Some([[-2.0, 3.0], [0.0, 4.0]]));
+        let carrier = Carrier::Plane(plane);
+        assert_eq!(
+            carrier.evaluate([2.0, 3.0]),
+            Some(Point3::new(3.0, 2.0, 8.0))
+        );
+        bytes.push(0);
+        assert!(SpatialPlane::read(&bytes).is_none());
+    }
 
     #[test]
     fn offset_cache_admits_a_trimmed_subdomain() {

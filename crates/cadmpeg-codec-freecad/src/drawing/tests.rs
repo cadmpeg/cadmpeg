@@ -137,8 +137,8 @@ pub(crate) fn recovers_techdraw_page_template_and_view_graph() {
         Some(neutral_template.id.as_str())
     );
     assert_eq!(
-        neutral_page.relationships["Views"][0].local_target(),
-        Some(neutral_view.id.as_str())
+        neutral_page.relationships["Views"][0].native_text(),
+        Some(crate::native::id_key(&neutral_view.object))
     );
     assert_eq!(neutral_template.assets.len(), 1);
     assert_eq!(
@@ -206,8 +206,8 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         cadmpeg_ir::references::ReferenceTarget::Null
     ));
     assert_eq!(
-        null_page.relationships["Views"][0].local_target(),
-        Some("fcstd:native:object#Model")
+        null_page.relationships["Views"][0].native_text(),
+        Some("Model")
     );
     let model_page = pages
         .iter()
@@ -215,8 +215,8 @@ fn preserves_null_and_non_drawing_page_links_in_typed_relationships() {
         .expect("model page");
     assert!(model_page.template.is_none());
     assert_eq!(
-        model_page.relationships["Template"][0].local_target(),
-        Some("fcstd:native:object#Model")
+        model_page.relationships["Template"][0].native_text(),
+        Some("Model")
     );
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
@@ -294,8 +294,8 @@ fn keeps_non_page_template_links_out_of_neutral_page_field() {
         Some(neutral_template.id.as_str())
     );
     assert_eq!(
-        neutral_view.relationships["Template"][0].local_target(),
-        Some(neutral_template.id.as_str())
+        neutral_view.relationships["Template"][0].native_text(),
+        Some(crate::native::id_key(&neutral_template.object))
     );
     assert!(neutral_view.template.is_none());
     assert!(crate::test_support::validate_native(result.ir()).is_empty());

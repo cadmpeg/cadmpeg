@@ -30,7 +30,7 @@ fn sample_segment(topology: &mut AsmHistoricalTopology, edge: i64, start: Point3
     topology.edge_samples.sort_by_key(|sample| sample.edge);
 }
 
-fn split_body_test_feature(scope_id: &str) -> Feature {
+pub(super) fn split_body_test_feature(scope_id: &str) -> Feature {
     Feature {
         id: FeatureId::mint("test:model:feature#split").unwrap(),
         ordinal: 0,
@@ -107,7 +107,7 @@ fn attach_shell_face(
     }
 }
 
-fn two_solid_boxes_with_planes(
+pub(super) fn two_solid_boxes_with_planes(
     b1: i64,
     min1: Point3,
     max1: Point3,

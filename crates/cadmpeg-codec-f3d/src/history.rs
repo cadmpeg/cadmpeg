@@ -12,6 +12,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+mod arc_extremes;
 pub(crate) mod binding;
 mod blend_spine;
 
@@ -24,13 +25,16 @@ mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
+pub(crate) mod edge_recipe_scope;
 mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
 mod face_recipe;
+mod face_support;
 mod fallback_face;
 pub(crate) mod fillet_blends;
 pub(crate) mod fragment_edge;
+mod generated_bodies;
 pub(crate) mod history_bodies;
 mod hole_support;
 mod loop_index;
@@ -38,6 +42,7 @@ mod move_face;
 mod output_blob;
 mod output_chain;
 mod output_properties;
+mod pattern_bodies;
 pub(crate) mod pipe_section;
 mod recipe_index;
 mod reference_edge;
@@ -53,6 +58,7 @@ mod treatment_index;
 use body_candidates::BodyCandidates;
 use body_index::CompleteBodyIndex;
 use cache::SnapshotCache;
+pub(crate) use generated_bodies::bind_generated_body_selections;
 use loop_index::LoopIndex;
 use output_properties::{
     classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
@@ -62,6 +68,7 @@ use output_properties::{
     EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2, EPS_HISTORY_BODY_BBOX_GROWTH_E3,
     EPS_HISTORY_BODY_BBOX_UNCHANGED_E4, EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4,
 };
+use pattern_bodies::bind_pattern_body_selections;
 use recipe_index::RecipeTopologyCache;
 use topology_cache::{TopologyQueryCache, VertexBoundaryIndex};
 use treatment_index::TreatmentCache;
@@ -927,7 +934,7 @@ impl<'a> HistoricalBodyIndex<'a> {
             edge_points.extend(interior);
             edge_points.extend(sampled_bounds.into_iter().flatten());
             if let (Some((center, normal, radius)), Some(start), Some(end)) = (circle, start, end) {
-                edge_points.extend(circle_arc_extremes(
+                edge_points.extend(arc_extremes::circle_arc_extremes(
                     center, normal, radius, start, interior, end, closed,
                 ));
             }
@@ -975,68 +982,6 @@ impl<'a> HistoricalBodyIndex<'a> {
         }
         (!faces.is_empty()).then_some(faces)
     }
-}
-
-/// The points of a circular arc that are extreme along a model axis. The arc
-/// runs from `start` through `interior` to `end` on the circle of `center`,
-/// unit `normal` and `radius`; a closed arc is the whole circle. An open arc
-/// without an interior point gives none, because its side is unknown.
-fn circle_arc_extremes(
-    center: cadmpeg_ir::math::Point3,
-    normal: cadmpeg_ir::math::Vector3,
-    radius: f64,
-    start: cadmpeg_ir::math::Point3,
-    interior: Option<cadmpeg_ir::math::Point3>,
-    end: cadmpeg_ir::math::Point3,
-    closed: bool,
-) -> Vec<cadmpeg_ir::math::Point3> {
-    use cadmpeg_ir::math::Vector3;
-    use std::f64::consts::TAU;
-    let first = start.vector_from(center).scale(radius.recip());
-    let second = normal.cross(first);
-    let angle = |point: cadmpeg_ir::math::Point3| {
-        let offset = point.vector_from(center);
-        offset.dot(second).atan2(offset.dot(first)).rem_euclid(TAU)
-    };
-    let span = if closed {
-        None
-    } else {
-        let Some(interior) = interior else {
-            return Vec::new();
-        };
-        let (middle, last) = (angle(interior), angle(end));
-        // The arc runs counterclockwise about `normal` when the interior
-        // point lies before the end in that sense.
-        Some(if middle < last {
-            (true, last)
-        } else {
-            (false, last)
-        })
-    };
-    let mut out = Vec::new();
-    for axis in [
-        Vector3::new(1.0, 0.0, 0.0),
-        Vector3::new(0.0, 1.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-    ] {
-        let along = axis - normal.scale(axis.dot(normal));
-        let length = along.norm();
-        if length <= EPS_HISTORY_CIRCLE_EDGE_E7 {
-            continue;
-        }
-        for sign in [1.0, -1.0] {
-            let point = center.translated(along, sign * radius / length);
-            let keep = match span {
-                None => true,
-                Some((true, last)) => angle(point) <= last,
-                Some((false, last)) => angle(point) >= last || angle(point) == 0.0,
-            };
-            if keep {
-                out.push(point);
-            }
-        }
-    }
-    out
 }
 
 pub(crate) struct BoundFeatureOutputs {
@@ -1114,7 +1059,8 @@ pub(crate) fn bind_feature_outputs(
     losses.append(&mut inferred_histories);
     let output_chains = features
         .iter()
-        .map(|feature| {
+        .enumerate()
+        .map(|(index, feature)| {
             let (current, previous) = feature_history_states(feature, scopes, histories)?;
             output_chain::OutputChain::resolve(
                 histories,
@@ -1124,7 +1070,8 @@ pub(crate) fn bind_feature_outputs(
                     .native_ref
                     .as_deref()
                     .and_then(|id| scope_histories.get(id))
-                    .map(String::as_str),
+                    .map(String::as_str)
+                    .or_else(|| feature_sources[index].map(|source| histories[source].id.as_str())),
             )
         })
         .collect::<Vec<_>>();
@@ -1218,6 +1165,9 @@ pub(crate) fn bind_feature_outputs(
     let mut feature_edge_midpoints = HashMap::<usize, Vec<cadmpeg_ir::math::Point3>>::new();
     let mut state_deleted_bodies = HashMap::<(usize, i64), Vec<i64>>::new();
     let mut state_solid_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
+    // Every body slot of a measured state, solid or not: a body that a state still holds
+    // is not deleted by the feature that produced the state.
+    let mut state_present_bodies = HashMap::<(usize, i64), BTreeSet<i64>>::new();
     let mut state_body_centers =
         HashMap::<(usize, i64), Vec<(i64, cadmpeg_ir::math::Point3)>>::new();
     let mut state_incomplete_body_centers = HashMap::<(usize, i64), BTreeSet<i64>>::new();
@@ -1463,6 +1413,7 @@ pub(crate) fn bind_feature_outputs(
                 if !bounds_list.is_empty() {
                     state_body_bounds.insert(state_key, bounds_list);
                 }
+                state_present_bodies.insert(state_key, topology.bodies.iter().copied().collect());
                 state_solid_bodies.insert(state_key, solid_edges.into_keys().collect());
             }
             let mut next_deletions = None;
@@ -1815,9 +1766,13 @@ pub(crate) fn bind_feature_outputs(
             .or(prev_feat_solid);
         let after_solid = cur_key.and_then(|k| state_solid_bodies.get(&k));
         let mut deleted_set = BTreeSet::new();
+        let after_present = cur_key.and_then(|k| state_present_bodies.get(&k));
+        let still_present = |b: &i64| after_present.is_some_and(|present| present.contains(b));
         if let (Some(before), Some(after)) = (before_solid, after_solid) {
             for &b in before.difference(after) {
-                deleted_set.insert(b);
+                if !still_present(&b) {
+                    deleted_set.insert(b);
+                }
             }
         } else if let Some(del) = cur_key.and_then(|k| state_deleted_bodies.get(&k)) {
             for &b in del {
@@ -1826,7 +1781,9 @@ pub(crate) fn bind_feature_outputs(
         }
         if let (Some(prev_feat), Some(after)) = (prev_feat_solid, after_solid) {
             for &b in prev_feat.difference(after) {
-                deleted_set.insert(b);
+                if !still_present(&b) {
+                    deleted_set.insert(b);
+                }
             }
         }
         deleted_set.extend(newly_absorbed.iter().copied());
@@ -2149,6 +2106,8 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub(crate) regions: &'a [cadmpeg_ir::topology::Region],
     /// Neutral region shells.
     pub(crate) shells: &'a [cadmpeg_ir::topology::Shell],
+    /// Neutral shell faces.
+    pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
 }
 
 pub(crate) fn bind_feature_body_selections(
@@ -2170,6 +2129,7 @@ pub(crate) fn bind_feature_body_selections(
         bodies,
         regions,
         shells,
+        inputs.faces,
         inputs.construction_recipes,
         inputs.persistent_design_links,
     );
@@ -2496,10 +2456,28 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Operation(
-                FeatureOperation::DeleteBody { bodies, .. }
-                | FeatureOperation::ReverseShape { source: bodies },
-            ) = definition
+            if let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) =
+                definition
+            {
+                if let Some(previous_state_id) = scope.previous_history_state_id() {
+                    bind_body_recipe_body_selection(
+                        bodies,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                } else {
+                    let native = bodies.clone();
+                    bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
+                    // The recipe identity of the operands outranks a face match.
+                    generated_bodies::keep_recipe_body_slots(bodies, native, scope, inputs);
+                }
+                break 'feature_edit;
+            }
+            if let FeatureDefinition::Operation(FeatureOperation::ReverseShape { source: bodies }) =
+                definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(
@@ -2875,95 +2853,6 @@ fn historical_body_slot(id: &str) -> Option<i64> {
         .1
         .parse()
         .ok()
-}
-
-fn bind_pattern_body_selections<'a>(
-    features: &mut [cadmpeg_ir::features::Feature],
-    inputs: &FeatureBodySelectionInputs<'a>,
-    body_candidates: &mut BodyCandidates<'a>,
-) {
-    use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
-    };
-
-    let scopes = inputs.scopes;
-    let groups = inputs.groups;
-    let body_recipe_operands = inputs.body_recipe_operands;
-
-    for feature in features {
-        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-            feature.evaluation.definition()
-        else {
-            continue;
-        };
-        let Some(native_ref) = feature.native_ref.as_deref() else {
-            continue;
-        };
-        let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-        let Some(scope) = matching_scopes.next() else {
-            continue;
-        };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
-        let stream = crate::ids::native_stream(&scope.id);
-        let mut matching_groups = groups.iter().filter(|group| {
-            group.scope_record_index == scope.record_index
-                && group.role() == DesignOperandRole::BODIES_B
-                && !group.members().is_empty()
-                && crate::ids::native_stream(&group.id) == stream
-        });
-        let Some(group) = matching_groups.next() else {
-            continue;
-        };
-        if matching_groups.next().is_some() {
-            continue;
-        }
-        let mut seed = if seeds.is_empty() {
-            Some(PatternSeed::Bodies(BodySelection::Native(group.id.clone())))
-        } else {
-            None
-        };
-        let feature_id = &feature.id;
-        feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = definition
-            else {
-                return;
-            };
-            if let Some(seed) = seed.take() {
-                seeds.push(seed);
-            }
-            let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() else {
-                return;
-            };
-            if let Some(previous_state_id) = scope.previous_history_state_id() {
-                bind_body_recipe_body_selection(
-                    selection,
-                    feature_id,
-                    previous_state_id,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                );
-            } else {
-                bind_direct_body_recipe_body_selection(selection, scope, inputs, body_candidates);
-                // A scope that stores no preceding state takes it from its
-                // history state, where the operands bound their body slots.
-                if let Some(previous_state_id) =
-                    effective_scope_previous_history_state_id(scope, inputs.histories)
-                {
-                    bind_body_recipe_body_selection(
-                        selection,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        body_recipe_operands,
-                    );
-                }
-            }
-        });
-    }
 }
 
 fn bind_body_recipe_body_selection(
@@ -3729,7 +3618,9 @@ fn face_selection_state<'a>(
                 | cadmpeg_ir::features::FeatureOperation::DeleteFace { heal: true, .. }
         )
     );
-    if !spans_transitions && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
+    if !spans_transitions
+        && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
+        && !extrude_spans_state_chain(feature, histories, history, state_id, previous_state_id)
     {
         return None;
     }
@@ -3742,6 +3633,29 @@ fn face_selection_state<'a>(
         state: state_index,
         previous: previous_index,
     })
+}
+
+/// Whether an `Extrude` reaches its result state from its preceding state
+/// through one complete chain of uniquely bound transitions.
+fn extrude_spans_state_chain(
+    feature: &cadmpeg_ir::features::Feature,
+    histories: &[AsmHistory],
+    history: &AsmHistory,
+    state_id: i64,
+    previous_state_id: i64,
+) -> bool {
+    matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+        )
+    ) && output_chain::OutputChain::resolve(
+        histories,
+        state_id,
+        previous_state_id,
+        Some(&history.id),
+    )
+    .is_some()
 }
 
 fn face_selection_reads_state(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
@@ -5269,8 +5183,9 @@ pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
-    edge_operands: &[crate::records::topology::edge_identity::DesignEdgeOperand],
+    edge_recipes: edge_recipe_scope::Sources<'_>,
     histories: &[AsmHistory],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> HashMap<String, String> {
     let mut candidates = Vec::new();
     for scope in scopes {
@@ -5305,6 +5220,7 @@ pub(crate) fn bind_scope_histories(
         }
     }
     let mut resolved = HashMap::<String, String>::new();
+    let mut inferred_scopes = HashSet::<String>::new();
     for (scope, candidates) in &candidates {
         if candidates.len() == 1 {
             insert_scope_history_binding(&mut resolved, &scope.id, &candidates[0].id);
@@ -5358,32 +5274,14 @@ pub(crate) fn bind_scope_histories(
                 continue;
             }
         }
-        // The faces that carry an edge operand's recipe reference lie in the
-        // BREP the recipe was evaluated against: two histories that hold the
-        // state pair differ by the BREP those faces name.
-        let operand_sources = edge_operands
-            .iter()
-            .filter(|operand| {
-                crate::ids::same_native_occurrence(&operand.id, &scope.id)
-                    && operand.scope_record_index == scope.record_index
-            })
-            .flat_map(|operand| &operand.candidate_faces)
-            .filter_map(|face| {
-                face.as_str()
-                    .strip_prefix("f3d:brep/")
-                    .and_then(|tail| tail.split_once('/'))
-                    .map(|(source, _)| source)
-            })
-            .collect::<HashSet<_>>();
-        if !operand_sources.is_empty() {
-            let mut matching = candidates.iter().filter(|history| {
-                historical_brep_source(&history.id)
-                    .is_some_and(|source| operand_sources.contains(source))
-            });
-            if let Some(history) = matching.next().filter(|_| matching.next().is_none()) {
-                insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
-                continue;
-            }
+        if let Some(history) = edge_recipe_scope::select(scope, edge_recipes, candidates) {
+            insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+            inferred_scopes.insert(scope.id.clone());
+            losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                "scope {}: its state pair occurs in several histories; it reads {}, whose BREP blob agrees with every qualified edge-recipe face candidate.",
+                scope.id, history.id
+            )));
+            continue;
         }
         let Some(construction) = scope.base_feature_construction() else {
             continue;
@@ -5411,7 +5309,7 @@ pub(crate) fn bind_scope_histories(
             insert_scope_history_binding(&mut resolved, &scope.id, history_id);
         }
     }
-    let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
+    let mut groups = BTreeMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
     for (index, (scope, _)) in candidates.iter().enumerate() {
         let (Some(stream), Some(state_id)) = (
             crate::ids::native_stream(&scope.id),
@@ -5459,6 +5357,17 @@ pub(crate) fn bind_scope_histories(
                     .filter(|history| !assigned.contains(history.id.as_str()));
                 if let Some(history) = remaining.next().filter(|_| remaining.next().is_none()) {
                     insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+                    let rests_on_inference = members.iter().any(|other| {
+                        let other = &candidates[*other].0.id;
+                        other != &scope.id && inferred_scopes.contains(other)
+                    });
+                    if rests_on_inference {
+                        inferred_scopes.insert(scope.id.clone());
+                        losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                            "scope {}: it reads {}, the only candidate history that no other scope with its state pair holds, and one of those scopes reads its history through edge-recipe face candidates.",
+                            scope.id, history.id
+                        )));
+                    }
                     progress = true;
                 }
             }
@@ -6034,7 +5943,7 @@ fn bind_historical_face_operand_candidates<'a>(
     } else {
         std::borrow::Cow::Borrowed(history_candidates)
     };
-    operand.historical_support_contexts = historical_face_support_contexts(
+    operand.historical_support_contexts = face_support::historical_face_support_contexts(
         &support_candidates,
         history,
         topology,
@@ -6869,6 +6778,21 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     }
                 }
                 resolve_body_recipe_operand_preceding_body(operand);
+                // A body operand of this B-rep selects the only body of a state
+                // that holds one body.
+                if operand.resolved_body_slot.is_none() {
+                    if let [body] = topology.bodies.as_slice() {
+                        let in_source = operand.references().iter().any(|reference| {
+                            reference
+                                .candidate_faces
+                                .iter()
+                                .any(|face| active_brep_face_matches_source(face, source))
+                        });
+                        if in_source {
+                            operand.resolved_body_slot = Some(*body);
+                        }
+                    }
+                }
                 let Some(body_slot) = operand.resolved_body_slot else {
                     continue;
                 };
@@ -7458,94 +7382,6 @@ fn face_operand_support_candidates<'a>(
         }
     }
     candidates
-}
-
-fn historical_face_support_contexts<'a>(
-    candidates: &[cadmpeg_ir::ids::FaceId],
-    history: &'a AsmHistory,
-    preceding_topology: &'a AsmHistoricalTopology,
-    changed_faces: &HashSet<i64>,
-    topology_queries: &mut TopologyQueryCache<'a>,
-) -> Vec<crate::records::topology::historical_context::DesignHistoricalFaceSupportContext> {
-    let mut preceding_faces = HashSet::new();
-    for face in &preceding_topology.faces {
-        preceding_faces.insert(*face);
-    }
-    let mut contexts = Vec::new();
-    'candidates: for candidate in candidates {
-        let Some(active_face_slot) = stable_ref(candidate.as_str()) else {
-            continue;
-        };
-        let mut preceding_bindings = preceding_topology
-            .face_surfaces
-            .iter()
-            .filter(|binding| binding.entity == active_face_slot);
-        let surface_slot = if let Some(binding) = preceding_bindings.next() {
-            if preceding_bindings.next().is_some() {
-                continue;
-            }
-            binding.carrier
-        } else {
-            let mut carriers = HashSet::new();
-            for topology in history
-                .states()
-                .iter()
-                .filter_map(|state| history.topology(state))
-            {
-                let mut bindings = topology
-                    .face_surfaces
-                    .iter()
-                    .filter(|binding| binding.entity == active_face_slot);
-                if let Some(binding) = bindings.next() {
-                    if bindings.next().is_some() {
-                        continue 'candidates;
-                    }
-                    carriers.insert(binding.carrier);
-                }
-            }
-            if carriers.len() != 1 {
-                continue;
-            }
-            let Some(carrier) = carriers.into_iter().next() else {
-                continue;
-            };
-            carrier
-        };
-        let mut preceding_face_slots = preceding_topology
-            .face_surfaces
-            .iter()
-            .filter(|binding| {
-                binding.carrier == surface_slot && preceding_faces.contains(&binding.entity)
-            })
-            .map(|binding| binding.entity)
-            .collect::<Vec<_>>();
-        preceding_face_slots.sort_unstable_by(Ord::cmp);
-        preceding_face_slots.dedup();
-        if preceding_face_slots.is_empty() {
-            continue;
-        }
-        let changed_preceding_face_slots = preceding_face_slots
-            .iter()
-            .copied()
-            .filter(|face| changed_faces.contains(face))
-            .collect::<Vec<_>>();
-        let preceding_face_boundaries = face_boundary_contexts_for_slots(
-            &preceding_face_slots,
-            preceding_topology,
-            topology_queries,
-        );
-
-        contexts.push(
-            crate::records::topology::historical_context::DesignHistoricalFaceSupportContext {
-                active_face_slot,
-                surface_slot,
-                preceding_face_slots,
-                preceding_face_boundaries,
-                changed_preceding_face_slots,
-            },
-        );
-    }
-    contexts
 }
 
 fn face_boundary_edges<'a>(
@@ -9561,6 +9397,43 @@ fn historical_topology(
         .collect::<Vec<_>>();
     surface_axes.sort_by_key(|a| a.surface);
 
+    let mut regions_by_body = HashMap::<&str, Vec<&str>>::new();
+    for region in &brep.regions {
+        regions_by_body
+            .entry(region.body.as_str())
+            .or_default()
+            .push(region.id.as_str());
+    }
+    for body in &brep.bodies {
+        if let Some(chain) = stable_ref(body.id.as_str())
+            .and_then(|record| brep.chain_order.body_regions.get(&record))
+        {
+            regions_by_body.insert(
+                body.id.as_str(),
+                chain
+                    .iter()
+                    .map(cadmpeg_ir::ids::RegionId::as_str)
+                    .collect(),
+            );
+        }
+    }
+    let mut faces_by_shell = HashMap::<&str, Vec<&str>>::new();
+    for face in &brep.faces {
+        faces_by_shell
+            .entry(face.shell.as_str())
+            .or_default()
+            .push(face.id.as_str());
+    }
+    for shell in &brep.shells {
+        if let Some(chain) = stable_ref(shell.id.as_str())
+            .and_then(|record| brep.chain_order.shell_faces.get(&record))
+        {
+            faces_by_shell.insert(
+                shell.id.as_str(),
+                chain.iter().map(cadmpeg_ir::ids::FaceId::as_str).collect(),
+            );
+        }
+    }
     let mut ring_neighbors = HashMap::new();
     for loop_ in &brep.loops {
         let ring = loop_.coedges();
@@ -9625,7 +9498,11 @@ fn historical_topology(
         body_regions: topology_some!(relations(brep.bodies.iter().map(|body| {
             (
                 body.id.as_str(),
-                body.regions.iter().map(cadmpeg_ir::ids::RegionId::as_str),
+                regions_by_body
+                    .get(body.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             )
         }))),
         region_shells: topology_some!(relations(brep.regions.iter().map(|region| {
@@ -9637,25 +9514,23 @@ fn historical_topology(
         shell_faces: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell.faces().iter().map(cadmpeg_ir::ids::FaceId::as_str),
+                faces_by_shell
+                    .get(shell.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
             )
         }))),
         shell_wire_edges: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell
-                    .wire_edges()
-                    .iter()
-                    .map(cadmpeg_ir::ids::EdgeId::as_str),
+                shell.wire_edges().map(cadmpeg_ir::ids::EdgeId::as_str),
             )
         }))),
         shell_free_vertices: topology_some!(relations(brep.shells.iter().map(|shell| {
             (
                 shell.id.as_str(),
-                shell
-                    .free_vertices()
-                    .iter()
-                    .map(cadmpeg_ir::ids::VertexId::as_str),
+                shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str),
             )
         }))),
         face_loops: topology_some!(relations(brep.faces.iter().map(|face| {
@@ -9696,8 +9571,8 @@ fn historical_topology(
             .map(|edge| {
                 Some(AsmHistoricalEdge {
                     edge: stable_ref(edge.id.as_str())?,
-                    start_vertex: stable_ref(edge.start.as_str())?,
-                    end_vertex: stable_ref(edge.end.as_str())?,
+                    start_vertex: stable_ref(edge.start()?.as_str())?,
+                    end_vertex: stable_ref(edge.end()?.as_str())?,
                 })
             })
             .collect::<Option<Vec<_>>>()),

@@ -118,6 +118,11 @@ pub enum Check {
     /// quantity measured on the decoded geometry by more than the
     /// measurement's error terms, cannot be measured, or names no bodies.
     DeclaredMeasure,
+    /// A record of the design layer breaks a rule of part 10 of the CADIR
+    /// v11 specification: a scope invariant, the container tree, a position,
+    /// an evaluation key or base, a current state, a resolved state, or a
+    /// configuration, arrangement, or override.
+    Design,
 }
 
 impl fmt::Display for Check {
@@ -146,6 +151,7 @@ impl fmt::Display for Check {
             Self::Orientation => "orientation",
             Self::MeasurementIncomplete => "measurement_incomplete",
             Self::DeclaredMeasure => "declared_measure",
+            Self::Design => "design",
         })
     }
 }
@@ -170,7 +176,6 @@ pub struct Finding {
     pub entity: Option<String>,
     /// Other document entities a finding about `entity` involves, in message
     /// order. Empty when `entity` is absent.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub related: Vec<String>,
 }
 
@@ -185,7 +190,6 @@ pub struct ValidationReport {
     /// Findings, in discovery order.
     pub findings: Vec<Finding>,
     /// Loss notes supplied to validation.
-    #[serde(default)]
     pub losses: Vec<LossNote>,
 }
 
@@ -221,12 +225,13 @@ mod tests {
     use crate::report::Severity;
 
     #[test]
-    fn finding_without_related_omits_the_key() -> Result<(), serde_json::Error> {
+    fn finding_without_related_writes_an_empty_list() -> Result<(), serde_json::Error> {
         let wire = serde_json::json!({
             "check": "referential_integrity",
             "severity": "error",
             "message": "invalid reference",
-            "entity": "test:model:feature#consumer"
+            "entity": "test:model:feature#consumer",
+            "related": []
         });
         let finding: Finding = serde_json::from_value(wire.clone())?;
         assert!(finding.related.is_empty());

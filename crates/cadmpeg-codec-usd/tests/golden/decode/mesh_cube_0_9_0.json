@@ -1,12 +1,27 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "color": {
@@ -17,18 +32,41 @@
           },
           "id": "usd:stage:body#/Cube/Box",
           "kind": "general",
-          "name": "Box",
-          "regions": []
+          "name": "Box"
         }
       ],
       "coedges": [],
-      "configurations": [],
       "curves": [],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "features": [],
       "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [
         {
           "id": "usd:stage:occurrence#/Cube",
@@ -40,7 +78,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Cube",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -79,7 +117,7 @@
           },
           "prototype": {
             "definition": "usd:stage:definition#/Cube/Box",
-            "scope": "local"
+            "kind": "local"
           },
           "scale": [
             1.0,
@@ -109,45 +147,50 @@
         }
       ],
       "parameters": [],
-      "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
       "product_definitions": [
         {
+          "bodies": [],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Cube",
           "kind": "part",
           "native_ref": "/Cube",
+          "sketches": [],
           "source_name": "Cube"
         },
         {
           "bodies": [
             "usd:stage:body#/Cube/Box"
           ],
+          "bom_properties": {},
           "id": "usd:stage:definition#/Cube/Box",
           "kind": "object",
           "native_ref": "/Cube/Box",
+          "sketches": [],
           "source_name": "Box"
         }
       ],
-      "regions": [],
+      "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [
         {
           "body": "usd:stage:body#/Cube/Box",
           "channels": [],
+          "faces": [],
+          "feature_edges": [],
           "id": "usd:stage:tessellation#/Cube/Box",
           "mesh": {
             "kind": "corner_shaded_list",
@@ -484,6 +527,7 @@
               }
             ]
           },
+          "texture_assignments": [],
           "texture_coordinates": [
             {
               "addressing": "corner",
@@ -635,13 +679,31 @@
                 }
               ]
             }
-          ]
+          ],
+          "triangle_groups": []
         }
       ],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "default_prim": "Cube",
@@ -649,17 +711,19 @@
         "up_axis": "Y"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "version": "0.9.0"
             },
             "dialect": "usd:usdc-0.9.0"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -667,31 +731,47 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "version": "0.9.0"
           },
           "dialect": "usd:usdc-0.9.0"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "4a9814b6e92b4b2ef4d333c4659de02b99ca7c908f3d7a34a8a7be9ff8da778b",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

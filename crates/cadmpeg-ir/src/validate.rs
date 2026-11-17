@@ -23,6 +23,7 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod carriers_parameterization;
+mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
@@ -57,8 +58,13 @@ use referential_integrity::check_typed_references;
 use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
-use topology::graphs::{check_coedge_pairing, check_shell_connectivity, check_wire_topology};
-use topology::{check_references, check_tolerances, check_topology_tolerances};
+use topology::graphs::{
+    check_child_list_reciprocity, check_closed_edges, check_coedge_pairing,
+    check_shell_connectivity, check_wire_topology,
+};
+use topology::{
+    check_references, check_subdivision_schemes, check_tolerances, check_topology_tolerances,
+};
 
 fn record_finding(
     findings: &mut Vec<Finding>,
@@ -129,6 +135,8 @@ fn validate_model_with_index<'ir>(
     check_evaluation_cycles(ctx, ir, ids, &mut findings)?;
     check_pmi(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings)?;
+    check_child_list_reciprocity(ir, &mut findings);
+    check_closed_edges(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     if ir.fragment {
@@ -145,6 +153,7 @@ fn validate_model_with_index<'ir>(
     check_procedural_support_consistency(ctx, ids, &evaluations, &mut findings)?;
     evaluations.report(&mut findings);
     check_topology_tolerances(ir, &mut findings);
+    check_subdivision_schemes(ir, &mut findings);
     check_tessellations(ir, &mut findings);
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
@@ -156,6 +165,7 @@ fn validate_model_with_index<'ir>(
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
     history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
+    design::check_design(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),
@@ -629,7 +639,7 @@ mod caller_policy_tests {
                 validate_neutral_with_source_fidelity_for_decode(
                     &ctx,
                     &ir,
-                    &SourceFidelity::default(),
+                    &SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(&[])),
                     Vec::new(),
                 )
             } else {

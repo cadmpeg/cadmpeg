@@ -71,13 +71,14 @@ pub(super) fn sketch_brep(
         prefix.clone().colon(cadmpeg_ir::identity_key!("surface")),
     );
     let v_axis = normal.cross(u_axis);
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, normal, u_axis)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
         )),
         source_object: None,
+        native_ref: None,
     });
     let ordered_entities = source
         .model
@@ -217,22 +218,26 @@ pub(super) fn sketch_brep(
                     .colon(profile_index)
                     .colon(use_index),
             );
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: curve_id.clone(),
                 geometry: generated.curve,
                 source_object: None,
+                native_ref: None,
             });
-            ir.model.edges.push(Edge {
+            ir.geometry.edges.push(Edge {
                 id: edge_id.clone(),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                     Some(curve_id),
                     Some(generated.param_range),
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-                start: start_vertex,
-                end: end_vertex,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    start_vertex,
+                    end_vertex,
+                )),
                 tolerance: None,
+                native_ref: None,
             });
             match &mut ring {
                 Some(ring) => ring
@@ -240,7 +245,7 @@ pub(super) fn sketch_brep(
                     .map_err(cadmpeg_core::CodecError::malformed)?,
                 None => ring = Some(cadmpeg_ir::topology::LoopRing::single(coedge_id.clone())),
             }
-            ir.model.coedges.push(Coedge {
+            ir.geometry.coedges.push(Coedge {
                 id: coedge_id.clone(),
                 owner_loop: loop_id.clone(),
                 edge: edge_id,
@@ -252,14 +257,16 @@ pub(super) fn sketch_brep(
                 },
                 use_curve: None,
                 pcurves: Vec::new(),
+                native_ref: None,
             });
         }
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: loop_id,
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring.ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("sketch profile has no coedges")
             })?),
+            native_ref: None,
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
@@ -288,13 +295,14 @@ pub(super) fn sketch_brep(
         ))
         .ok_or(Point::NON_FINITE_POSITION)
         .map_err(cadmpeg_core::CodecError::malformed)?;
-        ir.model
+        ir.geometry
             .points
             .push(Point::new(point_id.clone(), finite_position, None));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
         let edge_id = EdgeId::compose(
             &sketch_namespace(),
@@ -317,14 +325,17 @@ pub(super) fn sketch_brep(
                 .colon(cadmpeg_ir::identity_key!("point-coedge"))
                 .colon(ordinal),
         );
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-            start: vertex_id.clone(),
-            end: vertex_id,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertex_id.clone(),
+                vertex_id,
+            )),
             tolerance: None,
+            native_ref: None,
         });
-        ir.model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: coedge_id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -332,13 +343,15 @@ pub(super) fn sketch_brep(
             sense: Sense::Forward,
             use_curve: None,
             pcurves: Vec::new(),
+            native_ref: None,
         });
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                 cadmpeg_ir::topology::LoopRing::single(coedge_id),
             ),
+            native_ref: None,
         });
         face_loops.push(loop_id);
     }
@@ -348,7 +361,7 @@ pub(super) fn sketch_brep(
             sketch.id.as_str()
         )));
     }
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
         surface: surface_id,
@@ -357,27 +370,27 @@ pub(super) fn sketch_brep(
         name: sketch.name.clone(),
         color: None,
         tolerance: None,
+        native_ref: None,
     });
-    ir.model.shells.push(Shell::with_face(
-        shell_id.clone(),
-        region_id.clone(),
-        face_id,
-    ));
-    ir.model.regions.push(Region {
+    ir.geometry
+        .shells
+        .push(Shell::new(shell_id.clone(), region_id.clone()));
+    ir.geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id],
+        native_ref: None,
     });
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: vec![region_id],
         transform: None,
         name: sketch.name.clone(),
         color: None,
         visible: None,
+        native_ref: None,
     });
-    ir.model.finalize();
+    ir.finalize();
     Ok(ir)
 }
 
@@ -577,13 +590,14 @@ fn sketch_vertex(
         cadmpeg_ir::features::FinitePoint3::new(lift_point(position, origin, u_axis, v_axis))
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-    ir.model
+    ir.geometry
         .points
         .push(Point::new(point_id.clone(), finite_position, None));
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
+        native_ref: None,
     });
     vertices.insert(key, vertex_id.clone());
     Ok(vertex_id)

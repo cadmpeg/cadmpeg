@@ -127,8 +127,8 @@ fn a_four_use_edge_is_split_into_two_material_use_pairs() {
     let decoded = crate::StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!(decoded.ir().model.faces.len(), 12);
-    assert_eq!(decoded.ir().model.edges.len(), 24);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(decoded.ir().geometry.faces.len(), 12);
+    assert_eq!(decoded.ir().geometry.edges.len(), 24);
 }

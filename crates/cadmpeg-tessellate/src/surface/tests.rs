@@ -43,7 +43,7 @@ fn a_cone_apex_has_no_normal_even_when_its_parameter_rounds() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let surface = &mut ir.model.surfaces[0];
+    let surface = &mut ir.geometry.surfaces[0];
     surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         ConeSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),

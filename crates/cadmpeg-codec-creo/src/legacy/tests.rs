@@ -1147,9 +1147,18 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let source = result.ir().source.as_ref().expect("source metadata");
     assert_eq!(source.attributes["legacy_ascii_schema"], "12");
     assert_eq!(source.attributes["legacy_ascii_product_release"], "16.0");
-    assert_eq!(source.attributes["legacy_ascii_declaration_count"], "0");
-    assert_eq!(source.attributes["legacy_ascii_scope_count"], "1");
-    assert_eq!(source.attributes["legacy_ascii_value_count"], "0");
+    for key in [
+        "legacy_ascii_declaration_count",
+        "legacy_ascii_scope_count",
+        "legacy_ascii_value_count",
+        "legacy_ascii_continuation_count",
+        "file_size",
+    ] {
+        assert!(
+            !source.attributes.keys().any(|name| name.as_str() == key),
+            "{key}"
+        );
+    }
     assert_eq!(
         source.attributes["legacy_ascii_conflicting_declaration_count"],
         "0"

@@ -104,22 +104,22 @@ fn a_face_ring_runs_in_traversal_order_whatever_the_wire_serialization() {
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("square face");
-    let model = &result.ir().model;
-    assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.faces[0].sense, Sense::Forward);
-    let [face_loop] = model.loops.as_slice() else {
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.faces[0].sense, Sense::Forward);
+    let [face_loop] = geometry.loops.as_slice() else {
         panic!("one loop expected");
     };
     let LoopBoundary::Ring(ring) = &face_loop.boundary else {
         panic!("edge loop expected");
     };
     let point_of = |vertex: &cadmpeg_ir::ids::VertexId| -> Point3 {
-        let vertex = model
+        let vertex = geometry
             .vertices
             .iter()
             .find(|item| item.id == *vertex)
             .expect("vertex");
-        model
+        geometry
             .points
             .iter()
             .find(|item| item.id == vertex.point)
@@ -131,19 +131,25 @@ fn a_face_ring_runs_in_traversal_order_whatever_the_wire_serialization() {
         .coedges()
         .iter()
         .map(|id| {
-            let coedge = model
+            let coedge = geometry
                 .coedges
                 .iter()
                 .find(|item| item.id == *id)
                 .expect("coedge");
-            let edge = model
+            let edge = geometry
                 .edges
                 .iter()
                 .find(|item| item.id == coedge.edge)
                 .expect("edge");
             match coedge.sense {
-                Sense::Forward => (point_of(&edge.start), point_of(&edge.end)),
-                Sense::Reversed => (point_of(&edge.end), point_of(&edge.start)),
+                Sense::Forward => (
+                    point_of(&edge.ends.as_ref().unwrap().start),
+                    point_of(&edge.ends.as_ref().unwrap().end),
+                ),
+                Sense::Reversed => (
+                    point_of(&edge.ends.as_ref().unwrap().end),
+                    point_of(&edge.ends.as_ref().unwrap().start),
+                ),
             }
         })
         .collect();
