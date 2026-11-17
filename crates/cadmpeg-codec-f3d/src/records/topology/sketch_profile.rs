@@ -126,6 +126,14 @@ impl DesignSketchProfileOperand {
             u8::from(second),
         )))
     }
+    /// The nested region selection when it names planar Sketch curves:
+    /// every member stores a zero secondary identity.
+    pub(crate) fn planar_region_selection(&self) -> Option<&DesignSketchProfileRegionSelection> {
+        self.region_selection
+            .as_ref()
+            .filter(|selection| !selection.has_secondary_identity())
+    }
+
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
@@ -389,7 +397,10 @@ impl DesignSketchProfileRegionSelection {
                 atomic
                     .iter()
                     .flat_map(|region| &region.members)
-                    .any(|atomic| atomic.curve_primary_id == member.curve_primary_id)
+                    .any(|atomic| {
+                        atomic.curve_primary_id == member.curve_primary_id
+                            && atomic.curve_secondary_id == member.curve_secondary_id
+                    })
             });
             if !covered {
                 return None;
@@ -397,6 +408,15 @@ impl DesignSketchProfileRegionSelection {
             rings.extend(atomic);
         }
         Some(rings)
+    }
+
+    /// Whether a member names a curve with a nonzero secondary identity.
+    pub(crate) fn has_secondary_identity(&self) -> bool {
+        self.regions
+            .iter()
+            .chain(self.atomic_regions.iter().flat_map(|atomic| &atomic.loops))
+            .flat_map(|region| &region.members)
+            .any(|member| member.curve_secondary_id.is_some())
     }
 
     /// Whether the selection holds more than one selected region, atomic
@@ -437,6 +457,9 @@ pub(crate) struct DesignSketchProfileRegionMember {
     pub(crate) curve_primary_id: std::num::NonZeroU32,
     /// Byte offset of the persistent curve identity.
     pub(crate) curve_primary_id_offset: u64,
+    /// Secondary persistent identity of the selected Sketch curve; `None`
+    /// when the member stores zero.
+    pub(crate) curve_secondary_id: Option<std::num::NonZeroU32>,
     /// First incidence value, encoded as zero or one. On an edge of one curve,
     /// one when the ring traverses the curve against its stored direction.
     pub(crate) incidence_flag: bool,
@@ -476,7 +499,9 @@ struct DesignSketchProfileRegionMemberWire {
     curve_primary_id: u64,
     /// Byte offset of the persistent curve identity.
     curve_primary_id_offset: u64,
-    /// Structural region-incidence words retained in source order.
+    /// The member words from offset 8 in source order: a zero word, the
+    /// secondary curve identity, a zero word, three incidence values, and two
+    /// zero words.
     incidence_words: [u32; 8],
     /// Byte offset of the first incidence word.
     incidence_words_offset: u64,
@@ -492,8 +517,11 @@ impl TryFrom<DesignSketchProfileRegionMemberWire> for DesignSketchProfileRegionM
             .ok()
             .and_then(std::num::NonZeroU32::new)
             .ok_or("curve_primary_id must be a nonzero u32")?;
-        let [0, 0, 0, flag, first, second, 0, 0] = wire.incidence_words else {
-            return Err("incidence_words must contain three leading and two trailing zeros".into());
+        let [0, secondary, 0, flag, first, second, 0, 0] = wire.incidence_words else {
+            return Err(
+                "incidence_words must hold zero words around the secondary identity and two trailing zeros"
+                    .into(),
+            );
         };
         let incidence_flag = match flag {
             0 => false,
@@ -504,6 +532,7 @@ impl TryFrom<DesignSketchProfileRegionMemberWire> for DesignSketchProfileRegionM
             kind_offset: wire.kind_offset,
             curve_primary_id,
             curve_primary_id_offset: wire.curve_primary_id_offset,
+            curve_secondary_id: std::num::NonZeroU32::new(secondary),
             incidence_flag,
             incidence_values: [
                 DesignRegionIncidence::try_from(first)?,
@@ -523,7 +552,9 @@ impl From<DesignSketchProfileRegionMember> for DesignSketchProfileRegionMemberWi
             curve_primary_id_offset: member.curve_primary_id_offset,
             incidence_words: [
                 0,
-                0,
+                member
+                    .curve_secondary_id
+                    .map_or(0, std::num::NonZeroU32::get),
                 0,
                 u32::from(member.incidence_flag),
                 member.incidence_values[0].into(),
