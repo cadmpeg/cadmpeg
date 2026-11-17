@@ -114,9 +114,6 @@ fn position_resolves_unique_complete_paths_despite_ambiguous_prefixes_and_the_co
     child_carrier.occurrence_guid = CHILD.to_owned().try_into().unwrap();
     child.native_ref = Some(child_carrier.id.clone());
     child.id = cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#child").unwrap();
-    child.parent = cadmpeg_ir::products::OccurrenceParent::Occurrence {
-        occurrence: root.id.clone(),
-    };
     for ambiguous_full in [false, true] {
         let mut other = if ambiguous_full {
             child.clone()
@@ -124,10 +121,16 @@ fn position_resolves_unique_complete_paths_despite_ambiguous_prefixes_and_the_co
             root.clone()
         };
         other.id = cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#other").unwrap();
+        let mut occurrences = vec![root.clone(), child.clone(), other];
+        let definitions = crate::tree::owned_by(
+            &mut occurrences,
+            &[None, Some(0), ambiguous_full.then_some(0)],
+        );
         let paths = LocalOccurrencePaths::new(
             &[carrier.clone(), child_carrier.clone()],
             &[],
-            &[root.clone(), child.clone(), other],
+            &definitions,
+            &occurrences,
             &[],
         );
         let keys = [OCCURRENCE_KEY.to_owned(), CHILD.to_owned()];

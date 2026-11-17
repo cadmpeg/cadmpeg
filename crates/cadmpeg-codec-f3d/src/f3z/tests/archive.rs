@@ -526,18 +526,19 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
     .expect("nonidentity nested placements decode");
     let outer_id = cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#xref-0-0")
         .expect("outer occurrence identity");
-    let child = decoded
-        .ir()
-        .model
+    let model = &decoded.ir().model;
+    let outer_prototype = &model
         .occurrences
         .iter()
-        .find(|occurrence| {
-            matches!(
-                &occurrence.parent,
-                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent }
-                    if parent == &outer_id
-            )
-        })
+        .find(|occurrence| occurrence.id == outer_id)
+        .expect("outer occurrence")
+        .prototype;
+    let listed = crate::tree::listed(model, outer_prototype);
+    assert_eq!(listed.len(), 1);
+    let child = model
+        .occurrences
+        .iter()
+        .find(|occurrence| &occurrence.id == listed[0])
         .expect("merged component occurrence retains its outer parent");
     let outer_occurrence = decoded
         .ir()
@@ -546,20 +547,16 @@ fn f3z_archive_composes_nonidentity_nested_occurrence_placements() {
         .iter()
         .find(|occurrence| occurrence.id == outer_id)
         .expect("outer occurrence");
-    assert_eq!(outer_occurrence.transform.rows()[0][3], 10.0);
-    assert_eq!(child.transform.rows()[1][3], 20.0);
+    assert_eq!(outer_occurrence.transform.unwrap().rows()[0][3], 10.0);
+    assert_eq!(child.transform.unwrap().rows()[1][3], 20.0);
 
-    let graph = cadmpeg_ir::products::AssemblyGraph::new(&decoded.ir().model.occurrences)
-        .expect("merged occurrence graph");
-    let resolved = assembly::resolved_transform(&graph, &child.id)
+    let resolved = assembly::resolved_transform(decoded.ir(), &child.id)
         .expect("resolved nested occurrence transform");
     assert_eq!(resolved.rows()[0][3], 10.0);
     assert_eq!(resolved.rows()[1][3], 20.0);
     assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert!(decoded.ir().geometry.bodies[0].transform.is_none());
-    let cadmpeg_ir::products::PrototypeReference::Local { definition } = &child.prototype else {
-        panic!("merged member must have a local prototype");
-    };
+    let definition = &child.prototype;
     assert_eq!(
         decoded
             .ir()
@@ -638,18 +635,23 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
         assert_eq!(ir.model.occurrences.len(), 2);
         let outer_id =
             cadmpeg_ir::ids::OccurrenceId::mint("f3d:model:occurrence#xref-0-0").unwrap();
+        let outer_prototype = &ir
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id == outer_id)
+            .unwrap()
+            .prototype;
+        let listed = crate::tree::listed(&ir.model, outer_prototype);
+        assert_eq!(listed.len(), 1);
         let child = ir
             .model
             .occurrences
             .iter()
-            .find(|occurrence| {
-                matches!(&occurrence.parent,
-                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent }
-                if parent == &outer_id)
-            })
+            .find(|occurrence| &occurrence.id == listed[0])
             .expect("child remains relative to its containing occurrence");
         assert_eq!(
-            child.transform.rows(),
+            child.transform.unwrap().rows(),
             [
                 [1.0, 0.0, 0.0, 20.0],
                 [0.0, 1.0, 0.0, 0.0],
@@ -657,20 +659,15 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
                 [0.0, 0.0, 0.0, 1.0],
             ]
         );
-        let graph = cadmpeg_ir::products::AssemblyGraph::new(&ir.model.occurrences)
-            .expect("nested occurrence graph");
         assert_eq!(
-            assembly::resolved_transform(&graph, &child.id)
+            assembly::resolved_transform(ir, &child.id)
                 .unwrap()
                 .rows(),
             expected
         );
         assert_eq!(ir.geometry.bodies.len(), 1);
         assert!(ir.geometry.bodies[0].transform.is_none());
-        let cadmpeg_ir::products::PrototypeReference::Local { definition } = &child.prototype
-        else {
-            panic!("merged member must have a local prototype");
-        };
+        let definition = &child.prototype;
         assert_eq!(
             ir.model
                 .product_definitions

@@ -3608,32 +3608,24 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_types,
         )?;
         self.component_definitions_by_record = local.component_definitions_by_record.clone();
-        let mut external_placements = Vec::new();
-        if let Some(table) = prereqs.xref_table() {
-            let external =
-                crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;
-            self.ir
-                .model
-                .product_definitions
-                .extend(external.definitions);
-            self.ir.model.occurrences.extend(external.occurrences);
-            external_placements = external.placements;
-            self.report.losses.extend(external.losses);
-        }
-        self.ir.model.product_definitions.extend(local.definitions);
-        self.ir.model.occurrences.extend(local.occurrences);
-        // The external placements at the top level come first, as the source
-        // numbers them; the others sit in local occurrences.
-        let (top_external, nested_external): (Vec<_>, Vec<_>) = external_placements
-            .into_iter()
-            .partition(|(_, parent)| parent.is_none());
-        for (occurrence, parent) in top_external
-            .into_iter()
-            .chain(local.placements)
-            .chain(nested_external)
-        {
-            crate::tree::place_under(&mut self.ir.model, parent.as_ref(), occurrence);
-        }
+        let external = match prereqs.xref_table() {
+            Some(table) => Some(crate::xref::project_occurrences(
+                table,
+                &local_sources,
+                &local.occurrences,
+            )?),
+            None => None,
+        };
+        let external_losses = crate::tree::assemble(
+            &mut self.ir.model,
+            crate::tree::Projected {
+                definitions: local.definitions,
+                occurrences: local.occurrences,
+                placements: local.placements,
+            },
+            external,
+        );
+        self.report.losses.extend(external_losses);
         let parents = crate::tree::parent_ids(
             &self.ir.model.product_definitions,
             &self.ir.model.occurrences,
@@ -3966,6 +3958,12 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
                 crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
             }
+            let owned = crate::tree::own_once(
+                ctx,
+                &mut decoded.ir,
+                &std::collections::BTreeMap::new(),
+            )?;
+            decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(

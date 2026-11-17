@@ -65,7 +65,7 @@ fn an_omitted_nested_placement_keeps_an_unbound_joint_native_and_its_feature_val
     );
     let mut partial = joint("partial", Vec::new());
     partial.connectors_mut().next().unwrap().operand = JointOperand::external(
-        cadmpeg_ir::products::ExternalDocument::Missing {},
+        cadmpeg_ir::products::ExternalDocument::default(),
         "f3d:Design/BulkStream.dat:design-record#10",
         Vec::new(),
     );

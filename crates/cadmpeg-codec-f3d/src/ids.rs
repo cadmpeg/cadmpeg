@@ -295,16 +295,17 @@ pub(crate) fn stream_root_occurrence_id(
     )
 }
 
-/// Neutral nested occurrence identified by its complete containing path.
-pub(crate) fn nested_component_occurrence_id(
+/// One instance of the nested occurrence `own`, identified by the instance
+/// it sits in and its own occurrence identity.
+pub(crate) fn nested_occurrence_id(
     parent: &cadmpeg_ir::ids::OccurrenceId,
-    key: &impl crate::records::mesh::OccurrenceIdentity,
+    own: &cadmpeg_ir::ids::OccurrenceId,
 ) -> cadmpeg_ir::ids::OccurrenceId {
     cadmpeg_ir::ids::OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
         cadmpeg_ir::ids::Identity::from(parent.clone())
             .key()
-            .colon(key.occurrence_identity_key()),
+            .colon(cadmpeg_ir::ids::Identity::from(own.clone()).key()),
     )
 }
 

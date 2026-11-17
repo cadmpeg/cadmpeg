@@ -36,7 +36,7 @@ fn member_definition_owns_root_sketches_and_preserves_component_owners() {
     ir.model.product_definitions = vec![definition.clone()];
     let ctx = cadmpeg_test_support::service_decode_context();
 
-    let owner = define_member(&ctx, &mut ir, "member").unwrap();
+    let owner = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
 
     assert_eq!(ir.model.product_definitions.len(), 2);
     assert_eq!(ir.model.product_definitions[0], definition);
@@ -51,11 +51,11 @@ fn member_definition_extends_existing_root_sketches_once() {
     let mut ir = CadIr::empty();
     ir.model.sketches = vec![root.clone()];
     let ctx = cadmpeg_test_support::service_decode_context();
-    let owner = define_member(&ctx, &mut ir, "member").unwrap();
+    let owner = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
     ir.model.sketches.push(later.clone());
 
-    assert_eq!(define_member(&ctx, &mut ir, "member").unwrap(), owner);
-    assert_eq!(define_member(&ctx, &mut ir, "member").unwrap(), owner);
+    assert_eq!(define_member(&ctx, &mut ir, "member", "member.f3d").unwrap(), owner);
+    assert_eq!(define_member(&ctx, &mut ir, "member", "member.f3d").unwrap(), owner);
 
     assert_eq!(ir.model.product_definitions.len(), 1);
     let listed = &ir.model.product_definitions[0].sketches;

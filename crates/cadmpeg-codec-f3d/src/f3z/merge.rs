@@ -29,13 +29,14 @@ pub(super) fn merge_archive(
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut cadmpeg_ir::codec::DecodeBody,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
-) -> Result<usize, CodecError> {
+) -> Result<(usize, InstanceScopes), CodecError> {
     let (operation_poses, scene_sources) = placement;
     let scan = &session.scan;
     let table = xref_table_from_ir(ctx, ir)?;
 
     let stack = vec![session.model_root.clone()];
-    MergeSession {
+    let mut instance_scopes = InstanceScopes::new();
+    let merged = MergeSession {
         ctx,
         scan,
         archive: &session.archive,
@@ -48,9 +49,15 @@ pub(super) fn merge_archive(
         scene_sources,
         operation_protected: std::collections::BTreeSet::new(),
         component_path_tables: Vec::new(),
+        instance_scopes: &mut instance_scopes,
     }
-    .merge(ir, report, fidelity, &table)
+    .merge(ir, report, fidelity, &table)?;
+    Ok((merged, instance_scopes))
 }
+
+/// The identity scope of the member instance each merged occurrence places.
+pub(super) type InstanceScopes =
+    std::collections::BTreeMap<cadmpeg_ir::ids::OccurrenceId, String>;
 
 fn xref_table_from_ir(
     ctx: &DecodeContext<'_>,
@@ -157,6 +164,7 @@ struct MergeSession<'r, 'a> {
     scene_sources: &'r mut crate::scene::Sources,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     component_path_tables: Vec<(cadmpeg_ir::ids::OccurrenceId, XrefTable)>,
+    instance_scopes: &'r mut InstanceScopes,
 }
 
 impl MergeSession<'_, '_> {
@@ -525,6 +533,8 @@ impl MergeSession<'_, '_> {
                 .find(|item| item.id == placement.parent)
                 .ok_or_else(|| CodecError::malformed("missing F3Z placing occurrence"))?;
             placing.prototype = member.definition;
+            self.instance_scopes
+                .insert(placement.parent.clone(), format!("f3d:xref/{occurrence}"));
             self.stack.push(reference.relative_path.as_str().to_owned());
             let descendants = self.merge_placements(
                 parent_ir,
@@ -2460,7 +2470,7 @@ mod tests {
         ir.model.product_definitions.clear();
         ir.geometry.bodies[0].transform = Some(transform);
         let ctx = cadmpeg_test_support::service_decode_context();
-        define_member(&ctx, &mut ir, "member").unwrap();
+        define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.geometry.bodies[0].transform, Some(transform));
         assert_eq!(
             ir.model.product_definitions[0].bodies,
@@ -2499,7 +2509,7 @@ mod tests {
                 active: None,
             });
         let ctx = cadmpeg_test_support::service_decode_context();
-        let id = define_member(&ctx, &mut ir, "member").unwrap();
+        let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.model.product_definitions.len(), 1);
         assert_eq!(ir.model.product_definitions[0].id, id);
         assert_eq!(ir.model.product_definitions[0].bodies, [body]);
@@ -2514,7 +2524,7 @@ mod tests {
         policy.limits.max_entities = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut ir = cadmpeg_ir::CadIr::empty();
-        let error = define_member(&ctx, &mut ir, "member").unwrap_err();
+        let error = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
         assert!(ir.model.product_definitions.is_empty());
     }

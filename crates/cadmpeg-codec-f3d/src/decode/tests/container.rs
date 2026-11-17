@@ -548,9 +548,7 @@ fn source_image_marks(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<ArenaCla
 #[test]
 fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_definition() {
     use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
-    use cadmpeg_ir::products::{
-        Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
-    };
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition, ProductDefinitionKind};
     let definition = |id: &str| ProductDefinition {
         id: ProductDefinitionId::mint(id).unwrap(),
         kind: Some(ProductDefinitionKind::Part),
@@ -571,7 +569,7 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
         general_tolerance: None,
         active: None,
     };
-    let occurrence = |id: &str, definition: &str, parent: Option<&str>| Occurrence {
+    let occurrence = |id: &str, definition: &str| Occurrence {
         id: OccurrenceId::mint(id).unwrap(),
         prototype: ProductDefinitionId::mint(definition).unwrap(),
         transform: Some(cadmpeg_ir::transform::Transform::identity()),
@@ -589,25 +587,51 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
         super::super::file_definition(model).map(|id| id.as_str().to_owned())
     };
 
+    // The decoder's expanded tree: the file root lists the top level, and a
+    // definition the occurrences its placement holds.
+    let place = |model: &mut cadmpeg_ir::document::Model, parents: &[(&str, Option<&str>)]| {
+        model
+            .product_definitions
+            .retain(|definition| !definition.is_root());
+        for definition in &mut model.product_definitions {
+            definition.occurrences.clear();
+        }
+        for (id, parent) in parents {
+            let parent = parent.map(|parent| OccurrenceId::mint(parent).unwrap());
+            crate::tree::place_under(model, parent.as_ref(), OccurrenceId::mint(*id).unwrap());
+        }
+    };
+
     let mut model = cadmpeg_ir::document::Model::default();
     model.product_definitions = vec![definition(root), definition(child), definition(member)];
     model.occurrences = vec![
-        occurrence("f3d:model:occurrence#root-a", root, None),
-        occurrence(
-            "f3d:model:occurrence#a",
-            child,
-            Some("f3d:model:occurrence#root-a"),
-        ),
-        occurrence("f3d:model:occurrence#xref", member, None),
+        occurrence("f3d:model:occurrence#root-a", root),
+        occurrence("f3d:model:occurrence#a", child),
+        occurrence("f3d:model:occurrence#xref", member),
     ];
+    place(
+        &mut model,
+        &[
+            ("f3d:model:occurrence#root-a", None),
+            ("f3d:model:occurrence#a", Some("f3d:model:occurrence#root-a")),
+            ("f3d:model:occurrence#xref", None),
+        ],
+    );
     assert_eq!(file_definition(&model).as_deref(), Some(root));
 
     let stored = "f3d:model:component#stored";
     let stored_frame = format!("{stored}/stored-frame-occurrence");
     model.product_definitions.push(definition(stored));
-    model
-        .occurrences
-        .push(occurrence(&stored_frame, stored, None));
+    model.occurrences.push(occurrence(&stored_frame, stored));
+    place(
+        &mut model,
+        &[
+            ("f3d:model:occurrence#root-a", None),
+            ("f3d:model:occurrence#a", Some("f3d:model:occurrence#root-a")),
+            ("f3d:model:occurrence#xref", None),
+            (&stored_frame, None),
+        ],
+    );
     assert_eq!(
         file_definition(&model).as_deref(),
         Some(root),
@@ -616,6 +640,10 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
     model.occurrences.retain(|occurrence| {
         occurrence.id.as_str() == stored_frame || occurrence.id.as_str().ends_with("#xref")
     });
+    place(
+        &mut model,
+        &[(&stored_frame, None), ("f3d:model:occurrence#xref", None)],
+    );
     assert_eq!(
         file_definition(&model).as_deref(),
         Some(stored),
@@ -623,10 +651,19 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
     );
     model
         .occurrences
-        .push(occurrence("f3d:model:occurrence#root-b", child, None));
+        .push(occurrence("f3d:model:occurrence#root-b", child));
     model
         .occurrences
-        .push(occurrence("f3d:model:occurrence#root-a", root, None));
+        .push(occurrence("f3d:model:occurrence#root-a", root));
+    place(
+        &mut model,
+        &[
+            (&stored_frame, None),
+            ("f3d:model:occurrence#xref", None),
+            ("f3d:model:occurrence#root-b", None),
+            ("f3d:model:occurrence#root-a", None),
+        ],
+    );
     assert_eq!(file_definition(&model), None, "two source roots");
 
     model.occurrences.clear();

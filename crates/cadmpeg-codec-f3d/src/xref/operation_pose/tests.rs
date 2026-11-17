@@ -166,7 +166,7 @@ fn operation_pose_updates_every_instance_of_one_definition() {
         2
     );
     for occurrence in &ir.model.occurrences {
-        assert_eq!(occurrence.transform.rows()[0][3], 10.0);
+        assert_eq!(occurrence.transform.unwrap().rows()[0][3], 10.0);
     }
     assert!(losses
         .iter()
@@ -211,11 +211,12 @@ fn operation_pose_cannot_move_a_carrier_selected_descendant() {
     let mut child = ir.model.occurrences[0].clone();
     child.id = "f3d:model:occurrence#selected-child".try_into().unwrap();
     child.native_ref = None;
-    child.parent = OccurrenceParent::Occurrence {
-        occurrence: ir.model.occurrences[0].id.clone(),
-    };
     let protected = BTreeSet::from([child.id.clone()]);
     ir.model.occurrences.push(child);
+    let mut occurrences = ir.model.occurrences.clone();
+    ir.model.product_definitions =
+        crate::tree::owned_by(&mut occurrences, &[None, None, Some(0)]);
+    ir.model.occurrences = occurrences;
     let before = ir.model.occurrences.clone();
     let mut losses = Vec::new();
     project(
@@ -275,8 +276,7 @@ fn operation_pose_uses_one_matrix_even_inside_the_agreement_tolerance() {
             [1.0, 0.0, 0.0, if i == 0 { 10.0 } else { 10.0 + 1.0e-13 }],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-        ])
-        .unwrap();
+        ]);
     }
     let mut losses = Vec::new();
     assert_eq!(
@@ -294,7 +294,7 @@ fn operation_pose_uses_one_matrix_even_inside_the_agreement_tolerance() {
         ir.model.occurrences[0].transform,
         ir.model.occurrences[1].transform
     );
-    assert_eq!(ir.model.occurrences[0].transform.rows()[0][3], 10.0);
+    assert_eq!(ir.model.occurrences[0].transform.unwrap().rows()[0][3], 10.0);
 }
 
 #[test]
@@ -387,8 +387,8 @@ fn operation_pose_keeps_an_agreeing_carrier_constraint_and_its_native_evidence()
     let (mut ir, poses) = model();
     for occurrence in &mut ir.model.occurrences {
         occurrence.transform =
-            crate::design::components::neutral_transform(poses.values().next().unwrap().matrix)
-                .unwrap();
+            Some(crate::design::components::neutral_transform(poses.values().next().unwrap().matrix)
+                .unwrap());
     }
     let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);
     let before = ir.model.occurrences.clone();
@@ -440,9 +440,9 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
     let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);
     let mut losses = Vec::new();
     project(&ctx, &mut ir, &poses, &protected, &mut losses).unwrap();
-    assert_eq!(ir.model.occurrences[0].transform, Transform::identity());
-    assert_eq!(ir.model.occurrences[1].transform, Transform::identity());
-    assert!((ir.model.occurrences[2].transform.rows()[0][3] - 10.0).abs() < 1e-9);
+    assert_eq!(ir.model.occurrences[0].transform, Some(Transform::identity()));
+    assert_eq!(ir.model.occurrences[1].transform, Some(Transform::identity()));
+    assert!((ir.model.occurrences[2].transform.unwrap().rows()[0][3] - 10.0).abs() < 1e-9);
     assert!(losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::OperationPoseDisagrees.kind()));
