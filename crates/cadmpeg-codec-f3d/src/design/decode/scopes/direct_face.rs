@@ -18,6 +18,8 @@ use crate::layout::modify_marker_one_prologue as modify_one;
 use crate::layout::modify_marker_zero_prologue as modify_zero;
 use crate::layout::move_face_marker_one_prologue as face_one;
 use crate::layout::move_face_marker_zero_prologue as face_zero;
+use crate::layout::move_face_typed_marker_one_prologue as typed_face_one;
+use crate::layout::move_face_typed_marker_zero_prologue as typed_face_zero;
 use crate::layout::move_marked_transform_prologue as marked_move;
 use crate::layout::move_marker_one_transform_prologue as extended_move;
 use crate::layout::move_transform_frame_253 as move_frame;
@@ -51,28 +53,40 @@ use std::collections::HashMap;
 
 const RIGID_TRANSFORM_TYPE_GUID: &str = "84E6245F-1CDC-4FB8-8048-163A85FAD3F0";
 const RIGID_TRANSFORM_TYPE_VERSION: u32 = 2;
+const CONSTRUCTION_OPERAND_GROUP_TYPE_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
 const RIGID_TRANSFORM_TYPE_VERSION_3: u32 = 3;
 
-/// Primary-header offset of the marked distance reference of an `OffsetFaces`
-/// scope, or `None` when its prologue is not a known form.
+/// The distance record of an `OffsetFaces` scope, named by the marked
+/// distance reference of its prologue, or `None` when the prologue is not a
+/// known form.
 ///
 /// The 253- and 264-byte token-independent forms are identified by length.
 /// The other forms are identified by their prologue and by the offset of the
 /// ordered-reference count, because their scope tail can be 77 or 78 bytes.
 /// A marker-one prologue stores `1` at offset 20 and a u32 zero at 21, so its
 /// fields start four bytes later than those of a marker-zero prologue.
-fn offset_faces_distance_marker(
+fn offset_faces_distance_record(
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<usize> {
-    let references = scope.reference_members().len();
+) -> Option<u32> {
+    let members = scope.reference_members();
+    if members.len() < 3 {
+        return None;
+    }
+    let mut ordered = members.values().copied();
+    let first = ordered.next()?;
+    let second = ordered.next()?;
+    let last = ordered.next_back()?;
     if matches!(
-        (parameter_scope_payload_length(scope), references),
+        (parameter_scope_payload_length(scope), members.len()),
         (Some(264), 4) | (Some(253), 3)
     ) && bytes.get(start + 25) == Some(&1)
     {
-        return Some(25);
+        let distance = marked_record_reference(bytes, start + 25)?;
+        if distance == last {
+            return Some(distance);
+        }
     }
     let count_offset = usize::try_from(scope.reference_count_offset())
         .ok()?
@@ -83,19 +97,31 @@ fn offset_faces_distance_marker(
         _ => return None,
     };
     // A u32 one follows the marked distance reference, then the marked
-    // reference to the selected-face group, the first ordered reference.
-    let first_reference = scope.reference_members().values().next()?;
+    // reference to the selected-face group.
+    let distance = marked_record_reference(bytes, start + distance_marker)?;
+    let group = marked_record_reference(bytes, start + distance_marker + 15)?;
     (View::u32_le_at(bytes, start + distance_marker + 11) == Some(1)
-        && marked_record_reference(bytes, start + distance_marker + 15) == Some(*first_reference))
-    .then_some(distance_marker)
+        && ((group == first && distance == last) || (distance == first && group == second)))
+        .then_some(distance)
 }
 
+/// Whether the distance record of an `OffsetFaces` scope is the last of at
+/// least three ordered references, or the first with the selected-face group
+/// second.
 pub(crate) fn offset_faces_distance_reference_matches(
     scope: &DesignParameterScope,
     distance_record_index: u32,
+    is_face_group: impl Fn(u32) -> bool,
 ) -> bool {
-    scope.reference_members().len() >= 3
-        && scope.reference_members().values().next_back() == Some(&distance_record_index)
+    let members = scope.reference_members();
+    let mut ordered = members.values().copied();
+    match (ordered.next(), ordered.next(), ordered.next_back()) {
+        (Some(first), Some(second), Some(last)) => {
+            last == distance_record_index
+                || (first == distance_record_index && is_face_group(second))
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn exact_direct_face_operation(
@@ -107,11 +133,7 @@ pub(super) fn exact_direct_face_operation(
     let start = usize::try_from(scope.byte_offset()).ok()?;
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::OffsetFaces => {
-            let distance_marker = offset_faces_distance_marker(bytes, scope, start)?;
-            let distance_record_index = marked_record_reference(bytes, start + distance_marker)?;
-            if !offset_faces_distance_reference_matches(scope, distance_record_index) {
-                return None;
-            }
+            let distance_record_index = offset_faces_distance_record(bytes, scope, start)?;
             let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
             Some(DesignDirectFaceOperation::OffsetFaces(
                 direct_face::DesignOffsetFacesOperation {
@@ -203,37 +225,113 @@ fn marked_move_transform(
     Some(operation)
 }
 
+/// The spelling of the two marked references of a `MoveFace` prologue.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MoveFaceReferenceSpelling {
+    /// Eleven-byte marked same-segment references.
+    Plain,
+    /// 51-byte inline-typed local references.
+    Typed,
+}
+
+/// The fixed field offsets of each `MoveFace` prologue form, keyed by marker
+/// value and ordered-reference count offset.
+struct MoveFacePrologueForm {
+    marker: u8,
+    zero_word: Option<usize>,
+    reference_count: usize,
+    transform_flag: usize,
+    transform_reference: usize,
+    reference_flag: usize,
+    group_reference: usize,
+    spelling: MoveFaceReferenceSpelling,
+}
+
+const MOVE_FACE_PROLOGUE_FORMS: [MoveFacePrologueForm; 4] = [
+    MoveFacePrologueForm {
+        marker: face_zero::MARKER_VALUE,
+        zero_word: None,
+        reference_count: face_zero::REFERENCE_COUNT,
+        transform_flag: face_zero::TRANSFORM_FLAG,
+        transform_reference: face_zero::TRANSFORM_REFERENCE,
+        reference_flag: face_zero::REFERENCE_FLAG,
+        group_reference: face_zero::GROUP_REFERENCE,
+        spelling: MoveFaceReferenceSpelling::Plain,
+    },
+    MoveFacePrologueForm {
+        marker: face_one::MARKER_VALUE,
+        zero_word: Some(face_one::ZERO_WORD),
+        reference_count: face_one::REFERENCE_COUNT,
+        transform_flag: face_one::TRANSFORM_FLAG,
+        transform_reference: face_one::TRANSFORM_REFERENCE,
+        reference_flag: face_one::REFERENCE_FLAG,
+        group_reference: face_one::GROUP_REFERENCE,
+        spelling: MoveFaceReferenceSpelling::Plain,
+    },
+    MoveFacePrologueForm {
+        marker: typed_face_zero::MARKER_VALUE,
+        zero_word: None,
+        reference_count: typed_face_zero::REFERENCE_COUNT,
+        transform_flag: typed_face_zero::TRANSFORM_FLAG,
+        transform_reference: typed_face_zero::TRANSFORM_REFERENCE,
+        reference_flag: typed_face_zero::REFERENCE_FLAG,
+        group_reference: typed_face_zero::GROUP_REFERENCE,
+        spelling: MoveFaceReferenceSpelling::Typed,
+    },
+    MoveFacePrologueForm {
+        marker: typed_face_one::MARKER_VALUE,
+        zero_word: Some(typed_face_one::ZERO_WORD),
+        reference_count: typed_face_one::REFERENCE_COUNT,
+        transform_flag: typed_face_one::TRANSFORM_FLAG,
+        transform_reference: typed_face_one::TRANSFORM_REFERENCE,
+        reference_flag: typed_face_one::REFERENCE_FLAG,
+        group_reference: typed_face_one::GROUP_REFERENCE,
+        spelling: MoveFaceReferenceSpelling::Typed,
+    },
+];
+
+/// The prologue form whose ordered-reference count offset is `count_offset`,
+/// relative to the scope's primary indexed header.
+fn move_face_prologue_form(count_offset: u64) -> Option<&'static MoveFacePrologueForm> {
+    MOVE_FACE_PROLOGUE_FORMS
+        .iter()
+        .find(|form| u64_from_index(form.reference_count) == count_offset)
+}
+
+impl MoveFaceReferenceSpelling {
+    /// The record index of the marked reference at `at` in this spelling. A
+    /// typed reference must name `guid`.
+    fn record_reference(self, bytes: &[u8], at: usize, guid: &str) -> Option<u32> {
+        match self {
+            Self::Plain => marked_record_reference(bytes, at),
+            Self::Typed => crate::bytes::typed_local_reference(bytes, at)
+                .filter(|(_, stored)| stored.eq_ignore_ascii_case(guid))
+                .map(|(target, _)| target),
+        }
+    }
+}
+
 fn move_face_operand_markers(
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<(usize, usize)> {
-    let count_offset = usize::try_from(scope.reference_count_offset())
-        .ok()?
-        .checked_sub(start)?;
+) -> Option<(usize, usize, MoveFaceReferenceSpelling)> {
+    let count_offset = scope
+        .reference_count_offset()
+        .checked_sub(u64_from_index(start))?;
+    let form = move_face_prologue_form(count_offset)?;
     let bytes = bytes.get(start..)?;
-    let (flag, transform, reference_flag, group) =
-        match (*bytes.get(face_zero::MARKER)?, count_offset) {
-            (face_one::MARKER_VALUE, face_one::REFERENCE_COUNT)
-                if View::u32_le_at(bytes, face_one::ZERO_WORD) == Some(0) =>
-            {
-                (
-                    face_one::TRANSFORM_FLAG,
-                    face_one::TRANSFORM_REFERENCE,
-                    face_one::REFERENCE_FLAG,
-                    face_one::GROUP_REFERENCE,
-                )
-            }
-            (face_zero::MARKER_VALUE, face_zero::REFERENCE_COUNT) => (
-                face_zero::TRANSFORM_FLAG,
-                face_zero::TRANSFORM_REFERENCE,
-                face_zero::REFERENCE_FLAG,
-                face_zero::GROUP_REFERENCE,
-            ),
-            _ => return None,
-        };
-    (bytes.get(flag) == Some(&1) && View::u32_le_at(bytes, reference_flag) == Some(1))
-        .then_some((transform, group))
+    (*bytes.get(face_zero::MARKER)? == form.marker
+        && form
+            .zero_word
+            .is_none_or(|at| View::u32_le_at(bytes, at) == Some(0))
+        && bytes.get(form.transform_flag) == Some(&1)
+        && View::u32_le_at(bytes, form.reference_flag) == Some(1))
+    .then_some((
+        form.transform_reference,
+        form.group_reference,
+        form.spelling,
+    ))
 }
 
 pub(super) fn exact_move_face_operation(
@@ -247,9 +345,10 @@ pub(super) fn exact_move_face_operation(
         return None;
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    let (transform_marker, group_marker) = move_face_operand_markers(bytes, scope, start)?;
+    let (transform_marker, group_marker, spelling) =
+        move_face_operand_markers(bytes, scope, start)?;
     let transform_at = start.checked_add(transform_marker)?;
-    let transform = marked_record_reference(bytes, transform_at)?;
+    let transform = spelling.record_reference(bytes, transform_at, RIGID_TRANSFORM_TYPE_GUID)?;
     let mut typed = None;
     let mut typed_3 = None;
     let mut unregistered = None;
@@ -356,7 +455,7 @@ pub(super) fn exact_move_face_operation(
     operation.transform_reference_offset = Some(u64_from_index(transform_at));
     operation.face_group = start.checked_add(group_marker).and_then(|at| {
         Some(crate::records::identity::Located {
-            value: marked_record_reference(bytes, at)?,
+            value: spelling.record_reference(bytes, at, CONSTRUCTION_OPERAND_GROUP_TYPE_GUID)?,
             offset: u64_from_index(at.checked_add(1)?),
         })
     });
@@ -778,18 +877,16 @@ pub(crate) fn move_operation_links_hold(
 ) -> bool {
     scope.move_operation().is_none_or(|operation| {
         let face = scope.kind() == scope::DesignFeatureKind::MoveFace;
-        let face_offsets = [
-            (face_zero::REFERENCE_COUNT, face_zero::TRANSFORM_REFERENCE, face_zero::GROUP_REFERENCE),
-            (face_one::REFERENCE_COUNT, face_one::TRANSFORM_REFERENCE, face_one::GROUP_REFERENCE),
-        ].into_iter().find_map(|(count, transform, group)| {
-            if scope.byte_offset().checked_add(u64_from_index(count)) != Some(scope.reference_count_offset()) {
-                return None;
-            }
-            Some((
-                scope.byte_offset().checked_add(u64_from_index(transform))?,
-                scope.byte_offset().checked_add(u64_from_index(group))?.checked_add(1)?,
-            ))
-        });
+        let face_offsets = scope
+            .reference_count_offset()
+            .checked_sub(scope.byte_offset())
+            .and_then(move_face_prologue_form)
+            .and_then(|form| {
+                Some((
+                    scope.byte_offset().checked_add(u64_from_index(form.transform_reference))?,
+                    scope.byte_offset().checked_add(u64_from_index(form.group_reference))?.checked_add(1)?,
+                ))
+            });
         let transform_offset_valid = operation.transform_reference_offset.is_none_or(|offset| {
             if face {
                 face_offsets.is_some_and(|(expected, _)| offset == expected)

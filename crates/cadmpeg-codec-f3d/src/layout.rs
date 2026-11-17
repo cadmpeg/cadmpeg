@@ -2845,8 +2845,12 @@ pub(crate) mod sketch_profile_region_member {
     pub(crate) const LEN: usize = 40;
     /// Offset of `curve_primary_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const CURVE_PRIMARY_ID: usize = 4;
-    /// Offset of `zero_words_3` (`u32[3]`, little-endian). Spec §3.1.
-    pub(crate) const ZERO_WORDS_3: usize = 8;
+    /// Offset of `zero_word_after_primary` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD_AFTER_PRIMARY: usize = 8;
+    /// Offset of `curve_secondary_id` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CURVE_SECONDARY_ID: usize = 12;
+    /// Offset of `zero_word_after_secondary` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD_AFTER_SECONDARY: usize = 16;
 }
 
 /// Byte offsets for the `base_feature_class_377_prefix` record.
@@ -5617,6 +5621,44 @@ pub(crate) mod move_face_marker_one_prologue {
     pub(crate) const GROUP_REFERENCE: usize = 41;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 131;
+}
+
+/// Byte offsets for the `move_face_typed_marker_zero_prologue` record.
+///
+/// Spec §3.1. Record length 211 B.
+pub(crate) mod move_face_typed_marker_zero_prologue {
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 0;
+    /// Offset of `transform_flag` (`u8`). Spec §3.1.
+    pub(crate) const TRANSFORM_FLAG: usize = 21;
+    /// Offset of `transform_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const TRANSFORM_REFERENCE: usize = 22;
+    /// Offset of `reference_flag` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_FLAG: usize = 73;
+    /// Offset of `group_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 77;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 207;
+}
+
+/// Byte offsets for the `move_face_typed_marker_one_prologue` record.
+///
+/// Spec §3.1. Record length 215 B.
+pub(crate) mod move_face_typed_marker_one_prologue {
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 21;
+    /// Offset of `transform_flag` (`u8`). Spec §3.1.
+    pub(crate) const TRANSFORM_FLAG: usize = 25;
+    /// Offset of `transform_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const TRANSFORM_REFERENCE: usize = 26;
+    /// Offset of `reference_flag` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_FLAG: usize = 77;
+    /// Offset of `group_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 81;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 211;
 }
 
 /// Byte offsets for the `move_marked_transform_prologue` record.

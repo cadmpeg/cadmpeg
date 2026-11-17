@@ -791,7 +791,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &mut projection_losses,
                 )?,
                 Some(DesignFeatureFamily::Chamfer) => {
-                    let projection = chamfer::prepare(scope, inputs);
+                    let projection = chamfer::prepare(scope, inputs, &parameters);
                     let mut definition = if projection.legacy_compatible() && parameters.is_empty() {
                         project_fixed_chamfer(scope, construction_groups, edge_operands,
                             edge_identity_operands, edge_treatment_vertex_operands, histories,
@@ -802,7 +802,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     }
                     definition.map_or_else(|| {
                         retain_chamfer_records = true;
-                        projection.project(&parameters, ctx, &mut projection_losses)
+                        projection.project(ctx, &mut projection_losses)
                     }, Ok)?
                 }
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
@@ -3468,40 +3468,26 @@ pub(crate) fn bind_sketch_feature_geometry(
                 let Some(spatial) = spatial else {
                     break 'feature_edit;
                 };
-                if spatial.profiles.is_empty() {
-                    let Some(profile_operand) = scope.extrude_profile() else {
-                        break 'feature_edit;
-                    };
-                    let Some(stream) = native_stream(&scope.id) else {
-                        break 'feature_edit;
-                    };
-                    // The spatial carrier has no closed loop that can be represented
-                    // by a profile index. Keep the exact profile frame as a native
-                    // selection instead of retaining the provisional planar ID.
-                    let sketch_id = spatial.id.clone();
-                    let selection = format!(
-                        "{}{}{}",
-                        stream,
-                        ":design-record-header#",
-                        profile_operand.byte_offset()
-                    );
-                    *profile =
-                        match ProfileRef::spatial_sketch_selection(sketch_id, vec![selection]) {
-                            Ok(profile) => profile,
-                            Err(_) => {
-                                ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone()))
-                            }
-                        };
-                    break 'feature_edit;
-                }
-                let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
+                let Some(profile_operand) = scope.extrude_profile() else {
+                    // Without a profile operand, the selection groups of the
+                    // scope resolve the spatial profiles later.
                     break 'feature_edit;
                 };
-                let mut profiles = Vec::new();
-                for profile_index in 0..profile_count {
-                    profiles.push(profile_index);
-                }
-                *profile = match ProfileRef::spatial_sketch_profiles(spatial.id.clone(), profiles) {
+                let Some(stream) = native_stream(&scope.id) else {
+                    break 'feature_edit;
+                };
+                // Keep the exact profile frame as a native selection instead of
+                // the provisional planar ID. Profile-selection binding replaces
+                // it with spatial profile indices only when the stored region
+                // selection and the Extrude transition prove them.
+                let sketch_id = spatial.id.clone();
+                let selection = format!(
+                    "{}{}{}",
+                    stream,
+                    ":design-record-header#",
+                    profile_operand.byte_offset()
+                );
+                *profile = match ProfileRef::spatial_sketch_selection(sketch_id, vec![selection]) {
                     Ok(profile) => profile,
                     Err(_) => ProfileRef::Planar(PlanarProfileRef::Native(scope.id.clone())),
                 };
@@ -6537,6 +6523,13 @@ fn project_chamfer(
         let spec = or_none!(spec);
         candidates.push(spec);
     }
+    for spec in &candidates {
+        chamfer::note_orientation_assumptions(
+            &format!("Chamfer scope {}", scope.id),
+            *spec,
+            losses,
+        );
+    }
     let mut groups = Vec::new();
     if edge_groups.is_empty() {
         groups.push(ChamferGroup {
@@ -6616,6 +6609,7 @@ fn project_fixed_chamfer(
             }
         }
     };
+    chamfer::note_orientation_assumptions(&format!("Chamfer scope {}", scope.id), spec, losses);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
