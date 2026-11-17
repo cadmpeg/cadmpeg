@@ -2,6 +2,7 @@
 
 use crate::test_support::exchange::decode_inline;
 use cadmpeg_ir::pmi::{DimensionKind, PmiAnnotation, PmiDefinition, PmiDimension, PmiTarget};
+use cadmpeg_ir::references::InstanceTarget;
 
 fn dimensions(ir: &cadmpeg_ir::CadIr) -> Vec<(&PmiAnnotation, &PmiDimension)> {
     ir.model
@@ -14,10 +15,15 @@ fn dimensions(ir: &cadmpeg_ir::CadIr) -> Vec<(&PmiAnnotation, &PmiDimension)> {
         .collect()
 }
 
-fn aspect(id: &str) -> PmiTarget {
+fn aspect(id: &str) -> InstanceTarget<PmiTarget> {
     PmiTarget::ShapeAspect {
         source_id: cadmpeg_core::text::NonBlankString::new(id).expect("nonempty source identity"),
     }
+    .into()
+}
+
+fn directed_location() -> DimensionKind {
+    DimensionKind::Other("directed_dimensional_location".to_owned())
 }
 
 #[test]
@@ -41,7 +47,7 @@ fn only_dimension_entities_decode_as_dimensions() {
     let dimensions = dimensions(result.ir());
     assert_eq!(dimensions.len(), 1);
     let (annotation, relation) = dimensions[0];
-    assert!(matches!(relation.kind(), DimensionKind::Location));
+    assert_eq!(relation.kind(), &directed_location());
     assert!(relation
         .nominal()
         .is_some_and(|value| (value.value.get() - 7.5).abs() < 1.0e-12));
@@ -72,4 +78,23 @@ fn dimension_subtype_names_keep_their_kind() {
             (Some("width".to_owned()), DimensionKind::Size),
         ]
     );
+}
+
+#[test]
+fn a_directed_location_with_a_ratio_nominal_keeps_its_named_kind() {
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('from','',#5,.T.);
+#7=SHAPE_ASPECT('to','',#5,.T.);
+#10=DIRECTED_DIMENSIONAL_LOCATION('offset','',#6,#7);
+#11=MEASURE_REPRESENTATION_ITEM('nominal value',POSITIVE_RATIO_MEASURE(7.5),#1);
+#12=SHAPE_DIMENSION_REPRESENTATION('offset value',(#11),#2);
+#13=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#12);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let dimensions = dimensions(result.ir());
+    assert_eq!(dimensions.len(), 1);
+    assert_eq!(dimensions[0].1.kind(), &directed_location());
 }

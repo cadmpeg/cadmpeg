@@ -1786,12 +1786,12 @@ fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
         name if name == "DIMENSIONAL_SIZE" || name.starts_with("DIMENSIONAL_SIZE_") => {
             Some(DimensionKind::Size)
         }
-        name if name == "DIMENSIONAL_LOCATION"
-            || name.starts_with("DIMENSIONAL_LOCATION_")
-            || name == "DIRECTED_DIMENSIONAL_LOCATION" =>
-        {
+        name if name == "DIMENSIONAL_LOCATION" || name.starts_with("DIMENSIONAL_LOCATION_") => {
             Some(DimensionKind::Location)
         }
+        "DIRECTED_DIMENSIONAL_LOCATION" => Some(DimensionKind::Other(
+            "directed_dimensional_location".to_owned(),
+        )),
         name if name == "ANGULAR_SIZE"
             || name.starts_with("ANGULAR_SIZE_")
             || name == "ANGULAR_LOCATION"
