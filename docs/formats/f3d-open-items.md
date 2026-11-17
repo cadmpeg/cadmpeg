@@ -1453,11 +1453,11 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 ### DR-142. Thread construction option bytes
 
-**Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte, the pitch marker, and the zero bytes before the trailer `01` select?
+**Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte and the zero bytes before the trailer `01` select? In a form without the extended prefix, which field separates a cosmetic thread from a modeled thread whose scope has a null current history-state identity?
 
-**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag and the pitch-marker byte is the modeled flag of a scope with a result. Its second marker byte is `1` or `2`: threads on one external face store `1`, threads on two external faces and a thread on one internal face store `2`, and threads edited after other features store either value on one face. Thread type, designation, class, length, offset, hand, and the modeled option leave it unchanged. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. In the extended standard form, the first marker byte is the full-length flag. Its second marker byte is `1` or `2`: threads on one external face store `1`, threads on two external faces and a thread on one internal face store `2`, and threads edited after other features store either value on one face. Thread type, designation, class, length, offset, hand, and the modeled option leave it unchanged. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it. A form without the extended prefix stores modeled flag `0` for both a cosmetic thread and a modeled thread whose scope has a null current history-state identity; in a scope with a null current history-state identity the decoder reads `0` as a cosmetic thread and reports `feature.thread-modeled-flag-assumed`.
 
-**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time. For the second marker byte of the extended standard form: one external and one internal thread on faces made by the same feature, each saved before and after an edit of its face selection.
+**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time. A cosmetic thread and a modeled thread of one form without the extended prefix, each saved with a null current history-state identity. For the second marker byte of the extended standard form: one external and one internal thread on faces made by the same feature, each saved before and after an edit of its face selection.
 
 **Conflict.** None.
 
@@ -1811,7 +1811,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Conflict.** None.
 
-**Note.** DR-143 tracks the Thread modeled state. A following transition that drops the slot, rebinds its surface, or changes the bound surface record or its rows leaves the face unresolved with `feature.thread-live-face-unproven`.
+**Note.** A following transition that drops the slot, rebinds its surface, or changes the bound surface record or its rows leaves the face unresolved with `feature.thread-live-face-unproven`.
 
 ### DR-244. Treatment edge proof without a transition
 
@@ -2873,9 +2873,9 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 ### DR-357. Compact owned Thread option semantics
 
-**Question.** Which compact owned Thread field states the modeled flag? What property does the prefix word encode, and what construction option does the byte `C` encode beyond its owner-reference order?
+**Question.** What property does the prefix word encode, and what construction option does the byte `C` encode beyond its owner-reference order?
 
-**Known.** The version-four class-`326/263` compact owned frame has a zero u32 at primary-relative offset 33. The compact marker starts at offset 37, the `6H` token at offset 42, and the designation at offset 46. Construction marker `00 01 00 00 00` has leading offset and length owners; marker `00 02 00 00 00` has trailing offset and length owners. Both trailers repeat the length and offset owner references. Both pitch markers are zero. The selected internal cylinders have the stored minor diameters. The decoder retains these forms and their owner order; the neutral modeled state remains unspecified.
+**Known.** The version-four class-`326/263` compact owned frame has a zero u32 at primary-relative offset 33. The compact marker starts at offset 37, the `6H` token at offset 42, and the designation at offset 46. Construction marker `00 01 00 00 00` has leading offset and length owners; marker `00 02 00 00 00` has trailing offset and length owners. Both trailers repeat the length and offset owner references. The selected internal cylinders have the stored minor diameters. The decoder retains these forms and their owner order.
 
 **Need.** Controlled changes to the prefix word and construction option, with complete scope bytes, face orientation, and resulting geometry.
 

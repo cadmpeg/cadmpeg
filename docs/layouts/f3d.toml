@@ -17792,11 +17792,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "the pitch marker at 21"
+anchor = "the modeled flag at 21"
 
 [[record.field]]
 name = "pitch"
@@ -17895,11 +17895,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "its scalar lanes use pitch marker `0`"
+anchor = "its scalar lanes use the same offsets as the compact tail"
 
 [[record.field]]
 name = "pitch"
@@ -17952,11 +17952,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "its scalar lanes use pitch marker `0`"
+anchor = "its scalar lanes use the same offsets as the compact tail"
 
 [[record.field]]
 name = "pitch"
