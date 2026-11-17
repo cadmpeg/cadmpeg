@@ -16,6 +16,7 @@ pub mod configuration;
 pub mod construction;
 pub mod container;
 pub mod dimension;
+pub mod edit;
 pub mod evaluation;
 pub mod expr;
 pub mod feature;

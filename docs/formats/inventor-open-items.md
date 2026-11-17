@@ -318,6 +318,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** The record that dates an unbound Split or Base feature must be found before a history state can be assigned. A state must not be assigned from a body key that appears or disappears without a tag. The join of the body reference of an edge selector to a history body, which selects the owner edge in the state of that body, needs a rule.
 
+### DE-18. Contour-flange thickness side
+
+**Question.** Which thickness distributions do other contour plate-side values and attachment modes select?
+
+**Known.** Section 13.5 defines the Right thickness side for plate-side enumeration `(2, 0)` with attachment modes `(9, 1)` and `(9, 4)`.
+
+**Need.** Thickness-side mappings for other plate-side values and attachment-mode pairs.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

@@ -10,7 +10,7 @@ use cadmpeg_ir::units::UnitVector3;
 
 const DEGREE: usize = 3;
 const FIT_ERROR_MM: f64 = 0.0002;
-const MAX_SPANS: usize = 48;
+const MAX_CELLS: usize = 48 * 48;
 const MAX_REFINEMENTS: usize = 9;
 const HOLDOUTS: [f64; 3] = [0.2, 0.5, 0.8];
 
@@ -105,7 +105,7 @@ fn refined(points: &[f64], splits: &BTreeSet<usize>) -> Option<Vec<f64>> {
         }
     }
     output.push(*points.last()?);
-    (output.len() <= MAX_SPANS + 1).then_some(output)
+    Some(output)
 }
 
 fn spline_axis(points: &[f64]) -> NurbsSurfaceAxis {
@@ -161,7 +161,11 @@ fn fit(
     evaluate: impl Fn(f64, f64) -> Option<Point3>,
 ) -> Option<NurbsSurface> {
     for _ in 0..=MAX_REFINEMENTS {
-        if u_points.len() > MAX_SPANS + 1 || v_points.len() > MAX_SPANS + 1 {
+        let cells = u_points
+            .len()
+            .checked_sub(1)?
+            .checked_mul(v_points.len().checked_sub(1)?)?;
+        if cells == 0 || cells > MAX_CELLS {
             return None;
         }
         let mut u_splits = BTreeSet::new();
@@ -221,4 +225,53 @@ fn fit(
         v_points = refined(&v_points, &v_splits)?;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offset_retains_a_long_native_knot_partition() {
+        let spans = 64_u32;
+        let u_knots: Vec<_> = std::iter::once(0.0)
+            .chain((0..=spans).map(f64::from))
+            .chain(std::iter::once(f64::from(spans)))
+            .collect();
+        let rows = (0..=spans)
+            .map(|u| {
+                vec![
+                    Point3::new(f64::from(u), 0.0, 0.0),
+                    Point3::new(f64::from(u), 1.0, 0.0),
+                ]
+            })
+            .collect();
+        let source = NurbsSurface::new(
+            NurbsSurfaceAxis::new(1, u_knots, false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsPoleGrid::Polynomial { rows },
+            false,
+        )
+        .expect("long planar strip");
+        let fitted = offset(&source, 2.0, [[0.0, f64::from(spans)], [0.0, 1.0]])
+            .expect("native spans fit inside the cell budget");
+        for u in [0.0, 0.25, 17.5, 32.0, 63.75, 64.0] {
+            for v in [0.0, 0.25, 0.75, 1.0] {
+                let point =
+                    eval::decode::nurbs_surface_point(EvaluationAdmission::Standard, &fitted, u, v)
+                        .expect("offset sample")
+                        .get();
+                assert!(point.distance(Point3::new(u, v, 2.0)) <= FIT_ERROR_MM);
+            }
+        }
+    }
+
+    #[test]
+    fn oversized_tensor_grid_stops_before_surface_evaluation() {
+        let points = (0..=64).map(f64::from).collect::<Vec<_>>();
+        assert!(fit(points.clone(), points, |_, _| panic!(
+            "grid exceeds the cell budget"
+        ))
+        .is_none());
+    }
 }

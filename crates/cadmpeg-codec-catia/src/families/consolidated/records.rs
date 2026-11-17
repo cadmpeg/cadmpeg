@@ -1488,6 +1488,16 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
     records: &[ConsolidatedRecord],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
+    resolve_selected_consolidated_edge_blocks(ctx, data, records, |_| true, refusal)
+}
+
+pub(crate) fn resolve_selected_consolidated_edge_blocks(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    include: impl Fn(&ConsolidatedEdgeBlock) -> bool,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Result<Vec<ResolvedConsolidatedEdgeBlock>, cadmpeg_core::CodecError> {
     let surfaces = a5_surfaces_from_records(data, records, refusal)?;
     let points = object_stream_vertices_from_records(data, records);
     let standalone = (b2_cylinders_from_records(data, records)).collect::<Vec<_>>();
@@ -1506,7 +1516,10 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
         nurbs_surfaces: &surfaces,
     };
     let mut resolved = Vec::new();
-    for block in consolidated_edge_blocks_from_records(data, records) {
+    for block in consolidated_edge_blocks_from_records(data, records)
+        .into_iter()
+        .filter(include)
+    {
         let mut supports = [None, None];
         for side in [0, 1] {
             supports[side] = resolve_side_support(ctx, &block.pcurves[side], &points, &carriers)?;
