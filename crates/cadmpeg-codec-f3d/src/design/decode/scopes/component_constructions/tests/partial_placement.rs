@@ -259,11 +259,23 @@ fn legacy_fixture(frame: usize, name: &str) -> (Vec<u8>, DesignParameterScope, u
 
 #[test]
 fn legacy_scope_frames_retain_placements_without_source_records() {
-    for frame in [256, 257, 261, 267, 385, 389, 399] {
+    for (frame, legacy_261) in [
+        (256, false),
+        (257, false),
+        (261, false),
+        (261, true),
+        (267, false),
+        (385, false),
+        (389, false),
+        (399, false),
+    ] {
         for name in ["Component Insert", "Einfügen", "Komponente einfügen"] {
-            let (bytes, mut scope, _, _) = legacy_fixture(frame, name);
+            let (mut bytes, mut scope, _, _) = legacy_fixture(frame, name);
+            if legacy_261 {
+                bytes[20] = 0;
+            }
             let placement = unresolved_component_insert_placement(&bytes, &scope)
-                .unwrap_or_else(|| panic!("legacy frame {frame} refused"));
+                .unwrap_or_else(|| panic!("legacy frame {frame} refused (byte 20: {})", bytes[20]));
             assert_eq!(placement.occurrence_identity, 19);
             if frame >= 385 {
                 assert_eq!(

@@ -889,7 +889,8 @@ pub(super) fn unresolved_component_insert_placement(
             None,
         ),
         261 => (
-            exact_component_insert_identity_scope(bytes, start, relation)?,
+            exact_component_insert_identity_scope(bytes, start, relation)
+                .or_else(|| exact_identity_insert_scope(bytes, start, relation, false))?,
             None,
         ),
         frame @ (385 | 389 | 399) => {
