@@ -231,6 +231,9 @@ fn legacy_fixture(frame: usize) -> (Vec<u8>, DesignParameterScope, usize, usize)
     bytes[table + 15..table + 19].copy_from_slice(&u32::MAX.to_le_bytes());
     bytes[table + 19..ordinal]
         .copy_from_slice(&crate::bytes::lp_utf16_bytes("Component Insert").unwrap());
+    if frame == 385 {
+        bytes[339..343].copy_from_slice(&u32::MAX.to_le_bytes());
+    }
     let (_, mut scope) = fixture(272, false);
     scope
         .try_edit(|draft| {
@@ -254,7 +257,8 @@ fn legacy_fixture(frame: usize) -> (Vec<u8>, DesignParameterScope, usize, usize)
 fn legacy_scope_frames_retain_placements_without_source_records() {
     for frame in [256, 257, 261, 267, 385, 389, 399] {
         let (bytes, mut scope, _, _) = legacy_fixture(frame);
-        let placement = unresolved_component_insert_placement(&bytes, &scope).unwrap();
+        let placement = unresolved_component_insert_placement(&bytes, &scope)
+            .unwrap_or_else(|| panic!("legacy frame {frame} refused"));
         assert_eq!(placement.occurrence_identity, 19);
         if frame >= 385 {
             assert_eq!(

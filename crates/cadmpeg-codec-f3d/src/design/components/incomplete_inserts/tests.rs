@@ -187,6 +187,27 @@ fn legacy_partial_insert_projection_names_its_frame_and_membership_assumptions()
             .try_edit(|draft| {
                 draft.frame_length = frame;
                 draft.paired_byte_offset = frame;
+                draft.feature_ordinal_offset = match frame {
+                    256 | 257 | 267 => 180,
+                    261 => 184,
+                    385 => 308,
+                    389 | 399 => 312,
+                    _ => unreachable!(),
+                };
+                draft.kind_offset = draft.feature_ordinal_offset - 32;
+                draft.reference_count_offset = match frame {
+                    256 | 257 | 267 => 125,
+                    261 => 129,
+                    385 => 253,
+                    389 | 399 => 257,
+                    _ => unreachable!(),
+                };
+                draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+                    vec![20],
+                    vec![draft.reference_count_offset + 5],
+                    "reference_members",
+                )
+                .unwrap();
             })
             .unwrap();
         if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
