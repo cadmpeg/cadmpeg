@@ -411,13 +411,25 @@ fn contour_refusal_details_are_pinned() {
 }
 
 fn native(id: &str, native_ref: &str) -> Feature {
-    let mut feature: Feature = serde_json::from_value(serde_json::json!({
-        "id": format!("test:model:feature#{id}"), "ordinal": 1, "suppressed": null,
-        "definition": {"definition": "native", "kind": "Plate"}
-    }))
-    .expect("native feature");
-    feature.native_ref = Some(native_ref.to_owned());
-    feature
+    Feature {
+        product_definition: None,
+        id: FeatureId::mint(format!("test:model:feature#{id}")).expect("feature identity"),
+        ordinal: 1,
+        name: None,
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::Other("Plate".into()),
+                parameters: BTreeMap::new(),
+            },
+        )),
+        native_ref: Some(native_ref.to_owned()),
+    }
 }
 
 #[test]
