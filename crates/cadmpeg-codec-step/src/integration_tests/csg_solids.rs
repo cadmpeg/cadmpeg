@@ -4,6 +4,7 @@
 //! areas, and centroids equal their closed forms.
 
 use std::f64::consts::PI;
+use std::fmt::Write as _;
 
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::swept::PrimitiveShape;
@@ -648,4 +649,110 @@ fn a_revolved_rectangle_is_a_washer() {
     let ir = decode("#30", &rectangle_revolution(1.0, 2.0, 0.0, "360."));
     let area = 2.0 * PI * (4.0 - 1.0) + 2.0 * PI * (1.0 + 2.0);
     assert_solid("washer", &ir, 3.0 * PI, area, [0.0, 0.0, 0.5]);
+}
+
+/// The block of `size` 2 × 3 × 4 at local corner `(1, 0, 0)` of a plant CSG
+/// shape, followed by `orientations`, each a plant item orientation at
+/// `(10, 20, 30)` whose x axis is the model's y.
+fn plant_block(orientations: &[u64]) -> cadmpeg_ir::codec::DecodeResult {
+    let mut items = vec!["#30".to_owned()];
+    let mut geometry = String::from(
+        "#30=BLOCK('block',#31,2.,3.,4.);\n\
+         #31=AXIS2_PLACEMENT_3D('',#32,#21,#22);\n\
+         #32=CARTESIAN_POINT('',(1.,0.,0.));\n\
+         #41=CARTESIAN_POINT('plant item location',(10.,20.,30.));\n",
+    );
+    for orientation in orientations {
+        items.push(format!("#{orientation}"));
+    }
+    for orientation in orientations {
+        writeln!(
+            geometry,
+            "#{orientation}=AXIS2_PLACEMENT_3D('plant item orientation',#41,#21,#23);"
+        )
+        .expect("write a placement");
+    }
+    decode_inline(&exchange(&items.join(","), &geometry).replace(
+        "#20=CSG_SHAPE_REPRESENTATION",
+        "#20=PLANT_CSG_SHAPE_REPRESENTATION",
+    ))
+}
+
+fn has_point(ir: &CadIr, expected: [f64; 3]) -> bool {
+    ir.geometry.points.iter().any(|point| {
+        let position = point.position().get();
+        let found = [position.x, position.y, position.z];
+        found
+            .iter()
+            .zip(expected)
+            .all(|(found, expected)| (found - expected).abs() <= MEASURE_RELATIVE)
+    })
+}
+
+/// The plant item orientation is the frame of the block's own placement:
+/// its x axis is the model's y and its y axis the model's -x, so the local
+/// corner `(1, 0, 0)` lies at `(10, 21, 30)` and the far corner `(3, 3, 4)`
+/// at `(7, 23, 34)`.
+#[test]
+fn a_plant_item_orientation_places_its_csg_items() {
+    let decoded = plant_block(&[40]);
+    let ir = decoded.ir();
+    assert!(has_point(ir, [10.0, 21.0, 30.0]));
+    assert!(has_point(ir, [7.0, 23.0, 34.0]));
+    assert_solid("plant block", ir, 24.0, 52.0, [8.5, 22.0, 32.0]);
+    let FeatureOperation::Primitive(primitive) = &ir.design.features[0].definition.operation else {
+        panic!("a primitive");
+    };
+    let frame = primitive
+        .placement
+        .as_ref()
+        .and_then(|placement| placement.resolved.as_ref())
+        .expect("a resolved frame");
+    let origin = frame.origin.get();
+    assert_eq!([origin.x, origin.y, origin.z], [10.0, 21.0, 30.0]);
+    assert_eq!(frame.x_axis, cadmpeg_ir::units::UnitVector3::Y_AXIS);
+}
+
+/// Two plant item orientations name no frame: the block keeps its own
+/// placement and the decode reports the conflict.
+#[test]
+fn two_plant_item_orientations_place_nothing() {
+    let decoded = plant_block(&[40, 42]);
+    assert_solid("unplaced block", decoded.ir(), 24.0, 52.0, [2.0, 1.5, 2.0]);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::CsgPlantOrientationAmbiguous.kind()));
+}
+
+/// An AP227 piping component definition is a product definition: it owns
+/// the derived body and scopes the feature.
+#[test]
+fn a_piping_component_definition_scopes_its_feature() {
+    let decoded = decode_inline(
+        &exchange(
+            "#30",
+            "#30=SPHERE('sphere',2.,#32);\n\
+             #32=CARTESIAN_POINT('',(0.,0.,0.));\n",
+        )
+        .replace(
+            "#6=PRODUCT_DEFINITION('design','',#4,#5);",
+            "#6=PIPING_COMPONENT_DEFINITION('design','',#4,#5);",
+        ),
+    );
+    let ir = decoded.ir();
+    let [definition] = ir.model.product_definitions.as_slice() else {
+        panic!("one product definition");
+    };
+    assert_eq!(definition.bodies, vec![ir.geometry.bodies[0].id.clone()]);
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    assert_eq!(scope.definition, definition.id);
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::CsgDesignUnscoped.kind()));
 }

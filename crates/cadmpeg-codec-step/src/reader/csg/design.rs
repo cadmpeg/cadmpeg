@@ -108,7 +108,7 @@ pub(in crate::reader) fn attach(
                     refine: None,
                     fuzzy_tolerance: None,
                 },
-                placement: None,
+                placement: swept_placement(item),
                 component: None,
                 driven_by: None,
                 native_ref: Some(format!("#{member}")),
@@ -176,6 +176,17 @@ pub(in crate::reader) fn attach(
     losses
 }
 
+/// The plant item orientation of a swept-area solid, which places the
+/// result of its sweep. A primitive states the orientation in its own frame.
+fn swept_placement(item: &Item) -> Option<Box<Construction<kinds::Frame>>> {
+    match (&item.shape, &item.orientation) {
+        (Shape::Extruded { .. } | Shape::Revolved { .. }, Some(frame)) => {
+            fixed_frame(frame, None).map(Box::new)
+        }
+        _ => None,
+    }
+}
+
 fn feature_id(item: u64) -> FeatureId {
     FeatureId::from(ids::design(kind!("feature"), item))
 }
@@ -227,7 +238,13 @@ fn typed_operation(item: &Item, csg: &CsgData) -> Option<FeatureOperation> {
             source_settings: NativeOptions::new(),
         }))
     };
-    Some(match &item.shape {
+    let placed = match &item.shape {
+        Shape::Extruded { .. } | Shape::Revolved { .. } | Shape::Boolean { .. } => {
+            item.shape.clone()
+        }
+        _ => item.placed_shape(),
+    };
+    Some(match &placed {
         Shape::Block { frame, size } => primitive(
             PrimitiveShape::Box {
                 size: [

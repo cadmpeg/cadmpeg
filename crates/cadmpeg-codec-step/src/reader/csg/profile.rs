@@ -207,6 +207,29 @@ impl Profile {
         }
     }
 
+    /// The profile moved by a rigid motion, given as its point map and its
+    /// direction map.
+    pub(super) fn moved(
+        &self,
+        place: &impl Fn(Point3) -> Point3,
+        turn: &impl Fn(Vector3) -> Vector3,
+    ) -> Self {
+        Self {
+            origin: place(self.origin),
+            normal: turn(self.normal),
+            loops: self
+                .loops
+                .iter()
+                .map(|profile_loop| {
+                    profile_loop
+                        .iter()
+                        .map(|segment| segment.moved(place, turn))
+                        .collect()
+                })
+                .collect(),
+        }
+    }
+
     /// Every point the loops reach at their segment ends and arc midpoints.
     pub(super) fn sample_points(&self) -> Vec<Point3> {
         let mut points = Vec::new();

@@ -399,6 +399,9 @@ pub(crate) enum StepLossCode {
     AngleUnitFactorCorrected,
     /// A CSG item's attributes do not resolve; it has no feature and no body.
     CsgItemUnresolved,
+    /// A plant CSG shape lists several plant item orientations, so its items
+    /// keep their own placements.
+    CsgPlantOrientationAmbiguous,
     /// A CSG item has a design feature and no derived body.
     CsgSolidUnsynthesized,
     /// A CSG Boolean tree has design features and no derived body.
@@ -590,6 +593,7 @@ impl StepLossCode {
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
         Self::CsgItemUnresolved,
+        Self::CsgPlantOrientationAmbiguous,
         Self::CsgSolidUnsynthesized,
         Self::CsgBooleanUnevaluated,
         Self::CsgProfileGapClosed,
@@ -799,6 +803,7 @@ impl StepLossCode {
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::CsgItemUnresolved => "csg.item-unresolved",
+            Self::CsgPlantOrientationAmbiguous => "csg.plant-orientation-ambiguous",
             Self::CsgSolidUnsynthesized => "csg.solid-unsynthesized",
             Self::CsgBooleanUnevaluated => "csg.boolean-unevaluated",
             Self::CsgProfileGapClosed => "csg.profile-gap-closed",
@@ -1007,6 +1012,7 @@ impl StepLossCode {
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
+            Self::CsgPlantOrientationAmbiguous => LossTaxonomy::BodyTransformNotApplied,
             Self::CsgItemUnresolved | Self::CsgSolidUnsynthesized | Self::CsgBooleanUnevaluated => {
                 LossTaxonomy::GeometryNotTransferred
             }
@@ -1269,6 +1275,7 @@ mod tests {
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
                 "csg.item-unresolved",
+                "csg.plant-orientation-ambiguous",
                 "csg.solid-unsynthesized",
                 "csg.boolean-unevaluated",
                 "csg.profile-gap-closed",

@@ -1580,6 +1580,16 @@ CADIR decision: a revolution angle within 10⁻⁹ of one turn of its
 plane-angle unit, relative to the turn, is exactly one turn, and a larger
 angle violates IP3.
 
+CADIR decision: in an ISO 10303-227 `PLANT_CSG_SHAPE_REPRESENTATION`, the
+`AXIS2_PLACEMENT_3D` item named `plant item orientation` is the frame in which
+the representation's CSG items state their own placements. The reader composes
+the frame into each item and into the operands of its Boolean tree, so the
+derived body lies in model coordinates. A primitive feature's frame is the
+composed placement. A swept-area feature keeps its profile, direction, and
+axis as stated, and its `Feature.placement` is the orientation frame. A
+representation that lists two or more such placements composes no frame, and
+the decode reports `csg.plant-orientation-ambiguous`.
+
 CADIR decision: every CSG primitive, swept-area solid, and Boolean result is
 one design feature (CADIR v11 §6.3 and §6.5). The features of a product
 definition are the members of one unordered `Group` container, the root of
@@ -1898,8 +1908,19 @@ the formations of that product. The standard permits a product to have
 multiple definition groups. The product-definition function resolves these
 associations as a `SET`; `PRESENTATION_LAYER_ASSIGNMENT.assigned_items` is also
 a `SET`, so neither relationship supplies a view order.
-CADIR decision: each linked `PRODUCT_DEFINITION` is one product-definition
-view. A product with one definition uses identity
+ISO 10303-41 types `PRODUCT_DEFINITION_RELATIONSHIP.relating_product_definition`
+and `related_product_definition` as `product_definition`, so an entity that
+fills either attribute is a subtype of `product_definition`. In ISO 10303-227
+these subtypes are `DUCTING_SYSTEM`, `INSTRUMENTATION_AND_CONTROL_SYSTEM`,
+`PIPING_COMPONENT_DEFINITION`, `PIPING_SYSTEM`, `PLANT_LINE_DEFINITION`,
+`PLANT_LINE_SEGMENT_DEFINITION`, and `STRUCTURAL_SYSTEM`. Each holds the
+`product_definition` attributes `id`, `description`, `formation`, and
+`frame_of_reference` in its first four places. A plain
+`PRODUCT_DEFINITION_RELATIONSHIP` relates two definitions; it places no
+occurrence.
+CADIR decision: each linked `PRODUCT_DEFINITION`, or linked instance of one of
+these subtypes, is one product-definition view. A subtype instance whose
+`formation` is unset links to no product and is no view. A product with one definition uses identity
 `step:product:product#<product>`. When one `PRODUCT` has multiple definitions,
 each view receives a distinct identity suffixed by its definition instance.
 Shape bodies and definition descriptions bind to their own view and are not

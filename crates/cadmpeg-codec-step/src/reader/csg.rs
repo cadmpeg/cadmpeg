@@ -119,6 +119,113 @@ struct Item {
     entity: &'static str,
     name: Option<String>,
     shape: Shape,
+    /// The frame in which the item's own placement is stated, where a
+    /// plant item orientation places it.
+    orientation: Option<Frame>,
+}
+
+impl Item {
+    /// The item's shape in model coordinates.
+    fn placed_shape(&self) -> Shape {
+        match &self.orientation {
+            Some(frame) => self.shape.placed(frame),
+            None => self.shape.clone(),
+        }
+    }
+}
+
+impl Shape {
+    /// The shape whose placements are stated in `frame`, in model
+    /// coordinates.
+    fn placed(&self, frame: &Frame) -> Self {
+        let place = |point: cadmpeg_ir::math::Point3| frame.point(point.x, point.y, point.z);
+        let turn = |vector: Vector3| {
+            frame.x.scale(vector.x) + frame.y.scale(vector.y) + frame.z.scale(vector.z)
+        };
+        let moved = |inner: &Frame| Frame {
+            origin: place(inner.origin),
+            x: turn(inner.x),
+            y: turn(inner.y),
+            z: turn(inner.z),
+        };
+        match self {
+            Self::Block { frame, size } => Self::Block {
+                frame: moved(frame),
+                size: *size,
+            },
+            Self::Wedge { frame, size, ltx } => Self::Wedge {
+                frame: moved(frame),
+                size: *size,
+                ltx: *ltx,
+            },
+            Self::Cylinder {
+                frame,
+                radius,
+                height,
+            } => Self::Cylinder {
+                frame: moved(frame),
+                radius: *radius,
+                height: *height,
+            },
+            Self::Cone {
+                frame,
+                radii,
+                height,
+                source,
+            } => Self::Cone {
+                frame: moved(frame),
+                radii: *radii,
+                height: *height,
+                source: moved(source),
+            },
+            Self::Sphere { frame, radius } => Self::Sphere {
+                frame: moved(frame),
+                radius: *radius,
+            },
+            Self::Torus {
+                frame,
+                major,
+                minor,
+            } => Self::Torus {
+                frame: moved(frame),
+                major: *major,
+                minor: *minor,
+            },
+            Self::Ellipsoid { frame, semi_axes } => Self::Ellipsoid {
+                frame: moved(frame),
+                semi_axes: *semi_axes,
+            },
+            Self::Extruded {
+                area,
+                profile,
+                direction,
+                depth,
+            } => Self::Extruded {
+                area: *area,
+                profile: profile
+                    .as_ref()
+                    .map(|profile| profile.moved(&place, &turn))
+                    .map_err(Clone::clone),
+                direction: turn(*direction),
+                depth: *depth,
+            },
+            Self::Revolved {
+                area,
+                profile,
+                axis,
+                angle,
+            } => Self::Revolved {
+                area: *area,
+                profile: profile
+                    .as_ref()
+                    .map(|profile| profile.moved(&place, &turn))
+                    .map_err(Clone::clone),
+                axis: moved(axis),
+                angle: *angle,
+            },
+            Self::Boolean { .. } => self.clone(),
+        }
+    }
 }
 
 /// What the stage hands to the design attachment after product decoding.
@@ -176,6 +283,7 @@ pub(super) fn decode(
                         entity,
                         name,
                         shape,
+                        orientation: None,
                     },
                 );
             }
@@ -194,6 +302,7 @@ pub(super) fn decode(
                         entity: "BOOLEAN_RESULT",
                         name,
                         shape: Shape::Boolean { operator, operands },
+                        orientation: None,
                     },
                 );
             }
@@ -207,6 +316,11 @@ pub(super) fn decode(
     for item in items.values_mut() {
         if let Shape::Boolean { operands, .. } = &mut item.shape {
             *operands = operands.map(resolve);
+        }
+    }
+    for (item, frame) in plant_orientations(exchange, geometry, &items, &solids, &mut losses) {
+        if let Some(item) = items.get_mut(&item) {
+            item.orientation = Some(frame);
         }
     }
     let mut operands = BTreeSet::new();
@@ -225,7 +339,7 @@ pub(super) fn decode(
                 continue;
             }
             let mut builder = SolidBuilder::new(item.id, tolerance);
-            if let Err(message) = build(&mut builder, &item.shape) {
+            if let Err(message) = build(&mut builder, &item.placed_shape()) {
                 losses.push(StepLossCode::CsgSolidUnsynthesized.note(format!(
                     "{} #{} has a design feature and no derived body: {message}",
                     item.entity, item.id
@@ -327,6 +441,70 @@ fn item_name(
             )
         })
         .filter(|name| !name.is_empty())
+}
+
+/// The name of the placement that states the frame of a plant CSG shape's
+/// items.
+const PLANT_ITEM_ORIENTATION: &str = "plant item orientation";
+
+/// The frame of the items of each `PLANT_CSG_SHAPE_REPRESENTATION` that
+/// lists one `AXIS2_PLACEMENT_3D` named [`PLANT_ITEM_ORIENTATION`], by item;
+/// a Boolean tree's operands take its root's frame. A representation with
+/// several such placements places no item.
+fn plant_orientations(
+    exchange: &Exchange,
+    geometry: &GeometryData,
+    items: &BTreeMap<u64, Item>,
+    solids: &BTreeMap<u64, u64>,
+    losses: &mut Vec<LossNote>,
+) -> BTreeMap<u64, Frame> {
+    let mut frames = BTreeMap::new();
+    for (representation, record) in exchange.entities("PLANT_CSG_SHAPE_REPRESENTATION") {
+        let Some(values) = super::topology::representation_item_values(record) else {
+            continue;
+        };
+        let members: Vec<u64> = values.iter().filter_map(Value::reference).collect();
+        let orientations: Vec<u64> = members
+            .iter()
+            .copied()
+            .filter(|member| {
+                exchange.records().get(member).is_some_and(|candidate| {
+                    candidate.simple_name() == Some("AXIS2_PLACEMENT_3D")
+                        && matches!(
+                            candidate.parameter(0),
+                            Some(Value::String(bytes)) if exchange
+                                .decode_string(bytes)
+                                .is_ok_and(|name| name.trim() == PLANT_ITEM_ORIENTATION)
+                        )
+                })
+            })
+            .collect();
+        let frame = match orientations.as_slice() {
+            [] => continue,
+            [only] => match geometry.placements.get(only) {
+                Some(&placement) => Frame::from_placement(placement),
+                None => continue,
+            },
+            _ => {
+                losses.push(StepLossCode::CsgPlantOrientationAmbiguous.note(format!(
+                    "PLANT_CSG_SHAPE_REPRESENTATION #{representation} lists {} placements \
+                     named '{PLANT_ITEM_ORIENTATION}'; its items keep their own placements",
+                    orientations.len()
+                )));
+                continue;
+            }
+        };
+        let mut tree = Vec::new();
+        let mut seen = BTreeSet::new();
+        for member in members {
+            let root = solids.get(&member).copied().unwrap_or(member);
+            collect_tree(root, items, &mut seen, &mut tree);
+        }
+        for item in tree {
+            frames.entry(item).or_insert(frame);
+        }
+    }
+    frames
 }
 
 /// The tree root of each `CSG_SOLID`, by solid id.
