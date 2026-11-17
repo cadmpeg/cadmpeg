@@ -185,8 +185,55 @@ pub struct CurrentState {
 /// An evaluation with content has depth one more than the evaluation its
 /// `StateBase::Evaluation` base names, or one where its base is another arm or
 /// names no evaluation of `evaluations`. An evaluation without content has
-/// depth zero. The walk is iterative, and visits each evaluation once.
-pub(crate) fn admit_state_chains(evaluations: &[Evaluation]) -> Result<(), String> {
+/// depth zero. Returns the depth of each evaluation by its id; of two
+/// evaluations with one id, the first keeps it.
+pub(crate) fn admit_state_chains(
+    evaluations: &[Evaluation],
+) -> Result<BTreeMap<&str, u64>, String> {
+    let mut index = BTreeMap::new();
+    for (at, evaluation) in evaluations.iter().enumerate() {
+        index.entry(evaluation.id.as_str()).or_insert(at);
+    }
+    let depths = chain_depths(
+        evaluations,
+        |evaluation| match &evaluation.content {
+            None => ChainLink::Unstored,
+            Some(StateContent {
+                base: StateBase::Evaluation(base),
+                ..
+            }) => index
+                .get(base.as_str())
+                .map_or(ChainLink::Below(0), |&base| ChainLink::Within(base)),
+            Some(_) => ChainLink::Below(0),
+        },
+        |evaluation| format!("evaluation {}", evaluation.id.as_str()),
+    )?;
+    Ok(index.into_iter().map(|(id, at)| (id, depths[at])).collect())
+}
+
+/// What a state of one arena rests on in a chain of state bases.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ChainLink {
+    /// The state holds no content, and has depth zero.
+    Unstored,
+    /// The state's base is the state of the arena at this index.
+    Within(usize),
+    /// The state's base lies outside the arena and has this depth.
+    Below(u64),
+}
+
+/// The depth of each of the `states` of one arena, whose bases `link`
+/// states, refusing a chain deeper than [`Ceiling::StateChain`] or one that
+/// is a cycle.
+///
+/// A state with content has depth one more than its base. `name` names a
+/// state in the refusal of a cycle. The walk is iterative, and visits each
+/// state once.
+pub(crate) fn chain_depths<T>(
+    states: &[T],
+    link: impl Fn(&T) -> ChainLink,
+    name: impl Fn(&T) -> String,
+) -> Result<Vec<u64>, String> {
     #[derive(Clone, Copy)]
     enum Mark {
         Unseen,
@@ -194,38 +241,36 @@ pub(crate) fn admit_state_chains(evaluations: &[Evaluation]) -> Result<(), Strin
         Depth(u64),
     }
 
-    let mut index = BTreeMap::new();
-    for (at, evaluation) in evaluations.iter().enumerate() {
-        index.entry(evaluation.id.as_str()).or_insert(at);
-    }
-    let base_of = |at: usize| match &evaluations[at].content {
-        Some(StateContent {
-            base: StateBase::Evaluation(base),
-            ..
-        }) => index.get(base.as_str()).copied(),
-        _ => None,
-    };
-    let mut marks = vec![Mark::Unseen; evaluations.len()];
+    let mut marks = vec![Mark::Unseen; states.len()];
     let mut chain = Vec::new();
-    for start in 0..evaluations.len() {
-        let mut next = Some(start);
+    for start in 0..states.len() {
+        let mut at = start;
         let tail = loop {
-            let Some(at) = next else { break 0 };
             match marks[at] {
                 Mark::Depth(depth) => break depth,
                 Mark::OnChain => {
                     return Err(format!(
-                        "evaluation {} is its own ancestor through its state bases",
-                        evaluations[at].id.as_str()
+                        "{} is its own ancestor through its state bases",
+                        name(&states[at])
                     ));
                 }
-                Mark::Unseen if evaluations[at].content.is_none() => break 0,
                 Mark::Unseen => {}
             }
+            let base = match link(&states[at]) {
+                ChainLink::Unstored => {
+                    marks[at] = Mark::Depth(0);
+                    break 0;
+                }
+                ChainLink::Within(base) => Ok(base),
+                ChainLink::Below(depth) => Err(depth),
+            };
             marks[at] = Mark::OnChain;
             chain.push(at);
             read::within(Ceiling::StateChain, u64_from_index(chain.len()))?;
-            next = base_of(at);
+            match base {
+                Ok(base) => at = base,
+                Err(depth) => break depth,
+            }
         };
         let mut depth = tail;
         for at in chain.drain(..).rev() {
@@ -236,7 +281,13 @@ pub(crate) fn admit_state_chains(evaluations: &[Evaluation]) -> Result<(), Strin
         }
         read::within(Ceiling::StateChain, depth)?;
     }
-    Ok(())
+    Ok(marks
+        .into_iter()
+        .map(|mark| match mark {
+            Mark::Depth(depth) => depth,
+            Mark::Unseen | Mark::OnChain => 0,
+        })
+        .collect())
 }
 
 cadmpeg_core::named_optional_field!(deserialize_configuration<T>, T, "configuration");
