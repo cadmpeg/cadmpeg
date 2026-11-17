@@ -266,7 +266,7 @@ fn hand_written_documents() -> Vec<(&'static str, Value)> {
             text: Vec::new(),
             references: BTreeMap::from([(
                 cadmpeg_core::nonblank_literal!("zz_source_role"),
-                vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
+                vec![ReferenceSelection::new(ReferenceTarget::Null)],
             )]),
             value: None,
             format: None,

@@ -473,7 +473,7 @@ pub(crate) fn display_geometry(
                     used.insert(base);
                     ir.model.appearance_bindings.push(AppearanceBinding {
                         id: crate::ids::appearance_binding(member, index),
-                        target: AppearanceTarget::Tessellation(id.to_string()),
+                        target: AppearanceTarget::Tessellation(id.to_string()).into(),
                         appearance: crate::ids::appearance(member, base),
                         source_entity_id: None,
                         object_type: None,

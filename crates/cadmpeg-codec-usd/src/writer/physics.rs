@@ -232,7 +232,7 @@ impl Plan {
         };
         let mut rigid: BTreeSet<OccurrenceId> = BTreeSet::new();
         for body in &model.rigid_bodies {
-            if let PhysicsTarget::Occurrence { occurrence } = &body.target {
+            if let PhysicsTarget::Occurrence { occurrence } = &body.target.entity {
                 rigid.insert(occurrence.clone());
             }
             let mut lines = Vec::new();
@@ -262,7 +262,7 @@ impl Plan {
             if body.starts_asleep {
                 lines.push("bool physics:startsAsleep = 1".to_owned());
             }
-            add(&body.target, "PhysicsRigidBodyAPI", lines);
+            add(&body.target.entity, "PhysicsRigidBodyAPI", lines);
         }
         for joint in &model.assembly_joints {
             for connector in joint.connectors() {
@@ -282,10 +282,14 @@ impl Plan {
             }
         }
         for articulation in &model.articulations {
-            add(&articulation.root, "PhysicsArticulationRootAPI", Vec::new());
+            add(
+                &articulation.root.entity,
+                "PhysicsArticulationRootAPI",
+                Vec::new(),
+            );
         }
         for mass in &model.mass_properties {
-            add(&mass.target, "PhysicsMassAPI", mass_lines(mass));
+            add(&mass.target.entity, "PhysicsMassAPI", mass_lines(mass));
         }
         let scope_path = String::new();
         for collider in &model.colliders {
@@ -302,10 +306,10 @@ impl Plan {
             if !collider.enabled {
                 lines.push("bool physics:collisionEnabled = 0".to_owned());
             }
-            add(&collider.target, "PhysicsCollisionAPI", lines);
+            add(&collider.target.entity, "PhysicsCollisionAPI", lines);
             if let Some(approximation) = approximation {
                 add(
-                    &collider.target,
+                    &collider.target.entity,
                     "PhysicsMeshCollisionAPI",
                     vec![format!(
                         "uniform token physics:approximation = {}",
@@ -315,7 +319,7 @@ impl Plan {
             }
             if let Some(material) = collider.material.as_ref().and_then(|id| materials.get(id)) {
                 add(
-                    &collider.target,
+                    &collider.target.entity,
                     "MaterialBindingAPI",
                     vec![format!(
                         "rel material:binding:physics = <{scope_path}/{PHYSICS}/{material}>"
@@ -338,7 +342,7 @@ impl Plan {
                 entry.0.push(schema.clone());
                 entry.1.extend(lines.iter().cloned());
             };
-            let physics_target = match &settings.target {
+            let physics_target = match &settings.target.entity {
                 SolverTarget::Occurrence { occurrence } => Some(PhysicsTarget::Occurrence {
                     occurrence: occurrence.clone(),
                 }),
@@ -350,12 +354,12 @@ impl Plan {
                     .colliders
                     .iter()
                     .find(|record| &record.id == collider)
-                    .map(|record| record.target.clone()),
+                    .map(|record| record.target.entity.clone()),
                 SolverTarget::Articulation { articulation } => model
                     .articulations
                     .iter()
                     .find(|record| &record.id == articulation)
-                    .map(|record| record.root.clone()),
+                    .map(|record| record.root.entity.clone()),
                 SolverTarget::Joint { joint } => {
                     onto(joint_settings.entry(joint.clone()).or_default());
                     None

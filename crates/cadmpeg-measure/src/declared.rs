@@ -34,6 +34,8 @@ use crate::value::{Point, Quantity, Scalar};
 enum Gap {
     /// The target names no bodies of the document.
     TargetUnresolved,
+    /// The target is a state of the design, not the current geometry.
+    TargetState,
     /// The target definition has child occurrences.
     TargetAssembly,
     /// A centroid has no member body, or its members weigh nothing.
@@ -52,6 +54,7 @@ impl Gap {
     const fn code(self) -> &'static str {
         match self {
             Self::TargetUnresolved => "declared.target-unresolved",
+            Self::TargetState => "declared.target-state",
             Self::TargetAssembly => "declared.target-assembly",
             Self::NoMembers => "declared.no-members",
             Self::VoidShell => "declared.void-shell",
@@ -196,7 +199,7 @@ fn target_ids(target: &DeclaredTarget) -> Vec<String> {
     match target {
         DeclaredTarget::Definition { definition } => vec![definition.to_string()],
         DeclaredTarget::Bodies { bodies } => bodies.iter().map(ToString::to_string).collect(),
-        DeclaredTarget::Unresolved {} => Vec::new(),
+        DeclaredTarget::State(_) | DeclaredTarget::Unresolved => Vec::new(),
     }
 }
 
@@ -207,9 +210,13 @@ fn member_bodies<'ir>(
 ) -> Result<Vec<&'ir Body>, Unmeasured> {
     let body = |id: &BodyId| ir.geometry.bodies.iter().find(|body| &body.id == id);
     match &measure.target {
-        DeclaredTarget::Unresolved {} => Err(Unmeasured::gap(
+        DeclaredTarget::Unresolved => Err(Unmeasured::gap(
             Gap::TargetUnresolved,
             "the source names a target that is not a body or a definition of the document",
+        )),
+        DeclaredTarget::State(_) => Err(Unmeasured::gap(
+            Gap::TargetState,
+            "the target is a state of the design, whose bodies the current geometry need not hold",
         )),
         DeclaredTarget::Bodies { bodies } => {
             if bodies.is_empty() {

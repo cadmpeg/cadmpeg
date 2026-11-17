@@ -804,7 +804,7 @@ impl<'a> Builder<'a> {
                 appearance: Some(appearance),
                 hidden: hidden_binding_ids.contains(binding.id.as_str()),
             };
-            match &binding.target {
+            match &binding.target.entity {
                 AppearanceTarget::Body(id) => {
                     body_candidates
                         .entry(id.as_str())
@@ -978,7 +978,7 @@ impl<'a> Builder<'a> {
             let Some(color) = appearance.base_color else {
                 continue;
             };
-            let (target, style_kind) = match &binding.target {
+            let (target, style_kind) = match &binding.target.entity {
                 AppearanceTarget::Face(id) => (
                     self.face_step_refs.get(id.as_str()).copied(),
                     StyleKind::Surface,
@@ -1014,7 +1014,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
-                let target_id = match &binding.target {
+                let target_id = match &binding.target.entity {
                     AppearanceTarget::Face(id) => id.as_str().to_owned(),
                     AppearanceTarget::Surface(id) => id.as_str().to_owned(),
                     AppearanceTarget::Curve(id) => id.as_str().to_owned(),
@@ -1036,7 +1036,7 @@ impl<'a> Builder<'a> {
                 StyleKind::Point => self.point_style(color, name, &mut style_refs),
             };
             self.written_appearance_bindings.insert(binding.id.clone());
-            let targets = match &binding.target {
+            let targets = match &binding.target.entity {
                 AppearanceTarget::Edge(id) => {
                     self.edge_refs.get(id.as_str()).cloned().unwrap_or_default()
                 }
@@ -1255,7 +1255,7 @@ impl<'a> Builder<'a> {
             let mut assigned = Vec::new();
             let mut unsupported = 0usize;
             for item in layer.items {
-                let references = match item {
+                let references = match &item.entity {
                     PresentationItem::Body { body } => self
                         .body_item_refs
                         .get(body.as_str())
@@ -1324,7 +1324,7 @@ impl<'a> Builder<'a> {
                     PresentationItem::Source { .. } => Vec::new(),
                     PresentationItem::Tessellation { tessellation } => self
                         .tessellation_step_refs
-                        .get(&tessellation)
+                        .get(tessellation)
                         .copied()
                         .into_iter()
                         .collect(),
@@ -4504,7 +4504,7 @@ impl<'a> Builder<'a> {
             else {
                 continue;
             };
-            for target in &annotation.targets {
+            for target in annotation.targets.iter().map(|target| &target.entity) {
                 let PmiTarget::ShapeAspect { source_id } = target else {
                     continue;
                 };
@@ -4526,7 +4526,7 @@ impl<'a> Builder<'a> {
                 _ => Vec::new(),
             };
             for target in annotation.targets.iter().chain(zone_targets) {
-                let PmiTarget::ShapeAspect { source_id } = target else {
+                let PmiTarget::ShapeAspect { source_id } = &target.entity else {
                     continue;
                 };
                 aspects.entry(source_id.to_string()).or_insert_with(|| {
@@ -4542,7 +4542,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             for target in basis {
-                let PmiTarget::ShapeAspect { source_id } = target else {
+                let PmiTarget::ShapeAspect { source_id } = &target.entity else {
                     continue;
                 };
                 aspects.entry(source_id.to_string()).or_insert_with(|| {
@@ -4564,7 +4564,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let target_ref = annotation.targets.iter().find_map(|target| {
-                let PmiTarget::ShapeAspect { source_id } = target else {
+                let PmiTarget::ShapeAspect { source_id } = &target.entity else {
                     return None;
                 };
                 aspects.get(source_id.as_str()).copied()
@@ -4584,7 +4584,7 @@ impl<'a> Builder<'a> {
             };
             let mut exact = true;
             for target in basis {
-                let PmiTarget::ShapeAspect { source_id } = target else {
+                let PmiTarget::ShapeAspect { source_id } = &target.entity else {
                     exact = false;
                     continue;
                 };
@@ -4607,7 +4607,7 @@ impl<'a> Builder<'a> {
                 .targets
                 .iter()
                 .find_map(|target| {
-                    if let PmiTarget::ShapeAspect { source_id } = target {
+                    if let PmiTarget::ShapeAspect { source_id } = &target.entity {
                         aspects.get(source_id.as_str()).copied()
                     } else {
                         None
@@ -4620,7 +4620,7 @@ impl<'a> Builder<'a> {
             if matches!(&annotation.definition, PmiDefinition::Presentation { .. }) {
                 continue;
             }
-            for target in &annotation.targets {
+            for target in annotation.targets.iter().map(|target| &target.entity) {
                 for target_ref in self.pmi_target_refs(target) {
                     if !target_items.contains(&target_ref) {
                         target_items.push(target_ref);
@@ -4645,7 +4645,7 @@ impl<'a> Builder<'a> {
             };
             let mut components = Vec::new();
             let mut seen = HashSet::new();
-            for target in &annotation.targets {
+            for target in annotation.targets.iter().map(|target| &target.entity) {
                 for item in self.pmi_target_refs(target) {
                     if seen.insert(item) {
                         components.push(item);
@@ -4709,7 +4709,7 @@ impl<'a> Builder<'a> {
             let semantic = !matches!(&annotation.definition, PmiDefinition::Presentation { .. });
             let definition = target_ref(annotation).unwrap_or(fallback_aspect);
             let mut exact = true;
-            for target in &annotation.targets {
+            for target in annotation.targets.iter().map(|target| &target.entity) {
                 let identified_items = self.pmi_target_refs(target);
                 if identified_items.is_empty() {
                     if !matches!(target, PmiTarget::ShapeAspect { .. }) {
@@ -4966,7 +4966,7 @@ impl<'a> Builder<'a> {
                     }
                     if constraints.zones.iter().flat_map(|zone| &zone.projections)
                         .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
-                        .any(|target| !matches!(target, PmiTarget::ShapeAspect { source_id } if aspects.contains_key(source_id.as_str())))
+                        .any(|target| !matches!(&target.entity, PmiTarget::ShapeAspect { source_id } if aspects.contains_key(source_id.as_str())))
                     {
                         continue;
                     }
@@ -5095,12 +5095,13 @@ impl<'a> Builder<'a> {
                                 }
                                 _ => None,
                             };
-                            let Some(end) = aspect(&projection.end) else {
+                            let Some(end) = aspect(&projection.end.entity) else {
                                 continue;
                             };
                             let boundaries = projection
                                 .boundaries
                                 .iter()
+                                .map(|target| &target.entity)
                                 .filter_map(aspect)
                                 .collect::<Vec<_>>();
                             let length = self.emit_pmi_measure(PmiValue::from_parts(
@@ -6277,7 +6278,7 @@ impl<'a> Builder<'a> {
                     .map_or(&[][..], Vec::as_slice);
                 let alpha_unwritable = appearance.base_color.is_some_and(|color| {
                     color.a() != 1.0
-                        && bindings.iter().any(|binding| match &binding.target {
+                        && bindings.iter().any(|binding| match &binding.target.entity {
                             AppearanceTarget::Curve(_)
                             | AppearanceTarget::Edge(_)
                             | AppearanceTarget::Point(_)

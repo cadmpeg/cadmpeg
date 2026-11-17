@@ -850,6 +850,18 @@ pub(crate) fn feature_input_prefix(
     history_input_prefix(&feature.key(), previous_state_id)
 }
 
+/// Identity of the result state of `feature`, the history state `state_id`
+/// that its transition produces.
+pub(crate) fn history_result_state_id(
+    feature: &cadmpeg_ir::features::FeatureId,
+    state_id: i64,
+) -> cadmpeg_ir::ids::FeatureResultTopologyId {
+    cadmpeg_ir::ids::FeatureResultTopologyId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-result", "state"),
+        history_input_prefix(&feature.key(), state_id),
+    )
+}
+
 /// The history-input state key for a `prefix` from [`history_input_prefix`].
 pub(crate) fn history_input_state_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,

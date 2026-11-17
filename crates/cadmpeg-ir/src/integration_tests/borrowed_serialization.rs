@@ -107,7 +107,7 @@ wire_case!(
 wire_case!(
     borrowed_reference_target_wire,
     crate::references::ReferenceTarget,
-    json!({"kind":"external","document":"external-document","object":"source-object"})
+    json!({"kind":"external","value":{"document":"external-document","object":"source-object"}})
 );
 wire_case!(
     borrowed_spreadsheet_cell_wire,

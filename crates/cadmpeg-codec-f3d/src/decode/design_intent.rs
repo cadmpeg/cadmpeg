@@ -287,6 +287,7 @@ pub(super) struct DesignModel {
     /// Canvas and decal assets that the geometry assets do not hold yet.
     pub(super) assets: Vec<Asset>,
     pub(super) feature_input_topologies: Vec<FeatureInputTopology>,
+    pub(super) feature_result_topologies: Vec<cadmpeg_ir::features::FeatureResultTopology>,
     pub(super) sketches: Vec<Sketch>,
     pub(super) sketch_entities: Vec<SketchEntity>,
     pub(super) sketch_constraints: Vec<SketchConstraint>,
@@ -305,6 +306,7 @@ impl DesignModel {
             parameters,
             assets,
             feature_input_topologies,
+            feature_result_topologies,
             sketches,
             sketch_entities,
             sketch_constraints,
@@ -318,6 +320,7 @@ impl DesignModel {
         model.parameters = parameters;
         model.assets.extend(assets);
         model.feature_input_topologies = feature_input_topologies;
+        model.feature_result_topologies = feature_result_topologies;
         model.sketches = sketches;
         model.sketch_entities = sketch_entities;
         model.sketch_constraints = sketch_constraints;
@@ -860,26 +863,33 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             linear_tolerance: geometry.tolerances.linear.get(),
         },
     )?);
+    let body_selection_inputs = crate::history::FeatureBodySelectionInputs {
+        scopes: &design.design_parameter_scopes,
+        groups: &design.design_construction_operand_groups,
+        body_recipe_operands: &design.design_body_recipe_operands,
+        construction_recipes: &prereqs.construction_recipes,
+        persistent_design_links: geometry.persistent_design_links,
+        histories: &design.asm_histories,
+        bodies: geometry.bodies,
+        regions: geometry.regions,
+        shells: geometry.shells,
+        faces: geometry.faces,
+    };
     losses.extend(crate::history::bind_feature_body_selections(
         &mut model.features,
-        &crate::history::FeatureBodySelectionInputs {
-            scopes: &design.design_parameter_scopes,
-            groups: &design.design_construction_operand_groups,
-            body_recipe_operands: &design.design_body_recipe_operands,
-            construction_recipes: &prereqs.construction_recipes,
-            persistent_design_links: geometry.persistent_design_links,
-            histories: &design.asm_histories,
-            bodies: geometry.bodies,
-            regions: geometry.regions,
-            shells: geometry.shells,
-            faces: geometry.faces,
-        },
+        &body_selection_inputs,
     ));
     losses.extend(crate::history::combine_history_tools::bind(
         &mut model.features,
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
     ));
+    model
+        .feature_result_topologies
+        .extend(crate::history::bind_generated_body_selections(
+            &mut model.features,
+            &body_selection_inputs,
+        ));
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,

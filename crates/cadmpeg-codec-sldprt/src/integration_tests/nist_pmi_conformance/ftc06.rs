@@ -49,7 +49,7 @@ fn cylinder_geometry(
         .targets
         .iter()
         .map(|target| {
-            let PmiTarget::Face { face } = target else {
+            let PmiTarget::Face { face } = &target.entity else {
                 panic!(
                     "{} target is a face",
                     annotation.name.as_deref().unwrap_or("PMI")
@@ -137,7 +137,7 @@ fn ftc_06_emits_base_datums_with_face_targets() {
         let faces = annotation
             .targets
             .iter()
-            .filter_map(|target| match target {
+            .filter_map(|target| match &target.entity {
                 PmiTarget::Face { face } => Some(face),
                 _ => None,
             })
@@ -302,7 +302,7 @@ fn ftc_06_diameter8_targets_both_counted_spheres() {
     for x in [-114.3, 114.3] {
         assert!(
             annotation.targets.iter().any(|target| {
-                let PmiTarget::Face { face: face_id } = target else {
+                let PmiTarget::Face { face: face_id } = &target.entity else {
                     return false;
                 };
                 let Some(face) = ir.geometry.faces.iter().find(|face| &face.id == face_id) else {
@@ -354,7 +354,7 @@ fn ftc_06_diameter7_maps_to_its_spherical_radius_owner() {
 
     assert!(
         annotation.targets.iter().any(|target| {
-            let PmiTarget::Face { face: face_id } = target else {
+            let PmiTarget::Face { face: face_id } = &target.entity else {
                 return false;
             };
             let Some(face) = ir.geometry.faces.iter().find(|face| &face.id == face_id) else {

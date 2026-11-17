@@ -999,11 +999,11 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         base_color: Some(material),
         properties: Default::default(),
     });
-    let binding = |id: &str, target| AppearanceBinding {
+    let binding = |id: &str, target: AppearanceTarget| AppearanceBinding {
         id: format!("test:model:appearance-binding#{id}")
             .try_into()
             .expect("valid identity"),
-        target,
+        target: target.into(),
         appearance: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
