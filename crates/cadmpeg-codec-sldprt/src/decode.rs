@@ -3491,11 +3491,13 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -3567,6 +3569,11 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut sketch_entities,
+        held_handles,
+        &mut pmi_losses,
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut sketch_constraints,
@@ -4737,11 +4744,13 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -4897,6 +4906,11 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
         &histories,
         lanes,
+    );
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut ir.model.sketch_entities,
+        held_handles,
+        &mut pmi_losses,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,

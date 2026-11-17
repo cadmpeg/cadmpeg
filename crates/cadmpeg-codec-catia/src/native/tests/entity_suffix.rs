@@ -310,7 +310,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         CatiaEntitySuffixValue {
             prefix_atoms: [104, 8, 1],
             prefix_atom_widths,
-            payload: CatiaEntitySuffixPayload::ControlE8,
+            payload: CatiaEntitySuffixPayload::Evaluation {
+                evaluation: crate::native::CatiaEntityEvaluation::ZeroLiteral,
+                ..
+            },
             ..
         } if prefix_atom_widths.as_ref() == [2, 1, 1]
     ));
@@ -328,20 +331,20 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect("decode generic unset entity suffix");
+        .expect("decode generic unit-literal entity suffix");
     assert_eq!(
         wire::coverage_count(
             unset.report(),
             crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
-        0
+        1
     );
     assert_eq!(
         wire::coverage_count(
             unset.report(),
             crate::coverage::DECODED_UNSET_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
-        1
+        0
     );
 
     let incomplete = crate::native::CatiaNative::decode(&standard_catpart_with_parameter_value(&[
@@ -368,20 +371,27 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             ])),
             &DecodeOptions::default(),
         )
-        .expect("decode generic control entity suffix");
+        .expect("decode generic zero-literal entity suffix");
     assert_eq!(
         wire::coverage_count(
             control.report(),
-            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+            crate::coverage::DECODED_SCALAR_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
     assert_eq!(
         wire::coverage_count(
             control.report(),
+            crate::coverage::DECODED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            control.report(),
             crate::coverage::DECODED_CONTROL_E8_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
-        1
+        0
     );
     assert_eq!(
         wire::coverage_count(
@@ -400,7 +410,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .as_ref()
             .expect("complete control suffix")
             .payload,
-        CatiaEntitySuffixPayload::ControlE8
+        CatiaEntitySuffixPayload::Evaluation {
+            evaluation: crate::native::CatiaEntityEvaluation::ZeroLiteral,
+            ..
+        }
     ));
 
     let control_e9 = CatiaCodec
@@ -452,7 +465,7 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     malformed_control_e9.entity_records[0]
         .suffix_value_mut()
         .expect("complete E9 control suffix")
-        .payload = CatiaEntitySuffixPayload::ControlE8;
+        .payload = CatiaEntitySuffixPayload::Separator37;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_control_e9
         .store(&mut namespace)
@@ -706,10 +719,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         selected_unset.entity_records[0]
             .suffix_schema_selection
             .as_ref()
-            .expect("resolved schema-selected unset"),
+            .expect("resolved schema-selected unit literal"),
         crate::native::CatiaEntitySuffixSchemaSelection {
             value: crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
-                evaluation: CatiaEntityEvaluation::Unset,
+                evaluation: CatiaEntityEvaluation::UnitLiteral,
                 ..
             },
             ..
@@ -728,6 +741,13 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         wire::coverage_count(
             selected_control.report(),
             crate::coverage::DECODED_SCHEMA_SELECTED_CONTROL_ENTITY_SUFFIX_VALUE_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            selected_control.report(),
+            crate::coverage::DECODED_SCHEMA_SELECTED_EVALUATION_ENTITY_SUFFIX_VALUE_COUNT.as_str()
         ),
         1
     );
@@ -754,7 +774,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
             .payload,
         CatiaEntitySuffixPayload::SchemaSelected {
             selector: 4,
-            value: crate::native::CatiaEntitySuffixSelectedValue::ControlE8,
+            value: crate::native::CatiaEntitySuffixSelectedValue::Evaluation {
+                evaluation: crate::native::CatiaEntityEvaluation::ZeroLiteral,
+                ..
+            },
             ..
         }
     ));
@@ -766,7 +789,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         crate::native::CatiaEntitySuffixSchemaSelection {
             ordinal: 4,
             name,
-            value: crate::native::CatiaEntitySuffixSchemaValue::ControlE8,
+            value: crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+                evaluation: crate::native::CatiaEntityEvaluation::ZeroLiteral,
+                ..
+            },
             ..
         } if name == "Thickness"
     ));
@@ -897,10 +923,10 @@ fn native_namespace_types_and_validates_generic_entity_suffix_values() {
         bare_unset.entity_records[0]
             .suffix_value()
             .as_ref()
-            .expect("complete bare unset suffix")
+            .expect("complete bare unit-literal suffix")
             .payload,
         CatiaEntitySuffixPayload::Evaluation {
-            evaluation: CatiaEntityEvaluation::Unset,
+            evaluation: CatiaEntityEvaluation::UnitLiteral,
             ..
         }
     ));

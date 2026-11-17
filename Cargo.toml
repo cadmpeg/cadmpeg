@@ -5,6 +5,7 @@ members = [
   "crates/cadmpeg",
   "crates/cadmpeg-asm",
   "crates/cadmpeg-core",
+  "crates/cadmpeg-derive",
   "crates/cadmpeg-container",
   "crates/cadmpeg-ir",
   "crates/cadmpeg-measure",
@@ -44,6 +45,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 cadmpeg-asm = { path = "crates/cadmpeg-asm", version = "0.6.12" }
 cadmpeg-core = { path = "crates/cadmpeg-core", version = "0.6.12" }
+cadmpeg-derive = { path = "crates/cadmpeg-derive", version = "0.6.12" }
 cadmpeg-container = { path = "crates/cadmpeg-container", version = "0.6.12" }
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.6.12" }
 cadmpeg-measure = { path = "crates/cadmpeg-measure", version = "0.6.12" }
