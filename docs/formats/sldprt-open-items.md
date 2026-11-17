@@ -660,6 +660,14 @@ resolve a seed feature?
 
 **Need.** We must draw these points to type the relations that name them.
 
+### DI-70. Geometry of unresolved line-or-circle and arc handles
+
+**Question.** Which sketch records carry the geometry of a line-or-circle or arc handle that no marker layout in `sldprt.md` resolves?
+
+**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. A handle that no marker layout reads keeps its entity, and so does an arc handle whose read endpoints and marker point define no minor arc. After its last sketch-geometry pass, the decoder gives each such entity native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, keeps its identity and relations, and charges `sketch.handle-unresolved`. An arc handle whose inline center and endpoints define no minor arc joins its sketch after that pass, with native kind `sldprt:arc-handle`, its identity and relations, and the same loss. A line handle whose two read endpoints coincide, one of them read from a legacy 140-byte single-incidence profile-point record (`sldprt.md` §2), keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate`. A handle whose read values define no valid line, circle, or ellipse emits no entity, and neither does a kept handle that stores its own coordinates without the geometry locus `05 00 01 00` at marker +23.
+
+**Need.** We must read these handles to complete the sketch geometry and its profiles.
+
 
 ### DI-47. Relation-table framing
 
