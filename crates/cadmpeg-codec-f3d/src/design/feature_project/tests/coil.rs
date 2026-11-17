@@ -431,7 +431,7 @@ fn short_coil_keeps_signed_dimensions_and_native_placement_with_controls_loss() 
             draft.paired_byte_offset = 454;
             draft.reference_count_offset = 228;
             draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated((61..71).collect());
+                crate::records::identity::ReferenceRun::unlocated((60..70).collect());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
