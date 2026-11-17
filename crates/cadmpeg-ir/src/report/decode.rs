@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::dialect::{DialectLayers, FormatIdentity};
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -188,7 +189,7 @@ impl JsonSchema for DecodeReport {
 }
 
 /// Final disposition of one source record or semantic object.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
