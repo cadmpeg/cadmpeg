@@ -5,9 +5,10 @@
 //! holds child occurrences or several bodies, and nothing outside it, uses
 //! that occurrence as the one root prim; otherwise each root occurrence and
 //! each body no definition owns is a root prim. Each occurrence becomes an
-//! `Xform` prim with a `matrix4d` transform. A definition placed more than
-//! once is written once, under the abstract `Prototypes` prim, and each
-//! placement references it. Bodies become geometry prims: tessellations as
+//! `Xform` prim with a `matrix4d` transform. A definition that more than one
+//! occurrence places is written once, with its bodies and the occurrences it
+//! owns, under the abstract `Prototypes` prim, and each placement references
+//! it. Bodies become geometry prims: tessellations as
 //! `Mesh` prims; for a body with faces and no tessellation, each untrimmed
 //! face on a NURBS surface as a `NurbsPatch` prim and the other faces as one
 //! `Mesh` prim; and wire edges as one `NurbsCurves` prim. A placement whose content is one geometry prim is
@@ -345,7 +346,7 @@ impl<'ir> Writer<'ir> {
             .iter()
             .filter(|definition| {
                 uses.get(&definition.id).copied().unwrap_or_default() > 1
-                    && !definition.bodies.is_empty()
+                    && (!definition.bodies.is_empty() || !definition.occurrences.is_empty())
             })
             .map(|definition| {
                 let name = names.unique(definition.source_name.as_deref().unwrap_or("Prototype"));
@@ -663,7 +664,13 @@ impl<'ir> Writer<'ir> {
             }
             None => {}
         }
-        let mut children: Vec<&'ir Occurrence> = self.children(occurrence);
+        let shared = definition.is_some_and(|definition| self.shared.contains_key(&definition.id));
+        // A shared definition's occurrences are written in its prototype.
+        let mut children: Vec<&'ir Occurrence> = if shared {
+            Vec::new()
+        } else {
+            self.children(occurrence)
+        };
         let mut references = Vec::new();
         children.retain(|child| match self.arc_reference(child) {
             Some(reference) => {
@@ -681,7 +688,6 @@ impl<'ir> Writer<'ir> {
                 .metadata
                 .push(format!("prepend references = [{}]", references.join(", "))),
         }
-        let shared = definition.is_some_and(|definition| self.shared.contains_key(&definition.id));
         let bodies: Vec<&'ir Body> = definition
             .filter(|_| !shared)
             .map(|definition| {
@@ -706,11 +712,9 @@ impl<'ir> Writer<'ir> {
             placement.metadata.push(format!("kind = {}", quoted(kind)));
         }
         let head = if shared {
-            if children.is_empty() {
-                placement
-                    .metadata
-                    .insert(0, "instanceable = true".to_owned());
-            }
+            placement
+                .metadata
+                .insert(0, "instanceable = true".to_owned());
             "def"
         } else {
             "def Xform"
@@ -1627,17 +1631,24 @@ impl<'ir> Writer<'ir> {
                         .bodies(id.as_str(), cadmpeg_ir::index::StandardIndex)
                 })
                 .collect();
+            let occurrences = self.owned_occurrences(definition);
             let mut names = Names::default();
-            if let [body] = bodies.as_slice() {
+            if let ([body], []) = (bodies.as_slice(), occurrences.as_slice()) {
                 self.body(body, &mut names, &Placement::default(), Some(&name));
                 continue;
             }
             self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.name_next(&name);
             self.out.open();
+            self.stack.extend([PROTOTYPES.to_owned(), name.clone()]);
             for body in bodies {
                 self.body(body, &mut names, &Placement::default(), None);
             }
+            for occurrence in occurrences {
+                self.occurrence(occurrence, &mut names, None);
+            }
+            self.stack.pop();
+            self.stack.pop();
             self.out.close();
         }
         self.out.close();
