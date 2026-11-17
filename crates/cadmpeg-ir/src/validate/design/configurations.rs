@@ -531,11 +531,15 @@ fn check_overrides(
             format_args!("an arrangement's overrides hold a definition entry"),
         );
     }
+    if overrides.definitions.is_empty() {
+        return;
+    }
+    let spanned = index.spanned_definitions(scope);
     for (definition, value) in &overrides.definitions {
         check_definition_override(
             index,
             holder,
-            scope,
+            &spanned,
             definition.as_str(),
             value,
             kind,
@@ -691,16 +695,14 @@ fn check_occurrence_override(
 fn check_definition_override(
     index: &DesignRecords<'_>,
     holder: &str,
-    scope: &str,
+    spanned: &BTreeSet<&str>,
     definition: &str,
     value: &DefinitionOverride,
     kind: Holder,
     findings: &mut Vec<Finding>,
 ) {
     let record = index.definitions.get(definition).copied();
-    let spanned =
-        record.is_some() && (definition == scope || !index.scopes.contains_key(definition));
-    if !spanned {
+    if record.is_none() || !spanned.contains(definition) {
         super::error(
             findings,
             holder,

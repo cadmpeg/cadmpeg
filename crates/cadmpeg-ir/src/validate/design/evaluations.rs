@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::parameters;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
@@ -10,10 +11,9 @@ use crate::design::evaluation::{EvaluationStatus, StateBase};
 use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
 use crate::design::ops::body::PatternInstances;
 use crate::design::ops::surface::MeshKind;
-use crate::design::parameter::ParameterValue;
 use crate::design::refs::Position;
 use crate::design::selection::{OccurrencePath, StepRef};
-use crate::features::{ConfigurationId, ParameterId};
+use crate::features::ConfigurationId;
 use crate::report::check::Finding;
 
 /// A position names an existing member of a container, or the start of an
@@ -74,8 +74,23 @@ fn current_positions<'a>(index: &DesignRecords<'a>, scope: &str) -> BTreeSet<Pos
         .unwrap_or_default()
 }
 
-pub(super) fn check_evaluations(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
-    let cyclic = cyclic_evaluations(index);
+/// The evaluation rules. `max_chain_depth` is the reader's ceiling on a chain
+/// of state bases, `ResourceLimits::max_state_chain_depth`.
+pub(super) fn check_evaluations(
+    index: &DesignRecords<'_>,
+    max_chain_depth: u64,
+    findings: &mut Vec<Finding>,
+) {
+    let StateChains { cyclic, depths } = state_chains(index);
+    for (id, depth) in &depths {
+        if *depth == max_chain_depth.saturating_add(1) {
+            super::error(
+                findings,
+                id,
+                format_args!("evaluation's chain of state bases is {depth} deep, past the ceiling of {max_chain_depth} a reader admits"),
+            );
+        }
+    }
     let mut keys = BTreeMap::new();
     for evaluation in &index.ir.design.evaluations {
         let id = evaluation.id.as_str();
@@ -252,105 +267,124 @@ pub(super) fn check_evaluations(index: &DesignRecords<'_>, findings: &mut Vec<Fi
     }
 }
 
-/// The evaluations on a cycle of state bases.
-fn cyclic_evaluations<'a>(index: &DesignRecords<'a>) -> BTreeSet<&'a str> {
-    #[derive(Clone, Copy, PartialEq, Eq)]
+/// The chains of state bases: the evaluations on a cycle, and the depth of
+/// every other evaluation as a reader counts it. An evaluation without
+/// content has depth zero; one with content has depth one more than the
+/// evaluation its base names, or one where its base is another arm or names
+/// no evaluation. The walk is iterative.
+struct StateChains<'a> {
+    cyclic: BTreeSet<&'a str>,
+    depths: BTreeMap<&'a str, u64>,
+}
+
+fn state_chains<'a>(index: &DesignRecords<'a>) -> StateChains<'a> {
+    #[derive(Clone, Copy)]
     enum Mark {
         OnChain,
-        Done,
+        Depth(u64),
     }
-    let base_of = |id: &str| -> Option<&'a str> {
-        match &index.evaluations.get(id)?.content.as_ref()?.base {
+    enum Link<'a> {
+        Unstored,
+        Base(&'a str),
+        Below,
+    }
+    let link = |id: &str| -> Link<'a> {
+        let Some(content) = index
+            .evaluations
+            .get(id)
+            .and_then(|evaluation| evaluation.content.as_ref())
+        else {
+            return Link::Unstored;
+        };
+        match &content.base {
             StateBase::Evaluation(base) => index
                 .evaluations
                 .get_key_value(base.as_str())
-                .map(|(key, _)| *key),
-            StateBase::Empty | StateBase::Current(_) => None,
+                .map_or(Link::Below, |(key, _)| Link::Base(key)),
+            StateBase::Empty | StateBase::Current(_) => Link::Below,
         }
     };
     let mut marks: BTreeMap<&str, Mark> = BTreeMap::new();
     let mut cyclic = BTreeSet::new();
     for &start in index.evaluations.keys() {
         let mut chain = Vec::new();
-        let mut next = Some(start);
-        while let Some(id) = next {
-            match marks.get(id) {
-                Some(Mark::Done) => break,
+        let mut at = start;
+        let tail = loop {
+            match marks.get(at) {
+                Some(Mark::Depth(depth)) => break Some(*depth),
                 Some(Mark::OnChain) => {
                     let from = chain
                         .iter()
-                        .position(|listed| *listed == id)
+                        .position(|listed| *listed == at)
                         .unwrap_or_default();
                     cyclic.extend(chain[from..].iter().copied());
-                    break;
+                    break None;
                 }
                 None => {}
             }
-            marks.insert(id, Mark::OnChain);
-            chain.push(id);
-            next = base_of(id);
-        }
-        for id in chain {
-            marks.insert(id, Mark::Done);
+            match link(at) {
+                Link::Unstored => {
+                    marks.insert(at, Mark::Depth(0));
+                    break Some(0);
+                }
+                Link::Below => {
+                    chain.push(at);
+                    break Some(0);
+                }
+                Link::Base(base) => {
+                    marks.insert(at, Mark::OnChain);
+                    chain.push(at);
+                    at = base;
+                }
+            }
+        };
+        let mut depth = tail.unwrap_or_default();
+        for id in chain.into_iter().rev() {
+            depth = depth.saturating_add(1);
+            marks.insert(id, Mark::Depth(if tail.is_some() { depth } else { 0 }));
         }
     }
-    cyclic
+    let depths = marks
+        .into_iter()
+        .filter_map(|(id, mark)| match mark {
+            Mark::Depth(depth) if !cyclic.contains(id) => Some((id, depth)),
+            Mark::Depth(_) | Mark::OnChain => None,
+        })
+        .collect();
+    StateChains { cyclic, depths }
 }
 
 /// `CadIr::is_stateless(f, c)` (§5.4, D34, D35), decided where the document
 /// states what decides it: the feature's `suppressed` resolves to true in
 /// `configuration`, or the operation of the definition that applies there
 /// cannot change a state. A suppression bound to a parameter resolves through
-/// the parameter's cached value.
+/// the parameter's value in `configuration`.
 pub(super) fn is_stateless(
     index: &DesignRecords<'_>,
     feature: &Feature,
     configuration: Option<&str>,
 ) -> bool {
     let chain = index.configuration_chain(configuration);
-    let overrides = chain
+    let suppressed = chain
         .iter()
-        .copied()
-        .filter_map(|configuration| configuration.overrides.features.get(&feature.id));
-    let suppressed = overrides
-        .clone()
-        .find_map(|state| state.suppressed)
+        .find_map(|configuration| {
+            configuration
+                .overrides
+                .features
+                .get(&feature.id)?
+                .suppressed
+        })
         .or_else(|| match feature.suppressed.as_ref()? {
             Dimension::Literal(value) => Some(*value),
-            Dimension::Parameter(parameter) => parameter_bool(index, &chain, parameter),
+            Dimension::Parameter(parameter) => parameters::boolean_in(index, &chain, parameter),
             Dimension::Negated(parameter) => {
-                parameter_bool(index, &chain, parameter).map(|value| !value)
+                parameters::boolean_in(index, &chain, parameter).map(|value| !value)
             }
         });
     if suppressed == Some(true) {
         return true;
     }
-    let definition = { overrides }
-        .find_map(|state| state.definition.as_ref())
-        .unwrap_or(&feature.definition);
-    stateless_operation(&definition.operation)
-}
-
-fn parameter_bool(
-    index: &DesignRecords<'_>,
-    chain: &[&crate::design::configuration::DesignConfiguration],
-    parameter: &ParameterId,
-) -> Option<bool> {
-    let value = chain
-        .iter()
-        .find_map(|configuration| {
-            configuration
-                .overrides
-                .parameters
-                .get(parameter)?
-                .value
-                .as_ref()
-        })
-        .or_else(|| index.parameters.get(parameter.as_str())?.value.as_ref())?;
-    match value {
-        ParameterValue::Boolean(value) => Some(*value),
-        ParameterValue::Number(_) | ParameterValue::Integer(_) | ParameterValue::Text(_) => None,
-    }
+    stateless_operation(&index.definition_in(feature, configuration).operation)
 }
 
 /// An operation whose kind cannot change a state: a sketch, a sheet, a datum,
@@ -515,8 +549,9 @@ fn check_current_position(
     }
 }
 
-/// A stored-geometry feature's tessellations exist, and a current state after
-/// it holds each body it names (§5.10).
+/// A stored-geometry definition's tessellations exist, and a current state
+/// after a feature whose definition in its scope's active configuration is
+/// stored holds each body that definition names (§5.10).
 fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let ir = index.ir;
     let tessellations: BTreeSet<&str> = ir
@@ -525,21 +560,19 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
         .iter()
         .map(|tessellation| tessellation.id.as_str())
         .collect();
-    for feature in &ir.design.features {
+    for (holder, definition) in index.feature_definitions() {
         let FeatureOperation::Stored {
-            bodies,
             tessellations: named,
             ..
-        } = &feature.definition.operation
+        } = &definition.operation
         else {
             continue;
         };
-        let id = feature.id.as_str();
         for tessellation in named {
             if !tessellations.contains(tessellation.as_str()) {
                 super::error(
                     findings,
-                    id,
+                    holder,
                     format_args!(
                         "stored feature names {}, which is no tessellation of the model",
                         tessellation.as_str()
@@ -547,10 +580,22 @@ fn check_stored_features(index: &DesignRecords<'_>, findings: &mut Vec<Finding>)
                 );
             }
         }
+    }
+    for feature in &ir.design.features {
+        let id = feature.id.as_str();
         let after = PositionKey::After(MemberKey::Feature(id));
         let Some(scope) = index
             .scope_of(MemberKey::Feature(id))
             .and_then(|scope| index.scopes.get(scope))
+        else {
+            continue;
+        };
+        let active = scope
+            .active_configuration
+            .as_ref()
+            .map(ConfigurationId::as_str);
+        let FeatureOperation::Stored { bodies, .. } =
+            &index.definition_in(feature, active).operation
         else {
             continue;
         };

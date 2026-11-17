@@ -10,13 +10,13 @@ use std::fmt;
 use crate::design::configuration::{Arrangement, DesignConfiguration};
 use crate::design::container::{Container, Rollback};
 use crate::design::evaluation::Evaluation;
-use crate::design::feature::Feature;
+use crate::design::feature::{Feature, FeatureDefinition};
 use crate::design::parameter::DesignParameter;
 use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::scope::DesignScope;
 use crate::document::CadIr;
 use crate::features::ConfigurationId;
-use crate::products::{Occurrence, ProductDefinition, PrototypeReference};
+use crate::products::{Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference};
 
 /// A member of a container, by identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -275,5 +275,113 @@ impl<'a> DesignRecords<'a> {
     /// Whether the scope has configurations.
     pub(super) fn has_configurations(&self, scope: &str) -> bool {
         self.scope_configurations.contains_key(scope)
+    }
+
+    /// The definition of `feature` that applies in `configuration` (§5.10,
+    /// §5.11): the nearest definition override on the configuration's chain,
+    /// else the feature's own.
+    pub(super) fn definition_in(
+        &self,
+        feature: &'a Feature,
+        configuration: Option<&str>,
+    ) -> &'a FeatureDefinition {
+        self.configuration_chain(configuration)
+            .into_iter()
+            .find_map(|configuration| {
+                configuration
+                    .overrides
+                    .features
+                    .get(&feature.id)?
+                    .definition
+                    .as_ref()
+            })
+            .unwrap_or(&feature.definition)
+    }
+
+    /// Every feature definition the design states, with the record that
+    /// states it: each feature's own, and each definition override of a
+    /// configuration or an arrangement.
+    pub(super) fn feature_definitions(&self) -> Vec<(&'a str, &'a FeatureDefinition)> {
+        let design = &self.ir.design;
+        let overrides = design
+            .configurations
+            .iter()
+            .map(|configuration| (configuration.id.as_str(), &configuration.overrides))
+            .chain(
+                design
+                    .arrangements
+                    .iter()
+                    .map(|arrangement| (arrangement.id.as_str(), &arrangement.overrides)),
+            );
+        design
+            .features
+            .iter()
+            .map(|feature| (feature.id.as_str(), &feature.definition))
+            .chain(overrides.flat_map(|(holder, overrides)| {
+                overrides
+                    .features
+                    .values()
+                    .filter_map(move |state| Some((holder, state.definition.as_ref()?)))
+            }))
+            .collect()
+    }
+
+    /// The definitions `scope` spans (§5.1): its own, and every definition
+    /// placed below it that has no scope of its own.
+    ///
+    /// An occurrence whose parent is another occurrence is placed in that
+    /// occurrence's prototype; a root occurrence is placed in each definition
+    /// that no occurrence places inside another.
+    pub(super) fn spanned_definitions(&self, scope: &str) -> BTreeSet<&'a str> {
+        let Some((&scope, _)) = self.definitions.get_key_value(scope) else {
+            return BTreeSet::new();
+        };
+        let occurrences = &self.ir.model.occurrences;
+        let local = |occurrence: &'a Occurrence| match &occurrence.prototype {
+            PrototypeReference::Local { definition } => Some(definition.as_str()),
+            PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
+        };
+        let mut children: BTreeMap<&str, Vec<&'a Occurrence>> = BTreeMap::new();
+        let mut nested = BTreeSet::new();
+        for occurrence in occurrences {
+            if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
+                children
+                    .entry(parent.as_str())
+                    .or_default()
+                    .push(occurrence);
+                nested.extend(local(occurrence));
+            }
+        }
+        let mut placing: BTreeMap<&str, Vec<&'a Occurrence>> = BTreeMap::new();
+        for occurrence in occurrences {
+            if let Some(prototype) = local(occurrence) {
+                placing.entry(prototype).or_default().push(occurrence);
+            }
+        }
+        let roots: Vec<&'a Occurrence> = occurrences
+            .iter()
+            .filter(|occurrence| occurrence.parent == OccurrenceParent::Root {})
+            .collect();
+        let mut spanned = BTreeSet::from([scope]);
+        let mut pending = vec![scope];
+        while let Some(definition) = pending.pop() {
+            let mut placed: Vec<&'a Occurrence> = placing
+                .get(definition)
+                .into_iter()
+                .flatten()
+                .filter_map(|occurrence| children.get(occurrence.id.as_str()))
+                .flatten()
+                .copied()
+                .collect();
+            if !nested.contains(definition) {
+                placed.extend(roots.iter().copied());
+            }
+            for prototype in placed.into_iter().filter_map(local) {
+                if !self.scopes.contains_key(prototype) && spanned.insert(prototype) {
+                    pending.push(prototype);
+                }
+            }
+        }
+        spanned
     }
 }

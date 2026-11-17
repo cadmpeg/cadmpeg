@@ -223,6 +223,12 @@ pub(super) fn design_findings(ir: &CadIr) -> Vec<Finding> {
 }
 
 #[track_caller]
+pub(super) fn assert_no_design_finding(ir: &CadIr) {
+    let findings = design_findings(ir);
+    assert!(findings.is_empty(), "{findings:#?}");
+}
+
+#[track_caller]
 pub(super) fn assert_finding(ir: &CadIr, fragment: &str) {
     let findings = design_findings(ir);
     assert!(

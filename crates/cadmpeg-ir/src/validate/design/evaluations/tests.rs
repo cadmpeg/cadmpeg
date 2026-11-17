@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::configuration::FeatureStateOverride;
+use cadmpeg_core::decode::ResourceLimits;
+
+use crate::design::configuration::{FeatureStateOverride, ParameterOverride};
 use crate::design::container::{Container, OrderedKind, Rollback};
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
+use crate::design::expr::{Expression, Neutral, Node};
 use crate::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
-use crate::design::parameter::ParameterValue;
+use crate::design::parameter::{ParameterDefinition, ParameterValue};
 use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::units::ValueKind;
+use crate::document::CadIr;
 use crate::validate::design::fixture::{
-    after, assert_finding, body, document, feature, id, parameter, set_base,
+    after, assert_finding, assert_no_design_finding, body, configuration, document, evaluation,
+    feature, id, parameter, set_base, stored,
 };
 
 #[test]
@@ -94,6 +99,80 @@ fn a_stateless_feature_has_no_evaluation() {
     ir.design.parameters.push(flag);
     ir.design.features[0].suppressed = Some(Dimension::Negated(id("parameter", "flag")));
     assert_finding(&ir, "is stateless in the evaluation's configuration");
+}
+
+fn literal(value: bool) -> Expression {
+    Expression::Neutral(Neutral(Node::Boolean(value)))
+}
+
+/// The baseline with feature `extrude` suppressed by parameter `flag`, whose
+/// definition and cache are `cached`, configuration `large` overriding `flag`
+/// with the literal `overridden` and no cache, and an evaluation of `large`
+/// after `extrude`.
+fn suppressed_by_override(cached: bool, overridden: bool) -> CadIr {
+    let mut ir = document();
+    let mut flag = parameter("flag", ValueKind::Boolean);
+    flag.definition = ParameterDefinition::Expression(literal(cached));
+    flag.value = Some(ParameterValue::Boolean(cached));
+    ir.design.parameters.push(flag);
+    ir.design.features[0].suppressed = Some(Dimension::Parameter(id("parameter", "flag")));
+    ir.design.configurations[1].overrides.parameters.insert(
+        id("parameter", "flag"),
+        ParameterOverride {
+            expression: Some(literal(overridden)),
+            value: None,
+        },
+    );
+    ir.design.evaluations.push(evaluation(
+        "large-after-extrude",
+        "large",
+        Evaluated::State(after("extrude")),
+        Some(stored(StateBase::Current(after("fillet")))),
+    ));
+    ir
+}
+
+#[test]
+fn a_suppression_override_with_no_cache_resolves_through_its_expression() {
+    let ir = suppressed_by_override(false, true);
+    assert_finding(&ir, "is stateless in the evaluation's configuration");
+    let mut ir = suppressed_by_override(true, false);
+    ir.design.evaluations.remove(0);
+    assert_no_design_finding(&ir);
+}
+
+/// The baseline with `count` configurations of its scope, each with an
+/// evaluation after `extrude` whose base is the previous one's, and the first
+/// based on `Empty`.
+fn state_chain(count: usize) -> CadIr {
+    let mut ir = document();
+    for at in 0..count {
+        let key = format!("c{at}");
+        ir.design.configurations.push(configuration(&key, None));
+        let base = match at.checked_sub(1) {
+            Some(previous) => StateBase::Evaluation(id("evaluation", &format!("e{previous}"))),
+            None => StateBase::Empty,
+        };
+        ir.design.evaluations.push(evaluation(
+            &format!("e{at}"),
+            &key,
+            Evaluated::State(after("extrude")),
+            Some(stored(base)),
+        ));
+    }
+    ir
+}
+
+#[test]
+fn a_state_chain_past_the_reader_ceiling_is_refused() {
+    let ceiling = ResourceLimits::default().max_state_chain_depth;
+    let depth = usize::try_from(ceiling).unwrap();
+    let ir = state_chain(depth + 1);
+    assert_finding(&ir, &format!("past the ceiling of {ceiling}"));
+    assert!(serde_json::from_str::<CadIr>(&serde_json::to_string(&ir).unwrap()).is_err());
+    let ir = state_chain(depth);
+    assert_no_design_finding(&ir);
+    assert!(serde_json::from_str::<CadIr>(&serde_json::to_string(&ir).unwrap()).is_ok());
 }
 
 #[test]

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::configuration::{
     ArrangementKind, DefinitionOverride, FeatureStateOverride, ParameterOverride, PartNumber,
@@ -8,10 +8,16 @@ use crate::design::configuration::{
 use crate::design::dimension::Dimension;
 use crate::design::parameter::{Deviations, Tolerance};
 use crate::design::units::{Quantity, ValueKind};
+use crate::document::CadIr;
 use crate::pmi::LimitsAndFits;
+use crate::products::{
+    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+};
 use crate::scalar::FiniteReal;
+use crate::transform::Transform;
 use crate::validate::design::fixture::{
-    arrangement, assert_finding, design_findings, document, feature, id, parameter,
+    arrangement, assert_finding, assert_no_design_finding, design_findings, document, feature, id,
+    parameter,
 };
 
 #[test]
@@ -168,4 +174,65 @@ fn parameter_tolerances_need_a_quantity() {
     assert_finding(&ir, "states `decimals` but its kind is no quantity");
     assert_finding(&ir, "states a fit but its kind is no length");
     assert_finding(&ir, "is not below its upper deviation");
+}
+
+fn occurrence(key: &str, prototype: &str, parent: OccurrenceParent) -> Occurrence {
+    Occurrence {
+        id: id("occurrence", key),
+        prototype: PrototypeReference::Local {
+            definition: id("definition", prototype),
+        },
+        parent,
+        ordinal: 0,
+        transform: Transform::identity(),
+        linked_prototype: None,
+        scale: [FiniteReal::ONE; 3],
+        name: None,
+        visible: None,
+        link: None,
+        native_ref: None,
+    }
+}
+
+/// The baseline with a product definition `other` that has no bodies and no
+/// scope, which configuration `base` overrides.
+fn other_overridden() -> CadIr {
+    let mut ir = document();
+    ir.model.product_definitions.push(ProductDefinition {
+        id: id("definition", "other"),
+        kind: ProductDefinitionKind::Part,
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: BTreeMap::new(),
+        bodies: Vec::new(),
+        sketches: Vec::new(),
+        native_ref: None,
+    });
+    ir.design.configurations[0].overrides.definitions.insert(
+        id("definition", "other"),
+        DefinitionOverride {
+            label: Some("other".to_owned()),
+            ..DefinitionOverride::default()
+        },
+    );
+    ir
+}
+
+#[test]
+fn a_definition_override_names_a_definition_the_scope_spans() {
+    let ir = other_overridden();
+    assert_finding(&ir, "which is no definition the scope spans");
+
+    let mut ir = other_overridden();
+    let part = occurrence("part", "part", OccurrenceParent::Root {});
+    let child = OccurrenceParent::Occurrence {
+        occurrence: part.id.clone(),
+    };
+    ir.model.occurrences = vec![part, occurrence("other", "other", child)];
+    assert_no_design_finding(&ir);
+    let mut ir = other_overridden();
+    ir.model.occurrences = vec![occurrence("other", "other", OccurrenceParent::Root {})];
+    assert_no_design_finding(&ir);
 }

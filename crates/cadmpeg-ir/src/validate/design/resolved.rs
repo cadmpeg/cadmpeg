@@ -18,7 +18,10 @@ use crate::design::names::NameEntry;
 use crate::design::refs::{EntityRef, RecordRef};
 use crate::design::selection::OccurrencePath;
 use crate::document::Topology;
+use crate::features::ConfigurationId;
 use crate::ids::{BodyId, ProductDefinitionId};
+use crate::index::identities::IdentitySet;
+use crate::index::ModelIndex;
 use crate::report::check::Finding;
 use crate::schema::EntitySchema;
 use crate::transform::Transform;
@@ -333,6 +336,7 @@ fn merge<'a, K: Ord, V, T: ?Sized>(
 pub(super) fn check_resolved_states(
     ctx: &DecodeContext<'_>,
     index: &DesignRecords<'_>,
+    ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let ir = index.ir;
@@ -361,7 +365,7 @@ pub(super) fn check_resolved_states(
         };
         let id = evaluation.id.as_str();
         check_entries(index, &state, id, findings);
-        check_closure(ctx, &state, &topology, id, findings)?;
+        check_closure(ctx, &state, &topology, ids, id, findings)?;
         check_stored_bodies(index, evaluation, &state, findings);
     }
     Ok(())
@@ -471,19 +475,23 @@ fn check_entries(
 }
 
 /// Each record of the resolved state references only topology records of the
-/// state. A reference to a record outside every `Topology` is not a closure
-/// question and is left to the reference checks.
+/// state: a reference to an id that the state does not hold is reported
+/// unless the id is a record of the document outside every `Topology`, which
+/// the reference checks resolve.
 fn check_closure(
     ctx: &DecodeContext<'_>,
     state: &ResolvedState<'_>,
     topology: &BTreeSet<&str>,
+    ids: &ModelIndex<'_>,
     evaluation: &str,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     for (id, located) in &state.records {
         let mut outside = None;
         located.visit_references(ctx, &mut |target| {
-            if outside.is_none() && !state.records.contains_key(target) && topology.contains(target)
+            if outside.is_none()
+                && !state.records.contains_key(target)
+                && (topology.contains(target) || !IdentitySet::contains(ids, target))
             {
                 outside = Some(target.to_owned());
             }
@@ -501,7 +509,8 @@ fn check_closure(
 }
 
 /// Where the state after a stored-geometry feature is stored, it holds each
-/// body the feature names (§5.10).
+/// body that the feature's definition in the evaluation's configuration
+/// names (§5.10).
 fn check_stored_bodies(
     index: &DesignRecords<'_>,
     evaluation: &Evaluation,
@@ -515,10 +524,14 @@ fn check_stored_bodies(
     let Some(feature) = index.features.get(feature) else {
         return;
     };
+    let configuration = evaluation
+        .configuration
+        .as_ref()
+        .map(ConfigurationId::as_str);
     let FeatureOperation::Stored {
         bodies: Some(bodies),
         ..
-    } = &feature.definition.operation
+    } = &index.definition_in(feature, configuration).operation
     else {
         return;
     };

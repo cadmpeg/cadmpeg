@@ -28,7 +28,7 @@ pub(super) fn check_linkage(
         );
     }
     check_identities(ir, findings);
-    check_native_refs(ir, ids, findings);
+    check_native_refs(index, ids, findings);
 }
 
 macro_rules! visit_design_identities {
@@ -68,7 +68,8 @@ fn check_identities(ir: &CadIr, findings: &mut Vec<Finding>) {
 }
 
 /// Every `native_ref` of a design record resolves.
-fn check_native_refs(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
+fn check_native_refs(index: &DesignRecords<'_>, ids: &ModelIndex<'_>, findings: &mut Vec<Finding>) {
+    let ir = index.ir;
     let mut check = |owner: &str, native_ref: Option<&String>| {
         let Some(target) = native_ref else { return };
         let resolves = crate::validate::annotations_native::native_link_resolves(
@@ -92,12 +93,18 @@ fn check_native_refs(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<Findin
     }
     for feature in &design.features {
         check(feature.id.as_str(), feature.native_ref.as_ref());
-        if let FeatureOperation::Stored {
-            origin: StoredOrigin::Linked(link),
-            ..
-        } = &feature.definition.operation
-        {
-            check(feature.id.as_str(), link.native_ref.as_ref());
+    }
+    for (holder, definition) in index.feature_definitions() {
+        let link = match &definition.operation {
+            FeatureOperation::Stored {
+                origin: StoredOrigin::Linked(link),
+                ..
+            } => Some(&**link),
+            FeatureOperation::Datum(datum) => datum.link.as_ref(),
+            _ => None,
+        };
+        if let Some(link) = link {
+            check(holder, link.native_ref.as_ref());
         }
     }
     for sketch in &design.sketches {
