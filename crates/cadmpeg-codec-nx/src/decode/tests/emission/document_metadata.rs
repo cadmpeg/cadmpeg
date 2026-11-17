@@ -44,7 +44,7 @@ fn decode_projects_part_attributes_to_document_attributes() {
     assert_eq!(attribute.name, "Material");
     assert_eq!(
         attribute.target,
-        cadmpeg_ir::attributes::AttributeTarget::Document
+        cadmpeg_ir::attributes::AttributeTarget::Document.into()
     );
     assert_eq!(
         attribute.values,

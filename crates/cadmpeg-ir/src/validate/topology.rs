@@ -474,7 +474,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, &owner, "appearance", binding.appearance.as_str());
         }
-        match &binding.target {
+        match &binding.target.entity {
             AppearanceTarget::Body(body)
                 if ids
                     .bodies(body.as_str(), crate::index::StandardIndex)
@@ -550,12 +550,23 @@ pub(super) fn check_references(
             _ => {}
         }
     }
+    let records = crate::document::design_records::DesignRecords::of(ir);
     for attribute in &ir.model.attributes {
-        use crate::attributes::AttributeTarget;
+        use crate::attributes::{AttributeTarget, AttributeValue};
 
         let owner = attribute.id.as_str();
-        match &attribute.target {
+        for value in &attribute.values {
+            if let AttributeValue::Parameter(id) = value {
+                if !records.holds_parameter(id) {
+                    ref_error(findings, owner, "parameter", id.as_str());
+                }
+            }
+        }
+        match &attribute.target.entity {
             AttributeTarget::Document => {}
+            AttributeTarget::Configuration(id) if !records.holds_configuration(id) => {
+                ref_error(findings, owner, "configuration", id.as_str());
+            }
             AttributeTarget::Body(id)
                 if ids
                     .bodies(id.as_str(), crate::index::StandardIndex)

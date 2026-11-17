@@ -243,7 +243,22 @@ fn exact_reference(
         };
         curves.push((curve, *parameter_range));
     }
-    let Some(projection) = sources.project(view) else {
+    let Some(source) = property(properties, &view.object, "Source")? else {
+        return Ok(None);
+    };
+    let Some(owners) = source
+        .links()
+        .iter()
+        .map(|link| {
+            link.as_ref()
+                .filter(|link| link.document().is_none() && link.subelements().is_empty())
+                .and_then(crate::native::LinkTarget::object)
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let Some(projection) = sources.project(view, &owners) else {
         return Ok(None);
     };
     if curves.len() != selectors.len()

@@ -49,6 +49,8 @@ use crate::unknown::NativeUnknownRecord;
 use cadmpeg_core::text::NonBlankString;
 
 pub(crate) mod census;
+pub(crate) mod design_records;
+mod design_references;
 pub(crate) mod feature_parents;
 mod legacy;
 pub mod procedural;
@@ -2039,7 +2041,8 @@ pub struct CadIr {
 pub struct ScopeViolation {
     /// The excluded class.
     pub class: ArenaClass,
-    /// The first arena of `class` that holds a record, or `None` when a class
+    /// The first arena of `class` that holds a record, the first arena of
+    /// another class whose records reference `class`, or `None` when a class
     /// the scope holds requires `class`.
     pub arena: Option<ArenaName>,
 }
@@ -2047,10 +2050,16 @@ pub struct ScopeViolation {
 impl fmt::Display for ScopeViolation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.arena {
-            Some(arena) => write!(
+            Some(arena) if arena.class() == self.class => write!(
                 f,
                 "the document's scope excludes {} but {} arena `{arena}` holds records",
                 self.class, self.class
+            ),
+            Some(arena) => write!(
+                f,
+                "the document's scope excludes {} but {} arena `{arena}` holds a reference into it",
+                self.class,
+                arena.class()
             ),
             None => write!(
                 f,
@@ -2396,20 +2405,23 @@ impl CadIr {
     ///
     /// Refuses, without changing the scope, a scope that holds a class
     /// without the class it requires, or that excludes a class with a
-    /// populated arena.
+    /// populated arena or, for the design class, with a model record that
+    /// references it.
     pub fn set_scope(&mut self, scope: ContentScope) -> Result<(), ScopeViolation> {
         self.check_scope_value(scope)?;
         self.scope = scope;
         Ok(())
     }
 
-    /// Check the scope's class requirements and that every populated neutral
-    /// arena belongs to a held class.
+    /// Check the scope's class requirements, that every populated neutral
+    /// arena belongs to a held class, and that no model record references
+    /// the design class when the scope excludes it.
     ///
     /// # Errors
     ///
-    /// Names the excluded class and its first populated arena, or the
-    /// excluded class that a held class requires.
+    /// Names the excluded class and its first populated arena, or the first
+    /// model arena that references it, or the excluded class that a held
+    /// class requires.
     pub fn check_scope(&self) -> Result<(), ScopeViolation> {
         self.check_scope_value(self.scope)
     }
@@ -2429,6 +2441,14 @@ impl CadIr {
                         arena: Some(arena),
                     });
                 }
+            }
+        }
+        if !scope.holds(ArenaClass::Design) {
+            if let Some(arena) = design_references::first(&self.model) {
+                return Err(ScopeViolation {
+                    class: ArenaClass::Design,
+                    arena: Some(arena),
+                });
             }
         }
         Ok(())

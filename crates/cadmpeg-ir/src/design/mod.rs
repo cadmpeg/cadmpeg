@@ -33,5 +33,6 @@ pub mod selection;
 pub mod spreadsheet;
 pub mod units;
 
+mod identity_rewrite;
 #[cfg(test)]
 mod tests;

@@ -318,7 +318,7 @@ fn unsupported_manager_fields_cannot_patch_a_retained_member() {
     }
     ir.model.attributes.push(SourceAttribute {
         id: attribute_id,
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "configuration_manager".into(),
         values: vec![
             AttributeValue::Integer(17),
@@ -443,7 +443,7 @@ fn source_unit_code_uses_its_separate_units_route() {
     .unwrap();
     ir.model.attributes.push(SourceAttribute {
         id,
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "source_linear_unit_code".into(),
         values: vec![AttributeValue::Integer(1)],
     });

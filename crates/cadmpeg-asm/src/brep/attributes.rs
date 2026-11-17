@@ -164,7 +164,7 @@ pub fn source_attribute(
     }
     Ok(SourceAttribute {
         id: brep_id!(format, AttributeId, "attribute", record.index),
-        target,
+        target: target.into(),
         name: record.name.clone(),
         values,
     })

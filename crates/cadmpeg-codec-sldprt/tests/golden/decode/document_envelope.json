@@ -50,7 +50,9 @@
           "id": "sldprt:metadata:bounding_envelope#247:0",
           "name": "bounding_envelope",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -68,7 +70,9 @@
           "id": "sldprt:metadata:configuration_manager#247:269",
           "name": "configuration_manager",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -89,7 +93,9 @@
           "id": "sldprt:metadata:default_reference_plane#247:54",
           "name": "default_reference_plane",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -117,7 +123,9 @@
           "id": "sldprt:metadata:source_linear_unit_code#492:10",
           "name": "source_linear_unit_code",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -130,7 +138,9 @@
           "id": "sldprt:metadata:source_linear_unit_name#247:414",
           "name": "source_linear_unit_name",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
