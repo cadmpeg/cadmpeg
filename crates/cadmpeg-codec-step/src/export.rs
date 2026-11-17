@@ -1436,12 +1436,15 @@ impl<'a> Builder<'a> {
 
         let ir = self.ir;
         // A definition of a document that was not read has no product here.
-        let products = ir
+        let (external_products, products): (Vec<_>, Vec<_>) = ir
             .model
             .product_definitions
             .iter()
-            .filter(|product| !matches!(product.storage, Storage::External(_)))
-            .collect::<Vec<_>>();
+            .partition(|product| matches!(product.storage, Storage::External(_)));
+        let external_products = external_products
+            .into_iter()
+            .map(|product| &product.id)
+            .collect::<HashSet<_>>();
         let occurrences = &ir.model.occurrences;
         let emitted_product_definitions = products
             .iter()
@@ -1637,6 +1640,10 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let (parent_definition, parent_representation) = parent;
+            if external_products.contains(&occurrence.prototype) {
+                // Charged once, by the external-product summary.
+                continue;
+            }
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 self.loss(
                     StepLossCode::OccurrenceNoLocalProduct,
