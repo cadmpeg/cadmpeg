@@ -178,6 +178,64 @@ pub(crate) fn bind_unique_sketch_feature(
     }
 }
 
+/// Bind every profile that names a sketch feature to the sketch of that feature.
+///
+/// A sketch feature that a pass bound to a neutral sketch with at least one
+/// profile owns that sketch. A consumer whose profile names the sketch feature,
+/// its native record, or its unresolved owner then takes the whole sketch, by
+/// the predicate of [`bind_definition_sketch`]. A sketch without profiles binds
+/// no consumer.
+pub(crate) fn bind_bound_sketch_profiles(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+) {
+    let profiled = sketches
+        .iter()
+        .filter(|sketch| !sketch.profiles.is_empty())
+        .map(|sketch| &sketch.id)
+        .collect::<HashSet<_>>();
+    let mut bindings = Vec::new();
+    for (index, feature) in features.iter().enumerate() {
+        let FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: SketchFeatureBinding::Planar(Some(sketch)),
+        }) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !profiled.contains(sketch) {
+            continue;
+        }
+        bindings.push(SketchBinding {
+            index,
+            feature_id: feature.id.clone(),
+            native_ref: native_ref.to_owned(),
+            sketch: sketch.clone(),
+            has_profile: true,
+        });
+    }
+    for feature in features {
+        let dependencies = &mut feature.dependencies;
+        let feature_id = &feature.id;
+        feature.evaluation.edit(|definition, _| {
+            for binding in &bindings {
+                if bind_definition_sketch(
+                    definition,
+                    &binding.native_ref,
+                    &binding.feature_id,
+                    &binding.sketch,
+                    binding.has_profile,
+                ) && binding.feature_id != *feature_id
+                {
+                    dependencies.insert(binding.feature_id.clone());
+                }
+            }
+        });
+    }
+}
+
 fn sketch_alias_base_name(name: &str) -> Option<&str> {
     let (base, suffix) = name.rsplit_once('<')?;
     let ordinal = suffix.strip_suffix('>')?;
