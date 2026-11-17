@@ -2545,7 +2545,7 @@ pub(crate) struct CatiaRangeNominal {
     pub(crate) framing: CatiaRangeNominalFraming,
     /// Exact finite binary64 nominal bits.
     pub(crate) bits: u64,
-    /// Byte offset of `E6` within the record suffix.
+    /// Byte offset of the evaluation opcode within the record suffix.
     #[serde(default)]
     pub(crate) evaluation_opcode_offset: u64,
 }
@@ -5433,12 +5433,13 @@ fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaR
     };
     let CatiaEntitySuffixPayload::Evaluation {
         opcode_offset,
-        evaluation: CatiaEntityEvaluation::Scalar { bits },
+        evaluation,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     } = suffix.payload
     else {
         return None;
     };
+    let bits = evaluation.bits()?;
     Some(CatiaRangeNominal {
         framing,
         bits,

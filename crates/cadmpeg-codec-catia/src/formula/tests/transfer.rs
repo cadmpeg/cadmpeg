@@ -742,6 +742,10 @@ fn decode_transfers_a_unit_literal_formula_input_and_keeps_the_output_driven() {
     );
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::HistoryParameterLiteralAssumed.kind()
+            && loss.message.contains("2 design parameter(s)")
+    }));
 }
 
 #[test]

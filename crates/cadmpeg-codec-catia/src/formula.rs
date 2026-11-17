@@ -328,8 +328,11 @@ pub(crate) fn transfer_parameters(
                             )?;
                             let output_expression = expression.expression.value.clone();
                             let output_native_ref = output.id.clone();
+                            let (output_value, output_literal) =
+                                published_output_value(value, evaluated_expression);
                             transferred.push(FormulaParameterCandidate {
                                 literal: false,
+                                literal_value: output_literal,
                                 parameter: DesignParameter {
                                     product_definition: None,
                                     id: output_id,
@@ -338,13 +341,7 @@ pub(crate) fn transfer_parameters(
                                     name: output_name,
                                     expression: output_expression,
                                     display: None,
-                                    value: match value {
-                                        TypedParameterEvaluation::Unset => None,
-                                        TypedParameterEvaluation::Value(value) => Some(value),
-                                        TypedParameterEvaluation::Literal(value) => {
-                                            uncontradicted_literal(value, evaluated_expression)
-                                        }
-                                    },
+                                    value: output_value,
                                     dependencies: output_dependencies,
                                     properties: parameter_properties(
                                         parameter_type.as_str(),
@@ -577,6 +574,14 @@ pub(crate) fn transfer_parameters(
         }
     }
     *annotations = annotation_builder.build();
+    let literal_value_count = parameters
+        .iter()
+        .filter(|candidate| candidate.literal_value == Some(true))
+        .count();
+    let contradicted_literal_count = parameters
+        .iter()
+        .filter(|candidate| candidate.literal_value == Some(false))
+        .count();
     for candidate in parameters {
         ir.model.parameters.push(candidate.parameter);
     }
@@ -594,6 +599,8 @@ pub(crate) fn transfer_parameters(
         legacy_parameter_count: legacy_transfer.parameters,
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
         legacy_formula_count: legacy_transfer.formulas,
+        literal_value_count,
+        contradicted_literal_count,
         consumed_object_records,
     })
 }
@@ -714,6 +721,7 @@ fn definition_chain_parameter_candidate(
     }
     Ok(Some(FormulaParameterCandidate {
         literal,
+        literal_value: literal.then_some(true),
         parameter: DesignParameter {
             product_definition: None,
             id,
@@ -743,6 +751,10 @@ pub(crate) struct FormulaTransfer {
     pub(crate) legacy_parameter_count: usize,
     pub(crate) legacy_selector_parameter_count: usize,
     pub(crate) legacy_formula_count: usize,
+    /// Parameters that publish a stored `E7` or `E8` literal as their value.
+    pub(crate) literal_value_count: usize,
+    /// Formula outputs whose stored literal the evaluated expression contradicts.
+    pub(crate) contradicted_literal_count: usize,
     pub(crate) consumed_object_records: HashSet<String>,
 }
 
@@ -849,6 +861,7 @@ fn collect_legacy_parameters(
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
                 literal,
+                literal_value: literal.then_some(true),
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -910,6 +923,7 @@ fn collect_legacy_parameters(
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
                 literal: false,
+                literal_value: None,
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -971,6 +985,7 @@ fn collect_legacy_parameters(
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
                 literal: false,
+                literal_value: None,
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -1307,6 +1322,8 @@ struct FormulaParameterCandidate {
     /// The value is a stored `E7` or `E8` literal, which leaves a formula
     /// that reads it unevaluated.
     literal: bool,
+    /// For a stored `E7` or `E8` literal: whether the parameter publishes it.
+    literal_value: Option<bool>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1375,6 +1392,7 @@ fn typed_entity_parameter_candidate(
     };
     Ok(Some(FormulaParameterCandidate {
         literal,
+        literal_value: literal.then_some(true),
         parameter: DesignParameter {
             product_definition: None,
             id,
@@ -1625,8 +1643,10 @@ fn relation_program_output_candidate<'a>(
     let output_native_ref = output_entity.id.clone();
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
     output_dependencies.extend(dependencies.iter().cloned());
+    let (output_value, output_literal) = published_output_value(value, evaluated_expression);
     let candidate = FormulaParameterCandidate {
         literal: false,
+        literal_value: output_literal,
         parameter: DesignParameter {
             product_definition: None,
             id: candidate_id,
@@ -1635,13 +1655,7 @@ fn relation_program_output_candidate<'a>(
             name: output_name,
             expression: output_expression,
             display: None,
-            value: match value {
-                TypedParameterEvaluation::Unset => None,
-                TypedParameterEvaluation::Value(value) => Some(value),
-                TypedParameterEvaluation::Literal(value) => {
-                    uncontradicted_literal(value, evaluated_expression)
-                }
-            },
+            value: output_value,
             dependencies: output_dependencies,
             properties: parameter_properties(
                 parameter_type.as_str(),
@@ -1730,6 +1744,23 @@ enum TypedParameterEvaluation {
     Value(ParameterValue),
     /// A stored `E7` or `E8` literal.
     Literal(ParameterValue),
+}
+
+/// The published value of a formula output, and for a stored literal whether
+/// the output publishes it.
+fn published_output_value(
+    value: TypedParameterEvaluation,
+    evaluated: Option<&EvaluatedFormulaValue>,
+) -> (Option<ParameterValue>, Option<bool>) {
+    match value {
+        TypedParameterEvaluation::Unset => (None, None),
+        TypedParameterEvaluation::Value(value) => (Some(value), None),
+        TypedParameterEvaluation::Literal(value) => {
+            let kept = uncontradicted_literal(value, evaluated);
+            let published = kept.is_some();
+            (kept, Some(published))
+        }
+    }
 }
 
 /// The literal's value, unless an evaluated expression contradicts it.
@@ -3929,6 +3960,7 @@ mod parser_tests {
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
             literal: false,
+            literal_value: None,
             parameter: DesignParameter {
                 id: ParameterId::mint("synthetic:test:id#parameter".to_string())
                     .expect("identity grammar"),
