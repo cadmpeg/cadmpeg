@@ -2575,9 +2575,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection retains both selections and reports `feature.shell-group-roles-assumed`. The wall-selection solver uses the admitted complete construction; partial wall assumptions remain separate from its geometry proof.
 
-### DR-311. Trailing reference of a surface boundary carrier
+### DR-311. Trailing reference of a surface boundary carrier and other SurfaceExtend prologues
 
-**Question.** Which records can the trailing reference of a `SurfaceExtend` or boundary-carrier `SurfaceOffset` group name, and what does the boolean of a compact flag record state?
+**Question.** Which records can the trailing reference of a `SurfaceExtend` or boundary-carrier `SurfaceOffset` group name, what does the boolean of a compact flag record state, and where does a `SurfaceExtend` scope with another prologue store its extension method?
 
 **Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner, the boundary carrier, and the scope prologue with the extension method. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`. The boolean is `1` for each extension method with edge chaining on.
 

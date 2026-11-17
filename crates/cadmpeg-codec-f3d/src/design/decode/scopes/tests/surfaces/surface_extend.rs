@@ -3,6 +3,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::surfaces::exact_surface_extend_operation;
+use crate::design::decode::scopes::surfaces::surface_extend_loss;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::test_support::indexed_header;
@@ -243,8 +244,12 @@ fn prologue(method_code: u32) -> Vec<u8> {
     bytes
 }
 
-fn fixture_after(mut bytes: Vec<u8>) -> Vec<u8> {
-    compact_distance_owner(&mut bytes, 2.54);
+fn fixture_after(bytes: Vec<u8>) -> Vec<u8> {
+    fixture_after_distance(bytes, 2.54)
+}
+
+fn fixture_after_distance(mut bytes: Vec<u8>, distance: f64) -> Vec<u8> {
+    compact_distance_owner(&mut bytes, distance);
     boundary_carrier(&mut bytes, &COMPACT_TAIL);
     indexed_header(&mut bytes, *b"123", FLAG_RECORD);
     bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0]);
@@ -270,10 +275,15 @@ fn fixed_prologue_gives_the_extension_method_code() {
 #[test]
 fn a_violated_prologue_leaves_the_extension_method_unread() {
     let edits = [
+        (11, 1),
+        (19, 1),
         (20, 0),
-        (15, 1),
-        (24, 1),
+        (21, 1),
+        (28, 1),
+        (33, 0),
         (34, u8::try_from(CARRIER).unwrap()),
+        (38, 1),
+        (43, 1),
     ];
     for (at, value) in edits {
         let mut bytes = prologue(1);
@@ -285,5 +295,43 @@ fn a_violated_prologue_leaves_the_extension_method_unread() {
             operation.extension(),
             cadmpeg_ir::features::SurfaceExtension::Unresolved
         );
+    }
+}
+
+fn loss_code(distance: f64, code: Option<u32>) -> Option<String> {
+    let bytes = match code {
+        Some(code) => fixture_after_distance(prologue(code), distance),
+        None => fixture(distance, &COMPACT_TAIL).0,
+    };
+    let operation = decode(&bytes).unwrap();
+    surface_extend_loss("scope", &operation).map(|loss| loss.code.local_code().to_owned())
+}
+
+#[test]
+fn a_named_extension_method_with_a_positive_distance_has_no_loss() {
+    for code in 0..=2 {
+        assert_eq!(loss_code(2.54, Some(code)), None);
+    }
+}
+
+#[test]
+fn an_unnamed_method_code_or_another_prologue_reports_the_unresolved_method() {
+    for code in [Some(3), None] {
+        assert_eq!(
+            loss_code(2.54, code).as_deref(),
+            Some("feature.surface-extend-method-unresolved")
+        );
+    }
+}
+
+#[test]
+fn a_nonpositive_distance_reports_only_the_distance_loss() {
+    for distance in [-2.54, 0.0] {
+        for code in [Some(1), Some(3), None] {
+            assert_eq!(
+                loss_code(distance, code).as_deref(),
+                Some("feature.surface-extend-distance-nonpositive")
+            );
+        }
     }
 }
