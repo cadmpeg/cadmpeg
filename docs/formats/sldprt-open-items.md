@@ -664,7 +664,7 @@ resolve a seed feature?
 
 **Question.** Which sketch records carry the geometry of a line-or-circle or arc handle that no marker layout in `sldprt.md` resolves?
 
-**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. After its last sketch-geometry pass, the decoder keeps such an entity with its identity and relations, gives it native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, and charges `sketch.handle-unresolved`. The same applies to an arc handle whose read center and endpoints define no minor arc. A line handle whose two read endpoints coincide keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate`.
+**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. After its last sketch-geometry pass, the decoder keeps such an entity with its identity and relations, gives it native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, and charges `sketch.handle-unresolved`. The same applies to a handle whose endpoint markers give no sketch-plane coordinates, and to an arc handle whose read center and endpoints define no minor arc. A coordinate-bearing handle outside a geometry locus is a display handle (`sldprt.md` §2) and has no entity. A line handle whose two read endpoints coincide, one of them read from a legacy 140-byte single-incidence profile-point record (`sldprt.md` §2), keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate`.
 
 **Need.** We must read these handles to complete the sketch geometry and its profiles.
 

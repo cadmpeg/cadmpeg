@@ -1614,31 +1614,29 @@ pub(crate) fn project_marker_backed_sketches(
                                     &object_markers,
                                 );
                                 if let [start_marker, end_marker] = endpoints.as_slice() {
-                                    let (Some(start), Some(end)) =
-                                        (project(start_marker), project(end_marker))
-                                    else {
-                                        return Err(MarkerGeometryFailure::Absent);
-                                    };
-                                    if start == end {
-                                        if is_recovered_legacy_profile_point(start_marker)
-                                            || is_recovered_legacy_profile_point(end_marker)
-                                        {
-                                            // A zero-length line is not valid IR geometry. Preserve
-                                            // the marker whose endpoint collapsed because a newly
-                                            // recognized profile point supplied its coordinates.
-                                            SketchGeometry::native(cadmpeg_core::nonblank_const!(
-                                                DEGENERATE_LINE_PLACEHOLDER
-                                            ))
-                                        } else {
-                                            return Err(MarkerGeometryFailure::Absent);
+                                    match (project(start_marker), project(end_marker)) {
+                                        (Some(start), Some(end)) if start == end => {
+                                            if is_recovered_legacy_profile_point(start_marker)
+                                                || is_recovered_legacy_profile_point(end_marker)
+                                            {
+                                                // A zero-length line is not valid IR geometry. Preserve
+                                                // the marker whose endpoint collapsed because a newly
+                                                // recognized profile point supplied its coordinates.
+                                                SketchGeometry::native(
+                                                    cadmpeg_core::nonblank_const!(
+                                                        DEGENERATE_LINE_PLACEHOLDER
+                                                    ),
+                                                )
+                                            } else {
+                                                return Err(MarkerGeometryFailure::Absent);
+                                            }
                                         }
-                                    } else {
-                                        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                                            start,
-                                            end,
-                                        })
+                                        (Some(start), Some(end)) => SketchGeometry::try_from(
+                                            SketchGeometryDefinition::Line { start, end },
+                                        )
                                         .ok()
-                                        .ok_or(MarkerGeometryFailure::Absent)?
+                                        .ok_or(MarkerGeometryFailure::Absent)?,
+                                        _ => SketchGeometry::native(native_kind),
                                     }
                                 } else if let Some([start, end]) = {
                                     let mut endpoints = extended_declared_inline_line_endpoints(
@@ -1854,17 +1852,18 @@ pub(crate) fn project_marker_backed_sketches(
                                     return Err(MarkerGeometryFailure::Absent);
                                 };
                                 minor_arc_geometry(start, end, center, QUANTUM)
-                                    .ok_or(MarkerGeometryFailure::Absent)?
+                                    .unwrap_or_else(|| SketchGeometry::native(native_kind))
                             } else if let ([start, end], Some(point)) = (
                                 endpoints.as_slice(),
                                 marker.coordinates_m.and_then(|_| project(marker)),
                             ) {
-                                let (Some(start), Some(end)) = (project(start), project(end))
-                                else {
-                                    return Err(MarkerGeometryFailure::Absent);
-                                };
-                                minor_arc_geometry(start, end, point, QUANTUM)
-                                    .unwrap_or_else(|| SketchGeometry::native(native_kind))
+                                match (project(start), project(end)) {
+                                    (Some(start), Some(end)) => {
+                                        minor_arc_geometry(start, end, point, QUANTUM)
+                                            .unwrap_or_else(|| SketchGeometry::native(native_kind))
+                                    }
+                                    _ => SketchGeometry::native(native_kind),
+                                }
                             } else {
                                 (|| -> Result<SketchGeometry, MarkerGeometryFailure> {
                                     let [start, end] = endpoints.as_slice() else {

@@ -49,8 +49,9 @@ fn placeholder(kind: &str) -> SketchGeometry {
     SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(kind).unwrap())
 }
 
-#[test]
-fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
+/// The entities `project_marker_backed_sketches` emits for `markers` of one
+/// sketch feature whose lane holds `payload`.
+fn projected_entities(markers: Vec<SketchInputEntity>, payload: Vec<u8>) -> Vec<SketchEntity> {
     let histories = vec![FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -96,7 +97,7 @@ fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
     let lanes = vec![FeatureInputLane {
         id: "lane".into(),
         configuration: None,
-        native_payload: vec![0].into(),
+        native_payload: payload.into(),
         classes: Vec::new(),
         names: Vec::new(),
         scalars: Vec::new(),
@@ -107,10 +108,7 @@ fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: vec![
-            input_marker("point", 0, SketchInputKind::Point, Some([0.001, 0.002])),
-            input_marker("curve", 1, SketchInputKind::LineOrCircle, None),
-        ],
+        sketch_entities: markers,
     }];
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
@@ -130,6 +128,18 @@ fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
         &lanes,
     )
     .expect("marker profile projection fits service policy");
+    entities
+}
+
+#[test]
+fn a_line_or_circle_marker_without_coordinates_keeps_its_role_and_identity() {
+    let mut entities = projected_entities(
+        vec![
+            input_marker("point", 0, SketchInputKind::Point, Some([0.001, 0.002])),
+            input_marker("curve", 1, SketchInputKind::LineOrCircle, None),
+        ],
+        vec![0],
+    );
     let curve = entities
         .iter()
         .position(|entity| entity.native_ref.as_deref() == Some("curve"))
@@ -226,4 +236,74 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
         ]
     );
     assert!(losses[2].message.contains("marker-degenerate coincide"));
+}
+
+/// A geometry-locus arc record with its center, start and end stored inline
+/// (the direct-center layout), coordinates in metres.
+fn inline_arc_record(center: [f64; 2], start: [f64; 2], end: [f64; 2]) -> Vec<u8> {
+    let prefix = super::super::LEGACY_EXTENDED_SKETCH_MARKER;
+    let mut payload = vec![0; 138 + prefix.len()];
+    payload[..prefix.len()].copy_from_slice(prefix);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&[0x12, 0x00]);
+    for (offset, [u, v]) in [(58, center), (88, start), (104, end)] {
+        payload[offset..offset + 8].copy_from_slice(&u.to_le_bytes());
+        payload[offset + 8..offset + 16].copy_from_slice(&v.to_le_bytes());
+    }
+    payload[74..76].copy_from_slice(&11u16.to_le_bytes());
+    payload[84..88].copy_from_slice(&1u32.to_le_bytes());
+    payload[124..128].copy_from_slice(&7u32.to_le_bytes());
+    payload[128..134].copy_from_slice(&[0x00, 0x00, 0x02, 0x00, 0x00, 0x00]);
+    payload[134..138].copy_from_slice(&5u32.to_le_bytes());
+    payload[138..].copy_from_slice(prefix);
+    payload
+}
+
+#[test]
+fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
+    let arc_marker = || input_marker("arc", 0, SketchInputKind::Arc, Some([0.0, 0.0]));
+
+    let resolved = projected_entities(
+        vec![arc_marker()],
+        inline_arc_record([0.0, 0.0], [0.001, 0.0], [0.0, 0.001]),
+    );
+    assert!(
+        resolved.iter().any(|entity| {
+            entity.native_ref.as_deref() == Some("arc")
+                && matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Arc { .. }
+                )
+        }),
+        "the record reaches the inline-arc reader"
+    );
+
+    // The end lies 1e-12 mm from the start: distinct when read, one point at
+    // the sketch quantum, so center and endpoints define no minor arc.
+    let mut entities = projected_entities(
+        vec![arc_marker()],
+        inline_arc_record([0.0, 0.0], [0.001, 0.0], [0.001, 1.0e-15]),
+    );
+    let arc = entities
+        .iter()
+        .position(|entity| entity.native_ref.as_deref() == Some("arc"))
+        .expect("the arc handle keeps its entity");
+    let id = entities[arc].id().clone();
+
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, &mut losses);
+
+    assert_eq!(entities[arc].id(), &id);
+    assert_eq!(native_kind(&entities[arc]), Some("sldprt:arc-handle"));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        SldprtLossCode::SketchHandleUnresolved.kind()
+    );
+    assert!(losses[0].message.contains(id.as_str()));
 }
