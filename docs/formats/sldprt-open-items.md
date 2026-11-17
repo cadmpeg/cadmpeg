@@ -660,6 +660,14 @@ resolve a seed feature?
 
 **Need.** We must draw these points to type the relations that name them.
 
+### DI-70. Geometry of unresolved line-or-circle and arc handles
+
+**Question.** Which sketch records carry the geometry of a line-or-circle or arc handle that no marker layout in `sldprt.md` resolves?
+
+**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. A handle that no marker layout reads keeps its entity, and so does an arc handle whose read endpoints and marker point define no minor arc. After its last sketch-geometry pass, the decoder gives each such entity native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, keeps its identity and relations, and charges `sketch.handle-unresolved`. An arc handle whose inline center and endpoints define no minor arc joins its sketch after that pass, with native kind `sldprt:arc-handle`, its identity and relations, and the same loss. A line handle whose two read endpoints coincide, one of them read from a legacy 140-byte single-incidence profile-point record (`sldprt.md` §2), keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate`. A handle whose read values define no valid line, circle, or ellipse emits no entity, and neither does a kept handle that stores its own coordinates without the geometry locus `05 00 01 00` at marker +23.
+
+**Need.** We must read these handles to complete the sketch geometry and its profiles.
+
 
 ### DI-47. Relation-table framing
 
@@ -1065,6 +1073,22 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Conflict.** CADIR states a right-handed turn about `RevolutionAxis.direction`, and this codec writes the stored direction to that field unchanged. No partial revolution has shown that the two agree.
 
 **Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
+
+### EV-26. Sketch curve type `0xffff`
+
+**Question.** What curve does a sketch curve record of type `0xffff` in the arc layout define?
+
+**Known.** `sldprt.md` §2.3 "A *text record* has a curve record's fields" gives the record the arc's layout: two endpoint indices, u16 `0`, a centre index and four i32 `-2`. A type-`1` arc with distinct endpoint indices is the minor arc about its centre between its endpoints.
+
+**Need.** Type-`0xffff` records whose curves bound faces of a stored solid, compared with the counterclockwise and clockwise readings.
+
+### EV-27. Sketch curve records with selector bit 0 set
+
+**Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
+
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. In the layout with the eight zero bytes at +56 and selector `4` or `12`, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record with the eight zero bytes at +56"). Selectors `68` and `132` mark the compact legacy link-bearing forms of `sldprt.md` §2. With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+
+**Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
 
 ### EV-24. Bytes after the last top-level object
 
