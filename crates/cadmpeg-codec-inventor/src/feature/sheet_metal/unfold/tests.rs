@@ -98,6 +98,10 @@ fn selection(entries: &[(&str, u32)]) -> Selection {
     )
 }
 
+fn neutral_factor(rules: &[Rule], selections: &[Selection]) -> Option<FiniteReal> {
+    active_rule(rules, selections).and_then(|rule| factor(&rule.expression))
+}
+
 fn value(expected: f64) -> FiniteReal {
     FiniteReal::new(expected).expect("finite")
 }

@@ -322,9 +322,9 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Question.** Which fields state the PmDc style name and radius side, which join assigns an unfold rule to each style, and which entry is active when a `SheetMetalUnfold` category lists several entries?
 
-**Known.** The style operands reference thickness and bend-radius parameters. The style reader retains its prefix and suffix. The `SheetMetalUnfold` category stores names and one-based references to unfold-rule records in the same PmApp segment. A single entry selects one rule by name and ordinal. The decoder uses that rule's decimal expression as the document K-factor.
+**Known.** The style operands reference thickness and bend-radius parameters. The style reader retains its prefix and suffix. The `SheetMetalUnfold` category stores names and one-based references to unfold-rule records in the same PmApp segment. A single entry selects one rule by name and ordinal. The decoder uses that rule's decimal expression as the document K-factor. An unfold rule can also state its bend allowance as an equation or as a bend-table file name; such an expression text is not a decimal number. An active rule whose expression is not decimal gives no K-factor: the sheet-metal rules keep no bend allowance, and the decoder reports `feature.sheet-metal-unfold-factor-native` once per document. In 402 sheet-metal parts, each part has one selected rule, and each selected rule expression is decimal: 400 parts state `0.440 ul`, one states `0.3`, and one states `0.5`.
 
-**Need.** The style name and radius-side fields require exact byte semantics. Each style requires its unfold-rule join. A category with several entries requires an active-entry rule.
+**Need.** The style name and radius-side fields require exact byte semantics. Each style requires its unfold-rule join. A category with several entries requires an active-entry rule. Equation and bend-table expression texts require their grammar and their `form` values before they can state a bend allowance.
 
 ### DE-18. Contour-flange thickness side
 

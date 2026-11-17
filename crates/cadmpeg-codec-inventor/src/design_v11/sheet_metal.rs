@@ -9,11 +9,13 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::ids::SheetMetalRuleId;
 use cadmpeg_ir::design::ops::sheet_metal::{BendAllowance, BendSpec, SheetMetalRule};
 use cadmpeg_ir::features::ParameterValue;
-use cadmpeg_ir::scalar::{FiniteReal, Length, PositiveLength};
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::{Length, PositiveLength};
 use cadmpeg_ir::CadIr;
 
 use crate::feature::sheet_metal::{style::Style, unfold};
 use crate::feature::FeatureInventory;
+use crate::loss::InventorLossCode;
 use crate::pmdc::PmDcReference;
 
 pub(super) fn project(
@@ -21,6 +23,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     inventory: &FeatureInventory,
     parameters: &[crate::design::PmDcParameter],
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let raw = unique_index(parameters.iter().map(|parameter| {
         (
@@ -46,10 +49,14 @@ pub(super) fn project(
             _ => None,
         }
     };
-    let factor = unfold::neutral_factor(
+    let active = unfold::active_rule(
         &inventory.sheet_metal_unfold_rules,
         &inventory.sheet_metal_unfold_selections,
-    );
+    )
+    .map(|rule| DocumentRule {
+        id: rule.id(),
+        expression: &rule.expression,
+    });
     let design = unique_index(
         ir.design
             .parameters
@@ -70,7 +77,14 @@ pub(super) fn project(
             ))
         .then(|| Dimension::Parameter(parameter.id.clone()))
     };
-    let mut projected = rules(ctx, ir, &inventory.sheet_metal_styles, length, factor)?;
+    let mut projected = rules(
+        ctx,
+        ir,
+        &inventory.sheet_metal_styles,
+        length,
+        active.as_ref(),
+        losses,
+    )?;
     for (rule, style) in projected.iter_mut().zip(&inventory.sheet_metal_styles) {
         rule.thickness = binding(style, style.thickness).or_else(|| rule.thickness.take());
         rule.bend.radius = binding(style, style.bend_radius).or_else(|| rule.bend.radius.take());
@@ -80,16 +94,30 @@ pub(super) fn project(
     Ok(())
 }
 
+/// The active unfold rule of the document.
+struct DocumentRule<'a> {
+    id: String,
+    expression: &'a str,
+}
+
 fn rules(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     styles: &[Style],
     length: impl Fn(&Style, PmDcReference) -> Option<Length>,
-    factor: Option<FiniteReal>,
+    active: Option<&DocumentRule<'_>>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SheetMetalRule>, CodecError> {
     let Some(part) = ir.model.product_definitions.first() else {
         return Ok(Vec::new());
     };
+    let factor = active.and_then(|rule| unfold::factor(rule.expression));
+    if let Some(rule) = active.filter(|_| factor.is_none() && !styles.is_empty()) {
+        losses.push(InventorLossCode::FeatureSheetMetalUnfoldFactorNative.note(format!(
+            "Active unfold rule {} has expression {:?}, which states no decimal K-factor; the sheet-metal rules keep no bend allowance and the rule stays native.",
+            rule.id, rule.expression
+        )));
+    }
     let mut rules = Vec::new();
     for style in styles {
         ctx.charge_entities(1, "project Inventor v11 sheet-metal rule")?;

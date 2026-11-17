@@ -5,6 +5,7 @@ use crate::record_identity::{Located, RecordTypeId};
 use crate::test_support::test_fixtures::parse;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::ids::IdentityKey;
+use cadmpeg_ir::scalar::FiniteReal;
 
 fn style(ordinal: u32) -> Style {
     let mut bytes = vec![0; style::prefix_len(29).expect("prefix")];
@@ -21,6 +22,13 @@ fn style(ordinal: u32) -> Style {
 }
 
 fn projected(styles: &[Style], factor: Option<&str>) -> Vec<SheetMetalRule> {
+    projected_with_losses(styles, factor).0
+}
+
+fn projected_with_losses(
+    styles: &[Style],
+    factor: Option<&str>,
+) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
         "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
@@ -28,7 +36,12 @@ fn projected(styles: &[Style], factor: Option<&str>) -> Vec<SheetMetalRule> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    rules(
+    let active = factor.map(|expression| DocumentRule {
+        id: "inventor:pmdc:sheet-metal-unfold-rule#fixture-12".into(),
+        expression,
+    });
+    let mut losses = Vec::new();
+    let rules = rules(
         &ctx,
         &ir,
         styles,
@@ -37,9 +50,15 @@ fn projected(styles: &[Style], factor: Option<&str>) -> Vec<SheetMetalRule> {
             2 => Length::new(1.25),
             _ => None,
         },
-        factor.and_then(unfold::factor),
+        active.as_ref(),
+        &mut losses,
     )
-    .expect("rules")
+    .expect("rules");
+    (rules, losses)
+}
+
+fn codes(losses: &[LossNote]) -> Vec<&str> {
+    losses.iter().map(|loss| loss.code.local_code()).collect()
 }
 
 #[test]
@@ -103,9 +122,28 @@ fn sheet_metal_unitless_k_text_states_allowance() {
 
 #[test]
 fn sheet_metal_absent_or_equation_k_has_no_allowance() {
-    for factor in [None, Some("Thickness * 0.5"), Some("table.csv")] {
-        assert_eq!(projected(&[style(20)], factor)[0].allowance, None);
+    let (rules, losses) = projected_with_losses(&[style(20)], None);
+    assert_eq!(rules[0].allowance, None);
+    assert!(losses.is_empty());
+    for factor in ["Thickness * 0.5", "table.csv"] {
+        let (rules, losses) = projected_with_losses(&[style(20), style(30)], Some(factor));
+        assert!(rules.iter().all(|rule| rule.allowance.is_none()));
+        assert_eq!(
+            codes(&losses),
+            ["feature.sheet-metal-unfold-factor-native"],
+            "{factor:?}"
+        );
     }
+}
+
+#[test]
+fn sheet_metal_decimal_k_or_no_style_charges_no_unfold_loss() {
+    assert!(projected_with_losses(&[style(20)], Some("0.44 ul"))
+        .1
+        .is_empty());
+    assert!(projected_with_losses(&[], Some("Thickness * 0.5"))
+        .1
+        .is_empty());
 }
 
 #[test]
@@ -164,7 +202,15 @@ fn sheet_metal_projection_joins_parameter_literals_and_retains_unread_fields() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    project(&ctx, &mut ir, &inventory, std::slice::from_ref(&raw)).expect("project");
+    let mut losses = Vec::new();
+    project(
+        &ctx,
+        &mut ir,
+        &inventory,
+        std::slice::from_ref(&raw),
+        &mut losses,
+    )
+    .expect("project");
     assert_eq!(ir.design.sheet_metal_rules.len(), 2);
     assert!(ir.design.sheet_metal_rules[0].id < ir.design.sheet_metal_rules[1].id);
     for rule in &ir.design.sheet_metal_rules {
@@ -226,7 +272,8 @@ fn sheet_metal_binds_projected_length_parameters() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    project(&ctx, &mut ir, &inventory, &[raw]).expect("projection");
+    let mut losses = Vec::new();
+    project(&ctx, &mut ir, &inventory, &[raw], &mut losses).expect("projection");
     assert_eq!(
         ir.design.sheet_metal_rules[0].thickness,
         Some(Dimension::Parameter(id.clone()))

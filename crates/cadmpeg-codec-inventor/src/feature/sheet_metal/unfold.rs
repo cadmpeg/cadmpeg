@@ -286,10 +286,10 @@ pub(crate) fn factor(text: &str) -> Option<FiniteReal> {
     FiniteReal::new(number.parse().ok()?)
 }
 
-/// The K-factor of the active unfold rule. The document has one unfold-rule
-/// selection with one entry, and the entry names a rule record of the same
-/// segment by its name and by its one-based record index.
-pub(crate) fn neutral_factor(rules: &[Rule], selections: &[Selection]) -> Option<FiniteReal> {
+/// The active unfold rule. The document has one unfold-rule selection with
+/// one entry, and the entry names a rule record of the same segment by its
+/// name and by its one-based record index.
+pub(crate) fn active_rule<'a>(rules: &'a [Rule], selections: &[Selection]) -> Option<&'a Rule> {
     let [selection] = selections else {
         return None;
     };
@@ -305,7 +305,7 @@ pub(crate) fn neutral_factor(rules: &[Rule], selections: &[Selection]) -> Option
     if matches.next().is_some() || rule.name != entry.name {
         return None;
     }
-    factor(&rule.expression)
+    Some(rule)
 }
 
 #[cfg(test)]

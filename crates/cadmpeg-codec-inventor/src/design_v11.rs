@@ -29,6 +29,7 @@ pub(crate) fn project(
     sketches: &crate::sketch::SketchInventory,
     parameters: &[crate::design::PmDcParameter],
     units: &[crate::design::PmDcUnit],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let flags = features
         .features
@@ -56,7 +57,7 @@ pub(crate) fn project(
     project_history(ctx, ir, &flags)?;
     parameters::project(ctx, ir, parameters, units)?;
     datums::project(ctx, ir)?;
-    sheet_metal::project(ctx, ir, features, parameters)
+    sheet_metal::project(ctx, ir, features, parameters, losses)
 }
 
 fn project_history(

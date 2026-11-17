@@ -1313,7 +1313,7 @@ expression utf16
 display utf16
 ```
 
-For `PmApp` segment major versions 17 through 23, the payload has the same fields without `padding`. Each `utf16` field is a u32 code-unit count followed by that many UTF-16LE code units. A suffix follows the fields. `expression` is the K-factor expression text. The text is a decimal number of ASCII digits with at most one decimal point and at least one digit, optionally followed by the unitless suffix ` ul`. The K-factor is the value of that decimal number.
+For `PmApp` segment major versions 17 through 23, the payload has the same fields without `padding`. Each `utf16` field is a u32 code-unit count followed by that many UTF-16LE code units. A suffix follows the fields. `expression` is the K-factor expression text. When the text is a decimal number of ASCII digits with at most one decimal point and at least one digit, optionally followed by the unitless suffix ` ul`, the K-factor is the value of that decimal number.
 
 A `PmApp` record with type identifier `20d0a6fdd2118f936000a1b70b02ecb0` stores one style category. Its payload contains:
 

@@ -1541,6 +1541,7 @@ fn decode_container<'a>(
             &sketch_inventory,
             &design_inventory.parameters,
             &design_inventory.units,
+            &mut losses,
         )?;
     }
     let body = DecodeBody {
