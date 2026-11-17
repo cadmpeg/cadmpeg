@@ -1129,3 +1129,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** Establish the class-scoped operation carrier and the configuration-local state against producing-face orientation and body ownership.
 
 **Note.** Withheld operations retain their existing losses.
+
+### DI-71. Profile chains of marker sketches with dimensioned circles
+
+**Question.** Which feature-input records give the complete closed curve set of a marker-backed sketch whose only closed curve is a dimensioned circle?
+
+**Known.** A circular dimension on a point handle projects one circle with the dimension radius, centered on the handle. The sketch then has no profile chain, and an extrusion that names its sketch feature keeps the feature reference. The affected set has 36 extrusion and revolution features in 36 parts and 30 independent designs. Of 39 extrusions whose sketch has exactly one circle, 25 have a cylinder face that is coaxial with the circle and has its radius. In the other 14, no cylinder face has both the axis and the radius. Other coordinate handles of the same sketch lie at radii of further coaxial cylinder faces.
+
+**Need.** Establish the records that give every circle and curve of these sketches, so that a profile chain is admitted only when the sketch curve set is complete. Prove each chain against the produced side faces.
+
+**Conflict.** One dimensioned circle can be one of several concentric profile circles. A whole-sketch profile from that circle alone fills the region inside the outer circle.
