@@ -27,7 +27,8 @@ pub(super) fn validate(
                             crate::metadata::configuration_manager::values(payload, offset)
                         })
                         .is_some_and(|values| {
-                            attribute.values == values.map(AttributeValue::Integer)
+                            attribute.values
+                                == values.map(|value| Some(AttributeValue::Integer(value)))
                         })
                 });
         if !valid {

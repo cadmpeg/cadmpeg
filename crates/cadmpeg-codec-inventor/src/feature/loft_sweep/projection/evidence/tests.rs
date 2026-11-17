@@ -241,10 +241,12 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
                 vec![2, 8, 19, 258, 0, 0, 3, 23, 258, 4, 1],
             ),
         };
-        attribute.values[5] = AttributeValue::String(family.into());
-        attribute
-            .values
-            .extend(values.into_iter().map(AttributeValue::Integer));
+        attribute.values[5] = Some(AttributeValue::String(family.into()));
+        attribute.values.extend(
+            values
+                .into_iter()
+                .map(|value| Some(AttributeValue::Integer(value))),
+        );
     }
     let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
     let poles = NurbsPoleGrid::from_lanes(
@@ -281,7 +283,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         .contains(&(section, name)))
     .is_none());
     let mut different_last_curve = model.clone();
-    different_last_curve.model.attributes[2].values[17] = AttributeValue::Integer(5);
+    different_last_curve.model.attributes[2].values[17] = Some(AttributeValue::Integer(5));
     assert!(loft(&different_last_curve, 17, [19, 23], |section, name| [
         (0, 8),
         (1, 5)
@@ -300,7 +302,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
             .iter_mut()
             .zip(values)
         {
-            *slot = AttributeValue::Integer(value);
+            *slot = Some(AttributeValue::Integer(value));
         }
         swapped
     };
@@ -328,13 +330,13 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         );
     }
     let mut wrong_curve = model.clone();
-    wrong_curve.model.attributes[2].values[12] = AttributeValue::Integer(99);
+    wrong_curve.model.attributes[2].values[12] = Some(AttributeValue::Integer(99));
     assert!(
         loft(&wrong_curve, 17, [19, 23], |section, name| [(0, 8), (1, 3)]
             .contains(&(section, name)))
         .is_none()
     );
-    model.model.attributes[2].values[21] = AttributeValue::Integer(2);
+    model.model.attributes[2].values[21] = Some(AttributeValue::Integer(2));
     assert!(loft(&model, 17, [19, 23], |section, name| [(0, 8), (1, 3)]
         .contains(&(section, name)))
     .is_none());
@@ -392,7 +394,7 @@ fn legacy_model() -> CadIr {
             [38, 1, generator, -1]
                 .into_iter()
                 .chain(tail)
-                .map(AttributeValue::Integer),
+                .map(|value| Some(AttributeValue::Integer(value))),
         );
     }
     model
@@ -437,18 +439,18 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     missing_cap.model.attributes.remove(1);
     assert!(check(&missing_cap).is_none());
     let mut duplicate_cap = base.clone();
-    duplicate_cap.model.attributes[1].values[11] = AttributeValue::Integer(19);
+    duplicate_cap.model.attributes[1].values[11] = Some(AttributeValue::Integer(19));
     assert!(check(&duplicate_cap).is_none());
     let mut foreign_cap = base.clone();
-    foreign_cap.model.attributes[1].values[11] = AttributeValue::Integer(40);
+    foreign_cap.model.attributes[1].values[11] = Some(AttributeValue::Integer(40));
     assert!(check(&foreign_cap).is_none());
     // The side tail carries no member index; a member tail is the other carrier's form.
     let mut member = base.clone();
-    member.model.attributes[2].values[18] = AttributeValue::Integer(4);
-    member.model.attributes[2].values[19] = AttributeValue::Integer(1);
+    member.model.attributes[2].values[18] = Some(AttributeValue::Integer(4));
+    member.model.attributes[2].values[19] = Some(AttributeValue::Integer(1));
     assert!(check(&member).is_none());
     let mut curve_tail = base.clone();
-    curve_tail.model.attributes[2].values[14] = AttributeValue::Integer(257);
+    curve_tail.model.attributes[2].values[14] = Some(AttributeValue::Integer(257));
     assert!(check(&curve_tail).is_none());
     let mut duplicate_side = base.clone();
     let mut side = duplicate_side.model.attributes[2].clone();
@@ -456,18 +458,18 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
         serde_json::from_value(json!("test:model:face#f3")).expect("face id"),
     )
     .into();
-    side.values[7] = AttributeValue::Integer(17);
+    side.values[7] = Some(AttributeValue::Integer(17));
     duplicate_side.model.attributes[3] = side;
     assert!(check(&duplicate_side).is_none());
     // Two names on one face: the face is not solely the generator's.
     let mut shared = base.clone();
-    shared.model.attributes[2].values[6] = AttributeValue::Integer(2);
+    shared.model.attributes[2].values[6] = Some(AttributeValue::Integer(2));
     shared.model.attributes[2]
         .values
-        .insert(9, AttributeValue::Integer(5));
+        .insert(9, Some(AttributeValue::Integer(5)));
     shared.model.attributes[2]
         .values
-        .insert(10, AttributeValue::Integer(-1));
+        .insert(10, Some(AttributeValue::Integer(-1)));
     assert!(check(&shared).is_none());
     // A side face on a non-planar surface.
     let mut curved = base.clone();
@@ -484,8 +486,8 @@ fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     shell.id = serde_json::from_value(json!("test:model:shell#s2")).expect("id");
     shell.region = region.id.clone();
     other_body.geometry.faces[3].shell = shell.id.clone();
-    other_body.model.attributes[3].values[7] = AttributeValue::Integer(17);
-    other_body.model.attributes[3].values[11] = AttributeValue::Integer(0);
+    other_body.model.attributes[3].values[7] = Some(AttributeValue::Integer(17));
+    other_body.model.attributes[3].values[11] = Some(AttributeValue::Integer(0));
     other_body.geometry.bodies.push(body);
     other_body.geometry.regions.push(region);
     other_body.geometry.shells.push(shell);

@@ -83,6 +83,13 @@ pub struct Appearance {
     pub properties: BTreeMap<NonBlankString, FiniteReal>,
     /// Texture assets connected to shader input slots.
     pub textures: Vec<TextureRef>,
+    /// The native record this appearance was projected from.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// One texture asset connected to an appearance shader slot.
@@ -189,6 +196,8 @@ pub struct BumpMap {
 pub enum AppearanceTarget {
     /// Whole-body appearance.
     Body(BodyId),
+    /// Appearance of an occurrence.
+    Occurrence(crate::ids::OccurrenceId),
     /// Per-face appearance override.
     Face(FaceId),
     /// Per-edge line appearance.
@@ -209,6 +218,15 @@ pub enum AppearanceTarget {
         tessellation: String,
         /// The `source_id` of the group.
         group: String,
+    },
+    /// Appearance of a neutral record that no other arm names: the field
+    /// name of its arena in the model, the design, or the topology, and its
+    /// id.
+    Record {
+        /// The arena's field name.
+        arena: NonBlankString,
+        /// The record's id.
+        id: String,
     },
     /// Native presentation carrier without a neutral geometry arena.
     Source {
@@ -254,6 +272,13 @@ pub struct AppearanceBinding {
     /// ACT change-version channel GUIDs for this assigned entity.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub channels: BTreeMap<NonBlankString, String>,
+    /// The native record this binding was projected from.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 #[cfg(test)]
@@ -274,5 +299,6 @@ cadmpeg_core::named_optional_field!(deserialize_coordinates, NonBlankString, "co
 cadmpeg_core::named_optional_field!(deserialize_source_entity_id, String, "source_entity_id");
 cadmpeg_core::named_optional_field!(deserialize_object_type, String, "object_type");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 
 mod identity_rewrite;

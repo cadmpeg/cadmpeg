@@ -458,6 +458,7 @@ pub(crate) fn display_geometry(
                         object_type: None,
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 }
             }
@@ -597,6 +598,7 @@ fn appearance(member: &str, base: u32, defined: &crate::ol::Appearance) -> (Appe
         base_color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     };
     (appearance, rejected)
 }

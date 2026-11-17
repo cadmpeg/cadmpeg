@@ -669,6 +669,7 @@ fn writer_reports_dangling_appearance_binding() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let report = write_step(
@@ -706,6 +707,7 @@ fn writer_reports_appearance_without_base_color() {
         base_color: None,
         properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding.try_into().expect("valid identity"),
@@ -715,6 +717,7 @@ fn writer_reports_appearance_without_base_color() {
         object_type: None,
         visible: None,
         channels: std::collections::BTreeMap::default(),
+        native_ref: None,
     });
 
     let report = write_step(
@@ -771,6 +774,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             base_color: Some(color),
             properties: std::collections::BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
     }
     let mut bindings = vec![
@@ -782,6 +786,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             object_type: None,
             visible: None,
             channels: std::collections::BTreeMap::new(),
+            native_ref: None,
         },
         AppearanceBinding {
             id: "test:model:binding#blue"
@@ -793,6 +798,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             object_type: None,
             visible: None,
             channels: std::collections::BTreeMap::new(),
+            native_ref: None,
         },
     ];
     if reverse {
@@ -1181,6 +1187,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         ),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:appearance-binding#hidden-face"
@@ -1192,6 +1199,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         object_type: None,
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
+        native_ref: None,
     });
 
     let mut output = Vec::new();

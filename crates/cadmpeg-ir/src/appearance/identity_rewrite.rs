@@ -3,10 +3,11 @@
 
 use super::{Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef};
 
-rewrite_record!(Appearance, []; {id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures});
-rewrite_record!(AppearanceBinding, []; {id, target, appearance, source_entity_id, object_type, visible, channels});
+rewrite_record!(Appearance, []; {id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures, native_ref});
+rewrite_record!(AppearanceBinding, []; {id, target, appearance, source_entity_id, object_type, visible, channels, native_ref});
 rewrite_enum!(AppearanceTarget, []; {
     Body(field0),
+    Occurrence(field0),
     Face(field0),
     Edge(field0),
     Vertex(field0),
@@ -15,6 +16,7 @@ rewrite_enum!(AppearanceTarget, []; {
     Point(field0),
     Tessellation(field0),
     TriangleGroup {tessellation, group},
+    Record {arena, id},
     Source {source_id},
 });
 rewrite_record!(BumpMap, []; {normal_map, depth, normal_scale});

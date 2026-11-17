@@ -1364,14 +1364,17 @@ fn patch_retained_swobjects_metadata(
         };
         if attribute.name == "configuration_manager"
             && attribute.target.entity == cadmpeg_ir::attributes::AttributeTarget::Document
-            && crate::metadata::configuration_manager::values(payload, offset)
-                .is_some_and(|values| attribute.values == values.map(AttributeValue::Integer))
+            && crate::metadata::configuration_manager::values(payload, offset).is_some_and(
+                |values| {
+                    attribute.values == values.map(|value| Some(AttributeValue::Integer(value)))
+                },
+            )
         {
             continue;
         }
         match MetadataRecord::project(attribute, length_scale, retained)? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
-                let [AttributeValue::Vector(current)] = attribute.values.as_slice() else {
+                let [Some(AttributeValue::Vector(current))] = attribute.values.as_slice() else {
                     return Err(CodecError::Malformed(
                         "invalid retained bounding envelope".into(),
                     ));
@@ -1387,7 +1390,7 @@ fn patch_retained_swobjects_metadata(
                 )?;
             }
             Some(MetadataRecord::DefaultReferencePlane { origin, frame }) => {
-                let [AttributeValue::Vector(current_origin), AttributeValue::Vector(current_frame)] =
+                let [Some(AttributeValue::Vector(current_origin)), Some(AttributeValue::Vector(current_frame))] =
                     attribute.values.as_slice()
                 else {
                     return Err(CodecError::Malformed(
@@ -1420,7 +1423,7 @@ fn patch_retained_swobjects_metadata(
                         "SLDPRT enclosure edit requires a retained complete present record".into(),
                     ));
                 };
-                let [AttributeValue::Vector(ir_center), AttributeValue::Vector(ir_upper), AttributeValue::Vector(ir_lower), AttributeValue::Float(ir_radius)] =
+                let [Some(AttributeValue::Vector(ir_center)), Some(AttributeValue::Vector(ir_upper)), Some(AttributeValue::Vector(ir_lower)), Some(AttributeValue::Float(ir_radius))] =
                     attribute.values.as_slice()
                 else {
                     return Err(CodecError::Malformed(
@@ -1982,7 +1985,7 @@ impl MetadataRecord {
         Ok(Some(match attribute.name.as_str() {
             "bounding_envelope" => {
                 let kind = "bounding envelope";
-                let [AttributeValue::Vector(values)] = values else {
+                let [Some(AttributeValue::Vector(values))] = values else {
                     return Err(invalid(kind));
                 };
                 let values = ratios::<4>(values).ok_or_else(|| invalid(kind))?;
@@ -1991,7 +1994,9 @@ impl MetadataRecord {
             }
             "default_reference_plane" => {
                 let kind = "default reference plane";
-                let [AttributeValue::Vector(origin), AttributeValue::Vector(frame)] = values else {
+                let [Some(AttributeValue::Vector(origin)), Some(AttributeValue::Vector(frame))] =
+                    values
+                else {
                     return Err(invalid(kind));
                 };
                 let (Some(origin), Some(frame)) = (ratios::<3>(origin), ratios(frame)) else {
@@ -2003,7 +2008,7 @@ impl MetadataRecord {
             }
             "transformed_reference_enclosure" => {
                 let kind = "transformed reference enclosure";
-                let [AttributeValue::Vector(center), AttributeValue::Vector(upper), AttributeValue::Vector(lower), AttributeValue::Float(radius)] =
+                let [Some(AttributeValue::Vector(center)), Some(AttributeValue::Vector(upper)), Some(AttributeValue::Vector(lower)), Some(AttributeValue::Float(radius))] =
                     values
                 else {
                     return Err(invalid(kind));
@@ -2034,8 +2039,8 @@ impl MetadataRecord {
             "part_record" => {
                 retained(PART_RECORD_TOKEN)?;
                 let (first, trailing) = match values {
-                    [AttributeValue::Integer(first)] => (*first, None),
-                    [AttributeValue::Integer(first), AttributeValue::Integer(last)] => {
+                    [Some(AttributeValue::Integer(first))] => (*first, None),
+                    [Some(AttributeValue::Integer(first)), Some(AttributeValue::Integer(last))] => {
                         (*first, Some(*last))
                     }
                     _ => return Err(invalid("part scalar prefix")),
@@ -2054,13 +2059,13 @@ impl MetadataRecord {
                 ));
             }
             "source_linear_unit_code" => {
-                let [AttributeValue::Integer(code)] = values else {
+                let [Some(AttributeValue::Integer(code))] = values else {
                     return Err(invalid("source linear unit code"));
                 };
                 Self::SourceLinearUnitCode(*code)
             }
             "source_linear_unit_name" => {
-                let [AttributeValue::String(name)] = values else {
+                let [Some(AttributeValue::String(name))] = values else {
                     return Err(invalid("source linear unit name"));
                 };
                 retained(UNIT_NAME_TOKEN)?;

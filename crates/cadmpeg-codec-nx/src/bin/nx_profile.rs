@@ -1253,6 +1253,7 @@ mod tests {
             base_color: Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color")),
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: "test:model:binding#binding"
@@ -1264,6 +1265,7 @@ mod tests {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
 
         assert!(has_effective_color(
@@ -1324,6 +1326,7 @@ mod tests {
             base_color: None,
             properties: BTreeMap::new(),
             textures: Vec::new(),
+            native_ref: None,
         });
         let target = AppearanceTarget::Body(body.id.clone());
         ir.model.appearance_bindings.push(AppearanceBinding {
@@ -1336,6 +1339,7 @@ mod tests {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         assert!(!has_effective_color(&ir, None, &target));
 
@@ -1351,6 +1355,7 @@ mod tests {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         assert!(!has_effective_color(&ir, None, &target));
     }

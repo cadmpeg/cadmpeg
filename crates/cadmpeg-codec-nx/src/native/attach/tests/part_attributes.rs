@@ -24,8 +24,8 @@ fn part_attribute_attachment_preserves_value() {
     assert_eq!(attribute.name.as_str(), "Title");
     assert_eq!(
         attribute.values.as_slice(),
-        [cadmpeg_ir::attributes::AttributeValue::String(
+        [Some(cadmpeg_ir::attributes::AttributeValue::String(
             "Value".into()
-        )]
+        ))]
     );
 }

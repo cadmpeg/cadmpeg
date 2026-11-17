@@ -610,7 +610,8 @@ fn attach_part_attributes<'a>(
             id,
             target: AttributeTarget::Document.into(),
             name: attribute_title.to_string(),
-            values: vec![AttributeValue::String(attribute_value.to_string())],
+            values: vec![Some(AttributeValue::String(attribute_value.to_string()))],
+            native_ref: None,
         });
     }
     Ok(())
@@ -756,6 +757,7 @@ fn attach_rm_appearances(
             object_type: Some("RMFastLoad object ID".into()),
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -814,6 +816,7 @@ fn ensure_rm_color_appearance(
         base_color: Some(color),
         properties: BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     });
 
     let lookup_id = id.clone();
@@ -5389,7 +5392,8 @@ fn push_topology_attribute(
         id,
         target: context.target.clone().into(),
         name,
-        values,
+        values: values.into_iter().map(Some).collect(),
+        native_ref: None,
     });
 }
 
