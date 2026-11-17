@@ -405,6 +405,62 @@ fn a_boolean_tree_has_features_and_no_body() {
         .any(|loss| loss.code == StepLossCode::CsgBooleanUnevaluated.kind()));
 }
 
+/// Decode the Boolean results `booleans` over the block `#35`, listed through
+/// `CSG_SOLID` `#33` of `#30`, and require one `csg.item-unresolved` loss
+/// that names `cycle`, no combine, no body, and the block's feature alone.
+fn assert_cycle_refused(booleans: &str, cycle: &str) {
+    let decoded = decode_inline(&exchange(
+        "#33",
+        &format!(
+            "{booleans}\
+             #33=CSG_SOLID('',#30);\n\
+             #35=BLOCK('block',#36,1.,1.,1.);\n\
+             #36=AXIS2_PLACEMENT_3D('',#37,#21,#22);\n\
+             #37=CARTESIAN_POINT('',(0.,0.,0.));\n"
+        ),
+    ));
+    let cycles: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::CsgItemUnresolved.kind())
+        .collect();
+    assert_eq!(cycles.len(), 1, "{cycle}: one loss");
+    assert!(
+        cycles[0].message.contains(cycle),
+        "{cycle}: the loss names the cycle"
+    );
+    assert!(decoded.ir().geometry.bodies.is_empty(), "{cycle}: no body");
+    let features = &decoded.ir().design.features;
+    assert!(
+        !features
+            .iter()
+            .any(|feature| matches!(feature.definition.operation, FeatureOperation::Combine(_))),
+        "{cycle}: no combine"
+    );
+    let natives: Vec<_> = features
+        .iter()
+        .filter_map(|feature| feature.native_ref.as_deref())
+        .collect();
+    assert_eq!(natives, ["#35"], "{cycle}: the block's feature alone");
+}
+
+/// A Boolean result that is its own operand has no feature.
+#[test]
+fn a_boolean_result_that_is_its_own_operand_is_refused() {
+    assert_cycle_refused("#30=BOOLEAN_RESULT('b',.UNION.,#30,#35);\n", "#30 -> #30");
+}
+
+/// Two Boolean results that are each other's operands have no feature.
+#[test]
+fn two_boolean_results_that_are_each_others_operands_are_refused() {
+    assert_cycle_refused(
+        "#30=BOOLEAN_RESULT('a',.UNION.,#31,#35);\n\
+         #31=BOOLEAN_RESULT('b',.DIFFERENCE.,#30,#35);\n",
+        "#30 -> #31 -> #30",
+    );
+}
+
 /// A quarter disc of radius 2 in the plane `y = 0`, its straight edge on
 /// the z axis stated 10⁻⁹ off the axis, turned a full turn about `+z`: the
 /// profile point lies on the axis and the solid is the hemisphere. The arc

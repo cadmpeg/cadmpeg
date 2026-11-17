@@ -1595,9 +1595,14 @@ meet with the continuity that their `transition` states (§4.5.45). A
 its two operands. The difference removes the second operand from the first
 (§6.4.7). A `CSG_SOLID` names the root of one tree of Boolean results and
 primitives; a single primitive is a tree (§6.4.6). A Boolean operand that is
-a `CSG_SOLID` denotes the root of its tree. Length attributes convert to
-millimetres and angle attributes to radians by the units of the item's
-representation context.
+a `CSG_SOLID` denotes the root of its tree. The operand graph of Boolean
+results is acyclic (§6.4.6). Length attributes convert to millimetres and
+angle attributes to radians by the units of the item's representation
+context.
+
+CADIR decision: a Boolean result on an operand cycle, and a Boolean result
+whose operand tree reaches one, has no feature (`csg.item-unresolved`, which
+names the cycle). Their other operands keep their features and have no derived body.
 
 CADIR decision: a revolution angle within 10⁻⁹ of one turn of its
 plane-angle unit, relative to the turn, is exactly one turn, and a larger

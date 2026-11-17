@@ -318,6 +318,7 @@ pub(super) fn decode(
             *operands = operands.map(resolve);
         }
     }
+    let refused = refuse_cycles(&items, &mut losses);
     for (item, frame) in plant_orientations(exchange, geometry, &items, &solids, &mut losses) {
         if let Some(item) = items.get_mut(&item) {
             item.orientation = Some(frame);
@@ -388,7 +389,7 @@ pub(super) fn decode(
     for (&id, item) in &items {
         claims.insert(id);
         if let Shape::Boolean { .. } = item.shape {
-            if !operands.contains(&id) {
+            if !operands.contains(&id) && !refused.contains(&id) {
                 losses.push(StepLossCode::CsgBooleanUnevaluated.note(format!(
                     "BOOLEAN_RESULT #{id} has design features and no derived body; \
                      evaluating a regularised Boolean needs a solid modelling kernel"
@@ -396,7 +397,12 @@ pub(super) fn decode(
             }
         }
     }
-    let representations = representation_members(exchange, &items, &solids);
+    let mut representations = representation_members(exchange, &items, &solids);
+    for members in representations.values_mut() {
+        members.retain(|member| !refused.contains(member));
+    }
+    representations.retain(|_, members| !members.is_empty());
+    items.retain(|id, _| !refused.contains(id));
     for &representation in representations.keys() {
         claims.insert(representation);
     }
@@ -573,16 +579,14 @@ fn collect_tree(
 ) {
     let mut pending = vec![(root, false)];
     while let Some((id, expanded)) = pending.pop() {
+        if expanded {
+            members.push(id);
+            continue;
+        }
         let Some(item) = items.get(&id) else {
             continue;
         };
-        if expanded {
-            if seen.insert(id) {
-                members.push(id);
-            }
-            continue;
-        }
-        if seen.contains(&id) {
+        if !seen.insert(id) {
             continue;
         }
         pending.push((id, true));
@@ -591,6 +595,79 @@ fn collect_tree(
             pending.push((operands[0], false));
         }
     }
+}
+
+/// The Boolean results that lie on an operand cycle or have one in their
+/// operand graph. A Boolean tree is acyclic (ISO 10303-42 §6.4.6); each
+/// cycle found and each Boolean that uses one has a `csg.item-unresolved`
+/// loss.
+fn refuse_cycles(items: &BTreeMap<u64, Item>, losses: &mut Vec<LossNote>) -> BTreeSet<u64> {
+    let operands_of = |id: u64| match items.get(&id).map(|item| &item.shape) {
+        Some(Shape::Boolean { operands, .. }) => Some(*operands),
+        _ => None,
+    };
+    let mut finished = BTreeSet::new();
+    let mut on_path = BTreeSet::new();
+    let mut refused = BTreeSet::new();
+    let mut dependents = BTreeSet::new();
+    for &start in items.keys() {
+        let Some(pair) = operands_of(start) else {
+            continue;
+        };
+        if finished.contains(&start) {
+            continue;
+        }
+        let mut path = vec![(start, pair, 0_usize)];
+        on_path.insert(start);
+        while let Some(top) = path.last_mut() {
+            let (id, pair) = (top.0, top.1);
+            let Some(&operand) = pair.get(top.2) else {
+                path.pop();
+                on_path.remove(&id);
+                finished.insert(id);
+                if !refused.contains(&id) && pair.iter().any(|operand| refused.contains(operand)) {
+                    refused.insert(id);
+                    dependents.insert(id);
+                }
+                continue;
+            };
+            top.2 += 1;
+            let Some(next) = operands_of(operand) else {
+                continue;
+            };
+            if finished.contains(&operand) {
+                continue;
+            }
+            if on_path.contains(&operand) {
+                let entry = path
+                    .iter()
+                    .rposition(|&(member, ..)| member == operand)
+                    .unwrap_or_default();
+                let cycle: Vec<u64> = path[entry..].iter().map(|&(member, ..)| member).collect();
+                let chain = cycle
+                    .iter()
+                    .chain(std::iter::once(&operand))
+                    .map(|member| format!("#{member}"))
+                    .collect::<Vec<_>>()
+                    .join(" -> ");
+                losses.push(StepLossCode::CsgItemUnresolved.note(format!(
+                    "BOOLEAN_RESULT #{operand} is its own operand through {chain}; \
+                     a Boolean tree is acyclic (ISO 10303-42 §6.4.6), so the cycle has \
+                     no feature"
+                )));
+                refused.extend(cycle);
+                continue;
+            }
+            path.push((operand, next, 0));
+            on_path.insert(operand);
+        }
+    }
+    for id in dependents {
+        losses.push(StepLossCode::CsgItemUnresolved.note(format!(
+            "BOOLEAN_RESULT #{id} has an operand cycle in its tree, so it has no feature"
+        )));
+    }
+    refused
 }
 
 /// A positive finite length attribute, scaled to millimetres.
