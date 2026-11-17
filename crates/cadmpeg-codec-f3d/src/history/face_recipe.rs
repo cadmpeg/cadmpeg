@@ -141,6 +141,17 @@ impl FaceRecipeIndex {
         }
     }
 
+    /// The face fan at the one vertex of a closed edge: the two faces that
+    /// the edge bounds, when no other edge meets that vertex.
+    fn closed_edge_fan(&self, edge: i64, vertex: i64) -> Option<Vec<i64>> {
+        let corners = self.corners.get(&vertex)?;
+        let [first, second] = corners.as_slice() else {
+            return None;
+        };
+        (first.edges == [edge, edge] && second.edges == [edge, edge])
+            .then(|| vec![first.face, second.face])
+    }
+
     fn node_matches(
         &self,
         node: &DesignFaceRecipeStructure,
@@ -156,6 +167,10 @@ impl FaceRecipeIndex {
         let Some(Some(vertices)) = self.endpoints.get(&edge) else {
             return false;
         };
+        let closed = vertices[0] == vertices[1];
+        if closed != (node.sides.len() == 1) || node.sides.is_empty() {
+            return false;
+        }
         let Some(root) = usize::try_from(node.root).ok().and_then(|i| lanes.get(i)) else {
             return false;
         };
@@ -170,18 +185,23 @@ impl FaceRecipeIndex {
         {
             return false;
         }
-        let (Some(first), Some(second)) = (
-            self.fan(edge, vertices[0], *left),
-            self.fan(edge, vertices[1], *left),
-        ) else {
-            return false;
-        };
         let matches = |side: usize, fan: &[i64]| {
             let side = &node.sides[side];
             let ordinals = std::iter::once(side.header_value)
                 .chain(side.scalars.iter().copied())
                 .collect::<Vec<_>>();
             fan_matches(&ordinals, fan, lanes)
+        };
+        if closed {
+            return self
+                .closed_edge_fan(edge, vertices[0])
+                .is_some_and(|fan| matches(0, &fan));
+        }
+        let (Some(first), Some(second)) = (
+            self.fan(edge, vertices[0], *left),
+            self.fan(edge, vertices[1], *left),
+        ) else {
+            return false;
         };
         matches(0, &first) && matches(1, &second) || matches(1, &first) && matches(0, &second)
     }
@@ -232,7 +252,7 @@ impl FaceRecipeIndex {
             .collect::<Option<Vec<_>>>()?;
         if nodes
             .iter()
-            .any(|node| !node.has_valid_operand_ordinals(&operand.recipe_references))
+            .any(|node| !node.has_valid_boundary_edge_ordinals(&operand.recipe_references))
         {
             return None;
         }
