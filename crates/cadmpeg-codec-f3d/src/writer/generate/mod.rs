@@ -47,7 +47,7 @@ pub(super) fn write_new(
     let has_native = loaded_native.is_some();
     let native = loaded_native.unwrap_or_default();
     let attributes = attributes::AttributeIndex::new(target, &native);
-    if !target.model.subds.is_empty() {
+    if !target.geometry.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),
         ));
@@ -246,5 +246,7 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         physics_scenes: Omitted,
         solver_settings: Omitted,
         declared_measures: Omitted,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 }

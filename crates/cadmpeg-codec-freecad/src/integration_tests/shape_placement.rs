@@ -126,7 +126,7 @@ fn world_vertices(ir: &CadIr) -> HashMap<String, Vec<[f64; 3]>> {
         }
     }
     let mut world = HashMap::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         let payload = body
             .id
             .as_str()
@@ -135,8 +135,8 @@ fn world_vertices(ir: &CadIr) -> HashMap<String, Vec<[f64; 3]>> {
             .expect("payload name")
             .to_owned();
         let own = body.transform.unwrap_or_else(Transform::identity);
-        let point = ir.model.points.iter().find(|point| {
-            ir.model
+        let point = ir.geometry.points.iter().find(|point| {
+            ir.geometry
                 .vertices
                 .iter()
                 .any(|vertex| vertex.point == point.id && vertex.id.as_str().contains(&payload))

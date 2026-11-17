@@ -791,7 +791,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     &mut projection_losses,
                 )?,
                 Some(DesignFeatureFamily::Chamfer) => {
-                    let projection = chamfer::prepare(scope, inputs);
+                    let projection = chamfer::prepare(scope, inputs, &parameters);
                     let mut definition = if projection.legacy_compatible() && parameters.is_empty() {
                         project_fixed_chamfer(scope, construction_groups, edge_operands,
                             edge_identity_operands, edge_treatment_vertex_operands, histories,
@@ -802,7 +802,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     }
                     definition.map_or_else(|| {
                         retain_chamfer_records = true;
-                        projection.project(&parameters, ctx, &mut projection_losses)
+                        projection.project(ctx, &mut projection_losses)
                     }, Ok)?
                 }
                 Some(DesignFeatureFamily::Combine) => project_combine(scope, native_scope)
@@ -1589,6 +1589,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 projection_losses.push(crate::loss::F3dLossCode::FeatureBaseFeatureNullFlagAssumed.note(format!(
                                     "Base Feature {} stores flag 1 at Design offset {offset} in its marked null reference; its result runs are read as the ordinary result set (DR-241).",
                                     scope.id
+                                )));
+                            }
+                            if matches!(
+                                construction,
+                                crate::records::feature::base_feature::DesignBaseFeatureConstruction::SuffixResultBodies { .. }
+                            ) && construction.body_entity_suffixes().len() > 1
+                            {
+                                projection_losses.push(crate::loss::F3dLossCode::FeatureBaseFeatureSuffixRunOrderAssumed.note(format!(
+                                    "Base Feature {} stores {} bodies in a suffix result-body frame; its body, repeated, and result entries are read as three consecutive runs (DR-646).",
+                                    scope.id,
+                                    construction.body_entity_suffixes().len()
                                 )));
                             }
                             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
@@ -6526,6 +6537,13 @@ fn project_chamfer(
         let spec = or_none!(spec);
         candidates.push(spec);
     }
+    for spec in &candidates {
+        chamfer::note_orientation_assumptions(
+            &format!("Chamfer scope {}", scope.id),
+            *spec,
+            losses,
+        );
+    }
     let mut groups = Vec::new();
     if edge_groups.is_empty() {
         groups.push(ChamferGroup {
@@ -6605,6 +6623,7 @@ fn project_fixed_chamfer(
             }
         }
     };
+    chamfer::note_orientation_assumptions(&format!("Chamfer scope {}", scope.id), spec, losses);
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {

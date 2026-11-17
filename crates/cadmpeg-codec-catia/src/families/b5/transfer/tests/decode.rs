@@ -81,26 +81,26 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
-    assert_eq!(result.ir().model.edges.len(), 3);
-    assert_eq!(result.ir().model.curves.len(), 3);
-    assert!(result.ir().model.surfaces.iter().all(|surface| {
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
+    assert_eq!(result.ir().geometry.curves.len(), 3);
+    assert!(result.ir().geometry.surfaces.iter().all(|surface| {
         surface.source_object.as_ref().is_some_and(|source| {
             source.format == cadmpeg_ir::CodecFormat::Catia
                 && source.object_id.as_str().starts_with("cgm-surface:")
         })
     }));
-    assert!(result.ir().model.curves.iter().all(|curve| {
+    assert!(result.ir().geometry.curves.iter().all(|curve| {
         curve.source_object.as_ref().is_some_and(|source| {
             source.format == cadmpeg_ir::CodecFormat::Catia
                 && source.object_id.as_str().starts_with("cgm-edge:")
         })
     }));
-    assert_eq!(result.ir().model.procedural_curves.len(), 3);
-    assert!(result.ir().model.procedural_curves.iter().all(|curve| {
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 3);
+    assert!(result.ir().geometry.procedural_curves.iter().all(|curve| {
         matches!(
             curve.definition(),
             cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
@@ -110,8 +110,8 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
                 && family.context().sides()[1].surface.is_none()
         )
     }));
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.pcurves.len(), 3);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.pcurves.len(), 3);
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -169,7 +169,7 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         ),
         3
     );
-    assert!(result.ir().model.pcurves.iter().all(|pcurve| pcurve
+    assert!(result.ir().geometry.pcurves.iter().all(|pcurve| pcurve
         .parameter_range()
         .map(cadmpeg_ir::units::FiniteVector::get)
         == Some([0.0, 1.0])));
@@ -223,10 +223,10 @@ fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
             &DecodeOptions::default(),
         )
         .expect("decode complete native vertex chain");
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
     assert!(result.report().losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
@@ -270,17 +270,17 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
         )
         .expect("decode object-stream topology");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
-    assert_eq!(result.ir().model.edges.len(), 3);
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.pcurves.len(), 3);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.pcurves.len(), 3);
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .map(|edge| edge.id.as_str())
@@ -315,8 +315,8 @@ fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
         )
         .expect("decode duplicate loop-owner stream");
 
-    assert!(result.ir().model.bodies.is_empty());
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == CatiaLossCode::TopologyB5GraphUnclosed.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Blocking

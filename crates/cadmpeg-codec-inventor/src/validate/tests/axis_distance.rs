@@ -100,8 +100,8 @@ fn findings(
 fn loci(first: u32, second: u32) -> serde_json::Value {
     serde_json::json!({
         "kind": "distance_loci",
-        "first": {"kind": "entity", "entity": entity_id(first)},
-        "second": {"kind": "entity", "entity": entity_id(second)},
+        "first": {"kind": "entity", "value": entity_id(first)},
+        "second": {"kind": "entity", "value": entity_id(second)},
         "parameter": "inventor:design:parameter#generated-4"
     })
 }
@@ -110,6 +110,7 @@ fn native(first: u32, second: u32) -> serde_json::Value {
     serde_json::json!({
         "kind": "native",
         "native_kind": "axis_distance_dimension",
+        "native_properties": {},
         "entities": [entity_id(first), entity_id(second)],
         "parameter": "inventor:design:parameter#generated-4",
         "operands": [{

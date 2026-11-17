@@ -39,7 +39,7 @@ fn extract_face_pipeline_retains_relations_without_inventing_authored_face_roles
     assert_eq!(wire["byte_len"], 55);
     assert_eq!(
         serde_json::to_value(result.ir().model.features[0].evaluation.definition()).unwrap(),
-        serde_json::json!({"definition":"unresolved", "family":"extract_face"})
+        serde_json::json!({"kind": "operation", "value": {"kind": "unresolved", "value": {"family":"extract_face"}}})
     );
     let (mut ir, report, fidelity) = result.into_parts();
     let validation =

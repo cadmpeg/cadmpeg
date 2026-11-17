@@ -198,7 +198,7 @@ impl<'a> Approximator<'a> {
         let range = curve_domain(ir, index, owner)?;
         let slack = DOMAIN_SLACK_RELATIVE * (range[1] - range[0]).abs().max(1.0);
         let edges_inside = ir
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| edge.curve() == Some(owner))
@@ -291,7 +291,7 @@ fn trims_meet_vertices(
         ))
     };
     for face in ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter(|face| &face.surface == surface)
@@ -307,8 +307,11 @@ fn trims_meet_vertices(
                 let Some(edge) = index.edges(coedge.edge.as_str(), StandardIndex) else {
                     return false;
                 };
+                let Some(ends) = &edge.ends else {
+                    return false;
+                };
                 let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
-                    (vertex(edge.start.as_str()), vertex(edge.end.as_str()))
+                    (vertex(ends.start.as_str()), vertex(ends.end.as_str()))
                 else {
                     return false;
                 };
@@ -360,7 +363,7 @@ fn trims_meet_vertices(
 fn face_domain(ir: &CadIr, index: &ModelIndex<'_>, surface: &SurfaceId) -> Option<[[f64; 2]; 2]> {
     let mut bounds: Option<[[f64; 2]; 2]> = None;
     for face in ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter(|face| &face.surface == surface)
@@ -441,7 +444,7 @@ fn curve_domain(ir: &CadIr, index: &ModelIndex<'_>, curve: &CurveId) -> Option<[
     {
         return Some(context.parameter_range().endpoints());
     }
-    ir.model
+    ir.geometry
         .edges
         .iter()
         .filter(|edge| edge.curve() == Some(curve))

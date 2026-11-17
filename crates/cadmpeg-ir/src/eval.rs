@@ -4278,7 +4278,7 @@ fn construction_curve_parameter(
     } else {
         let mut ranges = index
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| edge.curve() == Some(directrix))

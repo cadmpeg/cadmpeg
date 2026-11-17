@@ -51,7 +51,7 @@ fn run(ir: &CadIr) -> Vec<Finding> {
 #[test]
 fn a_body_target_counts_each_identity_once() {
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("cube");
-    let body = cube.model.bodies[0].id.clone();
+    let body = cube.geometry.bodies[0].id.clone();
     declare(
         &mut cube,
         DeclaredTarget::Bodies {
@@ -76,7 +76,7 @@ fn saved_cache_disagreements_warn_while_declarations_and_validation_properties_e
         (DeclaredMeasureProvenance::SavedCache, Severity::Warning),
     ] {
         let mut cube = cadmpeg_ir::examples::unit_cube().expect("cube");
-        let body = cube.model.bodies[0].id.clone();
+        let body = cube.geometry.bodies[0].id.clone();
         cube.model.declared_measures.push(
             DeclaredMeasure::new(
                 DeclaredMeasureId::mint("test:model:declared_measure#mismatch").expect("identity"),
@@ -121,15 +121,15 @@ fn a_part_property_excludes_hidden_bodies_but_a_body_property_can_address_them()
     let cube = cadmpeg_ir::examples::unit_cube().expect("cube");
     let other = renamed(&cube, "synthetic:cube:", "synthetic:second:");
     let mut both = merged(&cube, &other);
-    let hidden = other.model.bodies[0].id.clone();
-    both.model
+    let hidden = other.geometry.bodies[0].id.clone();
+    both.geometry
         .bodies
         .iter_mut()
         .find(|body| body.id == hidden)
         .expect("other body")
         .visible = Some(false);
     let bodies = both
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
@@ -146,7 +146,7 @@ fn a_part_property_excludes_hidden_bodies_but_a_body_property_can_address_them()
 #[test]
 fn a_part_target_counts_each_owned_body_once() {
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("cube");
-    let body = cube.model.bodies[0].id.clone();
+    let body = cube.geometry.bodies[0].id.clone();
     let definition = definition(&mut cube, vec![body.clone(), body]);
     declare(&mut cube, DeclaredTarget::Definition { definition }, 1000.0);
     assert!(run(&cube).is_empty());

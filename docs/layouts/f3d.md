@@ -468,7 +468,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 11 B
 
-This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6.
+This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 5 or 6.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
@@ -854,10 +854,10 @@ Parsed by:
 | 27 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+27: edge-group reference` |
 | 38 | 21 | `zero_run_21_at_38` | `bytes[21]` | little | spec | Every byte that the form does not name is zero |
 | 59 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | `+59: Radius owner reference` |
-| 70 | 4 | `zero_run_4_at_70` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+| 70 | 4 | `radius_owner_padding` | `bytes[4]` | little | spec | `+70: four bytes` |
 | 74 | 4 | `set_ordinal` | `u32` | little | spec | `+74: u32 set ordinal` |
 | 78 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+78: TangencyWeight owner reference` |
-| 89 | 4 | `zero_run_4_at_89` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+| 89 | 4 | `tangency_weight_owner_padding` | `bytes[4]` | little | spec | `+89: four bytes` |
 
 ## `thicken_scope_prologue`
 
@@ -3574,7 +3574,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 24 B
 
-Offsets are relative to the primary indexed header. The two parallel 15-byte body-entry runs begin at offset 24.
+Offsets are relative to the primary indexed header. The two parallel 15-byte body-entry runs begin at offset 24. Layout record `base_feature_suffix_result_body` gives the suffix result-body form.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3725,7 +3725,7 @@ This layout repeats for each body entity suffix and each passive body-reference 
 
 Spec §3.1 · layout: byte offsets · size: 15 B
 
-Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form.
+Offsets are relative to the byte after the two parallel 15-byte body-entry runs of the ordinary form, or after the body-entry run of the suffix result-body form.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3734,6 +3734,39 @@ Offsets are relative to the byte after the two parallel 15-byte body-entry runs 
 | 9 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
 | 10 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
 | 11 | 4 | `body_count` | `u32` | little | spec | The ordinary form then stores a marked null reference, u32 `N` |
+
+## `base_feature_suffix_result_body`
+
+Spec §3.1 · layout: byte offsets · size: 104 B
+
+Offsets are relative to the primary indexed header. The LP-UTF16 scope kind payload begins at offset 206.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | stores eight zero bytes at offsets 11 through 18 |
+| 19 | 1 | `body_count_marker` | `u8` | little | spec | `u8 1` at offset 19 |
+| 20 | 4 | `body_count` | `u32` | little | spec | and u32 `1` at offset 20 |
+| 24 | 1 | `body_marker` | `u8` | little | spec | marked u64 body entity suffix at offset 24 |
+| 25 | 8 | `body_entity_suffix` | `u64` | little | spec | marked u64 body entity suffix at offset 24 |
+| 33 | 6 | `body_field` | `bytes[6]` | little | spec | an ordinary local 15-byte body-entity element |
+| 39 | 1 | `null_reference_marker` | `u8` | little | spec | the marked null reference at offset 39 |
+| 40 | 8 | `null_reference` | `bytes[8]` | little | spec | the marked null reference at offset 39 |
+| 48 | 1 | `null_reference_flag` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 49 | 1 | `null_reference_zero` | `u8` | little | spec | a flag byte of `0` or `1`, and a zero byte |
+| 50 | 4 | `repeated_count` | `u32` | little | spec | u32 `1` at offset 50 |
+| 54 | 1 | `repeated_marker` | `u8` | little | spec | repeats as a marked u32 value at offset 54 |
+| 55 | 4 | `repeated_body_entity_suffix` | `u32` | little | spec | repeats as a marked u32 value at offset 54 |
+| 59 | 6 | `repeated_field` | `bytes[6]` | little | spec | Each value has a six-byte trailing field |
+| 65 | 1 | `separator_zero` | `u8` | little | spec | One zero byte at offset 65 |
+| 66 | 1 | `metadata_marker` | `u8` | little | spec | marked u64 shared metadata-record index at offset 66 |
+| 67 | 8 | `metadata_record` | `u64` | little | spec | marked u64 shared metadata-record index at offset 66 |
+| 75 | 6 | `metadata_field` | `bytes[6]` | little | spec | Each value has a six-byte trailing field |
+| 81 | 4 | `result_count` | `u32` | little | spec | u32 `1` at offset 81 |
+| 85 | 1 | `result_marker` | `u8` | little | spec | marked u32 result-record index at offset 85 |
+| 86 | 4 | `result_record` | `u32` | little | spec | marked u32 result-record index at offset 85 |
+| 90 | 6 | `result_field` | `bytes[6]` | little | spec | Each value has a six-byte trailing field |
+| 96 | 8 | `zero_tail` | `bytes[8]` | little | spec | Offsets 96 through 103 are zero |
 
 ## `base_feature_compact_result_body_count`
 
@@ -7649,11 +7682,11 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 20 | 1 | `marker` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
-| 21 | 4 | `zero_value` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
-| 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
-| 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
-| 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
+| 20 | 1 | `marker` | `u8` | little | spec | It uses the marker-one prologue through offset 32 |
+| 21 | 4 | `zero_value` | `u32` | little | spec | It uses the marker-one prologue through offset 32 |
+| 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 32 |
+| 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 32 |
+| 33 | 1 | `direction_kind` | `u8` | little | spec | offset 33 stores direction kind `0` or `1` |
 | 34 | 1 | `project_axis` | `u8` | little | spec | Offset 34 stores the Project Axis flag |
 | 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag |
 | 36 | 3 | `zero_flags` | `bytes[3]` | little | spec | Offsets 36 and 37 store zero Symmetric and Two Sides flags, and offset 38 stores the null opposite-angle reference marker |
@@ -9919,10 +9952,10 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `zero_flag` | `u8` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` · value `0` |
-| 1 | 11 | `length_reference` | `bytes[11]` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` |
-| 12 | 11 | `offset_reference` | `bytes[11]` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` |
-| 23 | 1 | `end_flag` | `u8` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and byte `1` · value `1` |
+| 0 | 1 | `zero_flag` | `u8` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and the right-handed flag · value `0` |
+| 1 | 11 | `length_reference` | `bytes[11]` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and the right-handed flag |
+| 12 | 11 | `offset_reference` | `bytes[11]` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and the right-handed flag |
+| 23 | 1 | `right_handed` | `u8` | little | spec | Its trailer stores a zero byte, a marked length-owner reference, a marked offset-owner reference, and the right-handed flag |
 
 ## `thread_extended_compact_trailer`
 

@@ -3,26 +3,26 @@
 
 use std::collections::BTreeMap;
 
-use super::{ArenaName, CensusKey};
+use super::CensusKey;
 use crate::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::native::view::NativeView;
 
 macro_rules! define_census {
-    ($( $field:ident: $element:ty, $class:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         /// Count the borrowed view with one arena walk.
         pub(crate) fn count(view: NativeView<'_>) -> BTreeMap<CensusKey, usize> {
             let mut counts = BTreeMap::new();
             $(
                 // An absent history-body arena leaves the census of a document
                 // that predates the arena unchanged.
-                if stringify!($field) != "history_bodies" || !view.ir.model.$field.is_empty() {
+                if stringify!($field) != "history_bodies" || !view.ir.$home.$field.is_empty() {
                     counts.insert(
-                        CensusKey::model(ArenaName::registered(stringify!($field), super::arena_class!($class))),
-                        view.ir.model.$field.len(),
+                        CensusKey::model(super::arena_name!($field, $class, $home)),
+                        view.ir.$home.$field.len(),
                     );
                 }
             )*
-            let unknown_surfaces = view.ir.model.surfaces.iter().filter(|surface| matches!(surface.geometry,
+            let unknown_surfaces = view.ir.geometry.surfaces.iter().filter(|surface| matches!(surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }))).count();
             counts.insert(CensusKey::surfaces_unknown_geometry(), unknown_surfaces);
             view.for_each(|format, arena, records| {
@@ -59,7 +59,7 @@ mod tests {
         let standard = ir.census();
         assert_eq!(standard["native.future.records"], 1);
         assert!(!standard.contains_key("native.future.empty"));
-        for name in super::ArenaName::ALL {
+        for name in crate::document::ArenaName::ALL {
             if name.as_str() == "history_bodies" {
                 assert!(!standard.contains_key(name.as_str()));
             } else {

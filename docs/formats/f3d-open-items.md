@@ -552,6 +552,16 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
 
+### DR-654. Stored profile loop curves off the selected material boundary
+
+**Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
+
+**Known.** `f3d.md` "When the loops of a typed or compact profile group join the Sketch exactly" gives the transition reading. It requires every stored curve to bound a selected atomic region. A loop that lists a line ending inside a circle, or a line coincident with part of another listed line, names a curve that bounds no selected region in that reading. The selection stays native with `feature.profile-selection-native`.
+
+**Need.** Controlled Extrudes of one region with a line that ends inside it, and of two regions separated by two coincident lines, with the stored loops and the resulting end caps, to state when a listed curve contributes no boundary interval.
+
+**Conflict.** None.
+
 ### DR-97. Freedom entry second value `0`
 
 **Question.** What does a freedom entry state when its second f64 is `0` rather than π?
@@ -1011,6 +1021,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Membership certainty and order certainty remain independent.
 
+### DR-658. Conflicting and foreign Form reference joins
+
+**Question.** Which Form cage belongs to a source slot when its body, serializer, tracking group or owned list carries conflicting type, owner, position or namespace evidence? What frames a sparse tracking run after an unreadable member?
+
+**Known.** Form reference runs retain local, segment and document targets, inline and separate type claims, qualified asset text, foreign link data, nulls and source positions. A body surface joins a serializer through a compatible local target. Distinct source counts or positions can describe incompatible membership claims. An unreadable variable-width tracking member leaves subsequent slots unvisited. A matching fixed-slot envelope permits an independently retained alternative.
+
+**Need.** Controlled saves that introduce a foreign component and vary each Form selection, body owner and serializer independently, with the producer's resolved cage membership and reference namespace recorded.
+
+**Conflict.** A retained inline type can differ from the registered type of its local target. Separate source records can establish different positions or counts for a Form.
+
+**Note.** `feature.form-reference-type-conflict`, `feature.form-foreign-reference-unresolved`, `feature.form-tracking-owner-conflict`, `feature.form-serializer-reference-unresolved` and `feature.form-membership-conflict` record the unresolved joins and membership claims. `feature.form-tracking-fixed-slots-assumed` records the alternative fixed-slot reading. `feature.form-tracking-run-unresolved` retains the decoded owner when the member count is unavailable or exceeds the frame. Compatible local sibling facts remain available.
+
 ### DR-325. Empty Form selection group
 
 **Question.** What does a zero member count in a Form selection group mean for the cages committed by its scope?
@@ -1267,7 +1289,7 @@ The bounded-face Chamfer 4 members in `Parametric_PTFE_Umbilcal_guide.f3z` are t
 
 **Question.** Do the flag bytes of the chordal and compact fillet set forms encode tangent chain, do those forms store curvature continuity, and what do the set marker byte, the `00 01` tail of the current flag run, and the compact flag-run form encode?
 
-**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, reads curvature continuity in the constant form only, and stores `rolling_ball_corner = true` for the compact flag run, whose first byte is `01`.
+**Known.** `f3d.md` §3.1 "A parameter-owned `Fillet` scope names its fillet sets in a prefix" gives their positions and admitted values. The decoder stores the flag of every set form as the set's `tangent_chain`, reads curvature continuity in the constant form only, and stores `rolling_ball_corner = true` for the compact flag run, whose first byte is `01`. The decoder admits the compact run `01 01`; two public compact frames store `01 00` in its place. Public compact frames store zero bytes, 16-byte-aligned addresses, UTF-16 text fragments, or unrelated f32 values in the nine bytes after the compact run's `01 01` and in the four bytes at compact set offsets `+70` and `+89`. The decoder reads these bytes as padding and reports `feature.fillet-padding-assumed` when one of them is nonzero.
 
 **Need.** Chordal and compact Fillet saves with tangent chain off, with curvature continuity, and with setback corners.
 
@@ -1433,9 +1455,9 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte, the pitch marker, and the zero bytes before the trailer `01` select?
 
-**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag, the pitch-marker byte is the modeled flag, and the second marker byte is `1`. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag and the pitch-marker byte is the modeled flag of a scope with a result. Its second marker byte is `1` or `2`: threads on one external face store `1`, threads on two external faces and a thread on one internal face store `2`, and threads edited after other features store either value on one face. Thread type, designation, class, length, offset, hand, and the modeled option leave it unchanged. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
 
-**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time.
+**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time. For the second marker byte of the extended standard form: one external and one internal thread on faces made by the same feature, each saved before and after an edit of its face selection.
 
 **Conflict.** None.
 
@@ -1659,13 +1681,13 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** What do the two u64 values of each 16-byte entry after the entry count of an extended Thread prefix state?
 
-**Known.** A modeled extended Thread stores count `1` and one entry with u64 `1` and u64 `0x130`. The Design stream of that thread has no indexed record `0x130`. A cosmetic extended Thread stores count `0` and no entry.
+**Known.** A modeled extended Thread stores one entry for each selected face, and a cosmetic extended Thread stores count `0` and no entry. The first u64 values of one thread are `1` on one face, `1` and `6` on two faces, and `1`, `6`, and `7` on three faces. The second u64 values of one thread are consecutive, and they increase through the modeled threads of a design in timeline order. The Design stream has no indexed record with a second value.
 
-**Need.** Modeled threads on several faces, on bodies of different sizes, and in designs with different record counts.
+**Need.** Modeled threads on four or more faces, and the entity that carries a second value as its identity.
 
 **Conflict.** None.
 
-**Note.** The decoder admits entry counts `0` and `1`, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
+**Note.** The decoder requires one entry for each face-selection pair of a modeled thread, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
 
 ### DR-206. Sides of a two-sided to-object Revolve
 
@@ -1707,13 +1729,23 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** What does the flag byte of the marked null reference in a `Base Feature` result-body envelope state?
 
-**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the marked null reference of the ordinary form. Ordinary frames written by earlier releases store `0`. A public 318-byte class-348/257 ordinary frame stores `1` and repeats its passive reference. Six controlled one-body 331-byte ordinary frames from the current Fusion release, whose body is built in place, store `1` and repeat their body entity suffix. The decoder reads the result runs of a flagged ordinary frame as the ordinary result set and reports `feature.base-feature-null-flag-assumed`. Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 of the 262-byte wide zero-body form as zero; offsets 20 through 30 there have the layout of a marked null reference. One public 262-byte wide zero-body frame stores `1` at offset 29, and its current and preceding history states are equal; two other public frames of this form store `0`. A controlled 275-byte wide zero-body frame that holds a mesh body stores `1` at offset 29. A controlled 316-byte class-368/258 frame, whose body is a copy of a body in a referenced design, stores u32 `N` at offset 20 in place of `2N`, one run of `N` body-suffix entries, a marked null reference with flag `1` at offset 39, u32 `N`, and a repeated run of body suffixes; its kind starts at offset `169 + 37N`. The decoder keeps the wide zero-body frames with flag `1` and the 316-byte frame as unbound stored-body scopes.
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the marked null reference of the ordinary form. Ordinary frames written by earlier releases store `0`. A public 318-byte class-348/257 ordinary frame stores `1` and repeats its passive reference. Six controlled one-body 331-byte ordinary frames from the current Fusion release, whose body is built in place, store `1` and repeat their body entity suffix. A controlled 316-byte class-368/258 suffix result-body frame, whose body is a copy of a body in a referenced design, stores `1`. The decoder reads the result runs of a flagged ordinary or suffix result-body frame as the ordinary result set and reports `feature.base-feature-null-flag-assumed`. Layout record `base_feature_wide_zero_body` in [the layout tables](../layouts/f3d.md) defines offsets 21 through 35 of the 262-byte wide zero-body form as zero; offsets 20 through 30 there have the layout of a marked null reference. One public 262-byte wide zero-body frame stores `1` at offset 29, and its current and preceding history states are equal; two other public frames of this form store `0`. A controlled 275-byte wide zero-body frame that holds a mesh body stores `1` at offset 29. The decoder keeps the wide zero-body frames with flag `1` as unbound stored-body scopes.
 
 **Need.** Saves of one design that differ only in this byte, for example across Fusion releases or design options.
 
 **Conflict.** None.
 
 **Note.** DR-483 tracks a marked null reference whose byte after the flag byte is `1`. Unbound result references remain a native body selection of a neutral Base Feature and report `feature.stored-bodies-unbound`.
+
+### DR-646. Entry order of a multi-body suffix result-body frame
+
+**Question.** How does a `Base Feature` suffix result-body frame with more than one body order its body, repeated, and result entries?
+
+**Known.** `f3d.md` §3.1 "A `Base Feature` scope records a result-body snapshot" gives the one-body suffix result-body form. The ordinary form stores each entry kind as one consecutive run. The decoder reads a frame with u32 `N` greater than `1` at offset 20 and its kind at offset `169 + 37N` as `N` body entries, the marked null reference, u32 `N`, `N` repeated entries, one zero byte, the metadata record, u32 `N`, and `N` result entries, and reports `feature.base-feature-suffix-run-order-assumed`.
+
+**Need.** A controlled save whose Base Feature copies two bodies from a referenced design.
+
+**Conflict.** None.
 
 ### DR-251. Compact null-owner parameters: owner and trailer byte 3
 
@@ -1989,11 +2021,21 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which field layout does a `Revolve` scope use when it has the marker-one prologue and a token-independent frame length other than 345, 355, 367, 351, or 373?
 
-**Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 33, a 351- or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
+**Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 32, a 351-, 361-, or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
 
 **Need.** A Design stream with a marker-one `Revolve` scope of another token-independent length and the feature's parameters as the application shows them.
 
 **Note.** None.
+
+### DR-657. Referenced-angle Revolve direction kind 1 and second tail reference
+
+**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361-byte referenced-angle frame name?
+
+**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361-byte frame the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and records `feature.revolve-layout-assumed` with the target.
+
+**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and a 361-byte referenced-angle scope with the record that its second tail reference names.
+
+**Conflict.** None.
 
 ### DR-270. Curve order of a self-crossing stored profile loop
 
@@ -2695,7 +2737,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** Projection through explicit set references keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
@@ -2719,7 +2761,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
 
-**Note.** Projection through explicit set references reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
+**Note.** Projection reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
 
 ### DR-640. Chamfer parameter recovery from incomplete definitions
 
@@ -3259,3 +3301,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A stored carrier or a derivation rule for the absent curves, and the Sketch that owner 1977 names.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
+
+### DR-790. Design role of saved free edges
+
+**Question.** Which Design meaning does a saved free edge of an ASM BREP blob have: visible model geometry of the component, or an edge that the kernel keeps for a timeline feature?
+
+**Known.** A saved free edge is an `edge` record in the saved top-level range of the ASM stream with a null owner coedge (`asm.md` §5.2 "**Edge (98 B):**"). No coedge, loop, or face uses it. The public RailCore Mini archive stores 1790 saved free edges in eleven designs, from 4 to 912 in one design. The decoder emits each one as one wire body, and the count per design equals the count of null-owner-coedge `edge` records in the selected BREP blob. No Design body binding, body member, or body visibility record names a saved free edge. The `affected_saved_edges` property of 31 Extrude, Fillet, Chamfer, and Thread transitions lists them. 989 of the 1790 edges have the same end positions as an edge of a body with faces in the same design. 709 are closed edges.
+
+**Need.** A Design record that names a saved free edge, or a rule that relates a saved free edge to the feature that creates it, and the visibility of that edge in the component.
+
+**Note.** `f3d.md` §3.1 "A local occurrence is a child of each occurrence" excludes saved free-edge bodies from component body coverage. A saved free-edge body without a product-definition owner is reported as `assembly.saved-free-edge-body-unowned`.

@@ -32,7 +32,7 @@ const SAMPLES_PER_COEDGE: u32 = 16;
 /// about `normal`.
 fn loop_area_about(ir: &CadIr, loop_id: &str, normal: Vector3) -> f64 {
     let loop_ = ir
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.id.as_str() == loop_id)
@@ -40,19 +40,19 @@ fn loop_area_about(ir: &CadIr, loop_id: &str, normal: Vector3) -> f64 {
     let mut points = Vec::new();
     for coedge_id in loop_.coedges() {
         let coedge = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .find(|coedge| coedge.id == *coedge_id)
             .unwrap();
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .unwrap();
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve())
@@ -92,7 +92,7 @@ fn loop_area_about(ir: &CadIr, loop_id: &str, normal: Vector3) -> f64 {
 /// its own range.
 fn pcurve_area(ir: &CadIr, loop_id: &str) -> f64 {
     let loop_ = ir
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.id.as_str() == loop_id)
@@ -100,14 +100,14 @@ fn pcurve_area(ir: &CadIr, loop_id: &str) -> f64 {
     let mut points = Vec::new();
     for coedge_id in loop_.coedges() {
         let coedge = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .find(|coedge| coedge.id == *coedge_id)
             .unwrap();
         for pcurve_use in &coedge.pcurves {
             let pcurve = ir
-                .model
+                .geometry
                 .pcurves
                 .iter()
                 .find(|pcurve| pcurve.id == pcurve_use.pcurve)
@@ -134,7 +134,7 @@ fn pcurve_area(ir: &CadIr, loop_id: &str) -> f64 {
 
 /// The loops of the one face of `ir` with their roles.
 fn face_loops(ir: &CadIr) -> Vec<(String, LoopBoundaryRole)> {
-    let [face] = ir.model.faces.as_slice() else {
+    let [face] = ir.geometry.faces.as_slice() else {
         panic!("the model has one face");
     };
     assert_eq!(face.sense, Sense::Forward);
@@ -183,7 +183,7 @@ fn assert_neutral_directions(ir: &CadIr) {
 /// The one coedge of the loop `loop_id`.
 fn only_coedge<'ir>(ir: &'ir CadIr, loop_id: &str) -> &'ir Coedge {
     let mut coedges = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.owner_loop.as_str() == loop_id);
@@ -205,7 +205,7 @@ fn assert_reversed_use(ir: &CadIr, coedge: &Coedge, first: [f64; 2], second: [f6
         Some(DirectedParameterRange::new([4.0, 0.0]).unwrap())
     );
     let pcurve = ir
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == pcurve_use.pcurve)
@@ -285,7 +285,7 @@ fn model_space_boundary_on_a_nurbs_support_keeps_its_source_traversal_with_a_los
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::BoundaryWindingUnresolved.kind()));
-    let [coedge] = result.ir().model.coedges.as_slice() else {
+    let [coedge] = result.ir().geometry.coedges.as_slice() else {
         panic!("the face has one coedge");
     };
     assert_eq!(coedge.sense, Sense::Forward);
@@ -301,7 +301,7 @@ fn clockwise_inner_boundary_keeps_its_source_direction() {
     ));
     assert_neutral_directions(&ir);
     assert!(ir
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.sense == Sense::Forward));

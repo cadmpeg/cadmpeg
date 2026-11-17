@@ -705,7 +705,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         let mut ir = CadIr::empty();
         for (sequence, z) in [(1, 0.0), (3, 0.0)] {
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: CurveId::mint(format!("iges:model:curve#D{sequence}"))
                     .expect("identity grammar"),
@@ -719,6 +719,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         let pattern_plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
@@ -731,7 +732,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         )
         .unwrap());
         if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-            &mut ir.model.curves[1].geometry
+            &mut ir.geometry.curves[1].geometry
         {
             let center = circle_curve.center().get();
             let axis = circle_curve.frame().axis().as_raw();
@@ -832,7 +833,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         )
         .unwrap());
         if let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-            &mut ir.model.curves[0].geometry
+            &mut ir.geometry.curves[0].geometry
         {
             let center = circle_curve.center().get();
             let axis = circle_curve.frame().axis().as_raw();
@@ -876,7 +877,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
     crate::test_support::with_service_context(&[], |decode_ctx| {
         let mut ir = CadIr::empty();
         for sequence in [1, 3] {
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: CurveId::mint(format!("iges:model:curve#D{sequence}"))
                     .expect("identity grammar"),
@@ -890,6 +891,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         let entry = |sequence, entity_type| DirectoryEntry {

@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::AssetId;
+use crate::design::refs::StateRef;
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{BodyId, FaceId};
 use crate::math::{Point3, Vector3};
@@ -806,7 +807,7 @@ fn admit_normal(normal: Vector3) -> Result<FiniteVector3, TessellationError> {
 /// leave empty and none to refuse.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "domain", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum ChannelAddressing {
     /// Vertex-order addressing with no explicit index table.
@@ -848,8 +849,14 @@ struct TessellationWire {
     )]
     body: Option<BodyId>,
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     faces: Vec<FaceId>,
+    /// The state whose geometry holds `body` and `faces`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_state"
+    )]
+    state: Option<StateRef>,
     /// Source chordal deflection tolerance, when carried.
     #[serde(
         default,
@@ -867,19 +874,14 @@ struct TessellationWire {
     /// The mesh's vertices, triangles and shading normals.
     mesh: TessellationMesh,
     /// Undirected geometric feature edges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     feature_edges: Vec<[u32; 2]>,
     /// Source face or region groups as an ordered partition of the triangle ordinals.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     triangle_groups: Vec<TessellationTriangleGroup>,
     /// Source texture resources assigned to disjoint sets of triangle ordinals.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     texture_assignments: Vec<TessellationTextureAssignment>,
     /// Named texture-coordinate sets.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     texture_coordinates: Vec<TextureCoordinates>,
     /// Additional per-vertex or per-facet data channels.
-    #[serde(default)]
     channels: Vec<TessellationChannel>,
 }
 
@@ -911,6 +913,9 @@ pub struct Tessellation {
     pub body: Option<BodyId>,
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
     pub faces: Vec<FaceId>,
+    /// The state whose geometry holds `body` and `faces`. `None` is the
+    /// current geometry.
+    pub state: Option<StateRef>,
     /// Source chordal deflection tolerance, when carried.
     chordal_deflection: Option<NonNegativeReal>,
     /// Native source-object identity and effective display metadata.
@@ -1201,6 +1206,7 @@ impl Tessellation {
             id,
             body: None,
             faces: Vec::new(),
+            state: None,
             chordal_deflection: None,
             source_object: None,
             mesh,
@@ -1576,6 +1582,7 @@ impl From<Tessellation> for TessellationWire {
             id: tessellation.id,
             body: tessellation.body,
             faces: tessellation.faces,
+            state: tessellation.state,
             chordal_deflection: tessellation.chordal_deflection.map(NonNegativeReal::get),
             source_object: tessellation.source_object,
             mesh: tessellation.mesh.into_raw(),
@@ -1595,6 +1602,7 @@ impl TryFrom<TessellationWire> for Tessellation {
         let mut mesh = Self {
             body: wire.body,
             faces: wire.faces,
+            state: wire.state,
             source_object: wire.source_object,
             ..Self::new(wire.id, wire.mesh, wire.channels)?
         };
@@ -1655,6 +1663,7 @@ mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
+cadmpeg_core::named_optional_field!(deserialize_state, StateRef, "state");
 cadmpeg_core::named_optional_field!(deserialize_chordal_deflection, f64, "chordal_deflection");
 cadmpeg_core::named_optional_field!(
     deserialize_source_object,

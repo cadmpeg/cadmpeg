@@ -25,6 +25,7 @@ use crate::records::{
         extrude_selection::DesignExtrudeSelectionMember, extrude_selection::DesignOperandRole,
         sketch_profile::DesignSketchProfileOperand,
         sketch_profile::DesignSketchProfileRegionMember,
+        sketch_profile::DesignSketchProfileRegionSelection,
     },
 };
 use cadmpeg_core::decode::DecodeContext;
@@ -36,6 +37,7 @@ mod cap_regions;
 mod compact_members;
 pub(crate) mod face_profile_sets;
 mod region_members;
+mod stored_loop_cap;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
@@ -550,7 +552,11 @@ pub(crate) fn bind_extrude_profile_selections(
                                 && native_stream(&group.id) == native_stream(&scope.id)
                                 && group.scope_record_index == scope.record_index
                         });
-                        if let (Some(group), None) = (entity_groups.next(), entity_groups.next()) {
+                        let typed_group = match (entity_groups.next(), entity_groups.next()) {
+                            (Some(group), None) => Some(group),
+                            _ => None,
+                        };
+                        if let Some(group) = typed_group {
                             if let Some(selection) = resolve_entity_selection_profile(
                                 group,
                                 &curve_resolution.path_resolution(),
@@ -607,6 +613,27 @@ pub(crate) fn bind_extrude_profile_selections(
                             scoped_histories,
                         )? {
                             *profile = ProfileRef::Planar(selection);
+                        } else if let (Some(group), Some(states)) = (
+                            typed_group,
+                            scope
+                                .history_state_id()
+                                .zip(effective_previous_history_state_id),
+                        ) {
+                            if let Some(selection) = stored_loop_cap::resolve(
+                                group,
+                                &curve_resolution.path_resolution(),
+                                scoped_resolution,
+                                states,
+                                cap_regions::compact::Sweep {
+                                    operation: op,
+                                    start,
+                                    direction,
+                                    extent,
+                                },
+                            )? {
+                                *profile = ProfileRef::Planar(selection);
+                                break 'feature_edit;
+                            }
                         }
                     }
                     if let ProfileRef::Planar(PlanarProfileRef::HistoricalFaces { faces, .. }) =
@@ -801,7 +828,9 @@ pub(crate) fn bind_extrude_profile_selections(
                                 match (&explicit_profiles, unresolved_region_operand, &merged) {
                                     (None, None, _) => true,
                                     (None, Some((operand, stream)), ProfileRef::Planar(planar)) => {
-                                        planar_selection_agrees_with_region_operand(
+                                        operand.region_selection.as_ref().is_some_and(
+                                            DesignSketchProfileRegionSelection::is_beyond_one_face_rings,
+                                        ) || planar_selection_agrees_with_region_operand(
                                             stream,
                                             operand,
                                             sketch,

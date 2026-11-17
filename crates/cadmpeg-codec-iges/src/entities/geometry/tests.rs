@@ -57,6 +57,7 @@ fn composite_coplanarity_refuses_recursion_depth() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let segments = CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
         curve: child_id,
@@ -69,7 +70,7 @@ fn composite_coplanarity_refuses_recursion_depth() {
         self_intersect: None,
     };
     let mut ir = CadIr::empty();
-    ir.model.curves.push(child);
+    ir.geometry.curves.push(child);
     let index = ModelIndex::build(&ir);
     let plane = (Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0));
 
@@ -210,7 +211,7 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
     let v4 = IgesCodec
         .decode(&mut Cursor::new(file(global_v4)), &DecodeOptions::default())
         .unwrap();
-    assert!(v4.ir().model.points.is_empty());
+    assert!(v4.ir().geometry.points.is_empty());
     assert!(v4.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("Entity Use Flag 06 is outside")
@@ -219,7 +220,7 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
     let v5 = IgesCodec
         .decode(&mut Cursor::new(file(global_v5)), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(v5.ir().model.points.len(), 1);
+    assert_eq!(v5.ir().geometry.points.len(), 1);
     assert!(!v5.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("Entity Use Flag 06 is outside")
@@ -315,7 +316,7 @@ fn decode_retains_geometry_with_a_zero_v4_line_font() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::DirectoryMetadataNoncanonical.kind()
             && loss
@@ -345,7 +346,7 @@ fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains(
@@ -369,7 +370,7 @@ fn decode_applies_v4_base_geometry_use_flag_03_by_dialect() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(later.ir().model.curves.len(), 1);
+    assert_eq!(later.ir().geometry.curves.len(), 1);
     assert!(!later.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("base geometry values")
@@ -418,7 +419,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
         .unwrap();
     assert!(v4
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "iges:model:point#D5"));
@@ -435,7 +436,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
         .unwrap();
     assert!(v5
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.id.as_str() == "iges:model:point#D5"));
@@ -453,7 +454,7 @@ fn point_display_symbol_pointer_targets_follow_the_declared_dialect() {
             .unwrap();
         assert!(result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .any(|point| point.id.as_str() == "iges:model:point#D5"));
@@ -521,7 +522,7 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .filter(|point| {
@@ -546,7 +547,7 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
     ] {
         let point = result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .find(|point| point.id.as_str() == format!("iges:model:point#D{sequence}"))
@@ -596,7 +597,7 @@ fn type125_flash_is_admitted_in_v4_and_v5() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         assert_eq!(
             result.ir().native.namespace("iges").unwrap().arenas()["flashes"].len(),
             1
@@ -623,7 +624,7 @@ fn type125_form0_without_defining_entity_reports_display_loss() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::DisplayDataNotProjected.kind()
             && loss
@@ -644,7 +645,7 @@ fn decode_preserves_rational_bspline_weights_and_multiplicities() {
         )
         .unwrap();
 
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a NURBS carrier");
     };
@@ -676,7 +677,7 @@ fn decode_recovers_a_rational_declaration_with_equal_weights() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
@@ -702,7 +703,7 @@ fn decode_recovers_inconsistent_type_126_planar_and_closed_flags() {
             )
             .unwrap();
         assert!(
-            result.ir().model.curves.len() == 1,
+            result.ir().geometry.curves.len() == 1,
             "flags={flags:?}: losses={:?}",
             result.report().losses
         );
@@ -733,7 +734,7 @@ fn decode_uses_strict_global_resolution_for_type_126_closed_flag() {
             .unwrap();
 
         assert_eq!(
-            result.ir().model.curves.len(),
+            result.ir().geometry.curves.len(),
             1,
             "endpoint={endpoint}, PROP2={prop2}"
         );
@@ -840,9 +841,9 @@ fn decode_treats_type_126_periodic_flag_as_evaluation_metadata() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert!(result.report().losses.is_empty());
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a NURBS carrier");
     };
@@ -860,7 +861,7 @@ fn decode_recovers_type_126_without_required_normal_fields() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
@@ -890,7 +891,7 @@ fn decode_accepts_omitted_type_126_normal_for_nonplanar_v4_and_v5() {
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), 1);
+        assert_eq!(result.ir().geometry.curves.len(), 1);
         assert!(!result
             .report()
             .losses
@@ -908,7 +909,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         )
         .unwrap();
 
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a NURBS carrier");
     };
@@ -928,7 +929,7 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
     );
     assert_eq!(
-        result.ir().model.edges[0]
+        result.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0])
@@ -950,7 +951,7 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
         )
         .unwrap();
 
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a NURBS carrier");
     };
@@ -969,7 +970,7 @@ fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
         Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
     );
     assert_eq!(
-        result.ir().model.edges[0]
+        result.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 1.0])
@@ -994,9 +995,10 @@ fn decode_preserves_actual_weights_when_polynomial_claim_disagrees() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(result.ir().model.curves.len(), 1, "{weights}");
+        assert_eq!(result.ir().geometry.curves.len(), 1, "{weights}");
         assert_eq!(result.report().losses.is_empty(), claim_usable, "{weights}");
-        let Some(SolvedCurveGeometry::Nurbs(nurbs)) = result.ir().model.curves[0].geometry.solved()
+        let Some(SolvedCurveGeometry::Nurbs(nurbs)) =
+            result.ir().geometry.curves[0].geometry.solved()
         else {
             panic!("expected NURBS");
         };
@@ -1027,13 +1029,13 @@ fn decode_clamps_bspline_parameter_range_within_declared_real_significance() {
             .unwrap();
 
         assert_eq!(
-            result.ir().model.edges.len(),
+            result.ir().geometry.edges.len(),
             usize::from(decoded),
             "{range_start}"
         );
         if decoded {
             assert_eq!(
-                result.ir().model.edges[0]
+                result.ir().geometry.edges[0]
                     .param_range()
                     .map(cadmpeg_ir::units::FiniteVector::get),
                 Some([0.123_457, 1.0])
@@ -1056,9 +1058,9 @@ fn decode_projects_a_counterclockwise_circular_arc() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().geometry.curves.len(), 1);
     let Some(SolvedCurveGeometry::Circle(circle_curve)) =
-        result.ir().model.curves[0].geometry.solved()
+        result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a circle carrier");
     };
@@ -1074,14 +1076,14 @@ fn decode_projects_a_counterclockwise_circular_arc() {
     );
     assert_eq!(radius, 1.0);
     assert_eq!(
-        result.ir().model.edges[0]
+        result.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.position().get() == cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0)));
@@ -1104,7 +1106,7 @@ fn decode_accepts_rounded_transformed_circular_arc_frame() {
         .unwrap();
 
     let Some(SolvedCurveGeometry::Circle(circle_curve)) =
-        result.ir().model.curves[0].geometry.solved()
+        result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a circle carrier");
     };
@@ -1132,7 +1134,7 @@ fn decode_rejects_transform_roundoff_beyond_its_declared_precision() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.message
             .contains("not orthonormal within its declared numeric precision")
@@ -1151,7 +1153,7 @@ fn decode_applies_declared_double_precision_to_transform_coefficients() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.message
             .contains("not orthonormal within its declared numeric precision")
@@ -1172,7 +1174,7 @@ fn decode_canonicalizes_a_rounded_left_handed_transform() {
         .unwrap();
 
     let Some(SolvedCurveGeometry::Circle(circle_curve)) =
-        result.ir().model.curves[0].geometry.solved()
+        result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a circle carrier");
     };
@@ -1199,7 +1201,7 @@ fn decode_accepts_arc_endpoints_within_model_resolution() {
         .unwrap();
 
     let Some(SolvedCurveGeometry::Circle(circle_curve)) =
-        result.ir().model.curves[0].geometry.solved()
+        result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a circle carrier");
     };
@@ -1227,7 +1229,7 @@ fn decode_rejects_arc_endpoints_beyond_model_resolution() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.message
             .contains("arc start and terminate points have different radii")
@@ -1240,10 +1242,11 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert_eq!(result.ir().model.edges.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 2);
-    let Some(SolvedCurveGeometry::Line(line_curve)) = result.ir().model.curves[0].geometry.solved()
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 2);
+    let Some(SolvedCurveGeometry::Line(line_curve)) =
+        result.ir().geometry.curves[0].geometry.solved()
     else {
         panic!("expected a line carrier");
     };
@@ -1252,15 +1255,18 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     assert_eq!(origin, cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0));
     assert_eq!(direction, cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0));
     assert_eq!(
-        result.ir().model.edges[0]
+        result.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.0, 5.0])
     );
-    assert_eq!(result.ir().model.shells[0].wire_edges().len(), 1);
-    assert!(result.ir().model.shells[0].free_vertices().is_empty());
+    assert_eq!(result.ir().geometry.shells[0].wire_edges().count(), 1);
+    assert!(result.ir().geometry.shells[0]
+        .free_vertices()
+        .next()
+        .is_none());
     assert_eq!(
-        result.ir().model.curves[0]
+        result.ir().geometry.curves[0]
             .source_object
             .as_ref()
             .unwrap()
@@ -1280,11 +1286,11 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
             .decode(&mut Cursor::new(line_file(form)), &DecodeOptions::default())
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), 1);
-        assert!(result.ir().model.edges.is_empty());
-        assert!(result.ir().model.bodies.is_empty());
+        assert_eq!(result.ir().geometry.curves.len(), 1);
+        assert!(result.ir().geometry.edges.is_empty());
+        assert!(result.ir().geometry.bodies.is_empty());
         assert_eq!(
-            result.ir().model.curves[0]
+            result.ir().geometry.curves[0]
                 .source_object
                 .as_ref()
                 .unwrap()
@@ -1312,10 +1318,10 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.ir().model.points[0].position().get().x, 0.0);
-    assert_eq!(result.ir().model.points[0].position().get().y, 80.0);
-    assert_eq!(result.ir().model.points[0].position().get().z, 60.0);
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert_eq!(result.ir().geometry.points[0].position().get().x, 0.0);
+    assert_eq!(result.ir().geometry.points[0].position().get().y, 80.0);
+    assert_eq!(result.ir().geometry.points[0].position().get().z, 60.0);
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas()["transformations"].len(),
         2
@@ -1424,7 +1430,7 @@ fn decode_reports_transform_translation_overflow_after_inch_scaling() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert!(result.report().losses.iter().any(|loss| loss
         .message
         .contains("non-finite coefficients after length scaling")));
@@ -1439,9 +1445,9 @@ fn decode_wraps_a_free_line_in_one_body_region_and_shell() {
     let result = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.regions.len(), 1);
-    assert_eq!(result.ir().model.shells.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.regions.len(), 1);
+    assert_eq!(result.ir().geometry.shells.len(), 1);
 }
 
 #[test]
