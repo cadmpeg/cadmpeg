@@ -2165,6 +2165,7 @@ fn a5_distinct_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) ->
 
 fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     let (endpoint, interior) = match degree {
+        degree if degree > 0 && distinct.len() == 2 => (degree.checked_add(1)?, 1u32),
         1 | 3 if distinct.len() >= 2 => (degree + 1, 1u32),
         5 if distinct.len() >= 2 => (6u32, 3u32),
         _ => return None,
