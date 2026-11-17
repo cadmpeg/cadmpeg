@@ -216,22 +216,19 @@ fn exponential_instancing_stops_at_the_occurrence_limit() {
     assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
 }
 
+/// Each definition's children are walked once (§8.1), so the walk is linear
+/// in the stored children, and cycle-closing children are counted and left
+/// out without cutting off the other children.
 #[test]
-fn cycle_closing_children_count_toward_the_occurrence_limit() {
+fn cycle_closing_children_are_left_out_without_truncating_the_rest() {
     let started = Instant::now();
     let (ir, losses) = expand(&structure(vec![
         repeated("ROOT", 1, MAX_OCCURRENCES / 2),
         repeated("LOOP", 1, MAX_OCCURRENCES),
     ]));
     assert!(started.elapsed() < EXPANSION_DEADLINE);
-    assert_eq!(ir.model.occurrences.len(), MAX_OCCURRENCES / 2 + 1);
-    assert_eq!(
-        losses,
-        [
-            PvzLossCode::StructureOccurrenceCycle.kind(),
-            PvzLossCode::StructureOccurrenceTruncated.kind(),
-        ]
-    );
+    assert_eq!(ir.model.occurrences.len(), MAX_OCCURRENCES / 2);
+    assert_eq!(losses, [PvzLossCode::StructureOccurrenceCycle.kind()]);
 }
 
 #[test]
@@ -399,7 +396,8 @@ fn placement_defects_and_deep_chains_are_reported() {
     let mut root = definition("ROOT", &[]);
     root.occurrences = vec![mirrored, unbounded];
     let (ir, losses) = expand(&structure(vec![root, definition("LEAF", &[])]));
-    assert_eq!(ir.model.occurrences.len(), 3);
+    // §8.1: the root definition owns its two children; it has no occurrence.
+    assert_eq!(ir.model.occurrences.len(), 2);
     assert_eq!(
         losses,
         [
@@ -426,7 +424,9 @@ fn placement_defects_and_deep_chains_are_reported() {
         })
         .collect();
     let (ir, losses) = expand(&structure(chain));
-    assert_eq!(ir.model.occurrences.len(), depth);
+    // Each definition above the depth limit places the next; the root
+    // definition, at the top, is placed by no occurrence (§8.1).
+    assert_eq!(ir.model.occurrences.len(), depth - 1);
     assert_eq!(losses, [PvzLossCode::StructureOccurrenceTruncated.kind()]);
 }
 

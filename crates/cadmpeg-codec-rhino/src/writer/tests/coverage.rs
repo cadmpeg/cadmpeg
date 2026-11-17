@@ -132,7 +132,7 @@ fn unrepresented_product_structure_is_an_export_loss() {
     assert_eq!(
         omitted,
         [
-            "the rhino write does not represent model arena `product_definitions`: 1 record(s) omitted",
+            "the rhino write does not represent model arena `product_definitions`: 2 record(s) omitted",
             "the rhino write does not represent model arena `occurrences`: 2 record(s) omitted",
         ]
     );

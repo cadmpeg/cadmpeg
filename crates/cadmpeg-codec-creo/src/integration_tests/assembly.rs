@@ -177,7 +177,8 @@ fn a_frame_that_is_not_rigid_drops_its_occurrence() {
     let mut table = members_table();
     replace_once(&mut table, b"\x18\x10\x18\x2d", b"\x18\x0f\x18\x2d");
     let result = decode(build_asm_with(table));
-    assert_eq!(result.ir().model.occurrences.len(), 3);
+    // The root definition owns the two component rows that stay.
+    assert_eq!(result.ir().model.occurrences.len(), 2);
     assert_eq!(
         loss_messages(&result, CreoLossCode::AssemblyPlacementUnresolved),
         [

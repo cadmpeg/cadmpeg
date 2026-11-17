@@ -30,8 +30,7 @@ use crate::loss::PvzLossCode;
 use crate::ol::{MemberGeometry, Mesh};
 use crate::pvs::{DefinitionRole, Placement, Structure};
 
-/// Most occurrences one package decodes to. Child occurrences that close a
-/// definition cycle count toward the limit.
+/// Most occurrences one package decodes to.
 const MAX_OCCURRENCES: usize = 100_000;
 /// Relative tolerance on the perpendicularity and the common length of the
 /// three placement basis vectors (§3.10).
@@ -229,7 +228,7 @@ pub(crate) fn occurrences(
                 continue;
             };
             frame.2 += 1;
-            if emitted + cycles >= MAX_OCCURRENCES {
+            if emitted >= MAX_OCCURRENCES {
                 stopped = true;
                 break 'roots;
             }
@@ -296,8 +295,7 @@ pub(crate) fn occurrences(
     let mut truncation = Vec::new();
     if stopped {
         truncation.push(format!(
-            "decoding stopped at the limit of {MAX_OCCURRENCES} occurrences and \
-             cycle-closing child occurrences"
+            "decoding stopped at the limit of {MAX_OCCURRENCES} occurrences"
         ));
     }
     if past_depth > 0 {
