@@ -213,7 +213,7 @@ pub(super) fn transfer(
             id,
             name: None,
             visible: None,
-            targets: dimension.targets.clone(),
+            targets: dimension.targets.iter().cloned().map(Into::into).collect(),
             definition: PmiDefinition::Dimension(dimension.definition.clone()),
         });
     }

@@ -280,8 +280,10 @@
         {
           "id": "f3d:brep:attribute#19",
           "target": {
-            "kind": "face",
-            "value": "f3d:brep:entity#4"
+            "entity": {
+              "kind": "face",
+              "value": "f3d:brep:entity#4"
+            }
           },
           "name": "rgb_color-st-attrib",
           "values": [
