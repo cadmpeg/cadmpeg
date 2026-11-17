@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+mod planar_domains;
+
 use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::u64_from_index;
 
@@ -2301,7 +2303,7 @@ fn try_decode_standard_population(
                             let plane = planes.get(&prefix.target)?;
                             let neutral_normal = unit_vector(Vector3::from(plane.normal.get()))?;
                             selected.forward_on(neutral_normal, forward)
-                        }).unwrap_or(forward)
+                        }).unwrap_or(true)
                     } else {
                         forward
                     };
@@ -2783,6 +2785,9 @@ fn try_decode_standard_population(
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
         Err(_) => return None,
     };
+    if let Err(error) = planar_domains::repair(ctx, &mut ir, refusal) {
+        return Some(Err(error));
+    }
     consolidated_curve_bindings.standard_edges += weighted.edges;
     consolidated_curve_bindings.standard_face_pcurves += weighted.pcurves;
     consolidated_curve_bindings.widened_vertices = weighted.widened_vertices;
