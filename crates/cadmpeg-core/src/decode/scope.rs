@@ -219,7 +219,14 @@ impl DecodeDepth {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
-pub struct ArenaClasses(std::collections::BTreeSet<ArenaClass>);
+pub struct ArenaClasses(
+    #[serde(with = "crate::distinct_keys::set")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeSet<ArenaClass>")
+    )]
+    std::collections::BTreeSet<ArenaClass>,
+);
 
 impl ArenaClasses {
     /// An empty class set.
@@ -385,6 +392,25 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<ArenaClasses>(wire).expect("class set parses"),
             classes
+        );
+    }
+
+    #[test]
+    fn a_class_set_refuses_a_repeat_and_names_out_of_order() {
+        for (wire, refusal) in [
+            (r#"["process","model"]"#, "out of order"),
+            (r#"["model","model"]"#, "twice"),
+        ] {
+            let error = serde_json::from_str::<ArenaClasses>(wire)
+                .expect_err("a class set has one spelling")
+                .to_string();
+            assert!(error.contains(refusal), "{wire}: {error}");
+        }
+        let sorted: ArenaClasses =
+            serde_json::from_str(r#"["model","process"]"#).expect("sorted classes read");
+        assert_eq!(
+            sorted,
+            ArenaClasses::from([ArenaClass::Model, ArenaClass::Process])
         );
     }
 }

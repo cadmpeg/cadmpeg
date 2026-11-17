@@ -25,8 +25,6 @@ pub mod technology;
 pub mod tool;
 pub mod toolpath;
 
-mod wire;
-
 #[cfg(test)]
 mod tests;
 

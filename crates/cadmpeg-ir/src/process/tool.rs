@@ -18,7 +18,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::setup::JobKind;
 use super::technology::Technology;
-use super::{wire, ProcessDimension};
+use super::ProcessDimension;
 use crate::design::construction::FrameAxis;
 use crate::design::ids::{MachineId, PresetId, ToolId};
 use crate::design::names::NativeName;
@@ -637,6 +637,17 @@ pub enum RotaryAxes {
     },
 }
 
+/// A set of linear axes, read as a §2.5 set.
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct AxisSet(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<FrameAxis>);
+
+impl From<AxisSet> for BTreeSet<FrameAxis> {
+    fn from(AxisSet(axes): AxisSet) -> Self {
+        axes
+    }
+}
+
 /// A pocket of a machine's tool table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -687,7 +698,7 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_library, LibraryRef, "library");
 cadmpeg_core::named_optional_field!(
     deserialize_linear_axes,
-    wire::Distinct<FrameAxis> as BTreeSet<FrameAxis>,
+    AxisSet as BTreeSet<FrameAxis>,
     "linear_axes"
 );
 cadmpeg_core::named_optional_field!(deserialize_link, NonBlankString, "link");
