@@ -588,6 +588,7 @@ name = "cadmpeg-test-support"
 version = "0.6.12"
 dependencies = [
  "cadmpeg-core",
+ "cadmpeg-derive",
  "cadmpeg-ir",
  "regex",
  "serde",

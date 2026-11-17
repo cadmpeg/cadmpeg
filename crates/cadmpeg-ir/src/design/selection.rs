@@ -133,9 +133,10 @@ impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
 }
 
 #[cfg(feature = "schema")]
-impl<T: JsonSchema, O> JsonSchema for Members<T, O> {
+impl<T: JsonSchema, O: MemberOrder> JsonSchema for Members<T, O> {
     fn schema_name() -> std::borrow::Cow<'static, str> {
-        format!("Members_{}", T::schema_name()).into()
+        let order = if O::SORTED { "Unordered" } else { "Ordered" };
+        format!("{order}Members_{}", T::schema_name()).into()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {

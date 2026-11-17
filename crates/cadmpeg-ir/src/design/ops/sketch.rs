@@ -577,7 +577,10 @@ pub struct InterpolatedSpline<S: SketchSpace> {
     pub closed: Option<bool>,
     /// The tangent and curvature conditions at fit point `i`, by `i`.
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<(u32, SplineHandle<S>)>"))]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeSet<(u32, SplineHandle<S>)>")
+    )]
     pub handles: BTreeMap<u32, SplineHandle<S>>,
 }
 

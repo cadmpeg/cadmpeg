@@ -67,7 +67,10 @@ pub struct Cycle {
     pub depth: Option<Length>,
     /// The cycle's feeds by role.
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<(FeedRole, Feed)>"))]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeSet<(FeedRole, Feed)>")
+    )]
     pub feeds: BTreeMap<FeedRole, Feed>,
     /// The dwell at the bottom.
     #[serde(

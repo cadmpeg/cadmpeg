@@ -85,7 +85,10 @@ impl JsonSchema for Base64Bytes {
 #[serde(transparent)]
 pub struct NameTable(
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<(EntityRef, NameEntry)>"))]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "BTreeSet<(EntityRef, NameEntry)>")
+    )]
     BTreeMap<EntityRef, NameEntry>,
 );
 
@@ -317,11 +320,11 @@ enum TopoNameWire {
     Bounded {
         /// The faces beside the edge.
         #[serde(with = "cadmpeg_core::distinct_keys::set")]
-        #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
+        #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<TopoName>"))]
         faces: BTreeSet<TopoName>,
         /// The faces at the edge's ends, where the source records them.
         #[serde(with = "cadmpeg_core::distinct_keys::set")]
-        #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
+        #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<TopoName>"))]
         ends: BTreeSet<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
         #[serde(
@@ -335,7 +338,7 @@ enum TopoNameWire {
     Meeting {
         /// The faces that meet at the vertex.
         #[serde(with = "cadmpeg_core::distinct_keys::set")]
-        #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
+        #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<TopoName>"))]
         faces: BTreeSet<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
         #[serde(
@@ -400,7 +403,7 @@ struct MergedName {
     feature: Option<FeatureId>,
     /// The names of the merged entities.
     #[serde(with = "cadmpeg_core::distinct_keys::set")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<TopoName>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<TopoName>"))]
     from: BTreeSet<TopoName>,
 }
 

@@ -120,7 +120,7 @@ pub struct RigidGroup {
     /// The members, as paths from the definition that owns the group; the
     /// empty path is that definition's own origin.
     #[serde(with = "cadmpeg_core::distinct_keys::set")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<OccurrencePath>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<OccurrencePath>"))]
     pub members: BTreeSet<OccurrencePath>,
     /// Source options whose meaning is not established, and the values of
     /// typed facts whose carrier is unread.

@@ -635,7 +635,7 @@ pub enum LimitAt {
 pub struct Transition {
     /// The indices of the sets that meet.
     #[serde(with = "cadmpeg_core::distinct_keys::set")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<u32>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<u32>"))]
     pub between: BTreeSet<u32>,
     /// The vertices or edges at which they meet.
     #[serde(
@@ -1883,7 +1883,8 @@ pub struct DecalPlacement {
     pub mirrored: bool,
 }
 
-/// Reads a stated `centers` set, refusing `null` and a repeated member.
+/// Reads a stated `centers` set, refusing `null`, a repeated member, and
+/// members out of order.
 fn deserialize_centers<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<BTreeSet<CenterSource>>, D::Error> {

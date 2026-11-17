@@ -22,11 +22,15 @@ fn every_schema_position_has_one_spelling() {
     let report = cadmpeg_test_support::schema_sweep::sweep(&schema, &documents())
         .expect("the empty document serializes");
     println!(
-        "reached {} of {} definitions and probed {} struct positions; {} targets from \
+        "reached {} of {} definitions and probed {} struct positions, {} data-free \
+         enums, {} sets and pair-maps, and {} ordered member lists; {} targets from \
          documents, {} built from the schema; {} uninhabited; read {} documents",
         report.definitions_reached,
         report.definitions,
         report.positions,
+        report.names,
+        report.sets,
+        report.ordered,
         report.from_documents,
         report.built,
         report.uninhabited.len(),
@@ -37,6 +41,12 @@ fn every_schema_position_has_one_spelling() {
         "{} schema targets are reached by no document:\n{}",
         report.unreached.len(),
         report.unreached.join("\n")
+    );
+    assert!(
+        report.unprobed.is_empty(),
+        "{} value positions have no sample to probe:\n{}",
+        report.unprobed.len(),
+        report.unprobed.join("\n")
     );
     assert!(
         report.accepting.is_empty(),
