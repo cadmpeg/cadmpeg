@@ -218,7 +218,7 @@ impl FormReferenceGroup {
 cadmpeg_core::named_optional_field!(deserialize_inline_type_guid, String, "inline_type_guid");
 cadmpeg_core::named_optional_field!(deserialize_reference_group, FormReferenceGroup, "group");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = include_str!("form-api-item.md")]
