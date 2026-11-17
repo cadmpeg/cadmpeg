@@ -431,3 +431,43 @@ product-definition child list to every occurrence of that definition.
 with no repeated root definition that owns nested occurrences. The repeated
 definition cases remain open for identity-root names, nested-child counts, and
 instance-specific child structures.
+
+### PS-18. The plant item orientation of an AP227 CSG shape
+
+**Question.** Does the `AXIS2_PLACEMENT_3D` item that an ISO 10303-227
+`PLANT_CSG_SHAPE_REPRESENTATION` lists beside its CSG primitives place those
+primitives in the plant?
+
+**Known.** ISO 10303-43 founds every item of a representation in the
+coordinate space of the representation's context. The reader places each
+primitive by its own `position` in that space and keeps the placement item as
+a free placement. An AP227 exchange names such a placement item
+`'plant item orientation'` with a location far from the origin, while the
+primitives of the same representation lie near the origin and the product
+structure has no other placement of the plant item.
+
+**Need.** The ISO 10303-227 mapping of the plant item shape and its
+orientation. A mapping that makes the placement item a transform of the CSG
+items gives each derived body a `Body.transform`, or each plant item an
+occurrence placement.
+
+**Conflict.** The Part 43 reading puts every plant item of the exchange near
+the origin, overlapping one another; the plant layout that the placement
+locations describe is lost.
+
+### PS-19. AP227 subtypes of product definition
+
+**Question.** Are `PIPING_COMPONENT_DEFINITION` and the other AP227 plant
+item definitions subtypes of `product_definition`?
+
+**Known.** The reader admits the product-definition types that
+`crates/cadmpeg-codec-step/src/reader/product.rs` lists in
+`PRODUCT_DEFINITION_TYPES`. A `PIPING_COMPONENT_DEFINITION` has the four
+attributes of a `product_definition` and is the definition of a
+`PRODUCT_DEFINITION_SHAPE`. The bodies derived from the CSG items of its
+shape representation have no owning product definition, and their design
+features have no scope (`csg.design-unscoped`).
+
+**Need.** The ISO 10303-227 AIM EXPRESS for the plant item definitions. A
+confirmed subtype joins `PRODUCT_DEFINITION_TYPES`.
+

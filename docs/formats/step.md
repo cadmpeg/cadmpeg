@@ -1516,6 +1516,118 @@ and source shell instance as a tie-break. The source `voids` SET order does
 not select a neutral shell slot. The outer shell is not repeated in the void
 suffix.
 
+ISO 10303-42:2021 §6.4.6 to §6.4.19 define the CSG primitives, and §6.4.37
+to §6.4.39 define the swept-area solids. Each primitive lies in the frame of
+its `position`:
+
+- `BLOCK(position, x, y, z)` is the rectangular parallelepiped with one
+  vertex at `position.location` and its edges along the positive placement
+  axes, of lengths `x`, `y`, and `z` (§6.4.8).
+- `RIGHT_ANGULAR_WEDGE(position, x, y, z, ltx)` is the trapezoid with the
+  corners `(0, 0)`, `(x, 0)`, `(ltx, y)`, and `(0, y)` in the placement xy
+  plane, extruded by `z` along the placement z axis. WR1 requires
+  `0 ≤ ltx < x`. With `ltx = 0` the trapezoid is a triangle and the wedge has
+  five faces (§6.4.9).
+- `RIGHT_CIRCULAR_CYLINDER(position, height, radius)` has one planar circular
+  face centred at `position.location`. The centre of the second face lies at
+  the distance `height` along `position.axis` (§6.4.16).
+- `RIGHT_CIRCULAR_CONE(position, height, radius, semi_angle)` has its
+  truncated face of radius `radius` centred at `position.location`, or its
+  apex there when `radius` is zero. `position.axis` points out of the solid
+  from that face or apex. The base lies at the distance `height` against the
+  axis, with the radius `radius + height · tan(semi_angle)`, so the cone
+  widens toward its base. WR1 requires `radius ≥ 0`. IP1 requires
+  `semi_angle` between 0 and 90 degrees (§6.4.15).
+- `SPHERE(radius, centre)` is the ball of `radius` about `centre` (§6.4.14).
+- `TORUS(position, major_radius, minor_radius)` sweeps the disc of radius
+  `minor_radius` about the directrix circle of radius `major_radius`, centred
+  at `position.location` in the plane normal to `position.axis`. WR1 requires
+  `major_radius > minor_radius` (§6.4.18).
+- `ELLIPSOID(position, semi_axis_1, semi_axis_2, semi_axis_3)` is centred at
+  `position.location`, with its semi-axes along `position.p[1]`,
+  `position.p[2]`, and `position.p[3]` (§6.4.19).
+- `EXTRUDED_AREA_SOLID(swept_area, extruded_direction, depth)` translates the
+  area by `depth` along `extruded_direction`. WR1 requires a direction out of
+  the plane of the area (§6.4.38).
+- `REVOLVED_AREA_SOLID(swept_area, axis, angle)` turns the area about `axis`
+  through `angle`. A point `p` of the area leaves in the direction
+  `axis.z × (p − axis.location)`, so the turn is right-handed about the axis
+  direction. IP3 requires `0 < angle ≤ 360` degrees (§6.4.39).
+
+The `swept_area` of a swept-area solid is a `CURVE_BOUNDED_SURFACE` whose
+basis surface is a `PLANE` (§6.4.37, WR1). Each of its boundaries is a
+`BOUNDARY_CURVE`, which is closed (§4.5.82, WR1). The segments of a boundary
+meet with the continuity that their `transition` states (§4.5.45). A
+`BOOLEAN_RESULT` applies a regularised union, intersection, or difference to
+its two operands. The difference removes the second operand from the first
+(§6.4.7). A `CSG_SOLID` names the root of one tree of Boolean results and
+primitives; a single primitive is a tree (§6.4.6). A Boolean operand that is
+a `CSG_SOLID` denotes the root of its tree. Length attributes convert to
+millimetres and angle attributes to radians by the units of the item's
+representation context.
+
+CADIR decision: every CSG primitive, swept-area solid, and Boolean result is
+one design feature (CADIR v11 §6.3 and §6.5). The features of a product
+definition are the members of one unordered `Group` container, the root of
+the design scope of that definition. A shape representation that lists an
+item, or a `CSG_SOLID` of it, files the item and the operands of its tree
+under the definition that the representation's
+`SHAPE_DEFINITION_REPRESENTATION` names.
+
+| STEP item | Feature operation |
+|---|---|
+| `BLOCK` | `Primitive` `Box`, `size` `[x, y, z]`, frame `position` |
+| `RIGHT_ANGULAR_WEDGE` | `Primitive` `Wedge`, `y` `[0, y]`, `base` `[0, x, 0, z]`, `top` `[0, ltx, 0, z]`, frame `position` |
+| `RIGHT_CIRCULAR_CYLINDER` | `Primitive` `Cylinder`, frame `position` with x from its derived reference direction |
+| `RIGHT_CIRCULAR_CONE` | `Primitive` `Cone`, `radii` `[base, radius]`, frame `position` then a translation by `-height` along z |
+| `SPHERE` | `Primitive` `Sphere`, frame at `centre` with the model axes |
+| `TORUS` | `Primitive` `Torus`, `radii` `[major_radius, minor_radius]`, frame `position` |
+| `ELLIPSOID` | `Primitive` `Ellipsoid`, `radii` `[semi_axis_1, semi_axis_2, semi_axis_3]`, frame `position` |
+| `EXTRUDED_AREA_SOLID` | `Extrude` `Along` the direction, span from the profile plane to `depth`, lengths along the direction |
+| `REVOLVED_AREA_SOLID` | `Revolve` about the axis, span from the profile to `angle` |
+| `BOOLEAN_RESULT` | `Combine`, target the first operand's result, tool the second's, `Join`, `Intersect`, or `Cut` |
+
+Each construction holds its source placement as a `Fixed` step with the
+resolved value as its cache. Each primitive and swept-area solid makes a new
+solid body. The profile of a swept-area solid is a native pick of its
+`CURVE_BOUNDED_SURFACE` record that resolves to the surface decoded from it.
+A combine consumes its operands.
+
+An item outside every Boolean tree also has a solid body derived from it. Every record of the derived body has `derived` exactness. The body is
+a representation item of each representation that lists the item or a
+`CSG_SOLID` of it, so product ownership and occurrence placement treat it as
+any other representation item. The current state after the item's feature
+holds the body. A Boolean tree has features and no derived body, since its
+evaluation needs a solid modelling kernel (`csg.boolean-unevaluated`). An
+ellipsoid has a feature and no derived body, since CADIR has no ellipsoidal
+surface (`csg.solid-unsynthesized`). Other bodies of a definition with a
+design scope belong to one `Stored` feature with `Base` origin.
+
+The derived boundary is one closed shell. A block and a wedge extrude their
+base polygon, and a cylinder extrudes its base disc. A cone, a sphere, and a
+torus revolve their meridian section a full turn about the frame's z axis. A
+straight side segment sweeps a plane; an arc sweeps a cylinder when
+extruded along its axis, and a sphere or a torus when revolved. A revolved
+straight segment sweeps a plane, a cylinder, or a cone. A full-turn
+revolution and an extruded circle keep the profile segment, or the profile
+vertex, as the seam of the closed side face. A profile segment on the
+revolution axis bounds no side face. Face rings run counterclockwise about
+the outward normal.
+
+CADIR decision: a profile junction between a straight segment, or an arc
+trimmed by Cartesian points, and an arc trimmed by parameters takes the
+straight segment's end. Two parameter-trimmed arcs meet at the midpoint of
+their ends. Each arc then runs on its circle through its junction points. A
+boundary of one arc segment is its full circle. The decode reports the
+largest junction gap that it closed (`csg.profile-gap-closed`). An extruded
+profile is projected onto the plane of its `PLANE`. A revolved profile is
+projected onto the half-plane of the axis that holds it. Two of its distances
+from the axis, or two of its heights along the axis, that differ by at most
+10⁻⁷ of the profile's extent are one value, and a distance within that bound
+of zero lies on the axis. Each arc centre then moves along the axis, when it
+lies on the axis, or else along the arc's chord, to the point equidistant from
+the arc's ends.
+
 A face boundary uses an `EDGE_LOOP` coedge ring, a `POLY_LOOP` point ring, or
 a `VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a
 vertex-only boundary. ISO 10303-42:2021 §5.5.16 defines `POLY_LOOP` as an
