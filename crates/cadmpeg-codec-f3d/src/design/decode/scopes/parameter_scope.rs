@@ -218,6 +218,18 @@ pub(crate) fn decode_parameter_scopes(
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            if let scope::DesignScopePayload::SilhouetteSplit(_) = scope.payload() {
+                let operation = super::silhouette_split::decode(
+                    bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    &mut losses,
+                );
+                if let scope::DesignScopePayloadMut::SilhouetteSplit(slot) = scope.payload_mut() {
+                    *slot = operation;
+                }
+            }
             let face_groups = super::mesh_face_groups::decode_prefix(
                 ctx,
                 bytes,
@@ -2393,7 +2405,10 @@ fn scope_feature_kind(
     let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
     Some(match (literal, type_family) {
         (_, Some(family)) => family.clone(),
-        (scope::DesignFeatureKind::PathPattern, None) => scope::DesignFeatureKind::native(stored),
+        (
+            scope::DesignFeatureKind::PathPattern | scope::DesignFeatureKind::SilhouetteSplit,
+            None,
+        ) => scope::DesignFeatureKind::native(stored),
         (literal, None) => literal,
     })
 }

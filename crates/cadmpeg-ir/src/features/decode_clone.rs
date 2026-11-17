@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity rewrite implementations for feature records.
 
-use super::surfaces::UntrimLoops;
+use super::surfaces::{SilhouetteSplitMode, UntrimLoops};
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
@@ -302,6 +302,7 @@ Thicken { faces, thickness, side, result, tangent_chain },
     TrimBodiesAtPlane { targets, plane, keep },
     SplitBody { targets, tool },
     SplitFace { targets, tool },
+    SilhouetteSplit { target, direction, mode },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
     ReplaceFace { operands },
@@ -543,6 +544,8 @@ rewrite_enum!(SketchProfileRegion, []; {
 rewrite_record!(SketchProfileRegions, []; (field0));
 
 rewrite_record!(SplitFacePlanes, []; (field0));
+
+rewrite_enum!(SilhouetteSplitMode, []; { Unresolved, FacesOnly, ShelledBody, SolidBody });
 
 rewrite_enum!(SplitBodyTool, []; {
     Faces(field0),
