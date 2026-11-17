@@ -5,48 +5,101 @@ use crate::examples::unit_cube;
 use crate::validate::validate_neutral;
 
 #[test]
-fn mesh_face_group_sources_validate_meshes_and_originating_features() {
-    use crate::features::{Feature, FeatureDefinition, FeatureOperation};
+fn separation_sources_validate_dangling_tessellations_and_real_feature_anchors() {
+    use crate::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
+    };
     let mut ir = crate::CadIr::empty();
     for (ordinal, source) in [
-        serde_json::json!(["test:mesh:tessellation#missing"]),
-        serde_json::json!({"feature":"test:model:feature#1"}),
-        serde_json::json!({"feature":"test:model:feature#missing"}),
+        serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#0"}}),
+        serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#0"}}),
+        serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}),
+        serde_json::json!({"kind":"tessellations","value":["test:mesh:tessellation#missing"]}),
     ]
     .into_iter()
     .enumerate()
     {
-        let operation: FeatureOperation = serde_json::from_value(
-            serde_json::json!({"definition":"mesh_combine_face_groups", "source":source}),
-        )
-        .unwrap();
+        let operation: FeatureOperation = serde_json::from_value(serde_json::json!({"kind": "mesh_modify", "value": {"source":source, "modification":{"kind":"separate", "separation":{}}}})).unwrap();
         ir.model.features.push(Feature {
             product_definition: None,
-            id: crate::features::FeatureId::mint(format!("test:model:feature#{ordinal}")).unwrap(),
+            id: FeatureId::mint(format!("test:model:feature#{ordinal}")).unwrap(),
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
-            suppressed: Some(false),
-            dependencies: crate::features::DistinctMembers::default(),
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: crate::features::FeatureContent::default(),
-            evaluation: crate::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(operation),
-            ),
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation)),
             native_ref: None,
         });
     }
-    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
-    for ordinal in [0, 2] {
-        assert!(findings.iter().any(|finding| finding.check
-            == crate::report::check::Check::ReferentialIntegrity
-            && finding.entity.as_deref()
-                == Some(format!("test:model:feature#{ordinal}").as_str())));
+    let findings = feature_reference_findings(&ir);
+    for ordinal in [0, 1, 2, 3] {
+        assert_eq!(
+            findings.iter().any(|finding| finding.check
+                == crate::report::check::Check::ReferentialIntegrity
+                && finding.entity.as_deref()
+                    == Some(format!("test:model:feature#{ordinal}").as_str())),
+            ordinal >= 2
+        );
     }
-    assert!(!findings
+    ir.model.features[2].evaluation.set_definition(FeatureDefinition::Operation(serde_json::from_value(serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}, "modification":{"kind":"smooth"}}})).unwrap()));
+    assert!(!feature_reference_findings(&ir)
         .iter()
-        .any(|finding| finding.entity.as_deref() == Some("test:model:feature#1")));
+        .any(|finding| finding.entity.as_deref() == Some("test:model:feature#2")));
+}
+
+#[test]
+fn mesh_face_group_and_conversion_sources_validate_meshes_and_originating_features() {
+    use crate::features::{Feature, FeatureDefinition, FeatureOperation};
+    for kind in ["mesh_combine_face_groups", "mesh_convert"] {
+        let mut ir = crate::CadIr::empty();
+        for (ordinal, source) in [
+            serde_json::json!({"kind":"tessellations","value":["test:mesh:tessellation#missing"]}),
+            serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#1"}}),
+            serde_json::json!({"kind":"unresolved","value":{"feature":"test:model:feature#missing"}}),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let wire = if kind == "mesh_convert" {
+                serde_json::json!({"kind":kind, "value":{"sources":[source]}})
+            } else {
+                serde_json::json!({"kind":kind, "value":{"source":source}})
+            };
+            let operation: FeatureOperation = serde_json::from_value(wire).unwrap();
+            ir.model.features.push(Feature {
+                product_definition: None,
+                id: crate::features::FeatureId::mint(format!("test:model:feature#{ordinal}"))
+                    .unwrap(),
+                ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
+                name: None,
+                suppressed: Some(false),
+                dependencies: crate::features::DistinctMembers::default(),
+                source_properties: std::collections::BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: crate::features::FeatureContent::default(),
+                evaluation: crate::features::FeatureEvaluation::from_definition(
+                    FeatureDefinition::Operation(operation),
+                ),
+                native_ref: None,
+            });
+        }
+        let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+        for ordinal in [0, 2] {
+            assert!(findings.iter().any(|finding| finding.check
+                == crate::report::check::Check::ReferentialIntegrity
+                && finding.entity.as_deref()
+                    == Some(format!("test:model:feature#{ordinal}").as_str())));
+        }
+        assert!(!findings
+            .iter()
+            .any(|finding| finding.entity.as_deref() == Some("test:model:feature#1")));
+    }
 }
 
 #[test]
@@ -54,12 +107,16 @@ fn feature_operation_geometry_is_validated() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
 
     let definitions = vec![
-        FeatureDefinition::Operation(FeatureOperation::Form { cages: Vec::new() }),
-        FeatureDefinition::Operation(FeatureOperation::Form {
-            cages: vec![
-                crate::ids::SubdId::mint("synthetic:test:subd#missing").expect("valid identity")
-            ],
-        }),
+        FeatureDefinition::Operation(FeatureOperation::Form(
+            crate::features::form::FormConstruction::complete(Vec::new()).unwrap(),
+        )),
+        FeatureDefinition::Operation(FeatureOperation::Form(
+            crate::features::form::FormConstruction::complete(vec![crate::ids::SubdId::mint(
+                "synthetic:test:subd#missing",
+            )
+            .expect("valid identity")])
+            .unwrap(),
+        )),
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces: crate::features::FaceSelection::Native("thicken:faces".into()),
             thickness: None,
@@ -531,14 +588,15 @@ fn corner_requires_a_preceding_bend_dependency() {
     assert!(feature_reference_findings(&ir)
         .iter()
         .any(|finding| finding.message.contains("corner bend")));
-    let bend: FeatureOperation = serde_json::from_value(serde_json::json!({
-        "definition": "sheet_metal_bend", "plate": "test:model:feature#plate",
-        "attachment": {"kind": "all"}, "inside_radius": 1.0,
-        "relief": {"form": "style_default", "width": 1.0, "depth": 1.0,
-            "minimum_remnant": 0.0, "seam_gap": 0.0},
-        "transition": {"form": "style_default", "radius": 0.0}
-    }))
-    .unwrap();
+    let bend: FeatureOperation =
+        serde_json::from_value(serde_json::json!({"kind": "sheet_metal_bend", "value": {
+            "plate": "test:model:feature#plate",
+            "attachment": {"kind": "all"}, "inside_radius": 1.0,
+            "relief": {"form": "style_default", "width": 1.0, "depth": 1.0,
+                "minimum_remnant": 0.0, "seam_gap": 0.0},
+            "transition": {"form": "style_default", "radius": 0.0}
+        }}))
+        .unwrap();
     ir.model.features[1].evaluation.edit(|definition, _| {
         *definition = FeatureDefinition::Operation(bend);
     });
@@ -579,6 +637,7 @@ fn captured_component_positions_validate_resolved_occurrences() {
     };
     let mut feature: crate::features::Feature = serde_json::from_value(serde_json::json!({
         "id": "synthetic:test:feature#positions", "ordinal": 0, "suppressed": false,
+        "dependencies": [], "source_properties": {}, "source_content": [], "outputs": [],
         "definition": definition(None)
     }))
     .unwrap();
@@ -595,4 +654,56 @@ fn captured_component_positions_validate_resolved_occurrences() {
     let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
     assert!(findings.iter().any(|finding| finding.message
         == "references missing captured component occurrence `synthetic:test:occurrence#missing`"));
+}
+
+#[test]
+fn form_candidate_cages_participate_in_referential_validation() {
+    let mut ir = unit_cube().unwrap();
+    ir.model.features.push(serde_json::from_value(serde_json::json!({
+        "id":"test:model:feature#form-candidate", "ordinal":0,
+        "dependencies": [], "source_properties": {}, "source_content": [], "outputs": [],
+        "definition":{"kind":"operation","value":{"kind":"form","value":{
+            "cages":{"kind":"retained","value":{
+                "observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#candidate"}}],
+                "membership":{"kind":"partial","order":"unknown","members":[]}
+            }},
+            "inputs":crate::features::form::FormInputs::default()
+        }}}
+    })).unwrap());
+    let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+    assert!(findings.iter().any(|finding| finding.entity.as_deref()
+        == Some("test:model:feature#form-candidate")
+        && finding.check == crate::report::check::Check::ReferentialIntegrity));
+}
+
+#[test]
+fn plane_cut_unresolved_sources_validate_actual_anchors_including_self() {
+    use crate::features::{FeatureDefinition, FeatureOperation};
+    for source in ["test:model:feature#cut", "test:model:feature#missing"] {
+        let mut ir = crate::CadIr::empty();
+        let operation: FeatureOperation = serde_json::from_value(serde_json::json!({"kind": "mesh_modify", "value": {"source":{"kind":"unresolved","value":{"feature":source}},"modification":{"kind":"plane_cut","cut":{}}}})).unwrap();
+        ir.model.features.push(crate::features::Feature {
+            product_definition: None,
+            id: crate::features::FeatureId::mint("test:model:feature#cut").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: crate::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(operation),
+            ),
+            native_ref: None,
+        });
+        let findings = validate_neutral(&ir, Vec::new()).unwrap().findings;
+        assert_eq!(
+            findings.iter().any(|finding| finding.entity.as_deref()
+                == Some("test:model:feature#cut")
+                && finding.check == crate::report::check::Check::ReferentialIntegrity),
+            source.ends_with("missing")
+        );
+    }
 }

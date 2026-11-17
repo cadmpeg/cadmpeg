@@ -16,6 +16,7 @@ use crate::ids::{
     ArticulationId, BodyId, ColliderId, MassPropertiesId, OccurrenceId, PhysicalMaterialId,
     PhysicsSceneId, ProductDefinitionId, RigidBodyId,
 };
+use crate::references::InstanceTarget;
 use crate::scalar::{NonNegativeReal, PositiveReal};
 use crate::transform::Transform;
 use crate::units::UnitVector3;
@@ -125,7 +126,7 @@ pub struct MassProperties {
     /// Globally unique record identity.
     pub id: MassPropertiesId,
     /// The described entity.
-    pub target: PhysicsTarget,
+    pub target: InstanceTarget<PhysicsTarget>,
     /// Mass in kilograms.
     #[serde(
         default,
@@ -178,7 +179,7 @@ pub struct RigidBody {
     /// Globally unique record identity.
     pub id: RigidBodyId,
     /// The moving entity: a body, an occurrence, or a definition.
-    pub target: PhysicsTarget,
+    pub target: InstanceTarget<PhysicsTarget>,
     /// Whether the simulation moves the body only by its animated placement.
     pub kinematic: bool,
     /// Whether the simulation includes the body.
@@ -200,7 +201,6 @@ pub struct RigidBody {
     )]
     pub angular_velocity: Option<FiniteVector3>,
     /// Whether the body starts at rest until a contact or a force wakes it.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub starts_asleep: bool,
     /// Format-native record supplying this body.
     #[serde(
@@ -243,7 +243,7 @@ pub struct Collider {
     /// Globally unique record identity.
     pub id: ColliderId,
     /// The geometry: a body, or the bodies of an occurrence or a definition.
-    pub target: PhysicsTarget,
+    pub target: InstanceTarget<PhysicsTarget>,
     /// The contact shape.
     pub shape: ColliderShape,
     /// Whether the simulation includes the collider.
@@ -274,7 +274,7 @@ pub struct Articulation {
     pub id: ArticulationId,
     /// The root: a body in the tree, or an occurrence or a definition that
     /// holds the tree.
-    pub root: PhysicsTarget,
+    pub root: InstanceTarget<PhysicsTarget>,
     /// Format-native record supplying this articulation.
     #[serde(
         default,

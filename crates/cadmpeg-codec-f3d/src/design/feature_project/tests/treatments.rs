@@ -767,6 +767,41 @@ fn fillet_edge_sets_pair_with_radii_and_leave_the_face_group_unassigned() {
 }
 
 #[test]
+fn fillet_with_owners_and_no_radius_assignment_keeps_its_set_list_native() {
+    use crate::design::decode::operands::fillet_set_list_is_unadmitted;
+    let scope = localized_fillet_scope();
+    let groups = [
+        localized_fillet_group(100, 0, vec![200]),
+        localized_fillet_group(101, 1, vec![201]),
+    ];
+    let parameters = [
+        localized_fillet_parameter(10, 11, "TangencyWeight", None, 1.0),
+        localized_fillet_parameter(20, 21, "ChordLen", Some("mm"), 0.3),
+    ];
+    let owners = [
+        localized_fillet_owner(10, 11, 0),
+        localized_fillet_owner(20, 21, 1),
+    ];
+    // Two groups and a chord length pair no group with a law.
+    let assignments =
+        decode_fillet_radius_groups(std::slice::from_ref(&scope), &groups, &owners, &parameters);
+    assert!(assignments.is_empty());
+    assert!(fillet_set_list_is_unadmitted(
+        &scope,
+        &groups,
+        &assignments,
+        &owners
+    ));
+    // Without owned parameters nothing is retained for lack of a set list.
+    assert!(!fillet_set_list_is_unadmitted(
+        &scope,
+        &groups,
+        &assignments,
+        &[]
+    ));
+}
+
+#[test]
 fn detached_fillet_owner_supplies_no_radius() {
     let scope = localized_fillet_scope();
     let operand_groups = [localized_fillet_group(100, 0, vec![200])];

@@ -831,6 +831,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         secondary_id,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     };
     let source_curve = curve(source_curve_id.clone(), 10, 20, 0);
     let result_curve = curve(result_curve_id.clone(), 11, 21, 7);
@@ -1355,6 +1356,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
                 .unwrap(),
             ),
             planar_z_noise: None,
+            tail_marker: None,
         }
     };
     let explicit = curve(41, Point2::new(0.0, 0.0), Point2::new(2.0, 0.0));

@@ -51,7 +51,7 @@ fn controller_manifest_feature_families_and_closed_bodies() {
         .any(|entity| entity.construction));
 
     let bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.kind == BodyKind::Solid)
@@ -94,7 +94,7 @@ fn controller_1wire_rgbw_corpus_decodes_display_names() {
     let ir = decoded.ir();
 
     let body_names: Vec<&str> = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .filter_map(|b| b.name.as_deref())

@@ -142,8 +142,9 @@ fn edge_tolerance_admits_a_vertex_near_the_domain_start() {
 #[test]
 fn open_edge_or_open_carrier_is_refused() {
     let mut open = closed_edge("circle", "circle", "v0");
-    open.end = cadmpeg_ir::ids::VertexId::mint("test:model:vertex#v1".to_owned())
-        .expect("identity grammar");
+    open.ends.as_mut().unwrap().end =
+        cadmpeg_ir::ids::VertexId::mint("test:model:vertex#v1".to_owned())
+            .expect("identity grammar");
     assert_refused(&open, &circle(), Point3::new(10.0, 0.0, 0.0));
     let line = solved(SolvedCurveGeometry::Line(
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).expect("line"),

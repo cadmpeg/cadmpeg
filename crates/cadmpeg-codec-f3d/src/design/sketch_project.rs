@@ -397,6 +397,10 @@ pub(crate) fn project_sketch_design(
 
     let shared_identities = shared_curve_identities(curves);
     let mut entities = Vec::new();
+    // A point id repeats only the `pt_tag` of an earlier point of the same
+    // owner when the point is the center of a fillet arc; the later point
+    // takes the record-index key.
+    let mut seen_point_tags = HashSet::new();
     for point in points {
         let Some(owner) = point.owner_reference else {
             continue;
@@ -404,6 +408,9 @@ pub(crate) fn project_sketch_design(
         let Some(scope) = native_stream(&point.id) else {
             continue;
         };
+        let repeated_tag = point
+            .persistent_id()
+            .is_some_and(|tag| !seen_point_tags.insert((scope, owner, tag)));
         if spatial_owners.contains(&(scope, owner)) {
             continue;
         }
@@ -419,7 +426,7 @@ pub(crate) fn project_sketch_design(
         let native_ref = point.id.clone();
         entities.push(
             SketchEntity::new(
-                point.persistent_id().map_or_else(
+                point.persistent_id().filter(|_| !repeated_tag).map_or_else(
                     || crate::ids::neutral_sketch_record_id(&sketch, point.record_index),
                     |persistent_id| crate::ids::neutral_sketch_point_id(&sketch, persistent_id),
                 ),

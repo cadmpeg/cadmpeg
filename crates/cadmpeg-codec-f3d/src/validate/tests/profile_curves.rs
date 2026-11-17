@@ -16,6 +16,7 @@ fn typed_profile_validator_checks_region_offsets_and_exterior_cardinality() {
         owner_text_offset: 30,
         sketch_scope_record_index: 7,
         sketch_scope_offset: 80,
+        scope_sketch_containers: Vec::new(),
         identity_record_offset: 100,
         identity_end_offset: 274,
         groups: vec![

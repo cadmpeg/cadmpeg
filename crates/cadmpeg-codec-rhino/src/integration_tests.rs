@@ -72,7 +72,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
         assert_eq!(summary.format(), "rhino");
         assert!(summary.notes.iter().any(|note| note.contains(version)));
         let result = decode(bytes.clone());
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         assert_valid(&result);
         let container = EditableDecodeResult::from(
             RhinoCodec
@@ -86,7 +86,7 @@ fn archive_pipeline_aligns_versions_detection_inspection_units_and_container_onl
                 .expect("container-only 3DM decode"),
         );
         assert!(container.report().container_only());
-        assert!(container.ir().model.points.is_empty());
+        assert!(container.ir().geometry.points.is_empty());
     }
 }
 #[test]
@@ -133,9 +133,9 @@ fn curve_pipeline_composes_points_clouds_lines_arcs_polylines_and_compounds() {
         ),
     ];
     let result = decode(support::archive(&objects));
-    assert!(!result.ir().model.points.is_empty());
-    assert!(result.ir().model.curves.len() >= 3);
-    assert!(!result.ir().model.procedural_curves.is_empty());
+    assert!(!result.ir().geometry.points.is_empty());
+    assert!(result.ir().geometry.curves.len() >= 3);
+    assert!(!result.ir().geometry.procedural_curves.is_empty());
     assert_valid(&result);
 }
 #[test]
@@ -156,10 +156,10 @@ fn geometry_pipeline_composes_mesh_subd_extrusion_and_connected_brep_objects() {
     ];
     let result = decode(support::archive_writer("80", 202_608_010, &objects));
     assert!(!result.ir().model.tessellations.is_empty());
-    assert!(!result.ir().model.subds.is_empty());
-    assert!(!result.ir().model.procedural_surfaces.is_empty());
-    assert!(!result.ir().model.faces.is_empty());
-    assert!(!result.ir().model.pcurves.is_empty());
+    assert!(!result.ir().geometry.subds.is_empty());
+    assert!(!result.ir().geometry.procedural_surfaces.is_empty());
+    assert!(!result.ir().geometry.faces.is_empty());
+    assert!(!result.ir().geometry.pcurves.is_empty());
     assert_valid(&result);
 }
 
@@ -187,12 +187,17 @@ fn document_pipeline_composes_definitions_history_identity_attributes_and_settin
 #[test]
 fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topology() {
     let mut point_ir = cadmpeg_ir::CadIr::empty();
-    point_ir.model.points.push(cadmpeg_ir::topology::Point::new(
-        cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75))
+    point_ir
+        .geometry
+        .points
+        .push(cadmpeg_ir::topology::Point::new(
+            cadmpeg_ir::ids::PointId::mint("rhino:integration:point#0").expect("identity grammar"),
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                1.25, -2.5, 3.75,
+            ))
             .expect("a finite position is a point"),
-        None,
-    ));
+            None,
+        ));
     for version in [
         crate::RhinoArchiveVersion::V5,
         crate::RhinoArchiveVersion::V6,
@@ -205,8 +210,8 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
             .unwrap();
         let result = decode(bytes);
         assert_eq!(
-            result.ir().model.points[0].position().get(),
-            point_ir.model.points[0].position().get()
+            result.ir().geometry.points[0].position().get(),
+            point_ir.geometry.points[0].position().get()
         );
         assert_valid(&result);
     }
@@ -219,13 +224,13 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
     .into_parts();
     sheet.source = None;
     sheet.native.0.remove("rhino");
-    for curve in &mut sheet.model.curves {
+    for curve in &mut sheet.geometry.curves {
         curve.source_object = None;
     }
-    for surface in &mut sheet.model.surfaces {
+    for surface in &mut sheet.geometry.surfaces {
         surface.source_object = None;
     }
-    for point in &mut sheet.model.points {
+    for point in &mut sheet.geometry.points {
         point.source_object = None;
     }
     let mut bytes = Vec::new();
@@ -233,7 +238,7 @@ fn writer_pipeline_round_trips_supported_versions_and_connected_source_less_topo
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     let result = decode(bytes);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_valid(&result);
 }
 
@@ -250,7 +255,7 @@ fn recovery_pipeline_keeps_malformed_records_atomic_and_later_objects_decodable(
         let valid =
             support::object_record(1, POINT_CLASS, &support::point_payload([4.0, 5.0, 6.0]));
         let result = decode(support::archive(&[malformed, valid]));
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         assert!(result
             .report()
             .losses
@@ -273,7 +278,7 @@ fn registered_future_object_major_is_retained_without_known_prefix() {
         support::object_record(1, POINT_CLASS, &support::point_payload([4.0, 5.0, 6.0]));
     let result = decode(support::archive(&[future_record.clone(), valid_record]));
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let retained = result
         .source_fidelity()
         .retained_record("rhino:object:record#000000")
@@ -331,7 +336,7 @@ fn registered_future_table_major_is_retained_without_known_prefix() {
     );
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let retained = result
         .source_fidelity()
         .retained_records()
@@ -440,7 +445,7 @@ fn registered_userdata_future_payload_is_retained_by_table_owner() {
     );
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let lights = &result.ir().native.namespace("rhino").unwrap().arenas()["lights"];
     assert_eq!(lights.len(), 1);
     assert_eq!(
@@ -564,7 +569,7 @@ fn registered_material_userdata_future_payload_is_retained_by_table_owner() {
     );
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let materials = &result.ir().native.namespace("rhino").unwrap().arenas()["materials"];
     assert_eq!(materials.len(), 1);
     assert_eq!(
@@ -693,7 +698,7 @@ fn registered_dimension_style_userdata_future_payload_is_retained_by_table_owner
     );
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let dimension_styles =
         &result.ir().native.namespace("rhino").unwrap().arenas()["dimension_styles"];
     assert_eq!(dimension_styles.len(), 1);
@@ -813,7 +818,7 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
     );
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let materials = &result.ir().native.namespace("rhino").unwrap().arenas()["materials"];
     assert_eq!(materials.len(), 1);
     assert_eq!(
@@ -916,7 +921,7 @@ fn object_user_string_userdata_future_payload_is_retained_with_typed_geometry() 
     );
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.points.len(), 2);
+    assert_eq!(result.ir().geometry.points.len(), 2);
     let presentation =
         &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(presentation.len(), 1);
@@ -992,7 +997,7 @@ fn mesh_subd_proxy_future_payload_retains_parent_mesh_record() {
     let result = decode(bytes);
 
     assert_eq!(result.ir().model.tessellations.len(), 1);
-    assert!(result.ir().model.subds.is_empty());
+    assert!(result.ir().geometry.subds.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("SubD mesh proxy dropped")
             && loss.message.contains("parent mesh retained")
@@ -1057,7 +1062,7 @@ fn brep_region_userdata_future_payload_retains_parent_brep_record() {
     let bytes = support::archive(&[brep_record.clone(), following_point]);
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.message
             .contains("invalid optional Brep region topology discarded")
@@ -1164,7 +1169,7 @@ fn brep_nested_mesh_userdata_future_payload_retains_parent_record() {
     let bytes = support::archive(&[brep_record.clone(), following_point]);
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("V4/V5 mesh n-gon userdata") && loss.message.contains("dropped")
@@ -1262,7 +1267,7 @@ fn extrusion_display_mesh_cache_nested_userdata_future_payload_retains_parent_re
     let bytes = support::archive(&[extrusion_record.clone(), following_point]);
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     assert_eq!(result.ir().model.tessellations.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.message.contains("V4/V5 mesh n-gon userdata") && loss.message.contains("dropped")
@@ -1356,7 +1361,7 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
         Some(crate::wire::Uuid::from_wire(MESH_CLASS).to_string())
     );
     assert!(texture_mappings[0].field("mapping_crc").is_none());
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(result
         .report()
         .losses
@@ -1403,7 +1408,7 @@ fn future_settings_payload_is_retained_without_known_prefix() {
     );
     let result = decode(bytes);
 
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let retained = result
         .source_fidelity()
         .retained_records()
@@ -1469,7 +1474,7 @@ fn native_retentions_are_charged_and_excluded_from_the_decoded_census() {
     }));
 
     // The hatch loop curve is a real neutral carrier even though the fill is not.
-    assert!(!result.ir().model.curves.is_empty());
+    assert!(!result.ir().geometry.curves.is_empty());
     assert_eq!(result.ir().model.features.len(), 2);
     assert!(result.report().geometry_transferred());
     assert_valid(&result);
@@ -1567,7 +1572,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
             targets[0].target,
             cadmpeg_ir::references::ReferenceTarget::Null
         ));
-        assert!(targets[0].local_target().is_none());
+        assert!(targets[0].native.is_none());
     }
     assert!(annotation.assets.is_empty());
 
@@ -1879,14 +1884,18 @@ fn opennurbs_object_walk_and_transfer_floor() {
             _ => unreachable!("supported writer version table"),
         };
         let mut point_ir = cadmpeg_ir::CadIr::empty();
-        point_ir.model.points.push(cadmpeg_ir::topology::Point::new(
-            cadmpeg_ir::ids::PointId::mint("integration:writer:point#0").expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-                1.25, -2.5, 3.75,
-            ))
-            .expect("a finite position is a point"),
-            None,
-        ));
+        point_ir
+            .geometry
+            .points
+            .push(cadmpeg_ir::topology::Point::new(
+                cadmpeg_ir::ids::PointId::mint("integration:writer:point#0")
+                    .expect("identity grammar"),
+                cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                    1.25, -2.5, 3.75,
+                ))
+                .expect("a finite position is a point"),
+                None,
+            ));
         let mut bytes = Vec::new();
         crate::test_support::plan_at(archive_version, &point_ir)
             .and_then(|plan| plan.write_to(&mut bytes))

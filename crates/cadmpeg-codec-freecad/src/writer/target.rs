@@ -100,14 +100,8 @@ pub(crate) fn plan(
 
 /// Native `fcstd` arenas this writer handles itself: property values patch
 /// `Document.xml`, entry payloads are repacked, and the writer refuses its own
-/// unsupported object, extension and unreadable-entry edits.
-const CARRIED_NATIVE_ARENAS: &[&str] = &[
-    "entries",
-    "extensions",
-    "objects",
-    "properties",
-    "unreadable_entries",
-];
+/// unsupported object and extension edits.
+const CARRIED_NATIVE_ARENAS: &[&str] = &["entries", "extensions", "objects", "properties"];
 
 /// The `document_local_sha256` an `FCStd` write compares.
 ///

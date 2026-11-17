@@ -54,7 +54,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     );
     let mut source = unit_cube().expect("unit cube fixture is admitted");
     let (loop_index, ring) = source
-        .model
+        .geometry
         .loops
         .iter()
         .enumerate()
@@ -62,28 +62,39 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         .map(|(index, loop_)| (index, loop_.coedges().to_vec()))
         .expect("unit cube has an edge loop");
     let ends = |id: &CoedgeId| {
-        let coedge = source.model.coedges.iter().find(|c| c.id == *id).unwrap();
+        let coedge = source
+            .geometry
+            .coedges
+            .iter()
+            .find(|c| c.id == *id)
+            .unwrap();
         let edge = source
-            .model
+            .geometry
             .edges
             .iter()
             .find(|e| e.id == coedge.edge)
             .unwrap();
         match coedge.sense {
-            Sense::Forward => (edge.start.clone(), edge.end.clone()),
-            Sense::Reversed => (edge.end.clone(), edge.start.clone()),
+            Sense::Forward => (
+                edge.ends.as_ref().unwrap().start.clone(),
+                edge.ends.as_ref().unwrap().end.clone(),
+            ),
+            Sense::Reversed => (
+                edge.ends.as_ref().unwrap().end.clone(),
+                edge.ends.as_ref().unwrap().start.clone(),
+            ),
         }
     };
     let (other, corner) = ends(&ring[0]);
     let position = {
         let vertex = source
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|v| v.id == corner)
             .unwrap();
         source
-            .model
+            .geometry
             .points
             .iter()
             .find(|p| p.id == vertex.point)
@@ -95,44 +106,49 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     let edge = EdgeId::mint("test:model:edge#collapsed").unwrap();
     let coedge = CoedgeId::mint("test:model:coedge#collapsed").unwrap();
     if !curveless {
-        source.model.curves.push(Curve {
+        source.geometry.curves.push(Curve {
             id: curve.clone(),
             parameter_range: None,
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
                 DegenerateCurve::try_new(position.get()).unwrap(),
             )),
+            native_ref: None,
         });
     }
-    source.model.edges.push(Edge {
+    source.geometry.edges.push(Edge {
         id: edge.clone(),
         carrier: EdgeCarrier::unbounded((!curveless).then_some(curve)),
-        start: if same_vertex { corner.clone() } else { other },
-        end: corner.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            if same_vertex { corner.clone() } else { other },
+            corner.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     });
-    source.model.coedges.push(Coedge {
+    source.geometry.coedges.push(Coedge {
         id: coedge.clone(),
-        owner_loop: source.model.loops[loop_index].id.clone(),
+        owner_loop: source.geometry.loops[loop_index].id.clone(),
         edge,
         radial_next: coedge.clone(),
         sense: Sense::Forward,
         use_curve: None,
         pcurves: Vec::new(),
+        native_ref: None,
     });
     let mut coedges = ring;
     coedges.insert(1, coedge.clone());
     if matches!(ring_kind, Ring::Alone | Ring::AloneWithPcurves) {
         let twin = CoedgeId::mint("test:model:coedge#collapsed-twin").unwrap();
-        let mut second = source.model.coedges.last().unwrap().clone();
+        let mut second = source.geometry.coedges.last().unwrap().clone();
         second.id = twin.clone();
         second.radial_next = twin.clone();
-        source.model.coedges.push(second);
+        source.geometry.coedges.push(second);
         coedges = vec![coedge.clone(), twin];
     }
     if ring_kind == Ring::AloneWithPcurves {
         let pcurve = PcurveId::mint("test:model:pcurve#collapsed").unwrap();
-        source.model.pcurves.push(Pcurve {
+        source.geometry.pcurves.push(Pcurve {
             id: pcurve.clone(),
             geometry: PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::new(
@@ -146,9 +162,10 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         for coedge in source
-            .model
+            .geometry
             .coedges
             .iter_mut()
             .filter(|coedge| coedges.contains(&coedge.id))
@@ -166,9 +183,9 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     ) {
         // The plane is moved to have its origin at the corner, so the pcurve
         // point (0, 0) lifts to the corner.
-        let face_id = source.model.loops[loop_index].face.clone();
+        let face_id = source.geometry.loops[loop_index].face.clone();
         let surface_id = source
-            .model
+            .geometry
             .faces
             .iter()
             .find(|face| face.id == face_id)
@@ -176,7 +193,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             .surface
             .clone();
         let surface = source
-            .model
+            .geometry
             .surfaces
             .iter_mut()
             .find(|surface| surface.id == surface_id)
@@ -193,7 +210,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             Point2::new(0.0, 0.0)
         };
         let pcurve = PcurveId::mint("test:model:pcurve#collapsed").unwrap();
-        source.model.pcurves.push(Pcurve {
+        source.geometry.pcurves.push(Pcurve {
             id: pcurve.clone(),
             geometry: PcurveGeometry::Nurbs {
                 nurbs: PcurveNurbs::new(
@@ -207,9 +224,10 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         let collapsed = source
-            .model
+            .geometry
             .coedges
             .iter_mut()
             .find(|candidate| candidate.id == coedge)
@@ -224,7 +242,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         let circle = CurveId::mint("test:model:curve#closed-circle").unwrap();
         let circle_edge = EdgeId::mint("test:model:edge#closed-circle").unwrap();
         let circle_coedge = CoedgeId::mint("test:model:coedge#closed-circle").unwrap();
-        source.model.curves.push(Curve {
+        source.geometry.curves.push(Curve {
             id: circle.clone(),
             parameter_range: None,
             source_object: None,
@@ -237,29 +255,34 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
                 )
                 .unwrap(),
             )),
+            native_ref: None,
         });
-        source.model.edges.push(Edge {
+        source.geometry.edges.push(Edge {
             id: circle_edge.clone(),
             carrier: EdgeCarrier::unbounded(Some(circle)),
-            start: corner_vertex.clone(),
-            end: corner_vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                corner_vertex.clone(),
+                corner_vertex,
+            )),
             tolerance: None,
+            native_ref: None,
         });
-        source.model.coedges.push(Coedge {
+        source.geometry.coedges.push(Coedge {
             id: circle_coedge.clone(),
-            owner_loop: source.model.loops[loop_index].id.clone(),
+            owner_loop: source.geometry.loops[loop_index].id.clone(),
             edge: circle_edge,
             radial_next: circle_coedge.clone(),
             sense: Sense::Forward,
             use_curve: None,
             pcurves: Vec::new(),
+            native_ref: None,
         });
         coedges = vec![circle_coedge, coedge];
     }
-    let vertex_uses = source.model.loops[loop_index]
+    let vertex_uses = source.geometry.loops[loop_index]
         .anchored_vertex_uses()
         .to_vec();
-    source.model.loops[loop_index]
+    source.geometry.loops[loop_index]
         .replace_ring(coedges, vertex_uses)
         .expect("the ring with a collapsed edge is valid");
     source
@@ -428,32 +451,37 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     };
     let mut source = unit_cube().expect("unit cube fixture is admitted");
     let loop_index = source
-        .model
+        .geometry
         .loops
         .iter()
         .position(|loop_| loop_.coedges().len() >= 3)
         .expect("unit cube has an edge loop");
-    let first = source.model.loops[loop_index].coedges()[0].clone();
+    let first = source.geometry.loops[loop_index].coedges()[0].clone();
     let line = {
-        let coedge = source.model.coedges.iter().find(|c| c.id == first).unwrap();
+        let coedge = source
+            .geometry
+            .coedges
+            .iter()
+            .find(|c| c.id == first)
+            .unwrap();
         source
-            .model
+            .geometry
             .edges
             .iter()
             .find(|e| e.id == coedge.edge)
             .unwrap()
             .clone()
     };
-    let face_id = source.model.loops[loop_index].face.clone();
+    let face_id = source.geometry.loops[loop_index].face.clone();
     let pole_position = {
         let vertex = source
-            .model
+            .geometry
             .vertices
             .iter()
-            .find(|v| v.id == line.end)
+            .find(|v| v.id == line.ends.as_ref().unwrap().end)
             .unwrap();
         source
-            .model
+            .geometry
             .points
             .iter()
             .find(|p| p.id == vertex.point)
@@ -461,7 +489,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
             .position()
     };
     let surface_id = source
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id == face_id)
@@ -469,7 +497,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
         .surface
         .clone();
     let surface = source
-        .model
+        .geometry
         .surfaces
         .iter_mut()
         .find(|surface| surface.id == surface_id)
@@ -485,23 +513,29 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     let loop_id = if beside {
         LoopId::mint("test:model:loop#seam").unwrap()
     } else {
-        source.model.loops[loop_index].id.clone()
+        source.geometry.loops[loop_index].id.clone()
     };
     let seam = EdgeId::mint("test:model:edge#seam").unwrap();
     let pole = EdgeId::mint("test:model:edge#pole").unwrap();
-    source.model.edges.push(Edge {
+    source.geometry.edges.push(Edge {
         id: seam.clone(),
         carrier: EdgeCarrier::unbounded(line.curve().cloned()),
-        start: line.start.clone(),
-        end: line.end.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            line.ends.as_ref().unwrap().start.clone(),
+            line.ends.as_ref().unwrap().end.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     });
-    source.model.edges.push(Edge {
+    source.geometry.edges.push(Edge {
         id: pole.clone(),
         carrier: EdgeCarrier::unbounded(None),
-        start: line.end.clone(),
-        end: line.end,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            line.ends.as_ref().unwrap().end.clone(),
+            line.ends.as_ref().unwrap().end.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     let pole_end = if case == SeamRing::BesideALoopWithALongPole {
         Point2::new(1.0, 0.0)
@@ -509,7 +543,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
         Point2::new(0.0, 0.0)
     };
     let pcurve = PcurveId::mint("test:model:pcurve#pole").unwrap();
-    source.model.pcurves.push(Pcurve {
+    source.geometry.pcurves.push(Pcurve {
         id: pcurve.clone(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::new(
@@ -523,6 +557,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
             .unwrap(),
         },
         metadata: PcurveMetadata::default(),
+        native_ref: None,
     });
     let ring: Vec<CoedgeId> = [
         ("up", &seam, Sense::Forward, None),
@@ -532,7 +567,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     .into_iter()
     .map(|(name, edge, sense, pcurve)| {
         let id = CoedgeId::mint(format!("test:model:coedge#{name}")).unwrap();
-        source.model.coedges.push(Coedge {
+        source.geometry.coedges.push(Coedge {
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge: edge.clone(),
@@ -547,21 +582,22 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
                 })
                 .into_iter()
                 .collect(),
+            native_ref: None,
         });
         id
     })
     .collect();
     if case == SeamRing::BesideAnUnwritableLoop {
-        let first_loop = source.model.loops[loop_index].coedges().to_vec();
+        let first_loop = source.geometry.loops[loop_index].coedges().to_vec();
         let edges: Vec<EdgeId> = source
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| first_loop.contains(&coedge.id))
             .map(|coedge| coedge.edge.clone())
             .collect();
         for edge in source
-            .model
+            .geometry
             .edges
             .iter_mut()
             .filter(|edge| edges.contains(&edge.id))
@@ -570,13 +606,14 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
         }
     }
     if beside {
-        source.model.loops.push(Loop {
+        source.geometry.loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: LoopBoundary::Ring(LoopRing::new(ring, Vec::new()).unwrap()),
+            native_ref: None,
         });
         let face = source
-            .model
+            .geometry
             .faces
             .iter_mut()
             .find(|face| face.id == face_id)
@@ -585,7 +622,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
         loops.push(loop_id);
         face.loops = FaceLoops::unspecified(loops);
     } else {
-        source.model.loops[loop_index]
+        source.geometry.loops[loop_index]
             .replace_ring(ring, Vec::new())
             .expect("the seam ring is valid");
     }

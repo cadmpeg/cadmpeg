@@ -664,11 +664,11 @@ fn preserves_directed_reversed_face_edge_use() {
         panic!("expected surface");
     };
     assert!(
-        wire::field::<Vec<subd::SubdEdgeUse>>(
-            &(wire::field::<Vec<subd::SubdFace>>(&(surface.cage), "faces")[0]),
-            "edges"
-        )[1]
-        .reversed
+        surface.cage.faces()[0]
+            .edge_uses()
+            .nth(1)
+            .expect("second edge use")
+            .reversed
     );
     assert_eq!(
         wire::field::<[u32; 2]>(
@@ -897,8 +897,8 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 25.4);
     let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
-    assert_eq!(result.ir().model.subds.len(), 1);
-    let subd = &result.ir().model.subds[0];
+    assert_eq!(result.ir().geometry.subds.len(), 1);
+    let subd = &result.ir().geometry.subds[0];
     assert!(subd.source_object.is_some());
     assert_eq!(
         wire::field::<Vec<subd::SubdVertex>>(&(subd.cage), "vertices")[2]
@@ -961,7 +961,7 @@ fn unknown_subd_symmetry_type_preserves_surface_and_native_source_bytes() {
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
     let result = EditableDecodeResult::from(crate::decode::decode_for_test(&scan));
-    assert_eq!(result.ir().model.subds.len(), 1);
+    assert_eq!(result.ir().geometry.subds.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::EnumerationValueDegraded.kind()
             && loss.message.contains("symmetry type 6")
@@ -998,7 +998,7 @@ fn malformed_subd_is_atomic_and_later_object_recovers() {
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
     set_test_units(&mut scan, 1.0);
     let result = crate::decode::decode_for_test(&scan);
-    assert!(result.ir().model.subds.is_empty());
+    assert!(result.ir().geometry.subds.is_empty());
     assert_eq!(
         result
             .ir()

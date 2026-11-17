@@ -20,7 +20,7 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
     let construction =
         ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -33,8 +33,9 @@ fn a_type_122_directrix_start_that_overflows_is_refused_as_non_finite() {
             .expect("valid CircleCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
         ProceduralSurfaceDefinition::Extrusion(
             ExtrusionSurfaceConstruction::try_new(
@@ -71,7 +72,7 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
     let construction =
         ProceduralSurfaceId::mint("test:iges:procedural#extrusion").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
@@ -85,8 +86,9 @@ fn a_type_122_hyperbola_directrix_whose_minor_cosh_alone_overflows_has_finite_en
             .expect("valid HyperbolaCurve fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
         ProceduralSurfaceDefinition::Extrusion(
             ExtrusionSurfaceConstruction::try_new(

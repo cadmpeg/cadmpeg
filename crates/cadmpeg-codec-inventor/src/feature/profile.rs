@@ -181,7 +181,7 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         .collect::<HashMap<_, _>>();
     let mut names = HashMap::<&str, Vec<Option<EdgeName>>>::new();
     for attribute in &brep.attributes {
-        if let AttributeTarget::Edge(edge) = &attribute.target {
+        if let AttributeTarget::Edge(edge) = &attribute.target.entity {
             let naming = attribute.name == NAMING_ATTRIBUTE
                 || (attribute.name == CUSTOM_NAMING_ATTRIBUTE
                     && matches!(attribute.values.get(5), Some(AttributeValue::String(family))
@@ -262,8 +262,8 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
         for id in members {
             let Some((start, end)) = edges.get(id.as_str()).and_then(|edge| {
                 Some((
-                    *vertices.get(edge.start.as_str())?,
-                    *vertices.get(edge.end.as_str())?,
+                    *vertices.get(edge.start()?.as_str())?,
+                    *vertices.get(edge.end()?.as_str())?,
                 ))
             }) else {
                 wire_edges.clear();

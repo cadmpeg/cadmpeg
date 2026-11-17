@@ -66,7 +66,7 @@ pub(super) fn native_tolerant_coedge_extension(
             ..
         }) => {
             let model_coedge = target
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|candidate| candidate.id == *coedge)
@@ -75,7 +75,7 @@ pub(super) fn native_tolerant_coedge_extension(
                 CodecError::malformed(format_args!("tolerant coedge {coedge} has no use curve"))
             })?;
             let curve = target
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == use_curve.curve)
@@ -184,7 +184,7 @@ pub(super) fn encode_design_bulkstream(
         ));
     }
     let has_body_visibility = target
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.visible.is_some());

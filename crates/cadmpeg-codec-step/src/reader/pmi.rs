@@ -15,6 +15,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
     LimitsAndFits, PmiDefinition, PmiDimension, PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 
@@ -792,7 +793,7 @@ pub(super) fn decode(
         .pmi
         .iter()
         .flat_map(|annotation| &annotation.targets)
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::ShapeAspect { source_id } => {
                 source_id.as_str().strip_prefix('#')?.parse().ok()
             }
@@ -1050,34 +1051,38 @@ fn topology_targets(
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
         let body = body.clone();
-        push_target(&mut targets, PmiTarget::Body { body });
+        push_unique(&mut targets, PmiTarget::Body { body });
     }
     for face in topology.faces_by_source.get(&id).into_iter().flatten() {
         let face = face.clone();
-        push_target(&mut targets, PmiTarget::Face { face });
+        push_unique(&mut targets, PmiTarget::Face { face });
     }
     for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
         let edge = edge.clone();
-        push_target(&mut targets, PmiTarget::Edge { edge });
+        push_unique(&mut targets, PmiTarget::Edge { edge });
     }
     for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
         let vertex = vertex.clone();
-        push_target(&mut targets, PmiTarget::Vertex { vertex });
+        push_unique(&mut targets, PmiTarget::Vertex { vertex });
     }
     for point in geometry_sources.points.get(&id).into_iter().flatten() {
         let point = point.clone();
-        push_target(&mut targets, PmiTarget::Point { point });
+        push_unique(&mut targets, PmiTarget::Point { point });
     }
     for curve in geometry_sources.curves.get(&id).into_iter().flatten() {
         let curve = curve.clone();
-        push_target(&mut targets, PmiTarget::Curve { curve });
+        push_unique(&mut targets, PmiTarget::Curve { curve });
     }
     targets
 }
 
-fn push_target(targets: &mut Vec<PmiTarget>, target: PmiTarget) {
-    if !targets.contains(&target) {
-        targets.push(target);
+fn push_target(targets: &mut Vec<InstanceTarget<PmiTarget>>, target: PmiTarget) {
+    push_unique(targets, InstanceTarget::new(target));
+}
+
+fn push_unique<T: PartialEq>(items: &mut Vec<T>, item: T) {
+    if !items.contains(&item) {
+        items.push(item);
     }
 }
 
@@ -1107,7 +1112,7 @@ fn point_sources(
     ir: &CadIr,
 ) -> std::collections::BTreeMap<u64, std::vec::Vec<cadmpeg_ir::ids::PointId>> {
     let mut points = BTreeMap::<u64, Vec<_>>::new();
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
             continue;
         };
@@ -1121,7 +1126,7 @@ fn curve_sources(
     ir: &CadIr,
 ) -> std::collections::BTreeMap<u64, std::vec::Vec<cadmpeg_ir::ids::CurveId>> {
     let mut curves = BTreeMap::<u64, Vec<_>>::new();
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
             continue;
         };

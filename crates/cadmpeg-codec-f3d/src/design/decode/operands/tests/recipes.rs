@@ -123,6 +123,31 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     );
 }
 
+#[test]
+fn face_recipe_boundary_accepts_the_stream_end() {
+    let mut last = Vec::new();
+    for record_index in 100..=103 {
+        indexed_header(&mut last, *b"306", record_index);
+    }
+    let position = last.len();
+    for word in [0i32, -1, 2] {
+        last.extend_from_slice(&word.to_le_bytes());
+    }
+    assert_eq!(
+        crate::design::decode::operands::face_recipe_next_boundary(&last, position, 100, None),
+        Some((last.len(), 0))
+    );
+    assert_eq!(
+        crate::design::decode::operands::face_recipe_next_boundary(
+            &last,
+            position,
+            100,
+            Some(u64::try_from(last.len()).unwrap()),
+        ),
+        None
+    );
+}
+
 mod group_records;
 mod nested_records;
 

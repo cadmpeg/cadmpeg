@@ -27,18 +27,27 @@ fn parser_allows_print_controls_only_outside_anchor_and_reference_sections() {
 }
 
 #[test]
-fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
+fn parser_gives_up_excessive_parameter_nesting_without_recursing_unboundedly() {
     let nested = format!("{}1{}", "(".repeat(300), ")".repeat(300));
     let source = format!(
-        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM({nested});ENDSEC;END-ISO-10303-21;"
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM({nested});#2=ITEM();ENDSEC;END-ISO-10303-21;"
     );
-    let error =
+    let (parsed, _) =
         crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-            .unwrap_err();
+            .unwrap();
+    assert_eq!(parsed.records().keys().copied().collect::<Vec<_>>(), [2]);
+    let [statement] = parsed.given_up() else {
+        panic!("one given-up statement");
+    };
+    assert_eq!(
+        &source[statement.span.clone()],
+        format!("#1=ITEM({nested});")
+    );
     assert!(matches!(
-        error,
-        crate::parse::ParseError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        statement.cause,
+        crate::parse::GiveUpCause::Resource(limit)
+            if limit.scope == cadmpeg_core::decode::LimitScope::Part
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
                 && limit.limit == cadmpeg_core::decode::DecodePolicy::service().limits.max_recursion_depth
                 && limit.operation == "step_parse_parameter_nesting"
     ));

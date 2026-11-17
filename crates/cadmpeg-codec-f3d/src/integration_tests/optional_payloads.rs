@@ -48,6 +48,7 @@ fn damaged_first_optional_frame_keeps_detection_and_required_brep_admission() {
         cadmpeg_ir::Confidence::Medium
     );
     let decoded = super::decode(changed);
+    assert_eq!(decoded.ir().geometry, baseline.ir().geometry);
     assert_eq!(decoded.ir().model, baseline.ir().model);
     super::assert_valid(&decoded);
     assert!(!decoded.report().losses.is_empty());
@@ -123,7 +124,7 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
     ] {
         let original = f3d_with_configuration(&synthetic_geometry_smbh(), name, b"preview");
         let expected = super::decode(original.clone());
-        assert_eq!(expected.ir().model.bodies.len(), 1);
+        assert_eq!(expected.ir().geometry.bodies.len(), 1);
         for defect in [
             Defect::Crc,
             Defect::Encryption,
@@ -133,6 +134,7 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             let mut changed = original.clone();
             damage_entry(&mut changed, name, defect);
             let decoded = super::decode(changed.clone());
+            assert_eq!(decoded.ir().geometry, expected.ir().geometry);
             assert_eq!(decoded.ir().model, expected.ir().model);
             super::assert_valid(&decoded);
             assert!(<F3dCodec as CodecBackend>::validate_native(
@@ -142,10 +144,37 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             )
             .unwrap()
             .is_empty());
-            assert!(decoded.report().losses.iter().any(|loss| loss.code
-                == crate::loss::F3dLossCode::ArchiveEntryUnreadable
-                    .note(String::new())
-                    .code));
+            let losses: Vec<_> = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+                .collect();
+            assert_eq!(losses.len(), 1);
+            assert!(losses[0]
+                .message
+                .starts_with(&format!("part archive-entry {name:?} stream=\"\" offset=")));
+            let stubs = decoded.ir().native_unknowns("f3d").unwrap();
+            let stub = stubs
+                .iter()
+                .find(|stub| losses[0].message.contains(&format!("record={}", stub.id)))
+                .expect("the loss names the stub");
+            // No product definition stands for this document, so no record
+            // contains the entry.
+            assert!(decoded.ir().model.product_definitions.is_empty());
+            assert!(stub.links.is_empty());
+            let retained = decoded
+                .source_fidelity()
+                .retained_record(stub.id.as_str())
+                .expect("the entry's stored bytes are named");
+            let start = usize::try_from(retained.offset()).unwrap();
+            let end = usize::try_from(retained.end_offset()).unwrap();
+            // The source image holds the bytes once; the part keeps their digest.
+            assert_eq!(retained.data(), None);
+            assert_eq!(
+                retained.sha256(),
+                cadmpeg_ir::hash::digest::Sha256Digest::digest(&changed[start..end]).as_str()
+            );
             assert!(decoded
                 .source_fidelity()
                 .retained_records()
@@ -161,6 +190,71 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             assert_eq!(replayed, changed);
         }
     }
+}
+
+#[test]
+fn an_unreadable_asset_beside_a_stored_frame_root_links_to_the_source_root_definition() {
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+    let name = "FusionAssetName[Active]/Previews/thumbnail.png";
+    let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[]);
+    let original = crate::test_support::body_map_test::f3d_with_breps_design_and_assets(
+        &[("BREP.module.smbh", &synthetic_geometry_smbh())],
+        &bulk,
+        &meta,
+        &[(name, b"preview")],
+    );
+    let expected = super::decode(original.clone());
+    let roots = |model: &cadmpeg_ir::document::Model, stored_frame: bool| {
+        model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence.parent == OccurrenceParent::Root {}
+                    && crate::design::components::is_stored_frame_occurrence(occurrence)
+                        == stored_frame
+            })
+            .map(|occurrence| match &occurrence.prototype {
+                PrototypeReference::Local { definition } => definition.as_str().to_owned(),
+                other => panic!("a local root prototype: {other:?}"),
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+    };
+    let model = &expected.ir().model;
+    let Ok([source_root]) = <[String; 1]>::try_from(roots(model, false)) else {
+        panic!("one source root prototype: {:?}", model.occurrences);
+    };
+    let Ok([stored_root]) = <[String; 1]>::try_from(roots(model, true)) else {
+        panic!("one stored-frame root prototype: {:?}", model.occurrences);
+    };
+    assert_ne!(source_root, stored_root, "two root definitions");
+
+    let mut changed = original;
+    damage_entry(&mut changed, name, Defect::Crc);
+    let decoded = super::decode(changed);
+    assert_eq!(decoded.ir().model, expected.ir().model);
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
+        .collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!("one record.unreadable loss: {losses:?}");
+    };
+    let stubs = decoded.ir().native_unknowns("f3d").unwrap();
+    let stub = stubs
+        .iter()
+        .find(|stub| loss.message.contains(&format!("record={}", stub.id)))
+        .expect("the loss names the stub");
+    let links = stub
+        .links
+        .iter()
+        .map(cadmpeg_ir::ids::Identity::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(links, [source_root.as_str()]);
+    super::assert_valid(&decoded);
 }
 
 #[test]
@@ -182,7 +276,66 @@ fn required_brep_payload_defects_remain_fatal() {
 }
 
 #[test]
-fn optional_asset_resource_limits_are_not_recovered() {
+fn optional_asset_past_the_per_expansion_allowance_is_given_up_alone() {
+    let bytes = optional_deflated_preview();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_per_expand = 1;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let [given_up] = scan.given_up.as_slice() else {
+        panic!("one given-up part");
+    };
+    let loss = given_up.loss();
+    assert_eq!(loss.code.to_string(), "decode/record.unreadable");
+    assert!(loss.message.starts_with(
+        "part archive-entry \"FusionAssetName[Active]/Previews/thumbnail.png\" stream=\"\" offset="
+    ));
+    assert!(loss.message.contains("scope Part"));
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn a_required_entry_past_the_per_expansion_allowance_is_given_up_alone() {
+    let smbh = synthetic_geometry_smbh();
+    let bytes = crate::test_support::zip_test::f3d_with_deflated_smbh(&smbh);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_per_expand = u64::try_from(smbh.len() - 1).unwrap();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).expect("a Part refusal refuses no file");
+    let [given_up] = scan.given_up.as_slice() else {
+        panic!("one given-up part");
+    };
+    let loss = given_up.loss();
+    assert!(loss.message.starts_with(
+        "part archive-entry \"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh\" stream=\"\" offset="
+    ));
+    assert!(loss.message.contains("scope Part"));
+    assert!(scan.breps.is_empty());
+    assert!(ctx.resource_refusal().is_none());
+}
+
+#[test]
+fn optional_asset_past_the_session_allowance_refuses_the_session() {
+    let bytes = optional_deflated_preview();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_total = 1;
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+    let error = crate::container::scan(&ctx, root)
+        .err()
+        .expect("the session allowance refuses");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+            scope: cadmpeg_core::decode::LimitScope::Session,
+            ..
+        })
+    ));
+}
+
+fn optional_deflated_preview() -> Vec<u8> {
     use std::io::Write;
     let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -198,13 +351,5 @@ fn optional_asset_resource_limits_are_not_recovered() {
         )
         .unwrap();
     writer.write_all(b"preview").unwrap();
-    let bytes = writer.finish().unwrap().into_inner();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_decompressed_bytes_per_expand = 1;
-    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = crate::container::scan(&ctx, root)
-        .err()
-        .expect("optional expansion must refuse");
-    assert!(matches!(error, CodecError::ResourceLimit(_)));
+    writer.finish().unwrap().into_inner()
 }

@@ -21,9 +21,9 @@ use crate::history::edge_changes_across_state_chain;
 use crate::history::edge_recipe_reference_context;
 use crate::history::effective_scope_previous_history_state_id;
 use crate::history::face_changes_across_state_chain;
+use crate::history::face_support::historical_face_support_contexts;
 use crate::history::header_scope_previous_history_state_id;
 use crate::history::historical_edge_axis;
-use crate::history::historical_face_support_contexts;
 use crate::history::historical_loop_boundary;
 use crate::history::historical_topology;
 use crate::history::preceding_support_face_slots;
@@ -1138,6 +1138,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
                 preceding_face_slots: vec![4, 5],
                 preceding_face_boundaries: Vec::new(),
                 changed_preceding_face_slots: vec![5],
+                preceding_surface: None,
             }
         ]
     );
@@ -1161,6 +1162,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
                 preceding_face_slots: vec![4, 5],
                 preceding_face_boundaries: Vec::new(),
                 changed_preceding_face_slots: vec![5],
+                preceding_surface: None,
             }
         ]
     );
@@ -1277,21 +1279,21 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     brep.bodies.push(Body {
         id: BodyId::mint(id(1)).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(id(2)).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     brep.regions.push(Region {
         id: RegionId::mint(id(2)).expect("identity grammar"),
         body: BodyId::mint(id(1)).expect("identity grammar"),
         shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
+        native_ref: None,
     });
-    brep.shells.push(Shell::with_face(
+    brep.shells.push(Shell::new(
         ShellId::mint(id(3)).expect("identity grammar"),
         RegionId::mint(id(2)).expect("identity grammar"),
-        FaceId::mint(id(4)).expect("identity grammar"),
     ));
     brep.faces.push(Face {
         id: FaceId::mint(id(4)).expect("identity grammar"),
@@ -1304,6 +1306,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     brep.loops.push(Loop {
         id: LoopId::mint(id(5)).expect("identity grammar"),
@@ -1315,6 +1318,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             )
             .expect("fixture ring admission"),
         ),
+        native_ref: None,
     });
     brep.coedges.push(Coedge {
         id: CoedgeId::mint(id(6)).expect("identity grammar"),
@@ -1324,21 +1328,26 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     });
     brep.edges.push(Edge {
         id: EdgeId::mint(id(7)).expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
             CurveId::mint(id(21)).expect("identity grammar"),
         )),
-        start: VertexId::mint(id(8)).expect("identity grammar"),
-        end: VertexId::mint(id(9)).expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint(id(8)).expect("identity grammar"),
+            VertexId::mint(id(9)).expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     for slot in [8, 9] {
         brep.vertices.push(Vertex {
             id: VertexId::mint(id(slot)).expect("identity grammar"),
             point: PointId::mint(id(slot + 20)).expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         });
     }
 

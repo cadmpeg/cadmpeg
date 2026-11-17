@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
@@ -105,6 +107,62 @@ pub(crate) fn transfer(
     Ok(drawings)
 }
 
+/// The references a native link states: the explicit empty reference, an
+/// object of a document that was not read, or one unresolved reference per
+/// selected sub-element of a local object, which the decoder does not
+/// resolve to the geometry it decoded. A reference that names a sub-element
+/// keeps it in its native name after the object's source name and a `.`.
+pub(crate) fn link_references(
+    link: Option<&crate::native::LinkTarget>,
+) -> Result<Vec<ReferenceSelection>, CodecError> {
+    let Some(link) = link else {
+        return Ok(vec![ReferenceSelection::new(ReferenceTarget::Null)]);
+    };
+    let Some(object) = link.object() else {
+        if link.document_name().is_some() {
+            return Err(CodecError::malformed(
+                "drawing reference names a document and no object",
+            ));
+        }
+        return Ok(vec![ReferenceSelection::new(ReferenceTarget::Null)]);
+    };
+    let name = crate::native::id_key(object);
+    let names = if link.subelements().is_empty() {
+        vec![None]
+    } else {
+        link.subelements()
+            .iter()
+            .map(|subelement| native_name(&format!("{name}.{subelement}")).map(Some))
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    names
+        .into_iter()
+        .map(|native| {
+            Ok(match link.document_name() {
+                Some(document) => ReferenceSelection {
+                    target: ReferenceTarget::External {
+                        document: document.to_owned(),
+                        object: object.to_owned(),
+                    },
+                    native,
+                },
+                None => ReferenceSelection::unresolved(match native {
+                    Some(native) => native,
+                    None => native_name(name)?,
+                }),
+            })
+        })
+        .collect()
+}
+
+fn native_name(text: &str) -> Result<NativeName, CodecError> {
+    let blank = || CodecError::malformed("drawing reference has an empty source name");
+    Ok(NativeName {
+        codec: CodecId::from(NonBlankString::new("fcstd").ok_or_else(blank)?),
+        value: NativeNameValue::Text(NonBlankString::new(text).ok_or_else(blank)?),
+    })
+}
+
 pub(crate) fn transfer_neutral(
     ctx: &DecodeContext<'_>,
     model: &mut Model,
@@ -126,30 +184,6 @@ pub(crate) fn transfer_neutral(
                 .iter()
                 .filter(|property| property.owner == record.object),
         );
-        let relationship = |link: &Option<crate::native::LinkTarget>| {
-            let Some(link) = link.as_ref() else {
-                return Ok(ReferenceSelection::new(ReferenceTarget::Null, Vec::new()));
-            };
-            let target = match (link.document_name(), link.object()) {
-                (Some(document), Some(object)) => ReferenceTarget::External {
-                    document: document.to_owned(),
-                    object: object.to_owned(),
-                },
-                (None, None) => ReferenceTarget::Null,
-                (None, Some(object)) => ReferenceTarget::Local(
-                    neutral_ids
-                        .get(object)
-                        .map_or(object, cadmpeg_ir::drawings::DrawingId::as_str)
-                        .to_owned(),
-                ),
-                _ => {
-                    return Err(CodecError::malformed(
-                        "drawing relationship has no complete target",
-                    ));
-                }
-            };
-            Ok(ReferenceSelection::new(target, link.subelements().to_vec()))
-        };
         let parameter = |name: &str| scalar_property(ctx, &owned, name);
         let x = parameter("X")?;
         let y = parameter("Y")?;
@@ -189,7 +223,7 @@ pub(crate) fn transfer_neutral(
         for (role, targets) in &record.relationships {
             let mut selections = Vec::new();
             for link in targets {
-                selections.push(relationship(link)?);
+                selections.extend(link_references(link.as_ref())?);
             }
             relationships.insert(role.to_owned(), selections);
         }

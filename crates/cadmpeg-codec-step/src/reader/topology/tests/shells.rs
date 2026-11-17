@@ -32,10 +32,10 @@ fn disconnected_source_shell_is_partitioned_into_connected_ir_shells() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode disconnected source shell");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.regions.len(), 1);
-    assert_eq!(decoded.ir().model.shells.len(), 2);
-    assert_eq!(decoded.ir().model.faces.len(), 2);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.regions.len(), 1);
+    assert_eq!(decoded.ir().geometry.shells.len(), 2);
+    assert_eq!(decoded.ir().geometry.faces.len(), 2);
     let source_loss = decoded
         .report()
         .losses
@@ -72,7 +72,7 @@ fn disconnected_brep_outer_shell_is_rejected_without_role_corruption() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode disconnected BREP outer shell");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             .contains("STEP topology root #31 rejected: connected outer shell #30")
@@ -86,8 +86,8 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode outer and void shell witness");
 
-    let region = &decoded.ir().model.regions[0];
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    let region = &decoded.ir().geometry.regions[0];
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert_eq!(region.shells.len(), 3);
     assert_eq!(region.shells[0].as_str(), "step:data:shell#30");
     assert_eq!(
@@ -98,19 +98,11 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
         ["step:data:shell#31", "step:data:shell#32"]
     );
     let face_sense = |document: &CadIr, shell_id: &cadmpeg_ir::ids::ShellId| {
-        let shell = document
-            .model
-            .shells
-            .iter()
-            .find(|shell| &shell.id == shell_id)
-            .expect("shell carrier");
-        let face_id = shell.faces().first().expect("shell face");
         document
-            .model
-            .faces
-            .iter()
-            .find(|face| &face.id == face_id)
-            .expect("face carrier")
+            .geometry
+            .shell_faces(shell_id)
+            .next()
+            .expect("shell face")
             .sense
     };
     assert_eq!(
@@ -136,7 +128,7 @@ fn brep_with_voids_keeps_outer_first_and_void_order_independent_of_the_set() {
             &DecodeOptions::default(),
         )
         .expect("decode reordered outer and void shell witness");
-    assert_eq!(reordered.ir().model.regions[0].shells, region.shells);
+    assert_eq!(reordered.ir().geometry.regions[0].shells, region.shells);
 
     for document in [decoded.ir(), reordered.ir()] {
         let validation =
@@ -163,16 +155,16 @@ fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
         .expect("decode shared face shells");
 
     assert_eq!(
-        decoded.ir().model.bodies.len(),
+        decoded.ir().geometry.bodies.len(),
         2,
         "{:#?}",
         decoded.report().losses
     );
-    assert_eq!(decoded.ir().model.faces.len(), 2);
+    assert_eq!(decoded.ir().geometry.faces.len(), 2);
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .map(|face| face.id.as_str())
@@ -182,7 +174,7 @@ fn shared_source_face_gets_one_owner_scoped_face_per_shell() {
     );
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.color.is_some()));
@@ -205,7 +197,7 @@ fn brep_with_voids_scopes_edges_and_vertices_per_shell_after_shared_shell_use() 
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode scoped BREP with voids");
 
-    assert!(decoded.ir().model.bodies.iter().any(|body| {
+    assert!(decoded.ir().geometry.bodies.iter().any(|body| {
         body.id.as_str() == "step:data:body#70"
             && body.kind == cadmpeg_ir::topology::BodyKind::Solid
     }));
@@ -235,7 +227,7 @@ fn first_brep_with_voids_scopes_all_shell_carriers() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.id.as_str() == "step:data:body#31"));
@@ -274,11 +266,11 @@ fn oriented_shell_reads_the_derived_cfs_faces_slot() {
         )
         .expect("decode specification-form oriented closed shell");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid));
@@ -299,8 +291,8 @@ fn oriented_shell_without_the_derived_slot_is_read_and_reported() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode noncanonical oriented closed shell");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     let losses = decoded
         .report()
         .losses
@@ -354,7 +346,7 @@ fn failed_void_shell_does_not_commit_the_outer_brep() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode BREP with invalid void shell");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded
         .ir()
         .native_unknowns("step")
@@ -379,9 +371,9 @@ fn complex_oriented_open_shell_preserves_shell_sense() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex oriented shell");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        decoded.ir().model.faces[0].sense,
+        decoded.ir().geometry.faces[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
@@ -401,7 +393,7 @@ fn aliased_topology_root_reuses_the_committed_body_identity() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode aliased topology root");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     assert_eq!(decoded.ir().model.product_definitions[0].bodies.len(), 1);
     assert_eq!(
         decoded.ir().model.product_definitions[0].bodies[0].as_str(),
@@ -424,7 +416,7 @@ fn topology_root_identity_uses_kind_shell_and_orientation_not_record_order() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode topology root identity witness");
 
-    let bodies = &decoded.ir().model.bodies;
+    let bodies = &decoded.ir().geometry.bodies;
     assert_eq!(bodies.len(), 3, "{:#?}", decoded.report().losses);
     assert!(bodies
         .iter()
@@ -446,7 +438,7 @@ fn topology_root_identity_uses_kind_shell_and_orientation_not_record_order() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode physically reordered topology roots");
 
-    let reordered_bodies = &reordered.ir().model.bodies;
+    let reordered_bodies = &reordered.ir().geometry.bodies;
     assert_eq!(
         reordered_bodies.len(),
         3,
@@ -473,7 +465,7 @@ fn shared_edge_references_are_scoped_by_independent_roots_not_record_order() {
 
     let body_ids = decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.as_str().to_owned())
@@ -487,7 +479,7 @@ fn shared_edge_references_are_scoped_by_independent_roots_not_record_order() {
     );
     let edge_ids = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| edge.id.as_str().to_owned())
@@ -503,7 +495,7 @@ fn shared_edge_references_are_scoped_by_independent_roots_not_record_order() {
     );
     let vertex_ids = decoded
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| vertex.id.as_str().to_owned())
@@ -528,10 +520,10 @@ fn shared_edge_references_are_scoped_by_independent_roots_not_record_order() {
             &DecodeOptions::default(),
         )
         .expect("decode physically reordered shared edge witness");
-    assert_eq!(reordered.ir().model.bodies.len(), 2);
+    assert_eq!(reordered.ir().geometry.bodies.len(), 2);
     let reordered_edge_ids = reordered
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| edge.id.as_str().to_owned())
@@ -563,16 +555,16 @@ fn topology_root_kind_preserves_distinct_body_kinds_for_shared_shells() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode shared shell roots");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 2);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 2);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.kind == BodyKind::Sheet));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.kind == BodyKind::Solid));
@@ -591,7 +583,7 @@ fn reused_shell_in_a_distinct_root_gets_a_new_owner_scope() {
         .expect("decode reused shell root");
 
     assert_eq!(
-        decoded.ir().model.bodies.len(),
+        decoded.ir().geometry.bodies.len(),
         3,
         "{:#?}",
         decoded.report().losses
@@ -599,7 +591,7 @@ fn reused_shell_in_a_distinct_root_gets_a_new_owner_scope() {
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .shells
             .iter()
             .filter(|shell| shell.id.as_str().contains("root-70"))
@@ -624,26 +616,26 @@ fn distinct_roots_with_shared_topology_get_owner_scopes() {
         .expect("decode independent roots sharing topology");
 
     assert_eq!(
-        decoded.ir().model.bodies.len(),
+        decoded.ir().geometry.bodies.len(),
         2,
         "{:#?}",
         decoded.report().losses
     );
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .any(|edge| edge.id.as_str().contains("root-70")));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .any(|edge| edge.id.as_str().contains("root-31")));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
         .any(|vertex| vertex.id.as_str().contains("root-70")));
@@ -663,12 +655,12 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
     let sheet = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode partial sheet witness");
-    assert_eq!(sheet.ir().model.bodies.len(), 1);
-    assert_eq!(sheet.ir().model.faces.len(), 1);
-    assert_eq!(sheet.ir().model.vertices.len(), 3);
+    assert_eq!(sheet.ir().geometry.bodies.len(), 1);
+    assert_eq!(sheet.ir().geometry.faces.len(), 1);
+    assert_eq!(sheet.ir().geometry.vertices.len(), 3);
     assert!(sheet
         .ir()
-        .model
+        .geometry
         .vertices
         .iter()
         .all(|vertex| !vertex.id.as_str().contains("#6")));
@@ -690,7 +682,7 @@ fn missing_vertex_carrier_salvages_complete_sheet_member_but_rejects_solid() {
     let solid = StepCodec::default()
         .decode(&mut Cursor::new(solid_source), &DecodeOptions::default())
         .expect("decode partial solid witness");
-    assert!(solid.ir().model.bodies.is_empty());
+    assert!(solid.ir().geometry.bodies.is_empty());
     assert!(solid.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyRootRejected.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Error
@@ -713,7 +705,7 @@ fn rejected_solid_root_reports_an_error_severity_loss() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("salvage mode accepts a destroyed solid");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyRootRejected.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Error
@@ -742,13 +734,12 @@ fn strict_decode_rejects_a_destroyed_solid() {
 #[test]
 pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let body = ir.model.bodies[0].id.clone();
-    let mut region = ir.model.regions[0].clone();
+    let body = ir.geometry.bodies[0].id.clone();
+    let mut region = ir.geometry.regions[0].clone();
     region.id = "zzzz:test:region#second"
         .try_into()
         .expect("valid identity");
-    ir.model.bodies[0].regions.push(region.id.clone());
-    ir.model.regions.push(region);
+    ir.geometry.regions.push(region);
     let mut builder = Builder::new(
         &ir,
         StepSchema::Ap242Edition3,
@@ -769,7 +760,7 @@ fn advanced_brep_representation_reuses_its_committed_solid_body() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode advanced B-rep representation");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!(!result
         .ir()
         .native_unknowns("step")
@@ -828,7 +819,7 @@ fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode mapped advanced B-rep representation");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
             .contains("ADVANCED_BREP_REPRESENTATION instance(s) as named opaque STEP records")
@@ -843,34 +834,34 @@ fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
 fn loop_starts(ir: &CadIr, loop_id: &cadmpeg_ir::ids::LoopId) -> Vec<[f64; 3]> {
     use cadmpeg_ir::topology::Sense;
 
-    let model = &ir.model;
-    let face_loop = model
+    let geometry = &ir.geometry;
+    let face_loop = geometry
         .loops
         .iter()
         .find(|face_loop| &face_loop.id == loop_id)
         .expect("loop carrier");
     let mut starts = Vec::new();
     for coedge_id in face_loop.coedges() {
-        let coedge = model
+        let coedge = geometry
             .coedges
             .iter()
             .find(|coedge| &coedge.id == coedge_id)
             .expect("coedge carrier");
-        let edge = model
+        let edge = geometry
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .expect("edge carrier");
         let vertex_id = match coedge.sense {
-            Sense::Forward => &edge.start,
-            Sense::Reversed => &edge.end,
+            Sense::Forward => &edge.ends.as_ref().unwrap().start,
+            Sense::Reversed => &edge.ends.as_ref().unwrap().end,
         };
-        let vertex = model
+        let vertex = geometry
             .vertices
             .iter()
             .find(|vertex| &vertex.id == vertex_id)
             .expect("vertex carrier");
-        let point = model
+        let point = geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)
@@ -902,7 +893,7 @@ fn oriented_plane_normal(ir: &CadIr, face: &cadmpeg_ir::topology::Face) -> [f64;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)
@@ -966,9 +957,9 @@ fn reversed_closed_shell_reverses_face_sense_and_loop_traversal() {
     ] {
         let decoded = decode_wrapped_box(face_use, wrappers, min, max);
         let ir = decoded.ir();
-        assert_eq!(ir.model.bodies.len(), 1);
-        assert_eq!(ir.model.faces.len(), 6);
-        for (index, face) in ir.model.faces.iter().enumerate() {
+        assert_eq!(ir.geometry.bodies.len(), 1);
+        assert_eq!(ir.geometry.faces.len(), 6);
+        for (index, face) in ir.geometry.faces.iter().enumerate() {
             let normal = oriented_plane_normal(ir, face);
             let axis = normal
                 .iter()

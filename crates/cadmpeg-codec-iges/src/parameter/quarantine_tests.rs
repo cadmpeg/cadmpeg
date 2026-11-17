@@ -68,7 +68,7 @@ fn an_unreadable_literal_retains_the_other_fields_and_refuses_required_geometry(
         "unreadable"
     );
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
     assert_eq!(
         code_count(result.report(), IgesLossCode::ParameterLiteralUnusable),
         1
@@ -125,7 +125,7 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
     let native = result.ir().native.namespace("iges").unwrap();
     let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(native.arenas()["entities"].len(), 2);
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
     let fields = quarantined[0].fields().unwrap();
@@ -158,7 +158,7 @@ fn a_declared_count_of_zero_defers_to_the_back_pointer_census() {
 
     let native = result.ir().native.namespace("iges").unwrap();
     assert!(native.arenas()["quarantined_parameter_records"].is_empty());
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         code_count(result.report(), IgesLossCode::CardFramingRecovered),
@@ -249,7 +249,7 @@ fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
 
     let native = result.ir().native.namespace("iges").unwrap();
     let quarantined = &native.arenas()["quarantined_parameter_records"];
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
     assert_eq!(quarantined[0].fields().unwrap()["defect"], "no-owned-cards");
@@ -331,7 +331,7 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
     let native = result.ir().native.namespace("iges").unwrap();
     let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(native.arenas()["entities"].len(), 2);
-    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
     assert_eq!(quarantined.len(), 2);
     for record in quarantined {
         assert_eq!(record.fields().unwrap()["defect"], "ownership-conflict");

@@ -605,7 +605,7 @@ fn primitive_placement_composes_body_and_validator_rejects_changed_frame() {
     let mut value = serde_json::to_value(decoded.ir()).unwrap();
     let features = value["model"]["features"].as_array_mut().unwrap();
     let feature = features.iter_mut().find(|f| f["name"] == "Box").unwrap();
-    feature["definition"]["placement"] =
+    feature["definition"]["value"]["value"]["placement"] =
         serde_json::to_value(cadmpeg_ir::features::FeatureRigidPlacement::identity()).unwrap();
     let changed = serde_json::from_value(value).unwrap();
     assert!(crate::test_support::validate_native(&changed)

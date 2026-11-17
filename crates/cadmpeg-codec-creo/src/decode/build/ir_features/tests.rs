@@ -36,9 +36,9 @@ fn regeneration_edge_commit_installs_feature_parent() {
     child.id = child_id.clone();
     child.ordinal = 1;
     ir.model.features.push(child);
-    commit_regeneration_edges(&mut ir, vec![(child_id.clone(), parent_id.clone())])
-        .expect("regeneration parent");
+    let refused = commit_regeneration_edges(&mut ir, vec![(child_id.clone(), parent_id.clone())]);
     assert_eq!(ir.model.feature_parent(&child_id), Some(&parent_id));
+    assert!(refused.is_empty());
 }
 
 fn feature_for_output_refresh() -> cadmpeg_ir::features::Feature {

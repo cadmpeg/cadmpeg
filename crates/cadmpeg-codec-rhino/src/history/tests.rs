@@ -323,6 +323,10 @@ fn full_history_document_retains_geometry_without_a_physical_binding() {
                     )
                 });
             assert_eq!(source.data(), Some(history_record.as_slice()));
+            assert_eq!(
+                source.untyped().iter().copied().collect::<Vec<_>>(),
+                [cadmpeg_core::decode::ArenaClass::Model]
+            );
             assert!(result.report().losses.iter().any(|loss| {
                 loss.code == crate::loss::RhinoLossCode::HistoryGeometryNotTransferred.kind()
                     && loss.message.contains("no coordinate-unit binding")
@@ -394,6 +398,43 @@ fn unknown_history_record_type_is_retained_opaque() {
         .find(|value| value.table_typecode & !TCODE_CRC == 0x1000_0026)
         .expect("unknown record type retained");
     assert_eq!(&scan.data[retained.record.range.clone()], record.as_slice());
+}
+
+#[test]
+fn an_unknown_history_record_kept_without_decoding_is_untyped_model_content() {
+    let archive = ArchiveVersion::V5;
+    let record = source_band_history_record_with_major(archive, 1, 1, 2, &[]);
+    let bytes = minimal_document(
+        "50",
+        &[
+            crc_table(archive, 0x1000_0014, &[]),
+            crc_table(archive, 0x1000_0015, &[]),
+            crc_table(archive, 0x1000_0013, &[]),
+            crc_table(archive, 0x1000_0026, std::slice::from_ref(&record)),
+        ],
+    );
+    let result = EditableDecodeResult::from(
+        crate::RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("history document"),
+    );
+    let marked = result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(_, retained)| !retained.untyped().is_empty())
+        .map(|(id, retained)| {
+            (
+                id.as_str().to_owned(),
+                retained.data().map(<[u8]>::to_vec),
+                retained.untyped().iter().copied().collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(marked.len(), 1, "{marked:?}");
+    assert!(marked[0].0.starts_with("rhino:opaque:record#"));
+    assert_eq!(marked[0].1.as_deref(), Some(record.as_slice()));
+    assert_eq!(marked[0].2, [cadmpeg_core::decode::ArenaClass::Model]);
 }
 
 #[test]
