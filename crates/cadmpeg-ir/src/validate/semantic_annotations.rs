@@ -4,6 +4,7 @@
 use super::record_finding;
 use crate::index::identities::IdentitySet;
 
+use crate::document::design_records::DesignRecords;
 use crate::document::CadIr;
 use crate::report::{
     check::{Check, Finding},
@@ -15,6 +16,7 @@ pub(super) fn check_semantic_annotations(
     all_ids: &dyn IdentitySet,
     findings: &mut Vec<Finding>,
 ) {
+    let records = DesignRecords::of(ir);
     let mut orders = std::collections::BTreeSet::new();
     for annotation in &ir.model.semantic_annotations {
         let native = |target: &str| {
@@ -32,11 +34,9 @@ pub(super) fn check_semantic_annotations(
         if refs_valid {
             'groups: for targets in annotation.references.values() {
                 for target in targets {
-                    if let Some(id) = target.local_target() {
-                        if !all_ids.contains(id) {
-                            refs_valid = false;
-                            break 'groups;
-                        }
+                    if !target.target.resolves(&records, |id| all_ids.contains(id)) {
+                        refs_valid = false;
+                        break 'groups;
                     }
                 }
             }

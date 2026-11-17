@@ -37,6 +37,13 @@ const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
 const PRODUCT_DEFINITION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION",
     "PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS",
+    "DUCTING_SYSTEM",
+    "INSTRUMENTATION_AND_CONTROL_SYSTEM",
+    "PIPING_COMPONENT_DEFINITION",
+    "PIPING_SYSTEM",
+    "PLANT_LINE_DEFINITION",
+    "PLANT_LINE_SEGMENT_DEFINITION",
+    "STRUCTURAL_SYSTEM",
 ];
 const DRAWING_ITEM_OWNER_TYPES: &[&str] = &[
     "DRAWING_SHEET_REVISION",
@@ -1332,7 +1339,7 @@ fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
         return Some(partial.parameters.as_slice());
     }
     match record.simple_name() {
-        Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => {
+        Some(name) if PRODUCT_DEFINITION_TYPES.contains(&name) => {
             Some(record.partials.first().parameters.as_slice())
         }
         _ => None,
