@@ -88,7 +88,9 @@ pub(in crate::feature) fn project(
             } else {
                 inventory.edge_inputs.geometry.get(&key)
             }
-            .ok_or_else(|| CodecError::malformed("Inventor attachment has no stored edge geometry"))?;
+            .ok_or_else(|| {
+                CodecError::malformed("Inventor attachment has no stored edge geometry")
+            })?;
             let edge = HistoricalEdgeId::mint(format!("inventor:input-edge#{token}-{source}"))
                 .map_err(CodecError::malformed)?;
             geometry.push(HistoricalEdgeGeometry {

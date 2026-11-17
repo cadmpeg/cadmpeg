@@ -213,7 +213,10 @@ fn historical_attachment(
             };
             if edge.item != item
                 || !owners.insert(edge.owner)
-                || !inventory.edge_inputs.historical_generators.contains_key(&key)
+                || !inventory
+                    .edge_inputs
+                    .historical_generators
+                    .contains_key(&key)
             {
                 return Ok(None);
             }
@@ -232,13 +235,16 @@ fn attachment(
 ) -> Result<EdgeSelection, PlateError> {
     let (selection, collections) = attachment_collections(source, index)?;
     if let Some(edges) = generated_attachment(&collections, index) {
-        return Ok(EdgeSelection::generated(edges, selection.id())
-            .map_err(|_| PlateRefusal::EdgeName)?);
+        return Ok(
+            EdgeSelection::generated(edges, selection.id()).map_err(|_| PlateRefusal::EdgeName)?
+        );
     }
     let edges = historical_attachment(source, &collections, index, inventory)?
         .refuse(PlateRefusal::EdgeName)?;
-    Ok(EdgeSelection::historical(historical::state_id(source)?, edges, selection.id())
-        .map_err(|_| PlateRefusal::EdgeName)?)
+    Ok(
+        EdgeSelection::historical(historical::state_id(source)?, edges, selection.id())
+            .map_err(|_| PlateRefusal::EdgeName)?,
+    )
 }
 
 /// Whether every selected attachment edge has stored input geometry.
@@ -252,9 +258,7 @@ fn attachment_geometry(
         let key = (token.to_owned(), *source);
         match attachment {
             EdgeSelection::Generated { .. } => inventory.edge_inputs.geometry.contains_key(&key),
-            EdgeSelection::Historical { .. } => {
-                inventory.edge_inputs.historical.contains_key(&key)
-            }
+            EdgeSelection::Historical { .. } => inventory.edge_inputs.historical.contains_key(&key),
             _ => false,
         }
     })
@@ -444,9 +448,7 @@ pub(in crate::feature) fn reject_unresolved_inputs(
                 edges.iter().all(|edge| earlier(edge.feature.as_str()))
             }
             EdgeSelection::Historical { .. } => historical_producers(&item.feature, inventory)?
-                .is_some_and(|features| {
-                    features.iter().all(|feature| earlier(feature.as_str()))
-                }),
+                .is_some_and(|features| features.iter().all(|feature| earlier(feature.as_str()))),
             _ => false,
         };
         if complete {

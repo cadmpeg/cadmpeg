@@ -623,7 +623,11 @@ fn the_attachment_names_a_missing_list_before_a_missing_edge_name() {
         &[],
     );
     assert_eq!(
-        refusal(attachment(&fixture.plate, &index, &FeatureInventory::default())),
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
         Err(PlateRefusal::SelectionList)
     );
     // The list resolves, but the edge source has no generated name.
@@ -639,21 +643,32 @@ fn the_attachment_names_a_missing_list_before_a_missing_edge_name() {
         &[],
     );
     assert_eq!(
-        refusal(attachment(&fixture.plate, &index, &FeatureInventory::default())),
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
         Err(PlateRefusal::EdgeName)
     );
     // The source has an unnamed entry.
     index.edge_names.insert(("fixture".to_owned(), 61), None);
     assert_eq!(
-        refusal(attachment(&fixture.plate, &index, &FeatureInventory::default())),
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
         Err(PlateRefusal::EdgeName)
     );
     index
         .edge_names
         .insert(("fixture".to_owned(), 61), Some(named_edge()));
-    let EdgeSelection::Generated { edges, .. } =
-        refusal(attachment(&fixture.plate, &index, &FeatureInventory::default())).expect("generated")
-    else {
+    let EdgeSelection::Generated { edges, .. } = refusal(attachment(
+        &fixture.plate,
+        &index,
+        &FeatureInventory::default(),
+    ))
+    .expect("generated") else {
         panic!("generated selection");
     };
     assert_eq!(edges.as_slice(), [named_edge()]);
@@ -709,7 +724,11 @@ fn the_attachment_requires_wrappers_over_edge_collections() {
             .edge_names
             .insert(("fixture".to_owned(), 61), Some(named_edge()));
         assert_eq!(
-            refusal(attachment(&fixture.plate, &index, &FeatureInventory::default())),
+            refusal(attachment(
+                &fixture.plate,
+                &index,
+                &FeatureInventory::default()
+            )),
             Err(PlateRefusal::SelectionList),
             "property {slot}"
         );
@@ -745,7 +764,11 @@ fn a_repeated_generated_edge_is_refused_as_an_edge_name() {
         .edge_names
         .insert(("fixture".to_owned(), 61), Some(named_edge()));
     assert_eq!(
-        refusal(attachment(&fixture.plate, &index, &FeatureInventory::default())),
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
         Err(PlateRefusal::EdgeName)
     );
 }
@@ -825,10 +848,7 @@ fn an_unnamed_attachment_edge_selects_its_stored_input_revision() {
     else {
         panic!("historical selection");
     };
-    assert_eq!(
-        state,
-        historical::state_id(&fixture.plate).expect("state")
-    );
+    assert_eq!(state, historical::state_id(&fixture.plate).expect("state"));
     assert_eq!(
         edges.iter().cloned().collect::<Vec<_>>(),
         [historical::edge_id("fixture", 61).expect("edge")]
@@ -930,21 +950,19 @@ fn a_historical_attachment_requires_preceding_projected_generators() {
     let mut accepted = items(true);
     let mut refusals = Refusals::default();
     assert_eq!(
-        reject_unresolved_inputs(&ctx, &mut accepted, &inventory, &mut refusals)
-            .expect("accepted"),
+        reject_unresolved_inputs(&ctx, &mut accepted, &inventory, &mut refusals).expect("accepted"),
         0
     );
     assert!(accepted[1].neutral);
     // A native generator leaves the plate native.
     let mut rejected = items(false);
     assert_eq!(
-        reject_unresolved_inputs(&ctx, &mut rejected, &inventory, &mut refusals)
-            .expect("rejected"),
+        reject_unresolved_inputs(&ctx, &mut rejected, &inventory, &mut refusals).expect("rejected"),
         1
     );
     assert!(!rejected[1].neutral);
-    let wire = serde_json::to_string(&refusals.losses(&[rejected[1].feature.clone()]))
-        .expect("notes");
+    let wire =
+        serde_json::to_string(&refusals.losses(&[rejected[1].feature.clone()])).expect("notes");
     assert!(wire.contains("input-producer"));
     // A generator that names no feature record of the segment leaves it native.
     inventory
