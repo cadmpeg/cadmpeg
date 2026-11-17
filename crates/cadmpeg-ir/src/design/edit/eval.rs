@@ -594,7 +594,7 @@ pub fn evaluate(
 
 /// The type of an expression node (§5.13).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) enum Type {
+pub(crate) enum Type {
     /// A number of a quantity.
     Number(Quantity),
     /// A Boolean.
@@ -608,7 +608,7 @@ pub(super) enum Type {
 impl Type {
     /// The type of a parameter of a kind, `None` for a `Native` kind, which
     /// has no §5.13 type.
-    pub(super) const fn of_kind(kind: &ValueKind) -> Option<Self> {
+    pub(crate) const fn of_kind(kind: &ValueKind) -> Option<Self> {
         match kind {
             ValueKind::Quantity(quantity) => Some(Self::Number(*quantity)),
             ValueKind::Integer => Some(Self::Number(DIMENSIONLESS)),
@@ -821,7 +821,7 @@ enum Check<'a> {
 /// # Errors
 ///
 /// Returns why a node does not type-check.
-pub(super) fn check_types(
+pub(crate) fn check_types(
     root: &Node<ParameterRef>,
     reference: &dyn Fn(&ParameterRef) -> Result<Type, String>,
 ) -> Result<Type, String> {

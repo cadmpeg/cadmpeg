@@ -10,10 +10,12 @@ use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use crate::attributes::{AttributeExpression, AttributeTarget, AttributeValue, SourceAttribute};
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::expr::{
-    BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Measure, MeasureKind,
-    MeasureTarget, Neutral, Node,
+    parse, BinaryOp, Constant, Expression, ExpressionDialect, ExpressionToken, Measure,
+    MeasureKind, MeasureTarget, Neutral, Node,
 };
+use crate::design::parameter::{DesignParameter, ParameterDefinition};
 use crate::design::selection::OrderedSelection;
+use crate::design::units::{Quantity, ValueKind};
 use crate::examples::unit_cube;
 use crate::features::ParameterId;
 use crate::ids::{AppearanceId, AttributeId};
@@ -400,6 +402,87 @@ fn an_attribute_expression_meets_the_expression_rules() {
         })),
         ["references missing parameter `test:design:parameter#absent`"]
     );
+}
+
+fn design_parameter(key: &str, kind: ValueKind) -> DesignParameter {
+    DesignParameter {
+        id: ParameterId::mint(format!("test:design:parameter#{key}")).unwrap(),
+        scope: "test:model:product-definition#part".try_into().unwrap(),
+        owner: None,
+        name: Some(cadmpeg_core::text::NonBlankString::new(key).unwrap()),
+        kind,
+        unit: None,
+        definition: ParameterDefinition::Driven,
+        value: None,
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+
+#[test]
+fn an_attribute_expression_type_checks() {
+    let mass = ParameterId::mint("test:design:parameter#mass").unwrap();
+    let length = design_parameter("length", ValueKind::Quantity(Quantity::LENGTH));
+    let flag = design_parameter("flag", ValueKind::Boolean);
+    let refs = [reference(&mass), reference(&length.id), reference(&flag.id)];
+    let findings = |text: &str| {
+        let mut ir = unit_cube().unwrap();
+        ir.model.parameters.push(parameter(&mass));
+        ir.design.parameters.extend([length.clone(), flag.clone()]);
+        let node = parse(text, &refs, &[]).unwrap();
+        ir.model.attributes.push(attribute(
+            AttributeTarget::Document,
+            expression_value(Expression::Neutral(Neutral(node))),
+        ));
+        design_findings(&ir, ATTRIBUTE)
+    };
+    let refused = |reason: &str| [format!("expression does not type-check: {reason}")];
+
+    for admitted in [
+        "atan2(1[mm], 2[mm])",
+        "min(1[mm], $1, 3[mm])",
+        "if($2, 1[mm], $1)",
+        "if(1[mm] < 2[mm], \"a\", \"b\")",
+        "$0 + 1[deg]",
+        "$1 * $1 + 1[mm]^2",
+        "sin(30[deg]) == 0.5",
+        "not $2 and true",
+    ] {
+        assert_eq!(findings(admitted), Vec::<String>::new(), "{admitted}");
+    }
+    assert_eq!(findings("atan2(pi)"), refused("atan2 takes two arguments"));
+    assert_eq!(
+        findings("sin(1[deg], 2[deg])"),
+        refused("sin takes one argument")
+    );
+    assert_eq!(
+        findings("min(1[mm])"),
+        refused("min takes at least two arguments")
+    );
+    assert_eq!(
+        findings("if(true, 1[mm], 1[deg])"),
+        refused("if takes operands of one quantity")
+    );
+    assert_eq!(
+        findings("if(false, 1[mm], $1 * $1)"),
+        refused("if takes operands of one quantity")
+    );
+    assert_eq!(findings("true + 1"), refused("+ and - takes a number"));
+    assert_eq!(findings("$2 + 1"), refused("+ and - takes a number"));
+    assert_eq!(
+        findings("$1 + 1[deg]"),
+        refused("+ and - takes operands of one quantity")
+    );
+    assert_eq!(
+        findings("1[mm]^(1 + 1)"),
+        refused("a dimensioned base takes a literal exponent")
+    );
+    assert_eq!(findings("if(1, 2, 3)"), refused("if takes a Boolean"));
 }
 
 #[test]

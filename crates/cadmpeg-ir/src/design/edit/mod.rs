@@ -26,7 +26,7 @@
 
 mod caches;
 mod configuration;
-mod eval;
+pub(crate) mod eval;
 mod history;
 mod members;
 mod resolve;
