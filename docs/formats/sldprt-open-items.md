@@ -1070,7 +1070,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What curve does a sketch curve record of type `0xffff` in the arc layout define?
 
-**Known.** `sldprt.md` §2 "Sketch objects" gives the record the arc's layout: two endpoint indices, u16 `0`, a centre index and four i32 `-2`. A type-`1` arc runs counterclockwise about its centre from its first endpoint to its second.
+**Known.** `sldprt.md` §2.3 "A *text record* has a curve record's fields" gives the record the arc's layout: two endpoint indices, u16 `0`, a centre index and four i32 `-2`. A type-`1` arc runs counterclockwise about its centre from its first endpoint to its second.
 
 **Need.** Type-`0xffff` records whose curves bound faces of a stored solid, compared with the counterclockwise and clockwise readings.
 
@@ -1078,7 +1078,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
 
-**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. With bit 0 clear, the indices select point records of the same `sgSketch` object (`sldprt.md` §2 "Sketch objects"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. With bit 0 clear, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
 
 **Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
 
