@@ -472,3 +472,45 @@ fn selectors_outside_the_prototype_and_unknown_occurrences_are_refused() {
         Err(MeasureError::OutsideOccurrence { .. })
     ));
 }
+
+/// An override of `top` that places `inner` by (0, 0, 10) in place of its
+/// own transform (§8.1): `top ∘ override ∘ body` moves the centroid
+/// (1, 1.5, 7) to (101, 1.5, 17), in the space of `inner` and in the subtree
+/// of `top` alike.
+#[test]
+fn an_override_of_the_top_level_occurrence_places_its_nested_instance() {
+    use cadmpeg_ir::design::selection::{OccurrencePath, PathStep, StepRef};
+    let mut ir = placed_block();
+    let moved = Transform::affine([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 10.0],
+    ])
+    .expect("transform");
+    ir.model
+        .occurrences
+        .iter_mut()
+        .find(|occurrence| occurrence.id == occurrence_id("top"))
+        .expect("top")
+        .overrides
+        .push(cadmpeg_ir::products::NestedOverride {
+            path: OccurrencePath(vec![PathStep {
+                occurrence: StepRef::Occurrence(occurrence_id("inner")),
+                configuration: None,
+            }]),
+            transform: Some(moved),
+            suppressed: None,
+            visible: None,
+            representation: None,
+        });
+    for key in ["inner", "top"] {
+        let report = in_occurrence(&ir, key);
+        let [body] = report.bodies().as_slice() else {
+            panic!("one body row");
+        };
+        assert_point(
+            body.centroid().as_ref().expect("centroid"),
+            [101.0, 1.5, 17.0],
+        );
+    }
+}
