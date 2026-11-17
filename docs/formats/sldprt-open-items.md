@@ -1171,3 +1171,11 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** In 4 parts of 4 designs, 57 `sgSketch` objects with readable curve records (`sldprt.md` §2.3) lie in the span of a `Sheet-Metal` feature object and before the next named feature object. No sketch feature object encloses them, so no neutral sketch receives their curves. A `Break-Corner` and a `SketchBend` feature object each enclose one such object.
 
 **Need.** The object that writes each `sgSketch` (the sheet-metal feature itself, a sketch it absorbs, or a flat-pattern sketch), and the curves compared with the faces of the stored solid and its flat pattern.
+
+### DI-75. The `sgSketch` object that holds a profile body in a stream read without a complete object walk
+
+**Question.** In a `ResolvedFeatures` stream whose object walk (§2.3) stops before the end, which `sgSketch` object, and so which sketch feature, holds each profile body?
+
+**Known.** A profile body follows little-endian u32 `3` and a zero flag byte (`sldprt.md` §2.3) and belongs to the innermost profile-family object that holds it. Without a complete walk, the feature-name records do not delimit those objects. In 149 parts, 383 profile bodies have curves whose radii or lengths can be compared with the curve records of the `sgSketch` lists of the same stream. For 366 bodies, some list shares a radius or length with the body. The list before the body is that list for 141 bodies. For 99 bodies only one list shares a value with the body. That list is the list before the body for 8 of them, stands one to eight lists earlier for 90, and follows the body for 1. The name span that holds a body binds it to a sketch feature whose own list shares no value with the body for 189 of 349 sketch features in 79 designs.
+
+**Need.** A complete object walk of these streams, or the field of the profile-family object that points to its `sgSketch` object, compared with the faces each consuming feature produces.
