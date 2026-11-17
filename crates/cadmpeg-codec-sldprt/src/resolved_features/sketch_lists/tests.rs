@@ -424,7 +424,10 @@ fn a_listed_line_or_arc_ends_at_the_point_records_of_its_indices() {
 fn a_full_circle_and_a_point_record_have_no_listed_ends() {
     let sample = sample();
     let lists = SketchRecordLists::new(&sample.payload);
-    assert_eq!(lists.listed_curve_ends(&sample.payload, sample.circle), None);
+    assert_eq!(
+        lists.listed_curve_ends(&sample.payload, sample.circle),
+        None
+    );
     assert_eq!(
         lists.listed_curve_ends(&sample.payload, sample.points[0]),
         None

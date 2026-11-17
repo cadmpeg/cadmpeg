@@ -204,7 +204,9 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
         .collect::<Vec<_>>();
     // Projected records stand among the curve records; the list ends at its
     // last curve record.
-    let last = run.iter().rposition(|&curve| curve_record(payload, curve))?;
+    let last = run
+        .iter()
+        .rposition(|&curve| curve_record(payload, curve))?;
     let curves = run.get(..=last)?.to_vec();
     Some(SketchRecordList {
         points: points.to_vec(),

@@ -1,6 +1,5 @@
 //! Sketch marker record decoding and profile point coordinates.
 
-use super::sketch_lists::{CurveForm, SketchRecordLists};
 use super::bindings::spatial_relation_manager_ranges;
 use super::curves::slot_curve_and_center_indices;
 use super::endpoints::{
@@ -19,6 +18,7 @@ use super::relation_loci::same_dimension_length;
 use super::relation_records::unique_relation_declaration_candidates;
 use super::scalars::{operand_kind, FeatureObjectNames, FeatureObjectStarts};
 use super::selections::{marker_local_links, operand_accepts_marker};
+use super::sketch_lists::{CurveForm, SketchRecordLists};
 use super::{
     is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
     SPATIAL_VERTEX_PREFIX,

@@ -83,7 +83,7 @@ fn payload(listed: bool) -> (Vec<u8>, [usize; 3]) {
 fn kind_at(payload: &[u8], offset: usize) -> Option<SketchInputKind> {
     sketch_input_entities(payload, "sldprt:feature-input:resolved-features#1")
         .into_iter()
-        .find(|marker| marker.offset() == offset as u64)
+        .find(|marker| usize::try_from(marker.offset()).ok() == Some(offset))
         .map(|marker| marker.kind())
 }
 
@@ -92,7 +92,10 @@ fn a_listed_curve_record_is_a_curve_whatever_its_code() {
     let (payload, [line, arc, circle]) = payload(true);
     assert_eq!(kind_at(&payload, line), Some(SketchInputKind::LineOrCircle));
     assert_eq!(kind_at(&payload, arc), Some(SketchInputKind::Arc));
-    assert_eq!(kind_at(&payload, circle), Some(SketchInputKind::LineOrCircle));
+    assert_eq!(
+        kind_at(&payload, circle),
+        Some(SketchInputKind::LineOrCircle)
+    );
 }
 
 #[test]
