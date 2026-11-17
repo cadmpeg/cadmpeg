@@ -9,6 +9,7 @@
 
 use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i32};
 
+use crate::design::dimension::ParameterRef;
 use crate::design::expr::{BinaryOp, Constant, Function, MeasureKind, Node, UnaryOp};
 use crate::design::parameter::ParameterValue;
 use crate::design::units::{Quantity, Unit, UnitSymbol, ValueKind};
@@ -191,7 +192,7 @@ fn same(left: Quantity, right: Quantity, what: &str) -> Result<Quantity, EvalErr
 }
 
 /// The value of a literal exponent: a number, or a negated number.
-fn literal_exponent<R>(node: &Node<R>) -> Option<f64> {
+fn literal_exponent(node: &Node<ParameterRef>) -> Option<f64> {
     match node {
         Node::Number { value, unit } if unit.0.is_empty() => Some(value.get()),
         Node::Unary {
@@ -299,11 +300,11 @@ fn compare(op: BinaryOp, left: Value, right: Value) -> Result<Value, EvalError> 
     Ok(Value::Boolean(result))
 }
 
-fn binary<R>(
+fn binary(
     op: BinaryOp,
     left: Value,
     right: Value,
-    right_node: &Node<R>,
+    right_node: &Node<ParameterRef>,
 ) -> Result<Value, EvalError> {
     match op {
         BinaryOp::Add | BinaryOp::Subtract => {
@@ -486,16 +487,16 @@ fn call(function: Function, args: Vec<Value>) -> Result<Value, EvalError> {
     }
 }
 
-enum Task<'a, R> {
-    Visit(&'a Node<R>),
+enum Task<'a> {
+    Visit(&'a Node<ParameterRef>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<R>),
+    Binary(BinaryOp, &'a Node<ParameterRef>),
     Call(Function, usize),
-    Branch(&'a Node<R>, &'a Node<R>),
+    Branch(&'a Node<ParameterRef>, &'a Node<ParameterRef>),
 }
 
-/// Evaluates a neutral tree on canonical values. `reference` gives a
-/// reference's value, or `None` where it has none.
+/// Evaluates a neutral design expression tree on canonical values.
+/// `reference` gives a reference's value, or `None` where it has none.
 ///
 /// # Errors
 ///
@@ -503,9 +504,9 @@ enum Task<'a, R> {
 /// parameter, or a bend variable has no value, [`EvalError::Type`] where an
 /// operand does not have the quantity or kind its operator takes, and
 /// [`EvalError::Domain`] for an operation outside its domain.
-pub fn evaluate<R>(
-    root: &Node<R>,
-    reference: &mut dyn FnMut(&R) -> Option<Value>,
+pub fn evaluate(
+    root: &Node<ParameterRef>,
+    reference: &mut dyn FnMut(&ParameterRef) -> Option<Value>,
 ) -> Result<Value, EvalError> {
     let mut tasks = vec![Task::Visit(root)];
     let mut values: Vec<Value> = Vec::new();
