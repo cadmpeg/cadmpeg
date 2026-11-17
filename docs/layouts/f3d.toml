@@ -10194,7 +10194,7 @@ anchor = "Each selected region starts with a nonzero u32 loop count."
 name = "sketch_profile_region_member"
 kind = "byte"
 section = "3.1"
-anchor = "Each member is 40 bytes: u32 kind `3`, one nonzero u32 primary persistent Sketch-curve identity, three zero u32 values, three incidence values, and two zero u32 values."
+anchor = "Each member is 40 bytes: u32 kind `3`, the nonzero u32 primary persistent Sketch-curve identity, a zero u32, the u32 secondary persistent Sketch-curve identity, a second zero u32, three incidence values, and two zero u32 values."
 size = 40
 note = "The member repeats within each selected region. Region and member counts and the later-region marker are outside this fixed member frame."
 
@@ -10210,14 +10210,28 @@ name = "curve_primary_id"
 offset = 4
 type = "u32"
 source = "spec"
-anchor = "one nonzero u32 primary persistent Sketch-curve identity"
+anchor = "the nonzero u32 primary persistent Sketch-curve identity"
 
 [[record.field]]
-name = "zero_words_3"
+name = "zero_word_after_primary"
 offset = 8
-type = "u32[3]"
+type = "u32"
 source = "spec"
-anchor = "three zero u32 values"
+anchor = "a zero u32"
+
+[[record.field]]
+name = "curve_secondary_id"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "the u32 secondary persistent Sketch-curve identity"
+
+[[record.field]]
+name = "zero_word_after_secondary"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "a second zero u32"
 
 [[record.field]]
 name = "incidence_words"

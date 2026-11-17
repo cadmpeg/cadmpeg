@@ -79,6 +79,8 @@ pub(crate) struct ProfileGeometryWork {
     cap_outline_assumed_selections: Cell<usize>,
     cap_carrier_assumed: Cell<bool>,
     cap_carrier_assumed_selections: Cell<usize>,
+    spatial_transition_assumed: Cell<bool>,
+    spatial_transition_assumed_selections: Cell<usize>,
     hole_boundary_inferred_selections: Cell<usize>,
     region_hole_inferred_selections: Cell<usize>,
 }
@@ -115,6 +117,8 @@ impl ProfileGeometryWork {
             cap_outline_assumed_selections: Cell::new(0),
             cap_carrier_assumed: Cell::new(false),
             cap_carrier_assumed_selections: Cell::new(0),
+            spatial_transition_assumed: Cell::new(false),
+            spatial_transition_assumed_selections: Cell::new(0),
             hole_boundary_inferred_selections: Cell::new(0),
             region_hole_inferred_selections: Cell::new(0),
         }
@@ -220,6 +224,10 @@ impl ProfileGeometryWork {
                 &self.cap_carrier_assumed,
                 &self.cap_carrier_assumed_selections,
             ),
+            (
+                &self.spatial_transition_assumed,
+                &self.spatial_transition_assumed_selections,
+            ),
         ] {
             if skipped.take() {
                 selections.set(selections.get() + 1);
@@ -287,6 +295,12 @@ impl ProfileGeometryWork {
     /// edge read from its samples.
     pub(crate) fn note_cap_carrier_assumed(&self) {
         self.cap_carrier_assumed.set(true);
+    }
+
+    /// Record that the open selection stated the stored spatial profiles of a
+    /// spatial Sketch frame that the Extrude transition did not certify.
+    pub(crate) fn note_spatial_transition_assumed(&self) {
+        self.spatial_transition_assumed.set(true);
     }
 
     /// One loss for each cap that made a closed selection skip a search.
@@ -362,6 +376,12 @@ impl ProfileGeometryWork {
         if cap_carrier != 0 {
             losses.push(F3dLossCode::FeatureProfileCapCarrierAssumed.note(format!(
                 "{cap_carrier} extrude profile selection(s) were read from an end cap with an edge whose carrier is not proven. The reading assumes, from the edge's end points and interior sample, that the edge is the straight line between its ends, or the circular arc through its ends and the sample."
+            )));
+        }
+        let spatial_transition = self.spatial_transition_assumed_selections.get();
+        if spatial_transition != 0 {
+            losses.push(F3dLossCode::FeatureSpatialProfileTransitionAssumed.note(format!(
+                "{spatial_transition} extrude profile selection(s) stated the spatial profiles that the stored selection of a spatial Sketch frame names, or the one profile of the Sketch. The Extrude transition did not certify the stored spatial selection: its far caps were not compared with the union of the profiles (DR-780)."
             )));
         }
         let hole_inferred = self.hole_boundary_inferred_selections.get();
