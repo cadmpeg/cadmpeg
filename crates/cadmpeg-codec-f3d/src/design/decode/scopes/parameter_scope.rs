@@ -535,8 +535,8 @@ pub(crate) fn decode_parameter_scopes(
                 let construction =
                     exact_surface_extend_operation(bytes, &records, &scope, &mut losses);
                 if let Some(operation) = &construction {
-                    let distance = operation.distance.get();
                     use crate::loss::F3dLossCode;
+                    let distance = operation.distance.get();
                     match operation.distance_mm() {
                         Some(length) if length.get() > 0.0 => losses.push(
                             F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
