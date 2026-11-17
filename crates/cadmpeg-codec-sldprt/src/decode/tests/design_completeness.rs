@@ -380,7 +380,12 @@ fn design_completeness_audits_typed_construction_families() {
                 cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
                     .expect("distinct bodies"),
             ),
-            cells: cadmpeg_ir::features::NonEmptyMembers::one(BodySelection::Unresolved),
+            cells: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::BoundaryFillCell::BodyRegion(BodySelection::Unresolved),
+            ),
+            plane_tools: Vec::new(),
+            operation: None,
+            remove_tools: None,
         }),
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {

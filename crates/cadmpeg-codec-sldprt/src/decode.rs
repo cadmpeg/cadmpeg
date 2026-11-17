@@ -1922,8 +1922,15 @@ pub(crate) fn append_design_losses(
                             cadmpeg_ir::features::CombineDestination::NewComponent
                         )
                 }
-                FeatureOperation::BoundaryFill { tools, cells } => {
-                    incomplete_body_selection(tools) || cells.iter().any(incomplete_body_selection)
+                FeatureOperation::BoundaryFill { tools, cells, plane_tools, .. } => {
+                    incomplete_body_selection(tools)
+                        || !plane_tools.is_empty()
+                        || cells.iter().any(|cell| match cell {
+                            cadmpeg_ir::features::BoundaryFillCell::BodyRegion(body) => {
+                                incomplete_body_selection(body)
+                            }
+                            cadmpeg_ir::features::BoundaryFillCell::Recorded { .. } => true,
+                        })
                 }
                 FeatureOperation::CutWithSurface { targets, tools, .. } => {
                     incomplete_body_selection(targets) || incomplete_face_selection(tools)

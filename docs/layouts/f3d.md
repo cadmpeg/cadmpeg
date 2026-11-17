@@ -11902,6 +11902,39 @@ Unstated regions:
 
 - `0..21` (21 B): Indexed header and mesh scope prefix.
 
+## `boundary_fill_scope_prefix_plain`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+This form uses property flag zero and operation at offset 21.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/boundary_fill.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | scope prefix begins with nine zero bytes. |
+| 20 | 1 | `property_flag` | `u8` | little | spec | The byte at scope offset 20 selects the operation word at offset 21 |
+| 21 | 4 | `operation` | `u32` | little | spec | the operation word at offset 21 when it is zero |
+
+## `boundary_fill_scope_prefix_property`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+This form uses property flag one, a zero word at offset 21, and operation at offset 25.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/boundary_fill.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | scope prefix begins with nine zero bytes. |
+| 20 | 1 | `property_flag` | `u8` | little | spec | The byte at scope offset 20 selects the operation word at offset 21 |
+| 21 | 4 | `optional_property_word` | `u32` | little | spec | When it is one, the u32 at offset 21 is zero · value `0` |
+| 25 | 4 | `operation` | `u32` | little | spec | the operation word is at offset 25 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

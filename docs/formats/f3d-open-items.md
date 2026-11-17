@@ -3383,3 +3383,41 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The decoder applies the compact discriminator meanings and reports `feature.coil-short-controls-assumed`. It retains signed driving dimensions and the checked solved placement. An unbound placement remains native. A missing or ambiguous target group retains the Coil with an unresolved Boolean selection and reports `feature.coil-target-unresolved`.
+
+### DR-596. BoundaryFill cell geometry
+
+**Question.** Which boundaries define each selected-cell record?
+
+**Known.** The scope names the selected cells in an ordered reference list. The selected-cell type differs from the body-region group type.
+
+**Need.** A relationship between each selected-cell record and the set of body and plane boundaries that enclose it.
+
+**Note.** The decoder retains the cell identities and reports `feature.boundary-fill-cells-native`. An unavailable cell list and body-region partition report `feature.boundary-fill-cells-unresolved`.
+
+### DR-597. BoundaryFill tool bindings
+
+**Question.** How do the group and plane lists select neutral tools?
+
+**Known.** A role-4 group at the start of the scope reference table contains ordered body-recipe members. The prefix stores separate group and plane lists.
+
+**Need.** A same-state identity join for the plane selectors and an assignment for each body-group reference outside the role-4 group.
+
+**Note.** Unresolved neutral tool selections report `feature.boundary-fill-tools-unresolved`.
+
+### DR-598. BoundaryFill Boolean targets and control words
+
+**Question.** Which bodies receive the selected cell volumes for Join, Cut, and Intersect? What effects do additional operation words specify?
+
+**Known.** Operation words 1 through 4 specify Join, Cut, Intersect, and New Body respectively.
+
+**Need.** A stored target relationship for the three Boolean operations and controlled saves for any additional operation words.
+
+**Note.** The effects project with `feature.boundary-fill-targets-unresolved` when they require existing bodies. An unassigned operation word reports `feature.boundary-fill-operation-unresolved`.
+
+### DR-599. BoundaryFill auxiliary references
+
+**Question.** What roles do the settings fields, remaining prefix bytes, and named-tail references carry?
+
+**Known.** The selected-cell prefix contains a version-zero settings reference. The removal form contains two counted lists. The named scope tail supports associated references and optional middle and closing references.
+
+**Need.** Controlled saves that vary the auxiliary references and settings while keeping the selected cells and tools fixed.

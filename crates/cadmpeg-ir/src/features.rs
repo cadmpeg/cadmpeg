@@ -3810,13 +3810,30 @@ pub enum FeatureOperation {
         #[doc = "Component creation requested for the Boolean result."]
         destination: CombineDestination,
     },
-    /// Creates solid bodies from selected cells enclosed by boundary bodies.
+    /// Creates or combines solids from cells enclosed by boundary tools.
     BoundaryFill {
         /// Bodies whose faces partition space into candidate cells.
         tools: BodySelection,
-        /// Enclosed cells retained as result bodies, in source order.
+        /// Selected cells, in source order.
         #[serde(deserialize_with = "deserialize_local_cells")]
-        cells: NonEmptyMembers<BodySelection>,
+        cells: NonEmptyMembers<BoundaryFillCell>,
+        /// Construction-plane selectors in source order, including empty source slots.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        plane_tools: Vec<Option<SelectionReference>>,
+        /// Boolean effect of the selected cells.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_boundary_fill_operation"
+        )]
+        operation: Option<BooleanOp>,
+        /// Whether to remove tool bodies after the fill.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_boundary_fill_remove_tools"
+        )]
+        remove_tools: Option<bool>,
     },
     /// Removes one side of selected bodies using selected surface faces.
     CutWithSurface {
@@ -7919,6 +7936,24 @@ pub enum SurfaceProjectionMode {
     /// Retain projected edges only.
     Edges,
 }
+
+/// A selected region of a boundary fill.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(untagged, deny_unknown_fields)]
+pub enum BoundaryFillCell {
+    /// Cell selected through a body region.
+    BodyRegion(BodySelection),
+    /// Cell selected through a source record.
+    Recorded {
+        /// Source cell identity. A null denotes an empty source slot.
+        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        record: Option<SelectionReference>,
+    },
+}
+
+cadmpeg_core::named_optional_field!(deserialize_boundary_fill_operation, BooleanOp, "operation");
+cadmpeg_core::named_optional_field!(deserialize_boundary_fill_remove_tools, bool, "remove_tools");
 
 /// Boolean effect of a solid-producing feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]

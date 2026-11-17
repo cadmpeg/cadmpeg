@@ -42,6 +42,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
+mod boundary_fill;
 pub(crate) mod form_cages;
 mod mesh_face_groups;
 mod mirror;
@@ -960,7 +961,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     })
                 }),
                 Some(DesignFeatureFamily::BoundaryFill) => {
-                    project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
+                    boundary_fill::project(scope, construction_groups, ctx, &mut projection_losses)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
                             kind: scope.kind_name().into(),
                             parameters: BTreeMap::new(),
@@ -8191,66 +8192,6 @@ pub(super) fn project_fixed_sweep(
             allow_multi_profile_faces: None,
         },
     )))
-}
-
-fn project_boundary_fill(
-    scope: &DesignParameterScope,
-    construction_groups: &[DesignConstructionOperandGroup],
-) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
-
-    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::BoundaryFill
-        || scope.reference_members().len() < 5
-    {
-        return None;
-    }
-    let stream = native_stream(&scope.id)?;
-    let mut groups = Vec::new();
-    for group in construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    }) {
-        groups.push(group);
-    }
-    groups.sort_by(|left, right| {
-        left.scope_reference_ordinal
-            .cmp(&right.scope_reference_ordinal)
-    });
-    let (tools, cells) = groups.split_first()?;
-    if tools.scope_reference_ordinal != 0
-        || tools.record_index != *scope.reference_members().values().next()?
-        || tools.role() != DesignOperandRole::BODIES_A
-        || cells.is_empty()
-    {
-        return None;
-    }
-    for (index, group) in groups.iter().enumerate() {
-        let start = usize::try_from(group.scope_reference_ordinal).ok()?;
-        let end = groups
-            .get(index + 1)
-            .and_then(|next| usize::try_from(next.scope_reference_ordinal).ok())
-            .unwrap_or(scope.reference_members().len() - 1);
-        if start >= end
-            || group.record_index != *scope.reference_members().values().nth(start)?
-            || !group.members().iter().map(|member| member.value).eq(scope
-                .reference_members()
-                .values_in(start + 1..end)?
-                .copied())
-            || (index > 0 && group.role() != DesignOperandRole::ROLE_0X5)
-        {
-            return None;
-        }
-    }
-    let selected_cells: Vec<_> = cells
-        .iter()
-        .map(|cell| BodySelection::Native(cell.id.clone()))
-        .collect();
-    let selected_cells = selected_cells.try_into().ok()?;
-    Some(FeatureDefinition::Operation(
-        FeatureOperation::BoundaryFill {
-            tools: BodySelection::Native(tools.id.clone()),
-            cells: selected_cells,
-        },
-    ))
 }
 
 fn hole_extent_loss(scope: &DesignParameterScope) -> cadmpeg_ir::report::loss::LossNote {

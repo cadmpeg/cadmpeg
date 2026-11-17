@@ -4,20 +4,20 @@
 use super::surfaces::UntrimLoops;
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
-    BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
-    CoilConstruction, CoilPlacement, CombineDestination, CombineOperands, ComponentTransferMode,
-    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
-    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
-    ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
-    FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
-    GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
-    GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
-    LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
-    NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
-    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
-    RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter,
-    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
+    BodyMembers, BodySelection, BoundaryFillCell, CapturedComponentPosition,
+    CapturedPositionTransform, CoilConstruction, CoilPlacement, CombineDestination,
+    CombineOperands, ComponentTransferMode, DatumPlaneReference, DatumPointConstruction,
+    DistinctMembers, DraftAnchor, DraftPull, DraftSecondSide, EdgeSelection, ExtrudeDirection,
+    ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands,
+    FaceMaker, FaceMotion, FaceSelection, FeatureDefinition, FeatureEquationCurve,
+    FeatureOperation, FeaturePolyline, FilledSurfaceContinuity, FilledSurfaceContinuityState,
+    GeneratedBodyRef, GeneratedCurveRef, GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection,
+    GeneratedVertexRef, GeometryImportPath, HelicalSweepConstruction, InsertedBodies,
+    InsertedComponents, LinearTermination, LoftGuidance, LoftPointSection, LoftSection,
+    NativeFeatureKind, NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef,
+    PlanarProfileRef, PrimitiveSolid, PrimitiveSolidKind, ProfileRef, ReplaceFaceOperands,
+    RevolutionAxis, RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode,
+    ScaleCenter, SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
     SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
     SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
@@ -41,6 +41,10 @@ rewrite_enum!(AngularTermination, []; {
 });
 
 rewrite_record!(AxisAngle, []; { origin, direction, angle });
+rewrite_enum!(BoundaryFillCell, []; {
+    BodyRegion(selection),
+    Recorded { record },
+});
 rewrite_record!(CapturedComponentPosition, []; { selector, occurrence, transform });
 rewrite_enum!(CapturedPositionTransform, []; {
     Affine { transform },
@@ -296,7 +300,7 @@ Thicken { faces, thickness, side, result, tangent_chain },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
     Combine { operands, op, keep_tools, destination },
-    BoundaryFill { tools, cells },
+    BoundaryFill { tools, cells, plane_tools, operation, remove_tools },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
     TrimBodiesAtPlane { targets, plane, keep },

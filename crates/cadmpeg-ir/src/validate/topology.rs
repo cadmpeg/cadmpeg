@@ -3656,9 +3656,12 @@ fn check_feature_references(
                     );
                 }
             }
-            FeatureOperation::BoundaryFill { tools, cells } => {
+            FeatureOperation::BoundaryFill { tools, cells, .. } => {
                 body_selections.push(tools);
-                body_selections.extend(cells);
+                body_selections.extend(cells.iter().filter_map(|cell| match cell {
+                    crate::features::BoundaryFillCell::BodyRegion(body) => Some(body),
+                    crate::features::BoundaryFillCell::Recorded { .. } => None,
+                }));
             }
             FeatureOperation::SplitBody { targets, tool } => {
                 body_selections.push(targets);
