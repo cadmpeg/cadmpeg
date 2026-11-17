@@ -1805,13 +1805,13 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** Which stored relation carries a Thread selection from its result face to the selected region after a later operation rewrites that face?
 
-**Known.** The ASM transition chain preserves stable entity slots across record updates. A later transition can retain the threaded cylinder's slot, axis, and radius while it updates that face, deletes another face, and inserts a replacement face. The Thread selection names its preceding topology.
+**Known.** The ASM transition chain preserves stable entity slots across record updates. A later transition can retain the threaded cylinder's slot, axis, and radius while it updates that face, deletes another face, and inserts a replacement face. The Thread selection names its preceding topology. When every following transition keeps the selected face slot, its surface binding, and the bound surface record and its surface rows, the selected slot identifies the active face in the same BREP member (`f3d.md` §3.1 "A Thread input-face identity uses the stable entity slot").
 
-**Need.** Public controlled Thread designs followed by face splits, face deletion, and face motion, with the selected threaded regions identified before and after each operation.
+**Need.** Public controlled Thread designs followed by a split of the threaded face onto a new carrier, deletion of the threaded face, and motion of the threaded face, with the selected threaded regions identified before and after each operation.
 
 **Conflict.** None.
 
-**Note.** DR-143 tracks the Thread modeled state. The active-face proof requires topology and geometry preservation after the Thread result.
+**Note.** DR-143 tracks the Thread modeled state. A following transition that drops the slot, rebinds its surface, or changes the bound surface record or its rows leaves the face unresolved with `feature.thread-live-face-unproven`.
 
 ### DR-244. Treatment edge proof without a transition
 
