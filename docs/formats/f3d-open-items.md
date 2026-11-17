@@ -3330,7 +3330,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Need.** Planar frames with nonzero secondary members whose selected regions are proven against the stored Extrude bodies.
 
-**Note.** These planar frames resolve as frames without a nested selection.
+**Note.** The decoder resolves a planar frame whose nested selection has a member with a nonzero secondary identity as a frame without a nested selection.
 
 ### DR-790. Design role of saved free edges
 
