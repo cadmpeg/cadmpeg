@@ -68,6 +68,41 @@ fn owned_surface_tail_retains_descending_v_limits() {
         Some(tail.len())
     );
 }
+#[test]
+fn owned_surface_tail_reads_compact_patch_identifiers() {
+    for tail in [a5_surface_tail(), a5_surface_extrapolated_tail()] {
+        for (u, v) in [(63u16, 63u16), (64, 5), (5, 256), (256, 64)] {
+            let mut controls = vec![0x05];
+            for (index, value) in [u, v].into_iter().enumerate() {
+                if index == 1 {
+                    controls.push(0x05);
+                }
+                match value {
+                    0..=63 => controls.push(u8::try_from(value * 4 + 1).unwrap()),
+                    64..=255 => controls.extend([0x04, u8::try_from(value).unwrap()]),
+                    _ => {
+                        controls.push(0x08);
+                        controls.extend(value.to_le_bytes());
+                    }
+                }
+            }
+            let mut encoded = controls;
+            encoded.extend_from_slice(&tail[4..]);
+            assert_eq!(
+                super::parse_surface_tail(&encoded, 0, encoded.len(), true),
+                Some(encoded.len()),
+                "patches {u}, {v}"
+            );
+            for truncated in [3, encoded.len() - 1] {
+                assert_eq!(
+                    super::parse_surface_tail(&encoded, 0, truncated, true),
+                    None
+                );
+            }
+        }
+    }
+}
+
 use crate::test_support::test_bytes::le_f64;
 use crate::test_support::test_container::object_main_catpart;
 use crate::variant::Variant;
