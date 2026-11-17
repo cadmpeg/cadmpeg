@@ -3125,6 +3125,37 @@ fn sketch_feature(
     })
 }
 
+/// One note for each feature-label class with no recognized family, with the
+/// number of its native features.
+pub(crate) fn unrecognized_class_losses(
+    features: &[Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::NativeFeatureKind;
+    let derived = format!("InventorClass:{}", derived::CLASS_ID);
+    let mut classes = BTreeMap::<&str, usize>::new();
+    for feature in features {
+        if let FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: NativeFeatureKind::Other(kind),
+            ..
+        }) = feature.evaluation.definition()
+        {
+            if let Some(class) = kind.strip_prefix("InventorClass:") {
+                if *kind != derived {
+                    *classes.entry(class).or_default() += 1;
+                }
+            }
+        }
+    }
+    classes
+        .into_iter()
+        .map(|(class, count)| {
+            crate::loss::InventorLossCode::FeatureNativeClassUnrecognized.note(format!(
+                "Retained {count} feature(s) of unrecognized feature-label class {class} as native."
+            ))
+        })
+        .collect()
+}
+
 /// Native family of a feature-label class identifier.
 fn native_kind(class_id: Option<ClassId>) -> cadmpeg_ir::features::NativeFeatureKind {
     use cadmpeg_ir::features::NativeFeatureKind;
