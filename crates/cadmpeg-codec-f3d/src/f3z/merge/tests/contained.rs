@@ -813,11 +813,9 @@ fn typed_component_paths_require_the_element_role_and_complete_tail() {
                         local_reference(target)
                     });
                 } else {
+                    let target_type_guid = reference.document_type().unwrap().to_owned();
                     let crate::bytes::Reference::CrossDocument {
-                        target,
-                        target_type_guid,
-                        link_name,
-                        ..
+                        target, link_name, ..
                     } = reference
                     else {
                         unreachable!()
