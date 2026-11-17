@@ -652,6 +652,36 @@ pub(crate) mod design_parameter_owner_legacy_88 {
     pub(crate) const ZERO_RUN_6_TAIL: usize = 82;
 }
 
+/// Byte offsets for the `draft_parting_prefix` record.
+///
+/// Spec §3.1. Record length 75 B.
+pub(crate) mod draft_parting_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 75;
+    /// Offset of `first_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SCALAR: usize = 57;
+    /// Offset of `second_scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SCALAR: usize = 65;
+    /// Offset of `boundary_flag` (`bool8`). Spec §3.1.
+    pub(crate) const BOUNDARY_FLAG: usize = 73;
+    /// Offset of `fixed_edges_present` (`bool8`). Spec §3.1.
+    pub(crate) const FIXED_EDGES_PRESENT: usize = 74;
+}
+
+/// Byte offsets for the `draft_parting_group_suffix` record.
+///
+/// Spec §3.1. Record length 37 B.
+pub(crate) mod draft_parting_group_suffix {
+    /// Offset of `pull_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const PULL_REFERENCE: usize = 0;
+    /// Offset of `tool_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TOOL_REFERENCE: usize = 11;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 22;
+    /// Offset of `faces_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FACES_REFERENCE: usize = 26;
+}
+
 /// Byte offsets for the `draft_operation_prefix` record.
 ///
 /// Spec §3.1. Record length 57 B.
@@ -662,8 +692,8 @@ pub(crate) mod draft_operation_prefix {
     pub(crate) const FORM: usize = 21;
     /// Stated value of `form` (`u32`). Spec §3.1.
     pub(crate) const FORM_VALUE: u32 = 0x0000_0003;
-    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const CONSTANT_ONE: usize = 25;
+    /// Offset of `anchor_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ANCHOR_KIND: usize = 25;
     /// Offset of `flipped` (`u8`). Spec §3.1.
     pub(crate) const FLIPPED: usize = 29;
     /// Offset of `tangent_chain` (`u8`). Spec §3.1.

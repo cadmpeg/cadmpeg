@@ -1686,6 +1686,84 @@ source = "spec"
 anchor = "a six-byte zero trailer"
 
 [[record]]
+name = "draft_parting_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Draft anchor kinds `2` and `3` have a parting prefix"
+size = 75
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/draft.rs"
+
+[[record.gap]]
+offset = 0
+size = 57
+note = "The common Draft operation prefix precedes the auxiliary scalars."
+
+[[record.field]]
+name = "first_scalar"
+offset = 57
+type = "f64"
+source = "spec"
+anchor = "The two finite auxiliary f64 scalars start at offsets 57 and 65"
+
+[[record.field]]
+name = "second_scalar"
+offset = 65
+type = "f64"
+source = "spec"
+anchor = "The two finite auxiliary f64 scalars start at offsets 57 and 65"
+
+[[record.field]]
+name = "boundary_flag"
+offset = 73
+type = "bool8"
+source = "spec"
+anchor = "A Boolean boundary flag is at offset 73"
+
+[[record.field]]
+name = "fixed_edges_present"
+offset = 74
+type = "bool8"
+source = "spec"
+anchor = "a Boolean fixed-edge-reference-present marker is at offset 74"
+
+[[record]]
+name = "draft_parting_group_suffix"
+kind = "byte"
+section = "3.1"
+anchor = "The parting group suffix follows that optional reference"
+size = 37
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/draft.rs"
+
+[[record.field]]
+name = "pull_reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked pull-group reference is at offset 0"
+
+[[record.field]]
+name = "tool_reference"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked tool-group reference at offset 11"
+
+[[record.field]]
+name = "constant_one"
+offset = 22
+type = "u32"
+value = 1
+source = "spec"
+anchor = "u32 one at offset 22"
+
+[[record.field]]
+name = "faces_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked drafted-face-group reference at offset 26"
+
+[[record]]
 name = "draft_operation_prefix"
 kind = "byte"
 section = "3.1"
@@ -1715,11 +1793,11 @@ source = "spec"
 anchor = "u32 three at offset 21"
 
 [[record.field]]
-name = "constant_one"
+name = "anchor_kind"
 offset = 25
 type = "u32"
 source = "spec"
-anchor = "u32 one at offset 25"
+anchor = "the anchor-kind u32 at offset 25"
 
 [[record.field]]
 name = "flipped"

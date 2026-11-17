@@ -3269,6 +3269,33 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     && records_by_index.contains_key(&(native_stream, operation.angle_record_index))
                     && records_by_index
                         .contains_key(&(native_stream, operation.opposite_angle_record_index))
+                    && operation
+                        .flags
+                        .and_then(|flags| flags.parting)
+                        .is_none_or(|parting| {
+                            [
+                                Some(parting.pull),
+                                Some(parting.tool),
+                                Some(parting.faces),
+                                parting.fixed_edges,
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .all(|reference| {
+                                reference.value != 0
+                                    && reference.offset >= scope.byte_offset()
+                                    && reference
+                                        .offset
+                                        .checked_add(11)
+                                        .is_some_and(|end| end <= scope.reference_count_offset())
+                                    && scope
+                                        .reference_members()
+                                        .values()
+                                        .any(|value| *value == reference.value)
+                                    && records_by_index
+                                        .contains_key(&(native_stream, reference.value))
+                            })
+                        })
             }
         };
         let combine_link = match scope.combine_operation() {

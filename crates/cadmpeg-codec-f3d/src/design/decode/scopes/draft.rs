@@ -8,12 +8,18 @@ use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
 use crate::layout::draft_operation_prefix as prefix;
+use crate::layout::draft_parting_group_suffix as suffix;
+use crate::layout::draft_parting_prefix as parting_prefix;
 use crate::records::feature::direct_face::DesignDraftFlags;
 use crate::records::feature::direct_face::DesignDraftOperation;
+use crate::records::feature::direct_face::DesignDraftParting;
 use crate::records::feature::direct_face::DesignDraftTwoSided;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::identity::Located;
 use crate::records::parameters::DesignParameterOwner;
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::scalar::FiniteReal;
 
 const MODE_SINGLE_ANGLE: u32 = 1;
 
@@ -84,6 +90,7 @@ pub(super) fn exact_draft_operation_with_owners(
     )
     .ok()?;
     let opposite_angle = match flags.and_then(|flags| flags.two_sided) {
+        _ if flags.is_some_and(|flags| flags.parting.is_some()) => Some(opposite),
         None if opposite.get() == 0.0 => None,
         Some(DesignDraftTwoSided::TwoAngles) => Some(opposite),
         Some(DesignDraftTwoSided::Symmetric) if opposite == angle => Some(opposite),
@@ -100,8 +107,6 @@ pub(super) fn exact_draft_operation_with_owners(
     })
 }
 
-/// Read the prologue that names both angle lanes. A frame without this prologue
-/// states no flags and has the single-angle mode.
 fn draft_flags(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -109,24 +114,33 @@ fn draft_flags(
     opposite_angle_record_index: u32,
 ) -> Result<Option<DesignDraftFlags>, ()> {
     let start = usize::try_from(scope.byte_offset()).map_err(|_| ())?;
-    let at = |offset: usize| start + offset;
-    let names_lanes = bytes.get(at(prefix::ZERO_RUN_10)..at(prefix::FORM)) == Some(&[0; 10])
-        && View::u32_le_at(bytes, at(prefix::FORM)) == Some(prefix::FORM_VALUE)
-        && View::u32_le_at(bytes, at(prefix::CONSTANT_ONE)) == Some(1)
-        && marked_record_reference(bytes, at(prefix::ANGLE_REFERENCE)) == Some(angle_record_index)
-        && marked_record_reference(bytes, at(prefix::OPPOSITE_ANGLE_REFERENCE))
+    let length = usize::try_from(scope.frame_length()).map_err(|_| ())?;
+    let frame = bytes
+        .get(start..start.checked_add(length).ok_or(())?)
+        .ok_or(())?;
+    let names_lanes = frame.get(prefix::ZERO_RUN_10..prefix::FORM) == Some(&[0; 10])
+        && View::u32_le_at(frame, prefix::FORM) == Some(prefix::FORM_VALUE)
+        && matches!(View::u32_le_at(frame, prefix::ANCHOR_KIND), Some(1..=3))
+        && marked_record_reference(frame, prefix::ANGLE_REFERENCE) == Some(angle_record_index)
+        && marked_record_reference(frame, prefix::OPPOSITE_ANGLE_REFERENCE)
             == Some(opposite_angle_record_index);
     if !names_lanes {
         return Ok(None);
     }
-    let flag = |offset| match bytes.get(at(offset)) {
+    let flag = |offset| match frame.get(offset) {
         Some(0) => Ok(false),
         Some(1) => Ok(true),
         _ => Err(()),
     };
     let flipped = flag(prefix::FLIPPED)?;
     let tangent_chain = flag(prefix::TANGENT_CHAIN)?;
-    let two_sided = match View::u32_le_at(bytes, at(prefix::MODE)).ok_or(())? {
+    let mode = View::u32_le_at(frame, prefix::MODE).ok_or(())?;
+    let parting = match View::u32_le_at(frame, prefix::ANCHOR_KIND).ok_or(())? {
+        1 => None,
+        form => Some(parting_groups(frame, scope, form, mode).ok_or(())?),
+    };
+    let two_sided = match mode {
+        _ if parting.is_some() => None,
         MODE_SINGLE_ANGLE => None,
         mode => Some(DesignDraftTwoSided::try_from(mode).map_err(|_| ())?),
     };
@@ -134,7 +148,72 @@ fn draft_flags(
         flipped,
         tangent_chain,
         two_sided,
+        parting,
     }))
+}
+
+fn parting_groups(
+    frame: &[u8],
+    scope: &DesignParameterScope,
+    form: u32,
+    mode: u32,
+) -> Option<DesignDraftParting> {
+    let count_at = usize::try_from(
+        scope
+            .reference_count_offset()
+            .checked_sub(scope.byte_offset())?,
+    )
+    .ok()?;
+    let bytes = frame.get(..count_at)?;
+    let prefix_scalars = [
+        FiniteReal::new(View::f64_le_at(bytes, parting_prefix::FIRST_SCALAR)?)?,
+        FiniteReal::new(View::f64_le_at(bytes, parting_prefix::SECOND_SCALAR)?)?,
+    ];
+    let boundary_flag = match *bytes.get(parting_prefix::BOUNDARY_FLAG)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let reference = |offset| {
+        let value = marked_record_reference(bytes, offset)?;
+        (value != 0
+            && scope
+                .reference_members()
+                .values()
+                .any(|member| *member == value))
+        .then_some(Located {
+            value,
+            offset: scope.byte_offset().checked_add(u64_from_index(offset))?,
+        })
+    };
+    let fixed_edges = match *bytes.get(parting_prefix::FIXED_EDGES_PRESENT)? {
+        0 => None,
+        1 => Some(reference(parting_prefix::LEN)?),
+        _ => return None,
+    };
+    let group_at = parting_prefix::LEN.checked_add(if fixed_edges.is_some() { 11 } else { 0 })?;
+    let pull = reference(group_at.checked_add(suffix::PULL_REFERENCE)?)?;
+    let tool = reference(group_at.checked_add(suffix::TOOL_REFERENCE)?)?;
+    let faces = reference(group_at.checked_add(suffix::FACES_REFERENCE)?)?;
+    if View::u32_le_at(bytes, group_at.checked_add(suffix::CONSTANT_ONE)?) != Some(1)
+        || pull.value == tool.value
+        || pull.value == faces.value
+        || tool.value == faces.value
+        || fixed_edges
+            .is_some_and(|fixed| [pull.value, tool.value, faces.value].contains(&fixed.value))
+    {
+        return None;
+    }
+    Some(DesignDraftParting {
+        form,
+        mode,
+        prefix_scalars,
+        boundary_flag,
+        fixed_edges,
+        pull,
+        tool,
+        faces,
+    })
 }
 
 pub(super) fn contains_consecutive_guid_pair(bytes: &[u8]) -> bool {
