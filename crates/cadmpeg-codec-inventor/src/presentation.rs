@@ -265,7 +265,7 @@ fn project_default_bindings(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "body-default"),
                 short_digest_key(body.as_str().as_bytes()),
             ),
-            target: AppearanceTarget::Body(body.clone()),
+            target: AppearanceTarget::Body(body.clone()).into(),
             appearance: appearance.clone(),
             source_entity_id: Some(format!(
                 "inventor:presentation:rendering-style#{}-{}",
@@ -418,7 +418,7 @@ fn project_face_bindings(
                 &cadmpeg_ir::identity_namespace!("inventor", "presentation", "face-override"),
                 short_digest_key(face_id.as_str().as_bytes()),
             ),
-            target: AppearanceTarget::Face(face_id.clone()),
+            target: AppearanceTarget::Face(face_id.clone()).into(),
             appearance: appearance_id,
             source_entity_id: Some(format!(
                 "inventor:presentation:graphics-face#{}-{}",
@@ -1501,6 +1501,7 @@ mod tests {
         assert_eq!(
             binding.target,
             AppearanceTarget::Body(BodyId::mint("inventor:test:body#1").expect("identity grammar"))
+                .into()
         );
     }
 
@@ -1748,7 +1749,7 @@ mod tests {
         let [binding] = projection.bindings.as_slice() else {
             panic!("one face binding must be projected");
         };
-        assert_eq!(binding.target, AppearanceTarget::Face(face_id));
+        assert_eq!(binding.target, AppearanceTarget::Face(face_id).into());
         assert_eq!(binding.appearance, appearance.id);
         assert_eq!(
             binding.channels.get("precedence").map(String::as_str),

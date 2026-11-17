@@ -159,6 +159,7 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
         LossTaxonomy::ParametricRecordOmitted,
         LossTaxonomy::AppearanceReduced,
         LossTaxonomy::PreservedSourceUnavailable,
+        LossTaxonomy::ProcessRecordOmitted,
     ] {
         assert_eq!(
             serde_json::to_value(taxonomy).unwrap(),

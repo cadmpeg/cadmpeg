@@ -741,7 +741,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .model
         .appearance_bindings
         .iter()
-        .any(|binding| matches!(binding.target, AppearanceTarget::Face(_))));
+        .any(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_))));
     assert_eq!(
         regenerated.ir().model.tessellations[0].vertices()[0].z,
         125.0

@@ -1709,10 +1709,7 @@ pub(crate) fn project(
                         "generated dimension reference role is blank",
                     )
                 })?;
-                references.insert(
-                    role,
-                    vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
-                );
+                references.insert(role, vec![ReferenceSelection::new(ReferenceTarget::Null)]);
                 Ok(())
             }
             Some(_) => {

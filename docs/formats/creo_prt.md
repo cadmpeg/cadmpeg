@@ -6782,11 +6782,13 @@ the same `ref_id` and `ref_type` pair as the tolerance attributes.
 
 `Annot_Type` 8 identifies a dimension. Its neutral attributes include
 `PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`.
-`PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT` state the limits. In a save
-whose `#Creo  TM` banner release is 10, they are the absolute lower and upper
-bounds. In a save whose banner release is 4, they are deviations: the lower bound is the nominal minus the lower value and
-the upper bound is the nominal plus the upper value. `Limits` stores the
-bounds in these two attributes.
+`PTC_DIM_TYPE` text `Linear`, `Diameter`, `Radius`, or `Angle` names a
+linear, diameter, radius, or angular dimension. The `PTC_TOLERANCE_MODE` value
+`Limits` stores the bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.
+In a save whose `#Creo  TM` banner release is 10, they are the absolute lower
+and upper bounds. In a save whose banner release is 4, they are deviations: the
+lower bound is the nominal minus the lower value and the upper bound is the
+nominal plus the upper value.
 `+- Symmetric` stores a deviation magnitude in `PTC_DIM_TOL_VALUE`.
 `Plus-Minus` stores deviation magnitudes in `PTC_DIM_LOWER_TOL_VALUE` and
 `PTC_DIM_UPPER_TOL_VALUE`; the lower deviation is negative. Length values use

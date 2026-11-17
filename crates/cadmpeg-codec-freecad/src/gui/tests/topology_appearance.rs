@@ -36,14 +36,16 @@ fn face_materials_follow_shape_indices_without_complete_persistent_names() {
         let face_bindings = model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
             .collect::<Vec<_>>();
         assert_eq!(face_bindings.len(), 8);
         for face in &geometry.faces {
             assert_eq!(
                 face_bindings
                     .iter()
-                    .filter(|binding| { binding.target == AppearanceTarget::Face(face.id.clone()) })
+                    .filter(|binding| {
+                        binding.target == AppearanceTarget::Face(face.id.clone()).into()
+                    })
                     .count(),
                 1
             );
@@ -89,7 +91,7 @@ fn accepted_primitive_color_arrays_replace_defaults_and_keep_primitive_sizes() {
                 let bindings = model
                     .appearance_bindings
                     .iter()
-                    .filter(|binding| binding.target == target)
+                    .filter(|binding| binding.target.entity == target)
                     .collect::<Vec<_>>();
                 assert_eq!(bindings.len(), 1, "{entry}, count {count}, {target:?}");
                 let appearance = model

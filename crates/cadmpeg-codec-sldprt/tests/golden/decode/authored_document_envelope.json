@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -203,7 +209,9 @@
           "id": "sldprt:metadata:bounding_envelope#348:0",
           "name": "bounding_envelope",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -221,7 +229,9 @@
           "id": "sldprt:metadata:configuration_manager#348:300",
           "name": "configuration_manager",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -242,7 +252,9 @@
           "id": "sldprt:metadata:default_reference_plane#348:54",
           "name": "default_reference_plane",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -270,7 +282,9 @@
           "id": "sldprt:metadata:part_record#1062:6",
           "name": "part_record",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -287,7 +301,9 @@
           "id": "sldprt:metadata:source_linear_unit_code#638:10",
           "name": "source_linear_unit_code",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -300,7 +316,9 @@
           "id": "sldprt:metadata:source_linear_unit_name#348:445",
           "name": "source_linear_unit_name",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -313,7 +331,9 @@
           "id": "sldprt:metadata:transformed_reference_enclosure#348:153",
           "name": "transformed_reference_enclosure",
           "target": {
-            "kind": "document"
+            "entity": {
+              "kind": "document"
+            }
           },
           "values": [
             {
@@ -461,7 +481,19 @@
         ]
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
