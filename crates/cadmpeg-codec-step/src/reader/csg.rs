@@ -145,7 +145,7 @@ pub(super) fn decode(
     let mut losses = Vec::new();
     let mut claims = HashSet::new();
     let uncertainty = ir.tolerances.linear.get();
-    let angles = AngleUnits::new(exchange, geometry, ctx)?;
+    let angles = AngleUnits::new(geometry);
     let reader = ShapeReader {
         exchange,
         geometry,

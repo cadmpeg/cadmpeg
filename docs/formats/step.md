@@ -1106,7 +1106,17 @@ has ratio one. A plane-angle SI unit names `RADIAN`. A
 recursively resolved unit component, so a plane-angle conversion chain ends
 at the radian SI unit and includes its SI prefix and every conversion factor.
 Conversion-based units form an acyclic chain that ends in a dimensional base
-unit. ISO 10303-43
+unit.
+
+CADIR decision: a plane-angle `CONVERSION_BASED_UNIT` whose name is `degree`,
+compared after trimming and without case, is exactly π/180 radian, and every
+angle of the exchange reads it so. A stated factor that differs from π/180 by
+more than 10⁻⁹ of π/180 produces one `geometry.angle-unit-factor-corrected`
+loss for the unit record, with the stated factor and π/180. The 10⁻⁹ bound
+lies far above the rounding of π/180 to the digits an exchange writes and far
+below the `1/57.3` approximation, whose relative error is about 7.4·10⁻⁵.
+
+ISO 10303-43
 defines uncertainty at three scopes. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`
 applies to representations that share its context,
 `UNCERTAINTY_ASSIGNED_REPRESENTATION` applies to the items collected by one
@@ -1563,14 +1573,12 @@ its two operands. The difference removes the second operand from the first
 (§6.4.7). A `CSG_SOLID` names the root of one tree of Boolean results and
 primitives; a single primitive is a tree (§6.4.6). A Boolean operand that is
 a `CSG_SOLID` denotes the root of its tree. Length attributes convert to
-millimetres by the units of the item's representation context.
+millimetres and angle attributes to radians by the units of the item's
+representation context.
 
-CADIR decision: a CSG angle attribute and a profile trim parameter convert to
-radians by the turn of their plane-angle unit. A `CONVERSION_BASED_UNIT` named
-`degree` measures one 360th of a turn, whatever radian factor it states; any
-other plane-angle unit measures its radian factor. A revolution angle within
-10⁻⁹ of a turn, relative to the turn, is exactly one turn, and a larger angle
-violates IP3.
+CADIR decision: a revolution angle within 10⁻⁹ of one turn of its
+plane-angle unit, relative to the turn, is exactly one turn, and a larger
+angle violates IP3.
 
 CADIR decision: every CSG primitive, swept-area solid, and Boolean result is
 one design feature (CADIR v11 §6.3 and §6.5). The features of a product

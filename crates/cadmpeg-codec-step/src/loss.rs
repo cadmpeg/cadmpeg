@@ -394,6 +394,9 @@ pub(crate) enum StepLossCode {
     /// reported here instead, with its measured value, because the cost is
     /// continuous and a threshold cannot express it.
     EdgeVertexOffCarrier,
+    /// A plane-angle unit named degree states a radian factor other than
+    /// `π/180`; the reader reads it as `π/180`.
+    AngleUnitFactorCorrected,
     /// A CSG item's attributes do not resolve; it has no feature and no body.
     CsgItemUnresolved,
     /// A CSG item has a design feature and no derived body.
@@ -585,6 +588,7 @@ impl StepLossCode {
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
         Self::EdgeVertexOffCarrier,
+        Self::AngleUnitFactorCorrected,
         Self::CsgItemUnresolved,
         Self::CsgSolidUnsynthesized,
         Self::CsgBooleanUnevaluated,
@@ -793,6 +797,7 @@ impl StepLossCode {
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
+            Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::CsgItemUnresolved => "csg.item-unresolved",
             Self::CsgSolidUnsynthesized => "csg.solid-unsynthesized",
             Self::CsgBooleanUnevaluated => "csg.boolean-unevaluated",
@@ -1005,7 +1010,9 @@ impl StepLossCode {
             Self::CsgItemUnresolved | Self::CsgSolidUnsynthesized | Self::CsgBooleanUnevaluated => {
                 LossTaxonomy::GeometryNotTransferred
             }
-            Self::CsgProfileGapClosed => LossTaxonomy::DecodeDiagnostic,
+            Self::CsgProfileGapClosed | Self::AngleUnitFactorCorrected => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
@@ -1260,6 +1267,7 @@ mod tests {
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
                 "geometry.edge-vertex-off-carrier",
+                "geometry.angle-unit-factor-corrected",
                 "csg.item-unresolved",
                 "csg.solid-unsynthesized",
                 "csg.boolean-unevaluated",

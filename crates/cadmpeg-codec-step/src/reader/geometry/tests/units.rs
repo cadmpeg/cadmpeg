@@ -790,3 +790,67 @@ fn shared_representation_items_reject_conflicting_context_units() {
         .iter()
         .any(|loss| { loss.code == StepLossCode::ConflictingRepresentationUnits.kind() }));
 }
+
+/// A circle of radius 1 trimmed from parameter 0 to 90 in a plane-angle
+/// unit named `name` whose radian factor is `factor`.
+fn quarter_circle_trim(name: &str, factor: &str) -> cadmpeg_ir::codec::DecodeResult {
+    crate::test_support::exchange::decode_inline(&format!(
+        "#10=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n\
+         #11=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n\
+         #12=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);\n\
+         #13=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE({factor}),#11);\n\
+         #14=(CONVERSION_BASED_UNIT('{name}',#13) NAMED_UNIT(#12) PLANE_ANGLE_UNIT());\n\
+         #15=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#14)) REPRESENTATION_CONTEXT('model','3D'));\n\
+         #20=GEOMETRIC_CURVE_SET('',(#30));\n\
+         #21=GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION('',(#20),#15);\n\
+         #30=TRIMMED_CURVE('',#31,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(90.)),.T.,.PARAMETER.);\n\
+         #31=CIRCLE('',#32,1.);\n\
+         #32=AXIS2_PLACEMENT_3D('',#33,#34,#35);\n\
+         #33=CARTESIAN_POINT('',(0.,0.,0.));\n\
+         #34=DIRECTION('',(0.,0.,1.));\n\
+         #35=DIRECTION('',(1.,0.,0.));\n"
+    ))
+}
+
+/// The end of the parameter range of the decoded trim.
+fn trim_end(result: &cadmpeg_ir::codec::DecodeResult) -> f64 {
+    let [curve] = result.ir().geometry.procedural_curves.as_slice() else {
+        panic!("one trimmed curve");
+    };
+    let value = serde_json::to_value(curve).unwrap();
+    value["definition"]["parameter_range"][1].as_f64().unwrap()
+}
+
+fn corrections(result: &cadmpeg_ir::codec::DecodeResult) -> usize {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::AngleUnitFactorCorrected.kind())
+        .count()
+}
+
+/// A unit named degree that states `1/57.3` rad is read as `π/180`: the
+/// trim at 90 ends at `π/2`, and one loss names the correction.
+#[test]
+fn a_degree_unit_with_an_approximate_factor_reads_as_pi_over_180() {
+    let result = quarter_circle_trim("degree", "0.017452006980802792");
+    assert_eq!(trim_end(&result), 90.0 * (std::f64::consts::PI / 180.0));
+    assert_eq!(corrections(&result), 1);
+}
+
+/// A unit named DEGREE that states `π/180` needs no correction.
+#[test]
+fn a_degree_unit_with_the_exact_factor_reports_no_correction() {
+    let result = quarter_circle_trim(" DEGREE ", "0.0174532925199433");
+    assert_eq!(trim_end(&result), 90.0 * (std::f64::consts::PI / 180.0));
+    assert_eq!(corrections(&result), 0);
+}
+
+/// A unit with another name keeps the factor it states.
+#[test]
+fn a_grad_unit_keeps_its_stated_factor() {
+    let result = quarter_circle_trim("grad", "0.0157");
+    assert_eq!(trim_end(&result), 90.0 * 0.0157);
+    assert_eq!(corrections(&result), 0);
+}
