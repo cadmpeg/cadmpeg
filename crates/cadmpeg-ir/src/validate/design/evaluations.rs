@@ -81,9 +81,16 @@ pub(super) fn check_evaluations(
     max_chain_depth: u64,
     findings: &mut Vec<Finding>,
 ) {
-    let StateChains { cyclic, depths } = state_chains(index);
+    let StateChains { cyclic, depths } = state_chains(index).unwrap_or_else(|id| {
+        super::error(
+            findings,
+            id,
+            format_args!("the depth of the evaluation's chain of state bases overflows"),
+        );
+        StateChains::default()
+    });
     for (id, depth) in &depths {
-        if *depth == max_chain_depth.saturating_add(1) {
+        if depth.checked_sub(1) == Some(max_chain_depth) {
             super::error(
                 findings,
                 id,
@@ -272,12 +279,15 @@ pub(super) fn check_evaluations(
 /// content has depth zero; one with content has depth one more than the
 /// evaluation its base names, or one where its base is another arm or names
 /// no evaluation. The walk is iterative.
+#[derive(Default)]
 struct StateChains<'a> {
     cyclic: BTreeSet<&'a str>,
     depths: BTreeMap<&'a str, u64>,
 }
 
-fn state_chains<'a>(index: &DesignRecords<'a>) -> StateChains<'a> {
+/// Walks every chain of state bases. Returns the evaluation whose depth
+/// overflows, if one does.
+fn state_chains<'a>(index: &DesignRecords<'a>) -> Result<StateChains<'a>, &'a str> {
     #[derive(Clone, Copy)]
     enum Mark {
         OnChain,
@@ -340,7 +350,7 @@ fn state_chains<'a>(index: &DesignRecords<'a>) -> StateChains<'a> {
         };
         let mut depth = tail.unwrap_or_default();
         for id in chain.into_iter().rev() {
-            depth = depth.saturating_add(1);
+            depth = depth.checked_add(1).ok_or(id)?;
             marks.insert(id, Mark::Depth(if tail.is_some() { depth } else { 0 }));
         }
     }
@@ -351,7 +361,7 @@ fn state_chains<'a>(index: &DesignRecords<'a>) -> StateChains<'a> {
             Mark::Depth(_) | Mark::OnChain => None,
         })
         .collect();
-    StateChains { cyclic, depths }
+    Ok(StateChains { cyclic, depths })
 }
 
 /// `CadIr::is_stateless(f, c)` (§5.4, D34, D35), decided where the document
