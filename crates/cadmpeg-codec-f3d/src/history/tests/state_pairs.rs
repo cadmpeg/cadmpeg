@@ -21,9 +21,9 @@ use crate::history::edge_changes_across_state_chain;
 use crate::history::edge_recipe_reference_context;
 use crate::history::effective_scope_previous_history_state_id;
 use crate::history::face_changes_across_state_chain;
+use crate::history::face_support::historical_face_support_contexts;
 use crate::history::header_scope_previous_history_state_id;
 use crate::history::historical_edge_axis;
-use crate::history::historical_face_support_contexts;
 use crate::history::historical_loop_boundary;
 use crate::history::historical_topology;
 use crate::history::preceding_support_face_slots;
@@ -1138,6 +1138,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
                 preceding_face_slots: vec![4, 5],
                 preceding_face_boundaries: Vec::new(),
                 changed_preceding_face_slots: vec![5],
+                preceding_surface: None,
             }
         ]
     );
@@ -1161,6 +1162,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
                 preceding_face_slots: vec![4, 5],
                 preceding_face_boundaries: Vec::new(),
                 changed_preceding_face_slots: vec![5],
+                preceding_surface: None,
             }
         ]
     );

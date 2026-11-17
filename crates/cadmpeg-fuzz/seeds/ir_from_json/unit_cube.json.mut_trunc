@@ -481,3 +481,11 @@
           ]
         },
         "ends": {
+          "start": "synthetic:cube:vertex#3",
+          "end": "synthetic:cube:vertex#0"
+        }
+      },
+      {
+        "id": "synthetic:cube:edge#4",
+        "carrier": {
+          "curve": "s

@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -720,8 +726,10 @@
           "id": "catia:appearance:binding#0:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
-            "kind": "face",
-            "value": "catia:standard:face#0"
+            "entity": {
+              "kind": "face",
+              "value": "catia:standard:face#0"
+            }
           }
         },
         {
@@ -730,8 +738,10 @@
           "id": "catia:appearance:binding#1:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
-            "kind": "face",
-            "value": "catia:standard:face#1"
+            "entity": {
+              "kind": "face",
+              "value": "catia:standard:face#1"
+            }
           }
         },
         {
@@ -740,8 +750,10 @@
           "id": "catia:appearance:binding#2:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
-            "kind": "face",
-            "value": "catia:standard:face#2"
+            "entity": {
+              "kind": "face",
+              "value": "catia:standard:face#2"
+            }
           }
         },
         {
@@ -750,8 +762,10 @@
           "id": "catia:appearance:binding#3:d2d2d2d2",
           "object_type": "CATIA V5 display property",
           "target": {
-            "kind": "face",
-            "value": "catia:standard:face#3"
+            "entity": {
+              "kind": "face",
+              "value": "catia:standard:face#3"
+            }
           }
         }
       ],
@@ -879,7 +893,19 @@
         "zero_entity_vertex_incidences": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

@@ -600,7 +600,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
         .model
         .appearance_bindings
         .iter()
-        .filter(|binding| &binding.target == target);
+        .filter(|binding| &binding.target.entity == target);
     let bindings = bindings.collect::<Vec<_>>();
     if bindings.len() > 1 {
         return false;
@@ -628,7 +628,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
                 let body_appearance_exists = ir.geometry.bodies.iter().any(|body| {
                     body.color.is_some()
                         || ir.model.appearance_bindings.iter().any(|binding| {
-                            binding.target == AppearanceTarget::Body(body.id.clone())
+                            binding.target.entity == AppearanceTarget::Body(body.id.clone())
                         })
                 });
                 return !body_appearance_exists;
@@ -639,7 +639,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
                     .model
                     .appearance_bindings
                     .iter()
-                    .any(|binding| binding.target == body_target);
+                    .any(|binding| binding.target.entity == body_target);
             if body_appearance_exists {
                 return has_effective_color(ir, body.color, &body_target);
             }
@@ -1258,7 +1258,7 @@ mod tests {
             id: "test:model:binding#binding"
                 .try_into()
                 .expect("valid identity"),
-            target: AppearanceTarget::Body(body.id.clone()),
+            target: AppearanceTarget::Body(body.id.clone()).into(),
             appearance: appearance_id,
             source_entity_id: None,
             object_type: None,
@@ -1330,7 +1330,7 @@ mod tests {
             id: "test:model:binding#binding-1"
                 .try_into()
                 .expect("valid identity"),
-            target: target.clone(),
+            target: target.clone().into(),
             appearance: appearance_id.clone(),
             source_entity_id: None,
             object_type: None,
@@ -1345,7 +1345,7 @@ mod tests {
             id: "test:model:binding#binding-2"
                 .try_into()
                 .expect("valid identity"),
-            target: target.clone(),
+            target: target.clone().into(),
             appearance: appearance_id,
             source_entity_id: None,
             object_type: None,

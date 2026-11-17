@@ -25,17 +25,20 @@ const INDEXED_HEADER_LEN: usize = 11;
 const REFERENCE_LEN: usize = 11;
 const ENTITY_GUID_CODE_UNITS: u32 = 36;
 const CURRENT_FLAG_RUN_TAIL: [u8; 11] = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-const COMPACT_FLAG_RUN: [u8; 11] = [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const COMPACT_FLAG_RUN_HEAD: [u8; 2] = [1, 1];
+const COMPACT_FLAG_RUN_LEN: usize = 11;
+const PADDING_LEN: usize = 4;
 
 /// The fillet set list of `scope`, admitted when the prefix, every set frame,
-/// and every owner reference match their forms.
+/// and every owner reference match their forms, and whether a compact padding
+/// byte of its flag run or of a set frame is nonzero.
 pub(super) fn fillet_set_list(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
-) -> Option<DesignFilletSetList> {
+) -> Option<(DesignFilletSetList, bool)> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Fillet) {
         return None;
     }
@@ -58,13 +61,21 @@ pub(super) fn fillet_set_list(
     }
     cursor += 4;
     let rolling_ball = *frame.get(cursor)?;
+    let mut padding_holds_bytes = false;
     let form = if matches!(rolling_ball, 0 | 1)
         && frame.get(cursor + 1..cursor + 1 + CURRENT_FLAG_RUN_TAIL.len())? == CURRENT_FLAG_RUN_TAIL
     {
         cursor += 1 + CURRENT_FLAG_RUN_TAIL.len();
         DesignFilletSetListForm::Current
-    } else if frame.get(cursor..cursor + COMPACT_FLAG_RUN.len())? == COMPACT_FLAG_RUN {
-        cursor += COMPACT_FLAG_RUN.len();
+    } else if frame
+        .get(cursor..cursor + COMPACT_FLAG_RUN_LEN)?
+        .starts_with(&COMPACT_FLAG_RUN_HEAD)
+    {
+        padding_holds_bytes = frame
+            .get(cursor + COMPACT_FLAG_RUN_HEAD.len()..cursor + COMPACT_FLAG_RUN_LEN)?
+            .iter()
+            .any(|byte| *byte != 0);
+        cursor += COMPACT_FLAG_RUN_LEN;
         DesignFilletSetListForm::Compact
     } else {
         return None;
@@ -99,17 +110,37 @@ pub(super) fn fillet_set_list(
         if set.group_record_index != group_record_index {
             return None;
         }
+        padding_holds_bytes |= set_padding_holds_bytes(bytes, &set);
         sets.push(set);
         ordinals.push(ordinal);
     }
     if !ordinals_are_a_permutation(&ordinals) {
         return None;
     }
-    Some(DesignFilletSetList {
-        form,
-        rolling_ball_corner: rolling_ball == 1,
-        sets,
-    })
+    Some((
+        DesignFilletSetList {
+            form,
+            rolling_ball_corner: rolling_ball == 1,
+            sets,
+        },
+        padding_holds_bytes,
+    ))
+}
+
+/// Whether a padding field of the form of `set` holds a nonzero byte.
+fn set_padding_holds_bytes(bytes: &[u8], set: &DesignFilletSet) -> bool {
+    let Ok(start) = usize::try_from(set.byte_offset) else {
+        return false;
+    };
+    SET_FORMS
+        .iter()
+        .filter(|form| u64::try_from(form.len).ok() == Some(set.frame_length))
+        .flat_map(|form| form.padding)
+        .any(|at| {
+            bytes
+                .get(start + at..start + at + PADDING_LEN)
+                .is_some_and(|field| field.iter().any(|byte| *byte != 0))
+        })
 }
 
 /// `count` consecutive marked references from `cursor`, each distinct.
@@ -156,6 +187,7 @@ struct SetForm {
     law: (usize, LawRole),
     ordinal: usize,
     tangency_weight: usize,
+    padding: &'static [usize],
 }
 
 const SET_FORMS: [SetForm; 3] = [
@@ -168,6 +200,7 @@ const SET_FORMS: [SetForm; 3] = [
         law: (constant::RADIUS_OWNER_REFERENCE, LawRole::Radius),
         ordinal: constant::SET_ORDINAL,
         tangency_weight: constant::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[],
     },
     SetForm {
         len: chordal::LEN,
@@ -178,6 +211,7 @@ const SET_FORMS: [SetForm; 3] = [
         law: (chordal::CHORD_LENGTH_OWNER_REFERENCE, LawRole::ChordLength),
         ordinal: chordal::SET_ORDINAL,
         tangency_weight: chordal::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[],
     },
     SetForm {
         len: compact::LEN,
@@ -188,6 +222,10 @@ const SET_FORMS: [SetForm; 3] = [
         law: (compact::RADIUS_OWNER_REFERENCE, LawRole::Radius),
         ordinal: compact::SET_ORDINAL,
         tangency_weight: compact::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        padding: &[
+            compact::RADIUS_OWNER_PADDING,
+            compact::TANGENCY_WEIGHT_OWNER_PADDING,
+        ],
     },
 ];
 
@@ -212,6 +250,10 @@ impl SetForm {
                 || fields
                     .iter()
                     .any(|(start, width)| (*start..start + width).contains(&at))
+                || self
+                    .padding
+                    .iter()
+                    .any(|start| (*start..start + PADDING_LEN).contains(&at))
         })
     }
 }

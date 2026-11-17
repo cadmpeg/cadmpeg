@@ -300,7 +300,7 @@ mod tests {
         SourceAttribute {
             id: AttributeId::mint("sldprt:metadata:default_property#1:18:SW-MassProp-Config-0")
                 .expect("attribute id"),
-            target: AttributeTarget::Document,
+            target: AttributeTarget::Document.into(),
             name: name.to_owned(),
             values: vec![AttributeValue::String(value.to_owned())],
         }
