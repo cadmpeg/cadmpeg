@@ -255,7 +255,7 @@ fn ratio_on(pick: Value) -> CadIr {
 
 /// [`ratio_on`] picking the entity `e` of a sketch of `a`, whose curve is
 /// `curve`.
-fn ratio_on_sketch_entity(curve: Value) -> CadIr {
+fn ratio_on_sketch_entity(curve: &Value) -> CadIr {
     let mut ir =
         ratio_on(json!({"target": {"kind": "sketch_entity", "value": key("sketch_entity", "e")}}));
     ir.design.sketches.push(from(json!({
@@ -293,7 +293,7 @@ fn a_parameter_ratio_does_not_pick_an_axis_datum() {
 #[test]
 fn a_parameter_ratio_does_not_pick_a_sketch_point() {
     assert_finding(
-        &ratio_on_sketch_entity(json!({"kind": "point", "value": {"u": 0.0, "v": 0.0}})),
+        &ratio_on_sketch_entity(&json!({"kind": "point", "value": {"u": 0.0, "v": 0.0}})),
         Check::Design,
         Severity::Error,
         RATIO_REFUSED,
@@ -302,11 +302,11 @@ fn a_parameter_ratio_does_not_pick_a_sketch_point() {
 
 #[test]
 fn a_parameter_ratio_picks_a_sketch_curve_or_an_edge() {
-    assert_clean(&ratio_on_sketch_entity(json!({"kind": "line", "value": {
+    assert_clean(&ratio_on_sketch_entity(&json!({"kind": "line", "value": {
         "start": {"u": 0.0, "v": 0.0},
         "end": {"u": 1.0, "v": 0.0}
     }})));
-    assert_clean(&ratio_on_sketch_entity(json!({"kind": "arc", "value": {
+    assert_clean(&ratio_on_sketch_entity(&json!({"kind": "arc", "value": {
         "center": {"u": 0.0, "v": 0.0},
         "radius": 1.0,
         "start": 0.0,
