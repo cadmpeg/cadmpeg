@@ -579,7 +579,7 @@ fn nist_ftc_07_plane_boundary_keeps_the_model_spline_parameterization() {
         .iter()
         .find(|curve| Some(&curve.id) == edge.carrier.curve())
         .expect("model spline");
-    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &curve.geometry else {
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
         panic!("expected a model spline");
     };
     let pcurve = geometry
