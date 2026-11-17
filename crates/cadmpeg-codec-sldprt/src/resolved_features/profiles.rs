@@ -1064,6 +1064,65 @@ enum MarkerGeometryFailure {
     Codec(CodecError),
 }
 
+/// Native-kind prefix of a marker entity without admitted geometry, until
+/// [`finalize_unread_marker_entities`] replaces it after the last sketch
+/// geometry pass.
+const MARKER_GEOMETRY_PLACEHOLDER: &str = "sldprt:marker-geometry:";
+const DEGENERATE_LINE_PLACEHOLDER: &str = "sldprt:marker-geometry:degenerate-line";
+/// Native kind of an arc handle whose inline center and endpoints define no
+/// minor arc. The entity is held out of the sketch-geometry passes and joins
+/// its sketch in [`finalize_unread_marker_entities`].
+const ARC_POINTS_PLACEHOLDER: &str = "sldprt:marker-geometry:arc-points";
+
+/// Adds the held arc handles, gives every marker entity that no recovery
+/// pass resolved the marker role as its native kind, and charges one loss
+/// per entity.
+pub(crate) fn finalize_unread_marker_entities(
+    sketch_entities: &mut Vec<SketchEntity>,
+    held_handles: Vec<SketchEntity>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    use crate::loss::SldprtLossCode;
+    sketch_entities.extend(held_handles);
+    for entity in sketch_entities.iter_mut() {
+        let SketchGeometryDefinition::Native { native_kind } = entity.geometry.definition() else {
+            continue;
+        };
+        let Some(placeholder) = native_kind
+            .as_str()
+            .strip_prefix(MARKER_GEOMETRY_PLACEHOLDER)
+        else {
+            continue;
+        };
+        let (role, code) = match placeholder {
+            "1" => ("line-or-circle", SldprtLossCode::SketchHandleUnresolved),
+            "2" | "arc-points" => ("arc", SldprtLossCode::SketchHandleUnresolved),
+            _ if native_kind.as_str() == DEGENERATE_LINE_PLACEHOLDER => {
+                ("line-or-circle", SldprtLossCode::SketchLineDegenerate)
+            }
+            _ => continue,
+        };
+        let marker = entity
+            .native_ref
+            .as_deref()
+            .unwrap_or("without a native reference");
+        losses.push(code.note(match code {
+            SldprtLossCode::SketchLineDegenerate => format!(
+                "sketch {} entity {}: the two read endpoints of {role} handle {marker} coincide; the entity keeps its marker role",
+                entity.sketch,
+                entity.id()
+            ),
+            _ => format!(
+                "sketch {} entity {}: no line, circle, or arc geometry was admitted for {role} handle {marker}; the entity keeps its marker role",
+                entity.sketch,
+                entity.id()
+            ),
+        }));
+        entity.geometry =
+            SketchGeometry::native(cadmpeg_core::nonblank_literal!("sldprt:{role}-handle"));
+    }
+}
+
 impl From<CodecError> for MarkerGeometryFailure {
     fn from(error: CodecError) -> Self {
         Self::Codec(error)
@@ -1152,6 +1211,7 @@ pub(crate) fn project_marker_backed_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
     sketch_entities: &mut Vec<SketchEntity>,
+    held_handles: &mut Vec<SketchEntity>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
@@ -1428,6 +1488,7 @@ pub(crate) fn project_marker_backed_sketches(
                 indexed_rectangle_from_line_cycle(&lane.native_payload, &object_markers);
             let inferred_points = std::cell::OnceCell::new();
             let mut projected = Vec::new();
+            let mut held = Vec::new();
             for marker in markers.iter().copied() {
                 let native_kind = cadmpeg_core::nonblank_literal!(
                     "sldprt:marker-geometry:{}",
@@ -1574,7 +1635,9 @@ pub(crate) fn project_marker_backed_sketches(
                                             // A zero-length line is not valid IR geometry. Preserve
                                             // the marker whose endpoint collapsed because a newly
                                             // recognized profile point supplied its coordinates.
-                                            SketchGeometry::native(native_kind)
+                                            SketchGeometry::native(cadmpeg_core::nonblank_const!(
+                                                DEGENERATE_LINE_PLACEHOLDER
+                                            ))
                                         } else {
                                             return Err(MarkerGeometryFailure::Absent);
                                         }
@@ -1799,8 +1862,13 @@ pub(crate) fn project_marker_backed_sketches(
                                 ) else {
                                     return Err(MarkerGeometryFailure::Absent);
                                 };
-                                minor_arc_geometry(start, end, center, QUANTUM)
-                                    .ok_or(MarkerGeometryFailure::Absent)?
+                                minor_arc_geometry(start, end, center, QUANTUM).unwrap_or_else(
+                                    || {
+                                        SketchGeometry::native(cadmpeg_core::nonblank_const!(
+                                            ARC_POINTS_PLACEHOLDER
+                                        ))
+                                    },
+                                )
                             } else if let ([start, end], Some(point)) = (
                                 endpoints.as_slice(),
                                 marker.coordinates_m.and_then(|_| project(marker)),
@@ -2130,12 +2198,20 @@ pub(crate) fn project_marker_backed_sketches(
                     let Ok(entity_id) = SketchEntityId::mint(id_text) else {
                         continue;
                     };
-                    projected.push(
-                        SketchEntity::new(entity_id, sketch_id.clone(), geometry)
-                            .with_construction(construction)
-                            .with_native_ref(Some(marker.id().to_owned()))
-                            .with_endpoint_refs(endpoint_refs),
+                    let held_handle = matches!(
+                        geometry.definition(),
+                        SketchGeometryDefinition::Native { native_kind }
+                            if native_kind.as_str() == ARC_POINTS_PLACEHOLDER
                     );
+                    let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry)
+                        .with_construction(construction)
+                        .with_native_ref(Some(marker.id().to_owned()))
+                        .with_endpoint_refs(endpoint_refs);
+                    if held_handle {
+                        held.push(entity);
+                    } else {
+                        projected.push(entity);
+                    }
                 }
             }
             if let Some(rectangle) = encoded_rectangle {
@@ -2331,6 +2407,7 @@ pub(crate) fn project_marker_backed_sketches(
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
             }
             sketch_entities.extend(projected);
+            held_handles.extend(held);
             sketches.push(sketch);
             record_top_marker_coordinates(&mut features[feature_index], top_frame.is_some());
             features[feature_index]
@@ -4281,6 +4358,7 @@ mod detached_legacy_sketch_tests {
             &mut features,
             &mut sketches,
             &mut sketch_entities,
+            &mut Vec::new(),
             &[history],
             &[lane],
         )
@@ -4381,6 +4459,7 @@ mod detached_legacy_sketch_tests {
             &mut features,
             &mut sketches,
             &mut sketch_entities,
+            &mut Vec::new(),
             &[history],
             &[lane],
         )
@@ -4476,6 +4555,7 @@ mod detached_legacy_sketch_tests {
                 &mut features,
                 &mut sketches,
                 &mut sketch_entities,
+                &mut Vec::new(),
                 std::slice::from_ref(&history),
                 std::slice::from_ref(&lane),
             )
@@ -4649,6 +4729,7 @@ mod detached_legacy_sketch_tests {
         project_marker_backed_sketches(
             &service,
             &mut [],
+            &mut Vec::new(),
             &mut Vec::new(),
             &mut Vec::new(),
             &[history],
@@ -4890,3 +4971,6 @@ mod exact_tests;
 
 #[cfg(test)]
 mod index_tests;
+
+#[cfg(test)]
+mod unread_marker_tests;
