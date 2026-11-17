@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -57,8 +63,10 @@
           "id": "usd:stage:articulation#/Arm",
           "native_ref": "/Arm",
           "root": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm"
+            }
           }
         }
       ],
@@ -331,8 +339,10 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Base/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Base/Geom",
+              "kind": "body"
+            }
           }
         },
         {
@@ -344,8 +354,10 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Slider/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Slider/Geom",
+              "kind": "body"
+            }
           }
         },
         {
@@ -357,8 +369,10 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Upper/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Upper/Geom",
+              "kind": "body"
+            }
           }
         }
       ],
@@ -387,8 +401,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Base",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           }
         },
         {
@@ -408,8 +424,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Slider",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            }
           }
         },
         {
@@ -429,8 +447,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Upper",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            }
           }
         }
       ],
@@ -811,8 +831,10 @@
           "native_ref": "/Arm/Base",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           }
         },
         {
@@ -822,8 +844,10 @@
           "native_ref": "/Arm/Slider",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            }
           }
         },
         {
@@ -833,8 +857,10 @@
           "native_ref": "/Arm/Upper",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            }
           }
         }
       ],
@@ -1023,7 +1049,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

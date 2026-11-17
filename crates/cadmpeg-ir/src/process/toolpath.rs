@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Toolpath content (§7.8).
+//! Toolpaths (§7.8).
 //!
 //! A toolpath is the evaluation of an operation (ISO 14649 cutter-location
 //! trajectory). Motion coordinates are in the operation's work coordinate
@@ -12,11 +12,47 @@ use serde::{Deserialize, Serialize};
 
 use super::cycle::Cycle;
 use super::technology::{Coolant, SpindleDirection};
+use crate::design::evaluation::EvaluationStatus;
+use crate::design::ids::{MachiningFeatureId, OperationId, ToolpathId};
 use crate::design::units::{AngularSpeed, Duration, Feed};
-use crate::features::FinitePoint3;
+use crate::features::{ConfigurationId, FinitePoint3};
 use crate::scalar::{FiniteReal, Fraction};
 use crate::transform::Transform;
 use crate::units::UnitVector3;
+
+/// The evaluation of an operation, or of an operation and one of its
+/// features where the source stores one toolpath per pair.
+///
+/// A toolpath's key is (`operation`, `feature`, `configuration`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Toolpath {
+    /// The toolpath's identity.
+    pub id: ToolpathId,
+    /// The operation the toolpath evaluates.
+    pub operation: OperationId,
+    /// The feature of the operation the toolpath machines, where the source
+    /// stores one toolpath per operation and feature.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_feature"
+    )]
+    pub feature: Option<MachiningFeatureId>,
+    /// The configuration of the setup's scope the toolpath is of. `None`
+    /// states the toolpath of every configuration.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_configuration"
+    )]
+    pub configuration: Option<ConfigurationId>,
+    /// The status the source records for the toolpath.
+    pub status: EvaluationStatus,
+    /// The toolpath's motions, or its native record.
+    pub content: ToolpathContent,
+}
 
 /// The content of a toolpath.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -262,6 +298,8 @@ pub enum MotionValue {
 }
 
 cadmpeg_core::named_optional_field!(deserialize_axis, UnitVector3, "axis");
+cadmpeg_core::named_optional_field!(deserialize_configuration, ConfigurationId, "configuration");
+cadmpeg_core::named_optional_field!(deserialize_feature, MachiningFeatureId, "feature");
 cadmpeg_core::named_optional_field!(deserialize_feed, Feed, "feed");
 cadmpeg_core::named_optional_field!(deserialize_index, u32, "index");
 cadmpeg_core::named_optional_field!(deserialize_native, NonBlankString, "native");

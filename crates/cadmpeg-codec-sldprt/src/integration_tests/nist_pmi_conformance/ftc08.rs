@@ -51,7 +51,7 @@ fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
     let faces = annotation
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => ir.geometry.faces.iter().find(|item| &item.id == face),
             _ => None,
         })
@@ -142,7 +142,11 @@ fn assert_single_cylinder_target(
     axis_point_mm: [f64; 3],
     axis_direction: [f64; 3],
 ) {
-    let [PmiTarget::Face { face }] = annotation.targets.as_slice() else {
+    let [cadmpeg_ir::references::InstanceTarget {
+        entity: PmiTarget::Face { face },
+        ..
+    }] = annotation.targets.as_slice()
+    else {
         panic!(
             "{} has one face target",
             annotation.name.as_deref().unwrap_or("PMI")
@@ -236,7 +240,7 @@ fn ftc_08_row_66_and_92_preserve_the_native_parallelism_modifier_subset() {
     assert!(free_state
         .targets
         .iter()
-        .any(|target| matches!(target, PmiTarget::Face { .. })));
+        .any(|target| matches!(&target.entity, PmiTarget::Face { .. })));
 
     let tangent_plane = ir
         .model
@@ -294,7 +298,7 @@ fn ftc_08_emits_surface_profile16_value_and_face_targets() {
     assert!(annotation
         .targets
         .iter()
-        .all(|target| matches!(target, PmiTarget::Face { .. })));
+        .all(|target| matches!(&target.entity, PmiTarget::Face { .. })));
 }
 
 #[test]
@@ -319,7 +323,10 @@ fn ftc_08_emits_flatness4_value_and_face_target() {
     assert!((magnitude.get().value.get() - 0.015 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
     assert!(matches!(
         annotation.targets.as_slice(),
-        [PmiTarget::Face { .. }]
+        [cadmpeg_ir::references::InstanceTarget {
+            entity: PmiTarget::Face { .. },
+            ..
+        }]
     ));
 }
 

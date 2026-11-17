@@ -29,3 +29,17 @@ Profile regions. Each file extrudes one nested profile-region selection.
   profiles (3.0, 14.61354 and 2.0 mm²), then a rectangular pattern of the cut.
   Extrude1 990 mm³, 6 faces; the cut 975.38646 mm³, 10 faces; the pattern
   898.882541 mm³, 30 faces.
+
+# Fusion API fixtures: removed bodies
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2704.1.53 from a new design, for body selections of a removed body. The API
+reported the volume, body count and face count after each timeline item; those
+values are below.
+
+Removed bodies.
+
+- `mirror_remove.f3d`: Extrude1 1000 mm³, 6 faces; a cut, 993.716815 mm³,
+  8 faces; Mirror1 of the body across the YZ origin plane, 2 bodies,
+  1987.43363 mm³, 16 faces; RemoveBody of the original body, 1 body,
+  993.716815 mm³, 8 faces.

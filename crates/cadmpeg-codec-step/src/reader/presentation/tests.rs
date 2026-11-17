@@ -76,7 +76,7 @@ fn presentation_layer_expands_all_product_definition_views() {
         .first()
         .expect("product presentation layer");
     assert!(matches!(
-        layer.items.as_slice(),
+        layer.items.iter().map(|item| &item.entity).collect::<Vec<_>>().as_slice(),
         [
             PresentationItem::Product { product: first },
             PresentationItem::Product { product: second },
@@ -141,7 +141,7 @@ fn ps04_product_definition_views_keep_identity_when_records_reordered() {
             .expect("PS-04 layer")
             .items
             .iter()
-            .map(|item| match item {
+            .map(|item| match &item.entity {
                 PresentationItem::Product { product } => product.as_str().to_owned(),
                 other => panic!("unexpected PS-04 layer item: {other:?}"),
             })
@@ -205,7 +205,7 @@ fn presentation_layer_preserves_empty_label_and_visibility() {
     );
     assert_eq!(layer.visible, Some(false));
     assert!(matches!(
-        layer.items.as_slice(),
+        layer.items.iter().map(|item| &item.entity).collect::<Vec<_>>().as_slice(),
         [PresentationItem::Source { source_id }] if source_id == "#1"
     ));
 
@@ -265,7 +265,7 @@ pub(crate) fn step_color_assets_round_trip_names_and_tessellation_targets_strict
                 .iter()
                 .any(|binding| {
                     matches!(
-                        binding.target,
+                        &binding.target.entity,
                         cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
                     )
                 }));
@@ -318,7 +318,7 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
         .find(|layer| layer.name == "mesh layer")
         .expect("mesh presentation layer");
     assert!(layer.items.iter().any(|item| matches!(
-        item,
+        &item.entity,
         cadmpeg_ir::presentation::PresentationItem::Tessellation { tessellation }
             if tessellation.ends_with("#7")
     )));
@@ -350,7 +350,7 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
             layer.name == "mesh layer"
                 && layer.items.iter().any(|item| {
                     matches!(
-                        item,
+                        &item.entity,
                         cadmpeg_ir::presentation::PresentationItem::Tessellation { .. }
                     )
                 })
@@ -560,7 +560,7 @@ fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
             .iter()
             .filter(|binding| {
                 matches!(
-                    &binding.target,
+                    &binding.target.entity,
                     cadmpeg_ir::appearance::AppearanceTarget::Face(face)
                         if face.as_str() == "step:data:face#29"
                 )
@@ -604,7 +604,7 @@ fn independent_face_style_permutations_do_not_select_by_instance_order() {
             .iter()
             .filter(|binding| {
                 matches!(
-                    &binding.target,
+                    &binding.target.entity,
                     cadmpeg_ir::appearance::AppearanceTarget::Face(face)
                         if face.as_str() == "step:data:face#29"
                 )
@@ -759,7 +759,7 @@ fn context_dependent_styles_remain_native_for_distinct_contexts() {
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert_eq!(result.ir().model.appearance_bindings.len(), 1);
     assert!(matches!(
-        &result.ir().model.appearance_bindings[0].target,
+        &result.ir().model.appearance_bindings[0].target.entity,
         cadmpeg_ir::appearance::AppearanceTarget::Point(point)
             if point.as_str() == "step:data:point#13"
     ));
@@ -804,7 +804,7 @@ fn context_style_retention_is_independent_of_style_set_order() {
             .expect("decode context style order witness");
         assert!(result.ir().model.appearance_bindings.iter().all(|binding| {
             !matches!(
-                &binding.target,
+                &binding.target.entity,
                 cadmpeg_ir::appearance::AppearanceTarget::Point(point)
                     if point.as_str() == "step:data:point#3"
             )
@@ -890,7 +890,7 @@ fn styled_item_invisibility_is_binding_scoped() {
         .iter()
         .filter(|binding| {
             matches!(
-                &binding.target,
+                &binding.target.entity,
                 cadmpeg_ir::appearance::AppearanceTarget::Surface(surface)
                     if surface.as_str() == "step:data:surface#5"
             )
@@ -1161,7 +1161,7 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
     );
     assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
         matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Curve(ref curve)
                 if curve.as_str() == "step:data:curve#3"
         )
@@ -1355,7 +1355,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
         name: "all body regions".into(),
         description: None,
         visible: None,
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
 
     let mut bytes = Vec::new();
@@ -1432,7 +1432,7 @@ pub(crate) fn presentation_reader_normalizes_invalid_layer_and_common_datum_inpu
     assert_eq!(result.ir().model.presentation_layers.len(), 1);
     assert_eq!(result.ir().model.presentation_layers[0].name, "inspection");
     assert!(matches!(
-        result.ir().model.presentation_layers[0].items.as_slice(),
+        result.ir().model.presentation_layers[0].items.iter().map(|item| &item.entity).collect::<Vec<_>>().as_slice(),
         [PresentationItem::Source { source_id }] if source_id == "#30"
     ));
     assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
@@ -1593,7 +1593,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         id: "test:model:appearance-binding#face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(face),
+        target: AppearanceTarget::Face(face).into(),
         appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
         source_entity_id: None,
@@ -1643,7 +1643,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         id: "test:model:appearance-binding#vertex"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Vertex(vertex),
+        target: AppearanceTarget::Vertex(vertex).into(),
         appearance: AppearanceId::mint("test:model:appearance#vertex".to_string())
             .expect("identity grammar"),
         source_entity_id: None,
@@ -1666,7 +1666,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         .iter()
         .any(|binding| {
             matches!(
-                &binding.target,
+                &binding.target.entity,
                 AppearanceTarget::Vertex(vertex) if vertex.as_str().starts_with("step:data:vertex#")
             )
         }));
@@ -1684,7 +1684,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
         name: "point layer".to_string(),
         description: Some("standalone points".to_string()),
         visible: None,
-        items: vec![PresentationItem::Point { point }],
+        items: vec![PresentationItem::Point { point }.into()],
     });
 
     let mut bytes = Vec::new();
@@ -1805,9 +1805,10 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         items: vec![
             PresentationItem::Product {
                 product: parent_product,
-            },
-            PresentationItem::Occurrence { occurrence: child },
-            PresentationItem::Pmi { annotation },
+            }
+            .into(),
+            PresentationItem::Occurrence { occurrence: child }.into(),
+            PresentationItem::Pmi { annotation }.into(),
         ],
     });
 
@@ -1837,12 +1838,18 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         .find(|layer| layer.name == "mixed layer")
         .expect("mixed presentation layer");
     assert_eq!(layer.items.len(), 3);
-    assert!(matches!(layer.items[0], PresentationItem::Product { .. }));
     assert!(matches!(
-        layer.items[1],
+        &layer.items[0].entity,
+        PresentationItem::Product { .. }
+    ));
+    assert!(matches!(
+        &layer.items[1].entity,
         PresentationItem::Occurrence { .. }
     ));
-    assert!(matches!(layer.items[2], PresentationItem::Pmi { .. }));
+    assert!(matches!(
+        &layer.items[2].entity,
+        PresentationItem::Pmi { .. }
+    ));
 }
 
 /// The soccer-ball case: a body carries a base color and one face overrides it.
@@ -1880,7 +1887,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         id: "test:model:appearance-binding#face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(face),
+        target: AppearanceTarget::Face(face).into(),
         appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
         source_entity_id: None,

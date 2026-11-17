@@ -955,7 +955,8 @@ impl Builder<'_, '_, '_, '_> {
         let appearance = self.appearance(&surface)?;
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(key),
-            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string()),
+            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string())
+                .into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,
@@ -1009,7 +1010,8 @@ impl Builder<'_, '_, '_, '_> {
             target: AppearanceTarget::TriangleGroup {
                 tessellation: crate::ids::tessellation(key).to_string(),
                 group: path.to_owned(),
-            },
+            }
+            .into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,

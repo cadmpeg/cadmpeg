@@ -174,7 +174,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
         )));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())

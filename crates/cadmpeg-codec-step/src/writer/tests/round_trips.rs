@@ -1209,7 +1209,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         id: "test:model:appearance-binding#hidden-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
         source_entity_id: None,
         object_type: None,
@@ -1286,7 +1286,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         id: "test:model:appearance-binding#transparent-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
         source_entity_id: None,
         object_type: None,
@@ -1297,7 +1297,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         id: "test:model:appearance-binding#more-transparent-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[1].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[1].id.clone()).into(),
         appearance: second_appearance,
         source_entity_id: None,
         object_type: None,
@@ -1345,7 +1345,7 @@ fn writer_round_trips_presentation_layer_visibility() {
         name: "hidden layer".into(),
         description: Some("layer visibility".into()),
         visible: Some(false),
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
 
     let mut output = Vec::new();
@@ -1387,7 +1387,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
         name: String::new(),
         description: Some("unnamed layer".into()),
         visible: Some(false),
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
 
     let mut output = Vec::new();
@@ -1415,7 +1415,12 @@ fn writer_round_trips_empty_presentation_layer_label() {
     assert_eq!(layer.description.as_deref(), Some("unnamed layer"));
     assert_eq!(layer.visible, Some(false));
     assert!(matches!(
-        layer.items.as_slice(),
+        layer
+            .items
+            .iter()
+            .map(|item| &item.entity)
+            .collect::<Vec<_>>()
+            .as_slice(),
         [PresentationItem::Body { .. }]
     ));
 }

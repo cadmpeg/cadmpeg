@@ -3093,7 +3093,8 @@ fn retain_unresolved_appearance(
         id: binding_id,
         target: AppearanceTarget::Source {
             source_id: unresolved.identity.clone(),
-        },
+        }
+        .into(),
         appearance: appearance_id,
         source_entity_id: Some(unresolved.identity.clone()),
         object_type: Some(unresolved.owner_class.clone()),
@@ -3273,7 +3274,7 @@ fn push_display_meshes(
                             .then(display.ordinal())
                             .colon(table_index),
                     ),
-                    target: AppearanceTarget::Tessellation(id.clone()),
+                    target: AppearanceTarget::Tessellation(id.clone()).into(),
                     appearance,
                     source_entity_id: Some(source_entity_id),
                     object_type: Some("DisplayFace".into()),
@@ -3490,11 +3491,13 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -3566,6 +3569,11 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut sketch_entities,
+        held_handles,
+        &mut pmi_losses,
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut sketch_constraints,
@@ -3770,6 +3778,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &all_lanes,
     )?;
+    crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
@@ -3919,7 +3928,7 @@ fn build_geometry_ir(
             {
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: binding_id,
-                    target: AppearanceTarget::Face(target),
+                    target: AppearanceTarget::Face(target).into(),
                     appearance: id,
                     source_entity_id: Some(face_color.face_attr.to_string()),
                     object_type: Some("Face".into()),
@@ -4076,7 +4085,7 @@ fn build_geometry_ir(
                     .colon(definition.record_offset)
                     .colon(face_index),
             ),
-            target: AppearanceTarget::Face(face_id.clone()),
+            target: AppearanceTarget::Face(face_id.clone()).into(),
             appearance,
             source_entity_id: Some(format!(
                 "{}:{}",
@@ -4735,11 +4744,13 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -4896,6 +4907,11 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut ir.model.sketch_entities,
+        held_handles,
+        &mut pmi_losses,
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut ir.model.sketch_constraints,
@@ -4919,6 +4935,7 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
+    crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
@@ -5893,13 +5910,13 @@ fn brep_local_sha256_in_place(
     let mut appearance_partition =
         digest_partition::DigestPartition::split(&mut ir.model.appearances, |appearance| {
             ir.model.appearance_bindings.iter().any(|binding| {
-                matches!(binding.target, AppearanceTarget::Face(_))
+                matches!(binding.target.entity, AppearanceTarget::Face(_))
                     && binding.appearance == appearance.id
             })
         });
     let mut binding_partition =
         digest_partition::DigestPartition::split(&mut ir.model.appearance_bindings, |binding| {
-            matches!(binding.target, AppearanceTarget::Face(_))
+            matches!(binding.target.entity, AppearanceTarget::Face(_))
         });
     let mut saved_body_display = Vec::new();
     for body in &mut ir.geometry.bodies {
@@ -5993,7 +6010,7 @@ mod digest_tests {
     fn binding(id: &str, target: AppearanceTarget, appearance: &str) -> AppearanceBinding {
         AppearanceBinding {
             id: AppearanceBindingId::mint(id).unwrap(),
-            target,
+            target: target.into(),
             appearance: AppearanceId::mint(appearance).unwrap(),
             source_entity_id: None,
             object_type: None,
@@ -6104,7 +6121,7 @@ fn brep_partition_sha256(
     normalized
         .model
         .appearance_bindings
-        .retain(|binding| matches!(binding.target, AppearanceTarget::Face(_)));
+        .retain(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)));
     let bindings = &normalized.model.appearance_bindings;
     normalized.model.appearances.retain(|appearance| {
         bindings

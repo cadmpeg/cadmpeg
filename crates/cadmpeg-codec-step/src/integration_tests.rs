@@ -3,8 +3,10 @@
 
 mod assembly_bodies;
 mod closed_faces;
+mod csg_solids;
 mod declared_measures;
 mod partial_geometry;
+mod plant_units;
 mod pmi_scope;
 mod tessellated_parts;
 mod tolerance_zones;

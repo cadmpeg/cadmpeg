@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -268,8 +274,10 @@
           "id": "usd:stage:appearance-binding#/Plant/Frame/Tube",
           "source_entity_id": "/Plant/Looks/Steel",
           "target": {
-            "kind": "tessellation",
-            "value": "usd:stage:tessellation#/Plant/Frame/Tube"
+            "entity": {
+              "kind": "tessellation",
+              "value": "usd:stage:tessellation#/Plant/Frame/Tube"
+            }
           }
         }
       ],
@@ -845,7 +853,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
