@@ -156,7 +156,8 @@ impl<'a> States<'a> {
                 scope.current.iter().map(move |state| Extent {
                     scope: scope.definition.as_str(),
                     state,
-                    records: reach.from_bodies(state.bodies.iter().map(|body| body.as_str())),
+                    records: reach
+                        .reached_from(state.bodies.iter().map(crate::ids::BodyId::as_str)),
                 })
             })
             .collect();
@@ -361,7 +362,7 @@ impl<'a> Reach<'a> {
         Self { children }
     }
 
-    fn from_bodies(&self, bodies: impl Iterator<Item = &'a str>) -> BTreeSet<&'a str> {
+    fn reached_from(&self, bodies: impl Iterator<Item = &'a str>) -> BTreeSet<&'a str> {
         let mut found = BTreeSet::new();
         let mut stack: Vec<&'a str> = bodies.collect();
         while let Some(record) = stack.pop() {

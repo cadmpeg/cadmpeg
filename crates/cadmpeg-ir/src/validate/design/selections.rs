@@ -394,7 +394,7 @@ fn check_pick<'a>(
             findings,
         ),
         Some(PickContext::Definition(definition)) => {
-            check_definition(index, definition, at, findings)
+            check_definition(index, definition, at, findings);
         }
         Some(PickContext::InContext {
             assembly,
@@ -782,7 +782,7 @@ fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
         .iter()
         .flat_map(|evaluation| evaluation.content.iter())
         .flat_map(|content| content.delta.members.keys())
-        .map(|occurrence| occurrence.as_str())
+        .map(crate::ids::OccurrenceId::as_str)
         .collect()
 }
 

@@ -61,7 +61,10 @@ fn datum_pick(name: &str) -> Value {
 }
 
 fn named(at: Value, picks: Vec<Value>) -> Value {
-    json!({"at": at, "picks": {"kind": "named", "value": picks}})
+    let mut selection = json!({"picks": {"kind": "named"}});
+    selection["at"] = at;
+    selection["picks"]["value"] = Value::Array(picks);
+    selection
 }
 
 fn input(relation: &str, reference: Option<Value>, value: Option<Value>) -> Value {
@@ -76,18 +79,22 @@ fn input(relation: &str, reference: Option<Value>, value: Option<Value>) -> Valu
 }
 
 fn construction(inputs: Vec<Value>) -> Value {
-    json!({"inputs": inputs, "after": [], "resolved_in": {}})
+    let mut construction = json!({"after": [], "resolved_in": {}});
+    construction["inputs"] = Value::Array(inputs);
+    construction
 }
 
 fn plane_datum(construction: Value) -> Value {
-    json!({
+    let mut datum = json!({
         "kind": "datum",
         "value": {
-            "element": {"kind": "plane", "value": construction},
+            "element": {"kind": "plane"},
             "native_options": {},
             "source_settings": {}
         }
-    })
+    });
+    datum["value"]["element"]["value"] = construction;
+    datum
 }
 
 fn length(value: f64) -> Value {

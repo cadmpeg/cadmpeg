@@ -52,7 +52,7 @@ pub(super) struct Collect<'a, 'c> {
     pub(super) constructions: Vec<ConstructionView<'a>>,
 }
 
-impl<'a, 'c> Collect<'a, 'c> {
+impl<'c> Collect<'_, 'c> {
     pub(super) const fn new(ctx: &'c DecodeContext<'c>) -> Self {
         Self {
             ctx,

@@ -19,6 +19,7 @@ use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::selection::{
     DatumPart, PickContext, PickTarget, Picked, Picks, PrincipalEntity,
 };
+use crate::math::portable::Portable;
 use crate::math::{Point3, Vector3};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
@@ -39,12 +40,12 @@ pub(super) fn check(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut V
     for record in held {
         let at = record.holder.record();
         let scope = match record.holder {
-            Holder::Record { scope, .. } => scope.map(|scope| scope.as_str()),
+            Holder::Record { scope, .. } => scope.map(crate::ids::ProductDefinitionId::as_str),
             Holder::Definition(_) | Holder::Owned { .. } => record
                 .holder
                 .feature()
                 .and_then(|feature| index.scope_of(Key::Feature(feature)))
-                .map(|scope| scope.as_str()),
+                .map(crate::ids::ProductDefinitionId::as_str),
         };
         for &construction in &record.constructions {
             check_construction(index, construction, scope, geometry, at, findings);
@@ -434,14 +435,23 @@ const fn pick_count_admitted(relation: &Relation, count: usize) -> bool {
     }
 }
 
-/// The element of a datum feature: `None` where the operation is not
-/// stated (unresolved, native, or no such feature), `Some(None)` where the
-/// feature is not a datum.
-fn datum_element<'a>(index: &DesignIndex<'a>, feature: &str) -> Option<Option<&'a DatumElement>> {
+/// What a datum pick's feature is known to be.
+enum DatumFeature<'a> {
+    /// A typed datum.
+    Datum(&'a DatumElement),
+    /// A typed operation other than a datum.
+    Other,
+    /// An unresolved or native operation, or no such feature.
+    Unstated,
+}
+
+fn datum_element<'a>(index: &DesignIndex<'a>, feature: &str) -> DatumFeature<'a> {
     match index.operation(feature) {
-        Some(FeatureOperation::Datum(datum)) => Some(Some(&datum.element)),
-        Some(FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. }) | None => None,
-        Some(_) => Some(None),
+        Some(FeatureOperation::Datum(datum)) => DatumFeature::Datum(&datum.element),
+        Some(FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. }) | None => {
+            DatumFeature::Unstated
+        }
+        Some(_) => DatumFeature::Other,
     }
 }
 
@@ -454,7 +464,7 @@ fn picks_frame(index: &DesignIndex<'_>, pick: &Picked) -> bool {
             Some(DatumPart::Point(_)) => false,
             None => matches!(
                 datum_element(index, feature.as_str()),
-                None | Some(Some(DatumElement::Frame(_)))
+                DatumFeature::Unstated | DatumFeature::Datum(DatumElement::Frame(_))
             ),
         },
         PickTarget::Principal { entity, .. } | PickTarget::SketchFrame { entity, .. } => {
@@ -474,7 +484,7 @@ fn picks_whole_frame(index: &DesignIndex<'_>, pick: &Picked) -> bool {
         } => {
             matches!(
                 datum_element(index, feature.as_str()),
-                Some(Some(DatumElement::Frame(_)))
+                DatumFeature::Datum(DatumElement::Frame(_))
             )
         }
         PickTarget::Datum {
@@ -506,7 +516,7 @@ fn picks_curve(index: &DesignIndex<'_>, pick: &Picked) -> bool {
         } => {
             matches!(
                 datum_element(index, feature.as_str()),
-                None | Some(Some(DatumElement::Axis(_)))
+                DatumFeature::Unstated | DatumFeature::Datum(DatumElement::Axis(_))
             )
         }
         _ => false,
@@ -528,7 +538,7 @@ fn picks_plane(index: &DesignIndex<'_>, pick: &Picked) -> bool {
         } => {
             matches!(
                 datum_element(index, feature.as_str()),
-                Some(Some(DatumElement::Plane(_)))
+                DatumFeature::Datum(DatumElement::Plane(_))
             )
         }
         PickTarget::Datum {
@@ -712,7 +722,9 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
                 let key = (
                     definition.as_str(),
                     *entity,
-                    container.as_ref().map(|container| container.as_str()),
+                    container
+                        .as_ref()
+                        .map(crate::design::ids::ContainerId::as_str),
                 );
                 if restated.contains(&key) {
                     record_finding(
@@ -763,7 +775,9 @@ fn principal_restatement(datum: &Datum) -> Option<(PrincipalEntity, Option<&str>
             ..
         }] => Some((
             *entity,
-            container.as_ref().map(|container| container.as_str()),
+            container
+                .as_ref()
+                .map(crate::design::ids::ContainerId::as_str),
         )),
         _ => None,
     }
@@ -819,7 +833,7 @@ fn plane_ok(plane: &PlaneValue, geometry: Geometry) -> bool {
     Vector3::from(plane.x_axis)
         .dot(Vector3::from(plane.normal))
         .abs()
-        <= geometry.angular.sin()
+        <= geometry.angular.portable_sin()
 }
 
 fn frame_ok(frame: &FrameValue, geometry: Geometry) -> bool {
@@ -828,7 +842,7 @@ fn frame_ok(frame: &FrameValue, geometry: Geometry) -> bool {
         Vector3::from(frame.y_axis),
         Vector3::from(frame.z_axis),
     );
-    let tolerance = geometry.angular.sin();
+    let tolerance = geometry.angular.portable_sin();
     let cross = x.cross(y);
     x.dot(y).abs() <= tolerance
         && y.dot(z).abs() <= tolerance

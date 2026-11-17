@@ -149,7 +149,11 @@ impl<'a> DesignIndex<'a> {
                         found.insert(target);
                     }
                     if let PickTarget::Entity(name) = &pick.target {
-                        found.extend(mentioned_features(name).into_iter().map(|id| id.as_str()));
+                        found.extend(
+                            mentioned_features(name)
+                                .into_iter()
+                                .map(crate::features::FeatureId::as_str),
+                        );
                     }
                 }
             }
@@ -360,7 +364,7 @@ impl<'a> DesignIndex<'a> {
                         found.insert(feature.as_str());
                     }
                     Member::Container(inner) => {
-                        stack.extend(self.containers.get(inner.as_str()).copied())
+                        stack.extend(self.containers.get(inner.as_str()).copied());
                     }
                 }
             }
