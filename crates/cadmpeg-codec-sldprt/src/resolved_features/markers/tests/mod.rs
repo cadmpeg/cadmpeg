@@ -38,6 +38,7 @@ fn raw_link<T>(value: Option<(FiniteVector<2>, T)>) -> Option<([f64; 2], T)> {
 mod alternate_profile_points;
 mod dimension_carriers;
 mod four_link_profile_points;
+mod listed_curves;
 mod lanes;
 mod profile_curves;
 mod profile_points;

@@ -374,3 +374,59 @@ fn a_curve_without_the_eight_zero_bytes_stays_unresolved() {
         assert!(curve_stays_unresolved(&payload, offset));
     }
 }
+
+#[test]
+fn listed_lines_and_arcs_are_readable_curves_and_points_are_not() {
+    let sample = sample();
+    let lists = SketchRecordLists::new(&sample.payload);
+    for offset in [sample.line, sample.arc, sample.circle] {
+        assert!(lists.readable_curve(&sample.payload, offset));
+    }
+    for offset in sample.points {
+        assert!(!lists.readable_curve(&sample.payload, offset));
+    }
+}
+
+#[test]
+fn an_unread_curve_form_or_an_unlisted_record_is_not_a_readable_curve() {
+    let mut sample = sample();
+    sample.payload[sample.line + SELECTOR] = 5;
+    let lists = SketchRecordLists::new(&sample.payload);
+    assert!(!lists.readable_curve(&sample.payload, sample.line));
+    assert!(lists.readable_curve(&sample.payload, sample.arc));
+
+    let mut payload = vec![0; 7];
+    let unlisted = curve(&mut payload, 0, 1, 0, None);
+    let lists = SketchRecordLists::new(&payload);
+    assert!(!lists.readable_curve(&payload, unlisted));
+}
+
+#[test]
+fn selector_bit_three_marks_a_construction_record() {
+    let mut sample = sample();
+    sample.payload[sample.line + SELECTOR] = 12;
+    assert!(construction_record(&sample.payload, sample.line));
+    assert!(!construction_record(&sample.payload, sample.arc));
+    let lists = SketchRecordLists::new(&sample.payload);
+    assert!(lists.readable_curve(&sample.payload, sample.line));
+}
+
+#[test]
+fn a_listed_line_or_arc_ends_at_the_point_records_of_its_indices() {
+    let sample = sample();
+    let lists = SketchRecordLists::new(&sample.payload);
+    let ends = Some([sample.points[1], sample.points[2]]);
+    assert_eq!(lists.listed_curve_ends(&sample.payload, sample.line), ends);
+    assert_eq!(lists.listed_curve_ends(&sample.payload, sample.arc), ends);
+}
+
+#[test]
+fn a_full_circle_and_a_point_record_have_no_listed_ends() {
+    let sample = sample();
+    let lists = SketchRecordLists::new(&sample.payload);
+    assert_eq!(lists.listed_curve_ends(&sample.payload, sample.circle), None);
+    assert_eq!(
+        lists.listed_curve_ends(&sample.payload, sample.points[0]),
+        None
+    );
+}

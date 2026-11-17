@@ -50,6 +50,8 @@ const LINE_TRAILER: usize = 84;
 /// Where a current-layout line record stores its identity: with a zero
 /// trailer, a value other than `0` and null selects one-based ordinals.
 const LINE_IDENTITY: usize = 88;
+/// Selector bit 3: the record is construction geometry.
+const CONSTRUCTION_SELECTOR_BIT: u16 = 0x08;
 /// A point record's coordinate masks: bit 4 set writes two coordinates.
 const PLANAR_POINT_MASKS: [u16; 6] = [0x12, 0x13, 0x16, 0x1a, 0x1e, 0x1f];
 /// A point record's coordinate masks that write three coordinates.
@@ -125,6 +127,36 @@ impl SketchRecordLists {
             }
         }
         Self { lists, records }
+    }
+
+    /// The form of the curve record of a list that starts at `offset`, when
+    /// it is a line or an arc ([`curve_form`]).
+    pub(super) fn listed_curve(&self, payload: &[u8], offset: usize) -> Option<CurveForm> {
+        match self.record(offset)? {
+            ListedRecord::Curve { .. } => curve_form(payload, offset),
+            ListedRecord::Point => None,
+        }
+    }
+
+    /// The stream offsets of the point records at the two ends of the
+    /// listed line or arc at `offset`; `None` for a full circle, which has no
+    /// ends, and for a record that is not a readable curve.
+    pub(super) fn listed_curve_ends(&self, payload: &[u8], offset: usize) -> Option<[usize; 2]> {
+        let ListedRecord::Curve { sketch } = self.record(offset)? else {
+            return None;
+        };
+        let (start, end) = match curve_form(payload, offset)? {
+            CurveForm::Line { start, end } => (start, end),
+            CurveForm::Arc { start, end, .. } if start != end => (start, end),
+            CurveForm::Arc { .. } => return None,
+        };
+        Some([sketch.point(start)?, sketch.point(end)?])
+    }
+
+    /// Whether `offset` starts a curve record of a list whose form is a line
+    /// or an arc.
+    pub(super) fn readable_curve(&self, payload: &[u8], offset: usize) -> bool {
+        self.listed_curve(payload, offset).is_some()
     }
 
     /// The listed record that starts at `offset`.
@@ -306,6 +338,15 @@ fn object_identifier_line(payload: &[u8], offset: usize) -> Option<bool> {
     let trailer = View::u32_le_at(payload, offset.checked_add(LINE_TRAILER)?)?;
     let identity = View::u32_le_at(payload, offset.checked_add(LINE_IDENTITY)?)?;
     Some(trailer == 1 || (trailer == 0 && identity != 0 && identity != u32::MAX))
+}
+
+/// Whether bit 3 of the selector of the record at `offset` is set: the
+/// record is construction geometry.
+pub(super) fn construction_record(payload: &[u8], offset: usize) -> bool {
+    offset
+        .checked_add(SELECTOR)
+        .and_then(|at| View::u16_le_at(payload, at))
+        .is_some_and(|selector| selector & CONSTRUCTION_SELECTOR_BIT != 0)
 }
 
 /// The geometry of the listed record at `offset`, from the record and the

@@ -47,7 +47,7 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
-use super::sketch_lists::{listed_record_geometry, SketchRecordLists};
+use super::sketch_lists::{construction_record, listed_record_geometry, SketchRecordLists};
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -1516,6 +1516,27 @@ pub(crate) fn project_marker_backed_sketches(
                             f64_from_i64(point.1)? * QUANTUM,
                         ))
                     };
+                    // A curve record of a list reads from its list ahead of
+                    // the per-layout readers.
+                    if let Some(listed) = index_from_u64(marker.offset())
+                        .filter(|&offset| record_lists.readable_curve(&lane.native_payload, offset))
+                        .and_then(|offset| {
+                            let geometry = listed_record_geometry(
+                                &lane.native_payload,
+                                &record_lists,
+                                offset,
+                                &project_coordinates,
+                            )?;
+                            let construction = construction_record(&lane.native_payload, offset)
+                                || marker_is_selected_construction_line(
+                                    &lane.native_payload,
+                                    offset,
+                                );
+                            Some((geometry, construction))
+                        })
+                    {
+                        return Ok(listed);
+                    }
                     let is_recovered_legacy_profile_point = |endpoint: &SketchInputEntity| {
                         usize::try_from(endpoint.offset())
                             .ok()
@@ -2176,7 +2197,22 @@ pub(crate) fn project_marker_backed_sketches(
                 };
                 if let Some((geometry, construction)) = entity {
                     let mut endpoint_refs = Vec::new();
-                    if matches!(
+                    let listed_ends = index_from_u64(marker.offset()).and_then(|offset| {
+                        record_lists.listed_curve_ends(&lane.native_payload, offset)
+                    });
+                    let listed_curve = index_from_u64(marker.offset()).is_some_and(|offset| {
+                        record_lists.readable_curve(&lane.native_payload, offset)
+                    });
+                    if listed_curve {
+                        // A listed curve ends at the point records its indices
+                        // select.
+                        for end in listed_ends.into_iter().flatten() {
+                            let id = format!("sldprt:feature-input:sketch-entity#{lane_key}:{end}");
+                            if let Some(endpoint) = markers_by_id.get(id.as_str()) {
+                                endpoint_refs.push(endpoint.id().to_owned());
+                            }
+                        }
+                    } else if matches!(
                         marker.kind(),
                         SketchInputKind::LineOrCircle | SketchInputKind::Arc
                     ) {
