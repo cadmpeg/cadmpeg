@@ -74,18 +74,14 @@ fn position_resolves_unique_complete_paths_despite_ambiguous_prefixes_and_the_co
     const CHILD: &str = "22222222-3333-4444-8555-666666666666";
     let occurrence = cadmpeg_ir::products::Occurrence {
         id: cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#one").unwrap(),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:definition#one")
-                .unwrap(),
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
+        prototype: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:definition#one")
+            .unwrap(),
+        transform: Some(Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: Some("f3d:Design/BulkStream.dat:occurrence#key".into()),
     };
     let carrier = crate::records::feature::assembly_features::DesignComponentOccurrence::try_new(

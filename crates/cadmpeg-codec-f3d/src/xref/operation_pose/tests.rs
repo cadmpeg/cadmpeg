@@ -130,17 +130,13 @@ fn model() -> (cadmpeg_ir::CadIr, BTreeMap<String, OperationPose>) {
     for i in 0..2 {
         ir.model.occurrences.push(Occurrence {
             id: format!("f3d:model:occurrence#{i}").try_into().unwrap(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: "f3d:model:definition#test".to_owned().try_into().unwrap(),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: i,
-            transform: Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
+            prototype: "f3d:model:definition#test".to_owned().try_into().unwrap(),
+            transform: Some(Transform::identity()),
+            suppressed: None,
             visible: None,
-            link: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: None,
             native_ref: Some(key.clone()),
         });
     }

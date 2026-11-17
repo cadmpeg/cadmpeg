@@ -5,7 +5,6 @@ use std::time::{Duration, Instant};
 
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::products::OccurrenceParent;
 use cadmpeg_ir::CadIr;
 
 use super::{definitions, display_geometry, occurrences, placement, Placed, MAX_OCCURRENCES};
@@ -127,36 +126,39 @@ fn mirrored_skewed_or_unequal_bases_stay_affine() {
 }
 
 #[test]
-fn shared_definitions_expand_to_one_occurrence_per_path() {
+fn a_shared_definition_lists_its_occurrences_once() {
     let (ir, losses) = expand(&structure(vec![
         definition("TOP", &[1, 1, 2]),
         definition("SUB", &[2]),
         definition("LEAF", &[]),
     ]));
-    let tree: Vec<_> = ir
+    let owned: Vec<_> = ir
         .model
-        .occurrences
+        .product_definitions
         .iter()
-        .map(|occurrence| {
-            let parent = match &occurrence.parent {
-                OccurrenceParent::Root {} => String::new(),
-                OccurrenceParent::Occurrence { occurrence } => occurrence.to_string(),
-            };
-            (occurrence.id.to_string(), parent, occurrence.ordinal)
+        .map(|definition| {
+            (
+                definition.id.to_string(),
+                definition.is_root(),
+                definition
+                    .occurrences
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+            )
         })
         .collect();
     let id = |index: usize| format!("pvz:model:occurrence#{index}");
+    let definition = |index: usize| format!("pvz:model:definition#{index}");
     assert_eq!(
-        tree,
+        owned,
         [
-            (id(0), String::new(), 0),
-            (id(1), id(0), 0),
-            (id(2), id(0), 1),
-            (id(3), id(0), 2),
-            (id(4), id(1), 0),
-            (id(5), id(2), 0),
+            (definition(0), true, vec![id(0), id(2), id(3)]),
+            (definition(1), false, vec![id(1)]),
+            (definition(2), false, vec![]),
         ]
     );
+    assert_eq!(ir.model.occurrences.len(), 4);
     assert!(losses.is_empty());
     let mut ir = ir;
     ir.finalize();

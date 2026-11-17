@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::products::{ProductDefinitionKind, PrototypeReference};
+use cadmpeg_ir::products::{ProductDefinitionKind, Storage};
 use cadmpeg_ir::topology::BodyKind;
 
 use crate::loss::UsdLossCode;
@@ -28,8 +28,8 @@ fn lengths_scale_from_scene_units_to_millimetres() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("A"))
         .unwrap();
-    assert_eq!(root.transform.affine_rows()[0][3], 10.0);
-    assert_eq!(root.transform.affine_rows()[2][3], 30.0);
+    assert_eq!(root.transform.unwrap().affine_rows()[0][3], 10.0);
+    assert_eq!(root.transform.unwrap().affine_rows()[2][3], 30.0);
     let vertices = ir.model.tessellations[0].vertices();
     assert!((vertices[1].get().x - 10.0).abs() <= EPS_LENGTH);
     assert_eq!(
@@ -55,7 +55,7 @@ fn prims_become_definitions_and_occurrences() {
         .model
         .product_definitions
         .iter()
-        .map(|definition| definition.kind.clone())
+        .filter_map(|definition| definition.kind)
         .collect();
     assert!(kinds.contains(&ProductDefinitionKind::Part));
     assert!(kinds.contains(&ProductDefinitionKind::Object));
@@ -90,14 +90,14 @@ fn an_external_arc_is_an_external_prototype() {
     let external: Vec<_> = result
         .ir()
         .model
-        .occurrences
+        .product_definitions
         .iter()
-        .filter_map(|occurrence| match &occurrence.prototype {
-            PrototypeReference::External { object, .. } => Some(object.clone()),
+        .filter_map(|definition| match &definition.storage {
+            Storage::External(document) => Some(document.object.clone()),
             _ => None,
         })
         .collect();
-    assert_eq!(external, [Some("/Bolt".to_owned())]);
+    assert_eq!(external, [cadmpeg_core::text::NonBlankString::new("/Bolt")]);
     assert!(has_loss(&result, UsdLossCode::CompositionExternalArc));
 }
 

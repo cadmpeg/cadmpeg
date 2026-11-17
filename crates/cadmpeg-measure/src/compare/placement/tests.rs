@@ -47,17 +47,13 @@ fn occurrence(n: u32, transform: Transform) -> Occurrence {
     let one = FiniteReal::new(1.0).expect("finite");
     Occurrence {
         id: OccurrenceId::mint(format!("test:model:occurrence#{n}")).expect("id"),
-        prototype: PrototypeReference::Local {
-            definition: ProductDefinitionId::mint("test:model:product#1").expect("id"),
-        },
-        parent: OccurrenceParent::Root {},
-        ordinal: n,
-        transform,
-        linked_prototype: None,
-        scale: [one; 3],
-        name: None,
+        prototype: ProductDefinitionId::mint("test:model:product#1").expect("id"),
+        transform: Some(transform),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: None,
     }
 }

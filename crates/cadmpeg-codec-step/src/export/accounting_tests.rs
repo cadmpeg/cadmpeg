@@ -158,17 +158,13 @@ fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
         let root: cadmpeg_ir::ids::OccurrenceId = "test:model:occurrence#root".try_into().unwrap();
         let occurrence = Occurrence {
             id: root.clone(),
-            prototype: PrototypeReference::Local {
-                definition: ir.model.product_definitions[0].id.clone(),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform: cadmpeg_ir::transform::Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
+            prototype: ir.model.product_definitions[0].id.clone(),
+            transform: Some(cadmpeg_ir::transform::Transform::identity()),
+            suppressed: None,
             visible: None,
-            link: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: None,
             native_ref: None,
         };
         if nested {
@@ -176,15 +172,14 @@ fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
         }
         ir.model.occurrences.push(Occurrence {
             id: "test:model:occurrence#missing".try_into().unwrap(),
-            prototype: PrototypeReference::Local {
-                definition: "test:model:product-definition#missing".try_into().unwrap(),
-            },
-            parent: if nested {
-                OccurrenceParent::Occurrence { occurrence: root }
-            } else {
-                OccurrenceParent::Root {}
-            },
-            ..occurrence
+            prototype: "test:model:product-definition#missing".try_into().unwrap(),
+            transform: Some(Transform::identity()),
+            suppressed: None,
+            visible: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: None,
+            native_ref: None,
         });
         let mut output = vec![0xaa];
         let error = write_step(
