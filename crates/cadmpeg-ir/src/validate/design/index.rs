@@ -285,6 +285,37 @@ impl<'a> DesignIndex<'a> {
         })
     }
 
+    /// The position whose state a position names (§5.3): for
+    /// `After(Container(c))` of an ordered container `c`, the position at
+    /// `c`'s rollback, which has no state of its own; any other position is
+    /// itself. `None` where a rollback names no member of its container.
+    pub(super) fn rollback_position(&self, position: &Position) -> Option<Position> {
+        let mut position = position.clone();
+        for _ in 0..=self.containers.len() {
+            let Position::After(Member::Container(id)) = &position else {
+                return Some(position);
+            };
+            let Some(Container::Ordered {
+                id,
+                members,
+                rollback,
+                ..
+            }) = self.containers.get(id.as_str()).copied()
+            else {
+                return Some(position);
+            };
+            let end = match rollback {
+                Rollback::End => members.len(),
+                Rollback::Before(at) => members.iter().position(|member| member == at)?,
+            };
+            position = match end.checked_sub(1) {
+                None => Position::Start(id.clone()),
+                Some(last) => Position::After(members.get(last)?.clone()),
+            };
+        }
+        None
+    }
+
     /// The features the current geometry of a scope depends on: the union
     /// over its current states, or `None` where it lists none.
     pub(super) fn current_features(&self, scope: &str) -> Option<BTreeSet<&'a str>> {

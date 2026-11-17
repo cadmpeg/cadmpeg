@@ -24,7 +24,7 @@ use cadmpeg_core::CodecError;
 use crate::design::feature::Feature;
 use crate::document::{CadIr, Topology};
 use crate::ids::ProductDefinitionId;
-use crate::report::check::Finding;
+use crate::report::check::{Check, Finding};
 
 use super::record_finding;
 use index::{DesignIndex, Key};
@@ -51,6 +51,7 @@ fn check_closed_topology(
     let mut nested = Vec::new();
     super::topology::check_references(ctx, &alone, &index, &mut nested)?;
     for mut finding in nested {
+        finding.check = Check::Design;
         finding.message = format!("{what}: {}", finding.message);
         finding.related.insert(0, at.to_owned());
         findings.push(finding);

@@ -64,7 +64,7 @@ pub(super) fn check(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut V
             {
                 record_finding(
                     findings,
-                    Check::Spelling,
+                    Check::Design,
                     Severity::Error,
                     Some(at),
                     format_args!("a placement with no inputs and no bound step resolves to the identity; it is absent"),
@@ -100,7 +100,7 @@ fn check_construction(
     let after = construction.after();
     if inputs.is_empty() && after.is_empty() && !construction.has_resolved() {
         error(
-            Check::GeometricConsistency,
+            Check::Design,
             format_args!(
                 "a {} construction has no input, no step, and no resolved value",
                 kind.name()
@@ -109,7 +109,7 @@ fn check_construction(
     }
     if construction.solution() == Some(0) {
         error(
-            Check::GeometricConsistency,
+            Check::Design,
             format_args!("a construction's solution is 0; it counts from 1"),
         );
     }
@@ -117,7 +117,7 @@ fn check_construction(
         match step {
             PostStep::Flip(Dimension::Literal(false)) => {
                 error(
-                    Check::Spelling,
+                    Check::Design,
                     format_args!("a Flip step with a literal false is absent"),
                 );
             }
@@ -127,7 +127,7 @@ fn check_construction(
                     .all(|component| matches!(component, Dimension::Literal(_))) =>
             {
                 error(
-                    Check::Spelling,
+                    Check::Design,
                     format_args!(
                         "an AxisRotate step binds no axis component; it is a Fixed and a Rotate"
                     ),
@@ -139,7 +139,7 @@ fn check_construction(
     let resolved_in = construction.resolved_in();
     if inputs.is_empty() && after.is_empty() && !resolved_in.is_empty() {
         error(
-            Check::GeometricConsistency,
+            Check::Design,
             format_args!("a construction with no inputs and no steps has resolved_in values"),
         );
     }
@@ -157,7 +157,7 @@ fn check_construction(
                 .any(|record| record.id == *configuration && record.scope.as_str() == scope);
             if !other || active == Some(configuration) {
                 error(
-                    Check::ReferentialIntegrity,
+                    Check::Design,
                     format_args!(
                         "resolved_in names {}, which is not a configuration of the construction's scope other than its active one",
                         configuration.as_str()
@@ -173,7 +173,7 @@ fn check_construction(
         let (subject, relation) = (role.subject, &role.relation);
         if !subject_admitted(kind, subject) {
             error(
-                Check::GeometricConsistency,
+                Check::Design,
                 format_args!("a {} construction has a {subject:?} subject", kind.name()),
             );
         }
@@ -184,7 +184,7 @@ fn check_construction(
             )
         {
             error(
-                Check::Spelling,
+                Check::Design,
                 format_args!(
                     "a ZAxis subject carries a {relation:?} relation; the whole carries it"
                 ),
@@ -193,7 +193,7 @@ fn check_construction(
         if let Relation::Native(text) = relation {
             if !native_text(text.as_str()) {
                 error(
-                    Check::Spelling,
+                    Check::Design,
                     format_args!(
                         "native relation {:?} is not written codec:name",
                         text.as_str()
@@ -209,7 +209,7 @@ fn check_construction(
             input.reference.is_some(),
         ) {
             error(
-                Check::GeometricConsistency,
+                Check::Design,
                 format_args!(
                     "a {relation:?} input of a {} construction has a value it does not take",
                     kind.name()
@@ -220,14 +220,14 @@ fn check_construction(
             let zero = |value: &Dimension<crate::scalar::FiniteReal>| matches!(value, Dimension::Literal(value) if value.get() == 0.0);
             if zero(a) && zero(b) && zero(c) {
                 error(
-                    Check::GeometricConsistency,
+                    Check::Design,
                     format_args!("a PlaneEquation's literal a, b, and c are all zero"),
                 );
             }
         }
         if matches!(relation, Relation::Radius | Relation::Limit) && kind != Kind::Curve {
             error(
-                Check::GeometricConsistency,
+                Check::Design,
                 format_args!(
                     "a {relation:?} input occurs on a {} construction",
                     kind.name()
@@ -238,14 +238,22 @@ fn check_construction(
             && (!matches!(kind, Kind::Plane | Kind::Frame) || subject != Subject::Whole)
         {
             error(
-                Check::GeometricConsistency,
+                Check::Design,
                 format_args!("a Fold input is not the Whole of a plane or frame"),
             );
         }
-        if input.reversed.is_some() && !reversible(relation) {
+        if input.reversed.is_some() && !reversible(construction, subject, relation) {
             error(
-                Check::GeometricConsistency,
+                Check::Design,
                 format_args!("a {relation:?} input states reversed"),
+            );
+        }
+        if matches!(input.value, Some(ScalarDimension::ParameterRatio(_)))
+            && !parameter_ratio_admitted(index, relation, input.reference.as_ref())
+        {
+            error(
+                Check::Design,
+                format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
             );
         }
         match &input.reference {
@@ -254,7 +262,7 @@ fn check_construction(
                     let picks = picks.as_slice();
                     if !pick_count_admitted(relation, picks.len()) {
                         error(
-                            Check::GeometricConsistency,
+                            Check::Design,
                             format_args!(
                                 "a {relation:?} input's reference holds {} picks",
                                 picks.len()
@@ -267,17 +275,8 @@ fn check_construction(
                             .is_some_and(|first| !picks_frame(index, first))
                     {
                         error(
-                            Check::GeometricConsistency,
+                            Check::Design,
                             format_args!("a Coordinates reference does not pick a frame first"),
-                        );
-                    }
-                    if matches!(input.value, Some(ScalarDimension::ParameterRatio(_)))
-                        && !(matches!(relation, Relation::AtParameter)
-                            && matches!(picks, [one] if picks_curve(index, one)))
-                    {
-                        error(
-                            Check::GeometricConsistency,
-                            format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
                         );
                     }
                     if subject == Subject::Whole
@@ -286,7 +285,7 @@ fn check_construction(
                         && matches!(picks, [one] if picks_whole_frame(index, one))
                     {
                         error(
-                            Check::GeometricConsistency,
+                            Check::Design,
                             format_args!(
                                 "a Whole Coincident input on a whole frame is on a {} construction",
                                 kind.name()
@@ -298,7 +297,7 @@ fn check_construction(
             Some(InputReference::Built(built)) => {
                 if matches!(relation, Relation::Fold | Relation::Centroid) {
                     error(
-                        Check::GeometricConsistency,
+                        Check::Design,
                         format_args!(
                             "a nested construction is the reference of a {relation:?} input"
                         ),
@@ -310,7 +309,7 @@ fn check_construction(
                 {
                     if let crate::design::construction::AnyConstruction::Frame(_) = built.as_ref() {
                         error(
-                            Check::GeometricConsistency,
+                            Check::Design,
                             format_args!(
                                 "a Whole Coincident input on a whole frame is on a {} construction",
                                 kind.name()
@@ -318,32 +317,13 @@ fn check_construction(
                         );
                     }
                 }
-                if matches!(input.value, Some(ScalarDimension::ParameterRatio(_)))
-                    && !(matches!(relation, Relation::AtParameter)
-                        && matches!(
-                            built.as_ref(),
-                            crate::design::construction::AnyConstruction::Curve(_)
-                        ))
-                {
-                    error(
-                        Check::GeometricConsistency,
-                        format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
-                    );
-                }
             }
-            None => {
-                if matches!(input.value, Some(ScalarDimension::ParameterRatio(_))) {
-                    error(
-                        Check::GeometricConsistency,
-                        format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
-                    );
-                }
-            }
+            None => {}
         }
     }
     if matches!(kind, Kind::Plane | Kind::Frame) && leading_offset(index, construction) {
         error(
-            Check::Spelling,
+            Check::Design,
             format_args!("a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
         );
     }
@@ -379,14 +359,14 @@ fn value_admitted(
             (Kind::Point, Subject::Whole) | (_, Subject::Origin) => {
                 matches!(value, Some(V::Position { .. }))
             }
-            (Kind::Direction | Kind::Axis, Subject::Whole) => {
+            (Kind::Direction | Kind::Axis, Subject::Whole)
+            | (_, Subject::XAxis | Subject::YAxis | Subject::ZAxis) => {
                 matches!(value, Some(V::Components { .. }))
             }
-            (Kind::Plane, Subject::Whole) => matches!(value, Some(V::PlaneEquation { .. })),
-            _ => matches!(
-                value,
-                Some(V::Position { .. } | V::Components { .. } | V::PlaneEquation { .. })
-            ),
+            (Kind::Plane | Kind::Frame, Subject::Whole) => {
+                matches!(value, Some(V::PlaneEquation { .. }))
+            }
+            (Kind::Curve, Subject::Whole) => false,
         },
         Relation::Midway => matches!(value, None | Some(V::Ratio(_))),
         Relation::Radius => matches!(value, Some(V::Length(_))) || value.is_none() && referenced,
@@ -408,19 +388,58 @@ fn value_admitted(
     }
 }
 
-const fn reversible(relation: &Relation) -> bool {
-    matches!(
-        relation,
+/// Whether an input of `relation` on `subject` may state `reversed`: a
+/// `Coincident` one only where the subject is a line.
+fn reversible(construction: ConstructionView<'_>, subject: Subject, relation: &Relation) -> bool {
+    match relation {
         Relation::Parallel
-            | Relation::Perpendicular
-            | Relation::Tangent
-            | Relation::AxisOf
-            | Relation::Coincident
-            | Relation::PrincipalNormal
-            | Relation::Binormal
-            | Relation::AtParameter
-            | Relation::Native(_)
-    )
+        | Relation::Perpendicular
+        | Relation::Tangent
+        | Relation::AxisOf
+        | Relation::PrincipalNormal
+        | Relation::Binormal
+        | Relation::AtParameter => true,
+        Relation::Coincident => match subject {
+            Subject::XAxis | Subject::YAxis | Subject::ZAxis => true,
+            Subject::Origin => false,
+            Subject::Whole => match construction {
+                ConstructionView::Axis(_) => true,
+                ConstructionView::Curve(curve) => curve
+                    .resolved
+                    .as_ref()
+                    .is_none_or(|value| matches!(value, CurveValue::Segment { .. })),
+                ConstructionView::Point(_)
+                | ConstructionView::Direction(_)
+                | ConstructionView::Plane(_)
+                | ConstructionView::Frame(_) => false,
+            },
+        },
+        _ => false,
+    }
+}
+
+/// Whether a `ParameterRatio` value's input is `AtParameter` and its
+/// reference picks one edge or curve. An unread reference states no picks.
+fn parameter_ratio_admitted(
+    index: &DesignIndex<'_>,
+    relation: &Relation,
+    reference: Option<&InputReference>,
+) -> bool {
+    matches!(relation, Relation::AtParameter)
+        && match reference {
+            Some(InputReference::Picks(selection)) => match &selection.picks {
+                Picks::Named(picks) => {
+                    matches!(picks.as_slice(), [one] if picks_curve(index, one))
+                }
+                Picks::Unread => true,
+                Picks::Rule { .. } => false,
+            },
+            Some(InputReference::Built(built)) => matches!(
+                built.as_ref(),
+                crate::design::construction::AnyConstruction::Curve(_)
+            ),
+            None => false,
+        }
 }
 
 /// The number of picks each relation's reference holds.
@@ -633,13 +652,7 @@ fn check_datum_link(datum: &Datum, at: &str, findings: &mut Vec<Finding>) {
         DatumElement::Frame(frame) => coincident(&frame.inputs),
     };
     let mut error = |message: std::fmt::Arguments<'_>| {
-        record_finding(
-            findings,
-            Check::GeometricConsistency,
-            Severity::Error,
-            Some(at),
-            message,
-        );
+        record_finding(findings, Check::Design, Severity::Error, Some(at), message);
     };
     if !shapes {
         error(format_args!(
@@ -683,7 +696,7 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
             for other in others {
                 record_finding(
                     findings,
-                    Check::Spelling,
+                    Check::Design,
                     Severity::Error,
                     Some(other),
                     format_args!("datum feature restates principal {entity:?}, which datum feature {first} already restates"),
@@ -729,7 +742,7 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
                 if restated.contains(&key) {
                     record_finding(
                         findings,
-                        Check::Spelling,
+                        Check::Design,
                         Severity::Error,
                         Some(record.holder.record()),
                         format_args!("a pick names principal {entity:?}, which a datum feature restates; it picks that feature as Datum"),
@@ -821,7 +834,7 @@ fn check_values(
     for message in bad {
         record_finding(
             findings,
-            Check::GeometricConsistency,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!("{message}"),

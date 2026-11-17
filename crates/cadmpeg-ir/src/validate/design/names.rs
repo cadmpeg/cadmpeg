@@ -18,7 +18,10 @@ use crate::design::names::{
     GenerationRole, Generator, InstanceIndex, NameEntry, NameKind, TopoName,
 };
 use crate::design::ops::body::{PatternInstances, TransformMode};
-use crate::design::ops::shared::PatternLayout;
+use crate::design::ops::shared::{
+    DimensionTable, PatternLayout, PatternRun, RunSides, Spacing, UpToFill,
+};
+use crate::design::options::SymmetricMeasure;
 use crate::design::refs::{EntityRef, Evaluated};
 use crate::design::selection::{PickTarget, Picks};
 use crate::features::FeatureId;
@@ -229,7 +232,7 @@ fn check_entry(
     if !holds {
         record_finding(
             findings,
-            Check::ReferentialIntegrity,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!(
@@ -241,7 +244,7 @@ fn check_entry(
     if entry.name.is_none() && entry.native.is_none() {
         record_finding(
             findings,
-            Check::Spelling,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!(
@@ -257,7 +260,7 @@ fn check_entry(
     if kinds.len() > 1 {
         record_finding(
             findings,
-            Check::GeometricConsistency,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!("name of {} merges entities of different kinds", entity.id()),
@@ -266,7 +269,7 @@ fn check_entry(
         if Arena::of(entity).name_kind() != Some(*kind) {
             record_finding(
                 findings,
-                Check::GeometricConsistency,
+                Check::Design,
                 Severity::Error,
                 Some(at),
                 format_args!(
@@ -291,7 +294,7 @@ fn check_order(
         if !features.contains(feature.as_str()) {
             record_finding(
                 findings,
-                Check::ReferentialIntegrity,
+                Check::Design,
                 Severity::Error,
                 Some(at),
                 format_args!(
@@ -335,7 +338,7 @@ fn check_instance(index: &DesignIndex<'_>, name: &TopoName, at: &str, findings: 
     if valid == Some(false) {
         record_finding(
             findings,
-            Check::ReferentialIntegrity,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!(
@@ -355,66 +358,175 @@ fn literal<T: Copy>(dimension: &Dimension<T>) -> Option<T> {
 }
 
 /// Whether `instance` is an instance index of an implicit pattern of
-/// `layout` (§6.5): one coordinate per run present, not the seed's, and
-/// within the picks, rows, or count where the layout states them. `None`
+/// `layout` (§6.5, part 10 "Design"): one coordinate per run present, not
+/// all zeros, each in its run's coordinate range where the run's counts are
+/// literal, and a zero coordinate under a literal `seed_only: true`. `None`
 /// where the layout's instance set is not stated here.
 fn valid_pattern_index(layout: &PatternLayout, instance: &InstanceIndex) -> Option<bool> {
     let coordinates = &instance.0;
-    if coordinates.iter().all(|coordinate| *coordinate == 0) {
+    let index = layout_coordinates(layout)?;
+    if coordinates.len() != index.coordinates.len()
+        || coordinates.iter().all(|coordinate| *coordinate == 0)
+    {
         return Some(false);
     }
-    let one = || match coordinates.as_slice() {
-        [k] => Some(*k),
-        _ => None,
-    };
-    Some(match layout {
-        PatternLayout::Points { points, .. } => match (one(), &points.picks) {
-            (Some(k), Picks::Named(picks)) => {
-                k >= 1 && usize::try_from(k).is_ok_and(|k| k <= picks.as_slice().len())
-            }
-            (Some(_), _) => true,
-            (None, _) => false,
-        },
-        PatternLayout::Table(table) => one().is_some_and(|k| {
-            table
-                .rows
-                .iter()
-                .any(|row| i64::from(row.instance) == i64::from(k))
-        }),
-        PatternLayout::Mirror { .. } => coordinates.as_slice() == [1],
-        PatternLayout::Scale { count, .. } => one().is_some_and(|k| {
-            k >= 1 && literal(count).is_none_or(|count| i64::from(k) < i64::from(count))
-        }),
-        _ => coordinates.len() == layout_arity(layout)?,
-    })
+    let in_range = coordinates
+        .iter()
+        .zip(&index.coordinates)
+        .all(|(value, coordinate)| coordinate.admits(i64::from(*value)));
+    let seed_only = index.seed_only.iter().all(|&first| {
+        coordinates[first] == 0 || coordinates.get(first + 1).is_some_and(|value| *value == 0)
+    });
+    Some(in_range && seed_only)
 }
 
-/// The number of coordinates of an instance index of `layout`, where its
-/// runs state it.
-fn layout_arity(layout: &PatternLayout) -> Option<usize> {
-    let mut total = 0usize;
+/// The coordinates an instance index of a layout has.
+struct LayoutCoordinates<'a> {
+    /// One per run, in index order.
+    coordinates: Vec<Coordinate<'a>>,
+    /// The position of the first coordinate of each two-run `Linear` with a
+    /// literal `seed_only: true`.
+    seed_only: Vec<usize>,
+}
+
+/// The values one coordinate of an instance index takes.
+enum Coordinate<'a> {
+    /// Every value from the first to the second, both included.
+    Range(i64, i64),
+    /// A row's `instance` of a table.
+    Row(&'a DimensionTable),
+}
+
+impl Coordinate<'_> {
+    const ANY: Self = Self::Range(i64::MIN, i64::MAX);
+
+    fn admits(&self, value: i64) -> bool {
+        match self {
+            Self::Range(low, high) => (*low..=*high).contains(&value),
+            Self::Row(table) => table
+                .rows
+                .iter()
+                .any(|row| i64::from(row.instance) == value),
+        }
+    }
+}
+
+/// The coordinates of an instance index of `layout`, in declaration order.
+/// `None` where the layout does not state its runs.
+fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
+    let mut found = LayoutCoordinates {
+        coordinates: Vec::new(),
+        seed_only: Vec::new(),
+    };
     let mut stack = vec![layout];
     while let Some(layout) = stack.pop() {
-        let arity = match layout {
-            PatternLayout::Linear { second, .. } => 1 + usize::from(second.is_some()),
-            PatternLayout::Circular { radial, .. } => 1 + usize::from(radial.is_some()),
-            PatternLayout::Dimensions(runs) => runs.len(),
-            PatternLayout::Composite(stages) => {
-                stack.extend(stages);
-                0
+        let coordinates = &mut found.coordinates;
+        match layout {
+            PatternLayout::Linear {
+                first,
+                second,
+                seed_only,
+            } => {
+                if second.is_some() && matches!(seed_only, Some(Dimension::Literal(true))) {
+                    found.seed_only.push(coordinates.len());
+                }
+                coordinates.push(run_coordinate(&first.run));
+                coordinates.extend(second.iter().map(|second| run_coordinate(&second.run)));
             }
-            PatternLayout::Path { .. }
-            | PatternLayout::Points { .. }
-            | PatternLayout::Table(_)
-            | PatternLayout::Mirror { .. }
-            | PatternLayout::Scale { .. } => 1,
+            PatternLayout::Circular {
+                angular, radial, ..
+            } => {
+                coordinates.push(run_coordinate(angular));
+                coordinates.extend(radial.iter().map(run_coordinate));
+            }
+            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run)),
+            PatternLayout::Points { points, .. } => {
+                let last = match &points.picks {
+                    Picks::Named(picks) => {
+                        i64::try_from(picks.as_slice().len()).unwrap_or(i64::MAX)
+                    }
+                    _ => i64::MAX,
+                };
+                coordinates.push(Coordinate::Range(1, last));
+            }
+            PatternLayout::Dimensions(runs) => {
+                coordinates.extend(runs.iter().map(|run| {
+                    literal(&run.count).map_or(Coordinate::ANY, |count| {
+                        Coordinate::Range(0, i64::from(count) - 1)
+                    })
+                }));
+            }
+            PatternLayout::Table(table) => coordinates.push(Coordinate::Row(table)),
+            PatternLayout::Mirror { .. } => coordinates.push(Coordinate::Range(1, 1)),
+            PatternLayout::Scale { count, .. } => {
+                let last = literal(count).map_or(i64::MAX, |count| i64::from(count) - 1);
+                coordinates.push(Coordinate::Range(1, last));
+            }
+            PatternLayout::Composite(stages) => stack.extend(stages.iter().rev()),
             PatternLayout::Follow(_) | PatternLayout::Chain(_) | PatternLayout::Native(_) => {
                 return None
             }
-        };
-        total = total.checked_add(arity)?;
+        }
     }
-    Some(total)
+    Some(found)
+}
+
+/// The coordinate range of a run whose count, and seed where `sides` reads
+/// it, are literal. A run whose `sides` is not stated may lie on either side
+/// of the seed.
+fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
+    let Some(last) = spacing_count(&run.spacing).map(|count| i64::from(count) - 1) else {
+        return Coordinate::ANY;
+    };
+    let seed = match &run.seed {
+        None => Some(0),
+        Some(seed) => literal(seed).map(i64::from),
+    };
+    match &run.sides {
+        Some(RunSides::One) => seed.map_or(Coordinate::ANY, |seed| {
+            Coordinate::Range(-seed, last - seed)
+        }),
+        Some(RunSides::Against) => {
+            seed.map_or(Coordinate::ANY, |seed| Coordinate::Range(seed - last, seed))
+        }
+        Some(RunSides::Symmetric {
+            count: Some(SymmetricMeasure::Total),
+            ..
+        }) => {
+            let reverse = last.div_euclid(2);
+            Coordinate::Range(-reverse, last - reverse)
+        }
+        Some(RunSides::Symmetric { .. }) => Coordinate::Range(-last, last),
+        Some(RunSides::Reverse(reverse)) => {
+            let low = spacing_count(reverse).map_or(i64::MIN, |count| 1 - i64::from(count));
+            seed.map_or(Coordinate::ANY, |seed| {
+                Coordinate::Range(low.min(-seed), last - seed)
+            })
+        }
+        None => seed.map_or(Coordinate::ANY, |seed| {
+            Coordinate::Range(-last.max(seed), last.max(seed))
+        }),
+    }
+}
+
+/// A spacing's count, the seed included, where it is literal.
+fn spacing_count<Q>(spacing: &Spacing<Q>) -> Option<u32> {
+    match spacing {
+        Spacing::Pitch { count, .. }
+        | Spacing::Span { count, .. }
+        | Spacing::Fit { count }
+        | Spacing::UpTo {
+            fill: UpToFill::Count(count),
+            ..
+        } => literal(count),
+        Spacing::List(spacings) => u32::try_from(spacings.len()).ok()?.checked_add(1),
+        Spacing::PitchSpan { .. }
+        | Spacing::UpTo {
+            fill: UpToFill::Pitch(_),
+            ..
+        }
+        | Spacing::Native(_) => None,
+    }
 }
 
 /// `GenerationRole::Hole` occurs only in a `Generated` face name of a hole.
@@ -443,7 +555,7 @@ fn check_hole_role(
     if *kind != NameKind::Face || !of_hole {
         record_finding(
             findings,
-            Check::GeometricConsistency,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!(

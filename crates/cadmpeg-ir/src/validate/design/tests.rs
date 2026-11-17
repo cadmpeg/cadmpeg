@@ -19,6 +19,8 @@ use crate::document::CadIr;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
+mod refusals;
+
 fn id<T>(kind: &str, key: &str) -> T
 where
     T: TryFrom<String>,
@@ -200,12 +202,7 @@ fn an_input_anchor_outside_an_ordered_container_is_an_error() {
             ]
         }
     }));
-    assert_finding(
-        &ir,
-        Check::ReferentialIntegrity,
-        Severity::Error,
-        "anchored Input",
-    );
+    assert_finding(&ir, Check::Design, Severity::Error, "anchored Input");
 }
 
 #[test]
@@ -226,7 +223,7 @@ fn a_pick_of_a_later_feature_is_an_error_and_a_cycle_back_edge_a_warning() {
         .collect();
     assert_finding(
         &ir,
-        Check::ReferentialIntegrity,
+        Check::Design,
         Severity::Error,
         "does not depend-order before its anchor",
     );
@@ -246,7 +243,7 @@ fn a_pick_of_a_later_feature_is_an_error_and_a_cycle_back_edge_a_warning() {
         .sort_by(|left, right| left.id.cmp(&right.id));
     assert_finding(
         &cycle,
-        Check::ReferentialIntegrity,
+        Check::Design,
         Severity::Warning,
         "back-edge of a dependency cycle",
     );
@@ -265,7 +262,7 @@ fn a_pick_of_a_missing_record_is_an_error() {
     );
     assert_finding(
         &timeline(features),
-        Check::ReferentialIntegrity,
+        Check::Design,
         Severity::Error,
         "does not exist",
     );
@@ -287,7 +284,7 @@ fn a_native_pick_without_a_native_name_or_witness_is_an_error() {
     );
     assert_finding(
         &timeline(features),
-        Check::ReferentialIntegrity,
+        Check::Design,
         Severity::Error,
         "neither a native name nor a witness",
     );
@@ -312,7 +309,7 @@ fn a_datum_part_the_datum_lacks_is_an_error() {
     );
     assert_finding(
         &timeline(features),
-        Check::GeometricConsistency,
+        Check::Design,
         Severity::Error,
         "does not have",
     );
@@ -327,20 +324,16 @@ fn rule_terms_are_checked() {
     let native =
         json!({"rule": {"kind": "native", "value": "nocodec"}, "seeds": [datum_pick("a")]});
     for (terms, check, text) in [
-        (vec![explicit.clone()], Check::Spelling, "is Named"),
+        (vec![explicit.clone()], Check::Design, "is Named"),
         (
             vec![explicit.clone(), explicit],
-            Check::Spelling,
+            Check::Design,
             "equal propagation",
         ),
-        (
-            vec![seeded_all],
-            Check::GeometricConsistency,
-            "All rule term has seeds",
-        ),
+        (vec![seeded_all], Check::Design, "All rule term has seeds"),
         (
             vec![native.clone(), native],
-            Check::Spelling,
+            Check::Design,
             "not written codec:name",
         ),
     ] {
@@ -393,12 +386,7 @@ fn construction_inputs_are_checked_against_their_kind_and_relation() {
     ] {
         let mut features = planes();
         features[1] = feature("b", operation);
-        assert_finding(
-            &timeline(features),
-            Check::GeometricConsistency,
-            Severity::Error,
-            text,
-        );
+        assert_finding(&timeline(features), Check::Design, Severity::Error, text);
     }
     let mut features = planes();
     let mut flipped = construction(vec![input("offset", at_a(), Some(length(1.0)))]);
@@ -406,13 +394,8 @@ fn construction_inputs_are_checked_against_their_kind_and_relation() {
     flipped["solution"] = json!(0);
     features[1] = feature("b", plane_datum(flipped));
     let ir = timeline(features);
-    assert_finding(&ir, Check::Spelling, Severity::Error, "literal false");
-    assert_finding(
-        &ir,
-        Check::GeometricConsistency,
-        Severity::Error,
-        "solution is 0",
-    );
+    assert_finding(&ir, Check::Design, Severity::Error, "literal false");
+    assert_finding(&ir, Check::Design, Severity::Error, "solution is 0");
 }
 
 #[test]
@@ -431,7 +414,7 @@ fn a_resolved_plane_whose_axes_are_not_perpendicular_is_an_error() {
     features[1] = feature("b", plane_datum(skew));
     assert_finding(
         &timeline(features),
-        Check::GeometricConsistency,
+        Check::Design,
         Severity::Error,
         "not perpendicular",
     );
@@ -450,7 +433,7 @@ fn a_principal_entity_a_datum_restates_is_picked_through_the_datum() {
     ));
     assert_finding(
         &timeline(features.clone()),
-        Check::Spelling,
+        Check::Design,
         Severity::Error,
         "picks that feature as Datum",
     );
@@ -464,7 +447,7 @@ fn a_principal_entity_a_datum_restates_is_picked_through_the_datum() {
     );
     assert_finding(
         &timeline(features),
-        Check::Spelling,
+        Check::Design,
         Severity::Error,
         "already restates",
     );
@@ -491,7 +474,7 @@ fn a_coordinates_reference_picks_a_frame_first() {
     );
     assert_finding(
         &timeline(features),
-        Check::GeometricConsistency,
+        Check::Design,
         Severity::Error,
         "does not pick a frame first",
     );
@@ -513,7 +496,7 @@ fn a_pinned_position_that_does_not_resolve_is_an_error() {
     );
     assert_finding(
         &timeline(features),
-        Check::ReferentialIntegrity,
+        Check::Design,
         Severity::Error,
         "does not resolve",
     );
@@ -530,7 +513,7 @@ fn a_linked_datum_states_no_link_source() {
     ));
     assert_finding(
         &timeline(features),
-        Check::GeometricConsistency,
+        Check::Design,
         Severity::Error,
         "states a source",
     );
@@ -558,7 +541,7 @@ fn an_occurrence_path_with_an_occurrence_after_a_native_step_is_an_error() {
     );
     assert_finding(
         &timeline(features),
-        Check::ReferentialIntegrity,
+        Check::Design,
         Severity::Error,
         "after a Native step",
     );
@@ -608,12 +591,7 @@ fn name_tables_are_checked_in_their_states() {
     let entry = entries.values_mut().next().unwrap();
     entry.name = Some(generated("edge", "a"));
     ir.design.names = entries.into();
-    assert_finding(
-        &ir,
-        Check::GeometricConsistency,
-        Severity::Error,
-        "not the entity's kind",
-    );
+    assert_finding(&ir, Check::Design, Severity::Error, "not the entity's kind");
 
     let mut ir = named_cube();
     let mut entries = ir.design.names.entries().clone();
@@ -625,15 +603,10 @@ fn name_tables_are_checked_in_their_states() {
         },
     );
     ir.design.names = entries.into();
+    assert_finding(&ir, Check::Design, Severity::Error, "does not hold");
     assert_finding(
         &ir,
-        Check::ReferentialIntegrity,
-        Severity::Error,
-        "does not hold",
-    );
-    assert_finding(
-        &ir,
-        Check::Spelling,
+        Check::Design,
         Severity::Error,
         "neither a name nor a native name",
     );
@@ -645,12 +618,7 @@ fn name_tables_are_checked_in_their_states() {
     let entry = entries.values_mut().next().unwrap();
     entry.name = Some(generated("face", "b"));
     ir.design.names = entries.into();
-    assert_finding(
-        &ir,
-        Check::ReferentialIntegrity,
-        Severity::Error,
-        "does not depend on",
-    );
+    assert_finding(&ir, Check::Design, Severity::Error, "does not depend on");
 }
 
 #[test]
@@ -666,7 +634,7 @@ fn instance_names_and_hole_roles_name_the_features_that_make_them() {
     ir.design.names = entries.into();
     assert_finding(
         &ir,
-        Check::ReferentialIntegrity,
+        Check::Design,
         Severity::Error,
         "names no implicit copy",
     );
@@ -680,12 +648,7 @@ fn instance_names_and_hole_roles_name_the_features_that_make_them() {
         "role": {"kind": "hole", "value": "bore_wall"}
     }})));
     ir.design.names = entries.into();
-    assert_finding(
-        &ir,
-        Check::GeometricConsistency,
-        Severity::Error,
-        "not a hole's face",
-    );
+    assert_finding(&ir, Check::Design, Severity::Error, "not a hole's face");
 }
 
 fn current_pick(target: PickTarget) -> Picked {
@@ -725,12 +688,7 @@ fn an_entity_pick_matches_a_name_of_its_anchored_state() {
         &mut ir,
         current_pick(PickTarget::Entity(generated("face", "b"))),
     );
-    assert_finding(
-        &ir,
-        Check::ReferentialIntegrity,
-        Severity::Error,
-        "matches no entity",
-    );
+    assert_finding(&ir, Check::Design, Severity::Error, "matches no entity");
 
     let mut ir = named_cube();
     let mut pick = current_pick(PickTarget::Entity(generated("face", "a")));
@@ -738,7 +696,7 @@ fn an_entity_pick_matches_a_name_of_its_anchored_state() {
     publish(&mut ir, pick);
     assert_finding(
         &ir,
-        Check::ReferentialIntegrity,
+        Check::Design,
         Severity::Error,
         "not a record of its anchored state",
     );

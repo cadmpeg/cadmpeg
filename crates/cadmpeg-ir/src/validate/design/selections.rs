@@ -100,7 +100,7 @@ pub(super) fn check<'a>(
             if path.0.iter().any(|step| step.configuration.is_some()) {
                 record_finding(
                     findings,
-                    Check::Spelling,
+                    Check::Design,
                     Severity::Error,
                     Some(at),
                     format_args!("an instance-body path states a step configuration"),
@@ -127,7 +127,7 @@ fn check_anchor(
             if !ordered {
                 record_finding(
                     findings,
-                    Check::ReferentialIntegrity,
+                    Check::Design,
                     Severity::Error,
                     Some(at),
                     format_args!(
@@ -140,7 +140,7 @@ fn check_anchor(
             if !position_resolves(index, position) {
                 record_finding(
                     findings,
-                    Check::ReferentialIntegrity,
+                    Check::Design,
                     Severity::Error,
                     Some(at),
                     format_args!("a selection is pinned to a position that does not resolve"),
@@ -168,7 +168,7 @@ fn check_anchor(
             if !admitted {
                 record_finding(
                     findings,
-                    Check::ReferentialIntegrity,
+                    Check::Design,
                     Severity::Error,
                     Some(at),
                     format_args!(
@@ -187,7 +187,7 @@ fn check_anchor(
         if scoped {
             record_finding(
                 findings,
-                Check::ReferentialIntegrity,
+                Check::Design,
                 Severity::Error,
                 Some(at),
                 format_args!("a selection anchored Native picks in a definition that has a scope in this document"),
@@ -263,14 +263,11 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
         let seeded = !term.seeds.is_empty();
         match term.rule {
             SelectionRule::All { .. } if seeded => {
-                record(
-                    Check::GeometricConsistency,
-                    format_args!("an All rule term has seeds"),
-                );
+                record(Check::Design, format_args!("an All rule term has seeds"));
             }
             SelectionRule::All { .. } => {}
             _ if !seeded => record(
-                Check::GeometricConsistency,
+                Check::Design,
                 format_args!("a rule term other than All has no seeds"),
             ),
             _ => {}
@@ -283,7 +280,7 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
                 .any(|seed| matches!(seed.domain, Some(PickDomain::Containing(_))));
             if curves && !containing {
                 record(
-                    Check::GeometricConsistency,
+                    Check::Design,
                     format_args!("a Region term whose boundary picks curves has no seed with a Containing domain"),
                 );
             }
@@ -291,7 +288,7 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
         if let SelectionRule::Native(text) = term.rule {
             if !native_text(text.as_str()) {
                 record(
-                    Check::Spelling,
+                    Check::Design,
                     format_args!(
                         "native selection rule {:?} is not written codec:name",
                         text.as_str()
@@ -302,7 +299,7 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
         if let Some(Propagation::Native(text)) = term.propagation {
             if !native_text(text.as_str()) {
                 record(
-                    Check::Spelling,
+                    Check::Design,
                     format_args!(
                         "native propagation {:?} is not written codec:name",
                         text.as_str()
@@ -315,7 +312,7 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
     if let [only] = terms.as_slice() {
         if explicit(&only) && only.propagation.is_none() && excluded.is_empty() {
             record(
-                Check::Spelling,
+                Check::Design,
                 format_args!("a rule selection whose only term is Explicit, with no propagation and no exclusions, is Named"),
             );
         }
@@ -327,7 +324,7 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             .any(|earlier| earlier.propagation == term.propagation)
         {
             record(
-                Check::Spelling,
+                Check::Design,
                 format_args!("two Explicit terms of one selection have equal propagation"),
             );
         }
@@ -360,7 +357,7 @@ fn check_pick<'a>(
     if !target_exists(index, &pick.target) {
         record_finding(
             findings,
-            Check::ReferentialIntegrity,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!(
@@ -375,7 +372,7 @@ fn check_pick<'a>(
         if pick.native.is_none() && pick.witness.is_none() {
             record_finding(
                 findings,
-                Check::ReferentialIntegrity,
+                Check::Design,
                 Severity::Error,
                 Some(at),
                 format_args!("a Native pick carries neither a native name nor a witness"),
@@ -426,7 +423,7 @@ fn check_pick<'a>(
         if !named {
             record_finding(
                 findings,
-                Check::ReferentialIntegrity,
+                Check::Design,
                 Severity::Error,
                 Some(at),
                 format_args!("a Component pick's context names no occurrence"),
@@ -458,7 +455,8 @@ enum Stored<'a> {
 
 /// The stored states a pick without a context resolves in (§5.8): the
 /// current geometry of its scope for `Current`; for a position, the current
-/// state there, else each stored evaluation of it. None where the anchor
+/// state there, else each stored evaluation of it, the end of an ordered
+/// container being the position at its rollback. None where the anchor
 /// names no stored state, or is `Native`.
 fn anchored_states<'a>(
     index: &DesignIndex<'a>,
@@ -491,6 +489,9 @@ fn anchored_states<'a>(
             Some(position) => position,
             None => return Vec::new(),
         },
+    };
+    let Some(position) = index.rollback_position(&position) else {
+        return Vec::new();
     };
     if let Some(extent) = states.extent(scope, &position) {
         return vec![Stored::Extents(vec![extent])];
@@ -531,7 +532,7 @@ fn check_in_state(
         if !holds(entity) {
             record_finding(
                 findings,
-                Check::ReferentialIntegrity,
+                Check::Design,
                 Severity::Error,
                 Some(at),
                 format_args!(
@@ -561,7 +562,7 @@ fn check_in_state(
     if !matched {
         record_finding(
             findings,
-            Check::ReferentialIntegrity,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!("an Entity pick's name matches no entity of its anchored state"),
@@ -673,7 +674,7 @@ fn check_target_order(
     };
     record_finding(
         findings,
-        Check::ReferentialIntegrity,
+        Check::Design,
         severity,
         Some(at),
         format_args!(
@@ -710,7 +711,7 @@ fn check_datum_part(index: &DesignIndex<'_>, pick: &Picked, at: &str, findings: 
     if !admitted {
         record_finding(
             findings,
-            Check::GeometricConsistency,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!(
@@ -746,7 +747,7 @@ fn check_principal(
     if !ordered || elsewhere {
         record_finding(
             findings,
-            Check::ReferentialIntegrity,
+            Check::Design,
             Severity::Error,
             Some(site.holder.record()),
             format_args!("a Principal pick names container {}, which is not an ordered container of its definition", container.as_str()),
@@ -763,7 +764,7 @@ fn check_definition(
     if !index.definitions.contains(definition.definition.as_str()) {
         record_finding(
             findings,
-            Check::ReferentialIntegrity,
+            Check::Design,
             Severity::Error,
             Some(at),
             format_args!(
@@ -799,13 +800,7 @@ fn check_path(
     findings: &mut Vec<Finding>,
 ) {
     let mut record = |message: std::fmt::Arguments<'_>| {
-        record_finding(
-            findings,
-            Check::ReferentialIntegrity,
-            Severity::Error,
-            Some(at),
-            message,
-        );
+        record_finding(findings, Check::Design, Severity::Error, Some(at), message);
     };
     let mut native = false;
     let mut previous: Option<Option<&str>> = root.map(Some);
