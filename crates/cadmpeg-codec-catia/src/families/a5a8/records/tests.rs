@@ -27,6 +27,8 @@ use crate::test_support::test_a5a8::{
 };
 use crate::test_support::test_b5::a8_inline_surface_stream_with_native_vertex_chain;
 
+mod spline_headers;
+
 #[test]
 fn surface_tail_scans_continuation_without_materializing_a_lane() {
     let mut short = a5_surface_short_tail();
