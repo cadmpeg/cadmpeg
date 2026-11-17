@@ -11,6 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+mod edge_recipe_faces;
 mod treatment;
 
 use crate::history::bind_scope_histories;
@@ -259,8 +260,9 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
             &scopes,
             std::slice::from_ref(&binding),
             &[],
-            crate::history::edge_recipe_faces::EdgeRecipeFaces::default(),
+            Default::default(),
             &histories,
+            &mut Vec::new(),
         )
     };
     assert_eq!(bindings[&scope.id], histories[1].id);
@@ -322,8 +324,9 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
             &scopes,
             &[],
             std::slice::from_ref(&operand),
-            crate::history::edge_recipe_faces::EdgeRecipeFaces::default(),
+            Default::default(),
             &histories,
+            &mut Vec::new(),
         )
     };
     assert_eq!(bindings[&scope.id], histories[1].id);
@@ -416,8 +419,9 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         &scopes,
         &[],
         &[],
-        crate::history::edge_recipe_faces::EdgeRecipeFaces::default(),
+        Default::default(),
         &histories,
+        &mut Vec::new(),
     );
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
@@ -1790,128 +1794,177 @@ fn change_state(state_id: i64) -> crate::history_records::AsmDeltaState {
     }
 }
 
-#[test]
-fn scope_binding_reads_the_blob_of_its_edge_recipe_faces() {
-    use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
-    use crate::records::sketch_links::PersistentSubentityTag;
-    use crate::records::topology::edge_identity::DesignEdgeOperand;
-    use cadmpeg_ir::attributes::AttributeTarget;
-    use cadmpeg_ir::ids::FaceId;
+fn edge_recipe_scope_binding(
+    sources: &[&str],
+) -> (
+    std::collections::HashMap<String, String>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    edge_recipe_scope_binding_with_peer(sources, false)
+}
 
-    let state = |history: &str, state_id: i64, previous_state_id: Option<i64>| {
-        (
-            AsmDeltaState {
-                id: format!("{history}:asm-delta-state#{state_id}"),
-                parent: history.into(),
-                byte_offset: 0,
-                state_id,
-                version_flag: 1,
-                state_flag: 0,
-                previous_ref: None,
-                next_ref: previous_state_id,
-                node_index: state_id,
-                partner_ref: None,
-                owner_ref: 0,
-                bulletin_boards: Vec::new(),
-                records: Vec::new(),
-                transition: None,
-            },
-            Some(AsmHistoricalTopology::default()),
-            Vec::new(),
-        )
-    };
-    let history = |source: &str| {
-        let id = format!("f3d:asset/Breps.BlobParts/BREP.{source}.smbh:asm-history#1");
+/// A scope with the same state pair and no edge recipes of its own.
+fn state_pair_peer() -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let mut peer = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#99",
+        DesignFeatureKind::BaseFeature,
+        2,
+    );
+    peer.try_edit(|draft| {
+        draft.history_state_id = Some(3);
+        draft.previous_history_state_id = Some(2);
+        draft.layout_fixture_tail();
+    })
+    .unwrap();
+    peer
+}
+
+fn edge_recipe_scope_binding_with_peer(
+    sources: &[&str],
+    with_peer: bool,
+) -> (
+    std::collections::HashMap<String, String>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let scope = super::feature_outputs::scope_between(3, 2);
+    let histories = ["first", "second"].map(|source| {
+        let id = format!("f3d:Breps.BlobParts/BREP.{source}.smbh:asm-history#1");
         crate::test_support::history::history(
-            id.clone(),
+            id,
             0,
             None,
             false,
-            vec![state(&id, 9, Some(2)), state(&id, 2, None)],
+            vec![
+                super::feature_outputs::state(3, 3, Some(2), AsmHistoricalTopology::default()),
+                super::feature_outputs::state(2, 2, None, AsmHistoricalTopology::default()),
+            ],
         )
-    };
-    let histories = [history("first"), history("second")];
-    let stream = "f3d:Design/BulkStream.dat";
-    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
-        &format!("{stream}:design-parameter-scope#100"),
-        crate::records::feature::scope::DesignFeatureKind::Chamfer,
-        100,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.history_state_id = Some(9);
-            draft.previous_history_state_id = Some(2);
-            draft.layout_fixture_tail();
+    });
+    let stream = crate::ids::native_stream(&scope.id).unwrap();
+    let mut operands: Vec<crate::records::topology::edge_identity::DesignEdgeOperand> = sources
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            serde_json::from_value(serde_json::json!({
+                "id": format!("{stream}:design-edge-operand#{}", index + 20),
+                "scope_record_index": scope.record_index,
+                "scope_reference_ordinal": index,
+                "record_index": index + 20,
+                "byte_offset": 0,
+                "class_tag": "297",
+                "paired_byte_offset": 16,
+                "paired_class_tag": "259",
+                "recipe_record_index": index + 23,
+                "recipe_record_byte_offset": 32,
+                "recipe_id": format!("{stream}:construction-recipe#{}", index + 23),
+                "recipe_prefix_offset": 43,
+                "recipe_prefix_bytes": "",
+                "recipe_references": [],
+                "recipe_program_offset": 0,
+                "recipe_program": [],
+                "candidate_faces": [crate::history::historical_face_id(1).unwrap()],
+                "next_record_index": index + 24,
+                "next_byte_offset": 160
+            }))
+            .unwrap()
         })
-        .unwrap();
-    let scopes = vec![scope.clone()];
-    let recipe = ConstructionRecipe {
-        id: format!("{stream}:construction-recipe#1"),
-        byte_offset: 0,
-        kind: ConstructionRecipeKind::Edge,
-        design: None,
-        recipe_index: 0,
-        record_index: Some(crate::records::identity::RecordedValue {
-            value: 40,
-            offset: 0,
-        }),
+        .collect::<Vec<_>>();
+    let tags = sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| {
+            let reference = i64::try_from(index + 1).unwrap();
+            operands[index].recipe_references.push(
+                crate::records::dimensions::DesignRecipeReference {
+                    selector: 1,
+                    selector_offset: 0,
+                    token: "1".into(),
+                    token_integer: 0,
+                    token_offset: 0,
+                    design_reference: reference,
+                    design_reference_offset: 0,
+                    candidate_faces: vec![crate::history::historical_face_id(1).unwrap()],
+                    candidate_edges: Vec::new(),
+                    alternate_selector_faces: Vec::new(),
+                    alternate_selector_edges: Vec::new(),
+                    operand_offset: None,
+                },
+            );
+            crate::records::sketch_links::PersistentSubentityTag {
+                id: format!("{stream}:persistent-subentity-tag#{index}"),
+                target: cadmpeg_ir::attributes::AttributeTarget::Face(
+                    cadmpeg_ir::ids::FaceId::mint(format!("f3d:brep/{source}.smbh/brep:entity#1"))
+                        .unwrap(),
+                ),
+                selector: 1,
+                token: cadmpeg_core::nonblank_literal!("1"),
+                token_integer: 0,
+                design_references: vec![reference],
+                ordinal: u32::try_from(index).unwrap(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut notes = Vec::new();
+    let scopes = if with_peer {
+        vec![scope, state_pair_peer()]
+    } else {
+        vec![scope]
     };
-    let operand: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
-        "id": format!("{stream}:design-edge-operand#0"),
-        "scope_record_index": 100,
-        "scope_reference_ordinal": 0,
-        "record_index": 101,
-        "byte_offset": 0,
-        "class_tag": "297",
-        "paired_byte_offset": 16,
-        "paired_class_tag": "259",
-        "recipe_record_index": 104,
-        "recipe_record_byte_offset": 32,
-        "recipe_id": recipe.id,
-        "recipe_prefix_offset": 43,
-        "recipe_prefix_bytes": "",
-        "recipe_references": [],
-        "recipe_program_offset": 0,
-        "recipe_program": [],
-        "next_record_index": 105,
-        "next_byte_offset": 160,
-    }))
-    .unwrap();
-    let tag = |ordinal: u32, face: &str| PersistentSubentityTag {
-        id: format!("{stream}:persistent-subentity-tag#{ordinal}"),
-        target: AttributeTarget::Face(FaceId::mint(face).unwrap()),
-        selector: 1,
-        token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
-        token_integer: 0,
-        design_references: vec![40],
-        ordinal,
-    };
-    let bind = |tags: &[PersistentSubentityTag]| {
-        bind_scope_histories(
-            &scopes,
-            &[],
-            &[],
-            crate::history::edge_recipe_faces::EdgeRecipeFaces {
-                operands: std::slice::from_ref(&operand),
-                recipes: std::slice::from_ref(&recipe),
-                tags,
-            },
-            &histories,
-        )
-    };
+    let bindings = bind_scope_histories(
+        &scopes,
+        &[],
+        &[],
+        crate::history::edge_recipe_scope::Sources {
+            operands: &operands,
+            recipes: &[],
+            tags: &tags,
+        },
+        &histories,
+        &mut notes,
+    );
+    (bindings, notes)
+}
 
-    let second = [
-        tag(1, "f3d:brep/second.smbh/brep:entity#4"),
-        tag(2, "f3d:brep/second.smbh/brep:entity#7"),
-    ];
-    assert_eq!(bind(&second)[&scope.id], histories[1].id);
-    // Faces of two blobs, or faces with no blob, select no history.
-    let mixed = [
-        tag(1, "f3d:brep/second.smbh/brep:entity#4"),
-        tag(2, "f3d:brep/first.smbh/brep:entity#7"),
-    ];
-    assert!(!bind(&mixed).contains_key(&scope.id));
-    let unqualified = [tag(1, "f3d:brep:entity#4")];
-    assert!(!bind(&unqualified).contains_key(&scope.id));
-    assert!(!bind(&[]).contains_key(&scope.id));
+#[test]
+fn edge_recipe_faces_bind_the_unique_agreeing_history() {
+    let (bindings, notes) = edge_recipe_scope_binding(&["second", "second"]);
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(
+        bindings.values().next().unwrap(),
+        "f3d:Breps.BlobParts/BREP.second.smbh:asm-history#1"
+    );
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        notes[0].code,
+        crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.kind()
+    );
+}
+
+#[test]
+fn edge_recipe_faces_outside_candidate_histories_leave_the_scope_unbound() {
+    let (bindings, notes) = edge_recipe_scope_binding(&["third", "third"]);
+    assert!(bindings.is_empty());
+    assert!(notes.is_empty());
+}
+
+#[test]
+fn edge_recipe_faces_must_all_agree_with_one_history() {
+    let (bindings, notes) = edge_recipe_scope_binding(&["first", "second"]);
+    assert!(bindings.is_empty());
+    assert!(notes.is_empty());
+}
+
+#[test]
+fn elimination_after_an_edge_recipe_binding_reports_the_inference() {
+    let (bindings, notes) = edge_recipe_scope_binding_with_peer(&["second", "second"], true);
+    assert_eq!(bindings.len(), 2);
+    assert_eq!(
+        bindings["f3d:Design/BulkStream.dat:design-parameter-scope#99"],
+        "f3d:Breps.BlobParts/BREP.first.smbh:asm-history#1"
+    );
+    assert_eq!(notes.len(), 2);
+    assert!(notes.iter().all(|note| {
+        note.code == crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.kind()
+    }));
 }

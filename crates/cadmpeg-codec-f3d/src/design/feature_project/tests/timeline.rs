@@ -102,7 +102,7 @@ fn history_state_predecessors_are_component_qualified() {
         &scopes,
         &[],
         &[],
-        crate::history::edge_recipe_faces::EdgeRecipeFaces::default(),
+        crate::history::edge_recipe_scope::Sources::default(),
         &naming_spaces,
         &[],
     );

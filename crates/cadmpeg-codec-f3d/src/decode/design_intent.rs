@@ -764,12 +764,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
-        crate::history::edge_recipe_faces::EdgeRecipeFaces {
+        crate::history::edge_recipe_scope::Sources {
             operands: &design.design_edge_operands,
             recipes: &prereqs.construction_recipes,
             tags: geometry.persistent_subentity_tags,
         },
         &design.asm_histories,
+        &mut losses,
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
         scan,
@@ -1941,16 +1942,22 @@ fn extend_related_design_records(
         &design.design_record_headers,
         &prereqs.construction_recipes,
     )?;
+    crate::design::decode::operands::bind_edge_operand_candidates(
+        &mut design.design_edge_operands,
+        &prereqs.construction_recipes,
+        geometry.persistent_subentity_tags,
+    );
     let mut scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
-        crate::history::edge_recipe_faces::EdgeRecipeFaces {
+        crate::history::edge_recipe_scope::Sources {
             operands: &design.design_edge_operands,
             recipes: &prereqs.construction_recipes,
             tags: geometry.persistent_subentity_tags,
         },
         &design.asm_histories,
+        &mut Vec::new(),
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
         scan,
@@ -1982,11 +1989,6 @@ fn extend_related_design_records(
         crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
         &lineage_scopes,
-    );
-    crate::design::decode::operands::bind_edge_operand_candidates(
-        &mut design.design_edge_operands,
-        &prereqs.construction_recipes,
-        geometry.persistent_subentity_tags,
     );
     let (face_boundaries, edge_selection_notes) =
         crate::history::bind_edge_operand_history_candidates_with_notes(

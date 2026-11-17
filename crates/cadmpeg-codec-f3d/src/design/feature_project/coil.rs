@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! `Coil` scope projection.
 
 use super::{design_length, design_positive_length};
 use crate::design::face_resolve::design_angle;
@@ -14,7 +13,7 @@ use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 
-pub(super) fn project_coil(
+pub(super) fn project(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
@@ -126,9 +125,6 @@ pub(super) fn project_coil(
         let operation = scope.coil_operation()?;
         let stream = native_stream(&scope.id)?;
         let first_body_group = if operation == DesignExtrudeOperation::NewBody {
-            // The long Coil form carries one role-4 construction group for its
-            // generated body even when the result is a new body. It is not a
-            // Boolean target and must not suppress the typed result.
             None
         } else {
             let mut body_groups = construction_groups.iter().filter(|group| {
@@ -138,9 +134,13 @@ pub(super) fn project_coil(
             });
             let first_body_group = body_groups.next();
             if body_groups.next().is_some() {
-                return None;
+                if !scope.coil_has_short_compact_prologue() {
+                    return None;
+                }
+                None
+            } else {
+                first_body_group
             }
-            first_body_group
         };
         Some((
             diameter,
@@ -159,15 +159,21 @@ pub(super) fn project_coil(
     };
     let result = match (operation, first_body_group) {
         (DesignExtrudeOperation::NewBody, None) => SolidFeatureResult::NewBody {},
-        (operation, Some(group)) => SolidFeatureResult::Boolean {
-            operation: match operation {
-                DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanKind::Join,
-                DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanKind::Cut,
-                DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanKind::Intersect,
-                DesignExtrudeOperation::NewBody => return Ok(None),
-            },
-            targets: BodySelection::Native(group.id.clone()),
-        },
+        (operation, group) if group.is_some() || scope.coil_has_short_compact_prologue() => {
+            SolidFeatureResult::Boolean {
+                operation: match operation {
+                    DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanKind::Join,
+                    DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanKind::Cut,
+                    DesignExtrudeOperation::Intersect => {
+                        cadmpeg_ir::features::BooleanKind::Intersect
+                    }
+                    DesignExtrudeOperation::NewBody => return Ok(None),
+                },
+                targets: group.map_or(BodySelection::Unresolved, |group| {
+                    BodySelection::Native(group.id.clone())
+                }),
+            }
+        }
         _ => return Ok(None),
     };
     let placement = scope
@@ -201,6 +207,24 @@ pub(super) fn project_coil(
         },
     };
     let clockwise = or_none!(scope.coil_clockwise());
+    if scope.coil_has_short_compact_prologue() {
+        losses.push(crate::loss::F3dLossCode::CoilShortControlsAssumed.note(format!(
+            "Coil scope {} reads the short form through the compact discriminator lanes despite unresolved control bytes (DR-800).",
+            scope.id
+        )));
+    }
+    if matches!(
+        result,
+        SolidFeatureResult::Boolean {
+            targets: BodySelection::Unresolved,
+            ..
+        }
+    ) {
+        losses.push(crate::loss::F3dLossCode::CoilTargetUnresolved.note(format!(
+            "Coil scope {} retains an unresolved Boolean target selection.",
+            scope.id
+        )));
+    }
     if let Some(group) = first_body_group.filter(|group| group.members().len() != 1) {
         losses.push(crate::loss::F3dLossCode::CoilTargetMembersAssumed.note(format!(
             "Coil scope {} targets group {} with {} members; the group is read as one body selection.",

@@ -92,7 +92,6 @@ mod edge_flange;
 mod extrude;
 mod fold;
 
-use coil::project_coil;
 use extrude::{bind_extrude_work_plane_targets, project_extrude};
 
 fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
@@ -414,7 +413,7 @@ impl<'a> ScopeHistoryGraph<'a> {
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
         body_recipe_operands: &[DesignBodyRecipeOperand],
-        edge_recipes: crate::history::edge_recipe_faces::EdgeRecipeFaces<'_>,
+        edge_recipes: crate::history::edge_recipe_scope::Sources<'_>,
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
@@ -427,6 +426,7 @@ impl<'a> ScopeHistoryGraph<'a> {
                 body_recipe_operands,
                 edge_recipes,
                 histories,
+                &mut Vec::new(),
             ))
         };
         let mut component_namespaces = HashMap::new();
@@ -1087,7 +1087,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     thicken::project_thicken(scope, face_operands, construction_groups, &mut projection_losses)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
                 }
-                Some(DesignFeatureFamily::Coil) => project_coil(
+                Some(DesignFeatureFamily::Coil) => coil::project(
                     scope,
                     &parameters,
                     construction_groups,
@@ -1274,10 +1274,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                     pitch: cadmpeg_ir::scalar::PositiveLength::new(
                                         construction.pitch.get() * DESIGN_LENGTH_TO_MILLIMETRE,
                                     ),
-                                    modeled: construction
-                                        .extended
-                                        .as_ref()
-                                        .map(|extended| extended.modeled),
+                                    modeled: Some(construction.modeled),
                                     extent,
                                 },
                             ))
@@ -1716,7 +1713,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         scopes,
         body_bindings,
         body_recipe_operands,
-        crate::history::edge_recipe_faces::EdgeRecipeFaces {
+        crate::history::edge_recipe_scope::Sources {
             operands: edge_operands,
             recipes: construction_recipes,
             tags: persistent_subentity_tags,
