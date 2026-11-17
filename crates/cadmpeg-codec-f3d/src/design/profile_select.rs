@@ -36,6 +36,7 @@ use std::collections::{HashMap, HashSet};
 mod cap_regions;
 mod compact_members;
 pub(crate) mod face_profile_sets;
+mod group_union;
 mod region_members;
 mod spatial_regions;
 mod stored_loop_cap;
@@ -4414,6 +4415,7 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
     let mut island_absence = false;
     let mut flags_read = false;
     let mut coincident = false;
+    let mut unions = Vec::new();
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -4428,122 +4430,141 @@ fn resolve_profile_curve_arrangement_regions_with_policy(
         if !selection.valid_layout() {
             return Ok(None);
         }
-        for loops in selection.regions() {
-            let Some(end) = loops
-                .iter()
-                .try_fold(cursor, |end, loop_| end.checked_add(loop_.entries.len()))
-            else {
-                return Ok(None);
-            };
-            let Some(program) = curves.get(cursor..end) else {
-                return Ok(None);
-            };
-            cursor = end;
-            let single_exterior = matches!(loops.as_slice(), [loop_] if loop_.outer);
-            let found = if single_exterior && !compact {
-                crate::design::geometry::arrangement_region_matching_curve_program(
-                    source,
-                    resolution.sketch_entities,
-                    program,
-                    scoped.linear_tolerance,
-                    scoped.profile_work,
-                    scoped.ctx,
-                )?
-            } else {
-                None
-            };
-            let Some(found) = found else {
-                if !compact {
-                    if let Some(rings) = stored_loop_rings(loops, program) {
-                        if let Some(selected) =
-                            crate::design::geometry::arrangement_regions_matching_member_rings(
-                                source,
-                                resolution.sketch_entities,
-                                &rings,
-                                &std::collections::HashSet::new(),
-                                scoped.linear_tolerance,
-                                scoped.profile_work,
-                                scoped.ctx,
-                            )?
-                        {
-                            if let [region] = selected.regions.as_slice() {
-                                flags_read |= allow_assumptions || !selected.identity_unique;
-                                coincident |= selected.coincident
-                                    && (allow_assumptions || !selected.identity_unique);
-                                island_absence |= selected.island_absence;
-                                if !regions.contains(region) {
-                                    regions.push(region.clone());
-                                }
-                                continue;
-                            }
-                        }
-                    }
+        for group in &selection.groups {
+            let group_start = regions.len();
+            let mut first_end = None;
+            for (position, loops) in std::iter::once(&group.region)
+                .chain(&group.further)
+                .enumerate()
+            {
+                if position == 1 {
+                    first_end = Some(regions.len());
                 }
-                if !single_exterior {
+                let Some(end) = loops
+                    .iter()
+                    .try_fold(cursor, |end, loop_| end.checked_add(loop_.entries.len()))
+                else {
                     return Ok(None);
-                }
-                if !allow_assumptions {
-                    if let Some(rings) = stored_loop_rings(loops, program) {
-                        if let [members] = rings.as_slice() {
-                            let program = members
-                                .iter()
-                                .zip(&loops[0].entries)
-                                .map(|(member, entry)| {
-                                    (
-                                        member.clone(),
-                                        [entry.entry_fields[1], entry.entry_fields[2]],
-                                    )
-                                })
-                                .collect::<Vec<_>>();
+                };
+                let Some(program) = curves.get(cursor..end) else {
+                    return Ok(None);
+                };
+                cursor = end;
+                let single_exterior = matches!(loops.as_slice(), [loop_] if loop_.outer);
+                let found = if single_exterior && !compact {
+                    crate::design::geometry::arrangement_region_matching_curve_program(
+                        source,
+                        resolution.sketch_entities,
+                        program,
+                        scoped.linear_tolerance,
+                        scoped.profile_work,
+                        scoped.ctx,
+                    )?
+                } else {
+                    None
+                };
+                let Some(found) = found else {
+                    if !compact {
+                        if let Some(rings) = stored_loop_rings(loops, program) {
                             if let Some(selected) =
-                                crate::design::geometry::member_loop_union::resolve(
+                                crate::design::geometry::arrangement_regions_matching_member_rings(
                                     source,
                                     resolution.sketch_entities,
-                                    &program,
+                                    &rings,
+                                    &std::collections::HashSet::new(),
                                     scoped.linear_tolerance,
                                     scoped.profile_work,
                                     scoped.ctx,
                                 )?
                             {
-                                for region in selected {
-                                    if !regions.contains(&region) {
-                                        regions.push(region);
+                                if let [region] = selected.regions.as_slice() {
+                                    flags_read |= allow_assumptions || !selected.identity_unique;
+                                    coincident |= selected.coincident
+                                        && (allow_assumptions || !selected.identity_unique);
+                                    island_absence |= selected.island_absence;
+                                    if !regions.contains(region) {
+                                        regions.push(region.clone());
                                     }
+                                    continue;
                                 }
-                                continue;
                             }
                         }
                     }
-                }
-                let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
-                    source,
-                    resolution.sketch_entities,
-                    program,
-                    scoped.linear_tolerance,
-                    scoped.profile_work,
-                    scoped.ctx,
-                )?
-                else {
-                    return Ok(None);
-                };
-                assumed = true;
-                island_absence |= split.island_absence_assumed;
-                for region in split.regions {
-                    if !regions.contains(&region) {
-                        regions.push(region);
+                    if !single_exterior {
+                        return Ok(None);
                     }
+                    if !allow_assumptions {
+                        if let Some(rings) = stored_loop_rings(loops, program) {
+                            if let [members] = rings.as_slice() {
+                                let program = members
+                                    .iter()
+                                    .zip(&loops[0].entries)
+                                    .map(|(member, entry)| {
+                                        (
+                                            member.clone(),
+                                            [entry.entry_fields[1], entry.entry_fields[2]],
+                                        )
+                                    })
+                                    .collect::<Vec<_>>();
+                                if let Some(selected) =
+                                    crate::design::geometry::member_loop_union::resolve(
+                                        source,
+                                        resolution.sketch_entities,
+                                        &program,
+                                        scoped.linear_tolerance,
+                                        scoped.profile_work,
+                                        scoped.ctx,
+                                    )?
+                                {
+                                    for region in selected {
+                                        if !regions.contains(&region) {
+                                            regions.push(region);
+                                        }
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    let Some(split) =
+                        crate::design::geometry::arrangement_regions_of_crossing_loop(
+                            source,
+                            resolution.sketch_entities,
+                            program,
+                            scoped.linear_tolerance,
+                            scoped.profile_work,
+                            scoped.ctx,
+                        )?
+                    else {
+                        return Ok(None);
+                    };
+                    assumed = true;
+                    island_absence |= split.island_absence_assumed;
+                    for region in split.regions {
+                        if !regions.contains(&region) {
+                            regions.push(region);
+                        }
+                    }
+                    continue;
+                };
+                island_absence |= found.island_absence_assumed;
+                if !regions.contains(&found.region) {
+                    regions.push(found.region);
                 }
-                continue;
-            };
-            island_absence |= found.island_absence_assumed;
-            if !regions.contains(&found.region) {
-                regions.push(found.region);
+            }
+            if let Some(union) = first_end.and_then(|first_end| {
+                group_union::remove_union_first_region(&mut regions, group_start, first_end)
+            }) {
+                unions.push(union);
             }
         }
     }
     if cursor != curves.len() {
         return Ok(None);
     }
+    // A later member can repeat a group whose first region was removed as
+    // the union of its further regions; the further regions still cover it.
+    regions.retain(|region| !unions.contains(region));
     if !allow_assumptions && (assumed || island_absence || flags_read || coincident) {
         return Ok(None);
     }
