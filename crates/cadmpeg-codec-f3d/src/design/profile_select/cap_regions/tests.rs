@@ -21,7 +21,7 @@ use crate::history_records::{
 
 use super::{
     changed_planes, face_cap, face_cap_reading, face_outlines_cover_caps, outlines_agree,
-    polygon_area, Agreement, PlaneFrame, Sampled,
+    polygon_area, sample_regions, Agreement, PlaneFrame, Sampled,
 };
 
 const TOLERANCE: f64 = 1e-6;
@@ -1351,4 +1351,32 @@ fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
         .origin
         .x = 9.0;
     assert!(!certify(before, after, &selected, 3.0));
+}
+
+#[test]
+fn region_sampler_finds_a_band_between_grid_points() {
+    let square = |low: f64, high: f64| {
+        vec![
+            Point2::new(low, low),
+            Point2::new(high, low),
+            Point2::new(high, high),
+            Point2::new(low, high),
+        ]
+    };
+    let ring = |polyline| AtomicSketchRegion {
+        boundary: Vec::new(),
+        polyline,
+        encloses_island: false,
+        island_absence_assumed: false,
+    };
+    // A frame one unit wide around a square: no grid point lies in the frame.
+    let regions = [ring(square(0.0, 100.0)), ring(square(1.0, 99.0))];
+    let sampled = sample_regions(&regions, TOLERANCE).expect("each region has a point");
+    assert_eq!(sampled[0].nested, vec![1]);
+    let point = sampled[0].point;
+    let in_frame = |p: f64| (0.0..1.0).contains(&p) || (99.0..100.0).contains(&p);
+    assert!((0.0..=100.0).contains(&point.u) && (0.0..=100.0).contains(&point.v));
+    assert!(in_frame(point.u) || in_frame(point.v));
+    let inner = sampled[1].point;
+    assert!((1.0..=99.0).contains(&inner.u) && (1.0..=99.0).contains(&inner.v));
 }

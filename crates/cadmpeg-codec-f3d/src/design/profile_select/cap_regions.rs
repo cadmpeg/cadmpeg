@@ -1476,27 +1476,42 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
             low = Point2::new(low.u.min(p.u), low.v.min(p.v));
             high = Point2::new(high.u.max(p.u), high.v.max(p.v));
         }
+        let rings: Vec<&[Point2]> = std::iter::once(region.polyline.as_slice())
+            .chain(
+                nested
+                    .iter()
+                    .map(|inner| regions[*inner].polyline.as_slice()),
+            )
+            .collect();
         let mut best: Option<(Point2, f64)> = None;
+        let consider = |best: &mut Option<(Point2, f64)>, point: Point2| {
+            if !point_in_polygon(point, rings[0])
+                || rings[1..].iter().any(|ring| point_in_polygon(point, ring))
+            {
+                return;
+            }
+            let room = rings
+                .iter()
+                .map(|ring| clearance(point, ring))
+                .fold(f64::INFINITY, f64::min);
+            if best.is_none_or(|(_, most)| room > most) {
+                *best = Some((point, room));
+            }
+        };
         for i in 1..SAMPLE_GRID {
             for j in 1..SAMPLE_GRID {
-                let point = Point2::new(
-                    low.u + (high.u - low.u) * f64::from(i) / f64::from(SAMPLE_GRID),
-                    low.v + (high.v - low.v) * f64::from(j) / f64::from(SAMPLE_GRID),
+                consider(
+                    &mut best,
+                    Point2::new(
+                        low.u + (high.u - low.u) * f64::from(i) / f64::from(SAMPLE_GRID),
+                        low.v + (high.v - low.v) * f64::from(j) / f64::from(SAMPLE_GRID),
+                    ),
                 );
-                if !point_in_polygon(point, &region.polyline)
-                    || nested
-                        .iter()
-                        .any(|inner| point_in_polygon(point, &regions[*inner].polyline))
-                {
-                    continue;
-                }
-                let room = nested
-                    .iter()
-                    .map(|inner| clearance(point, &regions[*inner].polyline))
-                    .fold(clearance(point, &region.polyline), f64::min);
-                if best.is_none_or(|(_, most)| room > most) {
-                    best = Some((point, room));
-                }
+            }
+        }
+        if best.is_none_or(|(_, room)| room <= 10.0 * tolerance) {
+            for point in scanline_midpoints(&rings) {
+                consider(&mut best, point);
             }
         }
         let (point, room) = best?;
@@ -1510,6 +1525,47 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
         });
     }
     Some(out)
+}
+
+/// The most rows a region scan reads.
+const MAX_SCANLINES: usize = 512;
+
+/// The midpoints of the intervals that horizontal rows cut from `rings`. A row
+/// runs halfway between each two adjacent vertex heights, so it crosses every
+/// band of the region that the grid misses.
+fn scanline_midpoints(rings: &[&[Point2]]) -> Vec<Point2> {
+    let mut heights: Vec<f64> = rings
+        .iter()
+        .flat_map(|ring| ring.iter().map(|point| point.v))
+        .collect();
+    heights.sort_by(f64::total_cmp);
+    heights.dedup();
+    let rows: Vec<f64> = heights
+        .windows(2)
+        .map(|pair| 0.5 * (pair[0] + pair[1]))
+        .collect();
+    let step = rows.len().div_ceil(MAX_SCANLINES).max(1);
+    let mut out = Vec::new();
+    for row in rows.into_iter().step_by(step) {
+        let mut crossings: Vec<f64> = rings
+            .iter()
+            .flat_map(|ring| {
+                (0..ring.len()).filter_map(move |index| {
+                    let start = ring[index];
+                    let end = ring[(index + 1) % ring.len()];
+                    ((start.v - row) * (end.v - row) < 0.0)
+                        .then(|| start.u + (end.u - start.u) * (row - start.v) / (end.v - start.v))
+                })
+            })
+            .collect();
+        crossings.sort_by(f64::total_cmp);
+        out.extend(
+            crossings
+                .windows(2)
+                .map(|pair| Point2::new(0.5 * (pair[0] + pair[1]), row)),
+        );
+    }
+    out
 }
 
 /// The indices of the regions whose points `current` covers, in order;
