@@ -938,11 +938,9 @@ fn finish_decode(
                     slots
                         .iter()
                         .fold((0_usize, 0_usize), |(finite, unset), slot| match slot {
-                            crate::entity_table::RangeIntervalSlot::Binary64 { .. } => {
+                            crate::entity_table::RangeIntervalSlot::Binary64 { .. }
+                            | crate::entity_table::RangeIntervalSlot::ZeroLiteral { .. } => {
                                 (finite + 1, unset)
-                            }
-                            crate::entity_table::RangeIntervalSlot::Unset { .. } => {
-                                (finite, unset + 1)
                             }
                         });
                 (
@@ -979,7 +977,9 @@ fn finish_decode(
                     }
                 };
                 let (evaluated, unset) = match range.evaluation {
-                    crate::native::CatiaEntityEvaluation::Scalar { .. } => (evaluated + 1, unset),
+                    crate::native::CatiaEntityEvaluation::Scalar { .. }
+                    | crate::native::CatiaEntityEvaluation::UnitLiteral
+                    | crate::native::CatiaEntityEvaluation::ZeroLiteral => (evaluated + 1, unset),
                     crate::native::CatiaEntityEvaluation::Unset => (evaluated, unset + 1),
                 };
                 (total + 1, dimensions, complex, evaluated, unset)
@@ -996,12 +996,10 @@ fn finish_decode(
                     | crate::native::CatiaConstraintRangeFraming::DimensionC1
                     | crate::native::CatiaConstraintRangeFraming::DimensionDC
                     | crate::native::CatiaConstraintRangeFraming::DimensionDF
-            ) && match range.evaluation {
-                crate::native::CatiaEntityEvaluation::Scalar { bits } => {
-                    f64::from_bits(bits).is_finite()
-                }
-                crate::native::CatiaEntityEvaluation::Unset => false,
-            }
+            ) && range
+                .evaluation
+                .bits()
+                .is_some_and(|bits| f64::from_bits(bits).is_finite())
         })
         .count();
     let constraint_range_incidences = incoming_entity_incidence_counts(
@@ -1093,7 +1091,10 @@ fn finish_decode(
                 };
                 match &value.value {
                     Selected::Evaluation {
-                        evaluation: CatiaEntityEvaluation::Scalar { .. },
+                        evaluation:
+                            CatiaEntityEvaluation::Scalar { .. }
+                            | CatiaEntityEvaluation::UnitLiteral
+                            | CatiaEntityEvaluation::ZeroLiteral,
                         ..
                     } => (
                         total + 1,
@@ -1125,16 +1126,6 @@ fn finish_decode(
                         unset,
                         atoms + 1,
                         controls,
-                        separators,
-                        schemas,
-                    ),
-                    Selected::ControlE8 => (
-                        total + 1,
-                        evaluations,
-                        evaluated,
-                        unset,
-                        atoms,
-                        controls + 1,
                         separators,
                         schemas,
                     ),
@@ -1651,7 +1642,9 @@ fn finish_decode(
                 matches!(
                     value.payload,
                     crate::native::CatiaEntitySuffixPayload::Evaluation {
-                        evaluation: crate::native::CatiaEntityEvaluation::Scalar { .. },
+                        evaluation: crate::native::CatiaEntityEvaluation::Scalar { .. }
+                            | crate::native::CatiaEntityEvaluation::UnitLiteral
+                            | crate::native::CatiaEntityEvaluation::ZeroLiteral,
                         ..
                     }
                 )
@@ -1678,7 +1671,6 @@ fn finish_decode(
         .iter()
         .fold((0, 0), |(e8, e9), record| {
             match record.suffix_value().map(|value| &value.payload) {
-                Some(crate::native::CatiaEntitySuffixPayload::ControlE8) => (e8 + 1, e9),
                 Some(crate::native::CatiaEntitySuffixPayload::ControlE9) => (e8, e9 + 1),
                 _ => (e8, e9),
             }
@@ -1729,9 +1721,6 @@ fn finish_decode(
                 }
                 crate::native::CatiaEntitySuffixSelectedValue::Evaluation { .. } => {
                     (atoms, evaluations + 1, controls, separators, schemas)
-                }
-                crate::native::CatiaEntitySuffixSelectedValue::ControlE8 => {
-                    (atoms, evaluations, controls + 1, separators, schemas)
                 }
                 crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
                     (atoms, evaluations, controls, separators + 1, schemas)
@@ -3533,6 +3522,37 @@ fn finish_decode(
                  input selects; their catalog selectors declare no parameter name, so no neutral \
                  parameter transfers.",
                 formula_transfer.native_only_definition_chain_count
+            )));
+    }
+    let literal_range_nominal_count = native
+        .entity_records
+        .iter()
+        .filter(|record| {
+            record
+                .range_interval
+                .as_ref()
+                .is_some_and(|range| range.nominal.is_some())
+                && record.suffix_value().is_some_and(|suffix| {
+                    matches!(
+                        suffix.payload,
+                        crate::native::CatiaEntitySuffixPayload::Evaluation {
+                            evaluation: crate::native::CatiaEntityEvaluation::UnitLiteral
+                                | crate::native::CatiaEntityEvaluation::ZeroLiteral,
+                            ..
+                        }
+                    )
+                })
+        })
+        .count();
+    if formula_transfer.literal_value_count != 0
+        || formula_transfer.contradicted_literal_count != 0
+        || literal_range_nominal_count != 0
+    {
+        report
+            .losses
+            .push(CatiaLossCode::HistoryParameterLiteralAssumed.note(format!(
+                "{} design parameter(s) and {literal_range_nominal_count} Range nominal(s) read a stored E7 or E8 literal as the value one or zero; {} formula output(s) whose evaluated expression contradicts that value keep no value.",
+                formula_transfer.literal_value_count, formula_transfer.contradicted_literal_count
             )));
     }
     if unresolved_object_record_count != 0 {

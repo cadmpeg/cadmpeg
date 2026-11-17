@@ -3614,7 +3614,9 @@ fn face_selection_state<'a>(
                 | cadmpeg_ir::features::FeatureOperation::DeleteFace { heal: true, .. }
         )
     );
-    if !spans_transitions && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
+    if !spans_transitions
+        && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
+        && !extrude_spans_state_chain(feature, histories, history, state_id, previous_state_id)
     {
         return None;
     }
@@ -3627,6 +3629,29 @@ fn face_selection_state<'a>(
         state: state_index,
         previous: previous_index,
     })
+}
+
+/// Whether an `Extrude` reaches its result state from its preceding state
+/// through one complete chain of uniquely bound transitions.
+fn extrude_spans_state_chain(
+    feature: &cadmpeg_ir::features::Feature,
+    histories: &[AsmHistory],
+    history: &AsmHistory,
+    state_id: i64,
+    previous_state_id: i64,
+) -> bool {
+    matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+        )
+    ) && output_chain::OutputChain::resolve(
+        histories,
+        state_id,
+        previous_state_id,
+        Some(&history.id),
+    )
+    .is_some()
 }
 
 fn face_selection_reads_state(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {

@@ -26,6 +26,7 @@ fn entities(
 
 mod aspect_scope;
 mod depth_limits;
+mod dimension_entities;
 mod shared_walks;
 
 #[test]

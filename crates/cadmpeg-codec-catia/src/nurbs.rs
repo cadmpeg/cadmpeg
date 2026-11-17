@@ -70,6 +70,19 @@ impl LaneRefusals {
         self.notes.len()
     }
 
+    pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
+        let note = if resolved {
+            crate::loss::CatiaLossCode::TopologyUnselectedBodiesRetained.note(format!(
+                "Retained {excluded} unselected native sheet-group rosters outside neutral bounded topology, using the stored visible-body list."
+            ))
+        } else {
+            crate::loss::CatiaLossCode::TopologyBodySelectionUnresolved.note(
+                "The stored visible-body list did not resolve uniquely to body allocations; decoded rosters remain available as neutral subsets."
+            )
+        };
+        self.notes.push(note);
+    }
+
     /// Retain the identity that prevented a carrier population from merging.
     pub(crate) fn push_annotation_collision(
         &mut self,
