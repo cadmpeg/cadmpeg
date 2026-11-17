@@ -163,3 +163,28 @@ fn an_unnamed_expand_item_charges_a_loss_and_keeps_its_named_children() {
         "{losses:?}"
     );
 }
+
+#[test]
+fn a_provider_stored_true_that_expand_does_not_name_keeps_its_value_with_a_loss() {
+    let provider =
+        r#"<ViewProvider name="Body" expanded="1"><Properties Count="0"/></ViewProvider>"#;
+    for expand in [
+        "<Expand/>",
+        r#"<Expand count="1"><Expand name="Pad"/></Expand>"#,
+    ] {
+        let result = decode_with(provider, expand);
+        assert_eq!(expanded(&result, "Body"), Some(true), "{expand}");
+        let losses = unresolved_gui_losses(&result);
+        assert!(
+            losses
+                .iter()
+                .any(|message| message.contains("does not name Body")),
+            "{expand}: {losses:?}"
+        );
+    }
+    let result = decode_with(provider, "");
+    assert_eq!(expanded(&result, "Body"), Some(true));
+    assert!(unresolved_gui_losses(&result)
+        .iter()
+        .all(|message| !message.contains("does not name Body")));
+}

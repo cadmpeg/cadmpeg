@@ -77,14 +77,16 @@ independently.
 **Question.** When the `Expand` element of `GuiDocument.xml` and a `ViewProvider` `expanded`
 attribute disagree for one object, which one holds?
 
-**Known.** `freecad_fcstd.md` §1 gives both carriers. The decoder reads every object that `Expand`
+**Known.** `freecad_fcstd.md` §2 gives both carriers. The decoder reads every object that `Expand`
 names, at any nesting depth, as expanded, and reads a provider's own attribute for the other
 objects. When a provider stores `expanded` false for an object that `Expand` names, the decoder
-reads the object as expanded and charges `source.gui-metadata-unresolved`. The neutral flag is per
-object; the native `Expand` state keeps the tree path.
+reads the object as expanded and charges `source.gui-metadata-unresolved`. When an `Expand`
+element is present and a provider stores `expanded` true for an object that it does not name, the
+decoder keeps the provider's value and charges the same loss. The neutral flag is per object; the
+native `Expand` state keeps the tree path.
 
-**Need.** A document that saves the two carriers from different states shows a different tree
-than the one FreeCAD restores.
+**Need.** A FreeCAD restore source, or a saved document in which the two carriers disagree,
+together with the tree FreeCAD shows after it opens that document.
 
 ## REV-01. Midplane with a nonzero revolution Type
 

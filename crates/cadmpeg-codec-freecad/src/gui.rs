@@ -721,6 +721,11 @@ fn transfer_neutral_presentation(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut state_losses = Vec::new();
+    let expand_present = graph
+        .documents
+        .iter()
+        .flat_map(|document| &document.states)
+        .any(|state| state.kind == "Expand");
     let mut expanded_names = BTreeSet::new();
     for value in graph
         .documents
@@ -758,6 +763,16 @@ fn transfer_neutral_presentation(
     }) {
         state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
             "GUI Expand names {}, whose view provider stores expanded=false; the item is read as expanded",
+            provider.name
+        )));
+    }
+    for provider in graph.providers.iter().filter(|provider| {
+        expand_present
+            && provider.expanded == Some(true)
+            && !expanded_names.contains(provider.name.as_str())
+    }) {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand does not name {}, whose view provider stores expanded=true; the item is read as expanded",
             provider.name
         )));
     }
