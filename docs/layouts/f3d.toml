@@ -26156,6 +26156,35 @@ anchor = "The typed-reference zero-body form stores the same prefix with a 51-by
 
 
 [[record]]
+name = "sheet_metal_rule_v0_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A version-0 sheet-metal rule stores a"
+size = 25
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "settings_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "[u32 settings-reference count](../layouts/f3d.md) at offset 21"
+
+[[record]]
 name = "sheet_metal_rule_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs"
 kind = "byte"

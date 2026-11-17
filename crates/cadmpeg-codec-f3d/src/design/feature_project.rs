@@ -30,10 +30,14 @@ use crate::records::{
     sketch_geometry::{SketchCurveGeometry, SketchCurveIdentity},
     sketch_placement::DesignSketchPlacement,
     topology::{
-        body_recipe::DesignBodyRecipeOperand, construction::DesignConstructionOperandGroup,
-        edge_identity::DesignEdgeIdentityOperand, edge_identity::DesignEdgeOperand,
-        extrude_selection::DesignOperandRole, face::DesignFaceOperand,
-        fillet::DesignFilletRadiusGroup, fillet::DesignFilletRadiusLaw,
+        body_recipe::DesignBodyRecipeOperand,
+        construction::DesignConstructionOperandGroup,
+        edge_identity::DesignEdgeIdentityOperand,
+        edge_identity::DesignEdgeOperand,
+        extrude_selection::DesignOperandRole,
+        face::{DesignFaceOperand, DesignFaceSourceGroup},
+        fillet::DesignFilletRadiusGroup,
+        fillet::DesignFilletRadiusLaw,
     },
 };
 use cadmpeg_core::decode::DecodeContext;
@@ -83,6 +87,7 @@ macro_rules! or_none {
     };
 }
 
+mod base_face;
 mod bend_lines;
 mod chamfer;
 mod coil;
@@ -120,6 +125,7 @@ pub(crate) struct ProjectInputs<'a> {
         &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
+    pub(crate) face_source_groups: &'a [DesignFaceSourceGroup],
     pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) placement_constructions:
@@ -1274,6 +1280,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             ))
                         },
                     )?,
+                Some(DesignFeatureFamily::SheetMetalBaseFace) => {
+                    base_face::project(scope, inputs, &mut projection_losses)
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                }
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
                     edge_flange::project(scope, inputs, ctx, &mut projection_losses)?
                 }
@@ -1622,6 +1632,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     scope.record_index, origin.joint_origin_transform_offset,
                 )).is_some_and(|transform| *transform == origin.joint_origin_transform)
             });
+            let retain_base_face_records = matches!(family, Some(DesignFeatureFamily::SheetMetalBaseFace))
+                && matches!(&definition, FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. }));
             let outputs = inserted_bodies;
             Ok(Feature {
                 product_definition: None,
@@ -1649,11 +1661,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
+                    || retain_base_face_records
                     || retain_chamfer_records
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
+                    if retain_base_face_records {
+                        for (name, expression) in scope_parameter_expressions(scope, &parameters)? {
+                            properties.insert(
+                                cadmpeg_core::nonblank_literal!("parameter:").with_suffix(name.as_str()),
+                                expression,
+                            );
+                        }
+                    }
                     if retain_chamfer_records {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("chamfer:parameters"),
@@ -4968,8 +4989,10 @@ fn project_base_flange(
     Some((
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: PlanarProfileRef::Sketch(crate::ids::neutral_sketch_id(placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(thickness.get() * 10.0)?,
-            side: SheetMetalThicknessSide::Forward,
+            thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(
+                thickness.get() * 10.0,
+            )?),
+            side: Some(SheetMetalThicknessSide::Forward),
         }),
         rule_thickness.is_some(),
     ))

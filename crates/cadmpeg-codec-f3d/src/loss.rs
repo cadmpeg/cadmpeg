@@ -26,6 +26,11 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    BaseFaceRegionsNative,
+    BaseFaceSourceCarrierUnresolved,
+    BaseFaceThicknessUnresolved,
+    BaseFaceMaterialSideUnresolved,
+    BaseFaceResultChoiceUnresolved,
     ContourVectorOwnerDistanceRoleAssumed,
     ContourProfileNative,
     ContourDefaultSideOneLeftAssumed,
@@ -1036,6 +1041,11 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::SceneOverrideRefused,
+        Self::BaseFaceRegionsNative,
+        Self::BaseFaceSourceCarrierUnresolved,
+        Self::BaseFaceThicknessUnresolved,
+        Self::BaseFaceMaterialSideUnresolved,
+        Self::BaseFaceResultChoiceUnresolved,
         Self::ContourVectorOwnerDistanceRoleAssumed,
         Self::ContourProfileNative,
         Self::ContourDefaultSideOneLeftAssumed,
@@ -1687,6 +1697,11 @@ impl F3dLossCode {
             Self::ContourVectorOwnerDistanceRoleAssumed => {
                 "feature.contour-vector-owner-distance-role-assumed"
             }
+            Self::BaseFaceRegionsNative => "feature.base-face-regions-native",
+            Self::BaseFaceSourceCarrierUnresolved => "feature.base-face-source-carrier-unresolved",
+            Self::BaseFaceThicknessUnresolved => "feature.base-face-thickness-unresolved",
+            Self::BaseFaceMaterialSideUnresolved => "feature.base-face-material-side-unresolved",
+            Self::BaseFaceResultChoiceUnresolved => "feature.base-face-result-choice-unresolved",
             Self::ContourProfileNative => "feature.contour-profile-native",
             Self::ContourDefaultSideOneLeftAssumed => {
                 "feature.contour-default-side-one-left-assumed"
@@ -2643,6 +2658,11 @@ impl F3dLossCode {
             | Self::EdgeWidthUnresolved
             | Self::EdgeHeightTargetNative
             | Self::EdgeHeightTargetScopeAssumed
+            | Self::BaseFaceRegionsNative
+            | Self::BaseFaceSourceCarrierUnresolved
+            | Self::BaseFaceThicknessUnresolved
+            | Self::BaseFaceMaterialSideUnresolved
+            | Self::BaseFaceResultChoiceUnresolved
             | Self::ContourVectorOwnerDistanceRoleAssumed
             | Self::ContourProfileNative
             | Self::ContourDefaultSideOneLeftAssumed
@@ -3289,6 +3309,11 @@ impl F3dLossCode {
             | Self::EdgeWidthUnresolved
             | Self::EdgeHeightTargetNative
             | Self::EdgeHeightTargetScopeAssumed
+            | Self::BaseFaceRegionsNative
+            | Self::BaseFaceSourceCarrierUnresolved
+            | Self::BaseFaceThicknessUnresolved
+            | Self::BaseFaceMaterialSideUnresolved
+            | Self::BaseFaceResultChoiceUnresolved
             | Self::ContourVectorOwnerDistanceRoleAssumed
             | Self::ContourProfileNative
             | Self::ContourDefaultSideOneLeftAssumed

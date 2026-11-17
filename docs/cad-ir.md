@@ -262,7 +262,7 @@ Ordered resolved and historical body sets store nonempty member rows. Each row p
 
 A configuration feature evaluation is `suppressed` or `active`. A suppressed evaluation has no outputs. An active evaluation owns its output list, which may be empty. Dependencies and the feature definition remain present independently of the evaluation state.
 
-A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`).
+A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`). The operation omits unresolved `thickness` and `side` fields independently.
 
 `SheetMetalAttachedPlate` builds a flat plate from its profile, thickness, and side. Its attachment selects the existing sheet edge. It has no Boolean operation or bend dimensions. `SheetMetalBend` names that plate and selects the attachment edge in its own input topology. It builds the joining bend region with its inside radius, relief, and transition. Replay the plate first, then its bend. The pair transfers together; an unresolved member keeps both members native. Each historical attachment selection identifies its own feature's input topology row.
 

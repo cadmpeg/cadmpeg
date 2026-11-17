@@ -463,7 +463,7 @@ fn scale_feature_operation(
             scale_optional_positive_length(&mut construction.thickness, scale)?;
         }
         FeatureOperation::SheetMetalBaseFlange { thickness, .. } => {
-            scale_positive_length(thickness, scale)?;
+            scale_optional_positive_length(thickness, scale)?;
         }
         FeatureOperation::SheetMetalAttachedPlate { thickness, .. } => {
             scale_positive_length(thickness, scale)?;
