@@ -93,6 +93,26 @@ fn documents() -> Vec<Value> {
 /// treatment diameter above the bore it widens, a knot vector as long as its
 /// poles and degree need, a membership its cages commit.
 fn seed_documents() -> Vec<(&'static str, Value)> {
+    let mut partial_form_inputs = json!(cadmpeg_ir::features::form::FormInputs::default());
+    partial_form_inputs["reference_evidence"] = json!([{
+        "source": "test:sweep:record#0",
+        "role": "body",
+        "ordinal": 0,
+        "group": 0,
+        "target": {
+            "kind": "document",
+            "target": 22,
+            "segment": 7,
+            "asset_guid": "literal-asset",
+            "target_type_guid": "11111111-1111-4111-8111-111111111111",
+            "link_name": "literal-link",
+            "version": {
+                "key": "22222222-2222-4222-8222-222222222222",
+                "urn": "literal-version"
+            }
+        }
+    }]);
+    partial_form_inputs["order_evidence"] = json!([{"order": "source", "members": [0, 1]}]);
     let hole = |name: &'static str, shape: Value| {
         let operation = json!({"kind": "hole", "value": {"shape": shape}});
         (name, document("features", feature(&operation)))
@@ -203,7 +223,7 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                                 "certainty": "assumed",
                             },
                         },
-                        "inputs": {"lists": [], "parameters": {}, "references": []},
+                        "inputs": cadmpeg_ir::features::form::FormInputs::default(),
                     },
                 })),
             ),
@@ -241,7 +261,7 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                                 },
                             },
                         },
-                        "inputs": {"lists": [], "parameters": {}, "references": []},
+                        "inputs": partial_form_inputs,
                     },
                 })),
             ),
