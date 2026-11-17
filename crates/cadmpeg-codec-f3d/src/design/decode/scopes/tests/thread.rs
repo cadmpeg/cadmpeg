@@ -353,33 +353,58 @@ fn the_byte_at_marker_offset_21_states_the_modeled_flag_in_every_form() {
     }
 }
 
-#[test]
-fn modeled_flag_zero_without_the_extended_prefix_charges_the_assumed_loss() {
-    let scope = DesignParameterScope::empty(
+/// The modeled flag of a standard Thread construction without the extended
+/// prefix and the loss codes that a scope with the given current
+/// history-state identity charges for it.
+fn standard_thread_flag_reading(
+    flag: u8,
+    history_state_id: Option<i64>,
+) -> (bool, Vec<cadmpeg_ir::report::loss::LossKind>) {
+    let mut scope = DesignParameterScope::empty(
         "f3d:scope#standard-thread",
         crate::records::feature::scope::DesignFeatureKind::Thread,
         987,
     );
-    assert_eq!(scope.history_state_id(), None);
-    let loss_codes = |flag| {
-        let bytes = flagged_thread_bytes([0, 1, 0, 0, 0], flag, &[0, 1]);
-        let construction = parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![988])
-            .expect("standard Thread construction");
-        assert!(construction.extended.is_none());
-        let codes = thread_modeled_flag_loss(&scope, &construction)
-            .into_iter()
-            .map(|loss| loss.code)
-            .collect::<Vec<_>>();
-        (construction.modeled, codes)
-    };
+    if history_state_id.is_some() {
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = history_state_id;
+                draft.previous_history_state_id = Some(1);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+    }
+    assert_eq!(scope.history_state_id(), history_state_id);
+    let bytes = flagged_thread_bytes([0, 1, 0, 0, 0], flag, &[0, 1]);
+    let construction = parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![988])
+        .expect("standard Thread construction");
+    assert!(construction.extended.is_none());
+    let codes = thread_modeled_flag_loss(&scope, &construction)
+        .into_iter()
+        .map(|loss| loss.code)
+        .collect();
+    (construction.modeled, codes)
+}
+
+#[test]
+fn modeled_flag_zero_without_the_extended_prefix_charges_the_assumed_loss() {
     assert_eq!(
-        loss_codes(0),
+        standard_thread_flag_reading(0, None),
         (
             false,
             vec![crate::loss::F3dLossCode::ThreadModeledFlagAssumed.kind()]
         )
     );
-    assert_eq!(loss_codes(1), (true, Vec::new()));
+    assert_eq!(standard_thread_flag_reading(1, None), (true, Vec::new()));
+}
+
+#[test]
+fn modeled_flag_zero_in_a_scope_that_commits_a_state_is_a_cosmetic_thread_without_loss() {
+    assert_eq!(
+        standard_thread_flag_reading(0, Some(2)),
+        (false, Vec::new())
+    );
+    assert_eq!(standard_thread_flag_reading(1, Some(2)), (true, Vec::new()));
 }
 
 fn assert_thread_construction(

@@ -187,9 +187,12 @@ pub(super) fn thread_modeled_flag_loss(
     scope: &DesignParameterScope,
     construction: &DesignThreadConstruction,
 ) -> Option<LossNote> {
-    (construction.extended.is_none() && !construction.modeled).then(|| {
+    (construction.extended.is_none()
+        && !construction.modeled
+        && scope.history_state_id().is_none())
+    .then(|| {
         crate::loss::F3dLossCode::ThreadModeledFlagAssumed.note(format!(
-            "Thread scope {} has no extended prefix and stores modeled flag 0; it is read as a cosmetic thread, and a modeled thread whose scope has a null current history-state identity stores the same value (DR-142).",
+            "Thread scope {} has no extended prefix, commits no history state, and stores modeled flag 0; it is read as a cosmetic thread, and a modeled thread stores the same value in such a scope (DR-142).",
             scope.id
         ))
     })
