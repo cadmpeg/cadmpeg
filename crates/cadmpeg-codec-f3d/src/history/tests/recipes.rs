@@ -1705,3 +1705,115 @@ fn a_pattern_seed_stays_native_when_the_face_match_contradicts_the_recipe_slot()
             if native == "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
     ));
 }
+
+#[test]
+fn a_combine_keeps_its_direct_binding_where_its_header_predecessor_binds_no_body() {
+    use crate::history_records::AsmDeltaState;
+    use cadmpeg_ir::features::{
+        BodySelection, BooleanKind, CombineOperands, Feature, FeatureDefinition, FeatureId,
+        FeatureOperation,
+    };
+
+    let (scope, group_id, group, operand, body, region, shell, face) = direct_body_fixture();
+    let mut scope = scope;
+    scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Combine
+                .try_into()
+                .unwrap();
+            draft.history_state_id = Some(42);
+            draft.previous_history_state_id = None;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    // State 42 stores no predecessor; its header link names state 41. Neither
+    // state stores a topology, so the historical binding finds no body.
+    let state = |state_id: i64, next_ref: Option<i64>| -> crate::test_support::history::State {
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:asm-delta-state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            None,
+            Vec::new(),
+        )
+    };
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(42, Some(41)), state(41, None)],
+    );
+    assert_eq!(
+        crate::history::effective_scope_previous_history_state_id(
+            &scope,
+            std::slice::from_ref(&history)
+        ),
+        Some(41)
+    );
+    let combine = |histories: &[crate::history_records::AsmHistory]| {
+        let inputs = super::super::FeatureBodySelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: std::slice::from_ref(&group),
+            body_recipe_operands: std::slice::from_ref(&operand),
+            construction_recipes: &[],
+            persistent_design_links: &[],
+            histories,
+            bodies: std::slice::from_ref(&body),
+            regions: std::slice::from_ref(&region),
+            shells: std::slice::from_ref(&shell),
+            faces: std::slice::from_ref(&face),
+        };
+        let mut feature = Feature {
+            product_definition: None,
+            id: FeatureId::mint("f3d:test:feature#combine").expect("identity grammar"),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Combine {
+                    operands: CombineOperands::new(
+                        BodySelection::Native(group_id.into()),
+                        BodySelection::Native("tool".into()),
+                    )
+                    .unwrap(),
+                    op: BooleanKind::Join,
+                    keep_tools: false,
+                    destination: Default::default(),
+                }),
+            ),
+            native_ref: Some(scope.id.clone()),
+        };
+        super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+            feature.evaluation.definition()
+        else {
+            panic!("Combine feature");
+        };
+        (operands.target().clone(), operands.tools().clone())
+    };
+    let direct = combine(&[]);
+    assert!(matches!(
+        &direct.0,
+        BodySelection::Resolved { bodies, .. } if bodies.as_slice() == [body.id.clone()]
+    ));
+    assert_eq!(combine(std::slice::from_ref(&history)), direct);
+}

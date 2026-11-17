@@ -2290,6 +2290,12 @@ pub(crate) fn bind_feature_body_selections(
                             }
                             return;
                         };
+                        // A scope that stores no predecessor takes the
+                        // direct binding on `main`; with its history header
+                        // predecessor, an operand that the historical binding
+                        // leaves native keeps that direct binding.
+                        let header_predecessor = scope.previous_history_state_id().is_none();
+                        (|| {
                         if let Some(local) = combine_external_local_tools(scope) {
                             *tools = local;
                         }
@@ -2463,6 +2469,22 @@ pub(crate) fn bind_feature_body_selections(
                                     };
                                 }
                               }
+                            }
+                        }
+                        })();
+                        if header_predecessor {
+                            for operand in [target, tools] {
+                                if matches!(
+                                    operand,
+                                    BodySelection::Native(_) | BodySelection::NativeSet(_)
+                                ) {
+                                    bind_direct_body_recipe_body_selection(
+                                        operand,
+                                        scope,
+                                        inputs,
+                                        &mut body_candidates,
+                                    );
+                                }
                             }
                         }
                     });
