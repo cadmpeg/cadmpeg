@@ -4,6 +4,7 @@
 use super::{FeatureDirection3, FinitePoint3};
 use crate::scalar::{InteriorAngle, Length, PositiveLength};
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -754,7 +755,7 @@ impl TryFrom<HoleKindWire> for HoleKind {
 }
 
 /// Profile geometry families accepted as hole-location generators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum HoleProfileFilter {
@@ -929,7 +930,7 @@ pub enum HoleSpecification {
 }
 
 /// Thread handedness.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -1157,7 +1158,7 @@ impl From<HoleThreadDepthWire> for HoleThreadDepth {
 }
 
 /// Structural form of a hole entry treatment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
