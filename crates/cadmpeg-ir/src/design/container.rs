@@ -7,6 +7,7 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -57,7 +58,7 @@ pub enum Container {
         kind: UnorderedKind,
         /// The members.
         #[serde(with = "cadmpeg_core::distinct_keys::set")]
-        #[cfg_attr(feature = "schema", schemars(with = "Vec<Member>"))]
+        #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<Member>"))]
         members: BTreeSet<Member>,
     },
 }
@@ -73,7 +74,7 @@ impl Container {
 }
 
 /// What an ordered container is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum OrderedKind {
@@ -84,7 +85,7 @@ pub enum OrderedKind {
 }
 
 /// What an unordered container is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum UnorderedKind {

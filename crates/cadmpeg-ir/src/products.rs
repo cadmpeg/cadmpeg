@@ -2,6 +2,7 @@
 //! Product definitions, the occurrences they own, and the documents they
 //! come from (CADIR v11 §8.1).
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -32,7 +33,7 @@ pub use representation::{
 };
 
 /// The source's kind of a product definition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProductDefinitionKind {
@@ -889,7 +890,7 @@ pub enum JointOperands {
 
 /// Relative direction of the two normals of a plane coincidence or an insert,
 /// or of the z axes of a joint's two connector frames.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PlaneSense {
@@ -900,7 +901,7 @@ pub enum PlaneSense {
 }
 
 /// The side of a tangent plane on which the touching face lies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TangentContact {
@@ -1267,7 +1268,7 @@ pub struct AssemblyJoint {
 }
 
 /// An axis of a connector frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FrameAxis {
@@ -1298,7 +1299,7 @@ pub enum DriveAxis {
 }
 
 /// How a drive's output acts on the bodies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DriveMode {
