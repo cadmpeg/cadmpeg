@@ -574,6 +574,23 @@ fn carrier_admits_both_inline_document_type_spellings_at_their_exact_ends() {
                 .map(cadmpeg_ir::scalar::FiniteReal::get),
             [2.4, 0.0, 0.0]
         );
+        let indexed = crate::test_support::with_decode_context(|ctx| {
+            super::super::point_direction::point_direction_carrier_at(
+                ctx,
+                &bytes,
+                120,
+                super::super::point_direction::PointDirectionBoundary::Indexed(
+                    usize::try_from(operation.carrier_frame.unwrap().secondary_offset).unwrap(),
+                ),
+                55,
+                1,
+            )
+        })
+        .unwrap()
+        .unwrap();
+        let matching = external.is_none_or(|external| external == guid);
+        assert_eq!(indexed.inputs_complete, matching);
+        assert_eq!(indexed.inputs.len(), usize::from(matching));
         for shift in [1, 11] {
             let mut invalid = operation.clone();
             invalid.carrier_frame.as_mut().unwrap().secondary_offset += shift;

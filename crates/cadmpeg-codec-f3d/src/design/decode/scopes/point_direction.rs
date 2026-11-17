@@ -2,9 +2,9 @@
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
 use crate::bytes::lp_ascii_filtered_view;
-use crate::bytes::take_reference;
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::Reference;
+use crate::bytes::{take_reference, take_reference_lossless};
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::records::feature::hole::DesignHoleTangentPoint;
 use crate::records::identity::Located;
@@ -117,7 +117,11 @@ pub(super) fn point_direction_carrier_at<'a>(
     let mut read = 0;
     for slot in &mut inputs {
         let reference_at = cursor;
-        let Some(reference) = take_reference(body, &mut cursor) else {
+        let reference = match boundary {
+            PointDirectionBoundary::Registered(_) => take_reference_lossless(body, &mut cursor),
+            PointDirectionBoundary::Indexed(_) => take_reference(body, &mut cursor),
+        };
+        let Some(reference) = reference else {
             break;
         };
         *slot = Located {
