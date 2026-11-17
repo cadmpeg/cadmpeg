@@ -1,9 +1,11 @@
 use super::{
     design_positive_length, full_round_fillet_source, native_scope_definition,
-    project_face_selection, project_fixed_fillet_with_corners, project_full_round_fillet,
-    project_variable_fillet, resolved_fillet_assignments, ProjectInputs,
+    project_face_selection, project_full_round_fillet, project_variable_fillet,
+    resolved_fillet_assignments, ProjectInputs,
 };
-use crate::design::edge_resolve::resolved_edge_treatment_group_with_corners;
+use crate::design::edge_resolve::{
+    project_fixed_fillet_with_corners, resolved_edge_treatment_group_with_corners,
+};
 use crate::ids::native_stream;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignEdgeTreatmentVertexOperand;

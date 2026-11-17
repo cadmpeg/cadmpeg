@@ -4,8 +4,7 @@
 use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
-    project_fixed_fillet_with_corners, resolved_edge_flange_group, resolved_edge_group,
-    resolved_edge_treatment_group_with_corners,
+    resolved_edge_flange_group, resolved_edge_group, resolved_edge_treatment_group_with_corners,
 };
 use crate::design::face_resolve::{
     design_angle, resolved_body_recipe_selection, resolved_direct_face_selection,
