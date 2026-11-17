@@ -450,7 +450,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     let colored_solid_faces: HashSet<_> = model
         .appearance_bindings
         .iter()
-        .filter_map(|binding| match &binding.target {
+        .filter_map(|binding| match &binding.target.entity {
             cadmpeg_ir::appearance::AppearanceTarget::Face(face) if solid_faces.contains(face) => {
                 Some(face)
             }
