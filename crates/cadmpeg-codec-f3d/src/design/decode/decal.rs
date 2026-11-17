@@ -191,7 +191,7 @@ pub(crate) fn project_decal_images(
     }
     if assumed_normals != 0 {
         losses.push(F3dLossCode::DecalPlacementNormalAssumed.note(format!(
-            "{assumed_normals} Decal placement record(s) store a normal at an angle to U x V; the decoder keeps the stored frame (DR-484)."
+            "{assumed_normals} Decal placement record(s) store a normal that is not parallel to U x V; the decoder keeps the stored frame (DR-484)."
         )));
     }
     if unresolved_targets != 0 {

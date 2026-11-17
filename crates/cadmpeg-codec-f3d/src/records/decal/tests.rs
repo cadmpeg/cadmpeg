@@ -230,3 +230,34 @@ fn decal_image_wire_admits_a_placement_frame_before_the_asset_record() {
     null["placement"] = serde_json::Value::Null;
     assert!(serde_json::from_value::<crate::records::decal::DesignDecalImage>(null).is_err());
 }
+
+#[test]
+fn placement_normal_is_parallel_to_the_axes_within_the_tolerance() {
+    let u = [1.0f64, 2.0, 0.5];
+    let v = [-0.3f64, 0.4, 2.0];
+    let cross = [3.8f64, -2.15, 1.0];
+    let length = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let unit = cross.map(|value| value / length);
+    let u_length = u.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let in_plane = u.map(|value| value / u_length);
+    let placement = |normal: [f64; 3], u_axis: [f64; 3]| {
+        serde_json::from_value::<crate::records::decal::DesignDecalPlacement>(serde_json::json!({
+            "byte_offset": 40, "class_tag": "267", "vertex_count": 3, "ordinal": 1,
+            "u_axis": u_axis, "v_axis": v, "flag_bytes": "010000",
+            "reference_separator": 1, "normal_gap": 4,
+            "normal": normal, "origin": [1.0, 2.0, 0.0], "image_name": "mark",
+            "triangle_index_count": 3
+        }))
+        .expect("placement wire")
+    };
+    let tilted = |degrees: f64| {
+        let angle = degrees.to_radians();
+        [0, 1, 2].map(|lane| angle.cos() * unit[lane] + angle.sin() * in_plane[lane])
+    };
+    assert!(placement(unit, u).normal_is_parallel_to_axes());
+    assert!(placement(unit.map(|value| -value), u).normal_is_parallel_to_axes());
+    assert!(placement(tilted(0.01), u).normal_is_parallel_to_axes());
+    assert!(!placement(tilted(0.2), u).normal_is_parallel_to_axes());
+    assert!(!placement(in_plane, u).normal_is_parallel_to_axes());
+    assert!(!placement(unit, v).normal_is_parallel_to_axes());
+}

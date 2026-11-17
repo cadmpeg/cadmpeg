@@ -285,7 +285,7 @@ pub(crate) enum F3dLossCode {
     DecalPlacementNative,
     /// A Decal placement record is read in a trailing-reference layout other than the one-byte separator and four-byte gap.
     DecalPlacementLayoutAssumed,
-    /// A Decal placement record stores a normal at an angle to `U x V`.
+    /// A Decal placement record stores a normal outside the direction of `U x V` and its opposite.
     DecalPlacementNormalAssumed,
     DecalTargetUnresolved,
     DecalImageUnresolved,
