@@ -1114,7 +1114,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Note.** Withheld operations retain their existing losses.
 
-### DI-70. Profile chains of marker sketches with dimensioned circles
+### DI-71. Profile chains of marker sketches with dimensioned circles
 
 **Question.** Which feature-input records give the complete closed curve set of a marker-backed sketch whose only closed curve is a dimensioned circle?
 
