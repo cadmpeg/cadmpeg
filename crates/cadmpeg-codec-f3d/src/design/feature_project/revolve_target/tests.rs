@@ -489,6 +489,45 @@ fn a_work_plane_target_without_a_complete_origin_run_stays_native() {
 }
 
 #[test]
+fn a_face_recipe_member_outranks_the_plane_reading_of_the_same_group() {
+    for (selection, scopes) in [
+        (plane_selection(44, false), Vec::new()),
+        (plane_selection(282, false), vec![work_plane_scope(283)]),
+    ] {
+        let (extent, losses) = bound_plane_with_losses(
+            one_sided(),
+            &[face_operand(vec![14])],
+            &[],
+            &[selection.clone()],
+            &scopes,
+            1,
+        );
+        assert_eq!(
+            extent,
+            bound(one_sided(), &[face_operand(vec![14])], &[]),
+            "{}",
+            selection.primary_identity
+        );
+        assert!(
+            matches!(plane_termination(extent), AngularTermination::ToFace { .. }),
+            "{}",
+            selection.primary_identity
+        );
+        assert!(losses.is_empty(), "{losses:?}");
+        let (unresolved, losses) = bound_plane_with_losses(
+            one_sided(),
+            &[face_operand(Vec::new())],
+            &[],
+            &[selection],
+            &scopes,
+            1,
+        );
+        assert_eq!(unresolved, one_sided());
+        assert!(losses.is_empty(), "{losses:?}");
+    }
+}
+
+#[test]
 fn an_unproven_plane_target_stays_native() {
     for (selection, scopes, components) in [
         (plane_selection(282, false), Vec::new(), 1),

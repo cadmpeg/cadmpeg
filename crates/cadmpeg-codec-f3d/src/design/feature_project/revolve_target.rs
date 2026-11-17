@@ -112,7 +112,8 @@ pub(super) fn bind_revolve_shape_target(
 /// names in a Design stream that binds one component: the `WorkPlane` scope
 /// at the next record, returned with the frame, or an origin plane. The
 /// `WorkPlane` reading requires an identity that the Design type table rules
-/// out as an origin entity.
+/// out as an origin entity. A group with a face-recipe member names no
+/// plane.
 fn selected_target_plane<'a>(
     inputs: &RevolveTargetInputs<'a>,
     group: &DesignConstructionOperandGroup,
@@ -121,11 +122,20 @@ fn selected_target_plane<'a>(
         scope,
         scopes,
         entity_selection_operands,
+        face_operands,
         design_types,
         component_naming_spaces,
         ..
     } = *inputs;
     if !super::scope_stream_has_one_component(scope, component_naming_spaces) {
+        return None;
+    }
+    let stream = native_stream(&scope.id);
+    if face_operands.iter().any(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == scope.record_index
+            && operand.group_record_index() == Some(group.record_index)
+    }) {
         return None;
     }
     match (
