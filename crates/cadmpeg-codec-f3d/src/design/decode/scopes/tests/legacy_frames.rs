@@ -263,6 +263,12 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             values: [1.5, 2.5, 3.5, 0.0, -3.0, 4.0, 0.0, 0.0],
         },
         Case {
+            scope: ("901", "902"),
+            carrier: ("903", "904"),
+            lengths: (268, 215),
+            values: [1.5, 2.5, 3.5, 0.0, -3.0, 4.0, 0.0, 0.0],
+        },
+        Case {
             scope: ("361", "258"),
             carrier: ("335", "349"),
             lengths: (254, 195),

@@ -188,9 +188,11 @@ fn read<'a>(
             return None;
         }
         Some(guid)
-    } else {
+    } else if matches!(bytes.get(*cursor), Some(0 | 1)) {
         fields.inline_type_guid = ReadField::Absent;
         None
+    } else {
+        return None;
     };
     let cross_document = scalar!(cross_document, bytes.get(*cursor).copied(), 1);
     let reference = match cross_document {
@@ -242,13 +244,16 @@ fn read<'a>(
                 }
                 0 => {
                     let external = ascii(*cursor).filter(|(guid, _)| is_guid_hyphenated(guid));
-                    let target_type_guid = if let Some((guid, end)) = external {
+                    let (target_type_guid, link_name) = if let Some((guid, end)) = external {
                         fields.target_type_guid = ReadField::Value(guid);
                         *cursor = end;
-                        Some(guid)
+                        (Some(guid), text!(link_name, utf16(*cursor, 0..=256)))
                     } else if inline_type_guid.is_some() {
+                        let (link, end) = utf16(*cursor, 0..=256)?;
                         fields.target_type_guid = ReadField::Absent;
-                        None
+                        fields.link_name = ReadField::Value(link);
+                        *cursor = end;
+                        (None, link)
                     } else {
                         if let Some((guid, end)) = ascii(*cursor) {
                             fields.target_type_guid = ReadField::Value(guid);
@@ -256,7 +261,6 @@ fn read<'a>(
                         }
                         return None;
                     };
-                    let link_name = text!(link_name, utf16(*cursor, 0..=256));
                     let version = match scalar!(versioned, bytes.get(*cursor).copied(), 1) {
                         0 => {
                             fields.version_key_guid = ReadField::Absent;
@@ -406,6 +410,34 @@ mod tests {
             let mut cursor = 0;
             assert!(crate::bytes::take_reference(&bytes[..end], &mut cursor).is_none());
             assert_eq!(cursor, 0);
+        }
+    }
+    #[test]
+    fn short_optional_type_prefixes_keep_the_type_and_later_fields_unread() {
+        let mut bytes = vec![1];
+        bytes.extend_from_slice(&1600u64.to_le_bytes());
+        bytes.extend_from_slice(&36u32.to_le_bytes());
+        for end in 9..13 {
+            let read = read_reference_fields(&bytes[..end], 0);
+            assert_eq!(read.fields.target, ReadField::Value(1600));
+            assert_eq!(read.fields.inline_type_guid, ReadField::Unread);
+            assert_eq!(read.fields.cross_document, ReadField::Unread);
+            assert_eq!(read.fields.different_segment, ReadField::Unread);
+            assert!(!read.fields.complete);
+            let mut cursor = 0;
+            assert!(crate::bytes::take_reference(&bytes[..end], &mut cursor).is_none());
+            assert_eq!(cursor, 0);
+        }
+        let (bytes, link_at, _) = external(true, true);
+        let separate_at = link_at - 4 - SEPARATE.len();
+        for end in separate_at..separate_at + 4 {
+            let read = read_reference_fields(&bytes[..end], 0);
+            assert_eq!(read.fields.inline_type_guid, ReadField::Value(INLINE));
+            assert_eq!(read.fields.same_document, ReadField::Value(0));
+            assert_eq!(read.fields.target_type_guid, ReadField::Unread);
+            assert_eq!(read.fields.link_name, ReadField::Unread);
+            assert_eq!(read.fields.versioned, ReadField::Unread);
+            assert!(!read.fields.complete);
         }
     }
     #[test]

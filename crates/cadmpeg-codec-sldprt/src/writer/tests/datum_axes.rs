@@ -51,7 +51,9 @@ fn semantic_writer_refuses_partial_or_controlled_axes_without_writing_geometry()
             }
             feature
                 .evaluation
-                .set_definition(FeatureDefinition::Operation(draft.into_operation()));
+                .set_definition(FeatureDefinition::Operation(
+                    draft.into_operation().unwrap(),
+                ));
         }
         let mut encoded = Vec::new();
         let error = crate::test_support::plan_fixture_write_with_native_envelope(

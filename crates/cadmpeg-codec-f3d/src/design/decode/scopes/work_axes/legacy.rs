@@ -1,17 +1,20 @@
-use super::{scope_member_matches, Reader, WorkAxisRegistrations};
+use super::{registered_version, scope_member_matches, Reader, WorkAxisRegistrations};
 use crate::bytes::reference_fields::ReadField;
 use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::work_axis_direct_carrier_class_297 as direct_297;
 use crate::layout::work_axis_direct_carrier_class_335 as direct_335;
+use crate::layout::work_axis_direct_scope_long as scope_long;
+use crate::layout::work_axis_direct_scope_short as scope_short;
+use crate::layout::work_axis_direct_support as support_layout;
 use crate::layout::work_axis_endpoint_carrier as endpoint;
 use crate::layout::work_axis_two_point_carrier as two_point;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_axes::{
     AxisEndpoint, AxisEndpointReading, DesignWorkAxisCandidate, DesignWorkAxisSource,
 };
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::unknown::part::GivenUpPart;
 
@@ -41,6 +44,15 @@ pub(super) fn decode(
                 guid.eq_ignore_ascii_case(POINT_DIRECTION_TYPE_GUID) && matches!(version, 1 | 4)
             })
     };
+    let modern_version = |index: u32, start| {
+        registrations
+            .entities
+            .get(&u64::from(index))
+            .filter(|(guid, _)| guid.eq_ignore_ascii_case(POINT_DIRECTION_TYPE_GUID))
+            .map(|(_, version)| *version)
+            .or_else(|| registered_version(source, start, POINT_DIRECTION_TYPE_GUID, registrations))
+            .map_or(ReadField::Absent, ReadField::Value)
+    };
     if let Some([axis, _, first, _, second]) = scope.reference_members().values_array::<5>() {
         if let Some((start, end)) =
             frame(records, *axis)
@@ -62,7 +74,7 @@ pub(super) fn decode(
             let value_count = reader.read(View::req_u32_le);
             let mut candidate = DesignWorkAxisCandidate {
                 record_index: Some(*axis),
-                version: ReadField::Absent,
+                version: modern_version(*axis, start),
                 origin: reader.reals(),
                 displacement: reader.reals(),
                 ..Default::default()
@@ -116,29 +128,26 @@ pub(super) fn decode(
     if registered(*carrier) {
         return Ok(None);
     }
-    let (primary, paired, length, support_primary, support_paired) = match (
-        scope.class_tag.as_str(),
-        scope.paired_class_tag.as_str(),
-        scope.frame_length(),
-    ) {
-        ("302", "262", 268) => ("297", "262", direct_297::LEN, "306", "262"),
-        ("361", "258", 254) => ("335", "258", direct_335::LEN, "349", "258"),
-        _ => return Ok(None),
-    };
     let Some((start, end)) = frame(records, *carrier) else {
         return Ok(None);
     };
     let Some((support_start, support_end)) = frame(records, *support) else {
         return Ok(None);
     };
-    if end - start != length
-        || exact_indexed_header_at(bytes, start, *carrier).as_deref() != Some(primary)
-        || exact_indexed_header_at(bytes, end, *carrier).as_deref() != Some(paired)
-        || support_end - support_start != 293
-        || exact_indexed_header_at(bytes, support_start, *support).as_deref()
-            != Some(support_primary)
-        || exact_indexed_header_at(bytes, support_end, *support).as_deref() != Some(support_paired)
-        || bytes.get(start + 11..start + direct_297::VALUE_COUNT) != Some(&[0; 10])
+    if ![
+        (scope_long::LEN, direct_297::LEN),
+        (scope_short::LEN, direct_335::LEN),
+    ]
+    .into_iter()
+    .any(|(scope_length, carrier_length)| {
+        scope.frame_length() == u64_from_index(scope_length) && end - start == carrier_length
+    }) || exact_indexed_header_at(bytes, start, *carrier).is_none()
+        || exact_indexed_header_at(bytes, end, *carrier).is_none()
+        || support_end - support_start != support_layout::LEN
+        || exact_indexed_header_at(bytes, support_start, *support).is_none()
+        || exact_indexed_header_at(bytes, support_end, *support).is_none()
+        || bytes.get(start + direct_297::ZERO_RUN..start + direct_297::VALUE_COUNT)
+            != Some(&[0; 10])
     {
         return Ok(None);
     }
@@ -153,7 +162,7 @@ pub(super) fn decode(
     let value_count = reader.read(View::req_u32_le);
     let mut candidate = DesignWorkAxisCandidate {
         record_index: Some(*carrier),
-        version: ReadField::Absent,
+        version: modern_version(*carrier, start),
         origin: reader.reals(),
         displacement: reader.reals(),
         ..Default::default()

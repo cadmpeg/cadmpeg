@@ -75,13 +75,13 @@ impl DatumAxisDraft {
     }
 
     #[doc = "Canonicalize a readable draft or the unresolved axis family."]
-    #[must_use]
-    pub fn into_operation(self) -> FeatureOperation {
-        match DatumAxis::try_from(self) {
-            Ok(axis) => FeatureOperation::DatumAxis { axis },
-            Err(_) => FeatureOperation::Unresolved {
+    pub fn into_operation(self) -> Result<FeatureOperation, &'static str> {
+        if self.is_empty() {
+            Ok(FeatureOperation::Unresolved {
                 family: UnresolvedFamily::DatumAxis,
-            },
+            })
+        } else {
+            DatumAxis::try_from(self).map(|axis| FeatureOperation::DatumAxis { axis })
         }
     }
 }
@@ -91,6 +91,13 @@ impl TryFrom<DatumAxisDraft> for DatumAxis {
     fn try_from(draft: DatumAxisDraft) -> Result<Self, Self::Error> {
         if draft.is_empty() {
             return Err("an empty datum axis uses the unresolved datum-axis family");
+        }
+        if draft
+            .native_options
+            .keys()
+            .any(|key| draft.source_settings.contains_key(key))
+        {
+            return Err("datum-axis option keys must occur in one classification");
         }
         let DatumAxisDraft {
             origin,

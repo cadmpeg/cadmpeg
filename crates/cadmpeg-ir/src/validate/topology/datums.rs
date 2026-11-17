@@ -306,6 +306,13 @@ impl Walk<'_, '_, '_> {
             );
             return;
         };
+        if parameter.product_definition != self.owner.product_definition {
+            error(
+                self.findings,
+                self.owner,
+                "datum-axis dimension must bind a parameter of its own definition scope",
+            );
+        }
         if kind == "text" && matches!(value, Dimension::Negated(_)) {
             error(
                 self.findings,
@@ -614,17 +621,16 @@ impl Walk<'_, '_, '_> {
                 self.frame(frame);
             }
             if let Some(body) = &witness.body {
-                let mut external = false;
-                body.visit_identity_references(self.ctx, &mut |_| {
-                    external = true;
-                    Ok(())
-                })?;
-                if external {
-                    error(
-                        self.findings,
-                        self.owner,
-                        "witness topology must be closed over its typed references",
-                    );
+                body.visit_identity_references(self.ctx, &mut |_| Ok(()))?;
+                let mut nested = Vec::new();
+                super::nested::check(self.ctx, body.as_ref().clone(), &mut nested)?;
+                for mut finding in nested {
+                    if let Some(entity) = finding.entity.replace(self.owner.id.as_str().to_owned())
+                    {
+                        finding.related.insert(0, entity);
+                    }
+                    finding.message = format!("datum-axis witness topology: {}", finding.message);
+                    self.findings.push(finding);
                 }
             }
         }

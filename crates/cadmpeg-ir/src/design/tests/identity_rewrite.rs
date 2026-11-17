@@ -5,10 +5,63 @@ use crate::design::construction::{
 use crate::design::dimension::Dimension;
 use crate::design::names::{CodecId, NativeNameValue};
 use crate::design::options::{NativeOption, NativeOptions};
+use crate::design::refs::StateRef;
 use crate::design::selection::OrderedSelection;
 use crate::features::{ConfigurationId, ParameterId};
 use crate::scalar::Length;
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
+
+#[test]
+fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    for (source, expected, target) in [
+        (
+            serde_json::json!({"kind":"state","value":{"kind":"start","value":"test:model:container#one"}}),
+            serde_json::json!({"kind":"state","value":{"kind":"start","value":"test:placed:container#one"}}),
+            "test:model:container#one",
+        ),
+        (
+            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:model:feature#one"}}}),
+            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"feature","value":"test:placed:feature#one"}}}),
+            "test:model:feature#one",
+        ),
+        (
+            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:model:container#one"}}}),
+            serde_json::json!({"kind":"state","value":{"kind":"after","value":{"kind":"container","value":"test:placed:container#one"}}}),
+            "test:model:container#one",
+        ),
+        (
+            serde_json::json!({"kind":"tool","value":"test:model:feature#one"}),
+            serde_json::json!({"kind":"tool","value":"test:placed:feature#one"}),
+            "test:model:feature#one",
+        ),
+    ] {
+        for configuration in [false, true] {
+            let mut source = serde_json::json!({"of":source});
+            let mut expected = serde_json::json!({"of":expected});
+            let mut targets = vec![target.to_owned()];
+            if configuration {
+                source["configuration"] = "test:model:configuration#one".into();
+                expected["configuration"] = "test:placed:configuration#one".into();
+                targets.insert(0, "test:model:configuration#one".to_owned());
+            }
+            let state: StateRef = serde_json::from_value(source.clone()).unwrap();
+            let mut seen = Vec::new();
+            state
+                .visit_identity_references(&ctx, &mut |id| {
+                    seen.push(id.to_owned());
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(seen, targets);
+            let rewrite = |id: &str| Ok(id.replace("test:model:", "test:placed:"));
+            let mut map = IdentityMap::new(rewrite);
+            let state = state.rewrite_identities(&ctx, &mut map).unwrap();
+            map.finish().unwrap();
+            assert_eq!(serde_json::to_value(state).unwrap(), expected);
+        }
+    }
+}
 
 #[test]
 fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() {

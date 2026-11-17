@@ -5,12 +5,13 @@ use crate::design::names::{Generator, TopoName};
 use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::refs::{ConfigurationRef, EntityRef, Member, Position};
 use crate::design::selection::{
-    Anchor, DefinitionRef, MemberOrder, NativeOwner, OccurrencePath, PickContext, PickDomain,
-    PickTarget, Picked, Picks, Selection, SelectionRule, StepRef,
+    Anchor, DatumPart, DefinitionRef, MemberOrder, NativeOwner, OccurrencePath, PickContext,
+    PickDomain, PickTarget, Picked, Picks, Selection, SelectionRule, StepRef,
 };
 use crate::features::{datums::DatumAxis, Feature, FeatureOperation, UnresolvedFamily};
 use crate::index::ModelIndex;
-use crate::report::check::Finding;
+use crate::report::check::{Check, Finding};
+use crate::report::Severity;
 use crate::schema::EntityKind;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -255,39 +256,67 @@ impl References<'_, '_, '_> {
                 EntityKind::Feature,
                 "selection target must name a feature",
             ),
-            PickTarget::Datum { feature, .. } => {
+            PickTarget::Datum { feature, part } => {
                 self.require(
                     feature.as_str(),
                     EntityKind::Feature,
                     "selection target must name a feature",
                 );
-                if self
+                if let Some(target) = self
                     .ids
                     .features(feature.as_str(), crate::index::StandardIndex)
-                    .is_some_and(|feature| {
-                        !matches!(
-                            feature.evaluation.definition().operation(),
-                            FeatureOperation::DatumPrincipalPlane { .. }
-                                | FeatureOperation::DatumPlane { .. }
-                                | FeatureOperation::DatumThreePointPlane { .. }
-                                | FeatureOperation::DatumOffsetPlane { .. }
-                                | FeatureOperation::DatumAxis { .. }
-                                | FeatureOperation::DatumPoint { .. }
-                                | FeatureOperation::DatumCoordinateSystem { .. }
-                                | FeatureOperation::Unresolved {
-                                    family: UnresolvedFamily::DatumPlane
-                                        | UnresolvedFamily::DatumAxis
-                                        | UnresolvedFamily::DatumPoint
-                                        | UnresolvedFamily::DatumCoordinateSystem
-                                }
-                        )
-                    })
                 {
-                    super::error(
-                        self.findings,
-                        self.owner,
-                        "datum-axis datum selection must target a datum feature",
-                    );
+                    let operation = target.evaluation.definition().operation();
+                    if !matches!(
+                        operation,
+                        FeatureOperation::DatumPrincipalPlane { .. }
+                            | FeatureOperation::DatumPlane { .. }
+                            | FeatureOperation::DatumThreePointPlane { .. }
+                            | FeatureOperation::DatumOffsetPlane { .. }
+                            | FeatureOperation::DatumAxis { .. }
+                            | FeatureOperation::DatumPoint { .. }
+                            | FeatureOperation::DatumCoordinateSystem { .. }
+                            | FeatureOperation::Unresolved {
+                                family: UnresolvedFamily::DatumPlane
+                                    | UnresolvedFamily::DatumAxis
+                                    | UnresolvedFamily::DatumPoint
+                                    | UnresolvedFamily::DatumCoordinateSystem
+                            }
+                    ) {
+                        super::error(
+                            self.findings,
+                            self.owner,
+                            "datum-axis datum selection must target a datum feature",
+                        );
+                    } else if let Some(part) = part {
+                        let valid = match (part, operation) {
+                            (
+                                DatumPart::Principal(_),
+                                FeatureOperation::DatumCoordinateSystem { .. }
+                                | FeatureOperation::Unresolved {
+                                    family: UnresolvedFamily::DatumCoordinateSystem,
+                                },
+                            ) => Some(true),
+                            (DatumPart::Point(index), FeatureOperation::DatumPoint { .. }) => {
+                                Some(*index == 0)
+                            }
+                            (
+                                DatumPart::Point(_),
+                                FeatureOperation::Unresolved {
+                                    family: UnresolvedFamily::DatumPoint,
+                                },
+                            ) => None,
+                            _ => Some(false),
+                        };
+                        match valid {
+                            Some(true) => {}
+                            Some(false) => super::error(self.findings, self.owner, "datum-axis datum part is incompatible with its selected datum family"),
+                            None => crate::validate::record_finding(
+                                self.findings, Check::ReferentialIntegrity, Severity::Warning, Some(self.owner.id.as_str()),
+                                format_args!("datum-axis datum point part remains unresolved because the target's point count is unknown"),
+                            ),
+                        }
+                    }
                 }
             }
             PickTarget::Sketch(id) | PickTarget::SketchFrame { sketch: id, .. } => self.require(

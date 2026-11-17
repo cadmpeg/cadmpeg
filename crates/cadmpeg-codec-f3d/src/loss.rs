@@ -690,6 +690,10 @@ pub(crate) enum F3dLossCode {
     FeatureWorkAxisTwoPointConflictSolvedAssumed,
     FeatureWorkAxisGeometryUnrepresentable,
     FeatureWorkAxisBindingUnresolved,
+    FeatureWorkAxisLeadingBlockLayoutAssumed,
+    FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
+    FeatureWorkAxisLegacyLayoutAssumed,
+    FeatureWorkAxisCandidatesUnresolved,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
@@ -1476,6 +1480,10 @@ impl F3dLossCode {
         Self::FeatureWorkAxisTwoPointConflictSolvedAssumed,
         Self::FeatureWorkAxisGeometryUnrepresentable,
         Self::FeatureWorkAxisBindingUnresolved,
+        Self::FeatureWorkAxisLeadingBlockLayoutAssumed,
+        Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
+        Self::FeatureWorkAxisLegacyLayoutAssumed,
+        Self::FeatureWorkAxisCandidatesUnresolved,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureFaceGroupsTypeUnverified,
@@ -2342,6 +2350,14 @@ impl F3dLossCode {
                 "feature.work-axis-geometry-unrepresentable"
             }
             Self::FeatureWorkAxisBindingUnresolved => "feature.work-axis-binding-unresolved",
+            Self::FeatureWorkAxisLeadingBlockLayoutAssumed => {
+                "feature.work-axis-leading-block-layout-assumed"
+            }
+            Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed => {
+                "feature.work-axis-unsupported-version-legacy-layout-assumed"
+            }
+            Self::FeatureWorkAxisLegacyLayoutAssumed => "feature.work-axis-legacy-layout-assumed",
+            Self::FeatureWorkAxisCandidatesUnresolved => "feature.work-axis-candidates-unresolved",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
@@ -3095,6 +3111,10 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisTwoPointConflictSolvedAssumed
             | Self::FeatureWorkAxisGeometryUnrepresentable
             | Self::FeatureWorkAxisBindingUnresolved
+            | Self::FeatureWorkAxisLeadingBlockLayoutAssumed
+            | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
+            | Self::FeatureWorkAxisLegacyLayoutAssumed
+            | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureFaceGroupsTypeUnverified
@@ -3692,6 +3712,10 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisTwoPointConflictSolvedAssumed
             | Self::FeatureWorkAxisGeometryUnrepresentable
             | Self::FeatureWorkAxisBindingUnresolved
+            | Self::FeatureWorkAxisLeadingBlockLayoutAssumed
+            | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
+            | Self::FeatureWorkAxisLegacyLayoutAssumed
+            | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureFaceGroupsTypeUnverified
@@ -4406,6 +4430,10 @@ mod tests {
                 "feature.work-axis-two-point-conflict-solved-assumed",
                 "feature.work-axis-geometry-unrepresentable",
                 "feature.work-axis-binding-unresolved",
+                "feature.work-axis-leading-block-layout-assumed",
+                "feature.work-axis-unsupported-version-legacy-layout-assumed",
+                "feature.work-axis-legacy-layout-assumed",
+                "feature.work-axis-candidates-unresolved",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.mesh-face-groups-type-unverified",

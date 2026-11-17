@@ -23,6 +23,7 @@ enum Input {
 
 struct Carrier {
     class_tag: [u8; 3],
+    leading: u8,
     version: u32,
     value_count: u32,
     values: [f64; 8],
@@ -34,6 +35,7 @@ impl Carrier {
     fn new(values: [f64; 8], reference_type: u32) -> Self {
         Self {
             class_tag: *b"421",
+            leading: 0,
             version: 1,
             value_count: 8,
             values,
@@ -47,7 +49,7 @@ impl Carrier {
         indexed_header(bytes, self.class_tag, CARRIER);
         bytes.extend_from_slice(&[0; 4]);
         bytes.extend_from_slice(&0u32.to_le_bytes());
-        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&[self.leading, 0]);
         bytes.extend_from_slice(&self.value_count.to_le_bytes());
         for value in self.values {
             bytes.extend_from_slice(&value.to_le_bytes());
@@ -246,6 +248,32 @@ fn point_direction_carrier_supplies_the_solved_axis_of_an_unassigned_rule() {
         assert!(
             matches!(source, Some(DesignWorkAxisSource::PointDirection {reference_type: ReadField::Value(18), inputs, ..}) if inputs.references.len() == 2 && inputs.references[0].local().unwrap().0 == u64::from(FIRST_INPUT))
         );
+    }
+}
+
+#[test]
+fn work_axis_nonzero_leading_block_keeps_the_old_line_with_a_layout_assumption() {
+    for leading in [1, 255] {
+        let mut bytes = Vec::new();
+        Carrier {
+            leading,
+            ..Carrier::new([0.0, 0.0, 2.0, 0.0, 0.0, 1.0, 0.0, 0.0], 19)
+        }
+        .write(&mut bytes);
+        let result = read(&bytes, &carrier_types(1));
+        let axis = result.axis().unwrap();
+        assert!((axis.origin().unwrap().get().z - 20.0).abs() < 1.0e-12);
+        assert!((axis.direction().unwrap().get().z - 1.0).abs() < 1.0e-12);
+        assert_eq!(
+            result.evidence.candidates[0].prefix.leading_block,
+            ReadField::Value(leading)
+        );
+        assert!(result
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string()
+                == "f3d/feature.work-axis-leading-block-layout-assumed"));
+        assert_eq!(result.ir.native_unknowns("f3d").unwrap().len(), 1);
     }
 }
 
@@ -733,7 +761,7 @@ fn truncated_reference_keeps_path_prefix_and_an_empty_missing_count_is_reported(
         panic!("point-direction evidence")
     };
     assert_eq!(inputs.references.len(), 1);
-    assert!(!inputs.complete);
+    assert!(!inputs.complete());
     assert_eq!(
         inputs.references[0].target,
         ReadField::Value(u64::from(FIRST_INPUT))
@@ -758,4 +786,40 @@ fn truncated_reference_keeps_path_prefix_and_an_empty_missing_count_is_reported(
             .count(),
         1
     );
+}
+
+#[test]
+fn work_axis_damaged_counts_keep_neutral_input_occurrences_and_native_fields() {
+    for (declared, reference) in [
+        (2u32, vec![0]),
+        (u32::MAX, {
+            let mut reference = vec![1];
+            reference.extend_from_slice(&u64::from(FIRST_INPUT).to_le_bytes());
+            reference.extend_from_slice(&[0, 0]);
+            reference
+        }),
+    ] {
+        let mut bytes = Vec::new();
+        Carrier::new(unassigned_rule_values(), 19).write(&mut bytes);
+        let paired = bytes.split_off(bytes.len() - 11);
+        let count_at = 11 + 4 + 4 + 2 + 4 + 8 * 8 + 4;
+        bytes.truncate(count_at);
+        bytes.extend_from_slice(&declared.to_le_bytes());
+        bytes.extend_from_slice(&reference);
+        bytes.extend_from_slice(&paired);
+        let result = read(&bytes, &carrier_types(1));
+        assert!(result.axis().unwrap().geometry().is_some());
+        assert_eq!(result.axis().unwrap().inputs().len(), 1);
+        let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) =
+            &result.evidence.candidates[0].source
+        else {
+            panic!("point direction")
+        };
+        assert_eq!(inputs.declared, ReadField::Value(declared));
+        assert_eq!(inputs.references.len(), 1);
+        assert_eq!(inputs.references[0].present, ReadField::Value(reference[0]));
+        assert!(!inputs.complete());
+        assert!(result.has_loss(F3dLossCode::FeatureWorkAxisPartialCarrierSolvedAssumed));
+        assert_eq!(result.ir.native_unknowns("f3d").unwrap().len(), 1);
+    }
 }

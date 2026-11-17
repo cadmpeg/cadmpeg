@@ -131,7 +131,7 @@ rewrite_enum!(Generator, []; {SketchEntity(value), SpatialSketchEntity(value), E
 rewrite_enum!(EntityRef, []; {Body(value), Face(value), Edge(value), Vertex(value), Surface(value), Curve(value), Subd(value)});
 rewrite_enum!(Member, []; {Feature(value), Container(value)});
 rewrite_enum!(Position, []; {Start(value), After(value)});
-rewrite_enum!(Evaluated, []; {Position(value), Member(value)});
+rewrite_enum!(Evaluated, []; {State(value), Tool(value)});
 rewrite_record!(StateRef, []; {configuration, of});
 
 impl RewriteIdentities for ConfigurationRef {

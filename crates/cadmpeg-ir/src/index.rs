@@ -209,7 +209,6 @@ macro_rules! define_model_index {
             procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_surfaces_by_id: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
-            #[doc = "Every identity's native ownership and declared neutral kind."]
             identities: BorrowedIdentityIndex<'a, IdentityOwner>,
             entity_identities_distinct: bool,
             include_native: bool,

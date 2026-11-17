@@ -43,7 +43,6 @@ pub(crate) enum AxisCarrierPropertyValue {
 pub(crate) struct AxisReferenceRun {
     pub(crate) declared: ReadField<u32>,
     pub(crate) references: Vec<AxisReference>,
-    pub(crate) complete: bool,
 }
 
 #[derive(Deserialize)]
@@ -51,7 +50,6 @@ pub(crate) struct AxisReferenceRun {
 struct AxisReferenceRunWire {
     declared: ReadField<u32>,
     references: Vec<AxisReference>,
-    complete: bool,
 }
 impl TryFrom<AxisReferenceRunWire> for AxisReferenceRun {
     type Error = &'static str;
@@ -69,16 +67,18 @@ impl TryFrom<AxisReferenceRunWire> for AxisReferenceRun {
                 "WorkAxis reference prefix contradicts its declared count or occurrence order",
             );
         }
-        let complete = declared.is_some_and(|n| n > 0 && count == n)
-            && value.references.iter().all(|v| v.complete);
-        if value.complete != complete {
-            return Err("WorkAxis reference completion contradicts its retained prefix");
-        }
         Ok(Self {
             declared: value.declared,
             references: value.references,
-            complete: value.complete,
         })
+    }
+}
+
+impl AxisReferenceRun {
+    pub(crate) fn complete(&self) -> bool {
+        self.declared.value().is_some_and(|declared| {
+            *declared > 0 && usize::try_from(*declared).ok() == Some(self.references.len())
+        }) && self.references.iter().all(|reference| reference.complete)
     }
 }
 

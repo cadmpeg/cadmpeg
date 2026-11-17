@@ -24,6 +24,7 @@ use crate::report::{
 mod composite;
 mod datums;
 pub(super) mod graphs;
+pub(super) mod nested;
 mod sheet_metal;
 
 fn collect_pattern_paths<'a>(

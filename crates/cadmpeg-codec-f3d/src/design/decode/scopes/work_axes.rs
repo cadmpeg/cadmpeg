@@ -15,6 +15,8 @@ use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use std::collections::{HashMap, HashSet};
 
 mod legacy;
+#[cfg(test)]
+mod tests;
 
 struct Failure {
     start: usize,
@@ -162,12 +164,14 @@ impl<'a> Reader<'a> {
     ) -> Result<bool, CodecError> {
         let leading_at = self.view.position();
         prefix.leading_block = self.read(View::req_u8);
-        if prefix.leading_block != ReadField::Value(0) {
-            self.tail(
+        match prefix.leading_block {
+            ReadField::Value(0) => {}
+            ReadField::Value(_) => self.fail(
                 leading_at,
-                "WorkAxis carrier leading block has no admitted layout",
-            );
-            return Ok(false);
+                self.view.end(),
+                CodecError::malformed("WorkAxis carrier leading block layout is assumed"),
+            ),
+            ReadField::Absent | ReadField::Unread => return Ok(false),
         }
         let presence_at = self.view.position();
         prefix.property_presence = self.read(View::req_u8);
@@ -184,10 +188,15 @@ impl<'a> Reader<'a> {
         }
         let count_at = self.view.position();
         prefix.property_count = self.read(View::req_u32_le);
-        let Some(count) = prefix
-            .property_count
-            .value()
-            .and_then(|count| self.view.counted(u64::from(*count), 16))
+        let Some(declared) = prefix.property_count.value().copied() else {
+            return Ok(false);
+        };
+        let Some(count) = self
+            .view
+            .counted(
+                u64::from(declared).min(u64_from_index(self.view.remaining().div_ceil(8))),
+                1,
+            )
             .map(cadmpeg_core::decode::BoundedCount::get)
         else {
             self.tail(count_at, "WorkAxis property count exceeds its frame");
@@ -209,7 +218,15 @@ impl<'a> Reader<'a> {
             "WorkAxis property fields",
         )?;
         for index in 0..count {
-            prefix.properties[index].key = self.ascii(64);
+            if self.view.remaining() == 0 {
+                prefix.properties.truncate(index);
+                self.tail(
+                    count_at,
+                    "WorkAxis property count exceeds its readable prefix",
+                );
+                return Ok(false);
+            }
+            prefix.properties[index].key = self.ascii(self.view.remaining());
             if prefix.properties[index].key.value().is_none() {
                 prefix.properties.truncate(index + 1);
                 return Ok(false);
@@ -245,6 +262,13 @@ impl<'a> Reader<'a> {
                 return Ok(false);
             }
         }
+        if u64_from_index(count) != u64::from(declared) {
+            self.tail(
+                count_at,
+                "WorkAxis property count exceeds its readable prefix",
+            );
+            return Ok(false);
+        }
         Ok(true)
     }
 
@@ -258,7 +282,12 @@ impl<'a> Reader<'a> {
             .declared
             .value()
             .filter(|count| **count != 0)
-            .and_then(|count| self.view.counted(u64::from(*count), 1))
+            .and_then(|count| {
+                self.view.counted(
+                    u64::from(*count).min(u64_from_index(self.view.remaining())),
+                    1,
+                )
+            })
             .map(cadmpeg_core::decode::BoundedCount::get)
         else {
             self.tail(
@@ -280,6 +309,11 @@ impl<'a> Reader<'a> {
         run.references =
             ctx.alloc_filled(count, AxisReference::default(), "WorkAxis reference fields")?;
         for index in 0..count {
+            if self.view.remaining() == 0 {
+                run.references.truncate(index);
+                self.tail(at, "WorkAxis input count exceeds its readable prefix");
+                return Ok(run);
+            }
             let start = self.view.position();
             let relative = start - self.source.start();
             let end = self.view.end() - self.source.start();
@@ -297,7 +331,14 @@ impl<'a> Reader<'a> {
                     CodecError::malformed("WorkAxis reference cursor escaped its frame")
                 })?;
         }
-        run.complete = true;
+        if run.declared
+            != ReadField::Value(u32::try_from(run.references.len()).map_err(|_| {
+                CodecError::malformed("WorkAxis retained reference count exceeds u32")
+            })?)
+        {
+            self.tail(at, "WorkAxis input count exceeds its readable prefix");
+            return Ok(run);
+        }
         Ok(run)
     }
 
@@ -435,7 +476,7 @@ fn point_data(
         [ReadField::Absent; 3]
     };
     reading.inputs = reader.references(ctx)?;
-    reading.complete = reading.inputs.complete && reader.failures.is_empty();
+    reading.complete = reading.inputs.complete() && reader.failures.is_empty();
     Ok(())
 }
 
@@ -543,9 +584,12 @@ pub(super) fn decode_work_axis(
         legacy::decode(ctx, source, records, scope, stream, registrations, given_up)?
     {
         evidence.candidates.push(candidate);
-        return Ok(evidence);
     }
-    let mut seen = HashSet::new();
+    let mut seen = evidence
+        .candidates
+        .iter()
+        .filter_map(|candidate| candidate.record_index)
+        .collect::<HashSet<_>>();
     for (ordinal, record_index) in scope.reference_members().values().enumerate() {
         let registered = registrations
             .entities

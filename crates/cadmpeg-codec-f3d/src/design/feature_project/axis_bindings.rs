@@ -10,10 +10,9 @@ pub(super) enum AxisBinding<'a> {
 }
 
 pub(super) struct AxisBindings<'a> {
-    owner_keys: HashSet<(&'a str, u32)>,
     owners: HashMap<(&'a str, u32), Option<&'a DesignParameterOwner>>,
     parameters: HashMap<(&'a str, u32), usize>,
-    scopes: HashMap<(&'a str, u32), usize>,
+    scopes: HashMap<(&'a str, u32), Option<&'a DesignParameterScope>>,
 }
 impl<'a> AxisBindings<'a> {
     pub(super) fn new(
@@ -26,12 +25,13 @@ impl<'a> AxisBindings<'a> {
             .filter(|s| s.kind() == DesignFeatureKind::WorkAxis)
             .filter_map(|s| native_stream(&s.id).map(|stream| (stream, s.record_index)))
             .collect::<HashSet<_>>();
-        let mut scope_counts = HashMap::new();
+        let mut scope_records = HashMap::new();
         for scope in scopes {
             if let Some(stream) = native_stream(&scope.id) {
-                *scope_counts
+                scope_records
                     .entry((stream, scope.record_index))
-                    .or_insert(0usize) += 1;
+                    .and_modify(|entry| *entry = None)
+                    .or_insert(Some(scope));
             }
         }
         let owner_keys = owners
@@ -62,21 +62,25 @@ impl<'a> AxisBindings<'a> {
                 .or_insert(0usize) += 1;
         }
         Self {
-            owner_keys,
             owners: unique,
             parameters,
-            scopes: scope_counts,
+            scopes: scope_records,
         }
     }
     pub(super) fn owner(&self, stream: &str, index: u32, parameter: u32) -> AxisBinding<'a> {
         let key = (stream, index);
-        if !self.owner_keys.contains(&key) {
+        if !self.owners.contains_key(&key) {
             return AxisBinding::OutsideAxis;
         }
         match self.owners.get(&key).copied().flatten().filter(|owner| {
             owner.parameter_record_index() == parameter
                 && self.parameters.get(&(stream, parameter)) == Some(&1)
-                && self.scopes.get(&(stream, owner.scope_record_index())) == Some(&1)
+                && self
+                    .scopes
+                    .get(&(stream, owner.scope_record_index()))
+                    .copied()
+                    .flatten()
+                    .is_some_and(|scope| scope.names_owner(owner))
         }) {
             Some(owner) => AxisBinding::Bound(owner),
             None => AxisBinding::Unresolved,

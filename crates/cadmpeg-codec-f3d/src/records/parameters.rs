@@ -440,7 +440,6 @@ impl DesignParameter {
     pub(crate) fn evaluated_value(&self) -> FiniteReal {
         self.evaluated_value
     }
-    #[doc = "Literal source parameter name, including an empty name."]
     pub(crate) fn name(&self) -> &str {
         self.name.as_str()
     }

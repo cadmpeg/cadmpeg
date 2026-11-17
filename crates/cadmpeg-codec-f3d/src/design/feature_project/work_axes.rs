@@ -120,12 +120,19 @@ pub(super) fn project(
 ) -> Result<FeatureDefinition, cadmpeg_core::CodecError> {
     let Some(evidence) = scope.work_axis_construction() else {
         return Ok(FeatureDefinition::Operation(
-            DatumAxisDraft::default().into_operation(),
+            DatumAxisDraft::default()
+                .into_operation()
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         ));
     };
     let [candidate] = evidence.candidates.as_slice() else {
+        if evidence.candidates.len() > 1 {
+            losses.push(F3dLossCode::FeatureWorkAxisCandidatesUnresolved.note(format!("WorkAxis scope {} retains {} independently attributable carrier readings; their competition leaves the neutral line and construction unresolved.", scope.id, evidence.candidates.len())));
+        }
         return Ok(FeatureDefinition::Operation(
-            DatumAxisDraft::default().into_operation(),
+            DatumAxisDraft::default()
+                .into_operation()
+                .map_err(cadmpeg_core::CodecError::malformed)?,
         ));
     };
     let run = match &candidate.source {
@@ -147,6 +154,15 @@ pub(super) fn project(
         "WorkAxis neutral inputs",
     )?;
     let mut axis = DatumAxisDraft::default();
+    let leading_layout_assumed =
+        matches!(candidate.prefix.leading_block, ReadField::Value(value) if value != 0);
+    let legacy_version_assumed = matches!(
+        candidate.source,
+        Some(DesignWorkAxisSource::TwoPoint { .. } | DesignWorkAxisSource::DirectCarrier { .. })
+    ) && candidate
+        .version
+        .value()
+        .is_some_and(|version| !matches!(version, 1 | 4));
     let origin = values(&candidate.origin);
     let displacement = values(&candidate.displacement);
     let mut geometry = true;
@@ -174,7 +190,10 @@ pub(super) fn project(
             geometry = *value_count == ReadField::Value(8) && values(reserved) == Some([0.0, 0.0]);
             let (known_inputs, points) = inputs(candidate, run);
             axis.inputs = known_inputs;
-            two_point = Some((run.complete && run.declared == ReadField::Value(2), points));
+            two_point = Some((
+                run.complete() && run.declared == ReadField::Value(2),
+                points,
+            ));
         }
         Some(DesignWorkAxisSource::PointDirection {
             bounding_box_index,
@@ -237,7 +256,10 @@ pub(super) fn project(
                 losses.push(F3dLossCode::FeatureWorkAxisNonzeroParametersSolvedAssumed.note(format!("WorkAxis scope {} assumes its stored position and direction remain the solved line with nonzero point parameters; all source parameters remain in its native evidence.", scope.id)));
             }
             if *reference_type == ReadField::Value(12) {
-                two_point = Some((run.complete && run.declared == ReadField::Value(2), points));
+                two_point = Some((
+                    run.complete() && run.declared == ReadField::Value(2),
+                    points,
+                ));
             } else if reference_type.value().is_some() {
                 losses.push(F3dLossCode::FeatureWorkAxisRuleUnassigned.note(format!("WorkAxis scope {} retains refType {:?} and its input occurrences with unresolved construction roles; its position and direction supply the stored solved line where representable.", scope.id, reference_type.value())));
             }
@@ -245,6 +267,26 @@ pub(super) fn project(
     }
     if geometry && !candidate.complete && candidate.source.is_some() {
         losses.push(F3dLossCode::FeatureWorkAxisPartialCarrierSolvedAssumed.note(format!("WorkAxis scope {} assumes independently readable stored line components retain their solved meaning after a damaged carrier member; unreadable parts retain the source bytes.", scope.id)));
+    }
+    if geometry && leading_layout_assumed {
+        losses.push(F3dLossCode::FeatureWorkAxisLeadingBlockLayoutAssumed.note(format!("WorkAxis scope {} assumes its nonzero leading-block byte has the prior one-byte extent before the property and stored-line fields; the prologue remains retained as unreadable source evidence.", scope.id)));
+    }
+    if geometry
+        && matches!(
+            candidate.source,
+            Some(
+                DesignWorkAxisSource::TwoPoint { .. } | DesignWorkAxisSource::DirectCarrier { .. }
+            )
+        )
+    {
+        if legacy_version_assumed {
+            losses.push(F3dLossCode::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed.note(format!("WorkAxis scope {} assumes its registered unsupported point-direction revision {:?} retains the independently framed legacy carrier and endpoint layout; the stored line and known operand points follow that alternative reading with unresolved authored roles.", scope.id, candidate.version.value())));
+        } else if matches!(
+            candidate.source,
+            Some(DesignWorkAxisSource::DirectCarrier { .. })
+        ) {
+            losses.push(F3dLossCode::FeatureWorkAxisLegacyLayoutAssumed.note(format!("WorkAxis scope {} assumes its admitted scope and fixed carrier/support frames identify the legacy solved-axis layout independently of segment-local class spellings.", scope.id)));
+        }
     }
     if let Some((arity, points)) = two_point {
         let expected = origin.zip(displacement).map(|(origin, displacement)| {
@@ -269,6 +311,8 @@ pub(super) fn project(
             }
             arity
                 && geometry
+                && !leading_layout_assumed
+                && !legacy_version_assumed
                 && comparable
                 && parameters_zero
                 && displacement
@@ -311,7 +355,10 @@ pub(super) fn project(
             losses.push(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable.note(format!("WorkAxis scope {} retains source geometry whose origin conversion or nonzero direction admission is unresolved; each representable component remains typed.", scope.id)));
         }
     }
-    Ok(FeatureDefinition::Operation(axis.into_operation()))
+    Ok(FeatureDefinition::Operation(
+        axis.into_operation()
+            .map_err(cadmpeg_core::CodecError::malformed)?,
+    ))
 }
 
 #[cfg(test)]
@@ -359,7 +406,6 @@ mod tests {
                     inputs: AxisReferenceRun {
                         declared: ReadField::Value(4),
                         references: [42, 43, 42, 43].map(reference).into(),
-                        complete: true,
                     },
                 }),
                 endpoints,

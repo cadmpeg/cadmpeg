@@ -80,15 +80,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-319. WorkAxis point-and-direction construction rules
 
-**Question.** How do nonzero point parameters, unknown `refType` values, and point-and-direction operands determine the authored axis construction?
+**Question.** How do nonzero point parameters, unknown `refType` values, and point-and-direction operands determine the authored axis construction? Which payload follows a nonzero carrier leading-block byte, and which registered type identities select the legacy fixed carrier and support layouts?
 
-**Known.** `f3d.md` §3.1 describes version 1 and 4 carriers, the retained scalar/reference fields, and the refType 12 endpoint corroboration. Readable stored line components project independently into a checked datum axis. Unknown input roles remain absent; literal parameter expressions and source options remain source facts.
+**Known.** `f3d.md` §3.1 describes version 1 and 4 carriers, the retained scalar/reference fields, and the refType 12 endpoint corroboration. Readable stored line components project independently into a checked datum axis. Counted property and reference runs retain their readable prefixes and declared arity. Unknown input roles remain absent; literal parameter expressions and source options remain source facts. Detached parameter owners retain their source definitions without a canonical scope binding.
 
-**Need.** Controlled designs that vary each construction rule, nonzero point parameter, operand path and property lane independently, with independently measured solved axes.
+**Need.** Controlled designs that vary each construction rule, nonzero point parameter, operand path, property lane and leading-block payload independently, with independently measured solved axes. Registered legacy carrier and support type identities for each fixed layout.
 
-**Conflict.** A pair of known point operands can disagree with the separately stored line. The points remain typed with unknown roles, and a separately named assumption identifies use of the stored line.
+**Conflict.** A pair of known point operands can disagree with the separately stored line. The points remain typed with unknown roles, and a separately named assumption identifies use of the stored line. Independently eligible legacy and registered sibling carriers remain separate readings; competition leaves the neutral construction unresolved.
 
-**Note.** Nonzero point parameters retain a named stored-line assumption and unknown rules retain `feature.work-axis-rule-unassigned`. Their authored construction semantics remain unassigned. Partial carriers retain actual unreadable-part records and source images; endpoint tolerance is an explicitly reported hypothesis.
+**Note.** Nonzero point parameters retain a named stored-line assumption and unknown rules retain `feature.work-axis-rule-unassigned`. Their authored construction semantics remain unassigned. `feature.work-axis-leading-block-layout-assumed` retains the prior bounded one-byte leading-block reading. `feature.work-axis-unsupported-version-legacy-layout-assumed` distinguishes an unsupported modern revision from an unregistered legacy carrier. `feature.work-axis-legacy-layout-assumed` identifies fixed-layout admission independently of dynamic class spellings. Partial carriers retain actual unreadable-part records and source images; endpoint tolerance is an explicitly reported hypothesis.
 
 ### DR-284. Compact sketch-profile tail flags
 

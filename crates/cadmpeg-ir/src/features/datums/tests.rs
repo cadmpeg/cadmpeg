@@ -11,6 +11,8 @@ use crate::features::{
 use crate::math::{Point3, Vector3};
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacements};
 
+mod validation;
+
 fn origin() -> FinitePoint3 {
     FinitePoint3::new(Point3::new(10.0, 20.0, 30.0)).unwrap()
 }
@@ -66,7 +68,7 @@ fn datum_axis_partial_states_have_one_checked_wire_spelling() {
     }
     assert!(DatumAxis::try_from(DatumAxisDraft::default()).is_err());
     assert!(matches!(
-        DatumAxisDraft::default().into_operation(),
+        DatumAxisDraft::default().into_operation().unwrap(),
         FeatureOperation::Unresolved {
             family: UnresolvedFamily::DatumAxis
         }
@@ -189,7 +191,9 @@ fn datum_axis_validation_reaches_bound_parameter_owners_and_nested_subjects() {
         ..Default::default()
     };
     ir.model.features.push(prior);
-    ir.model.features.push(feature(draft.into_operation(), 2));
+    ir.model
+        .features
+        .push(feature(draft.into_operation().unwrap(), 2));
     let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(report
         .findings
@@ -232,7 +236,7 @@ fn datum_axis_validation_reaches_bound_parameter_owners_and_nested_subjects() {
     ir.model.features[1]
         .evaluation
         .set_definition(crate::features::FeatureDefinition::Operation(
-            bad.into_operation(),
+            bad.into_operation().unwrap(),
         ));
     let report = crate::validate::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(report
@@ -370,7 +374,8 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
                 }],
                 ..Default::default()
             }
-            .into_operation(),
+            .into_operation()
+            .unwrap(),
             1,
         ));
         let findings = crate::validate_neutral(&ir, Vec::new()).unwrap().findings;
@@ -441,7 +446,8 @@ fn datum_axis_validation_keeps_curve_origins_and_two_pick_parameters() {
             ],
             ..Default::default()
         }
-        .into_operation(),
+        .into_operation()
+        .unwrap(),
         1,
     ));
     let report = crate::validate_neutral(&ir, Vec::new()).unwrap();
@@ -525,7 +531,8 @@ fn datum_axis_validation_rejects_bad_witness_frames_and_construction_controls() 
             }],
             ..Default::default()
         }
-        .into_operation(),
+        .into_operation()
+        .unwrap(),
         1,
     ));
     let findings = crate::validate_neutral(&ir, Vec::new()).unwrap().findings;
@@ -555,7 +562,8 @@ fn datum_axis_bound_values_require_parameter_records() {
             )]),
             ..Default::default()
         }
-        .into_operation(),
+        .into_operation()
+        .unwrap(),
         2,
     );
     consumer.dependencies.insert(prior.id.clone());
@@ -598,7 +606,8 @@ fn datum_axis_picks_require_the_declared_target_arena() {
             )]),
             ..Default::default()
         }
-        .into_operation(),
+        .into_operation()
+        .unwrap(),
         1,
     ));
     let findings = crate::validate_neutral(&ir, Vec::new()).unwrap().findings;
@@ -717,7 +726,8 @@ fn datum_axis_target_checks_use_declarations_and_reach_nested_contexts() {
                 )]),
                 ..Default::default()
             }
-            .into_operation(),
+            .into_operation()
+            .unwrap(),
             2,
         );
         consumer.dependencies.insert(feature_id.clone());
@@ -782,7 +792,8 @@ fn datum_axis_resolved_configuration_keys_require_configuration_records() {
             }],
             ..Default::default()
         }
-        .into_operation(),
+        .into_operation()
+        .unwrap(),
         2,
     );
     consumer.dependencies.insert(prior.id.clone());
@@ -863,7 +874,8 @@ fn datum_axis_region_boundaries_require_the_selected_sketch_owner() {
                 )]),
                 ..Default::default()
             }
-            .into_operation(),
+            .into_operation()
+            .unwrap(),
             1,
         ));
         let findings = crate::validate_neutral(&ir, Vec::new()).unwrap().findings;

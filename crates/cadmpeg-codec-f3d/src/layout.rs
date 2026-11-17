@@ -4224,6 +4224,8 @@ pub(crate) mod work_plane_direct_374_matrix_frame {
 pub(crate) mod work_axis_direct_carrier_class_297 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 215;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
     /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const VALUE_COUNT: usize = 21;
 }
@@ -4238,6 +4240,30 @@ pub(crate) mod work_axis_direct_carrier_class_297 {
 pub(crate) mod work_axis_direct_carrier_class_335 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 195;
+}
+
+/// Byte offsets for the `work_axis_direct_scope_long` record.
+///
+/// Spec §3.1. Record length 268 B.
+pub(crate) mod work_axis_direct_scope_long {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 268;
+}
+
+/// Byte offsets for the `work_axis_direct_scope_short` record.
+///
+/// Spec §3.1. Record length 254 B.
+pub(crate) mod work_axis_direct_scope_short {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 254;
+}
+
+/// Byte offsets for the `work_axis_direct_support` record.
+///
+/// Spec §3.1. Record length 293 B.
+pub(crate) mod work_axis_direct_support {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 293;
 }
 
 /// Byte offsets for the `coil_compact_placement_matrix_frame` record.

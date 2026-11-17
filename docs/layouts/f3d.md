@@ -4690,6 +4690,7 @@ Offsets are relative to the class-297 primary indexed axis carrier paired with c
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | Both carriers store ten zero bytes at offsets 11 through 20 |
 | 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 at offset 21 |
 | 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
 | 89 | 4 | `reference_count` | `u32` | little | spec | u32 reference count 6 at offset 89 |
@@ -4698,7 +4699,6 @@ Offsets are relative to the class-297 primary indexed axis carrier paired with c
 Unstated regions:
 
 - `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
-- `11..21` (10 B): Bytes 11 through 20 are zero.
 - `97..215` (118 B): The generation-specific construction/reference tail ends at the paired header.
 
 ## `work_axis_direct_carrier_class_335`
@@ -4709,6 +4709,7 @@ Offsets are relative to the class-335 primary indexed axis carrier paired with c
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | Both carriers store ten zero bytes at offsets 11 through 20 |
 | 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 at offset 21 |
 | 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
 | 89 | 4 | `reference_count` | `u32` | little | spec | u32 reference count 6 at offset 89 |
@@ -4717,8 +4718,40 @@ Offsets are relative to the class-335 primary indexed axis carrier paired with c
 Unstated regions:
 
 - `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
-- `11..21` (10 B): Bytes 11 through 20 are zero.
 - `97..195` (98 B): The generation-specific construction/reference tail ends at the paired header.
+
+## `work_axis_direct_scope_long`
+
+Spec §3.1 · layout: byte offsets · size: 268 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 268 | `frame` | `bytes[268]` | little | spec | \| 302 \| 262 \| 268 \| |
+
+## `work_axis_direct_scope_short`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 254 | `frame` | `bytes[254]` | little | spec | \| 361 \| 258 \| 254 \| |
+
+## `work_axis_direct_support`
+
+Spec §3.1 · layout: byte offsets · size: 293 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 293 | `frame` | `bytes[293]` | little | spec | and is 293 bytes |
 
 ## `coil_compact_placement_matrix_frame`
 

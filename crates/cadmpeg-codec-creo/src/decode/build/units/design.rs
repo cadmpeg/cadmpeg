@@ -38,7 +38,7 @@ pub(super) fn axis(
     inputs(ctx, &mut draft.inputs, scale)?;
     options(ctx, &mut draft.native_options, scale)?;
     options(ctx, &mut draft.source_settings, scale)?;
-    *operation = draft.into_operation();
+    *operation = draft.into_operation().map_err(CodecError::malformed)?;
     Ok(())
 }
 fn dimension(value: &mut Dimension<Length>, scale: PositiveReal) -> Result<(), CodecError> {
@@ -276,24 +276,57 @@ fn topology(
     let faces: HashMap<_, _> = value.faces.iter().map(|v| (&v.id, &v.surface)).collect();
     let loops: HashMap<_, _> = value.loops.iter().map(|v| (&v.id, &v.face)).collect();
     let mut pcurve_scales = HashMap::new();
+    let mut assign = |id: &cadmpeg_ir::ids::PcurveId, chart: Option<[f64; 2]>| {
+        let chart = chart
+            .ok_or_else(|| CodecError::malformed("witness pcurve has no solved support chart"))?;
+        if pcurve_scales
+            .insert(id.clone(), chart)
+            .is_some_and(|old| old != chart)
+        {
+            return Err(CodecError::malformed(
+                "witness pcurve has incompatible support charts",
+            ));
+        }
+        Ok(())
+    };
     for coedge in &value.coedges {
         let chart = loops
             .get(&coedge.owner_loop)
             .and_then(|id| faces.get(id))
-            .and_then(|id| chart_scales.get(id));
+            .and_then(|id| chart_scales.get(id))
+            .copied();
         for usage in &coedge.pcurves {
-            let chart = chart.copied().ok_or_else(|| {
-                CodecError::malformed("witness pcurve has no solved support chart")
-            })?;
-            if pcurve_scales
-                .insert(usage.pcurve.clone(), chart)
-                .is_some_and(|old| old != chart)
-            {
-                return Err(CodecError::malformed(
-                    "witness pcurve has incompatible support charts",
-                ));
+            assign(&usage.pcurve, chart)?;
+        }
+    }
+    for loop_ in &value.loops {
+        let chart = faces
+            .get(&loop_.face)
+            .and_then(|id| chart_scales.get(id))
+            .copied();
+        for usage in loop_.vertex_pcurves() {
+            assign(&usage.pcurve, chart)?;
+        }
+    }
+    for surface in &value.procedural_surfaces {
+        if let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+            support,
+            boundary_pcurves,
+            ..
+        } = surface.definition()
+        {
+            let chart = chart_scales.get(support).copied();
+            for pcurve in boundary_pcurves {
+                assign(pcurve, chart)?;
             }
         }
+    }
+    if value
+        .pcurves
+        .iter()
+        .any(|pcurve| !pcurve_scales.contains_key(&pcurve.id))
+    {
+        return Err(CodecError::malformed("witness pcurve has no support chart"));
     }
     for point in &mut value.points {
         let mut position = point.position();
@@ -408,6 +441,7 @@ fn tolerance(value: &mut Option<PositiveReal>, scale: PositiveReal) -> Result<()
 
 #[cfg(test)]
 mod tests {
+    mod witness_charts;
     use super::super::scale_feature_definition;
     use super::*;
     use cadmpeg_ir::design::construction::{kinds, FrameAxis};
@@ -463,7 +497,11 @@ mod tests {
             cadmpeg_core::nonblank_literal!("f3d:bound"),
             NativeOption::Length(Dimension::Parameter(bound.clone())),
         );
-        let mut definition = FeatureDefinition::Operation(draft.into_operation());
+        let mut definition = FeatureDefinition::Operation(
+            draft
+                .into_operation()
+                .expect("valid axis conversion fixture"),
+        );
         let ctx = cadmpeg_test_support::service_decode_context();
         scale_feature_definition(
             &ctx,
@@ -586,7 +624,11 @@ mod tests {
             cadmpeg_core::nonblank_literal!("test:witness"),
             NativeOption::Selection(selection),
         );
-        let mut definition = FeatureDefinition::Operation(draft.into_operation());
+        let mut definition = FeatureDefinition::Operation(
+            draft
+                .into_operation()
+                .expect("valid axis conversion fixture"),
+        );
         let ctx = cadmpeg_test_support::service_decode_context();
         scale_feature_definition(
             &ctx,
