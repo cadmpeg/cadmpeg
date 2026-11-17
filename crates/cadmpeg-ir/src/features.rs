@@ -46,7 +46,7 @@ mod selection_overlap;
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
 
-#[doc(hidden)]
+#[doc = include_str!("features/form-api.md")]
 pub mod form;
 
 pub mod holes;
@@ -6594,6 +6594,7 @@ pub enum FaceSelection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
+#[cfg_attr(feature = "schema", schemars(extend("minItems" = 1)))]
 pub struct NonEmptyMembers<T>(Vec<T>);
 
 impl<T> TryFrom<Vec<T>> for NonEmptyMembers<T> {

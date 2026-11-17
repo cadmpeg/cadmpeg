@@ -958,7 +958,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     .appearance_bindings
                     .push(cadmpeg_ir::appearance::AppearanceBinding {
                         id: crate::ids::subset_binding(key, &format!("{}#{ordinal}", child.path)),
-                        target,
+                        target: target.into(),
                         appearance: appearance.clone(),
                         source_entity_id: Some(surface.material.clone()),
                         object_type: None,
@@ -989,7 +989,7 @@ impl super::Builder<'_, '_, '_, '_> {
             .appearance_bindings
             .push(cadmpeg_ir::appearance::AppearanceBinding {
                 id: crate::ids::appearance_binding(key),
-                target: cadmpeg_ir::appearance::AppearanceTarget::Body(body.clone()),
+                target: cadmpeg_ir::appearance::AppearanceTarget::Body(body.clone()).into(),
                 appearance,
                 source_entity_id: Some(surface.material),
                 object_type: None,

@@ -65,7 +65,7 @@ fn attributes_outside_sldprt_namespace_have_counted_export_loss() {
         .attributes
         .push(cadmpeg_ir::attributes::SourceAttribute {
             id: "test:model:attribute#other".try_into().unwrap(),
-            target: cadmpeg_ir::attributes::AttributeTarget::Document {},
+            target: cadmpeg_ir::attributes::AttributeTarget::Document {}.into(),
             name: "other".into(),
             values: vec![cadmpeg_ir::attributes::AttributeValue::String(
                 "value".into(),
@@ -88,7 +88,7 @@ fn edge_and_vertex_appearance_bindings_have_counted_export_loss() {
         let appearance = appearance(Some("moVisualProperties_c"));
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: "test:model:appearance-binding#other".try_into().unwrap(),
-            target,
+            target: target.into(),
             appearance: appearance.id.clone(),
             source_entity_id: None,
             object_type: None,
