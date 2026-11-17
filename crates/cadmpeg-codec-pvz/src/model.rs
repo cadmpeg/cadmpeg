@@ -170,7 +170,7 @@ pub(crate) fn occurrences(
     let mut owned: Vec<Vec<cadmpeg_ir::ids::OccurrenceId>> = vec![Vec::new(); definitions.len()];
     match roots.as_slice() {
         [] => {}
-        [root] => set_root(ir, crate::ids::definition(*root)),
+        [root] => set_root(ir, &crate::ids::definition(*root)),
         _ => {
             losses.push(PvzLossCode::StructureRootAmbiguous.note(format!(
                 "the structure has {} root definitions, not one; a document definition places \
@@ -325,12 +325,12 @@ pub(crate) fn occurrences(
 }
 
 /// Marks the definition the file holds at its top as the root definition.
-fn set_root(ir: &mut CadIr, id: cadmpeg_ir::ids::ProductDefinitionId) {
+fn set_root(ir: &mut CadIr, id: &cadmpeg_ir::ids::ProductDefinitionId) {
     if let Some(definition) = ir
         .model
         .product_definitions
         .iter_mut()
-        .find(|definition| definition.id == id)
+        .find(|definition| definition.id == *id)
     {
         definition.storage = Storage::File {
             document: ExternalDocument::default(),
