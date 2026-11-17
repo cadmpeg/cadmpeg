@@ -57,8 +57,10 @@
           "channels": {},
           "id": "pvz:model:appearance-binding#bracket.ol:0",
           "target": {
-            "kind": "tessellation",
-            "value": "pvz:model:tessellation#bracket.ol:0"
+            "entity": {
+              "kind": "tessellation",
+              "value": "pvz:model:tessellation#bracket.ol:0"
+            }
           }
         }
       ],
@@ -469,7 +471,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

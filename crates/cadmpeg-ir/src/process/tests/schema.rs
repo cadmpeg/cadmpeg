@@ -4,9 +4,12 @@
 use schemars::{schema_for, JsonSchema};
 
 use crate::design::construction::kinds;
+use crate::document::Process;
 use crate::process::cycle::{Cycle, CycleKind, CycleReturn, PlaneAxis, ProbeTarget};
 use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
-use crate::process::groups::{GroupKind, ProcessDefinition, ProcessGroup, ProcessOwner};
+use crate::process::groups::{
+    GroupKind, ProcessDefinition, ProcessGroup, ProcessOwner, ProcessParameter,
+};
 use crate::process::limits::{
     AxialFrom, AxialLimit, AxialRole, Height, HeightFrom, HeightRole, LimitPoint, RadialLimit,
     RadiusFrom, RadiusRole,
@@ -24,7 +27,7 @@ use crate::process::setup::{
     AxisClass, FunctionStep, JobKind, NcFunction, Program, ProgramOutput, ProgramStep, Setup, Step,
     WorkOffset, WorkpieceSetup,
 };
-use crate::process::state::ProcessStateOf;
+use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
 use crate::process::stock::{
     AxisSpec, BoxAlignment, BoxOffsets, BoxPoint, BoxSide, CylinderOffsets, StockPlacement,
     StockRule, StockShape, Wcs, WcsOrientation, WcsOrigin,
@@ -39,7 +42,7 @@ use crate::process::tool::{
     ToolCatalog, ToolClass, ToolPocket, TurningInsert, Uuid,
 };
 use crate::process::toolpath::{
-    Heater, Motion, MotionClass, MotionValue, MovementClass, ToolpathContent,
+    Heater, Motion, MotionClass, MotionValue, MovementClass, Toolpath, ToolpathContent,
 };
 use crate::process::{Choice, ProcessConstruction, WorkpieceSelection};
 
@@ -50,6 +53,12 @@ fn generates<T: JsonSchema>() {
 
 #[test]
 fn every_process_type_has_a_schema() {
+    generates::<Process>();
+    generates::<ProcessParameter>();
+    generates::<Toolpath>();
+    generates::<ProcessState>();
+    generates::<ProcessContent>();
+    generates::<ProcessBase>();
     generates::<Choice<StockRule>>();
     generates::<Choice<WcsOrientation>>();
     generates::<Choice<WcsOrigin>>();

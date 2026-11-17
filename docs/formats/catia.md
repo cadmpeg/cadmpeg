@@ -62,6 +62,15 @@ The declaration identifier has four big-endian `u32` words. Its metadata stream 
 
 The metadata property table starts with `total_size:u32be`, `identity:u32be`, and `count:u32be` (12 bytes). Each counted record starts with `size:u32be`, `identity:u32be`, `value_type:u16be`, and `value_bytes:u32be` (14 bytes). The record size is 14 plus `value_bytes`; the records close at `total_size`. Type 2 stores an even-length UTF-16BE value ending in NUL. The content-reference table is a sequence of type-2 records: zero or more unprefixed `Cont_` names of other declared containers, `0003` plus `CATPropertySets`, `0003` plus `CATStorageProperty`, then the unprefixed content stream name. `CATPropertySets` is optional only when no leading name is present. A leading name selects no content and need not name a directory stream. All text ends in UTF-16BE NUL. The final name exactly selects one length-framed directory descriptor. Numeric table and property identities supply no graph ownership edge. The graph's complete physical extent must lie in the selected content stream; the UUID metadata stream is not its graph storage.
 
+A `CATSeeBodyCont` visible-body list is
+`<count:u32le> <allocation_end:u32le[count]> <zero:u32le[4]>`.
+Each positive allocation end selects an A- or B-family class-`5b` frame
+with flag `13` in the declared `CGMGeom` stream. The allocation counter starts at zero
+at the beginning of its contiguous allocated record sequence. The list
+selects visible result bodies independently of the current feature.
+A selected class-`5b` frame with an owned-child reference zero can own the
+adjacent class-`65`/`60`/`61` body chain.
+
 ### 3.2 Inner `V5_CFV2`
 
 The standard path uses the first nested `V5_CFV2` magic after byte 8:

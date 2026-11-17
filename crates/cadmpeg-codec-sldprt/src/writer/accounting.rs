@@ -74,7 +74,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .iter()
             .filter(|binding| {
                 !matches!(
-                    binding.target,
+                    binding.target.entity,
                     AppearanceTarget::Face(_) | AppearanceTarget::Body(_)
                 )
             })
@@ -97,7 +97,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         .iter()
         .filter(|binding| {
             matches!(
-                binding.target,
+                binding.target.entity,
                 AppearanceTarget::Face(_) | AppearanceTarget::Body(_)
             )
         })

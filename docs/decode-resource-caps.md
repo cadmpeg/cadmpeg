@@ -35,7 +35,7 @@ from the name of the constant.
    ceilings: `max_expression_depth`, `max_name_depth`, `max_pick_depth`, and
    `max_construction_depth`. Reading a document enforces
    `max_state_chain_depth` on each chain of state bases its evaluations
-   form, and refuses a cycle as malformed. Excess refuses that read with
+   and process states form, and refuses a cycle as malformed. Excess refuses that read with
    `CodecError::ResourceLimit` (`RecursionDepth`, `BudgetExceeded`); it sets
    no fuse.
 4. **Local work cap.** The limit bounds a search, an iteration, a
@@ -464,10 +464,11 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/edge_alignment.rs` | `MAX_ENDPOINT_SEED_GAP_MM` | `0.005` | N | Maximum endpoint distance in mm for a corroborated shared-trim alignment seed. The fitted curve and surface lifts meet the ordinary edge gap. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_SHARED_EDGE_SEED_GAP_MM` | `0.005` | N | Maximum sampled boundary separation in mm for a retry using the admitted shared edge. Reprojection must meet the surface lift gap. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/transfer.rs` | `MAX_CORROBORATED_VERTEX_GAP_MM` | `0.005` | N | Maximum distance in mm for a vertex repair corroborated by an incident matching edge. Larger discrepancies retain the conflicting vertex. |
-| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_SPANS` | `48` | 4 | Knot spans per axis of a fitted tensor surface. A larger grid rejects the fit. |
+| `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_CELLS` | `48 * 48` | 4 | Grid cells of a fitted tensor surface. Each refinement step checks the product of the U and V knot spans before surface evaluation. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_REFINEMENTS` | `9` | 4 | Refinements of a tensor surface grid after the initial fit. A remaining residual rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ALTERNATE_LINES` | `4` | 4 | Ambiguous line stations admitted to the alternate boundary search. Excess skips the search. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ROLLING_BOUNDARY_EXCURSION` | `0.001` | N | Maximum normalized transverse excursion for a rolling-ball boundary retry. A larger excursion rejects the retry. |
+| `cadmpeg-codec-catia` | `src/families/freeform/parameter_cache.rs` | `MAX_CACHED_PARAMETERS` | `32_768` | N | Cached parameter evaluations per function. At capacity, existing entries remain available and new parameters are evaluated without caching. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_CHART_ENDPOINT_SLACK` | `0.00001` | N | Absolute parameter slack for clamping a station to the chart boundary. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_ERROR_MM` | `0.001` | N | Maximum sampled edge fit residual in mm. Larger residuals request subdivision. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_SPANS` | `128` | 4 | Spans in one fitted edge. Excess rejects the fit. |
@@ -563,7 +564,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 341.
+Production `MAX_*` constants: 342.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -571,8 +572,8 @@ Production `MAX_*` constants: 341.
 | 2    | Per-input bound            | 77    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 170   |
-| N    | Not a decode bound         | 52    |
-|      | Total                      | 341   |
+| N    | Not a decode bound         | 53    |
+|      | Total                      | 342   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -582,7 +583,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 7,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 26,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
-`cadmpeg-codec-catia` 78, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

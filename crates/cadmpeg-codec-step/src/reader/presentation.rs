@@ -15,6 +15,7 @@ use cadmpeg_ir::ids::{
     PointId, ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Fraction;
 use cadmpeg_ir::topology::Color;
@@ -225,7 +226,7 @@ pub(super) fn decode(
             name,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
-            items,
+            items: items.into_iter().map(InstanceTarget::new).collect(),
         });
         typed.insert(layer_id);
     }
@@ -403,7 +404,7 @@ pub(super) fn decode(
                             .dash(target_ordinal),
                     )
                     .into(),
-                    target,
+                    target: target.into(),
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),
                     object_type: None,

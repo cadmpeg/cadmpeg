@@ -347,8 +347,9 @@ pub struct PresentationLayer {
         deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
-    /// Assigned items in deterministic projection order; order has no semantic meaning.
-    pub items: Vec<PresentationItem>,
+    /// Assigned items, each in the placed instance and the state that hold
+    /// it, in deterministic projection order; order has no semantic meaning.
+    pub items: Vec<crate::references::InstanceTarget<PresentationItem>>,
 }
 
 cadmpeg_core::named_optional_field!(
@@ -480,7 +481,8 @@ mod tests {
             visible: None,
             items: vec![PresentationItem::Source {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
-            }],
+            }
+            .into()],
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -498,7 +500,8 @@ mod tests {
             visible: None,
             items: vec![PresentationItem::Source {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
-            }],
+            }
+            .into()],
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -516,7 +519,8 @@ mod tests {
             visible: None,
             items: vec![PresentationItem::Face {
                 face: FaceId::mint("test:model:face#missing").expect("valid identity"),
-            }],
+            }
+            .into()],
         });
 
         assert!(validate_neutral(&ir, Vec::new())

@@ -177,7 +177,9 @@
             "id": "nx:part-attributes-2:attribute#0:neutral",
             "name": "NX_Arrangement",
             "target": {
-              "kind": "document"
+              "entity": {
+                "kind": "document"
+              }
             },
             "values": [
               {
@@ -295,7 +297,19 @@
           ]
         }
       },
-      "process": {},
+      "process": {
+        "features": [],
+        "groups": [],
+        "machines": [],
+        "operations": [],
+        "parameters": [],
+        "presets": [],
+        "programs": [],
+        "setups": [],
+        "states": [],
+        "toolpaths": [],
+        "tools": []
+      },
       "scope": {
         "design": true,
         "model": true,

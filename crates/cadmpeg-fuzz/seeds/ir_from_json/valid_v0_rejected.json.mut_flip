@@ -49,11 +49,10 @@
     "spreadsheets": [],
     "product_definitions": [],
     "occurrences": [],
-   ß"assembly_joints": [],
+    "assembly_joints": [],
     "drawings": [],
     "semantic_annotations": [],
-    "presentation_documents": [],
-    "view_presentations": [],
+    "presentation_documents": [],õ    "view_presentations": [],
     "tessellations": [],
     "appearances": [],
     "appearance_bindings": [],
@@ -91,6 +90,18 @@
     "evaluations": [],
     "names": []
   },
-  "process": {},
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

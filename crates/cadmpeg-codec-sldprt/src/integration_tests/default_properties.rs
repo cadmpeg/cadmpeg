@@ -224,7 +224,7 @@ fn source_less_writer_refuses_saved_properties() {
     let mut ir = crate::test_support::ir::source_less_cube();
     ir.model.attributes.push(SourceAttribute {
         id: AttributeId::mint("sldprt:metadata:default_property#8:2:Saved").unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "Saved".into(),
         values: vec![AttributeValue::Integer(7)],
     });
