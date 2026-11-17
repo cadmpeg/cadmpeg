@@ -1163,3 +1163,11 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** For 50 extrusion profile sketches in 38 parts and 36 designs, no curve that is not construction geometry lies on a face of the solid in the plane read for the sketch, and the curves lie on faces in another principal plane through the origin. The plane read is most often the `XY` plane through the origin (21 sketches) or the plane with normal `-Y` through the origin (15).
 
 **Need.** The plane reference at the end of these `sgSketch` objects (`sldprt.md` §2.3, the pointer to the `moCompRefPlane_c` that names the sketch plane), compared with the faces of the solid.
+
+### DI-74. `sgSketch` objects inside a sheet-metal feature object
+
+**Question.** Which sketch do the `sgSketch` objects written inside the span of a `Sheet-Metal` feature object hold, and which feature consumes their curves?
+
+**Known.** In 4 parts of 4 designs, 57 `sgSketch` objects with readable curve records (`sldprt.md` §2.3) lie in the span of a `Sheet-Metal` feature object and before the next named feature object. No sketch feature object encloses them, so no neutral sketch receives their curves. A `Break-Corner` and a `SketchBend` feature object each enclose one such object.
+
+**Need.** The object that writes each `sgSketch` (the sheet-metal feature itself, a sketch it absorbs, or a flat-pattern sketch), and the curves compared with the faces of the stored solid and its flat pattern.
