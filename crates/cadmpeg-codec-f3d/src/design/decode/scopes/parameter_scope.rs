@@ -402,7 +402,10 @@ pub(crate) fn decode_parameter_scopes(
                         .map(|row| row.version),
                 );
                 if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-                    slot.point = construction;
+                    slot.point = construction.map(|hole| {
+                        losses.extend(hole.input_loss);
+                        hole.construction
+                    });
                     slot.extent = extent;
                 }
             }
@@ -765,8 +768,10 @@ pub(crate) fn decode_parameter_scopes(
                         recipes,
                         solved_frame,
                     ) {
-                        Ok(Some(carriers)) => carriers,
-                        Ok(None) => return None,
+                        Ok((carriers, input_loss)) => {
+                            losses.extend(input_loss);
+                            carriers?
+                        }
                         Err(error) => return Some(Err(error)),
                     };
                     Some(Ok(

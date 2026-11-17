@@ -2,7 +2,9 @@
 //! Exact hole constructions and hole face selections.
 
 use super::point_data::{exact_point_data_construction, POINT_DATA_TYPE_GUID};
-use super::point_direction::{point_direction_carrier_at, PointDirectionBoundary};
+use super::point_direction::{
+    point_direction_carrier_at, point_direction_input_loss, PointDirectionBoundary,
+};
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::operands::parse_entity_selection_frame;
@@ -17,6 +19,7 @@ use crate::records::feature::work_geometry::DesignWorkPointRuleForm;
 use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 
 /// Type GUID of the direct persistent face selection carried by a `Hole`.
@@ -28,6 +31,11 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 /// Longest standard sizing name, in UTF-16 code units, that a Hole extent
 /// block admits.
 const MAX_HOLE_STANDARD_NAME: usize = 256;
+
+pub(in crate::design::decode) struct ExactHole {
+    pub(in crate::design::decode) construction: DesignHoleConstruction,
+    pub(in crate::design::decode) input_loss: Option<LossNote>,
+}
 
 /// Decode the exact point-and-direction carrier owned by a `Hole` scope.
 ///
@@ -44,7 +52,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     required_scope_kind: &scope::DesignFeatureKind,
-) -> Result<Option<DesignHoleConstruction>, CodecError> {
+) -> Result<Option<ExactHole>, CodecError> {
     if &scope.kind() != required_scope_kind {
         return Ok(None);
     }
@@ -84,18 +92,19 @@ pub(in crate::design::decode) fn exact_hole_construction(
             if (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM {
                 continue;
             }
-            let Some(local_inputs) = carrier.local_inputs() else {
+            if !carrier.inputs_complete || carrier.inputs.is_empty() {
                 continue;
-            };
+            }
+            let local_input_count = carrier.local_inputs().count();
             let mut input_records = ctx.alloc_filled(
-                carrier.inputs.len(),
+                local_input_count,
                 crate::records::identity::Located {
                     value: 0,
                     offset: 0,
                 },
                 "Hole carrier inputs",
             )?;
-            for (slot, input) in input_records.iter_mut().zip(local_inputs) {
+            for (slot, input) in input_records.iter_mut().zip(carrier.local_inputs()) {
                 *slot = input;
             }
             let next = DesignHoleConstruction {
@@ -119,15 +128,26 @@ pub(in crate::design::decode) fn exact_hole_construction(
                 face_selection: None,
                 locations: Vec::new(),
             };
-            if candidate.replace(next).is_some() {
+            let input_loss = point_direction_input_loss(
+                scope,
+                *record_index,
+                carrier.inputs.len() - local_input_count,
+            );
+            if candidate
+                .replace(ExactHole {
+                    construction: next,
+                    input_loss,
+                })
+                .is_some()
+            {
                 return Ok(None);
             }
         }
     }
     Ok(candidate.map(|mut candidate| {
-        candidate.face_selection = face_selection;
+        candidate.construction.face_selection = face_selection;
         if *required_scope_kind == scope::DesignFeatureKind::Hole {
-            candidate.locations = hole_locations(bytes, records, scope, stream_types);
+            candidate.construction.locations = hole_locations(bytes, records, scope, stream_types);
         }
         candidate
     }))

@@ -248,8 +248,15 @@ pub(super) fn exact_legacy_as_built_421_operands(
     stream_types: &HashMap<u64, (&str, u32)>,
     recipes: &[ConstructionRecipe],
     solved_frame: &DesignAssemblySolvedFrame,
-) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
-    (|| {
+) -> Result<
+    (
+        Option<DesignAssemblyLegacyOperands>,
+        Option<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    let mut input_loss = None;
+    let operands = (|| {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length(),
         scope.class_tag.as_str(),
@@ -276,6 +283,11 @@ pub(super) fn exact_legacy_as_built_421_operands(
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
+    input_loss = hole.input_loss;
+    if input_loss.is_some() {
+        return None;
+    }
+    let hole = hole.construction;
     if hole.point_record_index != hole_record_index
         || !hole
             .input_records
@@ -354,7 +366,8 @@ recipes,
             },
         ),
     ))
-    })().transpose()
+    })().transpose()?;
+    Ok((operands, input_loss))
 }
 
 fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {

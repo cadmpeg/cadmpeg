@@ -21,6 +21,7 @@ const RECIPE_GUID: &str = "5662F619-2281-4AD9-93DC-1FCFDA1062E7";
 enum Input {
     Plain(u32),
     Typed(u32),
+    CrossSegment(u32),
 }
 
 struct Carrier {
@@ -76,6 +77,12 @@ impl Carrier {
                     bytes.extend_from_slice(&u64::from(*target).to_le_bytes());
                     bytes.extend_from_slice(&36u32.to_le_bytes());
                     bytes.extend_from_slice(RECIPE_GUID.as_bytes());
+                }
+                Input::CrossSegment(target) => {
+                    bytes.extend_from_slice(&u64::from(*target).to_le_bytes());
+                    bytes.extend_from_slice(&[0, 1]);
+                    bytes.extend_from_slice(&7u32.to_le_bytes());
+                    continue;
                 }
             }
             bytes.extend_from_slice(&[0, 0]);
@@ -294,6 +301,41 @@ fn two_point_rule_reads_the_point_data_endpoints() {
     );
     assert_eq!(axis.endpoint_deviation_cm, 0.0);
     assert!(work_axis_loss_notes(&work_axis_scope(), &axis).is_empty());
+}
+
+#[test]
+fn qualified_axis_input_keeps_the_solved_axis_without_binding_a_local_alias() {
+    for reference_type in [12, 18] {
+        let mut bytes = Vec::new();
+        Carrier {
+            inputs: vec![Input::Plain(FIRST_INPUT), Input::CrossSegment(SECOND_INPUT)],
+            ..Carrier::new([2.0, 1.0, -4.0, 0.0, -0.4, 0.0, 0.0, 0.0], reference_type)
+        }
+        .write(&mut bytes);
+        write_point_data(&mut bytes, FIRST_INPUT, [2.0, 1.0, -4.0]);
+        write_point_data(&mut bytes, SECOND_INPUT, [2.0, 0.6, -4.0]);
+        let mut types = carrier_types(1);
+        types.insert(u64::from(FIRST_INPUT), (POINT_DATA_TYPE_GUID, 1));
+        types.insert(u64::from(SECOND_INPUT), (POINT_DATA_TYPE_GUID, 1));
+        let axis = read(&bytes, &types).expect("solved axis with qualified input");
+        assert_eq!(
+            axis.construction
+                .displacement
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
+            [0.0, -0.4, 0.0],
+        );
+        assert_eq!(
+            axis.construction.source,
+            Some(DesignWorkAxisSource::PointDirection {
+                carrier_record_index: CARRIER,
+                reference_type,
+                input_record_indices: vec![FIRST_INPUT],
+            }),
+        );
+        assert!(work_axis_loss_notes(&work_axis_scope(), &axis)
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::FeaturePointDirectionInputsUnrepresented.kind()));
+    }
 }
 
 #[test]

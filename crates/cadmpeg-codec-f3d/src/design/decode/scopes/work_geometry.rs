@@ -6,7 +6,8 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::point_data::exact_point_data_construction;
 use super::point_direction::{
-    point_direction_carrier_at, PointDirectionBoundary, PointDirectionCarrier,
+    point_direction_carrier_at, point_direction_input_loss, PointDirectionBoundary,
+    PointDirectionCarrier,
 };
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
@@ -46,6 +47,7 @@ const EPS_WORK_AXIS_ENDPOINT_CM: f64 = 1.0e-9;
 pub(super) struct ExactWorkAxis {
     pub(super) construction: DesignWorkAxisConstruction,
     pub(super) endpoint_deviation_cm: f64,
+    omitted_inputs: usize,
 }
 
 pub(super) fn work_axis_loss_notes(
@@ -59,10 +61,17 @@ pub(super) fn work_axis_loss_notes(
         input_record_indices,
     }) = &axis.construction.source
     {
-        losses.push(F3dLossCode::FeatureWorkAxisRuleUnassigned.note(format!(
+        losses.extend(point_direction_input_loss(
+            scope,
+            *carrier_record_index,
+            axis.omitted_inputs,
+        ));
+        if *reference_type != WORK_AXIS_TWO_POINT_REFERENCE_TYPE {
+            losses.push(F3dLossCode::FeatureWorkAxisRuleUnassigned.note(format!(
             "WorkAxis scope {} assumes the position and direction of carrier {carrier_record_index} give its solved axis; refType {reference_type} has no assigned construction rule, and inputs {input_record_indices:?} stay native.",
             scope.id,
-        )));
+            )));
+        }
     }
     if axis.endpoint_deviation_cm > 0.0 {
         losses.push(F3dLossCode::FeatureWorkAxisEndpointToleranceAssumed.note(format!(
@@ -324,6 +333,7 @@ pub(super) fn exact_work_axis_construction(
         return Ok(Some(ExactWorkAxis {
             construction,
             endpoint_deviation_cm: 0.0,
+            omitted_inputs: 0,
         }));
     }
     exact_point_direction_work_axis_construction(ctx, bytes, records, scope, stream_types)
@@ -359,12 +369,13 @@ fn exact_point_direction_work_axis_construction(
         else {
             return Ok(None);
         };
-        let Some(local_inputs) = carrier.local_inputs() else {
+        if !carrier.inputs_complete || carrier.inputs.is_empty() {
             return Ok(None);
-        };
+        }
+        let local_input_count = carrier.local_inputs().count();
         let mut input_indices =
-            ctx.alloc_filled(carrier.inputs.len(), 0, "WorkAxis carrier inputs")?;
-        for (slot, input) in input_indices.iter_mut().zip(local_inputs) {
+            ctx.alloc_filled(local_input_count, 0, "WorkAxis carrier inputs")?;
+        for (slot, input) in input_indices.iter_mut().zip(carrier.local_inputs()) {
             *slot = input.value;
         }
         let Some(axis) = work_axis_from_point_direction_carrier(
@@ -413,7 +424,8 @@ fn work_axis_from_point_direction_carrier(
         return None;
     }
     let mut endpoint_deviation_cm: f64 = 0.0;
-    let source = if reference_type == WORK_AXIS_TWO_POINT_REFERENCE_TYPE {
+    let omitted_inputs = carrier.inputs.len() - input_indices.len();
+    let source = if reference_type == WORK_AXIS_TWO_POINT_REFERENCE_TYPE && omitted_inputs == 0 {
         let [first, second] = input_indices.as_slice() else {
             return None;
         };
@@ -458,6 +470,7 @@ fn work_axis_from_point_direction_carrier(
             source: Some(source),
         },
         endpoint_deviation_cm,
+        omitted_inputs,
     })
 }
 

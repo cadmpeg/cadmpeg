@@ -6,10 +6,13 @@ use crate::bytes::utf16::Utf16View;
 use crate::bytes::Reference;
 use crate::bytes::{take_reference, take_reference_lossless};
 use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::loss::F3dLossCode;
 use crate::records::feature::hole::DesignHoleTangentPoint;
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 
 #[derive(Clone, Copy)]
@@ -36,26 +39,29 @@ pub(super) struct PointDirectionCarrier<'a> {
 }
 
 impl PointDirectionCarrier<'_> {
-    pub(super) fn local_inputs(&self) -> Option<impl Iterator<Item = Located<u32>> + '_> {
-        if !self.inputs_complete
-            || self.inputs.is_empty()
-            || self.inputs.iter().any(|input| {
-                input
-                    .value
-                    .local()
-                    .is_none_or(|(target, _)| target == 0 || u32::try_from(target).is_err())
-            })
-        {
-            return None;
-        }
-        Some(self.inputs.iter().filter_map(|input| {
+    pub(super) fn local_inputs(&self) -> impl Iterator<Item = Located<u32>> + '_ {
+        self.inputs.iter().filter_map(|input| {
             let (target, _) = input.value.local()?;
-            Some(Located {
+            (target != 0).then_some(Located {
                 value: u32::try_from(target).ok()?,
                 offset: input.offset.checked_add(1)?,
             })
-        }))
+        })
     }
+}
+
+pub(super) fn point_direction_input_loss(
+    scope: &DesignParameterScope,
+    carrier_record_index: u32,
+    omitted_inputs: usize,
+) -> Option<LossNote> {
+    (omitted_inputs != 0).then(|| {
+        F3dLossCode::FeaturePointDirectionInputsUnrepresented.note(format!(
+            "{} scope {} carrier {carrier_record_index} has {omitted_inputs} input slots without a nonzero local u32 target.",
+            scope.kind(),
+            scope.id,
+        ))
+    })
 }
 
 pub(super) fn point_direction_carrier_at<'a>(
