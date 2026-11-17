@@ -32,6 +32,11 @@ pub(crate) struct DesignSketchProfileOperand {
     /// Exact nested profile-region selection, when its complete frame closes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) region_selection: Option<DesignSketchProfileRegionSelection>,
+    /// Whether the Design stream registers no Sketch entity with the stored
+    /// suffix. `entity_id` then spells the suffix with the stream's Sketch
+    /// entity prefix.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) sketch_absent: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
@@ -58,6 +63,7 @@ impl Clone for DesignSketchProfileOperand {
             entity_reference_offset: self.entity_reference_offset,
             compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection.clone(),
+            sketch_absent: self.sketch_absent,
             paired_class_tag: self.paired_class_tag.clone(),
             paired_byte_offset: self.paired_byte_offset,
         }
@@ -85,6 +91,7 @@ impl DesignSketchProfileOperand {
             entity_reference_offset: draft.entity_reference_offset,
             compact_tail_flags: draft.compact_tail_flags,
             region_selection: draft.region_selection,
+            sketch_absent: draft.sketch_absent,
             paired_class_tag: draft.paired_class_tag,
             paired_byte_offset: draft.paired_byte_offset,
         };
@@ -103,6 +110,7 @@ impl DesignSketchProfileOperand {
             entity_reference_offset: self.entity_reference_offset,
             compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection,
+            sketch_absent: self.sketch_absent,
             paired_class_tag: self.paired_class_tag,
             paired_byte_offset: self.paired_byte_offset,
         }
@@ -143,6 +151,8 @@ impl Serialize for DesignSketchProfileOperand {
             compact_tail_flags: Option<[bool; 2]>,
             #[serde(skip_serializing_if = "Option::is_none")]
             region_selection: Option<&'a DesignSketchProfileRegionSelection>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            sketch_absent: bool,
             paired_class_tag: &'a str,
             paired_byte_offset: u64,
         }
@@ -158,6 +168,7 @@ impl Serialize for DesignSketchProfileOperand {
             entity_reference_offset: self.entity_reference_offset,
             compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection.as_ref(),
+            sketch_absent: self.sketch_absent,
             paired_class_tag: self.paired_class_tag.as_str(),
             paired_byte_offset: self.paired_byte_offset,
         }
@@ -187,6 +198,8 @@ pub(crate) struct DesignSketchProfileOperandDraft {
     pub(crate) compact_tail_flags: Option<[bool; 2]>,
     /// Exact nested profile-region selection, when its complete frame closes.
     pub(crate) region_selection: Option<DesignSketchProfileRegionSelection>,
+    /// Whether the stream registers no Sketch entity with the stored suffix.
+    pub(crate) sketch_absent: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
@@ -226,6 +239,9 @@ struct DesignSketchProfileOperandWire {
         deserialize_with = "deserialize_region_selection"
     )]
     region_selection: Option<DesignSketchProfileRegionSelection>,
+    /// Whether the stream registers no Sketch entity with the stored suffix.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    sketch_absent: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     paired_class_tag: String,
     /// Byte offset of the same-index paired header.
@@ -251,6 +267,7 @@ impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
             entity_reference_offset: wire.entity_reference_offset,
             compact_tail_flags: wire.compact_tail_flags,
             region_selection: wire.region_selection,
+            sketch_absent: wire.sketch_absent,
             paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
         })
@@ -274,6 +291,7 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
             entity_reference_offset: value.entity_reference_offset,
             compact_tail_flags: value.compact_tail_flags,
             region_selection: value.region_selection,
+            sketch_absent: value.sketch_absent,
             paired_class_tag: value.paired_class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
         }
@@ -293,25 +311,109 @@ pub(crate) struct DesignSketchProfileRegionSelection {
     pub(crate) region_count_offset: u64,
     /// Member lists in source order.
     pub(crate) regions: Vec<DesignSketchProfileRegion>,
+    /// Atomic regions that make up the selected regions, in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) atomic_regions: Vec<DesignSketchProfileAtomicRegion>,
     /// Source per-file dynamic three-digit ASCII companion class tag.
     pub(crate) companion_class_tag: DesignClassTag,
     /// Byte offset of the same-index companion header.
     pub(crate) companion_byte_offset: u64,
 }
 
-/// One member list of a nested sketch-profile selection.
+/// One boundary loop of a nested sketch-profile selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSketchProfileRegion {
     /// Byte offset of this list's member count.
     pub(crate) member_count_offset: u64,
     /// Persistent curve members in source order.
     pub(crate) members: Vec<DesignSketchProfileRegionMember>,
+    /// Zero-based selected region that owns the loop.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(crate) region_ordinal: u32,
+    /// The loop is a hole of the preceding outer loop of its region: its
+    /// exterior byte is `0`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub(crate) hole: bool,
+}
+
+/// One atomic region of a selected region in a nested sketch-profile
+/// selection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignSketchProfileAtomicRegion {
+    /// Zero-based selected region that the atomic region is part of.
+    pub(crate) region_ordinal: u32,
+    /// Byte offset of the atomic region's loop count.
+    pub(crate) loop_count_offset: u64,
+    /// Boundary loops in source order.
+    pub(crate) loops: Vec<DesignSketchProfileRegion>,
+}
+
+// Serde requires `skip_serializing_if` predicates to borrow the field.
+fn is_false<T: Copy + Into<bool>>(value: &T) -> bool {
+    !(*value).into()
+}
+
+fn is_zero<T: Copy + Into<u64>>(value: &T) -> bool {
+    (*value).into() == 0
 }
 
 impl DesignSketchProfileRegionSelection {
+    /// The member rings that select regions. For each selected region,
+    /// these are the loops of its atomic regions when it has atomic regions
+    /// and they name every curve of the selected region, otherwise the
+    /// selected region's own loops. `None` when atomic regions omit a curve
+    /// of their selected region.
+    pub(crate) fn resolution_regions(&self) -> Option<Vec<&DesignSketchProfileRegion>> {
+        let mut rings = Vec::new();
+        let mut start = 0;
+        while let Some(first) = self.regions.get(start) {
+            let ordinal = first.region_ordinal;
+            let own = self
+                .regions
+                .iter()
+                .skip(start)
+                .take_while(|region| region.region_ordinal == ordinal)
+                .collect::<Vec<_>>();
+            start += own.len();
+            let atomic = self
+                .atomic_regions
+                .iter()
+                .filter(|atomic| atomic.region_ordinal == ordinal)
+                .flat_map(|atomic| &atomic.loops)
+                .collect::<Vec<_>>();
+            if atomic.is_empty() {
+                rings.extend(own);
+                continue;
+            }
+            let covered = own.iter().flat_map(|region| &region.members).all(|member| {
+                atomic
+                    .iter()
+                    .flat_map(|region| &region.members)
+                    .any(|atomic| atomic.curve_primary_id == member.curve_primary_id)
+            });
+            if !covered {
+                return None;
+            }
+            rings.extend(atomic);
+        }
+        Some(rings)
+    }
+
+    /// Whether the selection holds more than one selected region, atomic
+    /// regions, or a hole loop before its last loop. Such a selection names a
+    /// union of arrangement faces, which the member rings of one face cannot
+    /// be compared with, so it does not veto the profile that the Extrude
+    /// selection group resolves.
+    pub(crate) fn is_beyond_one_face_rings(&self) -> bool {
+        !self.atomic_regions.is_empty()
+            || self.regions.iter().any(|region| region.region_ordinal != 0)
+            || self.regions.iter().rev().skip(1).any(|region| region.hole)
+    }
+
     pub(crate) fn has_extended_incidence(&self) -> bool {
         self.regions
             .iter()
+            .chain(self.atomic_regions.iter().flat_map(|atomic| &atomic.loops))
             .flat_map(|region| &region.members)
             .any(|member| {
                 member

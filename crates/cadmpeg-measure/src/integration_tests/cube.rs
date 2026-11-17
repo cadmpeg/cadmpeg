@@ -100,7 +100,7 @@ fn an_unknown_body_selector_is_refused() {
     assert!(matches!(
         unknown,
         Err(crate::session::MeasureError::UnknownEntity {
-            arena: "model.bodies",
+            arena: "geometry.bodies",
             ..
         })
     ));

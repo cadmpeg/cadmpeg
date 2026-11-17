@@ -42,7 +42,8 @@ use super::fixed_parameters::exact_fixed_fillet_parameters;
 use super::hole::exact_hole_construction;
 use super::path_feature::{
     exact_path_feature_construction, loft_lists_loss, loft_reference_loss,
-    marker_one_revolve_assumed_length, three_flag_loft_settings_loss,
+    marker_one_revolve_assumed_length, referenced_revolve_reference_loss,
+    three_flag_loft_settings_loss,
 };
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
@@ -55,6 +56,7 @@ use super::surfaces::exact_ruled_surface_operation;
 use super::surfaces::exact_surface_extend_operation;
 use super::surfaces::exact_surface_offset_operation;
 use super::surfaces::exact_surface_stitch_operation;
+use super::surfaces::exact_surface_untrim_operation;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::work_geometry::exact_joint_origin_frame;
@@ -565,6 +567,13 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
+                    exact_surface_untrim_operation(ctx, bytes, &records, &scope, &mut losses)?;
+                if let scope::DesignScopePayloadMut::SurfaceUntrim(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction =
                     exact_surface_offset_operation(bytes, &records, &scope, recipes, &mut losses)?;
                 if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
                     *slot = construction;
@@ -593,7 +602,22 @@ pub(crate) fn decode_parameter_scopes(
                     parameters,
                     parameter_owners,
                 );
-                let sets = fillet_set_list(bytes, &records, &scope, parameters, parameter_owners);
+                let sets = fillet_set_list(
+                    bytes,
+                    &records,
+                    &scope,
+                    parameters,
+                    parameter_owners,
+                )
+                .map(|(sets, padding_holds_bytes)| {
+                    if padding_holds_bytes {
+                        losses.push(crate::loss::F3dLossCode::FeatureFilletPaddingAssumed.note(format!(
+                            "Fillet {} stores nonzero bytes in the padding of its compact flag run or set frames; they are read as padding (DR-390).",
+                            scope.id
+                        )));
+                    }
+                    sets
+                });
                 if let scope::DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
                     *slot = crate::records::feature::fillet_set::DesignFilletScope::admit(
                         construction,
@@ -604,12 +628,12 @@ pub(crate) fn decode_parameter_scopes(
             {
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
-                let sets = chamfer_set_list(bytes, &records, &scope, parameters, parameter_owners);
+                let sets = chamfer_set_list(bytes, &records, &scope);
                 if let scope::DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
-                    *slot = crate::records::feature::chamfer_set::DesignChamferScope::admit(
-                        construction,
+                    *slot = crate::records::feature::chamfer_set::DesignChamferScope {
+                        fixed: construction,
                         sets,
-                    );
+                    };
                 }
             }
             if let Some(construction) =
@@ -629,6 +653,7 @@ pub(crate) fn decode_parameter_scopes(
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
                     ) => {
                         *slot = Some(value);
+                        losses.extend(referenced_revolve_reference_loss(bytes, &scope));
                         if let Some(length) = marker_one_revolve_assumed_length(bytes, &scope) {
                             losses.push(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(
                                 format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-269).", scope.id),
@@ -830,6 +855,27 @@ pub(crate) fn decode_parameter_scopes(
 
             out.push(scope);
         }
+        super::edge_flange::bind(
+            ctx,
+            bytes,
+            &records,
+            &stream_types,
+            &mut out[stream_scope_start..],
+        )?;
+        super::contour::bind(
+            bytes,
+            &records,
+            &stream_types,
+            sources,
+            &mut out[stream_scope_start..],
+        );
+        super::fold::bind(
+            ctx,
+            bytes,
+            &records,
+            &stream_types,
+            &mut out[stream_scope_start..],
+        )?;
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }
@@ -1262,8 +1308,8 @@ pub(crate) fn parameter_scope_tail_length_is_valid(
     }
 }
 
-/// Tail byte that begins the second marked reference of an 87-byte fixed tail.
-const FIXED_TAIL_SECOND_REFERENCE: usize = 30;
+/// Tail byte that begins the second marked reference of an 87- or 88-byte fixed tail.
+pub(super) const FIXED_TAIL_SECOND_REFERENCE: usize = 30;
 
 pub(crate) fn parameter_scope_previous_history_offset(
     kind: impl AsRef<str>,
@@ -1485,7 +1531,7 @@ fn parameter_scope_previous_history_offset_for_form(
         ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
         (_, 77 | 78) => Some(31),
-        (_, 87) if second_tail_reference => Some(41),
+        (_, 87 | 88) if second_tail_reference => Some(41),
         (_, 87) => Some(31),
         _ => None,
     }
@@ -2065,7 +2111,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             {
                 let construction = Some(operation);
                 if let scope::DesignScopePayloadMut::EdgeFlange(slot) = scope.payload_mut() {
-                    *slot = construction;
+                    *slot = construction.into();
                 }
             }
         }

@@ -16,8 +16,8 @@ fn empty_solved_partition_retains_the_carrier_and_reports_the_blocking_loss() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("empty solved partition decodes")
         .into_parts();
-    assert!(ir.model.bodies.is_empty());
-    assert!(ir.model.faces.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
+    assert!(ir.geometry.faces.is_empty());
     assert!(ir.model.features.is_empty());
     assert!(!report.geometry_transferred());
     let losses: Vec<_> = report
@@ -32,6 +32,7 @@ fn empty_solved_partition_retains_the_carrier_and_reports_the_blocking_loss() {
     );
     assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Blocking);
     assert!(!fidelity.retained_records().is_empty());
+    assert!(fidelity.unrepresented().is_empty());
     let native = ir.native.namespace("inventor").expect("native carrier");
     let carriers = native
         .arena_as::<crate::native::ActiveCarrierRecord>("active_carrier")

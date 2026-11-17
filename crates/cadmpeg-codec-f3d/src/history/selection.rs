@@ -1241,6 +1241,12 @@ pub(crate) fn bind_mirror_selection_planes(
         if matching_face_operands.next().is_some() {
             continue;
         }
+        // A face-recipe member keeps its recipe before the indexed header that closes an
+        // entity-selection reading of the same record, so a later recipe is not this member's.
+        let matching_face_operand = matching_face_operand.filter(|face| {
+            matching_operand
+                .is_none_or(|operand| face.recipe_program_offset < operand.next_byte_offset())
+        });
         let plane = if let Some(operand) = matching_operand {
             if matching_face_operand.is_some() {
                 continue;

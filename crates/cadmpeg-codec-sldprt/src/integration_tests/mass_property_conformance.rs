@@ -101,7 +101,7 @@ fn assert_active_body_target(ir: &CadIr, measure: &DeclaredMeasure) {
     let [body] = bodies.as_slice() else {
         panic!("one active configuration body")
     };
-    assert_eq!(ir.model.bodies.len(), 1, "one document body");
+    assert_eq!(ir.geometry.bodies.len(), 1, "one document body");
     assert_eq!(
         measure.target,
         DeclaredTarget::Bodies {

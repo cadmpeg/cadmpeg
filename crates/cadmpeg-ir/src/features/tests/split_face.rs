@@ -1,6 +1,6 @@
 #[test]
 fn split_face_methods_enforce_their_wire_shapes() {
-    use crate::features::SplitFaceMethod;
+    use crate::features::surfaces::SplitFaceMethod;
     for (wire, value) in [
         (
             serde_json::json!({"kind":"unresolved"}),

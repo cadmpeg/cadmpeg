@@ -220,12 +220,12 @@ fn source_parameter_range(
 ) -> Result<Option<FiniteVector<2>>, CodecError> {
     let point_position = |vertex: &VertexId| {
         let point_id = &ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|item| item.id == *vertex)?
             .point;
-        ir.model
+        ir.geometry
             .points
             .iter()
             .find(|item| &item.id == point_id)
@@ -234,15 +234,15 @@ fn source_parameter_range(
     let mut chosen = None;
     let mut disagreement = false;
     for edge in ir
-        .model
+        .geometry
         .edges
         .iter()
         .filter(|edge| edge.curve() == Some(source_id))
     {
         let (Some(range), Some(start), Some(end)) = (
             edge.param_range(),
-            point_position(&edge.start),
-            point_position(&edge.end),
+            edge.start().and_then(&point_position),
+            edge.end().and_then(&point_position),
         ) else {
             continue;
         };
@@ -280,7 +280,7 @@ pub(super) fn project(
 ) -> Result<WireProjectionOutcome, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let mut records = BTreeMap::new();
     for record in parameters {
@@ -382,7 +382,7 @@ pub(super) fn project(
         };
         let source_id = crate::ids::curve(&crate::ids::Stem::directory(source_sequence));
         let Some(source_geometry) = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == source_id)
@@ -829,7 +829,11 @@ pub(super) fn project(
                 }
                 let function_id =
                     crate::ids::curve(&crate::ids::Stem::directory(function_sequence));
-                let Some(function) = ir.model.curves.iter().find(|curve| curve.id == function_id)
+                let Some(function) = ir
+                    .geometry
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == function_id)
                 else {
                     super::push_geometry_loss(
                         &mut losses,
@@ -1126,7 +1130,7 @@ pub(super) fn project(
             sequences.record_curve(&offset_source_id, entry.sequence);
 
             ctx.charge_entities(1, "iges_geometry_offsets")?;
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: offset_source_id.clone(),
                 geometry: CurveGeometry::Solved(placed_geometry),
@@ -1141,32 +1145,35 @@ pub(super) fn project(
                         continue;
                     }
                 }),
+                native_ref: None,
             });
         }
 
         ctx.charge_entities(2, "iges_geometry_offsets")?;
-        ir.model.points.extend([
+        ir.geometry.points.extend([
             Point::new(start_point.clone(), start_position, None),
             Point::new(end_point.clone(), end_position, None),
         ]);
 
         ctx.charge_entities(2, "iges_geometry_offsets")?;
-        ir.model.vertices.extend([
+        ir.geometry.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
                 point: start_point,
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         sequences.record_curve(&curve_id, entry.sequence);
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry,
@@ -1181,6 +1188,7 @@ pub(super) fn project(
                     continue;
                 }
             }),
+            native_ref: None,
         });
         let carrier = match cadmpeg_ir::topology::EdgeCarrier::new(
             Some(curve_id.clone()),
@@ -1194,16 +1202,19 @@ pub(super) fn project(
         };
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
-            start: start_vertex,
-            end: end_vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                start_vertex,
+                end_vertex,
+            )),
             tolerance: None,
+            native_ref: None,
         });
 
         ctx.charge_entities(1, "iges_geometry_offsets")?;
-        let _attached = procedural_admission.add_curve(&mut ir.model, &curve_id, procedural)?;
+        let _attached = procedural_admission.add_curve(&mut ir.geometry, &curve_id, procedural)?;
 
         wire_edges.push(edge_id);
         decoded.insert(entry.sequence);

@@ -580,37 +580,26 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         },
     )
     .unwrap();
-    let body = |id: &str, region: &str, visible| Body {
+    let body = |id: &str, visible| Body {
         id: BodyId::mint(id).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(region).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible,
+        native_ref: None,
     };
     let bodies = [
-        body(
-            "f3d:brep/current/brep:body#1",
-            "test:model:region#current-region",
-            Some(true),
-        ),
-        body(
-            "f3d:brep/external/brep:body#1",
-            "test:model:region#external-region",
-            Some(true),
-        ),
-        body(
-            "f3d:brep/cache/brep:body#1",
-            "test:model:region#cache-region",
-            None,
-        ),
+        body("f3d:brep/current/brep:body#1", Some(true)),
+        body("f3d:brep/external/brep:body#1", Some(true)),
+        body("f3d:brep/cache/brep:body#1", None),
     ];
     let regions = [
         Region {
             id: RegionId::mint("test:model:region#current-region").expect("identity grammar"),
             body: bodies[0].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#current-shell").expect("identity grammar")],
+            native_ref: None,
         },
         Region {
             id: RegionId::mint("test:model:region#external-region").expect("identity grammar"),
@@ -618,41 +607,60 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
             shells: vec![
                 ShellId::mint("test:model:shell#external-shell").expect("identity grammar")
             ],
+            native_ref: None,
         },
         Region {
             id: RegionId::mint("test:model:region#cache-region").expect("identity grammar"),
             body: bodies[2].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#cache-shell").expect("identity grammar")],
+            native_ref: None,
         },
     ];
-    let shell = |id: &str, region: &str, face: &str| {
-        Shell::with_face(
+    let shell = |id: &str, region: &str| {
+        Shell::new(
             ShellId::mint(id).expect("identity grammar"),
             RegionId::mint(region).expect("identity grammar"),
-            FaceId::mint(face).expect("identity grammar"),
         )
     };
     let shells = [
         shell(
             "test:model:shell#current-shell",
             "test:model:region#current-region",
-            "f3d:brep/current/brep:face#1",
         ),
         shell(
             "test:model:shell#external-shell",
             "test:model:region#external-region",
-            "f3d:brep/external/brep:face#1",
         ),
         shell(
             "test:model:shell#cache-shell",
             "test:model:region#cache-region",
+        ),
+    ];
+    let faces = [
+        crate::test_support::bare_face(
+            "f3d:brep/current/brep:face#1",
+            "test:model:shell#current-shell",
+        ),
+        crate::test_support::bare_face(
+            "f3d:brep/external/brep:face#1",
+            "test:model:shell#external-shell",
+        ),
+        crate::test_support::bare_face(
             "f3d:brep/cache/brep:face#1",
+            "test:model:shell#cache-shell",
         ),
     ];
 
     assert_eq!(
-        crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(&operand, Some("current")),
+        crate::history::body_candidates::BodyCandidates::new(
+            &bodies,
+            &regions,
+            &shells,
+            &faces,
+            &[],
+            &[]
+        )
+        .external(&operand, Some("current")),
         Some(bodies[1].id.clone())
     );
 
@@ -674,8 +682,15 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
     operand =
         crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();
     assert_eq!(
-        crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(&operand, Some("current")),
+        crate::history::body_candidates::BodyCandidates::new(
+            &bodies,
+            &regions,
+            &shells,
+            &faces,
+            &[],
+            &[]
+        )
+        .external(&operand, Some("current")),
         None
     );
 }
@@ -994,22 +1009,23 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     let body = Body {
         id: BodyId::mint("f3d:brep:body#1").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:region#1").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: Some(true),
+        native_ref: None,
     };
     let region = Region {
         id: RegionId::mint("test:model:region#1").expect("identity grammar"),
         body: body.id.clone(),
         shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
+        native_ref: None,
     };
-    let shell = Shell::with_face(
+    let shell = Shell::new(
         ShellId::mint("test:model:shell#1").expect("identity grammar"),
         region.id.clone(),
-        FaceId::mint("f3d:brep:entity#7").expect("identity grammar"),
     );
+    let face = crate::test_support::bare_face("f3d:brep:entity#7", "test:model:shell#1");
     let inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scope),
         groups: std::slice::from_ref(&group),
@@ -1020,6 +1036,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     let mut selection = BodySelection::Native(group_id.into());
     super::super::bind_direct_body_recipe_body_selection(
@@ -1030,6 +1047,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -1082,6 +1100,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         std::slice::from_ref(&body),
         std::slice::from_ref(&region),
         std::slice::from_ref(&shell),
+        std::slice::from_ref(&face),
         std::slice::from_ref(&recipe),
         std::slice::from_ref(&link),
     );
@@ -1096,6 +1115,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(
             std::slice::from_ref(&body),
+            &[],
             &[],
             &[],
             std::slice::from_ref(&recipe),
@@ -1114,6 +1134,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             std::slice::from_ref(&body),
             &[],
             &[],
+            &[],
             std::slice::from_ref(&recipe),
             &links
         )
@@ -1126,6 +1147,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(
             std::slice::from_ref(&body),
+            &[],
             &[],
             &[],
             std::slice::from_ref(&recipe),
@@ -1141,6 +1163,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     assert_eq!(
         crate::history::body_candidates::BodyCandidates::new(
             &[body.clone(), second_body],
+            &[],
             &[],
             &[],
             std::slice::from_ref(&recipe),
@@ -1164,6 +1187,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     let native = format!(
         "{}:design-record#21",
@@ -1178,6 +1202,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -1221,6 +1246,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     let mut feature = Feature {
         product_definition: None,
@@ -1281,6 +1307,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         bodies: std::slice::from_ref(&body),
         regions: std::slice::from_ref(&region),
         shells: std::slice::from_ref(&shell),
+        faces: std::slice::from_ref(&face),
     };
     let mut move_feature = Feature {
         product_definition: None,

@@ -17,7 +17,7 @@ fn successive_session_commits_accumulate_entities_and_exactness() {
         draft.exactness(&id, crate::provenance::Exactness::Derived);
         session.commit(draft, &mut annotations).unwrap().unwrap();
     }
-    assert_eq!(session.document().model.points.len(), 4096);
+    assert_eq!(session.document().geometry.points.len(), 4096);
     assert_eq!(annotations.exactness().len(), 4096);
 }
 
@@ -63,10 +63,11 @@ fn rejected_candidates_keep_the_reusable_admission_facts() {
     };
     assert_eq!(append(asset(0), true), Ok(()));
     let mut dangling = CadIr::empty();
-    dangling.model.vertices.push(crate::topology::Vertex {
+    dangling.geometry.vertices.push(crate::topology::Vertex {
         id: "test:model:vertex#dangling".try_into().unwrap(),
         point: "test:model:point#missing".try_into().unwrap(),
         tolerance: None,
+        native_ref: None,
     });
     // An invalid candidate and a valid one its caller refuses both roll
     // back; the facts still describe the one admitted asset.

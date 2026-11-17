@@ -202,7 +202,7 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
 #[test]
 fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(cadmpeg_ir::topology::Point::new(
+    ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
             .expect("finite position"),
@@ -550,8 +550,8 @@ fn a_brep_error_blocks_a_step_export() {
     use cadmpeg_ir::report::Severity;
 
     let (mut document, _) = checked_design_history();
-    let face_id = document.ir.model.faces[0].id.to_string();
-    document.ir.model.faces[0].surface =
+    let face_id = document.ir.geometry.faces[0].id.to_string();
+    document.ir.geometry.faces[0].surface =
         SurfaceId::mint("fcstd:test:surface#missing").expect("valid absent surface identity");
     let directory = tempfile::tempdir().expect("temporary CADIR directory");
     let conversion = prepare_cadir_for_step(&document.ir, &directory.path().join("brep.json"));
@@ -583,13 +583,13 @@ fn a_brep_error_blocks_a_step_export() {
             .all(|finding| finding.entity.as_deref().is_none_or(|id| {
                 document
                     .ir
-                    .model
+                    .geometry
                     .faces
                     .iter()
                     .any(|face| face.id.as_str() == id)
                     || document
                         .ir
-                        .model
+                        .geometry
                         .surfaces
                         .iter()
                         .any(|surface| surface.id.as_str() == id)

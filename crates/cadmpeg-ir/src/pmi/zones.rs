@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::PmiTarget;
+use crate::references::InstanceTarget;
 use crate::scalar::{Length, PositiveLength};
 
 /// Additional size and placement constraints on a geometric tolerance.
@@ -29,7 +30,6 @@ pub struct ToleranceConstraints {
     )]
     pub maximum: Option<PositiveLength>,
     /// Independently specified tolerance zones.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub zones: Vec<ToleranceZone>,
 }
 
@@ -48,7 +48,6 @@ pub struct ToleranceZone {
     /// Source-defined zone form, such as `cylindrical or circular`.
     pub form: NonBlankString,
     /// Projected extents belonging to this zone.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub projections: Vec<ToleranceProjection>,
 }
 
@@ -58,10 +57,9 @@ pub struct ToleranceZone {
 #[serde(deny_unknown_fields)]
 pub struct ToleranceProjection {
     /// Features that bound the projected zone.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub boundaries: Vec<PmiTarget>,
+    pub boundaries: Vec<InstanceTarget<PmiTarget>>,
     /// Feature at the projection end.
-    pub end: PmiTarget,
+    pub end: InstanceTarget<PmiTarget>,
     /// Positive projection length in millimetres.
     pub length: PositiveLength,
     /// Signed projection offset in millimetres.
@@ -83,7 +81,7 @@ cadmpeg_core::named_optional_field!(deserialize_offset, Length, "offset");
 
 impl ToleranceProjection {
     /// Features that bound or terminate this projection.
-    pub fn targets(&self) -> impl Iterator<Item = &PmiTarget> {
+    pub fn targets(&self) -> impl Iterator<Item = &InstanceTarget<PmiTarget>> {
         self.boundaries.iter().chain(std::iter::once(&self.end))
     }
 }

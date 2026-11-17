@@ -86,8 +86,17 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ctx.container_only(),
     )?;
     body.losses.extend(transfer_losses);
-    let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
+    source_fidelity.annotations = annotations;
+    let (unknowns, classes): (Vec<_>, Vec<_>) = unknowns.into_iter().unzip();
+    let ids = unknowns
+        .iter()
+        .map(|record| record.id().clone())
+        .collect::<Vec<_>>();
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
+    for (id, classes) in ids.iter().zip(classes) {
+        source_fidelity.mark_untyped(id.as_str(), classes)?;
+    }
     Ok(Decoded {
         ir,
         body,

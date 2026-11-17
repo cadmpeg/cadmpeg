@@ -941,8 +941,8 @@ fn semantic_writer_round_trips_feature_output_scope() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(base.ir().model.bodies.len(), 2);
-    let scope = base.ir().model.bodies[0].id.as_str().to_owned();
+    assert_eq!(base.ir().geometry.bodies.len(), 2);
+    let scope = base.ir().geometry.bodies[0].id.as_str().to_owned();
     let mut source = sldprt_with_body(&body);
     source.extend(make_block(
         0x42,
@@ -965,9 +965,9 @@ fn semantic_writer_round_trips_feature_output_scope() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     assert_eq!(
         *decoded.ir().model.features[0].evaluation.outputs(),
-        vec![decoded.ir().model.bodies[0].id.clone()]
+        vec![decoded.ir().geometry.bodies[0].id.clone()]
     );
-    let output = decoded.ir().model.bodies[1].id.clone();
+    let output = decoded.ir().geometry.bodies[1].id.clone();
     decoded.ir_mut().model.features[0]
         .evaluation
         .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(vec![output]).unwrap());
@@ -992,11 +992,11 @@ fn semantic_writer_round_trips_feature_output_scope() {
         .unwrap();
     assert_eq!(
         sldprt_native(regenerated.ir()).feature_histories[0].features[0].properties["Scope"],
-        regenerated.ir().model.bodies[1].id.as_str()
+        regenerated.ir().geometry.bodies[1].id.as_str()
     );
     assert_eq!(
         *regenerated.ir().model.features[0].evaluation.outputs(),
-        vec![regenerated.ir().model.bodies[1].id.clone()]
+        vec![regenerated.ir().geometry.bodies[1].id.clone()]
     );
 }
 

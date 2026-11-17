@@ -53,11 +53,11 @@ fn decode_merges_partition_and_deltas_records() {
         .unwrap();
 
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 3);
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.position().get().x == 2000.0));
@@ -87,7 +87,7 @@ fn conflicting_missing_partition_point_has_one_counted_loss() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert!(!result.ir().model.points.iter().any(|point| {
+            assert!(!result.ir().geometry.points.iter().any(|point| {
                 let x = point.position().get().x;
                 x == 2000.0 || x == 3000.0
             }));
@@ -123,7 +123,7 @@ fn unused_history_point_conflict_has_no_geometry_loss() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
     assert!(!result
         .report()
         .losses
@@ -176,9 +176,9 @@ fn first_delta_fin_recovers_the_partition_face_head_loop() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
     assert!(!result
         .report()
         .losses
@@ -204,7 +204,7 @@ fn conflicting_first_delta_fin_remains_referenced_on_both_decode_paths() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert!(result.ir().model.faces.is_empty());
+            assert!(result.ir().geometry.faces.is_empty());
             let losses: Vec<_> = result
                 .report()
                 .losses
@@ -236,9 +236,9 @@ fn missing_fin_closes_through_partition_loop_and_ring_context() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
     assert!(!result
         .report()
         .losses
@@ -264,7 +264,7 @@ fn conflicting_fin_framing_keeps_one_loss_through_empty_and_metadata_paths() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert!(result.ir().model.faces.is_empty());
+            assert!(result.ir().geometry.faces.is_empty());
             let losses: Vec<_> = result
                 .report()
                 .losses
@@ -300,7 +300,7 @@ fn conflicting_first_partition_fin_retains_loop_reference_for_loss() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert_eq!(
         result
             .report()
@@ -326,8 +326,8 @@ fn unused_history_fin_conflict_has_no_topology_loss() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
     assert!(!result
         .report()
         .losses
@@ -349,9 +349,9 @@ fn missing_loop_closes_against_partition_face_and_fin_before_history() {
         )
         .unwrap();
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 3);
     assert!(!result
         .report()
         .losses
@@ -376,7 +376,7 @@ fn conflicting_loop_node_ids_keep_one_loss_through_empty_and_metadata_paths() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert!(result.ir().model.loops.is_empty());
+            assert!(result.ir().geometry.loops.is_empty());
             let losses: Vec<_> = result
                 .report()
                 .losses
@@ -410,8 +410,8 @@ fn unused_history_loop_conflict_has_no_topology_loss() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
     assert!(!result
         .report()
         .losses
@@ -435,9 +435,16 @@ fn typed_ownership_can_close_across_partition_and_deltas() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.shells[0].faces().len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(
+        result
+            .ir()
+            .geometry
+            .shell_faces(&result.ir().geometry.shells[0].id)
+            .count(),
+        1
+    );
     assert!(!result
         .report()
         .losses
@@ -483,7 +490,7 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
             .count(),
         1
     );
@@ -698,7 +705,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
 
     let surface_bindings = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .map(|surface| {
@@ -713,7 +720,7 @@ fn merged_opaque_geometry_retains_its_owning_site() {
         .collect::<Vec<_>>();
     let curve_bindings = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .map(|curve| {
@@ -768,7 +775,7 @@ fn partition_point_coordinates_win_over_complete_deltas_records() {
         .unwrap();
     let point = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str().ends_with("#60"))
@@ -822,10 +829,10 @@ fn unselected_deltas_bridges_do_not_enter_partition_membership() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .all(|point| point.position().get().x != 10_000.0));
@@ -853,9 +860,9 @@ fn partition_point_refs_do_not_select_deltas_framing() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -881,7 +888,7 @@ fn deltas_point_index_does_not_replace_partition_coordinates() {
 
     let point = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id.as_str().ends_with("#60"))
@@ -901,8 +908,8 @@ fn decode_recovers_overlapping_topology_records() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.points.len(), 3);
-    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
 }
 
 #[test]
@@ -911,9 +918,9 @@ fn decode_recovers_tripled_deltas_topology() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.coedges.len(), 3);
-    assert_eq!(result.ir().model.points.len(), 3);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
 }
 
 #[test]
@@ -925,7 +932,7 @@ fn decode_resolves_prefixed_deltas_edge_curve() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+    assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     )));
@@ -940,7 +947,7 @@ fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+    assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     )));
@@ -969,8 +976,8 @@ fn unique_delta_vertex_fills_missing_current_identity() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
     assert!(!result
         .report()
         .losses
@@ -995,7 +1002,7 @@ fn conflicting_current_start_vertex_has_one_loss_on_both_decode_paths() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            assert!(result.ir().model.faces.is_empty());
+            assert!(result.ir().geometry.faces.is_empty());
             let losses: Vec<_> = result
                 .report()
                 .losses
@@ -1027,8 +1034,8 @@ fn partition_vertex_precedence_ignores_ff_only_history_conflict() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
     assert!(!result
         .report()
         .losses
@@ -1051,10 +1058,10 @@ fn finite_vertex_tolerance_transfers_in_millimetres_and_nonpositive_is_counted()
             )
             .unwrap();
         if tolerance > 0.0 && tolerance.is_finite() && (tolerance * 1000.0).is_finite() {
-            assert_eq!(result.ir().model.faces.len(), 1);
+            assert_eq!(result.ir().geometry.faces.len(), 1);
             let values: Vec<_> = result
                 .ir()
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .filter_map(|vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get))
@@ -1062,7 +1069,7 @@ fn finite_vertex_tolerance_transfers_in_millimetres_and_nonpositive_is_counted()
             assert_eq!(values.len(), 1);
             assert!((values[0] - 0.1).abs() < f64::EPSILON);
         } else {
-            assert!(result.ir().model.faces.is_empty());
+            assert!(result.ir().geometry.faces.is_empty());
             assert!(result
                 .report()
                 .losses
@@ -1084,7 +1091,7 @@ fn unused_history_vertex_conflict_has_no_topology_loss() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(!result
         .report()
         .losses
@@ -1113,11 +1120,11 @@ fn partition_vertex_survives_missing_point_until_delta_fill() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
     assert!(result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .any(|point| point.position().get().x == 2000.0));

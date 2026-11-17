@@ -169,7 +169,8 @@ fn nullable_transform_slots_preserve_references_codes_matrix_and_source_links() 
         assert_eq!(
             losses.iter().any(|note| note.code
                 == crate::loss::F3dLossCode::FeatureMoveTransformPrefixAssumed.kind()),
-            codes != [0, 0] || references != [false; 4] && form != 2
+            codes != [0, 0] && (codes, form) != ([0, 1], 0)
+                || references != [false; 4] && form != 2
         );
         let DesignScopePayloadMut::Move(slot) = scope.payload_mut() else {
             panic!("Move");

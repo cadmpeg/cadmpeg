@@ -3,6 +3,7 @@ use super::{
     selected_work_planes, DesignConstructionOperandGroup, DesignFaceOperand, DesignOperandRole,
     DesignParameterScope,
 };
+use cadmpeg_ir::features::surfaces::SplitFaceMethod;
 
 pub(super) struct ProjectedSplitFace {
     pub(super) definition: cadmpeg_ir::features::FeatureDefinition,
@@ -22,8 +23,7 @@ pub(super) fn project_split_face(
         DesignSplitFaceDirectionReference, DesignSplitFaceMethod,
     };
     use cadmpeg_ir::features::{
-        FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3, SplitFaceMethod,
-        SplitFaceTool,
+        FaceSelection, FeatureDefinition, FeatureOperation, FiniteVector3, SplitFaceTool,
     };
 
     let mut losses = Vec::new();

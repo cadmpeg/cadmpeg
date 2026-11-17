@@ -16,6 +16,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
@@ -1349,7 +1350,7 @@ fn project_with_feature_index_and_displays(
                 id,
                 name: object_name(entity),
                 visible: None,
-                targets,
+                targets: targets.into_iter().map(InstanceTarget::new).collect(),
                 definition: PmiDefinition::GeometricTolerance {
                     tolerance: tolerance.kind,
                     magnitude: tolerance.magnitude,
@@ -1508,7 +1509,7 @@ fn project_datum(
             id,
             name,
             visible: None,
-            targets,
+            targets: targets.into_iter().map(InstanceTarget::new).collect(),
             definition: PmiDefinition::Datum { identification },
         }),
     )
@@ -1590,7 +1591,7 @@ fn project_lower_profile_tier(
         id,
         name,
         visible: None,
-        targets,
+        targets: targets.into_iter().map(InstanceTarget::new).collect(),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
             magnitude: cadmpeg_ir::pmi::PmiMagnitude::from_parts(magnitude, PmiQuantity::Length),
@@ -1924,7 +1925,7 @@ fn project_dimension(
             id,
             name: object_name(entity),
             visible: None,
-            targets,
+            targets: targets.into_iter().map(InstanceTarget::new).collect(),
             definition: PmiDefinition::Dimension(dimension),
         },
         inferred_spherical_target,

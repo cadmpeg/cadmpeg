@@ -282,6 +282,7 @@ impl DesignNative {
 pub(super) struct DesignModel {
     pub(super) configurations: Vec<DesignConfiguration>,
     pub(super) features: Vec<Feature>,
+    pub(super) history_bodies: Vec<cadmpeg_ir::history_body::HistoryBody>,
     pub(super) parameters: Vec<DesignParameter>,
     /// Canvas and decal assets that the geometry assets do not hold yet.
     pub(super) assets: Vec<Asset>,
@@ -300,6 +301,7 @@ impl DesignModel {
         let Self {
             configurations,
             features,
+            history_bodies,
             parameters,
             assets,
             feature_input_topologies,
@@ -312,6 +314,7 @@ impl DesignModel {
         } = self;
         model.configurations = configurations;
         model.features = features;
+        model.history_bodies = history_bodies;
         model.parameters = parameters;
         model.assets.extend(assets);
         model.feature_input_topologies = feature_input_topologies;
@@ -668,6 +671,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_construction_operand_groups,
         ),
     );
+    losses.extend(crate::design::decode::operands::fillet_set_list_losses(
+        &design.design_parameter_scopes,
+        &design.design_construction_operand_groups,
+        &design.design_fillet_radius_groups,
+        &prereqs.design_parameter_owners,
+    ));
     model.features = projected.features;
     model.parameters = projected.parameters;
     if projected.unordered_parameter_scopes != 0 {
@@ -718,9 +727,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut losses,
     )?;
 
-    crate::design::feature_project::form_cages::bind_form_cages(
+    crate::design::feature_project::form_cages::FormProjection::new(scan).project(
         ctx,
-        scan,
         &design.design_parameter_scopes,
         &mut model.features,
         geometry.subds,
@@ -808,6 +816,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.primary_brep,
     )?;
     losses.extend(bound_outputs.losses);
+    model.history_bodies = crate::history::history_bodies::fill(
+        ctx,
+        scan,
+        crate::history::history_bodies::Inputs {
+            features: &model.features,
+            scopes: &design.design_parameter_scopes,
+            histories: &design.asm_histories,
+            bindings: &scope_histories,
+            primary_brep: geometry.primary_brep,
+        },
+        &mut losses,
+    )?;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
@@ -852,7 +872,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             bodies: geometry.bodies,
             regions: geometry.regions,
             shells: geometry.shells,
+            faces: geometry.faces,
         },
+    ));
+    losses.extend(crate::history::combine_history_tools::bind(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &prereqs.design_body_bindings,
     ));
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
@@ -1068,6 +1094,27 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut losses,
     )?;
     super::mesh_operations::convert::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &mut losses,
+    )?;
+    super::mesh_operations::combine::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &mut losses,
+    )?;
+    super::mesh_operations::separate::bind_features(
+        ctx,
+        scan,
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &mut losses,
+    )?;
+    super::mesh_operations::plane_cut::bind_features(
         ctx,
         scan,
         &mut model.features,
@@ -1749,12 +1796,10 @@ fn extend_related_design_records(
             &prereqs.design_parameter_owners,
             &prereqs.design_parameters,
         );
-    let chamfer_set_conflicts =
-        crate::design::decode::scopes::chamfer_set::retain_consistent_chamfer_sets(
-            &mut design.design_parameter_scopes,
-            &decoded_groups,
-            &prereqs.design_parameter_owners,
-        );
+    let chamfer_set_conflicts = crate::design::decode::scopes::chamfer_set::chamfer_set_conflicts(
+        &design.design_parameter_scopes,
+        &prereqs.design_parameter_owners,
+    );
     profile_losses.extend(
         crate::design::decode::scopes::chamfer_set::chamfer_set_conflict_loss(
             &chamfer_set_conflicts,

@@ -355,6 +355,7 @@ impl FaceAdmission<'_, '_> {
             | FeatureOperation::KnitSurface { faces, .. }
             | FeatureOperation::TrimSurface { faces, .. }
             | FeatureOperation::ExtendSurface { faces, .. }
+            | FeatureOperation::UntrimSurface { faces, .. }
             | FeatureOperation::DeleteFace { faces, .. }
             | FeatureOperation::MoveFace { faces, .. }
             | FeatureOperation::Dome { faces, .. }

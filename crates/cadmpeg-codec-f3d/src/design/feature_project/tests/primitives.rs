@@ -264,6 +264,22 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         ]
     );
     assert!(losses.is_empty());
+    // A nonzero inferred-axis byte keeps the stored frame and reports it as assumed.
+    let mut stray = support.clone();
+    stray.fields.inferred_x_axis.value = 23;
+    stray.fields.inferred_z_axis.value = 96;
+    let Some(FeatureDefinition::Operation(FeatureOperation::Block {
+        placement: Some(stray_placement),
+        ..
+    })) = project_solid_primitive(&scope, &[stray], &mut losses)
+    else {
+        panic!("box with nonzero inferred-axis bytes");
+    };
+    assert_eq!(stray_placement.rows(), placement.rows());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::FeatureBoxSupportFlagsAssumed.kind()));
+    losses.clear();
     assert!(project_solid_primitive(&scope, &[], &mut losses).is_some());
     assert_eq!(losses.len(), 1);
     assert_eq!(
@@ -390,6 +406,28 @@ fn esfera_primitiva_projects_like_sphere() {
     assert_eq!(
         center.get(),
         cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+    );
+    assert!((radius.get() - 10.0).abs() < f64::EPSILON);
+    if let DesignScopePayloadMut::SpherePrimitive(Some(sphere)) = scope.payload_mut() {
+        sphere.support_transform = Some(crate::records::identity::Located {
+            value: crate::records::sketch_placement::SketchPlacementMatrix::try_from([
+                [0.0, -1.0, 0.0, 4.0],
+                [1.0, 0.0, 0.0, 5.0],
+                [0.0, 0.0, 1.0, 6.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ])
+            .unwrap(),
+            offset: 100,
+        });
+    }
+    let Some(FeatureDefinition::Operation(FeatureOperation::Sphere { center, radius, .. })) =
+        project_solid_primitive(&scope, &[], &mut Vec::new())
+    else {
+        panic!("sphere with composed support");
+    };
+    assert_eq!(
+        center.get(),
+        cadmpeg_ir::math::Point3::new(20.0, 60.0, 90.0)
     );
     assert!((radius.get() - 10.0).abs() < f64::EPSILON);
 }

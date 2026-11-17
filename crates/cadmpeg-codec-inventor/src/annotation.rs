@@ -16,7 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId};
 use cadmpeg_ir::pmi::zones::ToleranceConstraints;
 use cadmpeg_ir::pmi::{
@@ -270,9 +270,9 @@ struct Outcome {
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     inputs: &Inputs<'_>,
-    model: &mut Model,
+    ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<Vec<LossNote>, CodecError> {
-    let names = BodyNames::new(model);
+    let names = BodyNames::new(ir);
     let mut outcome = Outcome::default();
     let mut annotations = Vec::new();
     for rse_segment in &inputs.rse.segments {
@@ -379,8 +379,8 @@ pub(crate) fn project(
         cadmpeg_core::decode::u64_from_index(annotations.len()),
         "Inventor part annotations",
     )?;
-    model.pmi.extend(annotations);
-    model
+    ir.model.pmi.extend(annotations);
+    ir.model
         .pmi
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     Ok(losses(&outcome))
@@ -552,7 +552,7 @@ fn dimension(
         id: annotation_id(segment, owner_ordinal)?,
         name: name.map(str::to_owned),
         visible: None,
-        targets,
+        targets: targets.into_iter().map(Into::into).collect(),
         definition: PmiDefinition::Dimension(definition),
     }))
 }
@@ -844,7 +844,7 @@ fn datums(
             id,
             name: labels.get(&owner).cloned().flatten(),
             visible: None,
-            targets,
+            targets: targets.into_iter().map(Into::into).collect(),
             definition: PmiDefinition::Datum {
                 identification: label,
             },
@@ -958,7 +958,10 @@ fn frame(
         id: annotation_id(segment, owner_ordinal)?,
         name: name.map(str::to_owned),
         visible: None,
-        targets: owner_targets(scope, owner_ordinal, intent.as_slice(), outcome),
+        targets: owner_targets(scope, owner_ordinal, intent.as_slice(), outcome)
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: kind,
             magnitude,

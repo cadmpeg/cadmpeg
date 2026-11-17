@@ -178,6 +178,7 @@ fn exact_rectangular_pattern_direction(
     selection_record_index: u32,
     scope_record_index: u32,
 ) -> Option<patterns::DesignRectangularPatternDirection> {
+    use crate::layout::rectangular_pattern_compact_extent_direction_record as compact_extent;
     use crate::layout::rectangular_pattern_compact_spacing_direction_record as compact;
     use crate::layout::rectangular_pattern_direction_record as frame;
     use crate::layout::rectangular_pattern_spacing_direction_record as spacing;
@@ -187,13 +188,16 @@ fn exact_rectangular_pattern_direction(
     let shift = match (length, distance_type) {
         (frame::LEN, 8) => 0,
         (spacing::LEN, 7) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
-        (compact::LEN, 7) => 0,
+        (compact::LEN, 7) | (compact_extent::LEN, 8) => 0,
         _ => return None,
     };
     let compact_spacing = length == compact::LEN;
+    let extent_form = length == compact_extent::LEN;
     let at = |offset| {
         start
-            + if compact_spacing && offset >= frame::INDEX_PLUS_ONE_REFERENCE {
+            + if extent_form && offset >= frame::SELECTION_COUNT {
+                offset - (frame::SELECTION_COUNT - compact_extent::SELECTION_COUNT)
+            } else if compact_spacing && offset >= frame::INDEX_PLUS_ONE_REFERENCE {
                 offset - (frame::INDEX_PLUS_ONE_REFERENCE - compact::INDEX_PLUS_ONE_REFERENCE)
             } else if compact_spacing && offset >= frame::SELECTION_COUNT {
                 offset - (frame::SELECTION_COUNT - compact::SELECTION_COUNT)
@@ -213,6 +217,7 @@ fn exact_rectangular_pattern_direction(
         || !matches!(selection_kind, 8 | 16)
         || bytes.get(start + frame::ZERO_RUN_16..start + frame::FIXED_EIGHT) != Some(&[0; 16])
         || (!compact_spacing
+            && !extent_form
             && (0..3).any(|lane| {
                 View::f64_le_at(bytes, at(frame::NEGATIVE_ONES) + lane * 8) != Some(-1.0)
             }))
@@ -380,6 +385,7 @@ fn exact_rectangular_pattern_distribution(
     construction: &DesignRectangularPatternConstruction,
     directions: &[patterns::DesignRectangularPatternDirection],
 ) -> Option<patterns::DesignRectangularPatternDistribution> {
+    use crate::layout::rectangular_pattern_payload_counted_head as counted_head;
     use crate::layout::rectangular_pattern_payload_distribution as block;
     use crate::layout::rectangular_pattern_payload_prefix as prefix;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
@@ -393,15 +399,31 @@ fn exact_rectangular_pattern_distribution(
         return None;
     };
     let after_prefix = start + prefix::LEN;
-    let at = match bytes.get(after_prefix)? {
-        0 => after_prefix + 1,
+    // `at` is the block offset that places `FIXED_TWO` on the u32 `2`.
+    let (at, zero_run) = match bytes.get(after_prefix)? {
+        0 => {
+            let head = after_prefix + 1;
+            if View::u32_le_at(bytes, head + counted_head::COUNT) == Some(counted_head::COUNT_VALUE)
+            {
+                // The counted form replaces the twelve zero bytes with the
+                // count, a marked record reference, and four zero bytes.
+                marked_record_reference(bytes, head + counted_head::REFERENCE)?;
+                (
+                    (head + counted_head::LEN).checked_sub(block::FIXED_TWO)?,
+                    head + counted_head::ZERO_RUN..head + counted_head::LEN,
+                )
+            } else {
+                (head, head + block::ZERO_RUN..head + block::FIXED_TWO)
+            }
+        }
         1 => {
             marked_record_reference(bytes, after_prefix)?;
-            after_prefix + MARKED_REFERENCE_LEN
+            let at = after_prefix + MARKED_REFERENCE_LEN;
+            (at, at + block::ZERO_RUN..at + block::FIXED_TWO)
         }
         _ => return None,
     };
-    if bytes.get(at + block::ZERO_RUN..at + block::FIXED_TWO) != Some(&[0; 12])
+    if bytes.get(zero_run.clone())? != &[0; 12][..zero_run.len()]
         || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
         || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
     {

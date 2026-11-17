@@ -182,7 +182,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             .expect("datum")
     };
     assert!(
-        matches!(datum("A").targets.as_slice(), [PmiTarget::Face { face }] if face.as_str() == "creo:visibgeom:face#106")
+        matches!(datum("A").targets.as_slice(), [cadmpeg_ir::references::InstanceTarget { entity: PmiTarget::Face { face }, .. }] if face.as_str() == "creo:visibgeom:face#106")
     );
     for (label, center_x) in [("B", -325.0), ("C", 325.0)] {
         let [target] = datum(label).targets.as_slice() else {
@@ -303,7 +303,10 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
 /// Assert the two opposed slot walls of the STEP twin's position targets:
 /// faces 805 and 801 at x = -192.5 and -107.5, or faces 852 and 848 at
 /// y = 25 and -25.
-fn assert_slot_walls(result: &cadmpeg_ir::codec::DecodeResult, targets: &[PmiTarget]) {
+fn assert_slot_walls(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    targets: &[cadmpeg_ir::references::InstanceTarget<PmiTarget>],
+) {
     let [first, second] = targets else {
         panic!("two slot walls: {targets:?}")
     };
@@ -327,23 +330,29 @@ fn assert_slot_walls(result: &cadmpeg_ir::codec::DecodeResult, targets: &[PmiTar
     }
 }
 
-fn target_plane(result: &cadmpeg_ir::codec::DecodeResult, target: &PmiTarget) -> ([f64; 3], f64) {
-    let PmiTarget::Face { face } = target else {
+fn target_plane(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
+) -> ([f64; 3], f64) {
+    let PmiTarget::Face { face } = &target.entity else {
         panic!("face target")
     };
     face_plane(result, face.as_str())
 }
 
-fn target_cylinder_radius(result: &cadmpeg_ir::codec::DecodeResult, target: &PmiTarget) -> f64 {
+fn target_cylinder_radius(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
+) -> f64 {
     target_cylinder(result, target).2
 }
 
 /// The origin, unit axis, and radius of a face target's cylindrical carrier.
 fn target_cylinder(
     result: &cadmpeg_ir::codec::DecodeResult,
-    target: &PmiTarget,
+    target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
 ) -> ([f64; 3], [f64; 3], f64) {
-    let PmiTarget::Face { face } = target else {
+    let PmiTarget::Face { face } = &target.entity else {
         panic!("face target")
     };
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -363,13 +372,13 @@ fn face_surface<'a>(
     result: &'a cadmpeg_ir::codec::DecodeResult,
     face: &str,
 ) -> Option<&'a cadmpeg_ir::geometry::SurfaceGeometry> {
-    let model = &result.ir().model;
-    let surface = &model
+    let geometry = &result.ir().geometry;
+    let surface = &geometry
         .faces
         .iter()
         .find(|item| item.id.as_str() == face)?
         .surface;
-    model
+    geometry
         .surfaces
         .iter()
         .find(|item| &item.id == surface)
@@ -534,7 +543,7 @@ fn keeps_a_tag_separate_when_unparsed_rows_can_repeat_its_label() {
     assert!(!datum_a.iter().any(|item| {
         item.targets
             .iter()
-            .any(|target| matches!(target, PmiTarget::Face { .. }))
+            .any(|target| matches!(target.entity, PmiTarget::Face { .. }))
     }));
 }
 

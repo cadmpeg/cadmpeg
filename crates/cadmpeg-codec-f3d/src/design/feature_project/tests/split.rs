@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_ir::features::surfaces::SplitFaceMethod;
 
 use cadmpeg_core::decode::u64_from_index;
 
@@ -627,7 +628,7 @@ fn role_nine_tool_group_projects_as_a_face_tool() {
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
             targets: FaceSelection::Native(_),
             tool: SplitFaceTool::Faces(FaceSelection::Native(_)),
-            method: cadmpeg_ir::features::SplitFaceMethod::Unresolved {},
+            method: cadmpeg_ir::features::surfaces::SplitFaceMethod::Unresolved {},
         })
     ));
     assert!(projected.losses.iter().any(|loss| {
@@ -640,7 +641,7 @@ fn supported_split_face_methods_project_as_decoded() {
     use crate::records::feature::split_face::{
         DesignSplitFaceDirectionReference, DesignSplitFaceMethod,
     };
-    use cadmpeg_ir::features::SplitFaceMethod;
+    use cadmpeg_ir::features::surfaces::SplitFaceMethod;
 
     for (native, expected) in [
         (
@@ -690,7 +691,7 @@ fn along_vector_keeps_the_solved_vector_and_unresolved_source_identity() {
         DesignSplitFaceDirectionReference, DesignSplitFaceMethod,
     };
     use crate::records::identity::{Located, ReferenceRun};
-    use cadmpeg_ir::features::{FeatureOperation, SplitFaceMethod};
+    use cadmpeg_ir::features::FeatureOperation;
     use cadmpeg_ir::math::Vector3;
 
     let (mut scope, groups) = split_face_fixture(DesignOperandRole::ROLE_0X9);
@@ -794,7 +795,7 @@ fn missing_direction_definition_keeps_the_reference_in_the_default_native_stream
     );
     let FeatureDefinition::Operation(FeatureOperation::SplitFace {
         method:
-            cadmpeg_ir::features::SplitFaceMethod::AlongVector {
+            cadmpeg_ir::features::surfaces::SplitFaceMethod::AlongVector {
                 direction,
                 native_carrier,
                 ..
@@ -813,7 +814,7 @@ fn missing_direction_definition_keeps_the_reference_in_the_default_native_stream
 
 #[test]
 fn missing_split_face_definition_stays_typed_with_named_losses() {
-    use cadmpeg_ir::features::{FaceSelection, FeatureOperation, SplitFaceMethod, SplitFaceTool};
+    use cadmpeg_ir::features::{FaceSelection, FeatureOperation, SplitFaceTool};
 
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
@@ -1140,7 +1141,7 @@ fn along_vector_preserves_extreme_values_and_input_slots() {
         DesignSplitFaceDirectionReference as Reference, DesignSplitFaceMethod,
     };
     use crate::records::identity::Located;
-    use cadmpeg_ir::features::SplitFaceMethod;
+    use cadmpeg_ir::features::surfaces::SplitFaceMethod;
     let finite = |value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
     for value in [1.0e200, 1.0e-200] {
         let (mut scope, groups) = split_face_fixture(DesignOperandRole::ROLE_0X9);
@@ -1216,7 +1217,7 @@ fn along_vector_distinguishes_partial_and_complete_input_runs() {
         DesignSplitFaceDirectionReference as Reference, DesignSplitFaceMethod,
     };
     use crate::records::identity::Located;
-    use cadmpeg_ir::features::SplitFaceMethod;
+    use cadmpeg_ir::features::surfaces::SplitFaceMethod;
     let finite = |value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
     for (count, complete) in [(1, true), (2, false)] {
         let (mut scope, groups) = split_face_fixture(DesignOperandRole::ROLE_0X9);

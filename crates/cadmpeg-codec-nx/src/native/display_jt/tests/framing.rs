@@ -101,7 +101,6 @@ fn jt_compressed_sequence_decodes_one_element_and_sequence() {
     let (data, segment) = compressed_jt_fixture();
     let container = Container {
         data: data.as_slice().into(),
-        physical_size: cadmpeg_core::decode::u64_from_index(data.len()),
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".into(),

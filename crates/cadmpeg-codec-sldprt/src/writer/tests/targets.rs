@@ -64,9 +64,12 @@ fn semantic_writer_reclassifies_the_final_retained_envelope() {
 
 fn sourced_ir(dialect: &'static str) -> CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -88,7 +91,7 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
 fn explicit_cross_dialect_transcode_refuses_without_consuming_present_image() {
     let ir = sourced_ir("sldprt:sw-version-12000-plus");
     let data = b"present retained image".to_vec();
-    let mut fidelity = SourceFidelity::default();
+    let mut fidelity = SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&data));
     let source_image_id: cadmpeg_ir::ids::UnknownId = crate::SOURCE_IMAGE_ID
         .to_owned()
         .try_into()

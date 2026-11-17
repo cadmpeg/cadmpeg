@@ -21,9 +21,12 @@ fn physically_dependent_point_retains_source_without_becoming_a_free_vertex() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert!(result.ir().model.vertices.is_empty());
-    let source = result.ir().model.points[0].source_object.as_ref().unwrap();
+    assert_eq!(result.ir().geometry.points.len(), 1);
+    assert!(result.ir().geometry.vertices.is_empty());
+    let source = result.ir().geometry.points[0]
+        .source_object
+        .as_ref()
+        .unwrap();
     assert_eq!(source.object_id.as_str(), "D1");
     assert_eq!(
         source.geometry_role,
@@ -39,7 +42,7 @@ fn unreadable_required_nurbs_pole_has_a_geometry_loss_and_refuses_strict_mode() 
         let recovered = IgesCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .unwrap();
-        assert!(recovered.ir().model.curves.is_empty(), "{literal}");
+        assert!(recovered.ir().geometry.curves.is_empty(), "{literal}");
         assert!(recovered
             .report()
             .losses
@@ -67,7 +70,7 @@ fn optional_nurbs_literals_do_not_hide_readable_poles() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(result.ir().model.curves.len(), 1, "{claim}, {normal}");
+        assert_eq!(result.ir().geometry.curves.len(), 1, "{claim}, {normal}");
         assert!(result.ir().native.namespace("iges").unwrap().arenas()
             ["quarantined_parameter_records"]
             .is_empty());
@@ -81,7 +84,7 @@ fn spline_claim_recovery_is_rejected_by_strict_mode() {
     let recovered = IgesCodec
         .decode(&mut Cursor::new(&input), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(recovered.ir().model.curves.len(), 1);
+    assert_eq!(recovered.ir().geometry.curves.len(), 1);
     assert!(recovered
         .report()
         .losses
@@ -120,7 +123,7 @@ fn unusable_metadata_use_flag_does_not_report_a_geometry_drop() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(!result
         .report()
         .losses

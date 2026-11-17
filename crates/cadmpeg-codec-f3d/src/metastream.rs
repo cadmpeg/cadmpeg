@@ -205,6 +205,46 @@ fn take_version_guid(
     })
 }
 
+/// Take the context's asset identity: a GUID, or a GUID joined to its version
+/// URN by `_` in one LP-UTF16 string.
+fn take_version_asset(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
+    const FIELD: &str = "version-context asset GUID";
+    let initial = *at;
+    if take_version_guid(bytes, at, FIELD, true).is_ok() {
+        return Ok(());
+    }
+    for prefix_len in [0, 4] {
+        if prefix_len != 0 && View::u32_le_at(bytes, initial) != Some(0) {
+            continue;
+        }
+        let Some(text_at) = initial.checked_add(prefix_len) else {
+            continue;
+        };
+        let Some((text, next)) = lp_utf16_bounded(bytes, text_at, 42..=1100) else {
+            continue;
+        };
+        let Some((guid, urn)) = text.split_at_checked(36) else {
+            continue;
+        };
+        let Some(urn) = urn.strip_prefix('_') else {
+            continue;
+        };
+        if is_guid_hyphenated(guid)
+            && urn.len() > 4
+            && urn.as_bytes()[..4].eq_ignore_ascii_case(b"urn:")
+            && urn.as_bytes().iter().all(u8::is_ascii_graphic)
+        {
+            *at = next;
+            return Ok(());
+        }
+    }
+    *at = initial;
+    Err(ParseFailure {
+        field: FIELD,
+        offset: initial,
+    })
+}
+
 fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
     let initial = *at;
     for prefix_len in [0, 4] {
@@ -250,7 +290,7 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
         let token_end = require(at.checked_add(8), "version-context token", *at)?;
         require(bytes.get(*at..token_end), "version-context token", *at)?;
         *at = token_end;
-        take_version_guid(bytes, at, "version-context asset GUID", true)?;
+        take_version_asset(bytes, at)?;
 
         // Legacy full contexts omit the separate revision GUID and place the
         // version URN directly after the asset GUID.
@@ -510,6 +550,29 @@ mod tests {
     #[test]
     fn rejects_unframed_empty_input() {
         assert!(parse(&[], "empty").is_err());
+    }
+
+    #[test]
+    fn parses_asset_identity_joined_to_version_urn() {
+        let mut bytes = stream_prefix();
+        bytes.extend_from_slice(&15u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0x1122_3344_5566_7788u64.to_le_bytes());
+        lp_utf16(
+            &mut bytes,
+            "11111111-2222-3333-4444-555555555555_urn:synthetic:version:1",
+        );
+        lp_utf16(&mut bytes, "66666666-7777-8888-9999-aaaaaaaaaaaa");
+        lp_utf16(&mut bytes, "urn:synthetic:version:2");
+        lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        parse(&bytes, "joined-asset").expect("joined asset identity");
+
+        let mut bad = bytes.clone();
+        let at = bad.windows(2).position(|w| w == b"_\0").expect("separator");
+        bad[at] = b'-';
+        assert!(parse(&bad, "bad-joined-asset").is_err());
     }
 
     #[test]

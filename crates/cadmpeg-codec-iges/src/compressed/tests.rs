@@ -55,7 +55,7 @@ fn compressed_optional_global_suffix_recovers_the_same_points_as_fixed_ascii() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert_eq!(decoded.ir().geometry.points.len(), 2);
     assert!(decoded
         .report()
         .losses
@@ -194,7 +194,7 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
             .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
             .unwrap(),
     );
-    assert_eq!(result.ir().model.points.len(), 2);
+    assert_eq!(result.ir().geometry.points.len(), 2);
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["representation"],
         "compressed-ascii"
@@ -349,7 +349,7 @@ fn compressed_ascii_preserves_v4_and_v5_0_profiles() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(result.ir().model.points.len(), 2, "{version}");
+        assert_eq!(result.ir().geometry.points.len(), 2, "{version}");
         assert_eq!(
             result.report().dialects().unwrap().primary().declared()["effective_version"],
             version
@@ -379,7 +379,7 @@ fn compressed_ascii_accepts_non_default_delimiters() {
     let result = IgesCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 2);
+    assert_eq!(result.ir().geometry.points.len(), 2);
     assert_eq!(
         result.ir().source.as_ref().unwrap().attributes["parameter_delimiter"],
         "|"

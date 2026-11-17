@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Synthetic local occurrence carriers with empty attributes.
+//! Synthetic local occurrence carriers with empty or typed attributes.
 #![allow(clippy::unwrap_used)]
 
 use crate::test_support::component_body_test::{append_body_owners, body_type, container_type};
@@ -8,16 +8,21 @@ use crate::test_support::{indexed_header, lp_ascii, lp_utf16};
 use cadmpeg_core::decode::u64_from_index;
 
 pub(crate) fn empty_attribute_local_component_design(body_owners: &[u64]) -> (Vec<u8>, Vec<u8>) {
-    nested_local_component_design_form(body_owners, false)
+    nested_local_component_design_form(body_owners, false, false)
 }
 
 pub(crate) fn later_identity_local_component_design() -> (Vec<u8>, Vec<u8>) {
-    nested_local_component_design_form(&[300], true)
+    nested_local_component_design_form(&[300], true, false)
+}
+
+pub(crate) fn attributed_local_component_design() -> (Vec<u8>, Vec<u8>) {
+    nested_local_component_design_form(&[300], false, true)
 }
 
 fn nested_local_component_design_form(
     body_owners: &[u64],
     later_identity: bool,
+    attributed: bool,
 ) -> (Vec<u8>, Vec<u8>) {
     let mut bulk = Vec::new();
     let mut records = Vec::new();
@@ -75,9 +80,25 @@ fn nested_local_component_design_form(
             bulk.push(0);
         } else {
             bulk.push(1);
-            bulk.extend_from_slice(&0_u32.to_le_bytes());
+            bulk.extend_from_slice(&(if attributed { 3_u32 } else { 0 }).to_le_bytes());
+            if attributed {
+                for name in ["GatedByParent", "ResolutionTime", "SelfGated"] {
+                    lp_ascii(&mut bulk, name);
+                    if name == "ResolutionTime" {
+                        lp_ascii(&mut bulk, "IntrinsicMetaTypeHString");
+                        lp_utf16(&mut bulk, "");
+                    } else {
+                        lp_ascii(&mut bulk, "IntrinsicMetaTypebool");
+                        bulk.push(0);
+                    }
+                }
+                bulk.extend_from_slice(&[0; 2]);
+            }
         }
         bulk.extend_from_slice(&ordinal.to_le_bytes());
+        if attributed {
+            bulk.push(1);
+        }
         lp_utf16(&mut bulk, "00000000-0000-4000-8000-000000000999");
         lp_utf16(&mut bulk, &format!("00000000-0000-4000-8001-{record:012}"));
         bulk.push(0);

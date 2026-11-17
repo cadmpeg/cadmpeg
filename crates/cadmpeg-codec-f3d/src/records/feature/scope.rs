@@ -41,6 +41,7 @@ use super::primitives::{
     DesignBoxPrimitive, DesignCylinderPrimitive, DesignSolidPrimitive, DesignSpherePrimitive,
     DesignTorusPrimitive,
 };
+use super::sheet_metal::edge::{DesignEdgeFlangeScope, DesignReferenceEdgeFlange};
 use super::sheet_metal::{
     DesignBaseFlangeOperation, DesignEdgeFlangeOperation, DesignHemOperation,
 };
@@ -48,7 +49,7 @@ use super::split_face::{DesignSplitFaceOperation, DesignSplitFaceScope};
 use super::surface_ops::{
     DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfacePatchBoundary, DesignSurfacePatchNormalState, DesignSurfacePatchScope,
-    DesignSurfacePatchSelection, DesignSurfaceStitchOperation,
+    DesignSurfacePatchSelection, DesignSurfaceStitchOperation, DesignSurfaceUntrimOperation,
 };
 use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
@@ -185,6 +186,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_edge_flange_operation,
     DesignEdgeFlangeOperation,
     "edge_flange_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_edge_flange_construction,
+    DesignReferenceEdgeFlange,
+    "edge_flange_construction"
 );
 cadmpeg_core::named_optional_field!(deserialize_entity_id, String, "entity_id");
 cadmpeg_core::named_optional_field!(
@@ -330,6 +336,11 @@ cadmpeg_core::named_optional_field!(
     "surface_extend_operation"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_surface_untrim_operation,
+    DesignSurfaceUntrimOperation,
+    "surface_untrim_operation"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_surface_offset_operation,
     DesignSurfaceOffsetOperation,
     "surface_offset_operation"
@@ -445,6 +456,12 @@ impl<T> ScopePayloadCompleteness for Option<T> {
 impl<T> ScopePayloadCompleteness for Vec<T> {
     fn is_uninterpreted(&self) -> bool {
         false
+    }
+}
+
+impl ScopePayloadCompleteness for DesignEdgeFlangeScope {
+    fn is_uninterpreted(&self) -> bool {
+        matches!(self, Self::Unresolved)
     }
 }
 
@@ -743,6 +760,9 @@ impl Serialize for DesignFeatureKind {
 
 design_feature_kinds! {
     data {
+        ContourFlange => "ContourFlange": Option<super::sheet_metal::contour::DesignContourFlangeOperation>,
+        Unfold => "Unfold": Option<super::sheet_metal::fold::DesignUnfoldOperation>,
+        Refold => "Refold": Option<super::sheet_metal::fold::DesignRefoldOperation>,
         Sketch => "Sketch": Option<DesignSketchEntityBinding>,
         Assemble => "Assemble": Option<DesignAssemblyAlignment>,
         AsBuilt => "As-built": Option<DesignAssemblyAlignment>,
@@ -771,11 +791,12 @@ design_feature_kinds! {
         SurfacePatch => "SurfacePatch": DesignSurfacePatchScope,
         SurfaceExtend => "SurfaceExtend": Option<DesignSurfaceExtendOperation>,
         SurfaceOffset => "SurfaceOffset": Option<DesignSurfaceOffsetOperation>,
+        SurfaceUntrim => "SurfaceUntrim": Option<DesignSurfaceUntrimOperation>,
         Hole => "Hole": crate::records::feature::hole::DesignHoleScope,
         Scale => "Scale": Option<DesignScaleOperation>,
         Thread => "Thread": Option<DesignThreadConstruction>,
         Emboss => "Emboss": Option<DesignEmbossConstruction>,
-        EdgeFlange => "EdgeFlange": Option<DesignEdgeFlangeOperation>,
+        EdgeFlange => "EdgeFlange": DesignEdgeFlangeScope,
         Hem => "Hem": Option<DesignHemOperation>,
         BaseFlange => "BaseFlange": Option<DesignBaseFlangeScope>,
         ComponentInsert => "Component Insert": DesignComponentInsertScope,
@@ -819,6 +840,7 @@ design_feature_kinds! {
         UnStitch => "UnStitch",
         RemoveBody => "RemoveBody",
         Face => "Face",
+        Bend => "Bend",
     }
 }
 
@@ -1124,6 +1146,24 @@ struct DesignParameterScopeSerde {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_contour_flange_operation"
+    )]
+    contour_flange_operation: Option<super::sheet_metal::contour::DesignContourFlangeOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_unfold_operation"
+    )]
+    unfold_operation: Option<super::sheet_metal::fold::DesignUnfoldOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_refold_operation"
+    )]
+    refold_operation: Option<super::sheet_metal::fold::DesignRefoldOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_mesh_face_groups"
     )]
     mesh_face_groups: Option<super::mesh_face_groups::DesignMeshFaceGroups>,
@@ -1141,6 +1181,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_extend_operation"
     )]
     surface_extend_operation: Option<DesignSurfaceExtendOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_surface_untrim_operation"
+    )]
+    surface_untrim_operation: Option<DesignSurfaceUntrimOperation>,
     /// Exact distance and boundary records carried by a `SurfaceOffset` scope.
     #[serde(
         default,
@@ -1184,6 +1230,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_edge_flange_operation"
     )]
     edge_flange_operation: Option<DesignEdgeFlangeOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_edge_flange_construction"
+    )]
+    edge_flange_construction: Option<DesignReferenceEdgeFlange>,
     /// Exact edge, parameter, and settings records carried by a `Hem` scope.
     #[serde(
         default,
@@ -1872,6 +1924,12 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             wire.path_feature = None;
         }
         let mut present = Vec::new();
+        if wire.unfold_operation.is_some() {
+            present.push("unfold_operation");
+        }
+        if wire.refold_operation.is_some() {
+            present.push("refold_operation");
+        }
         if wire.extrude.is_some() {
             present.push("extrude");
         }
@@ -1926,6 +1984,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.surface_extend_operation.is_some() {
             present.push("surface_extend_operation");
         }
+        if wire.surface_untrim_operation.is_some() {
+            present.push("surface_untrim_operation");
+        }
         if wire.surface_offset_operation.is_some() {
             present.push("surface_offset_operation");
         }
@@ -1941,6 +2002,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.edge_flange_operation.is_some() {
             present.push("edge_flange_operation");
         }
+        if wire.edge_flange_construction.is_some() {
+            present.push("edge_flange_construction");
+        }
         if wire.hem_operation.is_some() {
             present.push("hem_operation");
         }
@@ -1950,11 +2014,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.fillet_sets.is_some() {
             present.push("fillet_sets");
         }
-        if wire.fixed_chamfer_parameters.is_some() {
-            present.push("fixed_chamfer_parameters");
-        }
-        if wire.chamfer_sets.is_some() {
-            present.push("chamfer_sets");
+        // A chamfer scope keeps its fixed lanes beside its set list, so both
+        // fields are one payload family.
+        if wire.fixed_chamfer_parameters.is_some() || wire.chamfer_sets.is_some() {
+            present.push("chamfer");
         }
         if wire.combine_operation.is_some() || wire.combine_named_tail.is_some() {
             present.push("combine_operation");
@@ -2176,6 +2239,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::SurfaceExtend => {
                 DesignScopePayload::SurfaceExtend(wire.surface_extend_operation.take())
             }
+            DesignFeatureKind::SurfaceUntrim => {
+                DesignScopePayload::SurfaceUntrim(wire.surface_untrim_operation.take())
+            }
             DesignFeatureKind::SurfaceOffset => {
                 DesignScopePayload::SurfaceOffset(wire.surface_offset_operation.take())
             }
@@ -2204,7 +2270,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::Thread(wire.thread_construction.take())
             }
             DesignFeatureKind::EdgeFlange => {
-                DesignScopePayload::EdgeFlange(wire.edge_flange_operation.take())
+                DesignScopePayload::EdgeFlange(match wire.edge_flange_construction.take() {
+                    Some(construction) => DesignEdgeFlangeScope::ReferenceFramed(construction),
+                    None => wire.edge_flange_operation.take().into(),
+                })
             }
             DesignFeatureKind::Hem => DesignScopePayload::Hem(wire.hem_operation.take()),
             DesignFeatureKind::BaseFlange => {
@@ -2271,6 +2340,12 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::UnStitch => DesignScopePayload::UnStitch,
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
             DesignFeatureKind::Face => DesignScopePayload::Face,
+            DesignFeatureKind::Bend => DesignScopePayload::Bend,
+            DesignFeatureKind::ContourFlange => {
+                DesignScopePayload::ContourFlange(wire.contour_flange_operation.take())
+            }
+            DesignFeatureKind::Unfold => DesignScopePayload::Unfold(wire.unfold_operation.take()),
+            DesignFeatureKind::Refold => DesignScopePayload::Refold(wire.refold_operation.take()),
             DesignFeatureKind::SpherePrimitive => {
                 DesignScopePayload::SpherePrimitive(match wire.solid_primitive.take() {
                     None => None,
@@ -2332,15 +2407,20 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.scale_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
+            || wire.contour_flange_operation.is_some()
+            || wire.unfold_operation.is_some()
+            || wire.refold_operation.is_some()
             || wire.mesh_face_groups.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
+            || wire.surface_untrim_operation.is_some()
             || wire.surface_offset_operation.is_some()
             || wire.ruled_surface_operation.is_some()
             || !wire.surface_patch_boundaries.is_empty()
             || wire.surface_patch_normal.is_some()
             || wire.surface_patch_selection.is_some()
             || wire.edge_flange_operation.is_some()
+            || wire.edge_flange_construction.is_some()
             || wire.hem_operation.is_some()
             || wire.fixed_fillet_parameters.is_some()
             || wire.fillet_sets.is_some()
@@ -2416,6 +2496,20 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 .map_err(DesignParameterScopePayloadError)?,
             paired_byte_offset: wire.paired_byte_offset,
         })?;
+        if admitted
+            .contour_flange_operation()
+            .is_some_and(|operation| !operation.valid_for_scope(&admitted))
+            || admitted
+                .unfold_operation()
+                .is_some_and(|operation| !operation.valid_for_scope(&admitted))
+            || admitted
+                .refold_operation()
+                .is_some_and(|operation| !operation.valid_for_scope(&admitted))
+        {
+            return Err(DesignParameterScopePayloadError(
+                "fold operation disagrees with scope".into(),
+            ));
+        }
         if captured_positions
             .as_ref()
             .is_some_and(|positions| !positions.valid_for_scope(&admitted))
@@ -2504,9 +2598,13 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             scale_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
+            contour_flange_operation: None,
+            unfold_operation: None,
+            refold_operation: None,
             mesh_face_groups: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
+            surface_untrim_operation: None,
             surface_offset_operation: None,
             ruled_surface_operation: None,
             base_flange: None,
@@ -2514,6 +2612,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             surface_patch_normal: None,
             surface_patch_selection: None,
             edge_flange_operation: None,
+            edge_flange_construction: None,
             hem_operation: None,
             fixed_fillet_parameters: None,
             fillet_sets: None,
@@ -2622,6 +2721,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::CombineFaceGroups(value) => wire.mesh_face_groups = value,
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
+            DesignScopePayload::SurfaceUntrim(value) => wire.surface_untrim_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
             DesignScopePayload::SurfaceRuled(value) => wire.ruled_surface_operation = Some(value),
             DesignScopePayload::SurfacePatch(value) => {
@@ -2629,8 +2729,19 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.surface_patch_normal = value.normal;
                 wire.surface_patch_selection = value.selection;
             }
-            DesignScopePayload::EdgeFlange(value) => wire.edge_flange_operation = value,
+            DesignScopePayload::EdgeFlange(value) => match value {
+                DesignEdgeFlangeScope::Legacy(operation) => {
+                    wire.edge_flange_operation = Some(operation);
+                }
+                DesignEdgeFlangeScope::ReferenceFramed(construction) => {
+                    wire.edge_flange_construction = Some(construction);
+                }
+                DesignEdgeFlangeScope::Unresolved => {}
+            },
             DesignScopePayload::Hem(value) => wire.hem_operation = value,
+            DesignScopePayload::ContourFlange(value) => wire.contour_flange_operation = value,
+            DesignScopePayload::Unfold(value) => wire.unfold_operation = value,
+            DesignScopePayload::Refold(value) => wire.refold_operation = value,
             DesignScopePayload::Fillet(value) => {
                 wire.fixed_fillet_parameters = value.fixed;
                 wire.fillet_sets = value.sets;
@@ -2690,6 +2801,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::UnStitch
             | DesignScopePayload::RemoveBody
             | DesignScopePayload::Face
+            | DesignScopePayload::Bend
             | DesignScopePayload::Native(_) => {}
         }
         if base_flange_scope_is_absent(wire.base_flange.as_ref()) {
@@ -3127,6 +3239,33 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn contour_flange_operation(
+        &self,
+    ) -> Option<&super::sheet_metal::contour::DesignContourFlangeOperation> {
+        match &self.payload {
+            DesignScopePayload::ContourFlange(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn unfold_operation(
+        &self,
+    ) -> Option<&super::sheet_metal::fold::DesignUnfoldOperation> {
+        match &self.payload {
+            DesignScopePayload::Unfold(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn refold_operation(
+        &self,
+    ) -> Option<&super::sheet_metal::fold::DesignRefoldOperation> {
+        match &self.payload {
+            DesignScopePayload::Refold(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
     fn base_flange(&self) -> Option<&DesignBaseFlangeScope> {
         match &self.payload {
             DesignScopePayload::BaseFlange(value) => value.as_ref(),
@@ -3241,6 +3380,13 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn surface_untrim_operation(&self) -> Option<&DesignSurfaceUntrimOperation> {
+        match &self.payload {
+            DesignScopePayload::SurfaceUntrim(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn surface_offset_operation(&self) -> Option<&DesignSurfaceOffsetOperation> {
         match &self.payload {
             DesignScopePayload::SurfaceOffset(value) => value.as_ref(),
@@ -3257,7 +3403,16 @@ impl DesignParameterScope {
 
     pub(crate) fn edge_flange_operation(&self) -> Option<&DesignEdgeFlangeOperation> {
         match &self.payload {
-            DesignScopePayload::EdgeFlange(value) => value.as_ref(),
+            DesignScopePayload::EdgeFlange(DesignEdgeFlangeScope::Legacy(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn edge_flange_construction(&self) -> Option<&DesignReferenceEdgeFlange> {
+        match &self.payload {
+            DesignScopePayload::EdgeFlange(DesignEdgeFlangeScope::ReferenceFramed(value)) => {
+                Some(value)
+            }
             _ => None,
         }
     }
@@ -3827,3 +3982,20 @@ mod tests;
 mod serialize;
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_unfold_operation,
+    super::sheet_metal::fold::DesignUnfoldOperation,
+    "unfold_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_refold_operation,
+    super::sheet_metal::fold::DesignRefoldOperation,
+    "refold_operation"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_contour_flange_operation,
+    super::sheet_metal::contour::DesignContourFlangeOperation,
+    "contour_flange_operation"
+);

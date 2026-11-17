@@ -48,6 +48,7 @@ pub mod compare;
 pub mod container;
 
 pub mod declared_measures;
+pub mod design;
 pub mod diff;
 pub mod document;
 pub mod draft;
@@ -60,6 +61,7 @@ pub mod examples;
 pub mod features;
 pub mod geometry;
 pub mod hash;
+pub mod history_body;
 
 pub mod ids;
 pub mod index;
@@ -69,6 +71,7 @@ pub mod physics;
 pub mod pmi;
 pub mod point_cloud;
 pub mod presentation;
+pub mod process;
 pub mod products;
 mod provenance;
 pub mod references;
@@ -94,7 +97,7 @@ pub use diff::{
     NonEmptyFields, SourceDiff,
 };
 pub use document::{
-    ArenaClass, ArenaName, CadIr, CensusKey, DesignBelowFullDepth, SourceMeta, IR_VERSION,
+    ArenaHome, ArenaName, CadIr, CensusKey, ScopeViolation, SourceMeta, IR_VERSION,
 };
 pub use draft::ModelDraft;
 pub use features::{
@@ -148,9 +151,9 @@ pub use spreadsheets::{
     SpreadsheetRange,
 };
 pub use subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
-    SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
-    SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdFaceSide, SubdGripDirection, SubdGripWedge,
+    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip,
+    SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::admit::{
@@ -161,11 +164,6 @@ pub use validate::admit::{
 pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
-
-/// Serde default for a flag whose absent form is `true`.
-const fn default_true() -> bool {
-    true
-}
 
 /// Generate the JSON Schema for the current [`CadIr`] representation.
 ///
