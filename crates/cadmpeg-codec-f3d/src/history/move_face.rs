@@ -108,8 +108,9 @@ fn row_follows(before: Carrier<'_>, after: Carrier<'_>, motion: &FaceMotion) -> 
 
 /// Faces of the input state that the motion moves, sorted: the updated faces
 /// whose plane or cylinder row follows the motion. `None` when an updated face
-/// has no plane or cylinder row in either state, or the motion leaves every
-/// face in place.
+/// has no plane or cylinder row in either state, the motion is a rotation, or
+/// its distance is zero. The list is empty when no updated row follows the
+/// motion.
 fn moved_faces(
     motion: &FaceMotion,
     updated: &BTreeSet<i64>,
@@ -270,8 +271,6 @@ fn recipe_face_selection(
     (!faces.is_empty()).then(|| faces.into_iter().collect())
 }
 
-/// The selection that the transitions and the member recipes state. Two
-/// different selections state none.
 /// The selection of a group from its direct transition reading, its member
 /// recipes, and the shared-surface reading. The shared-surface reading is
 /// taken only when neither of the others states a selection.
@@ -288,6 +287,8 @@ fn group_selection(
     agreed_selection(moved, recipes)
 }
 
+/// The selection that the transitions and the member recipes state. Two
+/// different selections state none.
 fn agreed_selection(moved: Option<Vec<i64>>, recipes: Option<Vec<i64>>) -> Option<Vec<i64>> {
     match (moved, recipes) {
         (Some(moved), Some(recipes)) => (moved == recipes).then_some(moved),
