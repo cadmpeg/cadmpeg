@@ -47,7 +47,7 @@ pub trait ArenaEntity: private::Sealed + EntitySchema + Sized {
 /// Registry-complete arena lengths captured at a model transaction boundary.
 #[derive(Debug)]
 pub struct ModelCheckpoint {
-    lengths: [usize; EntityKind::ALL.len()],
+    lengths: [usize; crate::document::MODEL_ARENA_COUNT],
     feature_parents: crate::document::FeatureRegenerationParents,
 }
 
@@ -471,6 +471,15 @@ enum CommittedIdentity {
     StagedUnknown(usize),
 }
 
+impl CommittedIdentity {
+    /// The identity of the neutral entity at `index` of the arena of `kind`.
+    /// The arena macros call it, so the source census, which does not expand
+    /// them, sees no use of the expression type `Neutral` in their bodies.
+    const fn entity(kind: EntityKind, index: usize) -> Self {
+        Self::Neutral(IdentitySlot { kind, index })
+    }
+}
+
 type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
 
 /// A document owner or exclusive borrow with a caller-owned identity cache.
@@ -511,7 +520,7 @@ struct CommitState<'ctx, D: BorrowMut<CadIr>> {
     unknown_namespace: Option<&'ctx str>,
     identities: Option<CommittedIdentityIndex>,
     admission: Option<crate::validate::admit::incremental::AdmittedState>,
-    unindexed_start: Option<[usize; EntityKind::ALL.len()]>,
+    unindexed_start: Option<[usize; crate::document::MODEL_ARENA_COUNT]>,
     source_admission: Option<crate::validate::admit::NativeUnknownAdmission>,
 }
 
@@ -844,7 +853,10 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 (format, &self.state.unknowns),
                 changes.annotations(),
                 allowed,
-                ([0; EntityKind::ALL.len()], CandidateScope::Detached),
+                (
+                    [0; crate::document::MODEL_ARENA_COUNT],
+                    CandidateScope::Detached,
+                ),
             )?,
             None => None,
         };
@@ -996,7 +1008,7 @@ fn index_committed_identities(
     macro_rules! collect_model_identities {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for (index, entity) in base.$home.$field.iter().enumerate() {
-                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }));
+                insert_identity(&mut identities, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, index));
             })*
         };
     }
@@ -1091,12 +1103,17 @@ fn stage_committed_identities(
     unknown_namespace: Option<&str>,
 ) -> CommittedIdentityIndex {
     let mut staged = CommittedIdentityIndex::new();
-    let candidate = crate::document::Arenas { geometry, model };
+    let candidate = crate::document::Arenas {
+        geometry,
+        model,
+        design: &base.design,
+        process: &base.process,
+    };
     macro_rules! stage_model {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
             for (offset, entity) in candidate.$home.$field.iter().enumerate() {
                 let index = base.$home.$field.len() + offset;
-                insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index }));
+                insert_identity(&mut staged, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, index));
             }
         )*};
     }
@@ -1176,7 +1193,7 @@ impl<D: BorrowMut<CadIr>> CommitState<'_, D> {
                 ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                     let start = starts[<$ty as EntitySchema>::KIND.index()];
                     for (offset, entity) in self.base.borrow().$home.$field.get(start..).ok_or_else(|| CodecError::malformed("append-only staging removed an arena prefix"))?.iter().enumerate() {
-                        insert_identity(identities, identity_hash(entity.identity()), CommittedIdentity::Neutral(IdentitySlot { kind: <$ty as EntitySchema>::KIND, index: start + offset }));
+                        insert_identity(identities, identity_hash(entity.identity()), CommittedIdentity::entity(<$ty as EntitySchema>::KIND, start + offset));
                     }
                 )*};
             }
@@ -1263,6 +1280,7 @@ mod tests {
                 id: id.try_into().expect("valid identity"),
                 point: point.try_into().expect("valid identity"),
                 tolerance: None,
+                native_ref: None,
             })
             .expect("insert vertex into draft");
         draft
@@ -1480,6 +1498,7 @@ mod tests {
             id: owner.try_into().expect("valid identity"),
             point: target.try_into().expect("valid identity"),
             tolerance: None,
+            native_ref: None,
         });
         let mut ir = CadIr::empty();
 
@@ -1674,6 +1693,7 @@ mod tests {
                     .try_into()
                     .expect("valid identity"),
                 tolerance: None,
+                native_ref: None,
             })
             .expect("insert rejected vertex");
         assert!(!session.contains(rejected_identity).unwrap());

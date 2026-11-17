@@ -133,11 +133,11 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#70:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
 
     assert_eq!(
@@ -154,11 +154,11 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.model.features.push(Feature {
         product_definition: None,
@@ -198,7 +198,13 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     );
 
     crate::decode::with_service_context(|ctx| {
-        super::super::dependencies::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        super::super::dependencies::reconcile_feature_links(
+            ctx,
+            &scan,
+            &mut ir,
+            &BTreeMap::new(),
+            &mut Vec::new(),
+        )
     })
     .expect("the fixture feature links reconcile");
     assert_eq!(
@@ -223,22 +229,20 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#50:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:generated:result#10".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
-        regions: vec![
-            RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar")
-        ],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.geometry.regions.push(Region {
         id: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
@@ -246,11 +250,11 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         shells: vec![
             ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar")
         ],
+        native_ref: None,
     });
-    ir.geometry.shells.push(Shell::with_face(
+    ir.geometry.shells.push(Shell::new(
         ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
         RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
-        FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar"),
     ));
     ir.geometry.faces.push(Face {
         id: FaceId::mint("creo:generated:face#7".to_string()).expect("identity grammar"),
@@ -264,6 +268,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     ir.model.features.push(Feature {
         product_definition: None,
@@ -306,16 +311,10 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
     );
 
     let mut duplicate_shell = ir.clone();
-    duplicate_shell.geometry.shells.push(
-        Shell::new(
-            ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
-            RegionId::mint("creo:ambiguous:region#10".to_string()).expect("identity grammar"),
-            ir.geometry.shells[0].faces().to_vec(),
-            Vec::new(),
-            Vec::new(),
-        )
-        .expect("valid test fixture"),
-    );
+    duplicate_shell.geometry.shells.push(Shell::new(
+        ShellId::mint("creo:generated:shell#10".to_string()).expect("identity grammar"),
+        RegionId::mint("creo:ambiguous:region#10".to_string()).expect("identity grammar"),
+    ));
     assert_eq!(
         crate::decode::with_service_context(|ctx| feature_output_bodies(
             ctx,
@@ -332,6 +331,7 @@ fn generated_result_faces_are_outputs_alongside_generated_input_bodies() {
         id: RegionId::mint("creo:generated:region#10".to_string()).expect("identity grammar"),
         body: BodyId::mint("creo:ambiguous:body#10".to_string()).expect("identity grammar"),
         shells: Vec::new(),
+        native_ref: None,
     });
     assert_eq!(
         crate::decode::with_service_context(|ctx| feature_output_bodies(
@@ -379,22 +379,21 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     ir.geometry.bodies.push(Body {
         id: body_id.clone(),
         kind: BodyKind::Solid,
-        regions: vec![region_id.clone()],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.geometry.regions.push(Region {
         id: region_id.clone(),
         body: body_id.clone(),
         shells: vec![shell_id.clone()],
+        native_ref: None,
     });
-    ir.geometry.shells.push(Shell::with_face(
-        shell_id.clone(),
-        region_id.clone(),
-        face_id.clone(),
-    ));
+    ir.geometry
+        .shells
+        .push(Shell::new(shell_id.clone(), region_id.clone()));
     ir.geometry.faces.push(Face {
         id: face_id.clone(),
         shell: shell_id.clone(),
@@ -405,6 +404,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.loops.push(IrLoop {
         id: loop_id.clone(),
@@ -413,6 +413,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
             cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
                 .expect("valid loop ring"),
         ),
+        native_ref: None,
     });
     ir.geometry.coedges.push(Coedge {
         id: coedge_id.clone(),
@@ -422,6 +423,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     });
     assert_eq!(
         bodies_containing_edges(&ir, std::slice::from_ref(&edge_id))
@@ -438,6 +440,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
             cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
                 .expect("valid loop ring"),
         ),
+        native_ref: None,
     });
     assert!(
         bodies_containing_edges(&duplicate_loop, std::slice::from_ref(&edge_id))
@@ -457,6 +460,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     assert!(
         bodies_containing_edges(&duplicate_face, std::slice::from_ref(&edge_id))
@@ -465,17 +469,11 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     );
 
     let mut duplicate_shell = ir.clone();
-    duplicate_shell.geometry.shells.push(
-        Shell::new(
-            shell_id.clone(),
-            RegionId::mint("test:model:entity#creo:ambiguous:region".to_string())
-                .expect("identity grammar"),
-            ir.geometry.shells[0].faces().to_vec(),
-            Vec::new(),
-            Vec::new(),
-        )
-        .expect("valid test fixture"),
-    );
+    duplicate_shell.geometry.shells.push(Shell::new(
+        shell_id.clone(),
+        RegionId::mint("test:model:entity#creo:ambiguous:region".to_string())
+            .expect("identity grammar"),
+    ));
     assert!(
         bodies_containing_edges(&duplicate_shell, std::slice::from_ref(&edge_id))
             .expect("find the bodies containing the edges")
@@ -488,6 +486,7 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
         body: BodyId::mint("test:model:entity#creo:ambiguous:body".to_string())
             .expect("identity grammar"),
         shells: Vec::new(),
+        native_ref: None,
     });
     assert!(
         bodies_containing_edges(&duplicate_region, std::slice::from_ref(&edge_id))
@@ -499,11 +498,11 @@ fn edge_output_joins_reject_duplicate_topology_owners() {
     duplicate_body.geometry.bodies.push(Body {
         id: body_id,
         kind: BodyKind::Sheet,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     assert!(
         bodies_containing_edges(&duplicate_body, std::slice::from_ref(&edge_id))
@@ -518,11 +517,11 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     assert_eq!(
         evaluated_sweep_output_bodies(&ir, 40).expect("compute the evaluated sweep output bodies"),
@@ -536,11 +535,11 @@ fn evaluated_sweep_body_joins_reject_duplicate_ids() {
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("creo:feature:extrusion#40:body".to_string()).expect("identity grammar"),
         kind: BodyKind::Sheet,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     assert!(evaluated_sweep_output_bodies(&ir, 40)
         .expect("compute the evaluated sweep output bodies")

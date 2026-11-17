@@ -108,9 +108,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let extensions =
         arena!(namespace.arena_as_for_decode::<native::ExtensionRecord>(ctx, "extensions"));
     let entries = arena!(namespace.arena_as_for_decode::<native::EntryRecord>(ctx, "entries"));
-    let unreadable = arena!(
-        namespace.arena_as_for_decode::<container::UnreadableEntry>(ctx, "unreadable_entries")
-    );
     let physical =
         arena!(namespace.arena_as_for_decode::<native::ArchiveSpan>(ctx, "physical_ledger"));
     let logical =
@@ -149,49 +146,6 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         arena!(namespace.arena_as_for_decode::<native::DesignCensusRecord>(ctx, "design_census"));
 
     let mut findings = Vec::new();
-    let mut payload_spans = HashSet::new();
-    let mut decoded_names = HashSet::new();
-    if !unreadable.is_empty() {
-        for span in &physical {
-            let (name, range) = match &span.role {
-                native::ArchiveSpanRole::CompressedPayload(name)
-                | native::ArchiveSpanRole::EntryArchivePadding(name) => {
-                    (name, (span.span.start(), span.span.end()))
-                }
-                native::ArchiveSpanRole::LocalName(name)
-                | native::ArchiveSpanRole::LocalExtra(name) => {
-                    (name, (span.span.end(), span.span.end()))
-                }
-                _ => continue,
-            };
-
-            payload_spans.insert((name.as_str(), range));
-        }
-        for entry in &entries {
-            decoded_names.insert(entry.name());
-        }
-    }
-    let mut unreadable_names = HashSet::new();
-    for entry in &unreadable {
-        let unique = unreadable_names.insert(entry.name.as_str());
-        if !native::is_safe_entry_name(&entry.name)
-            || entry.id.strip_prefix("fcstd:native:unreadable_entry#") != Some(entry.name.as_str())
-            || entry.error.trim().is_empty()
-            || entry.data_end.checked_sub(entry.data_start)
-                != Some(cadmpeg_core::decode::u64_from_index(
-                    entry.stored_data.len(),
-                ))
-            || !payload_spans.contains(&(entry.name.as_str(), (entry.data_start, entry.data_end)))
-            || decoded_names.contains(entry.name.as_str())
-            || !unique
-        {
-            findings.push(finding(
-                Check::PayloadIntegrity,
-                "invalid source-only FCStd entry",
-                None,
-            ));
-        }
-    }
     if carrier_census != brep::carrier_census(ctx, &shape_payloads)? {
         findings.push(finding(
             Check::PayloadIntegrity,
@@ -364,7 +318,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .iter()
         .map(|provider| provider.id.as_str())
         .collect::<HashSet<_>>();
-    let has_gui_entry = entry_names.contains("GuiDocument.xml");
+    // The GUI document is read only beside the persistence document.
+    let has_gui_entry =
+        entry_names.contains("GuiDocument.xml") && entry_names.contains("Document.xml");
     if gui_documents.len() != usize::from(has_gui_entry) {
         findings.push(finding(
             Check::Counts,
@@ -933,25 +889,39 @@ impl CodecBackend for FcstdCodec {
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut scan = container::scan(ctx, root)?;
         let mut admitted_entities = 0_u64;
-        let attributes = container::source_attributes(&scan)?;
-        let thumbnail = scan
-            .data
-            .get("thumbnails/Thumbnail.png")
-            .map(|view| ("thumbnails/Thumbnail.png", view.window()))
-            .or_else(|| {
-                scan.data
-                    .get("Thumbnail.png")
-                    .map(|view| ("Thumbnail.png", view.window()))
-            });
+        // The thumbnail is a product reference of the persistence document.
+        let thumbnail = scan.persistence.as_ref().and_then(|_| {
+            scan.data
+                .get("thumbnails/Thumbnail.png")
+                .map(|view| ("thumbnails/Thumbnail.png", view.window()))
+                .or_else(|| {
+                    scan.data
+                        .get("Thumbnail.png")
+                        .map(|view| ("Thumbnail.png", view.window()))
+                })
+        });
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
         let mut geometry_transferred = false;
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
         let mut transfer_losses = Vec::new();
-        // One `classify` call feeds the report identity, loss, and notes.
-        let primary = dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
-        let dialects = cadmpeg_core::dialect::DialectLayers::of(primary);
-        let mut ir = CadIr::decoded(SourceMeta::classified(dialects.clone(), attributes));
+        // One `classify` call feeds the report identity, loss, and notes. A
+        // given-up `Document.xml` declares no dialect, so the source is not
+        // stated.
+        let dialects = scan
+            .persistence
+            .as_ref()
+            .map(|persistence| {
+                dialect::FcstdDialect::classify(&persistence.document, &persistence.schema_version)
+            })
+            .map(cadmpeg_core::dialect::DialectLayers::of);
+        let mut ir = match (&dialects, &scan.persistence) {
+            (Some(dialects), Some(persistence)) => CadIr::decoded(SourceMeta::classified(
+                dialects.clone(),
+                container::source_attributes(&persistence.document)?,
+            )),
+            _ => CadIr::empty(),
+        };
         if let Some((name, bytes)) = thumbnail {
             ctx.retain_bytes(
                 cadmpeg_core::decode::u64_from_index(bytes.len()),
@@ -973,18 +943,26 @@ impl CodecBackend for FcstdCodec {
                 ctx,
             )?;
         }
-        let namespace = ir.native.namespace_mut("fcstd");
-        namespace.set_arena(ctx, "document", std::slice::from_ref(&scan.document))?;
-        namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
-        if !scan.unreadable_entries.is_empty() {
-            namespace.set_arena(ctx, "unreadable_entries", &scan.unreadable_entries)?;
+        for given_up in std::mem::take(&mut scan.given_up) {
+            let loss = given_up.commit(ctx, &mut ir, &mut source_fidelity)?;
+            scan.losses.push(loss);
         }
+        let namespace = ir.native.namespace_mut("fcstd");
+        if let Some(persistence) = &scan.persistence {
+            namespace.set_arena(ctx, "document", std::slice::from_ref(&persistence.document))?;
+        }
+        namespace.set_arena(ctx, "physical_ledger", &scan.ledger)?;
         let decode_document = !ctx.container_only();
-        if decode_document {
-            let document_xml = &scan.document_xml;
+        let read_persistence = scan.persistence.as_ref().filter(|_| decode_document);
+        if let Some(container::Persistence {
+            document,
+            schema_version,
+            xml: document_xml,
+        }) = read_persistence
+        {
             let mut graph = persistence::parse_document(
                 document_xml,
-                persistence::Vocabulary::from_declaration(&scan.schema_version)?,
+                persistence::Vocabulary::from_declaration(schema_version)?,
             )?;
             scan.losses.extend(graph.losses);
             persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
@@ -993,7 +971,7 @@ impl CodecBackend for FcstdCodec {
             let (string_tables, mut element_maps) = element_map::parse(
                 ctx,
                 document_xml,
-                scan.document.file_version.value(),
+                document.file_version.value(),
                 &graph.properties,
                 &entry_records,
                 &mut scan.losses,
@@ -1016,13 +994,7 @@ impl CodecBackend for FcstdCodec {
             drawing::transfer_neutral(ctx, &mut ir.model, &drawings, &graph.properties)?;
             namespace.set_arena(ctx, "drawings", &drawings)?;
             let annotations = annotation::transfer(ctx, &graph.objects, &graph.properties)?;
-            annotation::transfer_neutral(
-                ctx,
-                &mut ir.model,
-                &annotations,
-                &graph.properties,
-                &drawings,
-            )?;
+            annotation::transfer_neutral(ctx, &mut ir.model, &annotations, &graph.properties)?;
             drawing::content::enrich(
                 ctx,
                 &mut ir.model,
@@ -1084,7 +1056,7 @@ impl CodecBackend for FcstdCodec {
                     &graph.properties,
                     &shape_payloads,
                     &entry_records,
-                    scan.document.program_version.as_deref(),
+                    document.program_version.as_deref(),
                 )?;
                 cycle_affected_design_objects = cycle_affected;
                 transfer_losses.extend(design_losses);
@@ -1167,7 +1139,7 @@ impl CodecBackend for FcstdCodec {
                         payloads: &shape_payloads,
                         topology_occurrences: &topology_occurrences,
                         requires_alpha_conversion: gui::requires_alpha_conversion(
-                            scan.document.program_version.as_deref(),
+                            document.program_version.as_deref(),
                         ),
                     },
                 )?
@@ -1255,6 +1227,20 @@ impl CodecBackend for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena(ctx, "element_maps", &element_maps)?;
+        } else if decode_document {
+            let entry_records = container::entry_records(ctx, &scan, &[])?;
+            let logical_ledger = container::opaque_ledger(&entry_records)?;
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
+            let coverage = container::byte_coverage(
+                &scan.ledger,
+                &entry_records,
+                &logical_ledger,
+                physical_byte_len,
+            );
+            let namespace = ir.native.namespace_mut("fcstd");
+            namespace.set_arena(ctx, "entries", &entry_records)?;
+            namespace.set_arena(ctx, "logical_ledger", &logical_ledger)?;
+            namespace.set_arena(ctx, "byte_coverage", std::slice::from_ref(&coverage))?;
         } else {
             let physical_byte_len = scan.ledger.last().map_or(0, |span| span.span.end());
             let coverage = container::byte_coverage(&scan.ledger, &[], &[], physical_byte_len);
@@ -1275,7 +1261,9 @@ impl CodecBackend for FcstdCodec {
         losses.extend(transfer_losses);
         let summary_notes = container::summary_notes(&scan);
         losses.extend(scan.losses);
-        let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
+        let dialect_losses = dialects
+            .as_ref()
+            .and_then(|dialects| dialect::FcstdDialect::dialect_loss(dialects.primary()));
         losses.extend(dialect_losses);
         // Only the FCStd writer reads this digest, and it admits only a `Full`
         // document. The serialization and hash are too costly to pay below that.

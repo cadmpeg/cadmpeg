@@ -180,6 +180,46 @@ pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
 }
 
+/// In a Catmull–Clark cage every face side holds one edge use, and the edges
+/// that state a knot interval state one value.
+pub(super) fn check_subdivision_schemes(ir: &CadIr, findings: &mut Vec<Finding>) {
+    for surface in &ir.geometry.subds {
+        if surface.scheme != crate::subd::SubdScheme::CatmullClark {
+            continue;
+        }
+        if surface
+            .cage
+            .faces()
+            .iter()
+            .any(|face| face.sides().iter().any(|side| side.edges.len() != 1))
+        {
+            super::record_finding(
+                findings,
+                Check::GeometricConsistency,
+                Severity::Error,
+                Some(surface.id.as_str()),
+                format_args!("Catmull-Clark face side holds more than one edge"),
+            );
+        }
+        let mut intervals = surface
+            .cage
+            .edges()
+            .iter()
+            .filter_map(crate::subd::SubdEdge::knot_interval);
+        if let Some(first) = intervals.next() {
+            if intervals.any(|interval| interval != first) {
+                super::record_finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    Severity::Error,
+                    Some(surface.id.as_str()),
+                    format_args!("Catmull-Clark cage edges state different knot intervals"),
+                );
+            }
+        }
+    }
+}
+
 pub(super) fn check_topology_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
     for (id, tolerance) in ir
         .geometry
@@ -217,16 +257,6 @@ pub(super) fn check_references(
     ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    for b in &ir.geometry.bodies {
-        for l in &b.regions {
-            if ids
-                .regions(l.as_str(), crate::index::StandardIndex)
-                .is_none()
-            {
-                ref_error(findings, b.id.as_str(), "region", l.as_str());
-            }
-        }
-    }
     for l in &ir.geometry.regions {
         if ids
             .bodies(l.body.as_str(), crate::index::StandardIndex)
@@ -249,11 +279,6 @@ pub(super) fn check_references(
             .is_none()
         {
             ref_error(findings, s.id.as_str(), "region", s.region.as_str());
-        }
-        for f in s.faces() {
-            if ids.faces(f.as_str(), crate::index::StandardIndex).is_none() {
-                ref_error(findings, s.id.as_str(), "face", f.as_str());
-            }
         }
         for e in s.wire_edges() {
             if ids.edges(e.as_str(), crate::index::StandardIndex).is_none() {
@@ -420,17 +445,15 @@ pub(super) fn check_references(
                 ref_error(findings, e.id.as_str(), "curve", c.as_str());
             }
         }
-        if ids
-            .vertices(e.start.as_str(), crate::index::StandardIndex)
-            .is_none()
-        {
-            ref_error(findings, e.id.as_str(), "vertex(start)", e.start.as_str());
-        }
-        if ids
-            .vertices(e.end.as_str(), crate::index::StandardIndex)
-            .is_none()
-        {
-            ref_error(findings, e.id.as_str(), "vertex(end)", e.end.as_str());
+        if let Some(ends) = &e.ends {
+            for (role, vertex) in [("vertex(start)", &ends.start), ("vertex(end)", &ends.end)] {
+                if ids
+                    .vertices(vertex.as_str(), crate::index::StandardIndex)
+                    .is_none()
+                {
+                    ref_error(findings, e.id.as_str(), role, vertex.as_str());
+                }
+            }
         }
     }
     for v in &ir.geometry.vertices {
@@ -451,7 +474,7 @@ pub(super) fn check_references(
         {
             ref_error(findings, &owner, "appearance", binding.appearance.as_str());
         }
-        match &binding.target {
+        match &binding.target.entity {
             AppearanceTarget::Body(body)
                 if ids
                     .bodies(body.as_str(), crate::index::StandardIndex)
@@ -527,12 +550,23 @@ pub(super) fn check_references(
             _ => {}
         }
     }
+    let records = crate::document::design_records::DesignRecords::of(ir);
     for attribute in &ir.model.attributes {
-        use crate::attributes::AttributeTarget;
+        use crate::attributes::{AttributeTarget, AttributeValue};
 
         let owner = attribute.id.as_str();
-        match &attribute.target {
+        for value in &attribute.values {
+            if let AttributeValue::Parameter(id) = value {
+                if !records.holds_parameter(id) {
+                    ref_error(findings, owner, "parameter", id.as_str());
+                }
+            }
+        }
+        match &attribute.target.entity {
             AttributeTarget::Document => {}
+            AttributeTarget::Configuration(id) if !records.holds_configuration(id) => {
+                ref_error(findings, owner, "configuration", id.as_str());
+            }
             AttributeTarget::Body(id)
                 if ids
                     .bodies(id.as_str(), crate::index::StandardIndex)

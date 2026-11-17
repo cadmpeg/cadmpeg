@@ -644,6 +644,7 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.points.extend([
             Point::new(
@@ -664,11 +665,13 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
                 id: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
                 point: PointId::mint("test:model:point#start-point").expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
                 point: PointId::mint("test:model:point#end-point").expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         ir.geometry.edges.push(Edge {
@@ -678,9 +681,12 @@ fn bounded_line_carrier_excludes_an_endpoint_at_the_resolution_boundary() {
                 Some([0.0, 1.0]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:vertex#start").expect("identity grammar"),
+                VertexId::mint("test:model:vertex#end").expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         });
 
         assert!(bounded_nurbs_for_curve_with_tolerance(
@@ -746,6 +752,7 @@ fn composite_flattening_over_its_depth_limit_is_refused_without_fusing_the_sessi
             None,
         ))),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.points.extend([
         Point::new(
@@ -766,20 +773,25 @@ fn composite_flattening_over_its_depth_limit_is_refused_without_fusing_the_sessi
             id: VertexId::mint("test:model:vertex#base-start").expect("identity grammar"),
             point: PointId::mint("test:model:point#base-start-point").expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: VertexId::mint("test:model:vertex#base-end").expect("identity grammar"),
             point: PointId::mint("test:model:point#base-end-point").expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         },
     ]);
     ir.geometry.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#base-edge").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(base_id.clone()), Some([0.0, 1.0]))
             .unwrap(),
-        start: VertexId::mint("test:model:vertex#base-start").expect("identity grammar"),
-        end: VertexId::mint("test:model:vertex#base-end").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("test:model:vertex#base-start").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#base-end").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
 
     let mut child_id = base_id;
@@ -801,6 +813,7 @@ fn composite_flattening_over_its_depth_limit_is_refused_without_fusing_the_sessi
                 self_intersect: None,
             }),
             source_object: None,
+            native_ref: None,
         });
         child_id = composite_id;
     }
@@ -834,6 +847,7 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.points.extend([
             Point::new(
@@ -867,23 +881,27 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
                 point: PointId::mint("test:model:point#wrong-start-point")
                     .expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
                 point: PointId::mint("test:model:point#wrong-end-point").expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
                 point: PointId::mint("test:model:point#matching-start-point")
                     .expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
                 point: PointId::mint("test:model:point#matching-end-point")
                     .expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         ir.geometry.edges.extend([
@@ -894,18 +912,23 @@ fn bounded_line_carrier_selects_a_curve_valid_edge_occurrence() {
                     Some([5.0, 6.0]),
                 )
                 .unwrap(),
-                start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
-                end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+                    VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
+                )),
                 tolerance: None,
+                native_ref: None,
             },
             Edge {
                 id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 2.0]))
                     .unwrap(),
-                start: VertexId::mint("test:model:vertex#matching-start")
-                    .expect("identity grammar"),
-                end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+                    VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
+                )),
                 tolerance: None,
+                native_ref: None,
             },
         ]);
 
@@ -939,6 +962,7 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         for (index, end) in [(0, 1.0), (1, 2.0)] {
             let start_point = PointId::mint(format!("test:model:point#start-point-{index}"))
@@ -972,11 +996,13 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
                     id: start_vertex.clone(),
                     point: start_point,
                     tolerance: None,
+                    native_ref: None,
                 },
                 Vertex {
                     id: end_vertex.clone(),
                     point: end_point,
                     tolerance: None,
+                    native_ref: None,
                 },
             ]);
             ir.geometry.edges.push(Edge {
@@ -990,9 +1016,12 @@ fn bounded_line_carrier_rejects_conflicting_valid_edge_ranges() {
                     ]),
                 )
                 .unwrap(),
-                start: start_vertex,
-                end: end_vertex,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    start_vertex,
+                    end_vertex,
+                )),
                 tolerance: None,
+                native_ref: None,
             });
         }
 
@@ -1021,6 +1050,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         ir.geometry.points.extend([
@@ -1042,11 +1072,13 @@ fn composite_index_lookups_match_the_unindexed_scan() {
                 id: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
                 point: PointId::mint("test:model:point#start-point").expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
                 point: PointId::mint("test:model:point#end-point").expect("identity grammar"),
                 tolerance: None,
+                native_ref: None,
             },
         ]);
         ir.geometry.edges.push(Edge {
@@ -1056,9 +1088,12 @@ fn composite_index_lookups_match_the_unindexed_scan() {
                 Some([0.0, 2.0]),
             )
             .unwrap(),
-            start: VertexId::mint("test:model:vertex#start").expect("identity grammar"),
-            end: VertexId::mint("test:model:vertex#end").expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("test:model:vertex#start").expect("identity grammar"),
+                VertexId::mint("test:model:vertex#end").expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         ir.geometry.curves.push(Curve {
             parameter_range: None,
@@ -1071,6 +1106,7 @@ fn composite_index_lookups_match_the_unindexed_scan() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
 
         let index = CompositeIndex::from_ir(&ir);

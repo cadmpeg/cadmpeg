@@ -981,6 +981,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
@@ -1067,6 +1068,7 @@ fn point_face_membership_matches_a_dense_face_point_table() {
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
     }
     let surface_indices = surface_ids
@@ -1248,6 +1250,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.faces.push(Face {
             id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
@@ -1258,6 +1261,7 @@ fn standard_emission_reverses_face_pcurve_range() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         let bindings = [(
             SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
@@ -1396,15 +1400,16 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
             .expect("fixture plane"),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("catia:test:body#0").expect("fixture body id"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.geometry.faces.push(Face {
         id: FaceId::mint("catia:standard:face#0").expect("fixture face id"),
@@ -1415,6 +1420,7 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let edge_vertices = [[0, 1], [1, 2], [2, 0]];
     let supports = [1, 2, 3].map(|tag| StandardCurveSupport {
@@ -1705,6 +1711,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.faces.push(Face {
         id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
@@ -1715,6 +1722,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let source = StandardConsolidatedSource {
         data: &bytes,

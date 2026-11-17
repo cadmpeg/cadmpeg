@@ -47,7 +47,7 @@ macro_rules! wire_case {
 wire_case!(
     borrowed_shell_members_wire,
     crate::topology::Shell,
-    json!({"id":"test:model:shell#s","region":"test:model:region#r","members":[{"kind":"face","id":"test:model:face#f"},{"kind":"wire_edge","id":"test:model:edge#e"},{"kind":"free_vertex","id":"test:model:vertex#v"}]})
+    json!({"id":"test:model:shell#s","region":"test:model:region#r","members":[{"kind":"wire_edge","id":"test:model:edge#e"},{"kind":"free_vertex","id":"test:model:vertex#v"}]})
 );
 wire_case!(
     borrowed_edge_carrier_wire,
@@ -107,7 +107,7 @@ wire_case!(
 wire_case!(
     borrowed_reference_target_wire,
     crate::references::ReferenceTarget,
-    json!({"kind":"external","document":"external-document","object":"source-object"})
+    json!({"kind":"external","value":{"document":"external-document","object":"source-object"}})
 );
 wire_case!(
     borrowed_spreadsheet_cell_wire,

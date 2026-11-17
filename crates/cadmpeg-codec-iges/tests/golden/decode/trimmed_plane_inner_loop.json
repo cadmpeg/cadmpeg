@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "iges:model:body#D15",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D15"
-          ],
           "visible": true
         }
       ],
@@ -306,9 +322,11 @@
               4.0
             ]
           },
-          "end": "iges:model:vertex#D15:0:0",
+          "ends": {
+            "end": "iges:model:vertex#D15:0:0",
+            "start": "iges:model:vertex#D15:0:0"
+          },
           "id": "iges:model:edge#D15:0:0",
-          "start": "iges:model:vertex#D15:0:0",
           "tolerance": 0.001
         },
         {
@@ -319,9 +337,11 @@
               4.0
             ]
           },
-          "end": "iges:model:vertex#D15:1:0",
+          "ends": {
+            "end": "iges:model:vertex#D15:1:0",
+            "start": "iges:model:vertex#D15:1:0"
+          },
           "id": "iges:model:edge#D15:1:0",
-          "start": "iges:model:vertex#D15:1:0",
           "tolerance": 0.001
         }
       ],
@@ -501,12 +521,7 @@
       "shells": [
         {
           "id": "iges:model:shell#D15",
-          "members": [
-            {
-              "id": "iges:model:face#D15",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D15"
         }
       ],
@@ -2141,7 +2156,19 @@
         "views": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

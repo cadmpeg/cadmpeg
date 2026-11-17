@@ -425,6 +425,7 @@ pub(super) fn project(
                     id: vertex.clone(),
                     point,
                     tolerance: None,
+                    native_ref: None,
                 });
 
                 free_vertices.push(vertex);
@@ -524,6 +525,7 @@ pub(super) fn project(
             id: start_vertex.clone(),
             point: start_point,
             tolerance: topology_tolerance,
+            native_ref: None,
         });
         if entry.form != 63 {
             ctx.charge_entities(1, "iges_geometry_copious")?;
@@ -536,6 +538,7 @@ pub(super) fn project(
                 id: end_vertex.clone(),
                 point: end_point,
                 tolerance: topology_tolerance,
+                native_ref: None,
             });
         }
         sequences.record_curve(&curve, entry.sequence);
@@ -557,6 +560,7 @@ pub(super) fn project(
                 |error| CodecError::malformed(format_args!("copious-data curve: {error}")),
             )?)),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
 
         ctx.charge_entities(1, "iges_geometry_copious")?;
@@ -567,9 +571,12 @@ pub(super) fn project(
                 Some([0.0, parameter_end]),
             )
             .map_err(CodecError::malformed)?,
-            start: start_vertex,
-            end: end_vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                start_vertex,
+                end_vertex,
+            )),
             tolerance: topology_tolerance,
+            native_ref: None,
         });
 
         wire_edges.push(edge);

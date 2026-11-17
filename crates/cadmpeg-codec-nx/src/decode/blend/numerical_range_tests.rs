@@ -47,6 +47,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
                 ),
             ),
             source_object: None,
+            native_ref: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         for d in [1., 1e9] {
@@ -392,6 +393,7 @@ fn overflowing_plane_model() -> (cadmpeg_ir::CadIr, SurfaceId, SurfaceGeometry) 
         id: surface_id.clone(),
         geometry: geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
     (ir, surface_id, geometry)
 }
@@ -455,6 +457,7 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
             id: surface_id.clone(),
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::build(&ir);
         let budget = GeometryWorkBudget::from_context(geometry_ctx, 1024);

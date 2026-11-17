@@ -59,10 +59,7 @@
       "bodies": [
         {
           "id": "f3d:brep:entity#1",
-          "kind": "sheet",
-          "regions": [
-            "f3d:brep:entity#2"
-          ]
+          "kind": "sheet"
         }
       ],
       "regions": [
@@ -78,16 +75,7 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "members": [
-            {
-              "kind": "face",
-              "id": "f3d:brep:entity#4"
-            },
-            {
-              "kind": "face",
-              "id": "f3d:brep:entity#5"
-            }
-          ]
+          "members": []
         }
       ],
       "faces": [
@@ -203,8 +191,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#21",
-          "end": "f3d:brep:entity#22"
+          "ends": {
+            "start": "f3d:brep:entity#21",
+            "end": "f3d:brep:entity#22"
+          }
         },
         {
           "id": "f3d:brep:entity#17",
@@ -214,8 +204,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#22",
-          "end": "f3d:brep:entity#23"
+          "ends": {
+            "start": "f3d:brep:entity#22",
+            "end": "f3d:brep:entity#23"
+          }
         },
         {
           "id": "f3d:brep:entity#18",
@@ -225,8 +217,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#23",
-          "end": "f3d:brep:entity#21"
+          "ends": {
+            "start": "f3d:brep:entity#23",
+            "end": "f3d:brep:entity#21"
+          }
         },
         {
           "id": "f3d:brep:entity#19",
@@ -236,8 +230,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#21",
-          "end": "f3d:brep:entity#24"
+          "ends": {
+            "start": "f3d:brep:entity#21",
+            "end": "f3d:brep:entity#24"
+          }
         },
         {
           "id": "f3d:brep:entity#20",
@@ -247,8 +243,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#24",
-          "end": "f3d:brep:entity#22"
+          "ends": {
+            "start": "f3d:brep:entity#24",
+            "end": "f3d:brep:entity#22"
+          }
         }
       ],
       "vertices": [
@@ -637,8 +635,39 @@
       "point_clouds": [],
       "history_bodies": []
     },
-    "design": {},
-    "process": {},
+    "design": {
+      "scopes": [],
+      "containers": [],
+      "features": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
+      "parameters": [],
+      "spreadsheets": [],
+      "sheet_metal_rules": [],
+      "programs": [],
+      "configurations": [],
+      "arrangements": [],
+      "publications": [],
+      "evaluations": [],
+      "names": []
+    },
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
+    },
     "native": {
       "f3d": {
         "act_component_links": [],

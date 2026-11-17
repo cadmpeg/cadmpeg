@@ -75,8 +75,14 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             .find(|e| e.id == coedge.edge)
             .unwrap();
         match coedge.sense {
-            Sense::Forward => (edge.start.clone(), edge.end.clone()),
-            Sense::Reversed => (edge.end.clone(), edge.start.clone()),
+            Sense::Forward => (
+                edge.ends.as_ref().unwrap().start.clone(),
+                edge.ends.as_ref().unwrap().end.clone(),
+            ),
+            Sense::Reversed => (
+                edge.ends.as_ref().unwrap().end.clone(),
+                edge.ends.as_ref().unwrap().start.clone(),
+            ),
         }
     };
     let (other, corner) = ends(&ring[0]);
@@ -107,14 +113,18 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(
                 DegenerateCurve::try_new(position.get()).unwrap(),
             )),
+            native_ref: None,
         });
     }
     source.geometry.edges.push(Edge {
         id: edge.clone(),
         carrier: EdgeCarrier::unbounded((!curveless).then_some(curve)),
-        start: if same_vertex { corner.clone() } else { other },
-        end: corner.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            if same_vertex { corner.clone() } else { other },
+            corner.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     source.geometry.coedges.push(Coedge {
         id: coedge.clone(),
@@ -124,6 +134,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
         sense: Sense::Forward,
         use_curve: None,
         pcurves: Vec::new(),
+        native_ref: None,
     });
     let mut coedges = ring;
     coedges.insert(1, coedge.clone());
@@ -151,6 +162,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         for coedge in source
             .geometry
@@ -212,6 +224,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
                 .unwrap(),
             },
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         let collapsed = source
             .geometry
@@ -242,13 +255,17 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
                 )
                 .unwrap(),
             )),
+            native_ref: None,
         });
         source.geometry.edges.push(Edge {
             id: circle_edge.clone(),
             carrier: EdgeCarrier::unbounded(Some(circle)),
-            start: corner_vertex.clone(),
-            end: corner_vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                corner_vertex.clone(),
+                corner_vertex,
+            )),
             tolerance: None,
+            native_ref: None,
         });
         source.geometry.coedges.push(Coedge {
             id: circle_coedge.clone(),
@@ -258,6 +275,7 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
             sense: Sense::Forward,
             use_curve: None,
             pcurves: Vec::new(),
+            native_ref: None,
         });
         coedges = vec![circle_coedge, coedge];
     }
@@ -460,7 +478,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
             .geometry
             .vertices
             .iter()
-            .find(|v| v.id == line.end)
+            .find(|v| v.id == line.ends.as_ref().unwrap().end)
             .unwrap();
         source
             .geometry
@@ -502,16 +520,22 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
     source.geometry.edges.push(Edge {
         id: seam.clone(),
         carrier: EdgeCarrier::unbounded(line.curve().cloned()),
-        start: line.start.clone(),
-        end: line.end.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            line.ends.as_ref().unwrap().start.clone(),
+            line.ends.as_ref().unwrap().end.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     source.geometry.edges.push(Edge {
         id: pole.clone(),
         carrier: EdgeCarrier::unbounded(None),
-        start: line.end.clone(),
-        end: line.end,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            line.ends.as_ref().unwrap().end.clone(),
+            line.ends.as_ref().unwrap().end.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     let pole_end = if case == SeamRing::BesideALoopWithALongPole {
         Point2::new(1.0, 0.0)
@@ -533,6 +557,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
             .unwrap(),
         },
         metadata: PcurveMetadata::default(),
+        native_ref: None,
     });
     let ring: Vec<CoedgeId> = [
         ("up", &seam, Sense::Forward, None),
@@ -557,6 +582,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
                 })
                 .into_iter()
                 .collect(),
+            native_ref: None,
         });
         id
     })
@@ -584,6 +610,7 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: LoopBoundary::Ring(LoopRing::new(ring, Vec::new()).unwrap()),
+            native_ref: None,
         });
         let face = source
             .geometry

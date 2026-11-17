@@ -392,6 +392,7 @@ fn instance_plane_transform_keeps_component_division() {
             frame,
         ))),
         source_object: None,
+        native_ref: None,
     };
     let transform = Transform::affine([
         [2.0, 0.0, 0.0, 4.0],
@@ -1268,6 +1269,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                         boundary.start_nurbs.clone(),
                     )),
                     source_object: Some(association.clone()),
+                    native_ref: None,
                 });
                 CommittedExtrusionBoundary {
                     boundary,

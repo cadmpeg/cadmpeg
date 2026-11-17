@@ -889,6 +889,7 @@ pub(super) fn transfer_section_entities(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))?),
+                    native_ref: None,
                 },
             )?;
         }
@@ -935,6 +936,7 @@ pub(super) fn transfer_section_entities(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))?),
+                    native_ref: None,
                 },
             )?;
         }
@@ -981,6 +983,7 @@ pub(super) fn transfer_section_entities(
                         "FeatDefs:section#{}:{suffix}",
                         sketch_identity_scope(sketch_id)
                     ))?),
+                    native_ref: None,
                 },
             )?;
         }
@@ -1016,6 +1019,7 @@ pub(super) fn transfer_section_entities(
                             "FeatDefs:saved_entity#{internal_id}"
                         ))?,
                     }),
+                    native_ref: None,
                 },
             )?;
         }

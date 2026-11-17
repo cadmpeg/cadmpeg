@@ -1,22 +1,35 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1",
-          "kind": "solid",
-          "regions": [
-            "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
-          ]
+          "kind": "solid"
         },
         {
           "id": "fcstd:model:body#Triangle:Shape:Triangle.Shape.brp:7%40location1",
-          "kind": "wire",
-          "regions": [
-            "fcstd:model:region#Triangle:Shape:Triangle.Shape.brp:7%40location1"
-          ]
+          "kind": "wire"
         }
       ],
       "coedges": [
@@ -776,9 +789,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:13%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -789,9 +804,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:15%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
@@ -802,9 +819,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:17%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
           "tolerance": 1e-7
         },
         {
@@ -815,9 +834,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:18%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
           "tolerance": 1e-7
         },
         {
@@ -828,9 +849,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:12%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:21%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -841,9 +864,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:22%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -854,9 +879,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:16%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:25%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -867,9 +894,11 @@
               30.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:14%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:26%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
@@ -880,9 +909,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -893,9 +924,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -906,9 +939,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -919,9 +954,11 @@
               20.0
             ]
           },
-          "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Box:Shape:Box.Shape.brp:8%40location1",
-          "start": "fcstd:model:vertex#Box:Shape:Box.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -932,9 +969,11 @@
               40.0
             ]
           },
-          "end": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:2%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:2%40location1",
+            "start": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#Triangle:Shape:Triangle.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -945,9 +984,11 @@
               41.23105625617661
             ]
           },
-          "end": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#Triangle:Shape:Triangle.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -958,9 +999,11 @@
               10.0
             ]
           },
-          "end": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#Triangle:Shape:Triangle.Shape.brp:6%40location1",
-          "start": "fcstd:model:vertex#Triangle:Shape:Triangle.Shape.brp:4%40location1",
           "tolerance": 1e-7
         }
       ],
@@ -1850,32 +1893,7 @@
       "shells": [
         {
           "id": "fcstd:model:shell#Box:Shape:Box.Shape.brp:33%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:10%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:20%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:24%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:28%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:30%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#Box:Shape:Box.Shape.brp:32%40location1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#Box:Shape:Box.Shape.brp:34%40location1"
         },
         {
@@ -2174,10 +2192,15 @@
           "relationships": {
             "BaseView": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2216,12 +2239,15 @@
           "relationships": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge3"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front.Edge3"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2260,10 +2286,15 @@
           "relationships": {
             "Source": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Box"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Box"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2302,12 +2333,15 @@
           "relationships": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge3"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front.Edge3"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2340,7 +2374,6 @@
           "relationships": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -2366,82 +2399,137 @@
           "relationships": {
             "Template": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Template"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Template:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Views": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Top"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Top:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Length"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Length:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Note"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Note:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Projection"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Projection:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Section"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Section:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Detail"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Detail:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Euclidean"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Euclidean:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Vertical"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Vertical:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "TriangleView"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#TriangleView:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2480,10 +2568,15 @@
           "relationships": {
             "Source": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Box"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Box"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2522,28 +2615,43 @@
           "relationships": {
             "Anchor": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "ProjItem"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#ProjItem:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Source": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Box"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Box"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Views": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "ProjItem"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#ProjItem:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2584,19 +2692,29 @@
           "relationships": {
             "BaseView": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Source": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Box"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Box"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2772,10 +2890,15 @@
           "relationships": {
             "Source": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Box"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Box"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2819,10 +2942,15 @@
           "relationships": {
             "Source": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Triangle"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Triangle"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2861,12 +2989,15 @@
           "relationships": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge1"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front.Edge1"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -3046,12 +3177,15 @@
           "references": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge3"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front.Edge3"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -3128,12 +3262,15 @@
           "references": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge3"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front.Edge3"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -3181,7 +3318,6 @@
           "references": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -3263,12 +3399,15 @@
           "references": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge1"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Front.Edge1"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Front:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -3495,7 +3634,19 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

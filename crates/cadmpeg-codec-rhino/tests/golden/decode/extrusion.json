@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "rhino:object:body#record-000000-offset-177.caps",
           "kind": "sheet",
-          "regions": [
-            "rhino:object:region#record-000000-offset-177.cap-0"
-          ],
           "visible": true
         }
       ],
@@ -94,9 +110,11 @@
               4.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
-          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0",
-          "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0"
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0",
+            "start": "rhino:object:vertex#record-000000-offset-177.cap-0.profile-0"
+          },
+          "id": "rhino:object:edge#record-000000-offset-177.cap-0.profile-0"
         }
       ],
       "faces": [
@@ -226,12 +244,7 @@
       "shells": [
         {
           "id": "rhino:object:shell#record-000000-offset-177.cap-0",
-          "members": [
-            {
-              "id": "rhino:object:face#record-000000-offset-177.cap-0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "rhino:object:region#record-000000-offset-177.cap-0"
         }
       ],
@@ -499,7 +512,19 @@
         "windows_bitmaps": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

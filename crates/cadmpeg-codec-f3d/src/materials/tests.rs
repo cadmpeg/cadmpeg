@@ -463,7 +463,7 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     };
     assert_eq!(
         binding.target,
-        cadmpeg_ir::appearance::AppearanceTarget::Body(second_body)
+        cadmpeg_ir::appearance::AppearanceTarget::Body(second_body).into()
     );
 }
 
@@ -873,7 +873,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
             id: format!("test:model:attribute#{}", face.rsplit_once('#').unwrap().1)
                 .try_into()
                 .expect("valid identity"),
-            target: AttributeTarget::Face(face.try_into().expect("valid identity")),
+            target: AttributeTarget::Face(face.try_into().expect("valid identity")).into(),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
@@ -930,7 +930,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .model
         .appearance_bindings
         .iter()
-        .map(|binding| binding.target.clone())
+        .map(|binding| binding.target.entity.clone())
         .collect::<Vec<_>>();
     assert_eq!(
         targets,
@@ -987,7 +987,7 @@ fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
             id: "f3d:test:attribute#face-material"
                 .try_into()
                 .expect("valid identity"),
-            target: AttributeTarget::Face(face),
+            target: AttributeTarget::Face(face).into(),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
@@ -1163,7 +1163,7 @@ fn decode_transfers_generated_custom_attribute() {
         .expect("generic tag attribute");
     assert_eq!(attribute.name, "ATTRIB_CUSTOM-attrib");
     assert!(matches!(
-        &attribute.target,
+        &attribute.target.entity,
         cadmpeg_ir::attributes::AttributeTarget::Body(body) if body == &result.ir().geometry.bodies[0].id
     ));
     assert!(attribute.values.iter().any(|value| matches!(
@@ -1249,12 +1249,12 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
         .iter()
         .find(|attribute| {
             attribute.name == "ATTRIB_CUSTOM-attrib"
-                && attribute.target == AttributeTarget::Vertex(tolerant_vertex.id.clone())
+                && attribute.target == AttributeTarget::Vertex(tolerant_vertex.id.clone()).into()
         })
         .expect("tolerant vertex attribute");
     assert_eq!(
         attribute.target,
-        AttributeTarget::Vertex(tolerant_vertex.id.clone())
+        AttributeTarget::Vertex(tolerant_vertex.id.clone()).into()
     );
     assert_eq!(
         f3d_native(round_trip.ir()).creation_timestamps[0]
@@ -1744,7 +1744,7 @@ fn generic_transparency_sets_opacity_without_changing_rgb() {
         let (appearances, _) = schema_appearances(&[record]).unwrap();
         let color = appearances[0].base_color.unwrap();
         assert_eq!([color.r(), color.g(), color.b()], [0.125, 0.25, 0.375]);
-        assert_eq!(f64::from(color.a()), 1.0 - transparency);
+        assert_eq!(color.a(), 1.0 - transparency);
     }
 }
 

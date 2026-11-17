@@ -854,10 +854,10 @@ Parsed by:
 | 27 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+27: edge-group reference` |
 | 38 | 21 | `zero_run_21_at_38` | `bytes[21]` | little | spec | Every byte that the form does not name is zero |
 | 59 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | `+59: Radius owner reference` |
-| 70 | 4 | `zero_run_4_at_70` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+| 70 | 4 | `radius_owner_padding` | `bytes[4]` | little | spec | `+70: four bytes` |
 | 74 | 4 | `set_ordinal` | `u32` | little | spec | `+74: u32 set ordinal` |
 | 78 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+78: TangencyWeight owner reference` |
-| 89 | 4 | `zero_run_4_at_89` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+| 89 | 4 | `tangency_weight_owner_padding` | `bytes[4]` | little | spec | `+89: four bytes` |
 
 ## `thicken_scope_prologue`
 
@@ -7708,11 +7708,11 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 20 | 1 | `marker` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
-| 21 | 4 | `zero_value` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
-| 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
-| 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33 |
-| 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33 |
+| 20 | 1 | `marker` | `u8` | little | spec | It uses the marker-one prologue through offset 32 |
+| 21 | 4 | `zero_value` | `u32` | little | spec | It uses the marker-one prologue through offset 32 |
+| 25 | 4 | `operation` | `u32` | little | spec | It uses the marker-one prologue through offset 32 |
+| 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 32 |
+| 33 | 1 | `direction_kind` | `u8` | little | spec | offset 33 stores direction kind `0` or `1` |
 | 34 | 1 | `project_axis` | `u8` | little | spec | Offset 34 stores the Project Axis flag |
 | 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag |
 | 36 | 3 | `zero_flags` | `bytes[3]` | little | spec | Offsets 36 and 37 store zero Symmetric and Two Sides flags, and offset 38 stores the null opposite-angle reference marker |

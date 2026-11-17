@@ -32,7 +32,7 @@ struct NamedFace<'a> {
 fn owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<NamedFace<'_>>> {
     let mut names = HashMap::new();
     for attribute in &ir.model.attributes {
-        let AttributeTarget::Face(face) = &attribute.target else {
+        let AttributeTarget::Face(face) = &attribute.target.entity else {
             continue;
         };
         let [_, _, _, _, _, AttributeValue::String(family), AttributeValue::Integer(1), AttributeValue::Integer(44), AttributeValue::Integer(1), AttributeValue::Integer(source), AttributeValue::Integer(-1), rest @ ..] =
@@ -377,7 +377,7 @@ struct LegacyFace<'a> {
 fn legacy_owned_faces(ir: &CadIr, generator: u32) -> Option<Vec<LegacyFace<'_>>> {
     let mut names = HashMap::new();
     for attribute in &ir.model.attributes {
-        let AttributeTarget::Face(face) = &attribute.target else {
+        let AttributeTarget::Face(face) = &attribute.target.entity else {
             continue;
         };
         let cap = match attribute.name.as_str() {

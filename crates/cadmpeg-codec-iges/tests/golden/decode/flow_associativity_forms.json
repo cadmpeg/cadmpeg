@@ -1,16 +1,32 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "iges:model:body#free-geometry",
           "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
+          "name": "IGES free geometry"
         }
       ],
       "coedges": [],
@@ -89,9 +105,11 @@
               2.0
             ]
           },
-          "end": "iges:model:vertex#D13-end",
-          "id": "iges:model:edge#D13",
-          "start": "iges:model:vertex#D13-start"
+          "ends": {
+            "end": "iges:model:vertex#D13-end",
+            "start": "iges:model:vertex#D13-start"
+          },
+          "id": "iges:model:edge#D13"
         },
         {
           "carrier": {
@@ -101,9 +119,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D3-end",
-          "id": "iges:model:edge#D3",
-          "start": "iges:model:vertex#D3-start"
+          "ends": {
+            "end": "iges:model:vertex#D3-end",
+            "start": "iges:model:vertex#D3-start"
+          },
+          "id": "iges:model:edge#D3"
         }
       ],
       "faces": [],
@@ -2198,7 +2218,19 @@
         "views": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

@@ -82,8 +82,8 @@ fn discontinuous_rings(document: &Value) -> BTreeMap<String, String> {
         let coedge = coedges[coedge];
         let edge = edges[coedge["edge"].as_str().unwrap()];
         let (start, end) = (
-            edge["start"].as_str().unwrap(),
-            edge["end"].as_str().unwrap(),
+            edge["ends"]["start"].as_str().unwrap(),
+            edge["ends"]["end"].as_str().unwrap(),
         );
         if coedge["sense"] == "reversed" {
             (end, start)
@@ -308,7 +308,7 @@ fn declared_geometry_errors_fail_check_and_unresolved_targets_warn() {
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let target = if unresolved {
-            DeclaredTarget::Unresolved {}
+            DeclaredTarget::Unresolved
         } else {
             DeclaredTarget::Bodies {
                 bodies: vec![ir.geometry.bodies[0].id.clone()],

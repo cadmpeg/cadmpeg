@@ -305,6 +305,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: curve_id.clone(),
                     geometry: curve_geometry,
                     source_object: None,
+                    native_ref: None,
                 },
             )?;
             let finite_position = cadmpeg_ir::features::FinitePoint3::new(Point3::from(position))
@@ -319,6 +320,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: vertex_id.clone(),
                     point: point_id,
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             ctx.charge_entities(1, "admit Creo model edges")?;
@@ -332,9 +334,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         Some([0.0, std::f64::consts::TAU]),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: vertex_id.clone(),
-                    end: vertex_id,
+                    ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                        vertex_id.clone(),
+                        vertex_id,
+                    )),
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             edges[index] = Some(edge_id);
@@ -358,6 +363,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     id: surface_id.clone(),
                     geometry: surface_geometry,
                     source_object: None,
+                    native_ref: None,
                 },
             )?;
             let mut loops = Vec::new();
@@ -404,6 +410,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         cadmpeg_ir::topology::LoopRing::new(ring_coedges, Vec::new())
                             .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
+                    native_ref: None,
                 });
                 let pcurve_uses = vec![PcurveUse {
                     pcurve,
@@ -425,6 +432,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         sense,
                         pcurves: pcurve_uses,
                         use_curve: None,
+                        native_ref: None,
                     },
                 )?;
                 loops.push(loop_id);
@@ -441,19 +449,15 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     name: None,
                     color: None,
                     tolerance: None,
+                    native_ref: None,
                 },
             )?;
             faces.push(face_id);
         }
-        let Ok(shell) = Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
-            faces,
-            Vec::new(),
-            Vec::new(),
-        ) else {
+        if faces.is_empty() {
             continue;
-        };
+        }
+        let shell = Shell::new(shell_id.clone(), region_id.clone());
         ctx.charge_entities(1, "admit Creo model shells")?;
         ir.geometry.shells.push(shell);
         let region_shells = vec![shell_id];
@@ -462,19 +466,19 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             id: region_id.clone(),
             body: body_id.clone(),
             shells: region_shells,
+            native_ref: None,
         });
-        let body_regions = vec![region_id];
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(
             ir,
             Body {
                 id: body_id,
                 kind: BodyKind::Solid,
-                regions: body_regions,
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             },
         )?;
         transferred += 1;

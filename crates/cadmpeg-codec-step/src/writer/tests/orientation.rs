@@ -56,8 +56,8 @@ fn planar_solid_volume_and_ccw_loops(ir: &CadIr) -> (f64, bool) {
                     let coedge = geometry.coedges.iter().find(|c| &c.id == id).unwrap();
                     let edge = geometry.edges.iter().find(|e| e.id == coedge.edge).unwrap();
                     position(match coedge.sense {
-                        Sense::Forward => &edge.start,
-                        Sense::Reversed => &edge.end,
+                        Sense::Forward => &edge.ends.as_ref().unwrap().start,
+                        Sense::Reversed => &edge.ends.as_ref().unwrap().end,
                     })
                 })
                 .collect();

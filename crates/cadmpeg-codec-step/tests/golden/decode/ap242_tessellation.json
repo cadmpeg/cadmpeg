@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "step:data:body#38",
-          "kind": "sheet",
-          "regions": [
-            "step:data:region#38"
-          ]
+          "kind": "sheet"
         }
       ],
       "coedges": [
@@ -124,9 +140,11 @@
               10.0
             ]
           },
-          "end": "step:data:vertex#14",
-          "id": "step:data:edge#26",
-          "start": "step:data:vertex#13"
+          "ends": {
+            "end": "step:data:vertex#14",
+            "start": "step:data:vertex#13"
+          },
+          "id": "step:data:edge#26"
         },
         {
           "carrier": {
@@ -136,9 +154,11 @@
               14.142135623730953
             ]
           },
-          "end": "step:data:vertex#15",
-          "id": "step:data:edge#27",
-          "start": "step:data:vertex#14"
+          "ends": {
+            "end": "step:data:vertex#15",
+            "start": "step:data:vertex#14"
+          },
+          "id": "step:data:edge#27"
         },
         {
           "carrier": {
@@ -148,9 +168,11 @@
               10.0
             ]
           },
-          "end": "step:data:vertex#13",
-          "id": "step:data:edge#28",
-          "start": "step:data:vertex#15"
+          "ends": {
+            "end": "step:data:vertex#13",
+            "start": "step:data:vertex#15"
+          },
+          "id": "step:data:edge#28"
         }
       ],
       "faces": [
@@ -240,12 +262,7 @@
       "shells": [
         {
           "id": "step:data:shell#37",
-          "members": [
-            {
-              "id": "step:data:face#36",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#38"
         }
       ],
@@ -306,8 +323,10 @@
           "id": "step:presentation:binding#77:0-0",
           "source_entity_id": "#77",
           "target": {
-            "kind": "tessellation",
-            "value": "step:tessellation:mesh#7"
+            "entity": {
+              "kind": "tessellation",
+              "value": "step:tessellation:mesh#7"
+            }
           }
         }
       ],
@@ -315,9 +334,9 @@
         {
           "base_color": {
             "a": 1.0,
-            "b": 0.20000000298023224,
-            "g": 0.800000011920929,
-            "r": 0.10000000149011612
+            "b": 0.2,
+            "g": 0.8,
+            "r": 0.1
           },
           "id": "step:presentation:appearance#70",
           "name": "mesh green",
@@ -562,7 +581,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

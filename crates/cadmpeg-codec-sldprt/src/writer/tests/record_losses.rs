@@ -65,7 +65,7 @@ fn attributes_outside_sldprt_namespace_have_counted_export_loss() {
         .attributes
         .push(cadmpeg_ir::attributes::SourceAttribute {
             id: "test:model:attribute#other".try_into().unwrap(),
-            target: cadmpeg_ir::attributes::AttributeTarget::Document {},
+            target: cadmpeg_ir::attributes::AttributeTarget::Document {}.into(),
             name: "other".into(),
             values: vec![cadmpeg_ir::attributes::AttributeValue::String(
                 "value".into(),
@@ -88,7 +88,7 @@ fn edge_and_vertex_appearance_bindings_have_counted_export_loss() {
         let appearance = appearance(Some("moVisualProperties_c"));
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: "test:model:appearance-binding#other".try_into().unwrap(),
-            target,
+            target: target.into(),
             appearance: appearance.id.clone(),
             source_entity_id: None,
             object_type: None,
@@ -174,20 +174,19 @@ fn generated_wire_and_general_bodies_refuse_solid_lump_conversion() {
 fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
     let mut ir = cube();
     let shell = &ir.geometry.shells[0];
-    ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::new(
+    ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::with_members(
         shell.id.clone(),
         shell.region.clone(),
-        shell.faces().to_vec(),
         vec![ir.geometry.edges[0].id.clone()],
         vec![ir.geometry.vertices[0].id.clone()],
-    )
-    .unwrap();
+    );
     let pcurve = Pcurve {
         id: "test:model:pcurve#use".try_into().unwrap(),
         geometry: PcurveGeometry::Line(
             LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
         ),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     };
     ir.geometry.coedges[0]
         .pcurves

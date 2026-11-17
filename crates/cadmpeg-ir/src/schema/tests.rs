@@ -366,6 +366,7 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
         id: "test:model:vertex#owner".try_into().unwrap(),
         point: "test:model:point#target".try_into().unwrap(),
         tolerance: None,
+        native_ref: None,
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     let limit = ResourceLimit::allocation_failed(

@@ -78,6 +78,7 @@ impl Builder {
                     id: id(VertexId::mint, "vertex", &key),
                     point: id(PointId::mint, "point", &key),
                     tolerance: None,
+                    native_ref: None,
                 });
             }
         }
@@ -95,15 +96,19 @@ impl Builder {
             id: id(CurveId::mint, "curve", key),
             geometry: CurveGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
         let [start, end] = ends;
         self.ir.geometry.edges.push(Edge {
             id: id(EdgeId::mint, "edge", key),
             carrier: EdgeCarrier::new(Some(id(CurveId::mint, "curve", key)), Some(range))
                 .expect("bounded edge"),
-            start: id(VertexId::mint, "vertex", &start),
-            end: id(VertexId::mint, "vertex", &end),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                id(VertexId::mint, "vertex", &start),
+                id(VertexId::mint, "vertex", &end),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -150,6 +155,7 @@ impl Builder {
             id: id(SurfaceId::mint, "surface", key),
             geometry: SurfaceGeometry::Solved(carrier),
             source_object: None,
+            native_ref: None,
         });
         let mut ring = Vec::with_capacity(uses.len());
         for (edge, use_sense) in uses {
@@ -163,12 +169,14 @@ impl Builder {
                 sense: *use_sense,
                 pcurves: Vec::new(),
                 use_curve: None,
+                native_ref: None,
             });
         }
         self.ir.geometry.loops.push(Loop {
             id: id(LoopId::mint, "loop", key),
             face: id(FaceId::mint, "face", key),
             boundary: LoopBoundary::Ring(LoopRing::new(ring, Vec::new()).expect("non-empty ring")),
+            native_ref: None,
         });
         self.ir.geometry.faces.push(Face {
             id: id(FaceId::mint, "face", key),
@@ -179,6 +187,7 @@ impl Builder {
             name: Some(key.to_owned()),
             color: None,
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -221,36 +230,24 @@ impl Builder {
     }
 
     fn body(&mut self) {
-        let faces = self
-            .ir
-            .geometry
-            .faces
-            .iter()
-            .map(|face| face.id.clone())
-            .collect();
-        self.ir.geometry.shells.push(
-            Shell::new(
-                id(ShellId::mint, "shell", "wedge"),
-                id(RegionId::mint, "region", "wedge"),
-                faces,
-                Vec::new(),
-                Vec::new(),
-            )
-            .expect("shell with faces"),
-        );
+        self.ir.geometry.shells.push(Shell::new(
+            id(ShellId::mint, "shell", "wedge"),
+            id(RegionId::mint, "region", "wedge"),
+        ));
         self.ir.geometry.regions.push(Region {
             id: id(RegionId::mint, "region", "wedge"),
             body: id(BodyId::mint, "body", "wedge"),
             shells: vec![id(ShellId::mint, "shell", "wedge")],
+            native_ref: None,
         });
         self.ir.geometry.bodies.push(Body {
             id: id(BodyId::mint, "body", "wedge"),
             kind: BodyKind::Solid,
-            regions: vec![id(RegionId::mint, "region", "wedge")],
             transform: None,
             name: Some("wedge".into()),
             color: None,
             visible: None,
+            native_ref: None,
         });
     }
 }

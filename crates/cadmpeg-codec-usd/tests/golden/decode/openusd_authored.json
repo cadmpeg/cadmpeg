@@ -1,36 +1,47 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Plant/Frame/Rail",
           "kind": "wire",
-          "name": "Rail",
-          "regions": [
-            "usd:stage:region#/Plant/Frame/Rail"
-          ]
+          "name": "Rail"
         },
         {
           "id": "usd:stage:body#/Plant/Frame/Tube",
           "kind": "general",
-          "name": "Tube",
-          "regions": []
+          "name": "Tube"
         },
         {
           "id": "usd:stage:body#/Plant/Roof",
           "kind": "sheet",
-          "name": "Roof",
-          "regions": [
-            "usd:stage:region#/Plant/Roof"
-          ]
+          "name": "Roof"
         },
         {
           "id": "usd:stage:body#prototype0",
           "kind": "general",
-          "name": "Leg0",
-          "regions": []
+          "name": "Leg0"
         }
       ],
       "coedges": [],
@@ -97,9 +108,11 @@
               5.0
             ]
           },
-          "end": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
-          "id": "usd:stage:edge#/Plant/Frame/Rail:0",
-          "start": "usd:stage:vertex#/Plant/Frame/Rail:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Plant/Frame/Rail:0:1",
+            "start": "usd:stage:vertex#/Plant/Frame/Rail:0:0"
+          },
+          "id": "usd:stage:edge#/Plant/Frame/Rail:0"
         }
       ],
       "faces": [
@@ -165,12 +178,7 @@
         },
         {
           "id": "usd:stage:shell#/Plant/Roof",
-          "members": [
-            {
-              "id": "usd:stage:face#/Plant/Roof",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/Plant/Roof"
         }
       ],
@@ -266,8 +274,10 @@
           "id": "usd:stage:appearance-binding#/Plant/Frame/Tube",
           "source_entity_id": "/Plant/Looks/Steel",
           "target": {
-            "kind": "tessellation",
-            "value": "usd:stage:tessellation#/Plant/Frame/Tube"
+            "entity": {
+              "kind": "tessellation",
+              "value": "usd:stage:tessellation#/Plant/Frame/Tube"
+            }
           }
         }
       ],
@@ -837,7 +847,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

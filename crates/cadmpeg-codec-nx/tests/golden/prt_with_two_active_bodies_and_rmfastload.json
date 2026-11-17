@@ -1,23 +1,36 @@
 {
   "decode": {
     "ir": {
-      "design": {},
+      "design": {
+        "arrangements": [],
+        "configurations": [],
+        "containers": [],
+        "evaluations": [],
+        "features": [],
+        "names": [],
+        "parameters": [],
+        "programs": [],
+        "publications": [],
+        "scopes": [],
+        "sheet_metal_rules": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": []
+      },
       "fragment": false,
       "geometry": {
         "bodies": [
           {
             "id": "nx:s0:body#2",
-            "kind": "sheet",
-            "regions": [
-              "nx:s0:region#4"
-            ]
+            "kind": "sheet"
           },
           {
             "id": "nx:s1:body#2",
-            "kind": "sheet",
-            "regions": [
-              "nx:s1:region#4"
-            ]
+            "kind": "sheet"
           }
         ],
         "coedges": [],
@@ -1149,414 +1162,12 @@
         "shells": [
           {
             "id": "nx:s0:shell#3",
-            "members": [
-              {
-                "id": "nx:s0:face#300",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#301",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#302",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#303",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#304",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#305",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#306",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#307",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#308",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#309",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#310",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#311",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#312",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#313",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#314",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#315",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#316",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#317",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#318",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#319",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#320",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#321",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#322",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#323",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#324",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#325",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#326",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#327",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#328",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#329",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#330",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#331",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#332",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#333",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#334",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#335",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#336",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#337",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#338",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#339",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#340",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#341",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#342",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#343",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#344",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#345",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#346",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#347",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#348",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s0:face#349",
-                "kind": "face"
-              }
-            ],
+            "members": [],
             "region": "nx:s0:region#4"
           },
           {
             "id": "nx:s1:shell#3",
-            "members": [
-              {
-                "id": "nx:s1:face#300",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#301",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#302",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#303",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#304",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#305",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#306",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#307",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#308",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#309",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#310",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#311",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#312",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#313",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#314",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#315",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#316",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#317",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#318",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#319",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#320",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#321",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#322",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#323",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#324",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#325",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#326",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#327",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#328",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#329",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#330",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#331",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#332",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#333",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#334",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#335",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#336",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#337",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#338",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#339",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#340",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#341",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#342",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#343",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#344",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#345",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#346",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#347",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#348",
-                "kind": "face"
-              },
-              {
-                "id": "nx:s1:face#349",
-                "kind": "face"
-              }
-            ],
+            "members": [],
             "region": "nx:s1:region#4"
           }
         ],
@@ -5133,7 +4744,19 @@
           ]
         }
       },
-      "process": {},
+      "process": {
+        "features": [],
+        "groups": [],
+        "machines": [],
+        "operations": [],
+        "parameters": [],
+        "presets": [],
+        "programs": [],
+        "setups": [],
+        "states": [],
+        "toolpaths": [],
+        "tools": []
+      },
       "scope": {
         "design": true,
         "model": true,

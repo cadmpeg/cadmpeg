@@ -764,26 +764,20 @@ impl Builder<'_, '_, '_, '_> {
             self.tallies.display_colors += 1;
         }
         let [r, g, b, a] = color?;
-        let channel = |value: f64| crate::text::value::round_f32(value.clamp(0.0, 1.0));
+        let channel = |value: f64| f64::from(crate::text::value::round_f32(value.clamp(0.0, 1.0)));
         Color::new(channel(r), channel(g), channel(b), channel(a))
     }
 
-    fn body(
-        &mut self,
-        prim: &Prim<'_>,
-        key: &str,
-        kind: BodyKind,
-        regions: Vec<cadmpeg_ir::ids::RegionId>,
-    ) {
+    fn body(&mut self, prim: &Prim<'_>, key: &str, kind: BodyKind) {
         let color = self.display_color(prim);
         self.ir.geometry.bodies.push(Body {
             id: crate::ids::body(key),
             kind,
-            regions,
             transform: None,
             name: Some(prim.name.clone()),
             color,
             visible: None,
+            native_ref: None,
         });
     }
 
@@ -834,7 +828,7 @@ impl Builder<'_, '_, '_, '_> {
             }
         };
         let body = crate::ids::body(key);
-        self.body(prim, key, BodyKind::General, Vec::new());
+        self.body(prim, key, BodyKind::General);
         self.ir
             .model
             .tessellations
@@ -960,7 +954,8 @@ impl Builder<'_, '_, '_, '_> {
         let appearance = self.appearance(&surface)?;
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(key),
-            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string()),
+            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string())
+                .into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,
@@ -1014,7 +1009,8 @@ impl Builder<'_, '_, '_, '_> {
             target: AppearanceTarget::TriangleGroup {
                 tessellation: crate::ids::tessellation(key).to_string(),
                 group: path.to_owned(),
-            },
+            }
+            .into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,
@@ -1184,6 +1180,7 @@ impl Builder<'_, '_, '_, '_> {
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
                 parameter_range,
                 source_object: None,
+                native_ref: None,
             });
             let start_vertex = crate::ids::vertex(key, ordinal, 0);
             let end_vertex = if closed {
@@ -1206,15 +1203,19 @@ impl Builder<'_, '_, '_, '_> {
                     id: vertex,
                     point,
                     tolerance: None,
+                    native_ref: None,
                 });
             }
             let edge = crate::ids::edge(key, ordinal);
             self.ir.geometry.edges.push(Edge {
                 id: edge.clone(),
                 carrier,
-                start: start_vertex,
-                end: end_vertex,
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    start_vertex,
+                    end_vertex,
+                )),
                 tolerance: None,
+                native_ref: None,
             });
             edges.push(edge);
             self.admit("usd_curve")?;
@@ -1223,21 +1224,15 @@ impl Builder<'_, '_, '_, '_> {
             return Ok(None);
         }
         let region = crate::ids::region(key);
-        let shell = Shell::new(
-            crate::ids::shell(key),
-            region.clone(),
-            Vec::new(),
-            edges,
-            Vec::new(),
-        )
-        .map_err(|_| CodecError::malformed("a curve shell holds no edge"))?;
+        let shell = Shell::with_members(crate::ids::shell(key), region.clone(), edges, Vec::new());
         self.ir.geometry.shells.push(shell);
         self.ir.geometry.regions.push(Region {
             id: region.clone(),
             body: crate::ids::body(key),
             shells: vec![crate::ids::shell(key)],
+            native_ref: None,
         });
-        self.body(prim, key, BodyKind::Wire, vec![region]);
+        self.body(prim, key, BodyKind::Wire);
         self.transferred = true;
         self.admit("usd_curves")?;
         Ok(Some(crate::ids::body(key)))
@@ -1267,6 +1262,7 @@ impl Builder<'_, '_, '_, '_> {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
             source_object: None,
+            native_ref: None,
         });
         let face = crate::ids::face(key);
         let region = crate::ids::region(key);
@@ -1284,22 +1280,17 @@ impl Builder<'_, '_, '_, '_> {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
-        let shell_record = Shell::new(
-            shell.clone(),
-            region.clone(),
-            vec![face],
-            Vec::new(),
-            Vec::new(),
-        )
-        .map_err(|_| CodecError::malformed("a patch shell holds no face"))?;
+        let shell_record = Shell::new(shell.clone(), region.clone());
         self.ir.geometry.shells.push(shell_record);
         self.ir.geometry.regions.push(Region {
             id: region.clone(),
             body: crate::ids::body(key),
             shells: vec![shell],
+            native_ref: None,
         });
-        self.body(prim, key, BodyKind::Sheet, vec![region]);
+        self.body(prim, key, BodyKind::Sheet);
         self.transferred = true;
         self.admit("usd_patch")?;
         Ok(Some(crate::ids::body(key)))
@@ -1442,7 +1433,7 @@ fn base_color(surface: &SurfaceShader) -> ([f64; 3], f64) {
 /// The appearance of a surface material.
 fn surface_appearance(surface: &SurfaceShader) -> Appearance {
     let ([r, g, b], opacity) = base_color(surface);
-    let channel = |value: f64| crate::text::value::round_f32(value.clamp(0.0, 1.0));
+    let channel = |value: f64| f64::from(crate::text::value::round_f32(value.clamp(0.0, 1.0)));
     let base_color = Color::new(channel(r), channel(g), channel(b), channel(opacity));
     let mut properties = BTreeMap::new();
     for (input, value) in &surface.inputs {

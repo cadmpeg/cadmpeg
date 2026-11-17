@@ -1,16 +1,32 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Occurrence",
           "kind": "solid",
-          "name": "Occurrence",
-          "regions": [
-            "usd:stage:region#/Occurrence:region:0"
-          ]
+          "name": "Occurrence"
         }
       ],
       "coedges": [
@@ -358,9 +374,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:0",
-          "id": "usd:stage:edge#/Occurrence:edge:0",
-          "start": "usd:stage:vertex#/Occurrence:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:0",
+            "start": "usd:stage:vertex#/Occurrence:vertex:0"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:0"
         },
         {
           "carrier": {
@@ -370,9 +388,11 @@
               0.004
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:0",
-          "id": "usd:stage:edge#/Occurrence:edge:1",
-          "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:0",
+            "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:1"
         },
         {
           "carrier": {
@@ -382,9 +402,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/Occurrence:vertex:1",
-          "id": "usd:stage:edge#/Occurrence:edge:2",
-          "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/Occurrence:vertex:1",
+            "start": "usd:stage:vertex#/Occurrence:vertex:1"
+          },
+          "id": "usd:stage:edge#/Occurrence:edge:2"
         }
       ],
       "faces": [
@@ -3374,20 +3396,7 @@
       "shells": [
         {
           "id": "usd:stage:shell#/Occurrence:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/Occurrence:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/Occurrence:face:2",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/Occurrence:region:0"
         }
       ],
@@ -3845,7 +3854,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

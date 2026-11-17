@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "rhino:object:body#record-000000-offset-177",
           "kind": "solid",
-          "regions": [
-            "rhino:object:region#record-000000-offset-177.slot-1"
-          ],
           "visible": true
         }
       ],
@@ -107,16 +123,20 @@
       "edges": [
         {
           "carrier": {},
-          "end": "rhino:object:vertex#record-000000-offset-177.slot-0",
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.slot-0",
+            "start": "rhino:object:vertex#record-000000-offset-177.slot-0"
+          },
           "id": "rhino:object:edge#record-000000-offset-177.singular-0",
-          "start": "rhino:object:vertex#record-000000-offset-177.slot-0",
           "tolerance": 0.05
         },
         {
           "carrier": {},
-          "end": "rhino:object:vertex#record-000000-offset-177.slot-1",
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.slot-1",
+            "start": "rhino:object:vertex#record-000000-offset-177.slot-1"
+          },
           "id": "rhino:object:edge#record-000000-offset-177.singular-2",
-          "start": "rhino:object:vertex#record-000000-offset-177.slot-1",
           "tolerance": 0.05
         },
         {
@@ -127,9 +147,11 @@
               1.0
             ]
           },
-          "end": "rhino:object:vertex#record-000000-offset-177.slot-1",
+          "ends": {
+            "end": "rhino:object:vertex#record-000000-offset-177.slot-1",
+            "start": "rhino:object:vertex#record-000000-offset-177.slot-0"
+          },
           "id": "rhino:object:edge#record-000000-offset-177.slot-0",
-          "start": "rhino:object:vertex#record-000000-offset-177.slot-0",
           "tolerance": 0.03
         }
       ],
@@ -361,12 +383,7 @@
       "shells": [
         {
           "id": "rhino:object:shell#record-000000-offset-177.component-0",
-          "members": [
-            {
-              "id": "rhino:object:face#record-000000-offset-177.slot-0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "rhino:object:region#record-000000-offset-177.slot-1"
         }
       ],
@@ -514,7 +531,19 @@
         "windows_bitmaps": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

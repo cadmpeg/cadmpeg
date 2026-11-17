@@ -297,6 +297,7 @@ fn a_pcurve_recovers_a_missing_cube_edge_in_both_directions() {
             id: pcurve_id.clone(),
             geometry,
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         ir.geometry.coedges[coedge_index].pcurves.push(PcurveUse {
             pcurve: pcurve_id,

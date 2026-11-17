@@ -1,20 +1,37 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Root/Cage",
           "kind": "general",
-          "name": "Cage",
-          "regions": []
+          "name": "Cage"
         },
         {
           "id": "usd:stage:body#/Root/Panel",
           "kind": "general",
-          "name": "Panel",
-          "regions": []
+          "name": "Panel"
         }
       ],
       "coedges": [],
@@ -41,8 +58,10 @@
           "id": "usd:stage:appearance-binding#/Root/Panel",
           "source_entity_id": "/Root/Looks/Red",
           "target": {
-            "kind": "tessellation",
-            "value": "usd:stage:tessellation#/Root/Panel"
+            "entity": {
+              "kind": "tessellation",
+              "value": "usd:stage:tessellation#/Root/Panel"
+            }
           }
         },
         {
@@ -51,10 +70,12 @@
           "id": "usd:stage:subset-binding#/Root/Panel:/Root/Panel/Left",
           "source_entity_id": "/Root/Looks/Textured",
           "target": {
-            "kind": "triangle_group",
-            "value": {
-              "group": "/Root/Panel/Left",
-              "tessellation": "usd:stage:tessellation#/Root/Panel"
+            "entity": {
+              "kind": "triangle_group",
+              "value": {
+                "group": "/Root/Panel/Left",
+                "tessellation": "usd:stage:tessellation#/Root/Panel"
+              }
             }
           }
         }
@@ -476,7 +497,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

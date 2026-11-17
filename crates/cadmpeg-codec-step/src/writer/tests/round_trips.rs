@@ -224,7 +224,10 @@ fn align_sheet_edge_to_pcurve(
             .expect("sheet pcurve edge");
         (
             edge.curve().cloned().expect("sheet pcurve edge curve"),
-            [edge.start.clone(), edge.end.clone()],
+            [
+                edge.ends.as_ref().unwrap().start.clone(),
+                edge.ends.as_ref().unwrap().end.clone(),
+            ],
         )
     };
     if let Some(curve_geometry) = curve_geometry_for_sheet_pcurve(geometry)? {
@@ -476,6 +479,7 @@ pub(super) fn cylinder_surface_doc() -> CadIr {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir
 }
@@ -751,7 +755,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     assert_eq!(decoded.ir().model.occurrences.len(), 1);
 }
 
-pub(super) fn wire_body_ir(alpha: f32) -> CadIr {
+pub(super) fn wire_body_ir(alpha: f64) -> CadIr {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.geometry.edges[0].clone();
     let curve = edge.curve().cloned().expect("cube edge curve");
@@ -759,9 +763,10 @@ pub(super) fn wire_body_ir(alpha: f32) -> CadIr {
         .edges
         .retain(|candidate| candidate.id == edge.id);
     ir.geometry.curves.retain(|candidate| candidate.id == curve);
-    ir.geometry
-        .vertices
-        .retain(|vertex| vertex.id == edge.start || vertex.id == edge.end);
+    ir.geometry.vertices.retain(|vertex| {
+        vertex.id == edge.ends.as_ref().unwrap().start
+            || vertex.id == edge.ends.as_ref().unwrap().end
+    });
     let point_ids = ir
         .geometry
         .vertices
@@ -776,20 +781,14 @@ pub(super) fn wire_body_ir(alpha: f32) -> CadIr {
     ir.geometry.faces.clear();
     ir.geometry.surfaces.clear();
     ir.geometry.shells.truncate(1);
-    ir.geometry.shells[0]
-        .edit_topology(|faces, wire_edges, free_vertices| {
-            faces.clear();
-            *wire_edges = vec![edge.id];
-            free_vertices.clear();
-        })
-        .unwrap();
+    ir.geometry.shells[0].members =
+        vec![cadmpeg_ir::topology::ShellMember::WireEdge { id: edge.id }];
     ir.geometry.regions.truncate(1);
     ir.geometry.regions[0].shells = vec![ir.geometry.shells[0].id.clone()];
     ir.geometry.bodies.truncate(1);
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.geometry.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, alpha).expect("valid color"));
-    ir.geometry.bodies[0].regions = vec![ir.geometry.regions[0].id.clone()];
     ir
 }
 
@@ -816,7 +815,7 @@ pub(crate) fn writer_round_trips_edge_based_wire_bodies() {
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert_eq!(decoded.ir().geometry.edges.len(), 1);
-    assert_eq!(decoded.ir().geometry.shells[0].wire_edges().len(), 1);
+    assert_eq!(decoded.ir().geometry.shells[0].wire_edges().count(), 1);
     assert_eq!(
         decoded.ir().geometry.bodies[0].color,
         Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.8, 1.0).expect("valid color"))
@@ -953,12 +952,14 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
             id: CurveId::mint("test:model:curve#parabola").expect("identity grammar"),
             geometry: parabola.clone(),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
             id: CurveId::mint("test:model:curve#hyperbola").expect("identity grammar"),
             geometry: hyperbola.clone(),
             source_object: None,
+            native_ref: None,
         },
     ]);
 
@@ -1001,6 +1002,7 @@ pub(crate) fn standalone_geometry_uses_general_shape_representation() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let output = export(&ir);
     assert!(output.contains("SHAPE_REPRESENTATION('',"));
@@ -1205,7 +1207,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         id: "test:model:appearance-binding#hidden-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
         source_entity_id: None,
         object_type: None,
@@ -1238,7 +1240,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
 
 #[test]
 fn writer_round_trips_surface_appearance_transparency() {
-    const EPS_ALPHA: f32 = 0.000_001;
+    const EPS_ALPHA: f64 = 0.000_001;
 
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
@@ -1282,7 +1284,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         id: "test:model:appearance-binding#transparent-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
         source_entity_id: None,
         object_type: None,
@@ -1293,7 +1295,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         id: "test:model:appearance-binding#more-transparent-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[1].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[1].id.clone()).into(),
         appearance: second_appearance,
         source_entity_id: None,
         object_type: None,
@@ -1341,7 +1343,7 @@ fn writer_round_trips_presentation_layer_visibility() {
         name: "hidden layer".into(),
         description: Some("layer visibility".into()),
         visible: Some(false),
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
 
     let mut output = Vec::new();
@@ -1383,7 +1385,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
         name: String::new(),
         description: Some("unnamed layer".into()),
         visible: Some(false),
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
 
     let mut output = Vec::new();
@@ -1411,7 +1413,12 @@ fn writer_round_trips_empty_presentation_layer_label() {
     assert_eq!(layer.description.as_deref(), Some("unnamed layer"));
     assert_eq!(layer.visible, Some(false));
     assert!(matches!(
-        layer.items.as_slice(),
+        layer
+            .items
+            .iter()
+            .map(|item| &item.entity)
+            .collect::<Vec<_>>()
+            .as_slice(),
         [PresentationItem::Body { .. }]
     ));
 }
@@ -1478,6 +1485,7 @@ fn analytic_surfaces_map_to_their_step_entities() {
             id: SurfaceId::mint("test:model:surface#s").expect("identity grammar"),
             geometry: geom,
             source_object: None,
+            native_ref: None,
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
@@ -1582,11 +1590,7 @@ fn writer_emits_both_carriers_for_mixed_general_bodies() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let edge = ir.geometry.edges[0].id.clone();
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::General;
-    {
-        let members = vec![edge];
-        ir.geometry.shells[0].edit_topology(|_, wire_edges, _| *wire_edges = members)
-    }
-    .unwrap();
+    ir.geometry.shells[0].add_wire_edge(edge);
 
     let mut output = Vec::new();
     let report = write_step(
@@ -1935,10 +1939,9 @@ fn disconnected_wire_edges_export_in_separate_connected_sets() {
         .edges
         .iter()
         .find(|edge| {
-            ir.geometry
-                .vertices
-                .iter()
-                .all(|v| v.id != edge.start && v.id != edge.end)
+            ir.geometry.vertices.iter().all(|v| {
+                v.id != edge.ends.as_ref().unwrap().start && v.id != edge.ends.as_ref().unwrap().end
+            })
         })
         .expect("disconnected edge")
         .clone();
@@ -1951,12 +1954,9 @@ fn disconnected_wire_edges_export_in_separate_connected_sets() {
             .expect("carrier")
             .clone(),
     );
-    for vertex in full
-        .geometry
-        .vertices
-        .iter()
-        .filter(|v| v.id == second.start || v.id == second.end)
-    {
+    for vertex in full.geometry.vertices.iter().filter(|v| {
+        v.id == second.ends.as_ref().unwrap().start || v.id == second.ends.as_ref().unwrap().end
+    }) {
         ir.geometry.points.push(
             full.geometry
                 .points
@@ -1967,9 +1967,7 @@ fn disconnected_wire_edges_export_in_separate_connected_sets() {
         );
         ir.geometry.vertices.push(vertex.clone());
     }
-    ir.geometry.shells[0]
-        .edit_topology(|_, edges, _| edges.push(second.id.clone()))
-        .expect("wire topology");
+    ir.geometry.shells[0].add_wire_edge(second.id.clone());
     ir.geometry.edges.push(second);
     assert!(cadmpeg_ir::validate_neutral(&ir, Vec::new())
         .expect("neutral validation")

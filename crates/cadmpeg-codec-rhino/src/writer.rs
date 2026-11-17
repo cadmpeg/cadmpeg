@@ -316,22 +316,19 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
         .iter()
         .filter(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
     {
-        let regions = body
-            .regions
-            .iter()
-            .map(|id| id.as_str().to_owned())
+        let regions = geometry
+            .body_regions(&body.id)
+            .map(|region| region.id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         let shells = geometry
-            .regions
-            .iter()
-            .filter(|region| regions.contains(region.id.as_str()))
+            .body_regions(&body.id)
             .flat_map(|region| region.shells.iter().map(|id| id.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let faces = geometry
-            .shells
+            .faces
             .iter()
-            .filter(|shell| shells.contains(shell.id.as_str()))
-            .flat_map(|shell| shell.faces().iter().map(|id| id.as_str().to_owned()))
+            .filter(|face| shells.contains(face.shell.as_str()))
+            .map(|face| face.id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         let surfaces = geometry
             .faces
@@ -373,7 +370,7 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .edges
             .iter()
             .filter(|edge| edges.contains(edge.id.as_str()))
-            .flat_map(|edge| [edge.start.as_str().to_owned(), edge.end.as_str().to_owned()])
+            .flat_map(|edge| edge.vertices().map(|vertex| vertex.as_str().to_owned()))
             .collect::<BTreeSet<_>>();
         let curves = geometry
             .edges
@@ -531,12 +528,7 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
         .geometry
         .shells
         .iter()
-        .flat_map(|shell| {
-            shell
-                .free_vertices()
-                .iter()
-                .map(|id| id.as_str().to_owned())
-        })
+        .flat_map(|shell| shell.free_vertices().map(|id| id.as_str().to_owned()))
         .collect::<BTreeSet<_>>();
     scoped.geometry.vertices = ir
         .geometry
@@ -1741,7 +1733,10 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
     let mut points = std::collections::BTreeSet::new();
     let mut groups = Vec::new();
     for body in &geometry.bodies {
-        if body.kind != BodyKind::General || body.regions.len() != 1 || body.transform.is_some() {
+        if body.kind != BodyKind::General
+            || geometry.body_regions(&body.id).count() != 1
+            || body.transform.is_some()
+        {
             return Err(CodecError::NotImplemented(format!(
                 "body {} is not a free-vertex body without placement",
                 body.id.as_str()
@@ -1751,7 +1746,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
         let region = geometry
             .regions
             .iter()
-            .find(|region| region.id == body.regions[0])
+            .find(|region| region.body == body.id)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("body {} region is missing", body.id.as_str()))
             })?;
@@ -1772,9 +1767,9 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 CodecError::malformed(format_args!("body {} shell is missing", body.id.as_str()))
             })?;
         if shell.region != region.id
-            || !shell.faces().is_empty()
-            || !shell.wire_edges().is_empty()
-            || shell.free_vertices().is_empty()
+            || geometry.shell_faces(&shell.id).next().is_some()
+            || shell.wire_edges().next().is_some()
+            || shell.free_vertices().next().is_none()
             || !shells.insert(shell.id.as_str().to_owned())
         {
             return Err(CodecError::malformed(format_args!(
@@ -2617,8 +2612,20 @@ fn default_layer_payload() -> Result<Vec<u8>, CodecError> {
     Ok(payload)
 }
 
-fn unit_color_channel(value: f32) -> Result<u8, CodecError> {
-    cadmpeg_core::convert::truncate_f64_to_u8(f64::from((value * 255.0).round()))
+/// The two vertices that bound an edge. A Rhino Brep edge names both.
+fn edge_ends(
+    edge: &cadmpeg_ir::topology::Edge,
+) -> Result<&cadmpeg_ir::topology::EdgeEnds, CodecError> {
+    edge.ends.as_ref().ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "Rhino writer does not encode edge {} with no vertex",
+            edge.id
+        ))
+    })
+}
+
+fn unit_color_channel(value: f64) -> Result<u8, CodecError> {
+    cadmpeg_core::convert::truncate_f64_to_u8((value * 255.0).round())
         .ok_or_else(|| CodecError::Malformed("color channel is outside byte range".into()))
 }
 

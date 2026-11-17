@@ -78,6 +78,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
             id,
             geometry: sphere_geometry.clone(),
             source_object: None,
+            native_ref: None,
         }));
     let bindings = [
         (surface_ids[0].clone(), false, 0),
@@ -292,6 +293,7 @@ fn sphere_section_circle_attaches_one_curve() {
             .expect("valid sphere"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let support = StandardCurveSupport {
         pos: 12,
@@ -330,6 +332,7 @@ fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
             .expect("valid sphere"),
         )),
         source_object: None,
+        native_ref: None,
     });
     for (index, position) in [Point3::new(0.8, 0.0, 0.6), Point3::new(0.0, 0.8, 0.6)]
         .into_iter()

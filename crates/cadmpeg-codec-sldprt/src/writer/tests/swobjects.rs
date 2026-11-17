@@ -156,9 +156,9 @@ fn semantic_writer_emits_face_records_deterministically() {
     for (index, face) in ir.geometry.faces.iter_mut().enumerate() {
         face.color = Some(
             Color::new(
-                f32::from(u16::try_from(index).expect("index fits u16")) / 10.0,
-                f32::from(u16::try_from(index + 1).expect("index fits u16")) / 10.0,
-                f32::from(u16::try_from(index + 2).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index + 1).expect("index fits u16")) / 10.0,
+                f64::from(u16::try_from(index + 2).expect("index fits u16")) / 10.0,
                 1.0,
             )
             .expect("valid color"),
@@ -981,7 +981,7 @@ fn the_metadata_projection_refuses_a_length_that_overflows_in_source_units() {
     let attribute = SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:default_reference_plane#0")
             .unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "default_reference_plane".into(),
         values: vec![
             AttributeValue::vector([1.0e10, 2.0, 3.0]).unwrap(),
@@ -1011,7 +1011,7 @@ fn patched_retained_metadata(
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint(&id).unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: name.into(),
         values,
     });
@@ -1117,7 +1117,7 @@ fn configuration_manager_metadata_cannot_be_patched_or_generated() {
     let attribute = SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:configuration_manager#0:0")
             .unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "configuration_manager".into(),
         values,
     };
@@ -1153,7 +1153,7 @@ fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
         let id = "sldprt:metadata:part_record#0:6";
         ir.model.attributes.push(SourceAttribute {
             id: cadmpeg_ir::ids::AttributeId::mint(id).unwrap(),
-            target: AttributeTarget::Document,
+            target: AttributeTarget::Document.into(),
             name: "part_record".into(),
             values,
         });
@@ -1182,7 +1182,7 @@ fn generated_part_metadata_requires_retained_root_serializer() {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:part_record#0:6").unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "part_record".into(),
         values: vec![AttributeValue::Integer(17)],
     });
@@ -1276,7 +1276,7 @@ fn configuration_manager_retention_is_checked_at_the_writer_entry() {
                 .iter_mut()
                 .find(|a| a.name == "configuration_manager")
                 .unwrap()
-                .target = AttributeTarget::Body(body);
+                .target = AttributeTarget::Body(body).into();
         }
         let records = crate::source_records(&ir, &fidelity).unwrap();
         let mut written = Vec::new();

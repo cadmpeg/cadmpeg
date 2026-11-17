@@ -124,6 +124,8 @@ const COVERAGE: ArenaDispositions = {
         physics_scenes: Written,
         solver_settings: Written,
         declared_measures: Omitted,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 };
 
@@ -314,7 +316,7 @@ impl<'ir> Writer<'ir> {
     fn new(ir: &'ir CadIr, version: &'static str) -> Self {
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
-            let key = match &binding.target {
+            let key = match &binding.target.entity {
                 AppearanceTarget::Tessellation(id) => id.clone(),
                 AppearanceTarget::Body(id) => id.to_string(),
                 AppearanceTarget::Face(id) => id.to_string(),
@@ -1066,12 +1068,9 @@ impl<'ir> Writer<'ir> {
     )> {
         let query = cadmpeg_ir::index::StandardIndex;
         let mut out = Vec::new();
-        for region in self.ordered(
-            body.regions
-                .iter()
-                .filter_map(|region| self.index.regions(region.as_str(), query)),
-            |region| region.id.as_str(),
-        ) {
+        for region in self.ordered(self.index.ir().geometry.body_regions(&body.id), |region| {
+            region.id.as_str()
+        }) {
             for shell in self.ordered(
                 region
                     .shells
@@ -1079,13 +1078,9 @@ impl<'ir> Writer<'ir> {
                     .filter_map(|shell| self.index.shells(shell.as_str(), query)),
                 |shell| shell.id.as_str(),
             ) {
-                for face in self.ordered(
-                    shell
-                        .faces()
-                        .iter()
-                        .filter_map(|face| self.index.faces(face.as_str(), query)),
-                    |face| face.id.as_str(),
-                ) {
+                for face in self.ordered(self.index.ir().geometry.shell_faces(&shell.id), |face| {
+                    face.id.as_str()
+                }) {
                     let surface = self.index.surfaces(face.surface.as_str(), query);
                     out.push((face, surface));
                 }
@@ -1115,14 +1110,14 @@ impl<'ir> Writer<'ir> {
         };
         self.out.line(&format!(
             "color3f[] primvars:displayColor = [{}] (",
-            tuple32(&[color.r(), color.g(), color.b()])
+            tuple32(&[color.r(), color.g(), color.b()].map(crate::text::value::round_f32))
         ));
         self.out.line("    interpolation = \"constant\"");
         self.out.line(")");
         if color.a() < 1.0 {
             self.out.line(&format!(
                 "float[] primvars:displayOpacity = [{}] (",
-                real32(color.a())
+                real32(crate::text::value::round_f32(color.a()))
             ));
             self.out.line("    interpolation = \"constant\"");
             self.out.line(")");
@@ -1377,12 +1372,9 @@ impl<'ir> Writer<'ir> {
         let query = cadmpeg_ir::index::StandardIndex;
         let index = &self.index;
         let mut edges = Vec::new();
-        for region in self.ordered(
-            body.regions
-                .iter()
-                .filter_map(|region| index.regions(region.as_str(), query)),
-            |region| region.id.as_str(),
-        ) {
+        for region in self.ordered(index.ir().geometry.body_regions(&body.id), |region| {
+            region.id.as_str()
+        }) {
             for shell in self.ordered(
                 region
                     .shells
@@ -1394,7 +1386,6 @@ impl<'ir> Writer<'ir> {
                     self.ordered(
                         shell
                             .wire_edges()
-                            .iter()
                             .filter_map(|edge| index.edges(edge.as_str(), query)),
                         |edge| edge.id.as_str(),
                     ),
@@ -1469,7 +1460,10 @@ impl<'ir> Writer<'ir> {
                 .points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)
                 .map(|point| point.position().get())
         };
-        let ends = position(&edge.start).zip(position(&edge.end));
+        let ends = edge
+            .start()
+            .and_then(&position)
+            .zip(edge.end().and_then(&position));
         curve_nurbs(
             curve,
             edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
@@ -1711,7 +1705,7 @@ impl<'ir> Writer<'ir> {
             .iter()
             .filter(|binding| {
                 !matches!(
-                    binding.target,
+                    binding.target.entity,
                     AppearanceTarget::Tessellation(_)
                         | AppearanceTarget::Body(_)
                         | AppearanceTarget::TriangleGroup { .. }

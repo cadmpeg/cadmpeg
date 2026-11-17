@@ -18,18 +18,21 @@ impl<'a> Graph<'a> {
         self.nodes.push((arena, id));
     }
 
+    /// Indexes each node by its id. A design record keeps the id of the
+    /// model record it restates; the first node of an id keeps the index.
     pub(crate) fn index(&mut self) {
-        self.ids
-            .extend(self.nodes.iter().enumerate().map(|(i, (_, id))| (*id, i)));
+        for (index, (_, id)) in self.nodes.iter().enumerate() {
+            self.ids.entry(id).or_insert(index);
+        }
         self.edges.resize_with(self.nodes.len(), Vec::new);
     }
 
-    pub(crate) fn references<T: crate::schema::EntitySchema>(
+    pub(crate) fn references<T: crate::schema::ArenaRecord + serde::Serialize>(
         &mut self,
         entity: &T,
     ) -> Result<(), CodecError> {
         let value = serde_json::to_value(entity).map_err(CodecError::malformed)?;
-        let Some(&index) = self.ids.get(entity.identity()) else {
+        let Some(&index) = self.ids.get(entity.record_identity()) else {
             return Ok(());
         };
         crate::reference_walk::visit_edges(
@@ -50,6 +53,13 @@ impl<'a> Graph<'a> {
             },
         );
         Ok(())
+    }
+
+    /// Add the edge from a parent to a child that names it.
+    pub(crate) fn child(&mut self, parent: &str, child: &str) {
+        if let (Some(&parent), Some(&child)) = (self.ids.get(parent), self.ids.get(child)) {
+            self.edges[parent].push(child);
+        }
     }
 
     fn owner(&self, index: usize) -> Option<usize> {
@@ -149,6 +159,8 @@ pub fn select(
     selected.tolerances = document.tolerances;
     selected.geometry = document.geometry.repro_select(&ids);
     selected.model = document.model.repro_select(&ids);
+    selected.design = document.design.repro_select(&ids);
+    selected.process = document.process.repro_select(&ids);
     let mut streams: BTreeSet<String> = finding
         .entity
         .iter()
@@ -241,6 +253,8 @@ pub fn select(
         }
         selected.geometry = document.geometry.repro_select(&ids);
         selected.model = document.model.repro_select(&ids);
+        selected.design = document.design.repro_select(&ids);
+        selected.process = document.process.repro_select(&ids);
     }
     if let Err(error) = super::projection_size(&selected, options) {
         match &error {
@@ -264,13 +278,9 @@ pub fn select(
                     if let Some(object) = row.as_object_mut() {
                         object.remove("source_object");
                         object.remove("product_definition");
-                        let child = match arena.as_str() {
-                            "bodies" => Some("regions"),
-                            "regions" => Some("shells"),
-                            _ => None,
-                        };
-                        if let Some(children) = child
-                            .and_then(|field| object.get_mut(field))
+                        if let Some(children) = (arena == "regions")
+                            .then(|| object.get_mut("shells"))
+                            .flatten()
                             .and_then(Value::as_array_mut)
                         {
                             children.retain(|id| id.as_str().is_some_and(|id| ids.contains(id)));

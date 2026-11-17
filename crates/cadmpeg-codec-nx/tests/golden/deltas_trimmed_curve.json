@@ -1,16 +1,32 @@
 {
   "decode": {
     "ir": {
-      "design": {},
+      "design": {
+        "arrangements": [],
+        "configurations": [],
+        "containers": [],
+        "evaluations": [],
+        "features": [],
+        "names": [],
+        "parameters": [],
+        "programs": [],
+        "publications": [],
+        "scopes": [],
+        "sheet_metal_rules": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": []
+      },
       "fragment": false,
       "geometry": {
         "bodies": [
           {
             "id": "nx:s0:body#2",
-            "kind": "sheet",
-            "regions": [
-              "nx:s0:region#12"
-            ]
+            "kind": "sheet"
           }
         ],
         "coedges": [
@@ -53,9 +69,11 @@
                 0.75
               ]
             },
-            "end": "nx:s0:vertex#10",
+            "ends": {
+              "end": "nx:s0:vertex#10",
+              "start": "nx:s0:vertex#10"
+            },
             "id": "nx:s0:edge#8",
-            "start": "nx:s0:vertex#10",
             "tolerance": 0.3
           }
         ],
@@ -112,12 +130,7 @@
         "shells": [
           {
             "id": "nx:s0:shell#3",
-            "members": [
-              {
-                "id": "nx:s0:face#4",
-                "kind": "face"
-              }
-            ],
+            "members": [],
             "region": "nx:s0:region#12"
           }
         ],
@@ -246,7 +259,19 @@
           ]
         }
       },
-      "process": {},
+      "process": {
+        "features": [],
+        "groups": [],
+        "machines": [],
+        "operations": [],
+        "parameters": [],
+        "presets": [],
+        "programs": [],
+        "setups": [],
+        "states": [],
+        "toolpaths": [],
+        "tools": []
+      },
       "scope": {
         "design": true,
         "model": true,

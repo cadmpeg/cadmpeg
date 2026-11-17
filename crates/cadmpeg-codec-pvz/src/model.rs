@@ -424,11 +424,11 @@ pub(crate) fn display_geometry(
             ir.geometry.bodies.push(Body {
                 id: body.clone(),
                 kind: BodyKind::General,
-                regions: Vec::new(),
                 transform: None,
                 name: Some(member.to_owned()),
                 color: None,
                 visible: None,
+                native_ref: None,
             });
             body
         }
@@ -452,7 +452,7 @@ pub(crate) fn display_geometry(
                     used.insert(base);
                     ir.model.appearance_bindings.push(AppearanceBinding {
                         id: crate::ids::appearance_binding(member, index),
-                        target: AppearanceTarget::Tessellation(id.to_string()),
+                        target: AppearanceTarget::Tessellation(id.to_string()).into(),
                         appearance: crate::ids::appearance(member, base),
                         source_entity_id: None,
                         object_type: None,
@@ -551,7 +551,12 @@ fn appearance(member: &str, base: u32, defined: &crate::ol::Appearance) -> (Appe
     let values = &defined.values;
     let mut rejected = 0_usize;
     let [r, g, b] = values.base;
-    let base_color = Color::new(r, g, b, values.opacity);
+    let base_color = Color::new(
+        f64::from(r),
+        f64::from(g),
+        f64::from(b),
+        f64::from(values.opacity),
+    );
     if base_color.is_none() {
         rejected += 1;
     }

@@ -1,16 +1,32 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "iges:model:body#free-geometry",
           "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
+          "name": "IGES free geometry"
         }
       ],
       "coedges": [],
@@ -174,9 +190,11 @@
               2.5707963267948966
             ]
           },
-          "end": "iges:model:vertex#D5-end",
-          "id": "iges:model:edge#D5",
-          "start": "iges:model:vertex#D5-start"
+          "ends": {
+            "end": "iges:model:vertex#D5-end",
+            "start": "iges:model:vertex#D5-start"
+          },
+          "id": "iges:model:edge#D5"
         }
       ],
       "faces": [],
@@ -764,7 +782,19 @@
         "views": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

@@ -79,6 +79,7 @@ fn pcurve_vertex_case() -> (
                 ),
             ),
             source_object: None,
+            native_ref: None,
         });
     }
     let carriers = [10, 11]
@@ -164,6 +165,7 @@ fn analytic_vertex_result() -> Result<super::SolvedTopologicalVertices, CodecErr
             .expect("identity grammar"),
         geometry: line([0.0, 0.0, 0.0], direction),
         source_object: None,
+        native_ref: None,
     };
     ir.geometry.curves.push(make_curve(7, [1.0, 0.0, 0.0]));
     let id = crate::topology::HalfEdgeId {

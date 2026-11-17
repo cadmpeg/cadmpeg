@@ -59,10 +59,7 @@
       "bodies": [
         {
           "id": "f3d:brep:entity#1",
-          "kind": "sheet",
-          "regions": [
-            "f3d:brep:entity#2"
-          ]
+          "kind": "sheet"
         }
       ],
       "regions": [
@@ -78,12 +75,7 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "members": [
-            {
-              "kind": "face",
-              "id": "f3d:brep:entity#4"
-            }
-          ]
+          "members": []
         }
       ],
       "faces": [
@@ -151,8 +143,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14"
+          "ends": {
+            "start": "f3d:brep:entity#13",
+            "end": "f3d:brep:entity#14"
+          }
         },
         {
           "id": "f3d:brep:entity#11",
@@ -162,8 +156,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15"
+          "ends": {
+            "start": "f3d:brep:entity#14",
+            "end": "f3d:brep:entity#15"
+          }
         },
         {
           "id": "f3d:brep:entity#12",
@@ -173,8 +169,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13"
+          "ends": {
+            "start": "f3d:brep:entity#15",
+            "end": "f3d:brep:entity#13"
+          }
         }
       ],
       "vertices": [
@@ -515,8 +513,39 @@
       "point_clouds": [],
       "history_bodies": []
     },
-    "design": {},
-    "process": {},
+    "design": {
+      "scopes": [],
+      "containers": [],
+      "features": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
+      "parameters": [],
+      "spreadsheets": [],
+      "sheet_metal_rules": [],
+      "programs": [],
+      "configurations": [],
+      "arrangements": [],
+      "publications": [],
+      "evaluations": [],
+      "names": []
+    },
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
+    },
     "native": {
       "f3d": {
         "act_component_links": [],

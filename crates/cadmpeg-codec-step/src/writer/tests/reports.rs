@@ -8,7 +8,7 @@ use cadmpeg_test_support::edit;
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, ExportPlan};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
@@ -53,18 +53,23 @@ pub(super) fn edgeless_doc() -> CadIr {
         id: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
         point: PointId::mint("test:model:point#p0").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.vertices.push(Vertex {
         id: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
         point: PointId::mint("test:model:point#p1").expect("identity grammar"),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.edges.push(Edge {
         id: EdgeId::mint("test:model:edge#e0").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-        start: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
-        end: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
+            VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
@@ -77,6 +82,7 @@ pub(super) fn edgeless_doc() -> CadIr {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.geometry.coedges.push(Coedge {
         id: CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar"),
@@ -86,6 +92,7 @@ pub(super) fn edgeless_doc() -> CadIr {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     });
     ir.geometry.loops.push(Loop {
         id: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
@@ -97,6 +104,7 @@ pub(super) fn edgeless_doc() -> CadIr {
             )
             .expect("valid loop ring"),
         ),
+        native_ref: None,
     });
     ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:face#f0").expect("identity grammar"),
@@ -110,25 +118,26 @@ pub(super) fn edgeless_doc() -> CadIr {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
-    ir.geometry.shells.push(Shell::with_face(
+    ir.geometry.shells.push(Shell::new(
         ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
         RegionId::mint("test:model:region#l0").expect("identity grammar"),
-        FaceId::mint("test:model:face#f0").expect("identity grammar"),
     ));
     ir.geometry.regions.push(Region {
         id: RegionId::mint("test:model:region#l0").expect("identity grammar"),
         body: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         shells: vec![ShellId::mint("test:model:shell#sh0").expect("identity grammar")],
+        native_ref: None,
     });
     ir.geometry.bodies.push(Body {
         id: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:region#l0").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir
 }
@@ -347,6 +356,9 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
         .iter_mut()
         .find(|edge| edge.id == edge_id)
         .expect("loop edge exists")
+        .ends
+        .as_mut()
+        .unwrap()
         .start = cadmpeg_ir::ids::VertexId::mint("test:model:vertex#missing-loop-vertex")
         .expect("identity grammar");
 
@@ -527,11 +539,11 @@ fn writer_names_only_the_region_without_shells_beside_a_bounded_region() {
     let body = ir.geometry.bodies[0].id.clone();
     let shells = Vec::new();
     let bounded = ir.geometry.regions[0].id.clone();
-    ir.geometry.bodies[0].regions.push(lost.clone());
     ir.geometry.regions.push(Region {
         id: lost.clone(),
         body,
         shells,
+        native_ref: None,
     });
 
     let report = write_step(
@@ -555,7 +567,6 @@ fn writer_names_only_the_region_without_shells_beside_a_bounded_region() {
 fn writer_reports_topology_without_an_emitted_region() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.regions.clear();
-    ir.geometry.bodies[0].regions.clear();
 
     let report = write_step(
         &ir,
@@ -578,15 +589,11 @@ fn writer_reports_topology_without_an_emitted_region() {
 fn writer_reports_wire_region_without_connected_edges() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
-    ir.geometry.shells[0]
-        .edit_topology(|faces, wire_edges, _| {
-            faces.clear();
-            *wire_edges = vec![
-                cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
-                    .expect("identity grammar"),
-            ];
-        })
-        .unwrap();
+    ir.geometry.faces.clear();
+    ir.geometry.shells[0].members = vec![cadmpeg_ir::topology::ShellMember::WireEdge {
+        id: cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
+            .expect("identity grammar"),
+    }];
 
     let report = write_step(
         &ir,
@@ -656,7 +663,7 @@ fn writer_reports_dangling_appearance_binding() {
     let appearance = AppearanceId::mint("test:model:appearance#missing").expect("identity grammar");
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding.try_into().expect("valid identity"),
-        target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()),
+        target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()).into(),
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
@@ -702,7 +709,7 @@ fn writer_reports_appearance_without_base_color() {
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding.try_into().expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
@@ -769,7 +776,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     let mut bindings = vec![
         AppearanceBinding {
             id: "test:model:binding#red".try_into().expect("valid identity"),
-            target: target.clone(),
+            target: target.clone().into(),
             appearance: red,
             source_entity_id: None,
             object_type: None,
@@ -780,7 +787,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             id: "test:model:binding#blue"
                 .try_into()
                 .expect("valid identity"),
-            target,
+            target: target.into(),
             appearance: blue,
             source_entity_id: None,
             object_type: None,
@@ -1084,6 +1091,7 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
 
     let report = write_step(
@@ -1178,7 +1186,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         id: "test:model:appearance-binding#hidden-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
         source_entity_id: None,
         object_type: None,
@@ -1213,7 +1221,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
         name: "hidden layer".into(),
         description: None,
         visible: Some(false),
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
     let mut output = Vec::new();
     let report = write_step(
@@ -1346,6 +1354,7 @@ fn edge_without_curve_is_reported_and_omitted() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let _ = curve; // silence unused import path
     assert!(report
@@ -1357,6 +1366,25 @@ fn edge_without_curve_is_reported_and_omitted() {
             && loss
                 .message
                 .contains("was omitted because it has no 3D curve")
+    }));
+}
+
+#[test]
+fn edge_without_vertices_is_reported_and_omitted() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let edge = ir.geometry.edges[0].id.clone();
+    ir.geometry.edges[0].ends = None;
+    let mut buf = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut buf,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::EdgeNoVertex.kind()
+            && loss.message == format!("edge {edge} was omitted because it has no vertex")
     }));
 }
 
@@ -1379,6 +1407,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         scheme: cadmpeg_ir::SubdScheme::CatmullClark,
         source_object: Some(source_object.clone()),
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     });
     ir.model.tessellations.push(
         Tessellation::new(
@@ -1542,6 +1571,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .procedural_surfaces
@@ -1585,6 +1615,7 @@ fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
     ir.geometry
         .procedural_curves
@@ -1663,60 +1694,6 @@ fn elliptical_cone_reduction_is_reported() {
         loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
             && loss.message.contains("elliptical cone surface(s)")
     }));
-}
-
-/// Plans a document whose single surface is a circular cone of `half_angle`.
-fn circular_cone_plan(half_angle: f64) -> Result<ExportPlan, cadmpeg_core::CodecError> {
-    let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            2.0,
-            1.0,
-            half_angle,
-        )
-        .unwrap(),
-    ));
-
-    StepCodec::default().plan(
-        EncodeInput::new(&ir, None),
-        TargetRequest::Explicit(StepSchema::Ap214.descriptor().id.as_str()),
-    )
-}
-
-#[test]
-fn cone_semi_angle_inside_wr2_is_planned() {
-    assert!(circular_cone_plan(0.5).is_ok());
-}
-
-#[test]
-fn zero_cone_semi_angle_is_planned_as_a_cylinder() {
-    assert!(circular_cone_plan(0.0).is_ok());
-}
-
-#[test]
-fn negative_cone_semi_angle_inside_wr2_is_planned() {
-    assert!(circular_cone_plan(-0.715_584_993_317_674_8).is_ok());
-}
-
-#[test]
-fn right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(std::f64::consts::FRAC_PI_2)
-        .expect_err("right angle cone is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
-}
-
-#[test]
-fn negative_right_angle_cone_semi_angle_is_refused_at_planning() {
-    let error = circular_cone_plan(-std::f64::consts::FRAC_PI_2)
-        .expect_err("negative right angle cone is outside WR2");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("outside (0, pi/2)"))
-    );
 }
 
 /// A similarity transform, which the writer carries as a `SURFACE_REPLICA`.

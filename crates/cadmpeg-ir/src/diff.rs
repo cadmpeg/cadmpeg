@@ -220,11 +220,15 @@ pub struct ModifiedEntity {
     pub fields: NonEmptyFields,
 }
 
-/// Compared arena: a registered model arena or a native namespace arena.
+/// Compared arena: a registered arena, the design's name table, or a native
+/// namespace arena.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArenaKind {
-    /// A model arena declared by `arena_registry!`.
+    /// An arena declared by `arena_registry!`.
     Model(ArenaName),
+    /// The name table of the design, serialized as `design.names`, keyed by
+    /// entity id.
+    DesignNames,
     /// A native namespace arena, serialized as `native.{format}.{name}`.
     Native {
         /// Source-format namespace.
@@ -233,6 +237,8 @@ pub enum ArenaKind {
         name: String,
     },
 }
+
+const DESIGN_NAMES: &str = "design.names";
 
 impl ArenaKind {
     /// Native namespace arena named `native.{format}.{name}` on the wire.
@@ -249,6 +255,7 @@ impl fmt::Display for ArenaKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Model(name) => f.write_str(name.as_str()),
+            Self::DesignNames => f.write_str(DESIGN_NAMES),
             Self::Native { format, name } => write!(f, "native.{format}.{name}"),
         }
     }
@@ -258,6 +265,7 @@ impl PartialEq<str> for ArenaKind {
     fn eq(&self, other: &str) -> bool {
         match self {
             Self::Model(name) => name.as_str() == other,
+            Self::DesignNames => other == DESIGN_NAMES,
             Self::Native { format, name } => {
                 other
                     .strip_prefix("native.")
@@ -449,19 +457,42 @@ macro_rules! define_diff_arenas {
     ($( $field:ident: $element:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
-                ArenaKind::Model(ArenaName::registered(
-                    stringify!($field),
-                    crate::document::arena_class!($class),
-                    crate::document::arena_home!($home),
-                )),
+                ArenaKind::Model(crate::document::arena_name!($field, $class, $home)),
                 &left.$home.$field,
                 &right.$home.$field,
-                crate::schema::EntitySchema::identity,
+                crate::schema::ArenaRecord::record_identity,
             )),*]
         }
     };
 }
 crate::document::classified_arena_registry!(define_diff_arenas);
+
+/// One entry of the design's name table, compared as a record keyed by its
+/// entity's id.
+#[derive(PartialEq, Serialize)]
+struct NameRow<'a> {
+    entity: &'a crate::design::refs::EntityRef,
+    entry: &'a crate::design::names::NameEntry,
+}
+
+fn name_rows(ir: &CadIr) -> Vec<NameRow<'_>> {
+    ir.design
+        .names
+        .entries()
+        .iter()
+        .map(|(entity, entry)| NameRow { entity, entry })
+        .collect()
+}
+
+fn diff_names(left: &CadIr, right: &CadIr) -> ArenaDiff {
+    let rows = name_rows;
+    arena(
+        ArenaKind::DesignNames,
+        &rows(left),
+        &rows(right),
+        |row: &NameRow<'_>| row.entity.id(),
+    )
+}
 
 fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
     let namespaces = left
@@ -575,6 +606,7 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     let tolerance_change = (!tolerances_agree(left.tolerances, right.tolerances))
         .then_some((left.tolerances, right.tolerances));
     let mut per_arena = diff_arenas(left, right);
+    per_arena.push(diff_names(left, right));
     per_arena.extend(diff_native_namespaces(left, right));
     IrDiff {
         tolerance_change,
@@ -764,6 +796,7 @@ mod tests {
                 .expect("test fixture invariant"),
             )),
             source_object: None,
+            native_ref: None,
         };
 
         let mut left = unit_cube().expect("valid unit cube fixture");

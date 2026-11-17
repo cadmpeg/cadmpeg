@@ -1,56 +1,57 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/Curves/Arc",
           "kind": "wire",
-          "name": "Arc",
-          "regions": [
-            "usd:stage:region#/Curves/Arc"
-          ]
+          "name": "Arc"
         },
         {
           "id": "usd:stage:body#/Curves/Bezier",
           "kind": "wire",
-          "name": "Bezier",
-          "regions": [
-            "usd:stage:region#/Curves/Bezier"
-          ]
+          "name": "Bezier"
         },
         {
           "id": "usd:stage:body#/Curves/CatmullRom",
           "kind": "wire",
-          "name": "CatmullRom",
-          "regions": [
-            "usd:stage:region#/Curves/CatmullRom"
-          ]
+          "name": "CatmullRom"
         },
         {
           "id": "usd:stage:body#/Curves/Loop",
           "kind": "wire",
-          "name": "Loop",
-          "regions": [
-            "usd:stage:region#/Curves/Loop"
-          ]
+          "name": "Loop"
         },
         {
           "id": "usd:stage:body#/Curves/Polyline",
           "kind": "wire",
-          "name": "Polyline",
-          "regions": [
-            "usd:stage:region#/Curves/Polyline"
-          ]
+          "name": "Polyline"
         },
         {
           "id": "usd:stage:body#/Curves/Splines",
           "kind": "wire",
-          "name": "Splines",
-          "regions": [
-            "usd:stage:region#/Curves/Splines"
-          ]
+          "name": "Splines"
         }
       ],
       "coedges": [],
@@ -433,9 +434,11 @@
               1.0
             ]
           },
-          "end": "usd:stage:vertex#/Curves/Arc:0:1",
-          "id": "usd:stage:edge#/Curves/Arc:0",
-          "start": "usd:stage:vertex#/Curves/Arc:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Curves/Arc:0:1",
+            "start": "usd:stage:vertex#/Curves/Arc:0:0"
+          },
+          "id": "usd:stage:edge#/Curves/Arc:0"
         },
         {
           "carrier": {
@@ -445,9 +448,11 @@
               2.0
             ]
           },
-          "end": "usd:stage:vertex#/Curves/Bezier:0:1",
-          "id": "usd:stage:edge#/Curves/Bezier:0",
-          "start": "usd:stage:vertex#/Curves/Bezier:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Curves/Bezier:0:1",
+            "start": "usd:stage:vertex#/Curves/Bezier:0:0"
+          },
+          "id": "usd:stage:edge#/Curves/Bezier:0"
         },
         {
           "carrier": {
@@ -457,9 +462,11 @@
               2.0
             ]
           },
-          "end": "usd:stage:vertex#/Curves/CatmullRom:0:1",
-          "id": "usd:stage:edge#/Curves/CatmullRom:0",
-          "start": "usd:stage:vertex#/Curves/CatmullRom:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Curves/CatmullRom:0:1",
+            "start": "usd:stage:vertex#/Curves/CatmullRom:0:0"
+          },
+          "id": "usd:stage:edge#/Curves/CatmullRom:0"
         },
         {
           "carrier": {
@@ -469,9 +476,11 @@
               4.0
             ]
           },
-          "end": "usd:stage:vertex#/Curves/Loop:0:0",
-          "id": "usd:stage:edge#/Curves/Loop:0",
-          "start": "usd:stage:vertex#/Curves/Loop:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Curves/Loop:0:0",
+            "start": "usd:stage:vertex#/Curves/Loop:0:0"
+          },
+          "id": "usd:stage:edge#/Curves/Loop:0"
         },
         {
           "carrier": {
@@ -481,9 +490,11 @@
               2.0
             ]
           },
-          "end": "usd:stage:vertex#/Curves/Polyline:0:1",
-          "id": "usd:stage:edge#/Curves/Polyline:0",
-          "start": "usd:stage:vertex#/Curves/Polyline:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Curves/Polyline:0:1",
+            "start": "usd:stage:vertex#/Curves/Polyline:0:0"
+          },
+          "id": "usd:stage:edge#/Curves/Polyline:0"
         },
         {
           "carrier": {
@@ -493,9 +504,11 @@
               6.0
             ]
           },
-          "end": "usd:stage:vertex#/Curves/Splines:0:1",
-          "id": "usd:stage:edge#/Curves/Splines:0",
-          "start": "usd:stage:vertex#/Curves/Splines:0:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Curves/Splines:0:1",
+            "start": "usd:stage:vertex#/Curves/Splines:0:0"
+          },
+          "id": "usd:stage:edge#/Curves/Splines:0"
         },
         {
           "carrier": {
@@ -505,9 +518,11 @@
               4.0
             ]
           },
-          "end": "usd:stage:vertex#/Curves/Splines:1:1",
-          "id": "usd:stage:edge#/Curves/Splines:1",
-          "start": "usd:stage:vertex#/Curves/Splines:1:0"
+          "ends": {
+            "end": "usd:stage:vertex#/Curves/Splines:1:1",
+            "start": "usd:stage:vertex#/Curves/Splines:1:0"
+          },
+          "id": "usd:stage:edge#/Curves/Splines:1"
         }
       ],
       "faces": [],
@@ -1177,7 +1192,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

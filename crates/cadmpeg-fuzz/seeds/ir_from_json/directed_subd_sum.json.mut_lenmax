@@ -69,7 +69,7 @@
               "y": 0.0,
               "z": 0.0
             }
-     ÿÿÿÿ }
+          }
         }
       },
       {
@@ -80,8 +80,7 @@
             "kind": "line",
             "origin": {
               "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+              "y": 0.0,ÿÿÿÿ           "z": 0.0
             },
             "direction": {
               "x": 0.0,
@@ -172,18 +171,30 @@
           ],
           "faces": [
             {
-              "edges": [
+              "sides": [
                 {
-                  "edge": 0,
-                  "reversed": false
+                  "edges": [
+                    {
+                      "edge": 0,
+                      "reversed": false
+                    }
+                  ]
                 },
                 {
-                  "edge": 1,
-                  "reversed": false
+                  "edges": [
+                    {
+                      "edge": 1,
+                      "reversed": false
+                    }
+                  ]
                 },
                 {
-                  "edge": 2,
-                  "reversed": false
+                  "edges": [
+                    {
+                      "edge": 2,
+                      "reversed": false
+                    }
+                  ]
                 }
               ]
             }
@@ -255,7 +266,38 @@
     "point_clouds": [],
     "history_bodies": []
   },
-  "design": {},
-  "process": {},
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "sheet_metal_rules": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }

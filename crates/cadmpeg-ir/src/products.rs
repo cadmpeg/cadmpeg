@@ -163,12 +163,16 @@ impl ExternalDocument {
 )]
 pub enum CopyOnChangePolicy {
     /// Link follows its prototype without making an owned copy.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Disabled,
     /// Copy is created when a marked prototype property changes.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Enabled,
     /// Link currently owns a changed copy.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Owned,
     /// Owned copy continues tracking its original source.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Tracking,
     /// Future policy retained without reinterpretation.
     Native(String),
@@ -1891,5 +1895,8 @@ cadmpeg_core::named_optional_field!(
 );
 
 mod identity_rewrite;
+
+mod nested_override;
+pub use nested_override::NestedOverride;
 
 mod serialization;

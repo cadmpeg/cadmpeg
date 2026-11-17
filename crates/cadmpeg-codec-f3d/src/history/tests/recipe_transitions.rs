@@ -601,11 +601,11 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     let body = |id: &str, kind| Body {
         id: BodyId::mint(id).expect("identity grammar"),
         kind,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
         product_definition: None,

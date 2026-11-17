@@ -68,14 +68,12 @@ fn meshed_on_write(result: &cadmpeg_ir::codec::DecodeResult) -> bool {
             && geometry
                 .shells
                 .iter()
-                .filter(|shell| body.regions.contains(&shell.region))
-                .flat_map(|shell| shell.faces().iter())
-                .filter_map(|face| {
+                .filter(|shell| {
                     geometry
-                        .faces
-                        .iter()
-                        .find(|candidate| &candidate.id == face)
+                        .body_regions(&body.id)
+                        .any(|region| region.id == shell.region)
                 })
+                .flat_map(|shell| geometry.shell_faces(&shell.id))
                 .any(|face| {
                     !face.loops.is_empty()
                         || !geometry.surfaces.iter().any(|surface| {

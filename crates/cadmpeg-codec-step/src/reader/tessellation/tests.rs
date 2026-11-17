@@ -167,7 +167,7 @@ pub(crate) fn decode_transfers_ap242_one_based_tessellation_indices() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
         )));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -1001,7 +1001,7 @@ fn non_finite_tessellation_coordinates_omit_dependents_and_retain_source() {
     let result = cadmpeg_test_support::EditableDecodeResult::from(result);
     assert!(result.ir().model.tessellations.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
-        loss.code == StepLossCode::ParseRecordOmitted.kind()
+        loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind()
             && loss.message.contains("finite binary64 range")
     }));
     let retained = result

@@ -38,8 +38,8 @@ fn arc_wire(gap: f64, closed: bool) -> CadIr {
             )
         })
         .collect();
-    edge.start = vertices[0].id.clone();
-    edge.end = vertices[usize::from(!closed)].id.clone();
+    edge.ends.as_mut().unwrap().start = vertices[0].id.clone();
+    edge.ends.as_mut().unwrap().end = vertices[usize::from(!closed)].id.clone();
     edge.carrier = EdgeCarrier::new(Some(curve_id.clone()), Some([0.0, last])).expect("range");
     if closed {
         vertices.truncate(1);
@@ -59,6 +59,7 @@ fn arc_wire(gap: f64, closed: bool) -> CadIr {
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     }];
     ir.geometry.shells = vec![Shell::with_wire_edge(
         ir.geometry.shells[0].id.clone(),
@@ -109,7 +110,7 @@ fn near_full_arc_below_uncertainty_writes_two_edges_and_reads_back_open() {
         .geometry
         .edges
         .iter()
-        .all(|edge| edge.start != edge.end));
+        .all(|edge| edge.ends.as_ref().unwrap().start != edge.ends.as_ref().unwrap().end));
     for expected in &ir.geometry.points {
         assert!(decoded
             .ir()
@@ -135,8 +136,8 @@ fn closed_ring_keeps_one_edge_and_one_vertex() {
     assert_eq!(decoded.ir().geometry.edges.len(), 1);
     assert_eq!(decoded.ir().geometry.vertices.len(), 1);
     assert_eq!(
-        decoded.ir().geometry.edges[0].start,
-        decoded.ir().geometry.edges[0].end
+        decoded.ir().geometry.edges[0].ends.as_ref().unwrap().start,
+        decoded.ir().geometry.edges[0].ends.as_ref().unwrap().end
     );
 }
 
@@ -232,7 +233,7 @@ fn split_face_edges_keep_shared_vertices_and_reversed_coedge_order() {
         .geometry
         .edges
         .iter()
-        .all(|edge| edge.start != edge.end));
+        .all(|edge| edge.ends.as_ref().unwrap().start != edge.ends.as_ref().unwrap().end));
 }
 
 #[test]
@@ -416,7 +417,10 @@ fn a_short_arc_near_the_periodic_seam_keeps_its_parameter_midpoint() {
         .expect("read back");
     let mut uses = std::collections::HashMap::new();
     for edge in &decoded.ir().geometry.edges {
-        for vertex in [&edge.start, &edge.end] {
+        for vertex in [
+            &edge.ends.as_ref().unwrap().start,
+            &edge.ends.as_ref().unwrap().end,
+        ] {
             *uses.entry(vertex).or_insert(0) += 1;
         }
     }

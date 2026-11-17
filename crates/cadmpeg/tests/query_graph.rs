@@ -27,10 +27,10 @@ const SIDECAR: &str = r#"{
 const BREP_DOC: &str = r#"{
   "ir_version": "11",
   "geometry": {
-    "bodies": [{"id": "body#1", "regions": ["region#1"]}],
-    "regions": [{"id": "region#1", "shells": ["shell#1"]}],
-    "shells": [{"id": "shell#1", "faces": ["face#1", "face#2"]}],
-    "faces": [{"id": "face#1"}, {"id": "face#2"}]
+    "bodies": [{"id": "body#1"}],
+    "regions": [{"id": "region#1", "body": "body#1", "shells": ["shell#1"]}],
+    "shells": [{"id": "shell#1", "region": "region#1", "members": []}],
+    "faces": [{"id": "face#1", "shell": "shell#1"}, {"id": "face#2", "shell": "shell#1"}]
   }
 }"#;
 
@@ -187,6 +187,7 @@ fn graph_brep_hops_3_reaches_faces() {
             "body#1",
             "--hops",
             "3",
+            "--reverse",
         ])
         .output()
         .unwrap();

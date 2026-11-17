@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "catia:b5:body#0",
-          "kind": "sheet",
-          "regions": [
-            "catia:b5:region#0"
-          ]
+          "kind": "sheet"
         }
       ],
       "coedges": [
@@ -181,9 +197,11 @@
               4.0
             ]
           },
-          "end": "catia:b5:vertex#1",
-          "id": "catia:b5:edge#300",
-          "start": "catia:b5:vertex#0"
+          "ends": {
+            "end": "catia:b5:vertex#1",
+            "start": "catia:b5:vertex#0"
+          },
+          "id": "catia:b5:edge#300"
         },
         {
           "carrier": {
@@ -193,9 +211,11 @@
               1.5707963267948966
             ]
           },
-          "end": "catia:b5:vertex#2",
-          "id": "catia:b5:edge#301",
-          "start": "catia:b5:vertex#1"
+          "ends": {
+            "end": "catia:b5:vertex#2",
+            "start": "catia:b5:vertex#1"
+          },
+          "id": "catia:b5:edge#301"
         },
         {
           "carrier": {
@@ -205,9 +225,11 @@
               -2.0
             ]
           },
-          "end": "catia:b5:vertex#3",
-          "id": "catia:b5:edge#302",
-          "start": "catia:b5:vertex#2"
+          "ends": {
+            "end": "catia:b5:vertex#3",
+            "start": "catia:b5:vertex#2"
+          },
+          "id": "catia:b5:edge#302"
         },
         {
           "carrier": {
@@ -217,9 +239,11 @@
               6.283185307179586
             ]
           },
-          "end": "catia:b5:vertex#0",
-          "id": "catia:b5:edge#303",
-          "start": "catia:b5:vertex#3"
+          "ends": {
+            "end": "catia:b5:vertex#0",
+            "start": "catia:b5:vertex#3"
+          },
+          "id": "catia:b5:edge#303"
         }
       ],
       "faces": [
@@ -715,12 +739,7 @@
       "shells": [
         {
           "id": "catia:b5:shell#0",
-          "members": [
-            {
-              "id": "catia:b5:face#500",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "catia:b5:region#0"
         }
       ],
@@ -887,7 +906,19 @@
         "zero_entity_vertex_incidences": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
@@ -1344,8 +1375,7 @@
         "catia:b5:body#0": {
           "entity": "inferred",
           "fields": {
-            "kind": "derived",
-            "regions": "derived"
+            "kind": "derived"
           },
           "kind": "entity"
         },
@@ -1419,33 +1449,33 @@
         },
         "catia:b5:edge#300": {
           "fields": {
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:edge#301": {
           "fields": {
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:edge#302": {
           "fields": {
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
         "catia:b5:edge#303": {
           "fields": {
-            "end": "derived",
-            "param_range": "derived",
-            "start": "derived"
+            "ends.end": "derived",
+            "ends.start": "derived",
+            "param_range": "derived"
           },
           "kind": "fields"
         },
@@ -1522,7 +1552,6 @@
         "catia:b5:shell#0": {
           "entity": "inferred",
           "fields": {
-            "faces": "derived",
             "region": "derived"
           },
           "kind": "entity"

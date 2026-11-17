@@ -640,6 +640,7 @@ mod tests {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         ir.geometry.procedural_surfaces.push(procedural_surface! {
             id: exact_construction.clone(),
@@ -661,6 +662,7 @@ mod tests {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         ir.geometry
             .add_procedural_surface(&cached_surface, procedural_surface! {

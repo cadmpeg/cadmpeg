@@ -726,14 +726,10 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             .iter()
             .find(|candidate| &candidate.id == body)
             .unwrap();
-        let in_body = body
-            .regions
-            .iter()
-            .filter_map(|id| geometry.regions.iter().find(|item| &item.id == id))
+        let in_body = geometry
+            .body_regions(&body.id)
             .flat_map(|region| &region.shells)
-            .filter_map(|id| geometry.shells.iter().find(|item| &item.id == id))
-            .flat_map(cadmpeg_ir::topology::Shell::faces)
-            .filter_map(|id| geometry.faces.iter().find(|item| &item.id == id))
+            .flat_map(|id| geometry.shell_faces(id))
             .flat_map(|face| face.loops.iter())
             .filter_map(|id| geometry.loops.iter().find(|item| &item.id == id))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)

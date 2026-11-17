@@ -32,6 +32,7 @@ pub fn rejected_missing_point(prefix: &str) -> Result<CadIr, FixtureError> {
         id: VertexId::mint(format!("{prefix}:vertex#0"))?,
         point: PointId::mint(format!("{prefix}:point#missing"))?,
         tolerance: None,
+        native_ref: None,
     });
     Ok(ir)
 }
@@ -52,6 +53,7 @@ pub fn rejected_missing_region(prefix: &str) -> Result<CadIr, FixtureError> {
         id: vertex.clone(),
         point,
         tolerance: None,
+        native_ref: None,
     });
     ir.geometry.shells.push(Shell::with_free_vertex(
         ShellId::mint(format!("{prefix}:shell#0"))?,

@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "step:data:body#18",
-          "kind": "solid",
-          "regions": [
-            "step:data:region#18"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [],
@@ -95,12 +111,7 @@
       "shells": [
         {
           "id": "step:data:shell#17",
-          "members": [
-            {
-              "id": "step:data:face#16",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#18"
         }
       ],
@@ -189,7 +200,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

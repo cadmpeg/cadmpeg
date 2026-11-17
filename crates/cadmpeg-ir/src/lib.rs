@@ -48,6 +48,7 @@ pub mod compare;
 pub mod container;
 
 pub mod declared_measures;
+pub mod design;
 pub mod diff;
 pub mod document;
 pub mod draft;
@@ -70,6 +71,7 @@ pub mod physics;
 pub mod pmi;
 pub mod point_cloud;
 pub mod presentation;
+pub mod process;
 pub mod products;
 mod provenance;
 pub mod references;
@@ -149,9 +151,9 @@ pub use spreadsheets::{
     SpreadsheetRange,
 };
 pub use subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
-    SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
-    SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdFaceSide, SubdGripDirection, SubdGripWedge,
+    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip,
+    SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::admit::{

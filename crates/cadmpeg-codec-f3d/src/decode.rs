@@ -5037,6 +5037,7 @@ fn decode_result(
     );
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
+    commit_given_up_parts(ctx, scan, &mut ir, &mut source_fidelity)?;
     if !retained.untyped.is_empty() {
         source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
     }
@@ -5068,6 +5069,83 @@ fn decode_result(
         body: report,
         source_fidelity,
     })
+}
+
+/// Commits each archive entry the scan gave up, its stub linked to the
+/// product definition of the file that holds the archive.
+/// `header_losses` already put each part's loss in the report.
+pub(crate) fn commit_given_up_parts(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    ir: &mut CadIr,
+    fidelity: &mut cadmpeg_ir::SourceFidelity,
+) -> Result<(), CodecError> {
+    let owner = file_definition(&ir.model).map(cadmpeg_ir::ids::Identity::from);
+    for given_up in scan.given_up.iter().cloned() {
+        let given_up = match &owner {
+            Some(owner) => given_up.contained_in(owner.clone()),
+            None => given_up,
+        };
+        given_up.commit(ctx, ir, fidelity)?;
+    }
+    Ok(())
+}
+
+/// The definition the decoded file holds at its top: the prototype of its
+/// root occurrences the source places, or with none, of the decoder's
+/// stored-frame root occurrences, or with none, the one definition no
+/// occurrence places. A stored-frame occurrence places a definition the
+/// source holds in the file's design without an occurrence, so beside a
+/// source root it is held by that root's definition. Definitions of merged
+/// archive members belong to their own files.
+fn file_definition(
+    model: &cadmpeg_ir::document::Model,
+) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
+    use cadmpeg_ir::ids::ProductDefinitionId;
+    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+    use std::collections::BTreeSet;
+    fn local(occurrence: &cadmpeg_ir::products::Occurrence) -> Option<&ProductDefinitionId> {
+        match &occurrence.prototype {
+            PrototypeReference::Local { definition } => Some(definition),
+            _ => None,
+        }
+    }
+    let own = |definition: &&ProductDefinitionId| !definition.as_str().starts_with("f3d:xref/");
+    let root_prototypes = |stored_frame: bool| {
+        model
+            .occurrences
+            .iter()
+            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter(move |occurrence| {
+                crate::design::components::is_stored_frame_occurrence(occurrence) == stored_frame
+            })
+            .filter_map(local)
+            .filter(own)
+            .collect::<BTreeSet<_>>()
+    };
+    let mut top = root_prototypes(false);
+    if top.is_empty() {
+        top = root_prototypes(true);
+    }
+    if top.is_empty() {
+        let placed = model
+            .occurrences
+            .iter()
+            .filter_map(local)
+            .collect::<std::collections::BTreeSet<_>>();
+        top = model
+            .product_definitions
+            .iter()
+            .map(|definition| &definition.id)
+            .filter(|definition| !placed.contains(definition))
+            .filter(own)
+            .collect();
+    }
+    let mut top = top.into_iter();
+    match (top.next(), top.next()) {
+        (Some(definition), None) => Some(definition.clone()),
+        _ => None,
+    }
 }
 
 pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
@@ -5982,7 +6060,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         std::collections::BTreeMap::<&str, Vec<&cadmpeg_ir::ids::FaceId>>::new();
     let mut guid_by_face = std::collections::BTreeMap::<&cadmpeg_ir::ids::FaceId, &str>::new();
     for attribute in &ir.model.attributes {
-        let AttributeTarget::Face(face) = &attribute.target else {
+        let AttributeTarget::Face(face) = &attribute.target.entity else {
             continue;
         };
         let strings = || {
@@ -6041,7 +6119,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         .appearance_bindings
         .iter()
         .filter_map(|binding| {
-            let AppearanceTarget::Face(face) = &binding.target else {
+            let AppearanceTarget::Face(face) = &binding.target.entity else {
                 return None;
             };
             Some((face, &binding.appearance))
@@ -6107,7 +6185,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 // reaches every face carrying it, so the assignment pair alone
                 // repeats across those faces.
                 id,
-                target,
+                target: target.into(),
                 appearance: appearance_id,
                 source_entity_id: None,
                 object_type: None,
@@ -6150,7 +6228,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
         let Some(color) = colors.get(&binding.appearance).copied() else {
             continue;
         };
-        match &binding.target {
+        match &binding.target.entity {
             AppearanceTarget::Body(id) => insert_appearance_color(&mut body_colors, id, color),
             AppearanceTarget::Face(id) => insert_appearance_color(&mut face_colors, id, color),
             _ => {}

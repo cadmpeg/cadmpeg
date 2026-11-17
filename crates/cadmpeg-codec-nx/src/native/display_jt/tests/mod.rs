@@ -1222,7 +1222,15 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
             .as_ref()
             .expect("required invariant")
             .color,
-        Some(Color::new(0.2, 0.3, 0.4, 0.5).expect("valid color"))
+        Some(
+            Color::new(
+                f64::from(0.2_f32),
+                f64::from(0.3_f32),
+                f64::from(0.4_f32),
+                0.5
+            )
+            .expect("valid color")
+        )
     );
     assert_eq!(
         tessellations[1]
@@ -1639,7 +1647,15 @@ fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
     );
     assert_eq!(
         super::display_jt_path_color(&path),
-        Some(Color::new(0.1, 0.2, 0.3, 0.8).expect("valid color"))
+        Some(
+            Color::new(
+                f64::from(0.1_f32),
+                f64::from(0.2_f32),
+                f64::from(0.3_f32),
+                f64::from(0.8_f32)
+            )
+            .expect("valid color")
+        )
     );
 
     super::accumulate_display_jt_material(&mut path, &material([1.0; 4], 0x06, 0));

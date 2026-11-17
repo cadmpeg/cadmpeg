@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "creo:visibgeom:body#1",
-          "kind": "solid",
-          "regions": [
-            "creo:visibgeom:region#1"
-          ]
+          "kind": "solid"
         }
       ],
       "coedges": [
@@ -313,9 +329,11 @@
               0.5000000000000002
             ]
           },
-          "end": "creo:visibgeom:vertex#2",
-          "id": "creo:visibgeom:edge#10",
-          "start": "creo:visibgeom:vertex#1"
+          "ends": {
+            "end": "creo:visibgeom:vertex#2",
+            "start": "creo:visibgeom:vertex#1"
+          },
+          "id": "creo:visibgeom:edge#10"
         },
         {
           "carrier": {
@@ -325,9 +343,11 @@
               0.5000000000000002
             ]
           },
-          "end": "creo:visibgeom:vertex#1",
-          "id": "creo:visibgeom:edge#11",
-          "start": "creo:visibgeom:vertex#3"
+          "ends": {
+            "end": "creo:visibgeom:vertex#1",
+            "start": "creo:visibgeom:vertex#3"
+          },
+          "id": "creo:visibgeom:edge#11"
         },
         {
           "carrier": {
@@ -337,9 +357,11 @@
               0.7071067811865478
             ]
           },
-          "end": "creo:visibgeom:vertex#3",
-          "id": "creo:visibgeom:edge#12",
-          "start": "creo:visibgeom:vertex#2"
+          "ends": {
+            "end": "creo:visibgeom:vertex#3",
+            "start": "creo:visibgeom:vertex#2"
+          },
+          "id": "creo:visibgeom:edge#12"
         },
         {
           "carrier": {
@@ -349,9 +371,11 @@
               1.0000000000000004
             ]
           },
-          "end": "creo:visibgeom:vertex#4",
-          "id": "creo:visibgeom:edge#13",
-          "start": "creo:visibgeom:vertex#1"
+          "ends": {
+            "end": "creo:visibgeom:vertex#4",
+            "start": "creo:visibgeom:vertex#1"
+          },
+          "id": "creo:visibgeom:edge#13"
         },
         {
           "carrier": {
@@ -361,9 +385,11 @@
               1.1180339887498953
             ]
           },
-          "end": "creo:visibgeom:vertex#2",
-          "id": "creo:visibgeom:edge#14",
-          "start": "creo:visibgeom:vertex#4"
+          "ends": {
+            "end": "creo:visibgeom:vertex#2",
+            "start": "creo:visibgeom:vertex#4"
+          },
+          "id": "creo:visibgeom:edge#14"
         },
         {
           "carrier": {
@@ -373,9 +399,11 @@
               1.1180339887498953
             ]
           },
-          "end": "creo:visibgeom:vertex#4",
-          "id": "creo:visibgeom:edge#15",
-          "start": "creo:visibgeom:vertex#3"
+          "ends": {
+            "end": "creo:visibgeom:vertex#4",
+            "start": "creo:visibgeom:vertex#3"
+          },
+          "id": "creo:visibgeom:edge#15"
         }
       ],
       "faces": [
@@ -824,24 +852,7 @@
       "shells": [
         {
           "id": "creo:visibgeom:shell#1",
-          "members": [
-            {
-              "id": "creo:visibgeom:face#1",
-              "kind": "face"
-            },
-            {
-              "id": "creo:visibgeom:face#2",
-              "kind": "face"
-            },
-            {
-              "id": "creo:visibgeom:face#3",
-              "kind": "face"
-            },
-            {
-              "id": "creo:visibgeom:face#4",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "creo:visibgeom:region#1"
         }
       ],
@@ -3163,7 +3174,19 @@
         ]
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

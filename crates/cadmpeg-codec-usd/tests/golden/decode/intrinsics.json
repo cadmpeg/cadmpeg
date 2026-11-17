@@ -1,64 +1,62 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "usd:stage:body#/World/Ball",
           "kind": "solid",
-          "name": "Ball",
-          "regions": [
-            "usd:stage:region#/World/Ball:region:0"
-          ]
+          "name": "Ball"
         },
         {
           "id": "usd:stage:body#/World/Box",
           "kind": "solid",
-          "name": "Box",
-          "regions": [
-            "usd:stage:region#/World/Box:region:0"
-          ]
+          "name": "Box"
         },
         {
           "id": "usd:stage:body#/World/Can",
           "kind": "solid",
-          "name": "Can",
-          "regions": [
-            "usd:stage:region#/World/Can:region:0"
-          ]
+          "name": "Can"
         },
         {
           "id": "usd:stage:body#/World/Frustum",
           "kind": "solid",
-          "name": "Frustum",
-          "regions": [
-            "usd:stage:region#/World/Frustum:region:0"
-          ]
+          "name": "Frustum"
         },
         {
           "id": "usd:stage:body#/World/Funnel",
           "kind": "solid",
-          "name": "Funnel",
-          "regions": [
-            "usd:stage:region#/World/Funnel:region:0"
-          ]
+          "name": "Funnel"
         },
         {
           "id": "usd:stage:body#/World/Pill",
           "kind": "solid",
-          "name": "Pill",
-          "regions": [
-            "usd:stage:region#/World/Pill:region:0"
-          ]
+          "name": "Pill"
         },
         {
           "id": "usd:stage:body#/World/Sheet",
           "kind": "sheet",
-          "name": "Sheet",
-          "regions": [
-            "usd:stage:region#/World/Sheet:region:0"
-          ]
+          "name": "Sheet"
         }
       ],
       "coedges": [
@@ -1111,9 +1109,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:4",
-          "id": "usd:stage:edge#/World/Box:edge:0",
-          "start": "usd:stage:vertex#/World/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:4",
+            "start": "usd:stage:vertex#/World/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:0"
         },
         {
           "carrier": {
@@ -1123,9 +1123,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:6",
-          "id": "usd:stage:edge#/World/Box:edge:1",
-          "start": "usd:stage:vertex#/World/Box:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:6",
+            "start": "usd:stage:vertex#/World/Box:vertex:4"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:1"
         },
         {
           "carrier": {
@@ -1135,9 +1137,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:7",
-          "id": "usd:stage:edge#/World/Box:edge:10",
-          "start": "usd:stage:vertex#/World/Box:vertex:6"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:7",
+            "start": "usd:stage:vertex#/World/Box:vertex:6"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:10"
         },
         {
           "carrier": {
@@ -1147,9 +1151,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:3",
-          "id": "usd:stage:edge#/World/Box:edge:11",
-          "start": "usd:stage:vertex#/World/Box:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:3",
+            "start": "usd:stage:vertex#/World/Box:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:11"
         },
         {
           "carrier": {
@@ -1159,9 +1165,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:6",
-          "id": "usd:stage:edge#/World/Box:edge:2",
-          "start": "usd:stage:vertex#/World/Box:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:6",
+            "start": "usd:stage:vertex#/World/Box:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:2"
         },
         {
           "carrier": {
@@ -1171,9 +1179,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:2",
-          "id": "usd:stage:edge#/World/Box:edge:3",
-          "start": "usd:stage:vertex#/World/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:2",
+            "start": "usd:stage:vertex#/World/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:3"
         },
         {
           "carrier": {
@@ -1183,9 +1193,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:3",
-          "id": "usd:stage:edge#/World/Box:edge:4",
-          "start": "usd:stage:vertex#/World/Box:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:3",
+            "start": "usd:stage:vertex#/World/Box:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:4"
         },
         {
           "carrier": {
@@ -1195,9 +1207,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:7",
-          "id": "usd:stage:edge#/World/Box:edge:5",
-          "start": "usd:stage:vertex#/World/Box:vertex:3"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:7",
+            "start": "usd:stage:vertex#/World/Box:vertex:3"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:5"
         },
         {
           "carrier": {
@@ -1207,9 +1221,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:7",
-          "id": "usd:stage:edge#/World/Box:edge:6",
-          "start": "usd:stage:vertex#/World/Box:vertex:5"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:7",
+            "start": "usd:stage:vertex#/World/Box:vertex:5"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:6"
         },
         {
           "carrier": {
@@ -1219,9 +1235,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:5",
-          "id": "usd:stage:edge#/World/Box:edge:7",
-          "start": "usd:stage:vertex#/World/Box:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:5",
+            "start": "usd:stage:vertex#/World/Box:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:7"
         },
         {
           "carrier": {
@@ -1231,9 +1249,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:1",
-          "id": "usd:stage:edge#/World/Box:edge:8",
-          "start": "usd:stage:vertex#/World/Box:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:1",
+            "start": "usd:stage:vertex#/World/Box:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:8"
         },
         {
           "carrier": {
@@ -1243,9 +1263,11 @@
               30.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Box:vertex:5",
-          "id": "usd:stage:edge#/World/Box:edge:9",
-          "start": "usd:stage:vertex#/World/Box:vertex:4"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Box:vertex:5",
+            "start": "usd:stage:vertex#/World/Box:vertex:4"
+          },
+          "id": "usd:stage:edge#/World/Box:edge:9"
         },
         {
           "carrier": {
@@ -1255,9 +1277,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Can:vertex:0",
-          "id": "usd:stage:edge#/World/Can:edge:0",
-          "start": "usd:stage:vertex#/World/Can:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Can:vertex:0",
+            "start": "usd:stage:vertex#/World/Can:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Can:edge:0"
         },
         {
           "carrier": {
@@ -1267,9 +1291,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Can:vertex:1",
-          "id": "usd:stage:edge#/World/Can:edge:1",
-          "start": "usd:stage:vertex#/World/Can:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Can:vertex:1",
+            "start": "usd:stage:vertex#/World/Can:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Can:edge:1"
         },
         {
           "carrier": {
@@ -1279,9 +1305,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Can:vertex:1",
-          "id": "usd:stage:edge#/World/Can:edge:2",
-          "start": "usd:stage:vertex#/World/Can:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Can:vertex:1",
+            "start": "usd:stage:vertex#/World/Can:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Can:edge:2"
         },
         {
           "carrier": {
@@ -1291,9 +1319,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Frustum:vertex:0",
-          "id": "usd:stage:edge#/World/Frustum:edge:0",
-          "start": "usd:stage:vertex#/World/Frustum:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Frustum:vertex:0",
+            "start": "usd:stage:vertex#/World/Frustum:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Frustum:edge:0"
         },
         {
           "carrier": {
@@ -1303,9 +1333,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Frustum:vertex:1",
-          "id": "usd:stage:edge#/World/Frustum:edge:1",
-          "start": "usd:stage:vertex#/World/Frustum:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Frustum:vertex:1",
+            "start": "usd:stage:vertex#/World/Frustum:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Frustum:edge:1"
         },
         {
           "carrier": {
@@ -1315,9 +1347,11 @@
               31.622776601683796
             ]
           },
-          "end": "usd:stage:vertex#/World/Frustum:vertex:1",
-          "id": "usd:stage:edge#/World/Frustum:edge:2",
-          "start": "usd:stage:vertex#/World/Frustum:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Frustum:vertex:1",
+            "start": "usd:stage:vertex#/World/Frustum:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Frustum:edge:2"
         },
         {
           "carrier": {
@@ -1327,9 +1361,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Funnel:vertex:0",
-          "id": "usd:stage:edge#/World/Funnel:edge:0",
-          "start": "usd:stage:vertex#/World/Funnel:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Funnel:vertex:0",
+            "start": "usd:stage:vertex#/World/Funnel:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Funnel:edge:0"
         },
         {
           "carrier": {
@@ -1339,9 +1375,11 @@
               36.05551275463989
             ]
           },
-          "end": "usd:stage:vertex#/World/Funnel:vertex:1",
-          "id": "usd:stage:edge#/World/Funnel:edge:1",
-          "start": "usd:stage:vertex#/World/Funnel:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Funnel:vertex:1",
+            "start": "usd:stage:vertex#/World/Funnel:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Funnel:edge:1"
         },
         {
           "carrier": {
@@ -1351,9 +1389,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:0",
-          "id": "usd:stage:edge#/World/Pill:edge:0",
-          "start": "usd:stage:vertex#/World/Pill:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:0",
+            "start": "usd:stage:vertex#/World/Pill:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:0"
         },
         {
           "carrier": {
@@ -1363,9 +1403,11 @@
               6.283185307179586
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:1",
-          "id": "usd:stage:edge#/World/Pill:edge:1",
-          "start": "usd:stage:vertex#/World/Pill:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:1",
+            "start": "usd:stage:vertex#/World/Pill:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:1"
         },
         {
           "carrier": {
@@ -1375,9 +1417,11 @@
               1.5707963267948966
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:0",
-          "id": "usd:stage:edge#/World/Pill:edge:2",
-          "start": "usd:stage:vertex#/World/Pill:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:0",
+            "start": "usd:stage:vertex#/World/Pill:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:2"
         },
         {
           "carrier": {
@@ -1387,9 +1431,11 @@
               20.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:1",
-          "id": "usd:stage:edge#/World/Pill:edge:3",
-          "start": "usd:stage:vertex#/World/Pill:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:1",
+            "start": "usd:stage:vertex#/World/Pill:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:3"
         },
         {
           "carrier": {
@@ -1399,9 +1445,11 @@
               1.5707963267948966
             ]
           },
-          "end": "usd:stage:vertex#/World/Pill:vertex:3",
-          "id": "usd:stage:edge#/World/Pill:edge:4",
-          "start": "usd:stage:vertex#/World/Pill:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Pill:vertex:3",
+            "start": "usd:stage:vertex#/World/Pill:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Pill:edge:4"
         },
         {
           "carrier": {
@@ -1411,9 +1459,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Sheet:vertex:1",
-          "id": "usd:stage:edge#/World/Sheet:edge:0",
-          "start": "usd:stage:vertex#/World/Sheet:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Sheet:vertex:1",
+            "start": "usd:stage:vertex#/World/Sheet:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Sheet:edge:0"
         },
         {
           "carrier": {
@@ -1423,9 +1473,11 @@
               50.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Sheet:vertex:2",
-          "id": "usd:stage:edge#/World/Sheet:edge:1",
-          "start": "usd:stage:vertex#/World/Sheet:vertex:1"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Sheet:vertex:2",
+            "start": "usd:stage:vertex#/World/Sheet:vertex:1"
+          },
+          "id": "usd:stage:edge#/World/Sheet:edge:1"
         },
         {
           "carrier": {
@@ -1435,9 +1487,11 @@
               40.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Sheet:vertex:3",
-          "id": "usd:stage:edge#/World/Sheet:edge:2",
-          "start": "usd:stage:vertex#/World/Sheet:vertex:2"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Sheet:vertex:3",
+            "start": "usd:stage:vertex#/World/Sheet:vertex:2"
+          },
+          "id": "usd:stage:edge#/World/Sheet:edge:2"
         },
         {
           "carrier": {
@@ -1447,9 +1501,11 @@
               50.0
             ]
           },
-          "end": "usd:stage:vertex#/World/Sheet:vertex:3",
-          "id": "usd:stage:edge#/World/Sheet:edge:3",
-          "start": "usd:stage:vertex#/World/Sheet:vertex:0"
+          "ends": {
+            "end": "usd:stage:vertex#/World/Sheet:vertex:3",
+            "start": "usd:stage:vertex#/World/Sheet:vertex:0"
+          },
+          "id": "usd:stage:edge#/World/Sheet:edge:3"
         }
       ],
       "faces": [
@@ -2133,120 +2189,37 @@
       "shells": [
         {
           "id": "usd:stage:shell#/World/Ball:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Ball:face:0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Ball:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Box:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Box:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:2",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:3",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:4",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Box:face:5",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Box:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Can:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Can:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Can:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Can:face:2",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Can:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Frustum:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Frustum:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Frustum:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Frustum:face:2",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Frustum:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Funnel:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Funnel:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Funnel:face:1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Funnel:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Pill:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Pill:face:0",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Pill:face:1",
-              "kind": "face"
-            },
-            {
-              "id": "usd:stage:face#/World/Pill:face:2",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Pill:region:0"
         },
         {
           "id": "usd:stage:shell#/World/Sheet:shell:0",
-          "members": [
-            {
-              "id": "usd:stage:face#/World/Sheet:face:0",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "usd:stage:region#/World/Sheet:region:0"
         }
       ],
@@ -3250,7 +3223,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

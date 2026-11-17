@@ -35,7 +35,7 @@ use crate::test_support::parasolid::FACE_COLOR_DEFINITION_ID;
 use crate::SldprtCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
-const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 fn strip_names(topology: &mut cadmpeg_ir::document::Topology) {
     topology.bodies.iter_mut().for_each(|body| body.name = None);
@@ -1213,6 +1213,7 @@ pub(crate) fn semantic_writer_rejects_subds() {
             scheme: cadmpeg_ir::SubdScheme::CatmullClark,
             source_object: None,
             cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
         });
 
     let error = crate::test_support::plan_inherited_write(
@@ -1423,7 +1424,7 @@ fn semantic_writer_preserves_multiple_body_ownership() {
         .geometry
         .shells
         .iter()
-        .all(|shell| shell.faces().len() == 1));
+        .all(|shell| regenerated.ir().geometry.shell_faces(&shell.id).count() == 1));
     assert!(regenerated.ir().geometry.regions.iter().all(|region| {
         regenerated.source_fidelity().annotations.provenance[region.id.as_str()]
             .tag
@@ -1643,7 +1644,7 @@ fn semantic_writer_preserves_face_appearance() {
         .model
         .appearance_bindings
         .iter()
-        .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .find(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
         .expect("face binding");
     let color = regenerated
         .ir()

@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "step:data:body#31",
-          "kind": "sheet",
-          "regions": [
-            "step:data:region#31"
-          ]
+          "kind": "sheet"
         }
       ],
       "coedges": [
@@ -166,9 +182,11 @@
           "carrier": {
             "curve": "step:data:curve#34"
           },
-          "end": "step:data:vertex#7",
-          "id": "step:data:edge#19",
-          "start": "step:data:vertex#6"
+          "ends": {
+            "end": "step:data:vertex#7",
+            "start": "step:data:vertex#6"
+          },
+          "id": "step:data:edge#19"
         },
         {
           "carrier": {
@@ -178,9 +196,11 @@
               14.142135623730953
             ]
           },
-          "end": "step:data:vertex#8",
-          "id": "step:data:edge#20",
-          "start": "step:data:vertex#7"
+          "ends": {
+            "end": "step:data:vertex#8",
+            "start": "step:data:vertex#7"
+          },
+          "id": "step:data:edge#20"
         },
         {
           "carrier": {
@@ -190,9 +210,11 @@
               10.0
             ]
           },
-          "end": "step:data:vertex#6",
-          "id": "step:data:edge#21",
-          "start": "step:data:vertex#8"
+          "ends": {
+            "end": "step:data:vertex#6",
+            "start": "step:data:vertex#8"
+          },
+          "id": "step:data:edge#21"
         }
       ],
       "faces": [
@@ -296,12 +318,7 @@
       "shells": [
         {
           "id": "step:data:shell#30",
-          "members": [
-            {
-              "id": "step:data:face#29",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "step:data:region#31"
         }
       ],
@@ -423,7 +440,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

@@ -26,6 +26,7 @@ fn plane() -> (cadmpeg_ir::CadIr, SurfaceId) {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     (ir, id)
 }
@@ -120,6 +121,7 @@ fn periodic_surface_selection_keeps_quarter_seeds_across_a_wide_domain() {
         id: id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
         source_object: None,
+        native_ref: None,
     });
     let pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -156,6 +158,7 @@ fn pcurve_locus_accepts_a_wide_finite_line_parameter_interval() {
             .expect("finite line"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let index = ModelIndex::new_model_only(&ir);
     let (exchange, _) = crate::test_support::with_service_context(
@@ -230,6 +233,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
                 .expect("finite many-span curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let index = ModelIndex::new_model_only(&ir);
     let midpoint = lower.midpoint(upper);

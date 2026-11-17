@@ -605,7 +605,7 @@ fn transfer_schema_one(
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{provider_key}:{index}"
                 ))?,
-                target: AppearanceTarget::Body(body.clone()),
+                target: AppearanceTarget::Body(body.clone()).into(),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some("ViewProvider".into()),
@@ -1140,7 +1140,7 @@ fn transfer_primitive_appearance(
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
-            target,
+            target: target.into(),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some(object_type.into()),
@@ -3827,7 +3827,7 @@ fn transfer_shape_appearances(
                         id: binding_id(format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ))?,
-                        target: AppearanceTarget::Body(body.clone()),
+                        target: AppearanceTarget::Body(body.clone()).into(),
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
@@ -4119,7 +4119,7 @@ fn bind_material_faces(
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
             ))?,
-            target: AppearanceTarget::Face(face),
+            target: AppearanceTarget::Face(face).into(),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider ShapeAppearance".into()),
@@ -4236,7 +4236,7 @@ fn transfer_topology_colors(
             if binding.appearance != default_appearance {
                 return true;
             }
-            let topology_id = match &binding.target {
+            let topology_id = match &binding.target.entity {
                 AppearanceTarget::Edge(id) => id.as_str(),
                 AppearanceTarget::Vertex(id) => id.as_str(),
                 _ => return true,
@@ -4320,7 +4320,7 @@ fn transfer_topology_colors(
                     "fcstd:appearance:binding#{kind_key}:{provider_key}:{}:{topology_key}",
                     index + 1,
                 ))?,
-                target,
+                target: target.into(),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some(format!("ViewProvider {}", kind.name())),
@@ -4338,26 +4338,26 @@ fn transfer_topology_colors(
 
 fn decode_color(value: u32, transparency: Option<f32>) -> Result<Color, CodecError> {
     Color::new(
-        f32::from(
+        f64::from(
             u8::try_from((value >> 24) & 0xff).map_err(|_| {
                 CodecError::Malformed("GUI color channel exceeds byte range".into())
             })?,
         ) / 255.0,
-        f32::from(
+        f64::from(
             u8::try_from((value >> 16) & 0xff).map_err(|_| {
                 CodecError::Malformed("GUI color channel exceeds byte range".into())
             })?,
         ) / 255.0,
-        f32::from(
+        f64::from(
             u8::try_from((value >> 8) & 0xff).map_err(|_| {
                 CodecError::Malformed("GUI color channel exceeds byte range".into())
             })?,
         ) / 255.0,
         transparency.map_or(
-            f32::from(u8::try_from(value & 0xff).map_err(|_| {
+            f64::from(u8::try_from(value & 0xff).map_err(|_| {
                 CodecError::Malformed("GUI color channel exceeds byte range".into())
             })?) / 255.0,
-            |value| 1.0 - value,
+            |value| 1.0 - f64::from(value),
         ),
     )
     .ok_or_else(|| CodecError::Malformed("GUI color components must be in [0, 1]".into()))
@@ -4378,13 +4378,13 @@ mod color_tests {
     #[test]
     fn packed_alpha_is_used_without_a_transparency_property() {
         let color = decode_color(0x1122_3340, None).expect("valid color");
-        assert!((color.a() - 64.0 / 255.0).abs() < f32::EPSILON);
+        assert!((color.a() - 64.0 / 255.0).abs() < f64::from(f32::EPSILON));
     }
 
     #[test]
     fn transparency_property_overrides_packed_alpha() {
         let color = decode_color(0x1122_3300, Some(0.25)).expect("valid color");
-        assert!((color.a() - 0.75).abs() < f32::EPSILON);
+        assert!((color.a() - 0.75).abs() < f64::from(f32::EPSILON));
     }
 
     #[test]
@@ -4486,11 +4486,11 @@ mod shape_association_tests {
         ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
             id: cadmpeg_ir::ids::BodyId::mint("fcstd:model:body#payload:1").expect("body identity"),
             kind: cadmpeg_ir::topology::BodyKind::default(),
-            regions: Vec::new(),
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         ir
     }

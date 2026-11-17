@@ -678,6 +678,7 @@ pub(super) fn project(
                     continue;
                 }
             }),
+            native_ref: None,
         });
         decoded.insert(entry.sequence);
     }

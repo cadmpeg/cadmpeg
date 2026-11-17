@@ -1,15 +1,31 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
         {
           "id": "iges:model:body#D37",
           "kind": "sheet",
-          "regions": [
-            "iges:model:region#D37"
-          ],
           "visible": true
         }
       ],
@@ -322,9 +338,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D37:D21:2",
-          "id": "iges:model:edge#D37:D23:1",
-          "start": "iges:model:vertex#D37:D21:1"
+          "ends": {
+            "end": "iges:model:vertex#D37:D21:2",
+            "start": "iges:model:vertex#D37:D21:1"
+          },
+          "id": "iges:model:edge#D37:D23:1"
         },
         {
           "carrier": {
@@ -334,9 +352,11 @@
               1.4142135623730951
             ]
           },
-          "end": "iges:model:vertex#D37:D21:3",
-          "id": "iges:model:edge#D37:D23:2",
-          "start": "iges:model:vertex#D37:D21:2"
+          "ends": {
+            "end": "iges:model:vertex#D37:D21:3",
+            "start": "iges:model:vertex#D37:D21:2"
+          },
+          "id": "iges:model:edge#D37:D23:2"
         },
         {
           "carrier": {
@@ -346,9 +366,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D37:D21:1",
-          "id": "iges:model:edge#D37:D23:3",
-          "start": "iges:model:vertex#D37:D21:3"
+          "ends": {
+            "end": "iges:model:vertex#D37:D21:1",
+            "start": "iges:model:vertex#D37:D21:3"
+          },
+          "id": "iges:model:edge#D37:D23:3"
         },
         {
           "carrier": {
@@ -358,9 +380,11 @@
               1.0
             ]
           },
-          "end": "iges:model:vertex#D37:D21:4",
-          "id": "iges:model:edge#D37:D23:4",
-          "start": "iges:model:vertex#D37:D21:1"
+          "ends": {
+            "end": "iges:model:vertex#D37:D21:4",
+            "start": "iges:model:vertex#D37:D21:1"
+          },
+          "id": "iges:model:edge#D37:D23:4"
         },
         {
           "carrier": {
@@ -370,9 +394,11 @@
               1.4142135623730951
             ]
           },
-          "end": "iges:model:vertex#D37:D21:2",
-          "id": "iges:model:edge#D37:D23:5",
-          "start": "iges:model:vertex#D37:D21:4"
+          "ends": {
+            "end": "iges:model:vertex#D37:D21:2",
+            "start": "iges:model:vertex#D37:D21:4"
+          },
+          "id": "iges:model:edge#D37:D23:5"
         },
         {
           "carrier": {
@@ -382,9 +408,11 @@
               1.118033988749895
             ]
           },
-          "end": "iges:model:vertex#D37:D21:5",
-          "id": "iges:model:edge#D37:D23:6",
-          "start": "iges:model:vertex#D37:D21:2"
+          "ends": {
+            "end": "iges:model:vertex#D37:D21:5",
+            "start": "iges:model:vertex#D37:D21:2"
+          },
+          "id": "iges:model:edge#D37:D23:6"
         },
         {
           "carrier": {
@@ -394,9 +422,11 @@
               1.118033988749895
             ]
           },
-          "end": "iges:model:vertex#D37:D21:1",
-          "id": "iges:model:edge#D37:D23:7",
-          "start": "iges:model:vertex#D37:D21:5"
+          "ends": {
+            "end": "iges:model:vertex#D37:D21:1",
+            "start": "iges:model:vertex#D37:D21:5"
+          },
+          "id": "iges:model:edge#D37:D23:7"
         }
       ],
       "faces": [
@@ -532,20 +562,7 @@
       "shells": [
         {
           "id": "iges:model:shell#D37",
-          "members": [
-            {
-              "id": "iges:model:face#D37:D31",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D37:D33",
-              "kind": "face"
-            },
-            {
-              "id": "iges:model:face#D37:D35",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "iges:model:region#D37"
         }
       ],
@@ -3677,7 +3694,19 @@
         "views": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

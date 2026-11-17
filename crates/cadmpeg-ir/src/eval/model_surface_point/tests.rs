@@ -58,6 +58,7 @@ fn fixture(revolution: bool, parallel: bool, distance: f64) -> (CadIr, SurfaceId
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], poles, None, false).unwrap(),
         )),
+        native_ref: None,
     });
     ir.geometry.surfaces = vec![
         Surface {
@@ -67,6 +68,7 @@ fn fixture(revolution: bool, parallel: bool, distance: f64) -> (CadIr, SurfaceId
                 construction: construction.clone(),
                 cache: None,
             },
+            native_ref: None,
         },
         Surface {
             id: offset.clone(),
@@ -75,6 +77,7 @@ fn fixture(revolution: bool, parallel: bool, distance: f64) -> (CadIr, SurfaceId
                 construction: offset_construction.clone(),
                 cache: None,
             },
+            native_ref: None,
         },
     ];
     ir.geometry.procedural_surfaces = vec![

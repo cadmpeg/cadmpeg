@@ -46,9 +46,13 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
         .iter()
         .filter(|edge| edge.curve().is_some_and(|id| id.as_str() == curve))
     {
-        let start = point(&edge.start)?;
-        let end = point(&edge.end)?;
-        let closed = cadmpeg_ir::math::Point3::distance(start, end) <= tolerance;
+        let closed = match &edge.ends {
+            Some(ends) => {
+                cadmpeg_ir::math::Point3::distance(point(&ends.start)?, point(&ends.end)?)
+                    <= tolerance
+            }
+            None => true,
+        };
         if result.is_some_and(|previous| previous != closed) {
             return None;
         }

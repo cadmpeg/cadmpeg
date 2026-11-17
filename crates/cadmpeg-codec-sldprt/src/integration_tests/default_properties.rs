@@ -162,6 +162,32 @@ fn inherited_writer_refuses_every_saved_property_edit() {
     }
 }
 #[test]
+fn saved_negative_zero_and_zero_are_one_property_value() {
+    let mut decoded = fixture();
+    let mut ir = decoded.ir_mut();
+    let row = ir
+        .model
+        .attributes
+        .iter_mut()
+        .filter(is_property)
+        .find(|row| row.name == "SavedName")
+        .unwrap();
+    let [AttributeValue::Float(saved)] = row.values.as_slice() else {
+        panic!("SavedName decodes as one float")
+    };
+    assert_eq!(saved.get().to_bits(), (-0.0_f64).to_bits());
+    row.values = vec![AttributeValue::float(0.0).unwrap()];
+    drop(ir);
+    let bytes = write(&decoded).unwrap();
+    let scan = crate::test_support::container::scan(&bytes);
+    let members = scan
+        .sections()
+        .filter(|s| s.name() == Some(MEMBER))
+        .collect::<Vec<_>>();
+    assert_eq!(members.len(), 1);
+    assert_eq!(members[0].payload(), XML);
+}
+#[test]
 fn inherited_writer_refuses_changed_unit_mirrors_in_the_saved_carrier() {
     let mut decoded = fixture();
     let mut ir = decoded.ir_mut();
@@ -198,7 +224,7 @@ fn source_less_writer_refuses_saved_properties() {
     let mut ir = crate::test_support::ir::source_less_cube();
     ir.model.attributes.push(SourceAttribute {
         id: AttributeId::mint("sldprt:metadata:default_property#8:2:Saved").unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "Saved".into(),
         values: vec![AttributeValue::Integer(7)],
     });

@@ -178,7 +178,8 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
                 .appearance_bindings
                 .iter()
                 .find(|binding| {
-                    binding.target == AppearanceTarget::Tessellation(tessellation.id.to_string())
+                    binding.target
+                        == AppearanceTarget::Tessellation(tessellation.id.to_string()).into()
                 })?;
             let color = colors[&binding.appearance];
             let table_index = tessellation
@@ -192,7 +193,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
             Some((
                 table_index,
                 [color.r(), color.g(), color.b()]
-                    .map(|value| truncate_f64_to_u8(f64::from((value * 255.0).round())).unwrap()),
+                    .map(|value| truncate_f64_to_u8((value * 255.0).round()).unwrap()),
             ))
         })
         .collect::<Vec<_>>();
@@ -200,7 +201,7 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
     colors.into_iter().map(|(_, color)| color).collect()
 }
 
-const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
+const EPS_COLOR_COMPONENT: f64 = 1.0e-6;
 
 #[test]
 fn packed_rgb_uses_low_to_high_red_green_blue_bytes() {
@@ -302,7 +303,7 @@ fn unresolved_feature_scope_keeps_source_bound_display_colour() {
         .iter()
         .find(|binding| {
             matches!(
-                binding.target,
+                binding.target.entity,
                 cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
             )
         })
@@ -469,7 +470,7 @@ fn decode_binds_entity53_color_to_face() {
         .model
         .appearance_bindings
         .iter()
-        .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .find(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
         .expect("face binding");
     let appearance = result
         .ir()
@@ -525,7 +526,7 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
             .count(),
         1
     );
@@ -559,7 +560,7 @@ fn decode_binds_adjacent_entity53_color_to_disc14_face() {
         .model
         .appearance_bindings
         .iter()
-        .find(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .find(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
         .expect("face binding");
     let color = result
         .ir()

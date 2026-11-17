@@ -124,9 +124,15 @@ fn bulged_cube() -> CadIr {
             .expect("cube edge");
         let domain = edge.param_range().expect("cube edge domain");
         let (start, end) = if coedge.sense == Sense::Forward {
-            (&edge.start, &edge.end)
+            (
+                &edge.ends.as_ref().unwrap().start,
+                &edge.ends.as_ref().unwrap().end,
+            )
         } else {
-            (&edge.end, &edge.start)
+            (
+                &edge.ends.as_ref().unwrap().end,
+                &edge.ends.as_ref().unwrap().start,
+            )
         };
         let position = |id: &cadmpeg_ir::ids::VertexId| {
             let vertex = ir
@@ -161,6 +167,7 @@ fn bulged_cube() -> CadIr {
                 Some(domain),
                 Some(FitTolerance::try_new(TOP_PCURVE_FIT).expect("finite fit tolerance")),
             ),
+            native_ref: None,
         });
         ir.geometry.coedges[index].pcurves = vec![PcurveUse {
             pcurve: id,
