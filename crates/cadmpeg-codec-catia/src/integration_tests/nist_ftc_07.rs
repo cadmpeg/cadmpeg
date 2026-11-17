@@ -129,7 +129,12 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         (753, [94.612_198_362, -103.517_913_248, -96.624_363_522]),
         (761, [141.074_363_413, -103.517_919_495, 69.212_205_915]),
     ];
-    const BOUNDARY_SAMPLES_MM: [(usize, [f64; 3]); 64] = [
+    // Preserve independent STEP witnesses alongside the native CATIA samples.
+    // Source: corpus/nist-pmi/step/nist_ftc_07_asme1_ap242-e2.stp; inches × 25.4.
+    // These eight plane-jet rows are unchanged from upstream 9c4e34b5d.
+    // Edge → STEP spline: 418→#6008, 425→#9996, 436→#1581, 443→#1533,
+    // 700→#2798, 728→#4038, 753→#5867, 761→#6073.
+    const STEP_BOUNDARY_SAMPLES_MM: [(usize, [f64; 3]); 64] = [
         (418, [-94.611_231_844, -103.516_638_909, -96.624_385_766]),
         (425, [141.074_385_766, -103.516_638_905, -69.211_231_846]),
         (436, [-94.611_234_209, -103.516_636_583, 96.624_385_806]),
@@ -261,7 +266,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         "unresolved freeform boundary curves: {unresolved:?}"
     );
     assert_eq!(circle_count, 48);
-    assert_eq!(nurbs_count, BOUNDARY_SAMPLES_MM.len());
+    assert_eq!(nurbs_count, STEP_BOUNDARY_SAMPLES_MM.len());
     let points: HashMap<_, _> = geometry
         .points
         .iter()
@@ -286,7 +291,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     let mut freeform_pcurve_uses = 0;
     let mut plane_pcurve_uses = 0;
     let admission = cadmpeg_ir::eval::admission::EvaluationAdmission::Standard;
-    for (ordinal, [x, y, z]) in BOUNDARY_SAMPLES_MM {
+    for (ordinal, [x, y, z]) in STEP_BOUNDARY_SAMPLES_MM {
         let id = format!("catia:standard:edge#{ordinal}");
         let edge = edges[id.as_str()];
         assert!(boundary_edges.contains(&edge.id));
