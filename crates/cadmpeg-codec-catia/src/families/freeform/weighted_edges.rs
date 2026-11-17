@@ -807,6 +807,21 @@ pub(in crate::families) fn attach(
                 let Ok(source_range) = ParameterInterval::new(canonical) else {
                     continue;
                 };
+                if compatible {
+                    if let Some(projected) =
+                        super::weighted_plane::project_curve(&curve_cache, face_plane, refusal)
+                    {
+                        if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
+                            plane_pcurve = Some((
+                                plane_coedges[0],
+                                projected,
+                                curve_range,
+                                other.byte_offset(),
+                            ));
+                        }
+                        break;
+                    }
+                }
                 curve_cache = lifted;
                 curve_range = source_range;
                 if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
