@@ -1311,7 +1311,7 @@ fn record_unguarded_fields(
                 continue;
             }
         };
-        let written = if writer == *reader {
+        let written = if writer.owner == *reader && writer.variant.is_none() {
             // The reading and writing declarations are one declaration, so the
             // field states both halves and no key lookup is needed. A field
             // with no name states no key at all, and is only reachable here.
@@ -1325,7 +1325,11 @@ fn record_unguarded_fields(
                 }
             }
         };
-        record_spelling_match(&at, read, written, &writer.to_string(), offenders);
+        let source = match writer.variant {
+            Some(variant) => format!("{}::{variant}", writer.owner),
+            None => writer.owner.to_string(),
+        };
+        record_spelling_match(&at, read, written, &source, offenders);
     }
 }
 

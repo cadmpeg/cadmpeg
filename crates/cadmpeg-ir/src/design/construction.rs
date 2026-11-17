@@ -14,8 +14,7 @@ use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use super::dimension::Dimension;
 use super::names::{CodecId, NativeNameValue};
@@ -76,7 +75,7 @@ pub mod kinds {
 /// How an element is built from references. A construction inside an
 /// operand has no identity, and its references anchor where the operand's
 /// do.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -85,7 +84,11 @@ pub mod kinds {
         with = "ConstructionWire<K>"
     )
 )]
-#[serde(bound(deserialize = ""), try_from = "ConstructionWire<K>")]
+#[serde(
+    bound = "",
+    rename(serialize = "ConstructionWire"),
+    try_from = "ConstructionWire<K>"
+)]
 pub struct Construction<K: ConstructionKind> {
     /// The constraints the source stores, in the source's priority order.
     pub inputs: Vec<ConstructionInput>,
@@ -94,12 +97,15 @@ pub struct Construction<K: ConstructionKind> {
     pub after: Vec<PostStep>,
     /// The selector the source stores for its choice among the solutions
     /// that the inputs admit.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub solution: Option<u32>,
     /// The source's name for its construction method, with the method
     /// options the source stores beside it.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<SourceMode>,
     /// The construction's value in its anchored state, for the active
     /// configuration, after the steps of `after`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<K::Value>,
     /// The construction's value in each other configuration for which the
     /// source stores one.
@@ -116,29 +122,6 @@ impl<K: ConstructionKind> Default for Construction<K> {
             resolved: None,
             resolved_in: BTreeMap::new(),
         }
-    }
-}
-
-impl<K: ConstructionKind> Serialize for Construction<K> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let fields = 3
-            + usize::from(self.solution.is_some())
-            + usize::from(self.mode.is_some())
-            + usize::from(self.resolved.is_some());
-        let mut wire = serializer.serialize_struct("ConstructionWire", fields)?;
-        wire.serialize_field("inputs", &self.inputs)?;
-        wire.serialize_field("after", &self.after)?;
-        if let Some(solution) = &self.solution {
-            wire.serialize_field("solution", solution)?;
-        }
-        if let Some(mode) = &self.mode {
-            wire.serialize_field("mode", mode)?;
-        }
-        if let Some(resolved) = &self.resolved {
-            wire.serialize_field("resolved", resolved)?;
-        }
-        wire.serialize_field("resolved_in", &self.resolved_in)?;
-        wire.end()
     }
 }
 
