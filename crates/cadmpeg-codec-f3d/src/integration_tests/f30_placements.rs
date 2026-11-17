@@ -27,7 +27,9 @@ fn f30_insertions_follow_the_captured_owner_subtree_move() {
         let result = decode(bytes.to_vec());
         let ir = result.ir();
         assert_eq!(ir.geometry.bodies.len(), 1);
-        assert_eq!(ir.model.occurrences.len(), 5);
+        // §8.1: the root component is the root definition, with no
+        // occurrence of its own.
+        assert_eq!(ir.model.occurrences.len(), 4);
         for code in [
             F3dLossCode::XrefPlacementUndecoded,
             F3dLossCode::XrefPlacementIdentityAssumed,

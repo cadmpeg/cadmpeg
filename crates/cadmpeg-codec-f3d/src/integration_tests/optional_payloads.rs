@@ -215,7 +215,12 @@ fn an_unreadable_asset_beside_a_stored_frame_root_links_to_the_source_root_defin
     let stored = root
         .occurrences
         .iter()
-        .filter_map(|id| model.occurrences.iter().find(|occurrence| &occurrence.id == id))
+        .filter_map(|id| {
+            model
+                .occurrences
+                .iter()
+                .find(|occurrence| &occurrence.id == id)
+        })
         .filter(|occurrence| crate::design::components::is_stored_frame_occurrence(occurrence))
         .map(|occurrence| occurrence.prototype.as_str().to_owned())
         .collect::<Vec<_>>();

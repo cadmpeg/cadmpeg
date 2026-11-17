@@ -660,9 +660,7 @@ fn f3z_archive_preserves_noncommuting_parent_and_child_placements() {
             ]
         );
         assert_eq!(
-            assembly::resolved_transform(ir, &child.id)
-                .unwrap()
-                .rows(),
+            assembly::resolved_transform(ir, &child.id).unwrap().rows(),
             expected
         );
         assert_eq!(ir.geometry.bodies.len(), 1);

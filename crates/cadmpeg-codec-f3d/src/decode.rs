@@ -3958,11 +3958,8 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
                 crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
             }
-            let owned = crate::tree::own_once(
-                ctx,
-                &mut decoded.ir,
-                &std::collections::BTreeMap::new(),
-            )?;
+            let owned =
+                crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();

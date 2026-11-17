@@ -2038,17 +2038,27 @@ mod tests {
             ..Default::default()
         };
         let instances = |references: &[crate::records::xref::XrefReference]| {
-            references.iter().map(|reference| {
-                serde_json::from_value::<cadmpeg_ir::products::Occurrence>(serde_json::json!({
-                    "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
-                    "prototype": {"kind":"unresolved"}, "parent": {"kind":"root"},
-                    "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
-                    "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
-                })).unwrap()
-            }).collect::<Vec<_>>()
+            references
+                .iter()
+                .map(|reference| {
+                    let mut occurrence = cadmpeg_ir::products::Occurrence::new(
+                        crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
+                        crate::xref::document_definition_id(reference.relative_path.as_str()),
+                        Some(cadmpeg_ir::transform::Transform::identity()),
+                    );
+                    occurrence.native_ref = Some(reference.id.clone());
+                    occurrence
+                })
+                .collect::<Vec<_>>()
         };
         let occurrences = instances(&table.references);
-        let bindings = super::super::components::paths::LocalOccurrencePaths::new(&[], &table.references, &[], &occurrences, &[]);
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &table.references,
+            &[],
+            &occurrences,
+            &[],
+        );
         let typed_path = path(11, true).unwrap();
         let legacy_path = DesignAssemblyOperandPath::try_new(
             typed_path.link().clone(),
@@ -2153,7 +2163,13 @@ mod tests {
         assert_eq!(restored.design_parameter_scopes, omitted_scopes);
         assert_eq!(restored.xref_references, [omitted]);
         let kept = instances(&restored.xref_references);
-        let kept_bindings = super::super::components::paths::LocalOccurrencePaths::new(&[], &restored.xref_references, &[], &kept, &[]);
+        let kept_bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &restored.xref_references,
+            &[],
+            &kept,
+            &[],
+        );
         assert!(!kept_bindings.requires_external_binding("f3d:Design/BulkStream.dat"));
         let kept_joint = super::project_assembly_joints_with_paths(
             &restored.design_parameter_scopes,
@@ -2167,7 +2183,13 @@ mod tests {
             crate::test_support::loss_codes(&kept_joint.losses),
             [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()]
         );
-        let bindings = super::super::components::paths::LocalOccurrencePaths::new(&[], &restored.xref_references, &[], &[], &[]);
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &restored.xref_references,
+            &[],
+            &[],
+            &[],
+        );
         let refused = super::project_assembly_joints_with_paths(
             &restored.design_parameter_scopes,
             &[],
@@ -2187,7 +2209,13 @@ mod tests {
         let mut with_child = table.references.clone();
         with_child.push(missing_child);
         let ancestor = instances(&table.references);
-        let partial_bindings = super::super::components::paths::LocalOccurrencePaths::new(&[], &with_child, &[], &ancestor, &[]);
+        let partial_bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &with_child,
+            &[],
+            &ancestor,
+            &[],
+        );
         let original = path(11, true).unwrap();
         let mut keys = original.occurrence_guids().to_vec();
         keys.push(crate::records::identity::Located {
@@ -2234,7 +2262,13 @@ mod tests {
         let mut other_document = restored.xref_references[0].clone();
         other_document.id =
             "f3d:xref/role-other/reference-0/occurrence-0/xref:reference#0".to_owned();
-        let other_bindings = super::super::components::paths::LocalOccurrencePaths::new(&[], &[other_document], &[], &[], &[]);
+        let other_bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &[other_document],
+            &[],
+            &[],
+            &[],
+        );
         let independent = super::project_assembly_joints_with_paths(
             &restored.design_parameter_scopes,
             &[],
@@ -2255,7 +2289,13 @@ mod tests {
         reference.ordinal = 1;
         table.references.push(reference);
         let occurrences = instances(&table.references);
-        let bindings = super::super::components::paths::LocalOccurrencePaths::new(&[], &table.references, &[], &occurrences, &[]);
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &table.references,
+            &[],
+            &occurrences,
+            &[],
+        );
         let refused = super::project_assembly_joints_with_paths(
             &scopes(true, false),
             &[],
@@ -2489,7 +2529,13 @@ mod tests {
         );
         assert_eq!(loss.message, "2 rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects.");
         let occurrences = instances(&table.references[..1]);
-        let bindings = super::super::components::paths::LocalOccurrencePaths::new(&[], &table.references[..1], &[], &occurrences, &[]);
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &table.references[..1],
+            &[],
+            &occurrences,
+            &[],
+        );
         null_group[0]
             .try_edit(|draft| {
                 let DesignScopePayload::AsBuilt(Some(alignment)) = &mut draft.payload else {
@@ -2583,19 +2629,16 @@ mod tests {
     fn joint_placed_identity_occurrences_count_each_inserted_design_once() {
         let occurrence = |id: &str, scope: &str| -> cadmpeg_ir::products::Occurrence {
             let prototype = if scope == "external" {
-                serde_json::json!({"kind": "external", "document": {"kind": "path", "path": format!("{id}.f3d")}})
+                crate::xref::document_definition_id(&format!("{id}.f3d"))
             } else {
-                serde_json::json!({"kind": "local", "definition": "f3d:model:product_definition#1"})
+                cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product_definition#1")
+                    .unwrap()
             };
-            serde_json::from_value(serde_json::json!({
-                "id": format!("f3d:model:occurrence#{id}"),
-                "prototype": prototype,
-                "parent": {"kind": "root"},
-                "ordinal": 0,
-                "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
-                "scale": [1.0, 1.0, 1.0],
-            }))
-            .unwrap()
+            cadmpeg_ir::products::Occurrence::new(
+                cadmpeg_ir::ids::OccurrenceId::mint(format!("f3d:model:occurrence#{id}")).unwrap(),
+                prototype,
+                Some(cadmpeg_ir::transform::Transform::identity()),
+            )
         };
         let occurrences = [
             occurrence("xref-0-0", "external"),
@@ -2607,7 +2650,7 @@ mod tests {
         };
         let external = container(serde_json::json!({
             "kind": "external",
-            "external_document": {"kind": "document_id", "document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
+            "external_document": {"document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
         }));
         let named = container(serde_json::json!({
             "kind": "occurrence",
@@ -2616,7 +2659,7 @@ mod tests {
         }));
         let missing = container(serde_json::json!({
             "kind": "external",
-            "external_document": {"kind": "missing"},
+            "external_document": {},
         }));
         assert_eq!(
             super::joint_placed_identity_occurrences(&occurrences, [&missing, &missing]),

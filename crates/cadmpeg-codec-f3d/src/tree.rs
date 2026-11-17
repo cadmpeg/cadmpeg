@@ -214,9 +214,9 @@ fn is_root_component_occurrence(occurrence: &Occurrence) -> bool {
         return false;
     };
     let root_key = key.starts_with("root-")
-        || key
-            .split_once(':')
-            .is_some_and(|(stream, rest)| stream.starts_with("stream") && rest.starts_with("root-"));
+        || key.split_once(':').is_some_and(|(stream, rest)| {
+            stream.starts_with("stream") && rest.starts_with("root-")
+        });
     root_key
         && occurrence.native_ref.is_none()
         && occurrence
@@ -299,7 +299,13 @@ pub(crate) fn own_once(
         }
     }
 
-    let folds = folds(definitions, occurrences, &occurrence_at, &definition_at, &placements);
+    let folds = folds(
+        definitions,
+        occurrences,
+        &occurrence_at,
+        &definition_at,
+        &placements,
+    );
     let transparent = folds
         .values()
         .flat_map(|(_, rooted)| rooted)
@@ -454,16 +460,22 @@ pub(crate) fn own_once(
         };
         let base = &stated[base];
         let value = &occurrences[node.occurrence];
-        let transform = value
-            .transform
-            .filter(|transform| index != node.canonical && !same_placement(base.transform, *transform));
+        let transform = value.transform.filter(|transform| {
+            index != node.canonical && !same_placement(base.transform, *transform)
+        });
         let visible = value.visible.filter(|_| value.visible != base.visible);
-        let suppressed = value.suppressed.filter(|_| value.suppressed != base.suppressed);
+        let suppressed = value
+            .suppressed
+            .filter(|_| value.suppressed != base.suppressed);
         let representation = value
             .representation
             .clone()
             .filter(|_| value.representation != base.representation);
-        if transform.is_none() && visible.is_none() && suppressed.is_none() && representation.is_none() {
+        if transform.is_none()
+            && visible.is_none()
+            && suppressed.is_none()
+            && representation.is_none()
+        {
             continue;
         }
         let mut chain = Vec::new();
@@ -630,8 +642,8 @@ pub(crate) fn own_once(
     old.product_definitions.clear();
     old.occurrences.clear();
     ir.model.extend_rewritten(old, &mut rewrite)?;
-    losses.shared_references = rewrite.count
-        + crate::scene::rename_bound(ctx, ir, &identity_map, &shared)?;
+    losses.shared_references = rewrite.count;
+    crate::scene::rename_bound(ctx, ir, &identity_map)?;
     ir.model.product_definitions = product_definitions;
     ir.model.occurrences = stated;
 
@@ -712,7 +724,11 @@ fn folds(
             .collect::<Vec<_>>();
         let components = rooted
             .iter()
-            .map(|&occurrence| definition_at.get(occurrences[occurrence].prototype.as_str()).copied())
+            .map(|&occurrence| {
+                definition_at
+                    .get(occurrences[occurrence].prototype.as_str())
+                    .copied()
+            })
             .collect::<Option<BTreeSet<_>>>();
         let Some(components) = components else {
             continue;
@@ -891,7 +907,7 @@ pub(crate) fn expand(
         let instance = match &pending.parent {
             None => occurrence.id.clone(),
             Some(parent) => {
-                let ((namespace, own), (_, parent)) =
+                let ((_, own), (namespace, parent)) =
                     (identity_parts(&occurrence.id)?, identity_parts(parent)?);
                 mint(format!("{namespace}#{parent}:{own}"))?
             }
@@ -913,16 +929,15 @@ pub(crate) fn expand(
             copy.transform = entry.transform.or(copy.transform);
             copy.visible = entry.visible.or(copy.visible);
             copy.suppressed = entry.suppressed.or(copy.suppressed);
-            copy.representation = entry
-                .representation
-                .clone()
-                .or(copy.representation.take());
+            copy.representation = entry.representation.clone().or(copy.representation.take());
         }
         if pending.parent.is_some() {
             if let Some(&owner) = cadmpeg_ir::products::owner(definitions, &occurrence.id)
                 .and_then(|owner| definition_at.get(owner.id.as_str()))
             {
-                expanded.definitions[owner].occurrences.push(instance.clone());
+                expanded.definitions[owner]
+                    .occurrences
+                    .push(instance.clone());
             }
         }
         expanded
@@ -1025,7 +1040,10 @@ pub(crate) fn listed<'m>(model: &'m Model, owner: &ProductDefinitionId) -> Vec<&
 
 /// The definition that lists `occurrence`.
 #[cfg(test)]
-pub(crate) fn owner_of<'m>(model: &'m Model, occurrence: &OccurrenceId) -> Option<&'m ProductDefinition> {
+pub(crate) fn owner_of<'m>(
+    model: &'m Model,
+    occurrence: &OccurrenceId,
+) -> Option<&'m ProductDefinition> {
     cadmpeg_ir::products::owner(&model.product_definitions, occurrence)
 }
 

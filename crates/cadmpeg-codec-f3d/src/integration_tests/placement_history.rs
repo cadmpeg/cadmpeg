@@ -175,8 +175,7 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
-    let expanded =
-        crate::tree::expand(&model.product_definitions, &model.occurrences).unwrap();
+    let expanded = crate::tree::expand(&model.product_definitions, &model.occurrences).unwrap();
     let poses = crate::tree::world_poses(model);
     let leaves = expanded
         .occurrences
@@ -253,7 +252,8 @@ fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
             assert!(stored.is_empty());
         } else {
             assert_eq!(stored.len(), 1);
-            assert!(crate::tree::owner_of(model, &stored[0].id).is_some_and(|owner| owner.is_root()));
+            assert!(crate::tree::owner_of(model, &stored[0].id)
+                .is_some_and(cadmpeg_ir::products::ProductDefinition::is_root));
             assert_eq!(
                 stored[0].transform,
                 Some(cadmpeg_ir::transform::Transform::identity())
@@ -544,7 +544,9 @@ fn later_fixed_identity_occurrence_reports_loss_and_stays_out_of_neutral_structu
         .collect::<Vec<_>>();
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("ordinal 2"));
-    assert_eq!(result.ir().model.occurrences.len(), 4);
+    // §8.1: the root component is the root definition, with no occurrence
+    // of its own.
+    assert_eq!(result.ir().model.occurrences.len(), 3);
     assert!(result
         .ir()
         .model

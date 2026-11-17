@@ -613,7 +613,10 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
         &mut model,
         &[
             ("f3d:model:occurrence#root-a", None),
-            ("f3d:model:occurrence#a", Some("f3d:model:occurrence#root-a")),
+            (
+                "f3d:model:occurrence#a",
+                Some("f3d:model:occurrence#root-a"),
+            ),
             ("f3d:model:occurrence#xref", None),
         ],
     );
@@ -627,7 +630,10 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
         &mut model,
         &[
             ("f3d:model:occurrence#root-a", None),
-            ("f3d:model:occurrence#a", Some("f3d:model:occurrence#root-a")),
+            (
+                "f3d:model:occurrence#a",
+                Some("f3d:model:occurrence#root-a"),
+            ),
             ("f3d:model:occurrence#xref", None),
             (&stored_frame, None),
         ],

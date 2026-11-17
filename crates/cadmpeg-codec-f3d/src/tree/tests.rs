@@ -37,7 +37,8 @@ fn component(id: &str, occurrences: &[&str]) -> ProductDefinition {
 }
 
 fn root(occurrences: &[&str]) -> ProductDefinition {
-    let mut definition = ProductDefinition::root(super::file_root_id(), ExternalDocument::default());
+    let mut definition =
+        ProductDefinition::root(super::file_root_id(), ExternalDocument::default());
     definition.occurrences = occurrences.iter().map(|id| occurrence_id(id)).collect();
     definition
 }
@@ -48,8 +49,8 @@ fn own_once(
 ) -> Vec<cadmpeg_ir::report::loss::LossKind> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     super::own_once(&ctx, ir, scopes)
         .unwrap()
         .into_iter()
@@ -109,7 +110,10 @@ fn shared_bracket() -> CadIr {
     second_bolt.visible = Some(false);
     ir.model.product_definitions = vec![
         root(&[ROOT_OCCURRENCE, "f3d:model:occurrence#xref-0-0"]),
-        component(ROOT_COMPONENT, &["f3d:model:occurrence#a", "f3d:model:occurrence#b"]),
+        component(
+            ROOT_COMPONENT,
+            &["f3d:model:occurrence#a", "f3d:model:occurrence#b"],
+        ),
         component(
             BRACKET,
             &["f3d:model:occurrence#a:bolt", "f3d:model:occurrence#b:bolt"],
@@ -140,7 +144,10 @@ fn the_root_component_is_the_root_definition() {
     let mut ir = shared_bracket();
     own_once(&mut ir, &BTreeMap::new());
     let root = definition(&ir, ROOT_COMPONENT);
-    assert!(root.is_root(), "§8.1: the root component is the root definition");
+    assert!(
+        root.is_root(),
+        "§8.1: the root component is the root definition"
+    );
     assert_eq!(
         listed(root),
         [
@@ -228,22 +235,47 @@ fn placements_that_agree_state_no_override() {
 #[test]
 fn a_reference_to_one_instance_names_its_occurrence() {
     let mut ir = shared_bracket();
-    let binding: cadmpeg_ir::appearance::AppearanceBinding =
-        serde_json::from_value(serde_json::json!({
-            "id": "f3d:model:appearance-binding#1",
-            "target": {"kind": "occurrence", "occurrence": "f3d:model:occurrence#b:bolt"},
-            "appearance": "f3d:model:appearance#1",
-        }))
-        .unwrap();
-    ir.model.appearance_bindings.push(binding);
+    let connector = |operand| cadmpeg_ir::products::JointConnector {
+        operand,
+        frame: Transform::identity(),
+        detached: false,
+    };
+    ir.model
+        .assembly_joints
+        .push(cadmpeg_ir::products::AssemblyJoint::paired(
+            cadmpeg_ir::products::JointId::mint("f3d:model:joint#bolt").unwrap(),
+            cadmpeg_ir::products::PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [
+                connector(cadmpeg_ir::products::JointOperand::root("root", Vec::new())),
+                connector(cadmpeg_ir::products::JointOperand::occurrence(
+                    occurrence_id("f3d:model:occurrence#b:bolt"),
+                    "bolt",
+                    Vec::new(),
+                )),
+            ],
+            None,
+        ));
     let losses = own_once(&mut ir, &BTreeMap::new());
     assert_eq!(
         losses,
         [crate::loss::F3dLossCode::InstanceReferenceShared.kind()]
     );
     assert_eq!(
-        serde_json::to_value(&ir.model.appearance_bindings[0].target).unwrap()["occurrence"],
-        "f3d:model:occurrence#bolt"
+        ir.model.assembly_joints[0]
+            .connectors()
+            .nth(1)
+            .unwrap()
+            .operand
+            .container,
+        cadmpeg_ir::products::OperandContainer::Occurrence {
+            occurrence: occurrence_id("f3d:model:occurrence#bolt"),
+            occurrence_path: Vec::new(),
+        }
     );
 }
 
@@ -252,8 +284,7 @@ fn expanding_restates_the_decoder_instances() {
     let original = shared_bracket();
     let mut ir = original.clone();
     own_once(&mut ir, &BTreeMap::new());
-    let expanded =
-        super::expand(&ir.model.product_definitions, &ir.model.occurrences).unwrap();
+    let expanded = super::expand(&ir.model.product_definitions, &ir.model.occurrences).unwrap();
     let instances = expanded
         .occurrences
         .iter()
@@ -315,7 +346,10 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
     .map(|id| occurrence_id(id))
     .collect();
     ir.model.product_definitions = vec![
-        root(&["f3d:model:occurrence#xref-0-0", "f3d:model:occurrence#xref-0-1"]),
+        root(&[
+            "f3d:model:occurrence#xref-0-0",
+            "f3d:model:occurrence#xref-0-1",
+        ]),
         member,
         component(
             MEMBER_ROOT,
@@ -352,7 +386,13 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
     own_once(&mut ir, &scopes);
     let member_root = definition(&ir, MEMBER_ROOT);
     assert!(
-        matches!(&member_root.storage, Storage::File { source: Some(_), .. }),
+        matches!(
+            &member_root.storage,
+            Storage::File {
+                source: Some(_),
+                ..
+            }
+        ),
         "§8.1: an archive member's root component is the member file's definition"
     );
     assert_eq!(member_root.label.as_deref(), Some("Part"));
@@ -362,7 +402,10 @@ fn an_archive_member_placed_twice_is_its_root_component_once() {
         .product_definitions
         .iter()
         .all(|definition| definition.id.as_str() != MEMBER));
-    for id in ["f3d:model:occurrence#xref-0-0", "f3d:model:occurrence#xref-0-1"] {
+    for id in [
+        "f3d:model:occurrence#xref-0-0",
+        "f3d:model:occurrence#xref-0-1",
+    ] {
         assert_eq!(placed(&ir, id).prototype.as_str(), MEMBER_ROOT);
     }
     assert!(placed(&ir, "f3d:model:occurrence#xref-0-0")

@@ -56,8 +56,7 @@ pub(super) fn merge_archive(
 }
 
 /// The identity scope of the member instance each merged occurrence places.
-pub(super) type InstanceScopes =
-    std::collections::BTreeMap<cadmpeg_ir::ids::OccurrenceId, String>;
+pub(super) type InstanceScopes = std::collections::BTreeMap<cadmpeg_ir::ids::OccurrenceId, String>;
 
 fn xref_table_from_ir(
     ctx: &DecodeContext<'_>,
@@ -176,6 +175,7 @@ impl MergeSession<'_, '_> {
         table: &XrefTable,
     ) -> Result<usize, CodecError> {
         let placements = member_placements(&parent_ir.model, table, None);
+        let placed_documents = placed_documents(&parent_ir.model);
         let mut member_roots = std::collections::BTreeMap::new();
         let merged = self.merge_placements(
             parent_ir,
@@ -277,6 +277,12 @@ impl MergeSession<'_, '_> {
             None,
         )?;
         crate::design::assembly::release_joint_placed(&mut parent_report.losses, left_identity);
+        // A document that a member definition now stands for at every
+        // placement was read.
+        let placed = self::placed_documents(&parent_ir.model);
+        parent_ir.model.product_definitions.retain(|definition| {
+            !placed_documents.contains(&definition.id) || placed.contains(&definition.id)
+        });
         parent_report
             .losses
             .retain(|loss| loss.code != F3dLossCode::SavedFreeEdgeBodyUnowned.kind());
@@ -555,6 +561,19 @@ impl MergeSession<'_, '_> {
         }
         Ok(merged)
     }
+}
+
+/// The external document definitions that an occurrence of `model` places.
+fn placed_documents(
+    model: &Model,
+) -> std::collections::BTreeSet<cadmpeg_ir::ids::ProductDefinitionId> {
+    model
+        .occurrences
+        .iter()
+        .map(|occurrence| &occurrence.prototype)
+        .filter(|prototype| crate::xref::is_document_definition(prototype))
+        .cloned()
+        .collect()
 }
 
 fn omit_unbound_member_joints(

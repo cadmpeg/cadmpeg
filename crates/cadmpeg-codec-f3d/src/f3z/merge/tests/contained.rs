@@ -258,7 +258,11 @@ fn own(model: &mut cadmpeg_ir::document::Model, parents: &Parents) {
         let parent = parent
             .as_deref()
             .map(|parent| OccurrenceId::mint(parent).unwrap());
-        crate::tree::place_under(model, parent.as_ref(), OccurrenceId::mint(id.as_str()).unwrap());
+        crate::tree::place_under(
+            model,
+            parent.as_ref(),
+            OccurrenceId::mint(id.as_str()).unwrap(),
+        );
     }
 }
 
@@ -366,8 +370,14 @@ fn placed_reference_edit(
     ];
     let mut parents = parented(&[
         ("f3d:model:occurrence#root", None),
-        ("f3d:model:occurrence#outer", Some("f3d:model:occurrence#root")),
-        ("f3d:model:occurrence#owner", Some("f3d:model:occurrence#outer")),
+        (
+            "f3d:model:occurrence#outer",
+            Some("f3d:model:occurrence#root"),
+        ),
+        (
+            "f3d:model:occurrence#owner",
+            Some("f3d:model:occurrence#outer"),
+        ),
         (
             "f3d:model:occurrence#owner:xref-0-0",
             Some("f3d:model:occurrence#owner"),
@@ -935,11 +945,9 @@ fn repeated_contained_design_records_keep_an_ambiguous_target_native() {
             repeated.id =
                 OccurrenceId::mint("f3d:xref/role/occurrence-0/model:occurrence#repeated-child")
                     .unwrap();
-            repeated.prototype = cadmpeg_ir::ids::ProductDefinitionId::mint(format!(
-                "{}/definition",
-                repeated.id
-            ))
-            .unwrap();
+            repeated.prototype =
+                cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{}/definition", repeated.id))
+                    .unwrap();
             parents.push((repeated.id.as_str().to_owned(), parents[5].1.clone()));
             ir.model.occurrences.push(repeated);
         },
@@ -966,11 +974,9 @@ fn repeated_insertions_require_a_unique_owner_qualified_component_path() {
         |ir, parents| {
             let mut repeated = ir.model.occurrences[3].clone();
             repeated.id = OccurrenceId::mint("f3d:model:occurrence#repeated-insertion").unwrap();
-            repeated.prototype = cadmpeg_ir::ids::ProductDefinitionId::mint(format!(
-                "{}/definition",
-                repeated.id
-            ))
-            .unwrap();
+            repeated.prototype =
+                cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{}/definition", repeated.id))
+                    .unwrap();
             parents.push((repeated.id.as_str().to_owned(), parents[3].1.clone()));
             ir.model.occurrences.push(repeated);
         },

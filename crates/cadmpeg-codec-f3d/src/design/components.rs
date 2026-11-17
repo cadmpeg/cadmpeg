@@ -2993,7 +2993,8 @@ mod tests {
         let stored_occurrence = stored_occurrences[0].id.clone();
         let stated = crate::tree::stated(projection.into(), None);
         assert!(
-            crate::tree::owner_of(&stated, &stored_occurrence).is_some_and(|owner| owner.is_root()),
+            crate::tree::owner_of(&stated, &stored_occurrence)
+                .is_some_and(cadmpeg_ir::products::ProductDefinition::is_root),
             "the stored-frame occurrence sits in the root definition"
         );
     }
@@ -3175,7 +3176,10 @@ mod tests {
         assert!(root_definition.is_root());
         let first = occurrence(crate::ids::neutral_component_occurrence_id(&guid(FIRST)));
         let second = occurrence(crate::ids::neutral_component_occurrence_id(&guid(SECOND)));
-        assert_eq!(root_definition.occurrences, [first.id.clone(), second.id.clone()]);
+        assert_eq!(
+            root_definition.occurrences,
+            [first.id.clone(), second.id.clone()]
+        );
         for child in [&first, &second] {
             assert_eq!(child.prototype, component);
         }
@@ -3260,8 +3264,11 @@ mod tests {
                 Some(&root)
             );
         }
-        assert!(crate::tree::listed(&stated, &crate::ids::neutral_component_id(&guid(EMPTY_CONTEXT)))
-            .is_empty());
+        assert!(crate::tree::listed(
+            &stated,
+            &crate::ids::neutral_component_id(&guid(EMPTY_CONTEXT))
+        )
+        .is_empty());
     }
 
     #[test]
@@ -3435,8 +3442,10 @@ mod tests {
                 assert!((value - expected).abs() < 1e-12, "{rows:?}");
             }
         }
-        let child =
-            crate::ids::nested_occurrence_id(&parent, &crate::ids::neutral_component_occurrence_id(&carriers[1].occurrence_guid));
+        let child = crate::ids::nested_occurrence_id(
+            &parent,
+            &crate::ids::neutral_component_occurrence_id(&carriers[1].occurrence_guid),
+        );
         assert_eq!(
             transform(&child),
             cadmpeg_ir::transform::Transform::identity().rows()
@@ -3480,12 +3489,13 @@ mod tests {
                     .all(|definition| definition.bodies.is_empty()));
                 assert_eq!(projection.occurrences.len(), 4);
                 let stated = crate::tree::stated(projection.into(), None);
-                let module = crate::ids::neutral_component_id(&guid(
-                    "00000000-0000-4000-8000-000000000101",
-                ));
+                let module =
+                    crate::ids::neutral_component_id(&guid("00000000-0000-4000-8000-000000000101"));
                 let children = carriers[1..]
                     .iter()
-                    .map(|child| crate::ids::neutral_component_occurrence_id(&child.occurrence_guid))
+                    .map(|child| {
+                        crate::ids::neutral_component_occurrence_id(&child.occurrence_guid)
+                    })
                     .collect::<Vec<_>>();
                 assert_eq!(
                     crate::tree::listed(&stated, &module),
@@ -3556,7 +3566,8 @@ mod tests {
         // §8.1: the module, placed twice, owns its two children once; the
         // placed instance tree has four leaves.
         let stated = crate::tree::stated(projection.into(), None);
-        let module = crate::ids::neutral_component_id(&guid("00000000-0000-4000-8000-000000000101"));
+        let module =
+            crate::ids::neutral_component_id(&guid("00000000-0000-4000-8000-000000000101"));
         let children = [&carriers[1], &carriers[2]]
             .map(|child| crate::ids::neutral_component_occurrence_id(&child.occurrence_guid));
         assert_eq!(
@@ -3676,7 +3687,8 @@ mod tests {
             ))),
             "the operation-placed occurrence stays in its containing component"
         );
-        let rows = crate::tree::world_poses(&stated)[&crate::ids::nested_occurrence_id(&parent, &own)]
+        let rows = crate::tree::world_poses(&stated)
+            [&crate::ids::nested_occurrence_id(&parent, &own)]
             .rows();
         assert!((rows[0][3] - 30.0).abs() < TOLERANCE);
         assert!((rows[1][3] - 60.0).abs() < TOLERANCE);
@@ -3798,9 +3810,10 @@ mod tests {
             crate::loss::F3dLossCode::LocalOccurrenceExpansionLimit.kind()
         );
         let stated = crate::tree::stated(projection.into(), None);
-        assert!(stated.occurrences.iter().all(|occurrence| {
-            crate::tree::owner_of(&stated, &occurrence.id).is_some()
-        }));
+        assert!(stated
+            .occurrences
+            .iter()
+            .all(|occurrence| { crate::tree::owner_of(&stated, &occurrence.id).is_some() }));
     }
 
     #[test]

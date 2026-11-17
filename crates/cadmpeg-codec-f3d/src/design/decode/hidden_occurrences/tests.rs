@@ -131,9 +131,7 @@ fn occurrence_id(name: &str) -> OccurrenceId {
 }
 
 /// The occurrence each named nested occurrence sits in.
-fn parents(
-    pairs: &[(&str, &str)],
-) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
+fn parents(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
     pairs
         .iter()
         .map(|(child, parent)| (occurrence_id(child), occurrence_id(parent)))
@@ -167,11 +165,14 @@ fn hidden(target: u32, ancestors: &[u32]) -> DesignHiddenOccurrence {
 #[test]
 fn a_hidden_record_sets_visibility_on_each_instance_of_its_target() {
     let carriers = [carrier(30), carrier(40)];
-    let mut occurrences = vec![
-        occurrence("a", &carriers[0]),
-        occurrence("b", &carriers[1]),
-    ];
-    apply_hidden_occurrences(&mut occurrences, &parents(&[]), &carriers, &[], &[hidden(30, &[])]);
+    let mut occurrences = vec![occurrence("a", &carriers[0]), occurrence("b", &carriers[1])];
+    apply_hidden_occurrences(
+        &mut occurrences,
+        &parents(&[]),
+        &carriers,
+        &[],
+        &[hidden(30, &[])],
+    );
     assert_eq!(occurrences[0].visible, Some(false));
     assert_eq!(occurrences[1].visible, None);
 }
@@ -237,7 +238,13 @@ fn a_hidden_record_names_an_external_occurrence_by_its_placement_carrier() {
     let mut external = occurrence("external", &carriers[0]);
     external.native_ref = Some(references[0].id.clone());
     let mut occurrences = vec![occurrence("local", &carriers[0]), external];
-    apply_hidden_occurrences(&mut occurrences, &parents(&[]), &carriers, &references, &[hidden(50, &[])]);
+    apply_hidden_occurrences(
+        &mut occurrences,
+        &parents(&[]),
+        &carriers,
+        &references,
+        &[hidden(50, &[])],
+    );
     assert_eq!(occurrences[0].visible, None);
     assert_eq!(occurrences[1].visible, Some(false));
     let mut bytes = Vec::new();

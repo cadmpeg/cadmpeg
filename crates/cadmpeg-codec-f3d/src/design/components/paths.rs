@@ -542,8 +542,7 @@ mod tests {
         let mut second = chain[2].clone();
         second.id = OccurrenceId::mint("f3d:model:occurrence#second-c").unwrap();
         repeated.push(second);
-        let definitions =
-            crate::tree::owned_by(&mut repeated, &[None, Some(0), Some(1), None]);
+        let definitions = crate::tree::owned_by(&mut repeated, &[None, Some(0), Some(1), None]);
         let repeated_paths =
             LocalOccurrencePaths::new(&[], &table.references, &definitions, &repeated, &[]);
         assert!(repeated_paths.ambiguous(stream, &keys(&[key_c])));

@@ -126,7 +126,10 @@ fn an_identity_owner_carrier_places_external_members_when_body_projection_is_def
     .unwrap();
     assert!(projection.losses.is_empty());
     assert_eq!(projection.occurrences.len(), 1);
-    assert_eq!(projection.occurrences[0].transform.unwrap().rows()[0][3], 20.0);
+    assert_eq!(
+        projection.occurrences[0].transform.unwrap().rows()[0][3],
+        20.0
+    );
 }
 
 #[test]
@@ -174,7 +177,10 @@ fn a_unique_owner_chain_composes_and_unresolved_owners_keep_the_root_placement()
                 projection.placements,
                 [(projection.occurrences[0].id.clone(), None)]
             );
-            assert_eq!(projection.occurrences[0].transform.unwrap().rows()[0][3], 20.0);
+            assert_eq!(
+                projection.occurrences[0].transform.unwrap().rows()[0][3],
+                20.0
+            );
             assert_eq!(projection.losses.len(), 1, "{case}");
             assert_eq!(
                 projection.losses[0].code,

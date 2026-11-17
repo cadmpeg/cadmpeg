@@ -96,16 +96,17 @@ fn copy() -> DesignComponentOccurrence {
 }
 
 fn product_occurrence(carrier: &DesignComponentOccurrence) -> Occurrence {
-    serde_json::from_value(serde_json::json!({
-        "id": crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
-        "native_ref": carrier.id.clone(),
-        "prototype": {"kind": "local", "definition": crate::ids::neutral_component_id(&carrier.component_guid)},
-        "parent": {"kind": "root"},
-        "ordinal": 0,
-        "transform": [[1.0, 0.0, 0.0, 60.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
-        "scale": [1.0, 1.0, 1.0],
-    }))
-    .unwrap()
+    let mut occurrence = Occurrence::new(
+        crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
+        crate::ids::neutral_component_id(&carrier.component_guid),
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 60.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]),
+    );
+    occurrence.native_ref = Some(carrier.id.clone());
+    occurrence
 }
 
 fn native() -> FeatureDefinition {

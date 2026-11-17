@@ -446,27 +446,23 @@ pub(crate) fn bind(
     Ok(())
 }
 
-/// Renames the occurrence each bound display pose names by `renamed`, and
-/// counts the poses bound to an instance in `shared`.
+/// Renames the occurrence each bound display pose names by `renamed`. A
+/// pose's row keeps its full path, so a pose of one instance of a shared
+/// occurrence names that occurrence.
 pub(crate) fn rename_bound(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     renamed: &std::collections::HashMap<String, String>,
-    shared: &BTreeSet<String>,
-) -> Result<usize, CodecError> {
+) -> Result<(), CodecError> {
     let Some(native) = ir.native.namespace("f3d") else {
-        return Ok(0);
+        return Ok(());
     };
     let mut rows: Vec<DisplayPose> = native.arena_as_for_decode(ctx, "display_poses")?;
-    let mut count = 0;
     let mut changed = false;
     for row in &mut rows {
         let SceneBinding::Bound { occurrence } = &mut row.binding else {
             continue;
         };
-        if shared.contains(occurrence.as_str()) {
-            count += 1;
-        }
         if let Some(to) = renamed.get(occurrence.as_str()) {
             *occurrence = OccurrenceId::mint(to.clone()).map_err(CodecError::malformed)?;
             changed = true;
@@ -477,7 +473,7 @@ pub(crate) fn rename_bound(
             .namespace_mut("f3d")
             .set_arena(ctx, "display_poses", &rows)?;
     }
-    Ok(count)
+    Ok(())
 }
 
 pub(crate) fn validate(

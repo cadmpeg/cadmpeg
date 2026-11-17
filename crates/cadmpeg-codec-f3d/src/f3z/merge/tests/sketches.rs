@@ -54,8 +54,14 @@ fn member_definition_extends_existing_root_sketches_once() {
     let owner = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
     ir.model.sketches.push(later.clone());
 
-    assert_eq!(define_member(&ctx, &mut ir, "member", "member.f3d").unwrap(), owner);
-    assert_eq!(define_member(&ctx, &mut ir, "member", "member.f3d").unwrap(), owner);
+    assert_eq!(
+        define_member(&ctx, &mut ir, "member", "member.f3d").unwrap(),
+        owner
+    );
+    assert_eq!(
+        define_member(&ctx, &mut ir, "member", "member.f3d").unwrap(),
+        owner
+    );
 
     assert_eq!(ir.model.product_definitions.len(), 1);
     let listed = &ir.model.product_definitions[0].sketches;
