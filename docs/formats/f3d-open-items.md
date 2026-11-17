@@ -2591,9 +2591,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** What operation does a negative `SurfaceExtend` extension distance select?
 
-**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive.
+**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive. A natural extension with a negative distance is a failed feature in Fusion: the scope keeps its frame, its signed distance and a history state, and the body keeps its unextended boundary.
 
-**Need.** Two saves that extend the same edge by a positive distance and by its negation, with the resulting body geometry of each.
+**Need.** Saves of a perpendicular extension and of a tangent extension of one edge by a positive distance and by its negation, with the resulting body geometry of each.
 
 **Conflict.** None.
 
