@@ -24,6 +24,9 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// Kind stem of an angular dimension.
+const ANGULAR_DIMENSION_KIND: &str = "Angular Dimension";
+
 /// Native property that holds a dimension's instance name.
 const DIMENSION_INSTANCE_NAME: &str = "instance_name";
 
@@ -1871,7 +1874,7 @@ fn parallel_group_axis_angle_definition(
     let [first, second] = entities else {
         return None;
     };
-    if parameter.source_kind() != "Angular Dimension-2"
+    if parameter.dimension_kind().as_str() != ANGULAR_DIMENSION_KIND
         || !design_dimension_unit(parameter)
         || parallel_line_distance(first, second).is_none()
     {
@@ -3688,7 +3691,7 @@ pub(super) fn null_locus_dimension_definition(
     ) {
         return Some(definition);
     }
-    if source_kind != "Angular Dimension-2"
+    if crate::records::parameters::dimension_kind_stem(source_kind) != ANGULAR_DIMENSION_KIND
         || pair.loci()[0].role != 14
         || pair.loci()[1].role != 3
         || !matches!(

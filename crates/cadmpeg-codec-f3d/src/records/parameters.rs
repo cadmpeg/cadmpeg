@@ -332,6 +332,16 @@ fn check_parameter_discriminator_offset(
     Ok(())
 }
 
+/// A dimension `source_kind` with a trailing `-<digits>` instance suffix removed.
+pub(crate) fn dimension_kind_stem(source_kind: &str) -> &str {
+    source_kind
+        .rsplit_once('-')
+        .filter(|(_, instance)| {
+            !instance.is_empty() && instance.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .map_or(source_kind, |(stem, _)| stem)
+}
+
 impl DesignParameter {
     /// Source family and ownership.
     pub(crate) fn source(&self) -> &DesignParameterSource {
@@ -486,13 +496,7 @@ impl DesignParameter {
     /// The source kind with a trailing `-<digits>` instance suffix removed.
     pub(crate) fn dimension_kind(&self) -> NonBlankString {
         let source_kind = self.source_kind();
-        source_kind
-            .as_str()
-            .rsplit_once('-')
-            .filter(|(_, instance)| {
-                !instance.is_empty() && instance.bytes().all(|byte| byte.is_ascii_digit())
-            })
-            .and_then(|(stem, _)| NonBlankString::new(stem))
+        NonBlankString::new(dimension_kind_stem(source_kind.as_str()))
             .unwrap_or_else(|| source_kind.clone())
     }
 
