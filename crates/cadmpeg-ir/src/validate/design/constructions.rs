@@ -16,6 +16,9 @@ use crate::design::dimension::Dimension;
 use crate::design::feature::FeatureOperation;
 use crate::design::names::NameKind;
 use crate::design::ops::datum::{Datum, DatumElement};
+use crate::design::ops::sketch::{
+    EntityDefinition, EntityForm, PlanarCurve, SketchSpace, SpatialCurve,
+};
 use crate::design::selection::{
     DatumPart, PickContext, PickTarget, Picked, Picks, PrincipalEntity,
 };
@@ -516,7 +519,9 @@ fn picks_whole_frame(index: &DesignIndex<'_>, pick: &Picked) -> bool {
     }
 }
 
-/// Whether a pick may pick one edge or curve.
+/// Whether a pick may pick one edge or curve: an axis datum is a line with
+/// no parameter range, and a sketch point entity is no curve. A sketch
+/// entity that does not exist is the existence check's finding.
 fn picks_curve(index: &DesignIndex<'_>, pick: &Picked) -> bool {
     match &pick.target {
         PickTarget::Entity(name) => {
@@ -526,20 +531,55 @@ fn picks_curve(index: &DesignIndex<'_>, pick: &Picked) -> bool {
                     .first()
                     .is_some_and(|kind| matches!(kind, NameKind::Edge | NameKind::Curve))
         }
-        PickTarget::SketchEntity(_)
-        | PickTarget::SpatialSketchEntity(_)
-        | PickTarget::Native { .. } => true,
+        PickTarget::SketchEntity(entity) => index
+            .sketch_entities
+            .get(entity.as_str())
+            .is_none_or(|entity| entity_is_curve(&entity.definition, planar_point)),
+        PickTarget::SpatialSketchEntity(entity) => index
+            .spatial_sketch_entities
+            .get(entity.as_str())
+            .is_none_or(|entity| entity_is_curve(&entity.definition, spatial_point)),
+        PickTarget::Native { .. } => true,
         PickTarget::Datum {
             feature,
             part: None,
-        } => {
-            matches!(
-                datum_element(index, feature.as_str()),
-                DatumFeature::Unstated | DatumFeature::Datum(DatumElement::Axis(_))
-            )
-        }
+        } => matches!(
+            datum_element(index, feature.as_str()),
+            DatumFeature::Unstated
+        ),
         _ => false,
     }
+}
+
+/// Whether a sketch entity may be a curve. A `Frame` is a point entity, and
+/// a `Text` or `BlockInstance` is no curve; a `Native` form, or another form
+/// with no solved curve, states no kind.
+fn entity_is_curve<S: SketchSpace>(
+    definition: &EntityDefinition<S>,
+    is_point: fn(&S::Curve) -> bool,
+) -> bool {
+    match definition {
+        EntityDefinition::Free(curve) => !is_point(curve),
+        EntityDefinition::Defined { form, solved } => match form.as_ref() {
+            EntityForm::Frame | EntityForm::Text(_) | EntityForm::BlockInstance(_) => false,
+            EntityForm::Native(_) => true,
+            EntityForm::Interpolated(_)
+            | EntityForm::Conic { .. }
+            | EntityForm::Derived(_)
+            | EntityForm::Instanced { .. } => solved.as_ref().is_none_or(|curve| !is_point(curve)),
+        },
+    }
+}
+
+fn planar_point(curve: &PlanarCurve) -> bool {
+    matches!(
+        curve,
+        PlanarCurve::Point(_) | PlanarCurve::Spatial(SpatialCurve::Point(_))
+    )
+}
+
+fn spatial_point(curve: &SpatialCurve) -> bool {
+    matches!(curve, SpatialCurve::Point(_))
 }
 
 /// Whether a pick is known to pick a plane.

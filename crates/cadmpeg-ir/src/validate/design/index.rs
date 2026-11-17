@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::container::{Container, Rollback};
 use crate::design::feature::{Feature, FeatureOperation};
-use crate::design::ops::sketch::{Sketch, SpatialSketch};
+use crate::design::ops::sketch::{Planar, Sketch, SketchEntity, Spatial, SpatialSketch};
 use crate::design::refs::{Member, Position};
 use crate::design::scope::DesignScope;
 use crate::design::selection::{NativeOwner, OccurrencePath, PickTarget, StepRef};
@@ -61,10 +61,8 @@ pub(super) struct DesignIndex<'a> {
     pub(super) scopes: BTreeMap<&'a str, &'a DesignScope>,
     pub(super) sketches: BTreeMap<&'a str, &'a Sketch>,
     pub(super) spatial_sketches: BTreeMap<&'a str, &'a SpatialSketch>,
-    /// The sketch of each planar sketch entity.
-    pub(super) sketch_entities: BTreeMap<&'a str, &'a str>,
-    /// The spatial sketch of each spatial sketch entity.
-    pub(super) spatial_sketch_entities: BTreeMap<&'a str, &'a str>,
+    pub(super) sketch_entities: BTreeMap<&'a str, &'a SketchEntity<Planar>>,
+    pub(super) spatial_sketch_entities: BTreeMap<&'a str, &'a SketchEntity<Spatial>>,
     pub(super) publications: BTreeSet<&'a str>,
     pub(super) occurrences: BTreeMap<&'a str, &'a Occurrence>,
     pub(super) definitions: BTreeSet<&'a str>,
@@ -112,12 +110,12 @@ impl<'a> DesignIndex<'a> {
             sketch_entities: design
                 .sketch_entities
                 .iter()
-                .map(|entity| (entity.id.as_str(), entity.sketch.as_str()))
+                .map(|entity| (entity.id.as_str(), entity))
                 .collect(),
             spatial_sketch_entities: design
                 .spatial_sketch_entities
                 .iter()
-                .map(|entity| (entity.id.as_str(), entity.sketch.as_str()))
+                .map(|entity| (entity.id.as_str(), entity))
                 .collect(),
             publications: design
                 .publications
@@ -206,11 +204,11 @@ impl<'a> DesignIndex<'a> {
             PickTarget::SketchEntity(entity) => self
                 .sketch_entities
                 .get(entity.as_str())
-                .and_then(|sketch| self.sketch_owner(sketch)),
+                .and_then(|entity| self.sketch_owner(entity.sketch.as_str())),
             PickTarget::SpatialSketchEntity(entity) => self
                 .spatial_sketch_entities
                 .get(entity.as_str())
-                .and_then(|sketch| self.spatial_sketch_owner(sketch)),
+                .and_then(|entity| self.spatial_sketch_owner(entity.sketch.as_str())),
             PickTarget::Datum { feature, .. }
             | PickTarget::Feature(feature)
             | PickTarget::FeatureResult(feature)

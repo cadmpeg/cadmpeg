@@ -231,6 +231,92 @@ fn a_parameter_ratio_is_on_an_at_parameter_input_that_picks_one_edge() {
     );
 }
 
+/// The axis datum `a` on the X axis, then the plane datum `b` whose one
+/// input is `AtParameter` at `ParameterRatio` 0.5 of `pick`.
+fn ratio_on(pick: Value) -> CadIr {
+    let mut axis = plane_datum(construction(vec![input(
+        "coincident",
+        Some(named(input_anchor(), vec![principal("x_axis")])),
+        None,
+    )]));
+    axis["value"]["element"]["kind"] = json!("axis");
+    timeline(vec![
+        feature("a", axis),
+        feature(
+            "b",
+            plane_datum(construction(vec![input(
+                "at_parameter",
+                Some(named(input_anchor(), vec![pick])),
+                Some(json!({"kind": "parameter_ratio", "value": literal(0.5)})),
+            )])),
+        ),
+    ])
+}
+
+/// [`ratio_on`] picking the entity `e` of a sketch of `a`, whose curve is
+/// `curve`.
+fn ratio_on_sketch_entity(curve: Value) -> CadIr {
+    let mut ir =
+        ratio_on(json!({"target": {"kind": "sketch_entity", "value": key("sketch_entity", "e")}}));
+    ir.design.sketches.push(from(json!({
+        "id": key("sketch", "s"),
+        "owner": key("feature", "a"),
+        "plane": {"kind": "block"},
+        "solve": {"status": "current"},
+        "native_options": {},
+        "source_settings": {}
+    })));
+    ir.design.sketch_entities.push(from(json!({
+        "id": key("sketch_entity", "e"),
+        "sketch": key("sketch", "s"),
+        "definition": {"kind": "free", "value": curve},
+        "roles": [],
+        "native_options": {},
+        "source_settings": {}
+    })));
+    ir
+}
+
+const RATIO_REFUSED: &str =
+    "a ParameterRatio value is not on an AtParameter input that picks one edge or curve";
+
+#[test]
+fn a_parameter_ratio_does_not_pick_an_axis_datum() {
+    assert_finding(
+        &ratio_on(datum_pick("a")),
+        Check::Design,
+        Severity::Error,
+        RATIO_REFUSED,
+    );
+}
+
+#[test]
+fn a_parameter_ratio_does_not_pick_a_sketch_point() {
+    assert_finding(
+        &ratio_on_sketch_entity(json!({"kind": "point", "value": {"u": 0.0, "v": 0.0}})),
+        Check::Design,
+        Severity::Error,
+        RATIO_REFUSED,
+    );
+}
+
+#[test]
+fn a_parameter_ratio_picks_a_sketch_curve_or_an_edge() {
+    assert_clean(&ratio_on_sketch_entity(json!({"kind": "line", "value": {
+        "start": {"u": 0.0, "v": 0.0},
+        "end": {"u": 1.0, "v": 0.0}
+    }})));
+    assert_clean(&ratio_on_sketch_entity(json!({"kind": "arc", "value": {
+        "center": {"u": 0.0, "v": 0.0},
+        "radius": 1.0,
+        "start": 0.0,
+        "end": 1.0
+    }})));
+    assert_clean(&ratio_on(
+        json!({"target": {"kind": "entity", "value": generated("edge", "a")}}),
+    ));
+}
+
 /// The named unit cube with a linear pattern `p` of two instances after `b`,
 /// the current state after `p`, and its first face named as instance
 /// `instance` of `a`'s face.
