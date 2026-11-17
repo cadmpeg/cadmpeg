@@ -755,8 +755,9 @@ edition between the Edition 1 module (`442 1`) and the Edition 2 module
 (`442 3`).
 
 For the CADIR AP242 edition report, the first identifier must have the exact
-long-form name and one of the exact numeric object identifiers in the table.
-An AP242 identifier with no object identifier, an ASN.1 named object
+long-form name and one of the exact numeric object identifiers in the table, or
+the ISO/TS 10303-442:2018 identifier `{ 1 0 10303 442 2 1 4 }`, which reports
+Edition 2. An AP242 identifier with no object identifier, an ASN.1 named object
 identifier, or another numeric object identifier reports an unspecified
 edition. ASCII case differences compare equal. Later identifiers do not
 override the first identifier's report.

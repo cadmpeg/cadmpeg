@@ -27,8 +27,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 Edition 3 (`{ 1 0 10303 442 4 1 4 }`).
 `crates/cadmpeg-codec-step/src/options.rs:61-71` defines `StepSchema` through
 `Ap242Edition3` with no Edition 4 variant, and
-`crates/cadmpeg-codec-step/src/dialect.rs:232-240` maps only the Edition 1
-through 3 object identifiers to rows. An Edition 4 declaration
+`crates/cadmpeg-codec-step/src/dialect.rs:247-256` maps the Edition 1
+through 3 object identifiers and the ISO/TS 10303-442:2018 identifier
+(`442 2`, as Edition 2) to rows. An Edition 4 declaration
 (`{ 1 0 10303 442 7 1 4 }`) therefore classifies as `Unknown` and is read
 with the nearest-strategy grammar. `step.md` §1 names the Edition 4 object
 identifier as a Part 28 derivation input. `docs/evaluations.toml` declares no
