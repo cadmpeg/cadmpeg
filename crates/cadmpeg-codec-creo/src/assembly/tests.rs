@@ -223,3 +223,17 @@ fn row_kinds_select_model_extensions() {
     assert_eq!(MemberKind::from_byte(3), MemberKind::Other(3));
     assert_eq!(MemberKind::from_byte(3).extension(), None);
 }
+
+#[test]
+fn dict_prefixes_follow_the_banded_head_table() {
+    for (prefix, value) in [(0x54_u8, 0.18_f64), (0x58, 0.22)] {
+        let bytes = value.to_be_bytes();
+        let mut token = vec![prefix];
+        token.extend_from_slice(&bytes[2..]);
+        assert_eq!(scalar(&token), Some((value, 7)));
+    }
+    assert_eq!(
+        bits(&[0xb2, 0x28, 0xc7, 0x31, 0xeb, 0x69, 0x50]),
+        Some((0xbfde_28c7_31eb_6950, 7))
+    );
+}
