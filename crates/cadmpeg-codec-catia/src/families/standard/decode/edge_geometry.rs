@@ -1460,7 +1460,10 @@ pub(super) fn build_standard_edge_curve(
                 }
                 selected = Some(candidate);
             }
-            if let Some((ellipse, range)) = selected.filter(|_| !conflicting) {
+            if let Some((ellipse, range, gap)) = selected.filter(|_| !conflicting) {
+                if gap > 0.0 {
+                    refusal.push_conic_branch_bounds_inferred(support.pos, gap);
+                }
                 geometry = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse));
                 param_range = Some(range);
             }

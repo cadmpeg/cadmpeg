@@ -71,6 +71,8 @@ pub(crate) enum CatiaLossCode {
     TopologyAffineVertexReconciled,
     /// A planar shared-edge lift uses a native parameter-map fit tolerance.
     GeometryParameterMapAccuracyInferred,
+    /// A witnessed conic branch exceeds the incident face bounds.
+    GeometryConicBranchBoundsInferred,
     /// A sheet face uses a fitted surface carrier.
     GeometrySheetSurfaceFitted,
     /// A transferred rolling-ball fit uses adjusted rail points.
@@ -173,6 +175,7 @@ impl CatiaLossCode {
         Self::GeometryRollingSheetExtended,
         Self::TopologyAffineVertexReconciled,
         Self::GeometryParameterMapAccuracyInferred,
+        Self::GeometryConicBranchBoundsInferred,
         Self::GeometrySheetSurfaceFitted,
         Self::GeometryRollingBallRailsAdjusted,
         Self::GeometryUnresolvedCarriers,
@@ -232,6 +235,7 @@ impl CatiaLossCode {
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryRollingSheetExtended => "geometry.rolling-sheet-extended",
             Self::TopologyAffineVertexReconciled => "topology.affine-vertex-reconciled",
+            Self::GeometryConicBranchBoundsInferred => "geometry.conic-branch-bounds-inferred",
             Self::GeometryParameterMapAccuracyInferred => {
                 "geometry.parameter-map-accuracy-inferred"
             }
@@ -324,6 +328,7 @@ impl CatiaLossCode {
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryRollingSheetExtended
             | Self::GeometryParameterMapAccuracyInferred
+            | Self::GeometryConicBranchBoundsInferred
             | Self::GeometrySheetSurfaceFitted
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
             Self::GeometryUnresolvedCarriers
@@ -415,6 +420,7 @@ mod tests {
                 "geometry.rolling-sheet-extended",
                 "topology.affine-vertex-reconciled",
                 "geometry.parameter-map-accuracy-inferred",
+                "geometry.conic-branch-bounds-inferred",
                 "geometry.sheet-surface-fitted",
                 "geometry.rolling-ball-rails-adjusted",
                 "geometry.unresolved-carriers",

@@ -52,6 +52,16 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         .arena_as("consolidated_a5_charts")
         .expect("reload native chart records");
     assert_eq!(charts.len(), 20);
+    let inferences: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "geometry.conic-branch-bounds-inferred")
+        .collect();
+    assert_eq!(inferences.len(), 28);
+    assert!(inferences
+        .iter()
+        .all(|loss| loss.message.contains("stored-box excess")));
 }
 
 #[test]

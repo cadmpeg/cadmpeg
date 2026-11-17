@@ -81,43 +81,55 @@ fn branch_fits_bounds(
     range: [f64; 2],
     bounds: &[Option<StandardFaceBounds>; 2],
 ) -> bool {
-    let center_lanes = [center.x, center.y, center.z];
-    let reference_lanes = [cosine.x, cosine.y, cosine.z];
-    let tangent_lanes = [sine.x, sine.y, sine.z];
-    bounds.iter().flatten().all(|bounds| {
-        (0..3).all(|i| {
-            let point = |angle: f64| {
-                center_lanes[i]
-                    + (reference_lanes[i] * angle.cos() + tangent_lanes[i] * angle.sin())
-            };
-            let ends = [point(range[0]), point(range[1])];
-            let mut lower = ends[0].min(ends[1]);
-            let mut upper = ends[0].max(ends[1]);
-            let phase = tangent_lanes[i].atan2(reference_lanes[i]);
-            for extremum in [phase, phase + std::f64::consts::PI] {
-                if (extremum - range[0]).rem_euclid(std::f64::consts::TAU) <= range[1] - range[0] {
-                    let value = point(extremum);
-                    lower = lower.min(value);
-                    upper = upper.max(value);
-                }
+    bounds
+        .iter()
+        .flatten()
+        .all(|bounds| branch_bounds_gap(center, cosine, sine, range, bounds).1 == 0.0)
+}
+
+fn branch_bounds_gap(
+    center: Point3,
+    cosine: Vector3,
+    sine: Vector3,
+    range: [f64; 2],
+    bounds: &StandardFaceBounds,
+) -> (f64, f64) {
+    let center = [center.x, center.y, center.z];
+    let cosine = [cosine.x, cosine.y, cosine.z];
+    let sine = [sine.x, sine.y, sine.z];
+    let mut raw_gap = 0.0_f64;
+    let mut admitted_gap = 0.0_f64;
+    for i in 0..3 {
+        let point = |angle: f64| center[i] + cosine[i] * angle.cos() + sine[i] * angle.sin();
+        let ends = [point(range[0]), point(range[1])];
+        let mut lower = ends[0].min(ends[1]);
+        let mut upper = ends[0].max(ends[1]);
+        let phase = sine[i].atan2(cosine[i]);
+        for extremum in [phase, phase + std::f64::consts::PI] {
+            if (extremum - range[0]).rem_euclid(std::f64::consts::TAU) <= range[1] - range[0] {
+                let value = point(extremum);
+                lower = lower.min(value);
+                upper = upper.max(value);
             }
-            let roundoff_scale = bounds.aabb_center[i]
-                .get()
-                .abs()
-                .max(bounds.aabb_half_extents[i].get())
-                .max(lower.abs())
-                .max(upper.abs())
-                .max(1.0);
-            let tolerance = STANDARD_FACE_BOUNDS_TOLERANCE
-                .max(ARC_BOUND_SOURCE_ROUNDOFF_FACTOR * f64::from(f32::EPSILON) * roundoff_scale);
-            lower.is_finite()
-                && upper.is_finite()
-                && lower
-                    >= bounds.aabb_center[i].get() - bounds.aabb_half_extents[i].get() - tolerance
-                && upper
-                    <= bounds.aabb_center[i].get() + bounds.aabb_half_extents[i].get() + tolerance
-        })
-    })
+        }
+        if !lower.is_finite() || !upper.is_finite() {
+            return (f64::INFINITY, f64::INFINITY);
+        }
+        let scale = bounds.aabb_center[i]
+            .get()
+            .abs()
+            .max(bounds.aabb_half_extents[i].get())
+            .max(lower.abs())
+            .max(upper.abs())
+            .max(1.0);
+        let allowance = STANDARD_FACE_BOUNDS_TOLERANCE
+            .max(ARC_BOUND_SOURCE_ROUNDOFF_FACTOR * f64::from(f32::EPSILON) * scale);
+        let gap = (bounds.aabb_center[i].get() - bounds.aabb_half_extents[i].get() - lower)
+            .max(upper - bounds.aabb_center[i].get() - bounds.aabb_half_extents[i].get());
+        raw_gap = raw_gap.max(gap);
+        admitted_gap = admitted_gap.max(gap - allowance);
+    }
+    (raw_gap, admitted_gap)
 }
 
 pub(in crate::families::standard::decode) fn bounded_ellipse_branch(
@@ -172,7 +184,7 @@ pub(in crate::families::standard::decode) fn witnessed_cylinder_ellipse_branch(
     endpoints: [Point3; 2],
     witness: Point3,
     bounds: &[Option<StandardFaceBounds>; 2],
-) -> Option<(cadmpeg_ir::geometry::analytic::EllipseCurve, [f64; 2])> {
+) -> Option<(cadmpeg_ir::geometry::analytic::EllipseCurve, [f64; 2], f64)> {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let axis = *cylinder.frame().axis().as_raw();
     let normal = *ellipse.frame().axis().as_raw();
@@ -207,13 +219,23 @@ pub(in crate::families::standard::decode) fn witnessed_cylinder_ellipse_branch(
     };
     let reference = *selected.frame().reference().as_raw();
     let tangent = selected.frame().axis().as_raw().cross(reference);
-    (bounds.iter().any(Option::is_some)
-        && branch_fits_bounds(
-            selected.center().get(),
-            reference.scale(selected.major_radius().get()),
-            tangent.scale(selected.minor_radius().get()),
-            range,
-            bounds,
-        ))
-    .then_some((selected, range))
+    if bounds.iter().all(Option::is_none) {
+        return None;
+    }
+    let center = selected.center().get();
+    let cosine = reference.scale(selected.major_radius().get());
+    let sine = tangent.scale(selected.minor_radius().get());
+    let complement = [range[1], range[0] + std::f64::consts::TAU];
+    let mut inferred_gap = 0.0_f64;
+    for bounds in bounds.iter().flatten() {
+        let (gap, excess) = branch_bounds_gap(center, cosine, sine, range, bounds);
+        if excess > 0.0 {
+            let (other_gap, _) = branch_bounds_gap(center, cosine, sine, complement, bounds);
+            if !gap.is_finite() || gap >= other_gap {
+                return None;
+            }
+            inferred_gap = inferred_gap.max(gap);
+        }
+    }
+    Some((selected, range, inferred_gap))
 }

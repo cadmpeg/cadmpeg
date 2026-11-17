@@ -306,6 +306,8 @@ In FTC-07, treating consecutive operand values as one parameter representation j
 
 **Known.** `catia.md` §5.8 "Cylinder and torus payloads use" identifies their witness point as the trimmed-face AABB center and defines a branch when one candidate's exact extrema fit all available incident-face boxes. The same bounds block exists on plane, cone, and sphere records. A box center is a spatial bound, independent of an edge's angular interval.
 
+**Note.** When a cylinder-witnessed ellipse exceeds an incident box, the decoder retains it when that branch has a smaller exact-extrema discrepancy than its complement in every contradicting box and all admitted cylinder witnesses agree. It charges `geometry.conic-branch-bounds-inferred` with the maximum box excess. Public FTC-07 has 28 such trims with excesses from 0.003397 to 0.004548 mm. Independent interior-arc verification remains required to settle this relation.
+
 **Need.** Establish a source-bound parameter or boundary incidence for the remaining branches. Require independent interior-arc verification and agreement between incident carriers before extending the witness relation beyond the bounded ellipse selection in §5.8.
 
 **Conflict.** In FTC-07, a cylinder face's AABB-center azimuth lies about `1.38e-7` radians beyond an edge endpoint. Strict angular containment selects the complementary arc, whose extrema exceed the face box by more than 3 mm. The STEP twin's short arc and the native face box select the other interval.
