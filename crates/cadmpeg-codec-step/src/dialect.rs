@@ -165,6 +165,12 @@ const NEAREST_STRATEGY: Part21Dialect = Part21Dialect::Schema(StepSchema::Ap242E
 /// `step:ap214` row. The writer does not declare it.
 const AP214_COMMITTEE_DRAFT_SCHEMA_NAME: &str = "AUTOMOTIVE_DESIGN_CC2";
 
+/// The object identifier of ISO/TS 10303-442:2018, the AP242 module edition
+/// between the modules of AP242 Edition 1 and Edition 2. It selects the
+/// `step:ap242-e2` row, and the writer declares only that row's canonical
+/// identifier.
+const AP242_MODULE_EDITION_2: &[u64] = &[1, 0, 10303, 442, 2, 1, 4];
+
 impl StepDialect {
     /// Every dialect identity this enum can name.
     #[cfg(test)]
@@ -202,7 +208,8 @@ impl StepDialect {
     ///   The object identifier is optional in Part 21; leaving it out is legal
     ///   and says the edition is unspecified, not that the file is unrecognized.
     /// - present and naming an edition — that edition's row, decided against
-    ///   this enum's own canonical identifiers.
+    ///   this enum's own canonical identifiers and the ISO/TS 10303-442:2018
+    ///   module identifier, which selects the Edition 2 row.
     /// - present and naming no edition — [`Self::Unknown`]. An edition claim
     ///   that matches nothing this codec declares is an unrecognized
     ///   declaration, unlike making no claim at all. Arcs that do not read as a
@@ -234,12 +241,15 @@ impl StepDialect {
         .map_or(Self::Unknown, Self::Part21)
     }
 
-    /// The AP242 edition row whose canonical object identifier the declaration
-    /// names. A future or malformed object identifier names no verified row.
+    /// The AP242 edition row whose canonical object identifier, or for Edition 2
+    /// the ISO/TS 10303-442:2018 module identifier, the declaration names. A
+    /// future or malformed object identifier names no verified row.
     fn ap242_edition(object_identifier: Option<&[u64]>) -> Option<Part21Dialect> {
         match object_identifier? {
             [1, 0, 10303, 442, 1, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition1)),
-            [1, 0, 10303, 442, 3, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition2)),
+            [1, 0, 10303, 442, 3, 1, 4] | AP242_MODULE_EDITION_2 => {
+                Some(Part21Dialect::Schema(StepSchema::Ap242Edition2))
+            }
             [1, 0, 10303, 442, 4, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition3)),
             _ => None,
         }
@@ -324,6 +334,23 @@ pub(crate) fn dialect_loss(matched: &DialectMatch) -> Option<cadmpeg_ir::report:
         using.as_str()),
     };
     Some(StepLossCode::SourceDialectUnverified.note(message))
+}
+
+/// The assumption loss for a declaration that selects an AP242 edition row
+/// through the identifier of an intermediate module edition.
+pub(crate) fn schema_edition_loss(
+    exchange: &Exchange,
+    matched: &DialectMatch,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    if matched.dialect() != &STEP_AP242_E2
+        || exchange.primary_schema_object_identifier().as_deref() != Some(AP242_MODULE_EDITION_2)
+    {
+        return None;
+    }
+    Some(StepLossCode::SourceSchemaEditionAssumed.note(format!(
+        "FILE_SCHEMA object identifier {{ 1 0 10303 442 2 1 4 }} names ISO/TS 10303-442:2018; this decode reads it as {}",
+        STEP_AP242_E2.as_str()
+    )))
 }
 
 /// Refuses the three alternate encodings this codec identifies and does not
