@@ -9,6 +9,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::super::geometry::GeometryData;
 use super::super::{RecordExt, ValueExt};
+use super::angles::AngleUnits;
 use super::frame::{rotate_about, unit, Frame};
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -264,26 +265,32 @@ fn signed_area(profile_loop: &[Segment], normal: Vector3) -> f64 {
     sum.dot(normal)
 }
 
-/// The largest distance between a segment end and the next segment's start
-/// that the profile builder closed.
-#[derive(Debug, Clone, Copy, Default)]
-pub(super) struct ClosedGap {
-    pub(super) distance: f64,
+/// The relative resolution of profile coordinates: two profile coordinates
+/// closer than this fraction of the profile's extent are one coordinate.
+pub(super) const PROFILE_RELATIVE_RESOLUTION: f64 = 1.0e-7;
+
+/// A planar area and the largest junction gap its boundaries closed.
+pub(super) struct ReadProfile {
+    pub(super) profile: Profile,
+    pub(super) gap: f64,
 }
 
 /// Read the planar area of `CURVE_BOUNDED_SURFACE` `surface`.
 ///
 /// Each boundary is a `boundary_curve`, closed by its WHERE rule, whose
 /// segments meet with positional continuity (ISO 10303-42 §4.5.82 and
-/// §4.5.45). A junction between a straight segment and an arc takes the
-/// straight segment's end; the arc runs through the junction points on its
-/// circle.
+/// §4.5.45). A junction gap closes when it is within the larger of
+/// `uncertainty` and [`PROFILE_RELATIVE_RESOLUTION`] of the profile's
+/// extent; a larger gap refuses the profile. A junction between a straight
+/// segment and an arc takes the straight segment's end; the arc runs through
+/// the junction points on its circle.
 pub(super) fn read(
     surface: u64,
     exchange: &Exchange,
     geometry: &GeometryData,
-    gap: &mut ClosedGap,
-) -> Result<Profile, String> {
+    angles: &AngleUnits<'_>,
+    uncertainty: f64,
+) -> Result<ReadProfile, String> {
     let record = record_of(exchange, surface)?;
     let parameters = simple_parameters(record, "CURVE_BOUNDED_SURFACE", surface)?;
     let plane = parameters
@@ -304,15 +311,29 @@ pub(super) fn read(
         .get(2)
         .and_then(Value::list)
         .ok_or_else(|| format!("CURVE_BOUNDED_SURFACE #{surface} has no boundary list"))?;
-    let mut loops = Vec::new();
+    let mut read_loops = Vec::new();
     for boundary in boundaries {
         let boundary = boundary.reference().ok_or_else(|| {
             format!("CURVE_BOUNDED_SURFACE #{surface} has a non-reference boundary")
         })?;
-        loops.push(boundary_loop(boundary, exchange, geometry, gap)?);
+        read_loops.push((
+            boundary,
+            boundary_segments(boundary, exchange, geometry, angles)?,
+        ));
     }
-    if loops.is_empty() {
+    if read_loops.is_empty() {
         return Err(format!("CURVE_BOUNDED_SURFACE #{surface} has no boundary"));
+    }
+    let size = extent(read_loops.iter().flat_map(|(_, read)| read));
+    let tolerance = uncertainty.max(PROFILE_RELATIVE_RESOLUTION * size);
+    let mut gap = 0.0_f64;
+    let mut loops = Vec::new();
+    for (boundary, read) in &read_loops {
+        let (closed, closed_gap) = close_junctions(read, tolerance).map_err(|message| {
+            format!("boundary #{boundary} of CURVE_BOUNDED_SURFACE #{surface} {message}")
+        })?;
+        gap = gap.max(closed_gap);
+        loops.push(closed);
     }
     let normal = *axis.as_raw();
     loops.sort_by(|left, right| {
@@ -320,11 +341,39 @@ pub(super) fn read(
             .abs()
             .total_cmp(&signed_area(left, normal).abs())
     });
-    Ok(Profile {
-        origin: origin.get(),
-        normal,
-        loops,
+    Ok(ReadProfile {
+        profile: Profile {
+            origin: origin.get(),
+            normal,
+            loops,
+        },
+        gap,
     })
+}
+
+/// The diagonal of the box that holds every segment end and arc circle.
+fn extent<'a>(read: impl Iterator<Item = &'a ReadSegment>) -> f64 {
+    let mut low = [f64::INFINITY; 3];
+    let mut high = [f64::NEG_INFINITY; 3];
+    let mut include = |point: Point3, reach: f64| {
+        for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+            low[axis] = low[axis].min(value - reach);
+            high[axis] = high[axis].max(value + reach);
+        }
+    };
+    for piece in read {
+        match piece.segment {
+            Segment::Line { start, end } => {
+                include(start, 0.0);
+                include(end, 0.0);
+            }
+            Segment::Arc { center, radius, .. } => include(center, radius),
+        }
+    }
+    (0..3)
+        .map(|axis| (high[axis] - low[axis]).max(0.0).powi(2))
+        .sum::<f64>()
+        .sqrt()
 }
 
 fn record_of(exchange: &Exchange, id: u64) -> Result<&RawRecord, String> {
@@ -354,12 +403,12 @@ struct ReadSegment {
     exact_ends: bool,
 }
 
-fn boundary_loop(
+fn boundary_segments(
     boundary: u64,
     exchange: &Exchange,
     geometry: &GeometryData,
-    gap: &mut ClosedGap,
-) -> Result<ProfileLoop, String> {
+    angles: &AngleUnits<'_>,
+) -> Result<Vec<ReadSegment>, String> {
     let record = record_of(exchange, boundary)?;
     let name = record
         .simple_name()
@@ -395,7 +444,7 @@ fn boundary_loop(
             .get(2)
             .and_then(Value::reference)
             .ok_or_else(|| format!("composite curve segment #{segment} has no parent curve"))?;
-        let mut pieces = parent_curve(parent, exchange, geometry)?;
+        let mut pieces = parent_curve(parent, exchange, geometry, angles)?;
         if !same_sense {
             pieces.reverse();
             for piece in &mut pieces {
@@ -404,18 +453,21 @@ fn boundary_loop(
         }
         read.extend(pieces);
     }
-    close_junctions(&read, gap).ok_or_else(|| format!("{name} #{boundary} does not close"))
+    Ok(read)
 }
 
 /// Join each segment's end to the next segment's start, and re-run every arc
-/// through its junction points.
-fn close_junctions(read: &[ReadSegment], gap: &mut ClosedGap) -> Option<ProfileLoop> {
-    let count = read.len();
-    if count == 0 {
-        return None;
-    }
-    if count == 1 {
-        let only = &read[0];
+/// through its junction points. A gap above `tolerance` refuses the loop.
+/// One arc closes on itself as its full circle.
+fn close_junctions(read: &[ReadSegment], tolerance: f64) -> Result<(ProfileLoop, f64), String> {
+    let wide = |gap: f64| {
+        format!("leaves a gap of {gap:e} mm, above the closing tolerance {tolerance:e} mm")
+    };
+    if let [only] = read {
+        let gap = only.segment.end().distance(only.segment.start());
+        if gap > tolerance {
+            return Err(wide(gap));
+        }
         return match only.segment {
             Segment::Arc {
                 center,
@@ -423,33 +475,40 @@ fn close_junctions(read: &[ReadSegment], gap: &mut ClosedGap) -> Option<ProfileL
                 radius,
                 start,
                 ..
-            } => {
-                let distance = only.segment.end().distance(start);
-                gap.distance = gap.distance.max(distance);
-                Some(vec![Segment::Arc {
+            } => Ok((
+                vec![Segment::Arc {
                     center,
                     normal,
                     radius,
                     start,
                     sweep: TAU,
-                }])
-            }
-            Segment::Line { .. } => None,
+                }],
+                gap,
+            )),
+            Segment::Line { .. } => Err("is one straight segment".to_owned()),
         };
     }
+    let count = read.len();
+    if count == 0 {
+        return Err("has no segment".to_owned());
+    }
+    let mut gap = 0.0_f64;
     let mut junctions = Vec::with_capacity(count);
     for index in 0..count {
         let before = &read[index];
         let after = &read[(index + 1) % count];
         let end = before.segment.end();
         let start = after.segment.start();
-        gap.distance = gap.distance.max(end.distance(start));
+        gap = gap.max(end.distance(start));
         let point = match (before.exact_ends, after.exact_ends) {
             (true, _) => end,
             (false, true) => start,
             (false, false) => start.translated(end.vector_from(start), 0.5),
         };
         junctions.push(point);
+    }
+    if gap > tolerance {
+        return Err(wide(gap));
     }
     let mut closed = Vec::with_capacity(count);
     for (index, piece) in read.iter().enumerate() {
@@ -467,11 +526,12 @@ fn close_junctions(read: &[ReadSegment], gap: &mut ClosedGap) -> Option<ProfileL
                 normal,
                 radius,
                 start,
-                sweep: turn_between(center, normal, start, end)?,
+                sweep: turn_between(center, normal, start, end)
+                    .ok_or("has an arc of zero radius")?,
             },
         });
     }
-    Some(closed)
+    Ok((closed, gap))
 }
 
 /// The counterclockwise turn about `normal` from `start` to `end`, in
@@ -489,11 +549,13 @@ fn parent_curve(
     curve: u64,
     exchange: &Exchange,
     geometry: &GeometryData,
+    angles: &AngleUnits<'_>,
 ) -> Result<Vec<ReadSegment>, String> {
     let record = record_of(exchange, curve)?;
     match record.simple_name() {
         Some("TRIMMED_CURVE") => {
-            trimmed_curve(curve, record.parameters(), exchange, geometry).map(|piece| vec![piece])
+            trimmed_curve(curve, record.parameters(), exchange, geometry, angles)
+                .map(|piece| vec![piece])
         }
         Some("CIRCLE") => {
             let circle = circle(curve, record.parameters(), geometry)?;
@@ -619,6 +681,7 @@ fn trimmed_curve(
     parameters: &[Value],
     exchange: &Exchange,
     geometry: &GeometryData,
+    angles: &AngleUnits<'_>,
 ) -> Result<ReadSegment, String> {
     let basis = parameters
         .get(1)
@@ -663,9 +726,8 @@ fn trimmed_curve(
         }
         Some("CIRCLE") => {
             let circle = circle(basis, basis_record.parameters(), geometry)?;
-            let angle_scale = geometry.units.angle([id]).get();
             let parameter = |trim: &Trim| {
-                let stated = trim.parameter.map(|t| t * angle_scale);
+                let stated = trim.parameter.map(|t| angles.radians(id, t));
                 let located = trim.point.map(|point| circle.parameter_of(point));
                 if cartesian_master {
                     located.or(stated)
@@ -724,27 +786,32 @@ mod tests {
     }
 
     #[test]
-    fn a_single_arc_boundary_closes_into_the_full_circle() {
-        let arc = Segment::Arc {
-            center: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            radius: 2.0,
-            start: Point3::new(2.0, 0.0, 0.0),
-            sweep: 6.0,
+    fn a_single_arc_boundary_closes_into_the_full_circle_within_tolerance() {
+        let arc = |sweep: f64| ReadSegment {
+            segment: Segment::Arc {
+                center: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                radius: 2.0,
+                start: Point3::new(2.0, 0.0, 0.0),
+                sweep,
+            },
+            exact_ends: false,
         };
-        let mut gap = ClosedGap::default();
-        let closed = close_junctions(
-            &[ReadSegment {
-                segment: arc,
-                exact_ends: false,
-            }],
-            &mut gap,
-        )
-        .expect("a circle closes");
+        let almost = TAU - CLOSING_TEST_TURN;
+        let (closed, gap) = close_junctions(&[arc(almost)], CLOSING_TEST_TOLERANCE)
+            .expect("a nearly closed circle closes");
         let Segment::Arc { sweep, .. } = closed[0] else {
             panic!("an arc");
         };
         assert_eq!(sweep, TAU);
-        assert!((gap.distance - arc.end().distance(arc.start())).abs() < 1.0e-12);
+        assert!(gap <= CLOSING_TEST_TOLERANCE);
+        assert!(close_junctions(&[arc(6.0)], CLOSING_TEST_TOLERANCE).is_err());
     }
+
+    /// A turn whose chord on a circle of radius 2 lies below
+    /// [`CLOSING_TEST_TOLERANCE`].
+    const CLOSING_TEST_TURN: f64 = 1.0e-9;
+
+    /// The closing tolerance of the unit tests.
+    const CLOSING_TEST_TOLERANCE: f64 = 1.0e-6;
 }

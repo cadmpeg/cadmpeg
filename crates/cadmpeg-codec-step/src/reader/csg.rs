@@ -16,15 +16,17 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::loss::LossNote;
 
+use self::angles::AngleUnits;
 use self::brep::{Axis, SolidBuilder};
 use self::frame::Frame;
-use self::profile::{ClosedGap, Profile};
+use self::profile::Profile;
 use super::geometry::GeometryData;
 use super::topology::TopologyData;
 use super::{RecordExt, StageOutcome, ValueExt};
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
+mod angles;
 mod brep;
 mod design;
 mod frame;
@@ -142,8 +144,15 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<CsgData>, CodecError> {
     let mut losses = Vec::new();
     let mut claims = HashSet::new();
-    let mut gap = ClosedGap::default();
-    let mut gap_owner = None;
+    let uncertainty = ir.tolerances.linear.get();
+    let angles = AngleUnits::new(exchange, geometry, ctx)?;
+    let reader = ShapeReader {
+        exchange,
+        geometry,
+        angles: &angles,
+        uncertainty,
+    };
+    let mut gap = (0.0_f64, None);
     let mut items = BTreeMap::new();
     for (id, record) in exchange.entities_any(&SOLID_TYPES) {
         let Some(entity) = record
@@ -152,12 +161,13 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let before = gap.distance;
-        match read_shape(id, entity, record, exchange, geometry, &mut gap) {
+        let mut item_gap = 0.0_f64;
+        let read = reader.shape(id, entity, record, &mut item_gap);
+        if item_gap > gap.0 {
+            gap = (item_gap, Some(id));
+        }
+        match read {
             Ok(shape) => {
-                if gap.distance > before {
-                    gap_owner = Some(id);
-                }
                 let name = item_name(exchange, record, id, &mut losses);
                 items.insert(
                     id,
@@ -233,6 +243,10 @@ pub(super) fn decode(
                 }
             };
             if built.faces == 0 {
+                losses.push(StepLossCode::CsgSolidUnsynthesized.note(format!(
+                    "{} #{} has a design feature and no derived body: its boundary has no face",
+                    item.entity, item.id
+                )));
                 continue;
             }
             if let Err(error) = session.commit_model(built.draft)? {
@@ -272,12 +286,14 @@ pub(super) fn decode(
     for &representation in representations.keys() {
         claims.insert(representation);
     }
-    if let Some(owner) = gap_owner {
-        losses.push(StepLossCode::CsgProfileGapClosed.note(format!(
-            "swept-area profiles close boundary curves whose segment ends lie up to {:.6e} mm \
-             apart, the largest at #{owner}",
-            gap.distance
-        )));
+    if let (distance, Some(owner)) = gap {
+        if distance > uncertainty {
+            losses.push(StepLossCode::CsgProfileGapClosed.note(format!(
+                "swept-area profiles close boundary curves whose segment ends lie up to \
+                 {distance:.6e} mm apart, above the linear uncertainty {uncertainty:e} mm; \
+                 the largest gap is at #{owner}"
+            )));
+        }
     }
     Ok(StageOutcome {
         value: CsgData {
@@ -421,16 +437,51 @@ fn placement(record: &RawRecord, index: usize, geometry: &GeometryData) -> Resul
         .ok_or_else(|| format!("the position #{id} does not resolve"))
 }
 
+/// The exchange context that reads a CSG item's attributes.
+struct ShapeReader<'a> {
+    exchange: &'a Exchange,
+    geometry: &'a GeometryData,
+    angles: &'a AngleUnits<'a>,
+    uncertainty: f64,
+}
+
+impl ShapeReader<'_> {
+    /// The planar area of a swept-area solid; `gap` takes the largest
+    /// junction gap it closed.
+    fn profile(&self, area: u64, gap: &mut f64) -> Result<Profile, String> {
+        let read = profile::read(
+            area,
+            self.exchange,
+            self.geometry,
+            self.angles,
+            self.uncertainty,
+        )?;
+        *gap = gap.max(read.gap);
+        Ok(read.profile)
+    }
+
+    /// The shape of item `id` of type `entity`.
+    fn shape(
+        &self,
+        id: u64,
+        entity: &str,
+        record: &RawRecord,
+        gap: &mut f64,
+    ) -> Result<Shape, String> {
+        let geometry = self.geometry;
+        read_shape(id, entity, record, geometry, self, gap)
+    }
+}
+
 fn read_shape(
     id: u64,
     entity: &str,
     record: &RawRecord,
-    exchange: &Exchange,
     geometry: &GeometryData,
-    gap: &mut ClosedGap,
+    reader: &ShapeReader<'_>,
+    gap: &mut f64,
 ) -> Result<Shape, String> {
     let scale = geometry.units.length([id]).get();
-    let angle_scale = geometry.units.angle([id]).get();
     match entity {
         "BLOCK" => Ok(Shape::Block {
             frame: placement(record, 1, geometry)?,
@@ -475,7 +526,7 @@ fn read_shape(
             let semi_angle = record
                 .parameter(4)
                 .and_then(Value::number)
-                .map(|value| value * angle_scale)
+                .map(|value| reader.angles.radians(id, value))
                 .filter(|angle| *angle > 0.0 && *angle < std::f64::consts::FRAC_PI_2)
                 .ok_or("semi_angle is not between 0 and 90 degrees (IP1)")?;
             let base = top + height * semi_angle.tan();
@@ -534,7 +585,7 @@ fn read_shape(
                 .ok_or("extruded_direction does not resolve")?;
             Ok(Shape::Extruded {
                 area,
-                profile: profile::read(area, exchange, geometry, gap),
+                profile: reader.profile(area, gap),
                 direction,
                 depth: length(record, 3, scale, "depth")?,
             })
@@ -547,15 +598,12 @@ fn read_shape(
             let angle = record
                 .parameter(3)
                 .and_then(Value::number)
-                .map(|value| value * angle_scale)
-                .filter(|angle| {
-                    *angle > 0.0 && *angle <= std::f64::consts::TAU + brep::FULL_TURN_TOLERANCE
-                })
-                .map(|angle| angle.min(std::f64::consts::TAU))
+                .filter(|value| *value > 0.0)
+                .and_then(|value| reader.angles.sweep(id, value))
                 .ok_or("angle is not in (0, 360] degrees (IP3)")?;
             Ok(Shape::Revolved {
                 area,
-                profile: profile::read(area, exchange, geometry, gap),
+                profile: reader.profile(area, gap),
                 axis: placement(record, 2, geometry)?,
                 angle,
             })

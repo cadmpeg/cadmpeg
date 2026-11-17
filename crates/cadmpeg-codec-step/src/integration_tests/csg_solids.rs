@@ -25,10 +25,19 @@ const TESSELLATION_CHORD: f64 = 1.0e-3;
 /// [`TESSELLATION_CHORD`].
 const TESSELLATION_RELATIVE: f64 = 1.0e-3;
 
+/// The radian factor of an exact degree.
+const DEGREE: &str = "0.0174532925199433";
+
 /// The product, units, context, and CSG shape representation that list
 /// `items`, followed by `geometry`. Lengths are millimetres and plane angles
 /// degrees.
 fn exchange(items: &str, geometry: &str) -> String {
+    exchange_in(items, geometry, "#10", DEGREE)
+}
+
+/// [`exchange`] with the length unit `length` (`#10` millimetre, `#17`
+/// inch) and the degree's stated radian factor `degree`.
+fn exchange_in(items: &str, geometry: &str, length: &str, degree: &str) -> String {
     format!(
         "#1=APPLICATION_CONTEXT('csg');\n\
          #2=PRODUCT_CONTEXT('',#1,'mechanical');\n\
@@ -41,9 +50,12 @@ fn exchange(items: &str, geometry: &str) -> String {
          #10=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n\
          #11=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n\
          #12=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);\n\
-         #13=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.0174532925199433),#11);\n\
+         #13=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE({degree}),#11);\n\
          #14=(CONVERSION_BASED_UNIT('DEGREE',#13) NAMED_UNIT(#12) PLANE_ANGLE_UNIT());\n\
-         #15=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#14)) REPRESENTATION_CONTEXT('model','3D'));\n\
+         #15=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT(({length},#14)) REPRESENTATION_CONTEXT('model','3D'));\n\
+         #16=DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.);\n\
+         #17=(CONVERSION_BASED_UNIT('INCH',#9) LENGTH_UNIT() NAMED_UNIT(#16));\n\
+         #9=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#10);\n\
          #20=CSG_SHAPE_REPRESENTATION('',({items}),#15);\n\
          #21=DIRECTION('',(0.,0.,1.));\n\
          #22=DIRECTION('',(1.,0.,0.));\n\
@@ -319,7 +331,13 @@ fn each_primitive_is_a_feature_whose_current_state_holds_its_body() {
     let PrimitiveShape::Box { size } = &primitive.shape else {
         panic!("a box");
     };
-    assert_eq!(size.len(), 3);
+    let literal = |dimension: &cadmpeg_ir::design::dimension::Dimension<
+        cadmpeg_ir::scalar::PositiveLength,
+    >| match dimension {
+        cadmpeg_ir::design::dimension::Dimension::Literal(value) => value.get(),
+        _ => panic!("a literal size"),
+    };
+    assert_eq!(size.each_ref().map(literal), [2.0, 3.0, 4.0]);
     let [scope] = ir.design.scopes.as_slice() else {
         panic!("one scope");
     };
@@ -423,4 +441,211 @@ fn a_revolved_profile_point_beside_the_axis_lies_on_it() {
         12.0 * PI,
         [0.0, 0.0, 0.75],
     );
+}
+
+/// The quarter disc of radius 2 in the plane `y = 0`, its straight edges on
+/// the x and z axes, turned through `angle` degrees about `+z`, in an
+/// exchange whose degree states the radian factor `degree`.
+fn quarter_disc(angle: &str, degree: &str) -> String {
+    exchange_in(
+        "#30",
+        &format!(
+            "#30=REVOLVED_AREA_SOLID('dome',#31,#36,{angle});\n\
+             #31=CURVE_BOUNDED_SURFACE('',#32,(#34),.F.);\n\
+             #32=PLANE('',#33);\n\
+             #33=AXIS2_PLACEMENT_3D('',#40,#23,#22);\n\
+             #34=BOUNDARY_CURVE('',(#35,#37,#38),.F.);\n\
+             #35=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#50);\n\
+             #37=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#51);\n\
+             #38=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#52);\n\
+             #36=AXIS1_PLACEMENT('',#40,#21);\n\
+             #40=CARTESIAN_POINT('',(0.,0.,0.));\n\
+             #41=CARTESIAN_POINT('',(2.,0.,0.));\n\
+             #42=CARTESIAN_POINT('',(0.,0.,2.));\n\
+             #43=VECTOR('',#22,1.);\n\
+             #44=VECTOR('',#21,1.);\n\
+             #45=LINE('',#40,#43);\n\
+             #46=LINE('',#42,#44);\n\
+             #47=AXIS2_PLACEMENT_3D('',#40,#23,#22);\n\
+             #48=CIRCLE('',#47,2.);\n\
+             #50=TRIMMED_CURVE('',#45,(#40),(#41),.T.,.CARTESIAN.);\n\
+             #51=TRIMMED_CURVE('',#48,(#41),(#42),.F.,.CARTESIAN.);\n\
+             #52=TRIMMED_CURVE('',#46,(#42),(#40),.T.,.CARTESIAN.);\n"
+        ),
+        "#10",
+        degree,
+    )
+}
+
+/// A quarter turn of the quarter disc: its sphere face ends on the axis at
+/// its pole. By Pappus' theorem the volume is the disc's area `π` times the
+/// arc `(8 / 3π) · π/2` its centroid travels. The area is a quarter of the
+/// hemisphere `2π`, the quarter-disc floor `π`, and the two end caps `2π`.
+#[test]
+fn a_partial_revolution_touching_the_axis_meshes_and_obeys_pappus() {
+    let ir = decode_inline(&quarter_disc("90.", DEGREE)).ir().clone();
+    assert_solid(
+        "quarter of a hemisphere",
+        &ir,
+        4.0 * PI / 3.0,
+        5.0 * PI,
+        [0.75, 0.75, 0.75],
+    );
+}
+
+/// A stated 360 is one full turn of a unit named `degree` whose radian
+/// factor rounds up or down; the solid is the whole hemisphere.
+#[test]
+fn a_full_turn_of_a_rounded_degree_is_a_full_revolution() {
+    for degree in ["0.017453293", "0.01745329252", "0.017452006980802792"] {
+        let ir = decode_inline(&quarter_disc("360.", degree)).ir().clone();
+        assert_solid(degree, &ir, 16.0 * PI / 3.0, 12.0 * PI, [0.0, 0.0, 0.75]);
+    }
+}
+
+/// A block of 1 × 2 × 3 inches whose corner lies at 1 inch on x.
+#[test]
+fn an_inch_block_measures_in_millimetres() {
+    let inch = 25.4_f64;
+    let ir = decode_inline(&exchange_in(
+        "#30",
+        "#30=BLOCK('block',#31,1.,2.,3.);\n\
+         #31=AXIS2_PLACEMENT_3D('',#32,#21,#22);\n\
+         #32=CARTESIAN_POINT('',(1.,0.,0.));\n",
+        "#17",
+        DEGREE,
+    ))
+    .ir()
+    .clone();
+    assert_solid(
+        "inch block",
+        &ir,
+        6.0 * inch.powi(3),
+        22.0 * inch * inch,
+        [1.5 * inch, inch, 1.5 * inch],
+    );
+}
+
+/// The square `[0, 4]²` less the disc of radius 1 about `(2, 2)`, extruded 1.
+#[test]
+fn an_extruded_profile_keeps_its_hole() {
+    let ir = decode(
+        "#30",
+        "#30=EXTRUDED_AREA_SOLID('x',#31,#21,1.);\n\
+         #31=CURVE_BOUNDED_SURFACE('',#32,(#34,#60),.F.);\n\
+         #32=PLANE('',#33);\n\
+         #33=AXIS2_PLACEMENT_3D('',#39,#21,#22);\n\
+         #34=BOUNDARY_CURVE('',(#35),.F.);\n\
+         #35=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#50);\n\
+         #39=CARTESIAN_POINT('',(0.,0.,0.));\n\
+         #50=POLYLINE('',(#40,#41,#42,#43,#40));\n\
+         #40=CARTESIAN_POINT('',(0.,0.,0.));\n\
+         #41=CARTESIAN_POINT('',(4.,0.,0.));\n\
+         #42=CARTESIAN_POINT('',(4.,4.,0.));\n\
+         #43=CARTESIAN_POINT('',(0.,4.,0.));\n\
+         #60=BOUNDARY_CURVE('',(#61),.F.);\n\
+         #61=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#62);\n\
+         #62=CIRCLE('',#63,1.);\n\
+         #63=AXIS2_PLACEMENT_3D('',#64,#21,#22);\n\
+         #64=CARTESIAN_POINT('',(2.,2.,0.));\n",
+    );
+    assert_solid("holed plate", &ir, 16.0 - PI, 48.0, [2.0, 2.0, 0.5]);
+}
+
+/// The cone feature's frame is its placement moved by `-height` along its
+/// axis: the centre of the base.
+#[test]
+fn a_cone_feature_frame_lies_at_its_base() {
+    let ir = decode(
+        "#30",
+        "#30=RIGHT_CIRCULAR_CONE('cone',#31,3.,1.,45.);\n\
+         #31=AXIS1_PLACEMENT('',#32,#22);\n\
+         #32=CARTESIAN_POINT('',(5.,1.,2.));\n",
+    );
+    let FeatureOperation::Primitive(primitive) = &ir.design.features[0].definition.operation else {
+        panic!("a primitive");
+    };
+    let frame = primitive
+        .placement
+        .as_ref()
+        .and_then(|placement| placement.resolved.as_ref())
+        .expect("a resolved frame");
+    let origin = frame.origin.get();
+    assert_eq!([origin.x, origin.y, origin.z], [2.0, 1.0, 2.0]);
+    assert_eq!(frame.z_axis, cadmpeg_ir::units::UnitVector3::X_AXIS);
+}
+
+/// Decode `geometry` and require its one feature and no body, with a
+/// `csg.solid-unsynthesized` loss.
+fn assert_refused(label: &str, geometry: &str) {
+    let decoded = decode_inline(&exchange("#30", geometry));
+    assert!(decoded.ir().geometry.bodies.is_empty(), "{label}: no body");
+    assert_eq!(
+        decoded.ir().design.features.len(),
+        1,
+        "{label}: one feature"
+    );
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::CsgSolidUnsynthesized.kind()),
+        "{label}: a csg.solid-unsynthesized loss"
+    );
+}
+
+/// A polyline boundary that omits its closing point leaves a gap of 4.
+#[test]
+fn an_open_polyline_profile_is_refused() {
+    assert_refused(
+        "open polyline",
+        "#30=EXTRUDED_AREA_SOLID('x',#31,#21,1.);\n\
+         #31=CURVE_BOUNDED_SURFACE('',#32,(#34),.F.);\n\
+         #32=PLANE('',#33);\n\
+         #33=AXIS2_PLACEMENT_3D('',#39,#21,#22);\n\
+         #34=BOUNDARY_CURVE('',(#35),.F.);\n\
+         #35=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#50);\n\
+         #39=CARTESIAN_POINT('',(0.,0.,0.));\n\
+         #50=POLYLINE('',(#40,#41,#42,#43));\n\
+         #40=CARTESIAN_POINT('',(0.,0.,0.));\n\
+         #41=CARTESIAN_POINT('',(4.,0.,0.));\n\
+         #42=CARTESIAN_POINT('',(4.,4.,0.));\n\
+         #43=CARTESIAN_POINT('',(0.,4.,0.));\n",
+    );
+}
+
+/// The rectangle `x ∈ [x0, x1]`, `z ∈ [0, 1]` of the plane `y = y0`,
+/// turned through `angle` degrees about `+z`.
+fn rectangle_revolution(x0: f64, x1: f64, y0: f64, angle: &str) -> String {
+    format!(
+        "#30=REVOLVED_AREA_SOLID('ring',#31,#36,{angle});\n\
+         #31=CURVE_BOUNDED_SURFACE('',#32,(#34),.F.);\n\
+         #32=PLANE('',#33);\n\
+         #33=AXIS2_PLACEMENT_3D('',#40,#23,#22);\n\
+         #34=BOUNDARY_CURVE('',(#35),.F.);\n\
+         #35=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#50);\n\
+         #36=AXIS1_PLACEMENT('',#39,#21);\n\
+         #39=CARTESIAN_POINT('',(0.,0.,0.));\n\
+         #50=POLYLINE('',(#40,#41,#42,#43,#40));\n\
+         #40=CARTESIAN_POINT('',({x0:?},{y0:?},0.));\n\
+         #41=CARTESIAN_POINT('',({x1:?},{y0:?},0.));\n\
+         #42=CARTESIAN_POINT('',({x1:?},{y0:?},1.));\n\
+         #43=CARTESIAN_POINT('',({x0:?},{y0:?},1.));\n"
+    )
+}
+
+/// A profile across the axis, and a profile whose plane misses the axis.
+#[test]
+fn a_profile_off_the_axis_half_plane_is_refused() {
+    assert_refused("straddling", &rectangle_revolution(-1.0, 2.0, 0.0, "360."));
+    assert_refused("offset plane", &rectangle_revolution(1.0, 2.0, 1.0, "90."));
+}
+
+/// A washer: the rectangle `[1, 2] × [0, 1]` turned a full turn.
+#[test]
+fn a_revolved_rectangle_is_a_washer() {
+    let ir = decode("#30", &rectangle_revolution(1.0, 2.0, 0.0, "360."));
+    let area = 2.0 * PI * (4.0 - 1.0) + 2.0 * PI * (1.0 + 2.0);
+    assert_solid("washer", &ir, 3.0 * PI, area, [0.0, 0.0, 0.5]);
 }

@@ -23,24 +23,25 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop, LoopBoundary,
-    LoopRing, Point, Region, Sense, Shell, Vertex,
+    AnchoredVertexUse, Body, BodyKind, Coedge, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop,
+    LoopBoundary, LoopRing, Point, Region, Sense, Shell, Vertex,
 };
 
 use super::frame::{rotate_about, turn, unit, Frame};
-use super::profile::{Profile, Segment};
+use super::profile::{Profile, Segment, PROFILE_RELATIVE_RESOLUTION};
 use crate::ids::{self, kind};
 
 /// A sweep angle within this many radians of a full turn is a full turn.
-pub(super) const FULL_TURN_TOLERANCE: f64 = 1.0e-12;
-
-/// The relative resolution of profile coordinates: two profile coordinates
-/// closer than this fraction of the profile's extent are one coordinate.
-const PROFILE_RELATIVE_RESOLUTION: f64 = 1.0e-7;
+const FULL_TURN_TOLERANCE: f64 = 1.0e-12;
 
 /// An extruded arc sweeps a circular cylinder when the cosine between its
 /// circle's axis and the direction is within this of one.
 const ARC_AXIS_PARALLEL_TOLERANCE: f64 = 1.0e-9;
+
+/// A face ring: `(edge, coedge sense)` in traversal order, and each pole
+/// occurrence as the ring position of the coedge it follows and the pole
+/// vertex.
+type PoledRing = (Vec<(usize, Sense)>, Vec<(usize, usize)>);
 
 /// A body under construction for one CSG item.
 pub(super) struct SolidBuilder {
@@ -219,6 +220,18 @@ impl SolidBuilder {
         sense: Sense,
         rings: Vec<Vec<(usize, Sense)>>,
     ) -> Result<(), String> {
+        let rings = rings.into_iter().map(|ring| (ring, Vec::new())).collect();
+        self.face_with_poles(geometry, sense, rings)
+    }
+
+    /// [`Self::face`] whose rings also list their pole occurrences: the ring
+    /// position of the coedge each pole follows, and the pole vertex.
+    pub(super) fn face_with_poles(
+        &mut self,
+        geometry: SolvedSurfaceGeometry,
+        sense: Sense,
+        rings: Vec<PoledRing>,
+    ) -> Result<(), String> {
         let key = self.key();
         let surface = SurfaceId::from(ids::csg(kind!("surface"), key.clone()));
         let face = FaceId::from(ids::csg(kind!("face"), key));
@@ -229,7 +242,7 @@ impl SolidBuilder {
             native_ref: None,
         });
         let mut loop_ids = Vec::new();
-        for ring in rings {
+        for (ring, poles) in rings {
             let loop_key = self.key();
             let loop_id = LoopId::from(ids::csg(kind!("loop"), loop_key));
             let mut coedges = Vec::new();
@@ -248,7 +261,15 @@ impl SolidBuilder {
                 });
                 coedges.push(coedge);
             }
-            let ring = LoopRing::new(coedges, Vec::new()).map_err(|error| error.to_string())?;
+            let vertex_uses = poles
+                .into_iter()
+                .map(|(after, vertex)| AnchoredVertexUse {
+                    vertex: self.vertices[vertex].id.clone(),
+                    after: coedges[after].clone(),
+                    pcurves: Vec::new(),
+                })
+                .collect();
+            let ring = LoopRing::new(coedges, vertex_uses).map_err(|error| error.to_string())?;
             self.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face.clone(),
@@ -610,12 +631,19 @@ pub(super) fn revolve(
         .max_by(|left, right| left.norm().total_cmp(&right.norm()))
         .and_then(unit)
         .ok_or("the profile lies on the revolution axis")?;
-    let extent = samples
-        .iter()
-        .map(|point| point.distance(axis.point))
-        .fold(0.0, f64::max);
-    let tolerance = builder.tolerance.max(PROFILE_RELATIVE_RESOLUTION * extent);
+    let tolerance = builder
+        .tolerance
+        .max(PROFILE_RELATIVE_RESOLUTION * diagonal(&samples));
     let sweep_direction = axis.direction.cross(away);
+    for point in &samples {
+        let offset = point.vector_from(axis.point);
+        if offset.dot(sweep_direction).abs() > tolerance {
+            return Err("the profile plane does not contain the revolution axis".to_owned());
+        }
+        if axis.radial(*point).dot(away) < -tolerance {
+            return Err("the profile crosses the revolution axis".to_owned());
+        }
+    }
     let profile = meridian(profile, axis, away, tolerance).oriented(sweep_direction.scale(-1.0));
     let full = full_turn(angle);
     let place = |point: Point3| rotate_about(point, axis.point, axis.direction, angle);
@@ -694,19 +722,52 @@ pub(super) fn revolve(
             {
                 continue;
             }
-            let mut ring = vec![(start[loop_index][index], Sense::Reversed)];
+            let start_pole = match rails[index] {
+                Some(_) => None,
+                None => Some(builder.vertex(segment.start())?),
+            };
+            let end_pole = match rails[(index + 1) % count] {
+                Some(_) => None,
+                None => Some(builder.vertex(segment.end())?),
+            };
+            let mut ring = vec![(start[loop_index][index], Sense::Reversed, start_pole)];
             if let Some(rail) = rails[index] {
-                ring.push((rail, Sense::Forward));
+                ring.push((rail, Sense::Forward, None));
             }
-            ring.push((end[loop_index][index], Sense::Forward));
+            ring.push((end[loop_index][index], Sense::Forward, end_pole));
             if let Some(rail) = rails[(index + 1) % count] {
-                ring.push((rail, Sense::Reversed));
+                ring.push((rail, Sense::Reversed, None));
             }
+            if end_pole.is_some() && start_pole.is_none() {
+                ring.rotate_left(1);
+            }
+            let poles = ring
+                .iter()
+                .enumerate()
+                .filter_map(|(position, entry)| entry.2.map(|pole| (position, pole)))
+                .collect();
+            let coedges = ring.iter().map(|entry| (entry.0, entry.1)).collect();
             let (geometry, sense) = revolved_surface(segment, axis, sweep_direction, tolerance)?;
-            builder.face(geometry, sense, vec![ring])?;
+            builder.face_with_poles(geometry, sense, vec![(coedges, poles)])?;
         }
     }
     Ok(())
+}
+
+/// The diagonal of the box that holds `points`.
+fn diagonal(points: &[Point3]) -> f64 {
+    let mut low = [f64::INFINITY; 3];
+    let mut high = [f64::NEG_INFINITY; 3];
+    for point in points {
+        for (axis, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+            low[axis] = low[axis].min(value);
+            high[axis] = high[axis].max(value);
+        }
+    }
+    (0..3)
+        .map(|axis| (high[axis] - low[axis]).max(0.0).powi(2))
+        .sum::<f64>()
+        .sqrt()
 }
 
 /// The profile in the half-plane of `axis` toward `away`, with each
