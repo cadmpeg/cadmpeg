@@ -28,6 +28,7 @@ use crate::layout::early_distance_extrude_present_prefix as early_present;
 use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::legacy_reference_extrude_profile_normal as legacy_reference_normal;
+use crate::layout::offset_23_extrude_prologue;
 use crate::layout::offset_24_extrude_prologue;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
 use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
@@ -1188,6 +1189,19 @@ fn exact_current_extrude_prologue_with(
         )
     {
         start.checked_add(offset_24_extrude_prologue::OPERATION)?
+    } else if bytes.get(
+        start.checked_add(offset_23_extrude_prologue::ZERO_RUN_12)?
+            ..start.checked_add(offset_23_extrude_prologue::OPERATION)?,
+    ) == Some(&[0; 12])
+        && matches!(
+            View::u32_le_at(
+                bytes,
+                start.checked_add(offset_23_extrude_prologue::OPERATION)?
+            ),
+            Some(1..=4)
+        )
+    {
+        start.checked_add(offset_23_extrude_prologue::OPERATION)?
     } else {
         start.checked_add(28)?
     };

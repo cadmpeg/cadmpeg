@@ -601,7 +601,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
             scope.payload_mut()
         {
-            *slot = (!hole_scope).then_some(DesignCombineOperation {
+            slot.operation = (!hole_scope).then_some(DesignCombineOperation {
                 form: DesignCombineForm::Standard,
                 operation: cadmpeg_ir::features::BooleanKind::Join,
                 operation_offset: 0,
@@ -625,6 +625,8 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                     },
                     additional: vec![],
                 },
+
+                destination: Default::default(),
             });
         }
         scopes.push(scope);
@@ -1486,6 +1488,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let profile = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             scope_reference_ordinal: 0,
             record_index: 20,
             byte_offset: 200,

@@ -216,12 +216,16 @@ fn inputs(
             out.push((
                 "color3f".to_owned(),
                 base.to_owned(),
-                tuple32(&[color.r(), color.g(), color.b()]),
+                tuple32(&[color.r(), color.g(), color.b()].map(crate::text::value::round_f32)),
             ));
             names.insert(base.to_owned());
         }
         if color.a() < 1.0 && !names.contains(opacity) {
-            out.push(("float".to_owned(), opacity.to_owned(), real32(color.a())));
+            out.push((
+                "float".to_owned(),
+                opacity.to_owned(),
+                real32(crate::text::value::round_f32(color.a())),
+            ));
             if column == 3 {
                 out.push((
                     "bool".to_owned(),

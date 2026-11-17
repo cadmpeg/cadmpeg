@@ -84,7 +84,7 @@ fn input_summary(document: &LoadedDocument) -> InputSummary<'_> {
             LoadOrigin::Restored { .. } => "restored",
             LoadOrigin::Decoded { .. } => "decoded",
         },
-        decode_depth: document.ir.decode_depth(),
+        decode_depth: document.ir.scope().depth(),
     }
 }
 
@@ -164,7 +164,7 @@ struct Session<'a> {
 
 /// Refuse a document that holds no geometry.
 fn require_geometry(loaded: &LoadedDocument) -> Result<(), ApplicationError> {
-    if loaded.ir.decode_depth() == DecodeDepth::Container {
+    if !loaded.ir.scope().model {
         return Err(ConversionRefusal::InsufficientMeasureDepth {
             depth: DepthReport {
                 needed: DecodeDepth::Geometry,

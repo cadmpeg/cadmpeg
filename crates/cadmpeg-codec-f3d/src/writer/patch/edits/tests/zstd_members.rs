@@ -58,7 +58,7 @@ fn stored_members(archive: &[u8]) -> Vec<(String, CompressionMethod, Vec<u8>)> {
 #[test]
 fn a_retained_f3d_with_zstandard_members_patches() {
     let mut source = cadmpeg_ir::examples::unit_cube().unwrap();
-    let body = source.model.bodies[0].id.clone();
+    let body = source.geometry.bodies[0].id.clone();
     f3d_native_mut(&mut source).creation_timestamps = vec![CreationTimestamp {
         id: "f3d:generated:creation-timestamp#0".into(),
         target: AttributeTarget::Body(body),

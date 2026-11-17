@@ -63,7 +63,7 @@ fn hole_and_sweep_edits_preserve_the_previous_admitted_shape() {
     );
     assert!(sheet.generated_sections_mut().next().is_none());
     let wire = serde_json::to_value(&sweep).expect("a sweep shape serializes");
-    assert_eq!(wire["mode"], "solid");
+    assert_eq!(wire["kind"], "solid");
     let mut sheet_wire = serde_json::to_value(&sheet).expect("a sweep shape serializes");
     sheet_wire["sections"] = wire["sections"].clone();
     serde_json::from_value::<SweepShape>(sheet_wire)

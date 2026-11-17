@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AppearanceId, BodyId, EdgeId, FaceId, VertexId};
+use crate::references::InstanceTarget;
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::topology::Color;
 use cadmpeg_core::text::NonBlankString;
@@ -77,12 +78,10 @@ pub struct Appearance {
     )]
     pub base_color: Option<Color>,
     /// Additional byte-decoded shader scalars keyed by schema property name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     #[cfg_attr(feature = "schema", schemars(with = "BTreeMap<NonBlankString, f64>"))]
     pub properties: BTreeMap<NonBlankString, FiniteReal>,
     /// Texture assets connected to shader input slots.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub textures: Vec<TextureRef>,
 }
 
@@ -98,7 +97,6 @@ pub struct TextureRef {
     /// Texture schema family, such as `UnifiedBitmapSchema`.
     pub schema: String,
     /// Ordered library resource paths stored by the texture asset.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
     /// External asset-library URN, when present.
     #[serde(
@@ -186,7 +184,7 @@ pub struct BumpMap {
 /// A topology entity which receives an appearance.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum AppearanceTarget {
     /// Whole-body appearance.
@@ -226,8 +224,9 @@ pub enum AppearanceTarget {
 pub struct AppearanceBinding {
     /// Globally unique deterministic assignment identity.
     pub id: crate::ids::AppearanceBindingId,
-    /// Assigned topology entity.
-    pub target: AppearanceTarget,
+    /// The assigned entity, in the placed instance and the state that hold
+    /// it.
+    pub target: InstanceTarget<AppearanceTarget>,
     /// Referenced appearance asset.
     pub appearance: AppearanceId,
     /// Fusion design-entity id, such as `0_985`.
@@ -253,7 +252,6 @@ pub struct AppearanceBinding {
     )]
     pub visible: Option<bool>,
     /// ACT change-version channel GUIDs for this assigned entity.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub channels: BTreeMap<NonBlankString, String>,
 }

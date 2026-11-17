@@ -24,7 +24,7 @@ fn edges(ir: &cadmpeg_ir::CadIr) -> Vec<Measured> {
     let owners = Owners::new(ir);
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     let pass = PassAllowance::new(WorkProfile::Desktop.pass_allowance(1).unwrap());
-    ir.model
+    ir.geometry
         .edges
         .iter()
         .map(|edge| {
@@ -83,12 +83,12 @@ fn an_open_arc_without_a_range_runs_in_the_increasing_parameter_direction() {
     );
     let mut ir = builder.finish(BodyKind::Wire);
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == arc)
         .unwrap();
-    edge.end = end;
+    edge.ends.as_mut().unwrap().end = end;
     let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
     let [t0, t1] = interval.unwrap();
     assert!((t0 + PI / 2.0).abs() < 1.0e-15, "{t0}");
@@ -104,13 +104,13 @@ fn a_closed_edge_on_a_curve_without_a_period_has_no_interval() {
     let line = builder.line(&a, &b);
     let mut ir = builder.finish(BodyKind::Wire);
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == line)
         .unwrap();
     edge.carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(edge.carrier.curve().cloned());
-    edge.end = edge.start.clone();
+    edge.ends.as_mut().unwrap().end = edge.ends.as_ref().unwrap().start.clone();
     let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
     assert_eq!(
         interval.unwrap_err().reason,
@@ -133,14 +133,14 @@ fn an_ellipse_quarter_integrates_to_its_series_length() {
     );
     let mut ir = builder.finish(BodyKind::Wire);
     let curve_id = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id == arc)
         .and_then(|edge| edge.carrier.curve().cloned())
         .unwrap();
     let curve = ir
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -156,12 +156,12 @@ fn an_ellipse_quarter_integrates_to_its_series_length() {
         .unwrap(),
     ));
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == arc)
         .unwrap();
-    edge.end = end;
+    edge.ends.as_mut().unwrap().end = end;
     let [(interval, length)] = edges(&ir).try_into().ok().unwrap();
     let [t0, t1] = interval.unwrap();
     assert!((t1 - t0 - PI / 2.0).abs() < 1.0e-15);
@@ -196,7 +196,7 @@ fn cuboid_rows(
     let owners = Owners::new(&ir);
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     let pass = PassAllowance::new(WorkProfile::Desktop.pass_allowance(1).unwrap());
-    ir.model
+    ir.geometry
         .edges
         .iter()
         .map(|edge| {
@@ -207,7 +207,9 @@ fn cuboid_rows(
                 work: &slice,
             };
             let geometry = measure_edge(&eval, &owners, edge, placement, Work::Row).unwrap();
-            let stored = owners.vertex_position(edge.start.as_str()).unwrap();
+            let stored = owners
+                .vertex_position(edge.ends.as_ref().unwrap().start.as_str())
+                .unwrap();
             (stored, geometry.row(&owners, None))
         })
         .collect()

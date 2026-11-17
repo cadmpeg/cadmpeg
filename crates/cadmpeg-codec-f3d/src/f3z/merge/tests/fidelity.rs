@@ -1,16 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::super::rescope_fidelity;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::source_fidelity::{RetainedSourceRecord, SourceFidelity};
 
 const ID: &str = "f3d:native:record#one";
+
+fn member_digest() -> Sha256Digest {
+    Sha256Digest::digest(b"member file")
+}
+
+fn archive_digest() -> Sha256Digest {
+    Sha256Digest::digest(b"archive file")
+}
 
 fn source(stream: &str) -> SourceFidelity {
     let mut annotations = AnnotationBuilder::new();
     let handle = StreamHandle::new(cadmpeg_ir::StreamName::try_from(stream.to_owned()).unwrap());
     annotations.note(ID, &handle, 7, Some("retained"));
     annotations.derived(ID, "geometry").unwrap();
-    let mut fidelity = SourceFidelity::with_annotations(annotations.build());
+    let mut fidelity = SourceFidelity::with_annotations(annotations.build(), member_digest());
     fidelity
         .insert_retained_record(
             cadmpeg_ir::ids::UnknownId::mint(ID).unwrap(),
@@ -31,7 +40,7 @@ fn source(stream: &str) -> SourceFidelity {
 fn source_rescoping_preserves_bytes_extent_tag_and_exactness() {
     let input = source("member");
     let original = input.retained_record(ID).unwrap().clone();
-    let output = rescope_fidelity(input.clone(), "part/occurrence-0").unwrap();
+    let output = rescope_fidelity(input.clone(), "part/occurrence-0", archive_digest()).unwrap();
     let id = "f3d:xref/part/occurrence-0/native:record#one";
     let retained = output.retained_record(id).unwrap();
     assert_eq!(retained.data(), original.data());
@@ -51,9 +60,9 @@ fn source_rescoping_preserves_bytes_extent_tag_and_exactness() {
 
 #[test]
 fn occurrence_and_stream_boundaries_cannot_alias() {
-    let first = rescope_fidelity(source("b/c"), "a").unwrap();
-    let second = rescope_fidelity(source("c"), "a/b").unwrap();
-    let escaped = rescope_fidelity(source("c"), "a%2Fb").unwrap();
+    let first = rescope_fidelity(source("b/c"), "a", archive_digest()).unwrap();
+    let second = rescope_fidelity(source("c"), "a/b", archive_digest()).unwrap();
+    let escaped = rescope_fidelity(source("c"), "a%2Fb", archive_digest()).unwrap();
     let owner = |fidelity: &SourceFidelity| {
         fidelity
             .retained_records()
@@ -73,10 +82,21 @@ fn source_rescoping_preserves_absent_provenance_tag() {
     let mut builder = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::StreamName::try_from("member".to_owned()).unwrap());
     builder.note(ID, &stream, 7, None);
-    let output =
-        rescope_fidelity(SourceFidelity::with_annotations(builder.build()), "part").unwrap();
+    let output = rescope_fidelity(
+        SourceFidelity::with_annotations(builder.build(), member_digest()),
+        "part",
+        archive_digest(),
+    )
+    .unwrap();
     assert_eq!(
         output.annotations.provenance["f3d:xref/part/native:record#one"].tag,
         None
     );
+}
+
+#[test]
+fn a_rescoped_member_takes_the_digest_of_the_archive_it_was_read_from() {
+    let output = rescope_fidelity(source("member"), "part", archive_digest()).unwrap();
+    assert_eq!(output.decode_digest, archive_digest());
+    assert!(output.file_digests.is_empty());
 }

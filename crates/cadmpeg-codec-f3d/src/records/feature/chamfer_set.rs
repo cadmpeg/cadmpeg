@@ -11,23 +11,6 @@ pub(crate) struct DesignChamferScope {
     pub(crate) sets: Option<DesignChamferSetList>,
 }
 
-impl DesignChamferScope {
-    /// The payload of one decoded `Chamfer` scope; a set list takes precedence
-    /// over fixed scalar lanes.
-    pub(crate) fn admit(
-        fixed: Option<DesignFixedChamferParameters>,
-        sets: Option<DesignChamferSetList>,
-    ) -> Self {
-        match sets {
-            Some(sets) => Self {
-                fixed: None,
-                sets: Some(sets),
-            },
-            None => Self { fixed, sets: None },
-        }
-    }
-}
-
 /// Ordered chamfer sets named by the prefix of a `Chamfer` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "DesignChamferSetListWire")]

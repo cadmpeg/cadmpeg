@@ -103,7 +103,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) != Some(row) {
             return None;
         }
-        let mut surfaces = ir.model.surfaces.iter().filter(|surface| {
+        let mut surfaces = ir.geometry.surfaces.iter().filter(|surface| {
             crate::identity::matches_numbered_identity(
                 surface.id.as_str(),
                 "creo:visibgeom:surface#",
@@ -255,10 +255,11 @@ mod full_turn_carrier_tests {
                 next_surface: 0,
                 offset: usize::try_from(id).expect("fixture index fits usize"),
             });
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface ID"),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             });
         };
         add(

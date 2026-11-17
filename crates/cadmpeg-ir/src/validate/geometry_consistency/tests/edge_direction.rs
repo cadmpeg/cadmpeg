@@ -15,12 +15,12 @@ fn cube_with_spline_edge(poles: impl FnOnce(Point3, Point3) -> Vec<Point3>) -> C
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let position = |ir: &CadIr, vertex: &crate::ids::VertexId| {
         let vertex = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|candidate| &candidate.id == vertex)
             .expect("edge vertex");
-        ir.model
+        ir.geometry
             .points
             .iter()
             .find(|point| point.id == vertex.point)
@@ -28,11 +28,14 @@ fn cube_with_spline_edge(poles: impl FnOnce(Point3, Point3) -> Vec<Point3>) -> C
             .position()
             .get()
     };
-    let edge = &ir.model.edges[0];
-    let (start, end) = (position(&ir, &edge.start), position(&ir, &edge.end));
+    let edge = &ir.geometry.edges[0];
+    let (start, end) = (
+        position(&ir, &edge.ends.as_ref().unwrap().start),
+        position(&ir, &edge.ends.as_ref().unwrap().end),
+    );
     let curve_id = edge.curve().cloned().expect("cube edge curve");
     assert_eq!(
-        ir.model
+        ir.geometry
             .edges
             .iter()
             .filter(|edge| edge.curve() == Some(&curve_id))
@@ -44,7 +47,7 @@ fn cube_with_spline_edge(poles: impl FnOnce(Point3, Point3) -> Vec<Point3>) -> C
     knots.extend((0..controls.len()).map(|index| f64::from(u32::try_from(index).unwrap())));
     knots.push(knots[knots.len() - 1]);
     let curve = ir
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -53,7 +56,7 @@ fn cube_with_spline_edge(poles: impl FnOnce(Point3, Point3) -> Vec<Point3>) -> C
         NurbsCurve::from_lanes(1, knots, controls, None, false).unwrap(),
     ));
     curve.parameter_range = None;
-    ir.model.edges[0].set_param_range(None);
+    ir.geometry.edges[0].set_param_range(None);
     ir
 }
 
@@ -64,7 +67,7 @@ fn against_curve_findings(ir: &CadIr) -> usize {
         .iter()
         .filter(|finding| {
             finding.check == Check::GeometricConsistency
-                && finding.entity.as_deref() == Some(ir.model.edges[0].id.as_str())
+                && finding.entity.as_deref() == Some(ir.geometry.edges[0].id.as_str())
                 && finding.message.contains(AGAINST_CURVE)
         })
         .count()

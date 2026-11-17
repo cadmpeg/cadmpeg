@@ -16,7 +16,8 @@ fn joint_settings(values: Vec<(&str, SolverValue)>) -> SolverSettings {
         schema: "PhysxJointAPI".to_owned(),
         target: SolverTarget::Joint {
             joint: JointId::mint("test:model:joint#0").unwrap(),
-        },
+        }
+        .into(),
         values: values
             .into_iter()
             .map(|(name, value)| (name.to_owned(), value))

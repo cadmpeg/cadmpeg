@@ -9,7 +9,7 @@ use cadmpeg_ir::geometry::{
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CurveId, EdgeId, FaceId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,
+    BodyId, CurveId, EdgeId, LoopId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, FaceLoops, Region, Sense, Shell};
@@ -33,9 +33,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// The first body, region, shell and face of each owner-qualified identity.
 pub(super) struct SolidBodyIndex<'a> {
     bodies: BTreeMap<&'a BodyId, &'a Body>,
-    regions: BTreeMap<(&'a RegionId, &'a BodyId), &'a Region>,
     shells: BTreeMap<(&'a ShellId, &'a RegionId), &'a Shell>,
-    faces: BTreeMap<(&'a FaceId, &'a ShellId), &'a Face>,
+    body_regions: BTreeMap<&'a BodyId, Vec<&'a Region>>,
+    shell_faces: BTreeMap<&'a ShellId, Vec<&'a Face>>,
 }
 
 impl<'a> SolidBodyIndex<'a> {
@@ -51,30 +51,45 @@ impl<'a> SolidBodyIndex<'a> {
             }
             first
         }
+        let regions = first(arenas.regions, |region| (&region.id, &region.body));
+        let faces = first(arenas.faces, |face| (&face.id, &face.shell));
+        let mut body_regions = BTreeMap::<_, Vec<_>>::new();
+        for region in arenas.regions {
+            if regions
+                .get(&(&region.id, &region.body))
+                .is_some_and(|first| std::ptr::eq(*first, region))
+            {
+                body_regions.entry(&region.body).or_default().push(region);
+            }
+        }
+        let mut shell_faces = BTreeMap::<_, Vec<_>>::new();
+        for face in arenas.faces {
+            if faces
+                .get(&(&face.id, &face.shell))
+                .is_some_and(|first| std::ptr::eq(*first, face))
+            {
+                shell_faces.entry(&face.shell).or_default().push(face);
+            }
+        }
         Self {
             bodies: first(arenas.bodies, |body| &body.id),
-            regions: first(arenas.regions, |region| (&region.id, &region.body)),
             shells: first(arenas.shells, |shell| (&shell.id, &shell.region)),
-            faces: first(arenas.faces, |face| (&face.id, &face.shell)),
+            body_regions,
+            shell_faces,
         }
     }
 
-    fn shell_faces(&self, shell: &Shell) -> Option<Vec<&'a Face>> {
-        shell
-            .faces()
-            .iter()
-            .map(|face_id| self.faces.get(&(face_id, &shell.id)).copied())
-            .collect()
+    fn shell_faces(&self, shell: &Shell) -> Vec<&'a Face> {
+        self.shell_faces.get(&shell.id).cloned().unwrap_or_default()
     }
 
     pub(super) fn body_faces(&self, body_id: &BodyId) -> Option<Vec<&'a Face>> {
         let body = self.bodies.get(body_id)?;
         let mut faces = Vec::new();
-        for region_id in &body.regions {
-            let region = self.regions.get(&(region_id, &body.id))?;
+        for region in self.body_regions.get(&body.id).into_iter().flatten() {
             for shell_id in &region.shells {
                 let shell = self.shells.get(&(shell_id, &region.id))?;
-                faces.extend(self.shell_faces(shell)?);
+                faces.extend(self.shell_faces(shell));
             }
         }
         Some(faces)
@@ -85,15 +100,14 @@ impl<'a> SolidBodyIndex<'a> {
         if body.kind != BodyKind::Solid {
             return None;
         }
-        let [region_id] = body.regions.as_slice() else {
+        let [region] = self.body_regions.get(&body.id)?.as_slice() else {
             return None;
         };
-        let region = self.regions.get(&(region_id, &body.id))?;
         let [shell_id] = region.shells.as_slice() else {
             return None;
         };
         let shell = self.shells.get(&(shell_id, &region.id))?;
-        self.shell_faces(shell)
+        Some(self.shell_faces(shell))
     }
 }
 
@@ -112,12 +126,12 @@ pub(super) struct ProjectionArenas<'a> {
 impl<'a> ProjectionArenas<'a> {
     pub(super) fn of(ir: &'a CadIr) -> Self {
         Self {
-            bodies: &ir.model.bodies,
-            regions: &ir.model.regions,
-            shells: &ir.model.shells,
-            faces: &ir.model.faces,
-            surfaces: &ir.model.surfaces,
-            procedural_surfaces: &ir.model.procedural_surfaces,
+            bodies: &ir.geometry.bodies,
+            regions: &ir.geometry.regions,
+            shells: &ir.geometry.shells,
+            faces: &ir.geometry.faces,
+            surfaces: &ir.geometry.surfaces,
+            procedural_surfaces: &ir.geometry.procedural_surfaces,
         }
     }
 }
@@ -227,17 +241,22 @@ pub(super) struct CarrierIndex<'a> {
 impl<'a> CarrierIndex<'a> {
     pub(super) fn new(ir: &'a CadIr) -> Self {
         let mut loop_coedges = BTreeMap::<_, Vec<_>>::new();
-        for coedge in &ir.model.coedges {
+        for coedge in &ir.geometry.coedges {
             loop_coedges
                 .entry(&coedge.owner_loop)
                 .or_default()
                 .push(coedge);
         }
         Self {
-            surfaces: last_surfaces(&ir.model.surfaces),
-            edges: ir.model.edges.iter().map(|edge| (&edge.id, edge)).collect(),
+            surfaces: last_surfaces(&ir.geometry.surfaces),
+            edges: ir
+                .geometry
+                .edges
+                .iter()
+                .map(|edge| (&edge.id, edge))
+                .collect(),
             curves: ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .map(|curve| (&curve.id, curve))
@@ -1080,6 +1099,8 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
 
             op,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }));
     }
     Ok(match kind {
@@ -2715,7 +2736,7 @@ pub(super) fn hole_operations_by_body(
 
     let solid_bodies = SolidBodyIndex::new(ir);
     let mut selected = None;
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         if solid_bodies.connected_solid_body_faces(&body.id).is_some()
             && selected.replace(body).is_some()
         {

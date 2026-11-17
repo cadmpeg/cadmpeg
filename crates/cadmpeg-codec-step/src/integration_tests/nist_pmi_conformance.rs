@@ -324,7 +324,7 @@ fn nist_ctc_01_semantic_pmi_matches_the_nist_definition() {
         all_around
             .targets
             .iter()
-            .filter(|target| matches!(target, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
+            .filter(|target| matches!(&target.entity, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
             .count(),
         6
     );
@@ -783,7 +783,7 @@ fn nist_ftc_10_fit_and_zero_material_tolerances_match_the_nist_definition() {
             annotation
                 .targets
                 .iter()
-                .filter(|target| matches!(target, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
+                .filter(|target| matches!(&target.entity, cadmpeg_ir::pmi::PmiTarget::Face { .. }))
                 .count(),
             6
         );
@@ -824,7 +824,7 @@ fn every_nist_step_preserves_its_source_faces_and_dimensions() {
             .count();
         assert!(faces > 0, "{name} contains no bounded faces");
         assert_eq!(
-            result.ir().model.faces.len(),
+            result.ir().geometry.faces.len(),
             faces,
             "{name} lost source faces"
         );

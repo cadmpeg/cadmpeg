@@ -3,14 +3,16 @@
 //!
 //! A session counts input bytes, decompressed bytes, retained output bytes,
 //! entities, and recursion depth. A refusal in any of them fuses the session:
-//! every later charge fails and `finish_session` returns the refusal.
+//! every later charge fails and `finish_session` returns the refusal, unless
+//! the refusal is Part-scoped and the part runner that owns it gives the part
+//! up (`DecodeContext::run_part`).
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::CodecError;
 
-use super::error::{ResourceDimension, ResourceFailure, ResourceLimit};
+use super::error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit};
 use super::policy::{
     DecodePolicy, DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE, RETAINED_BASE,
     RETAINED_PER_INPUT_BYTE,
@@ -232,16 +234,38 @@ impl DecodeBudget {
         additional: u64,
         operation: &'static str,
     ) -> ResourceLimit {
-        let resource = ResourceLimit {
+        self.refuse_resource(ResourceLimit {
+            scope: LimitScope::for_dimension(dimension),
             dimension,
             reason,
             limit,
             used,
             additional,
             operation,
-        };
+        })
+    }
+
+    /// Fuses the session with `resource` and returns it.
+    pub(super) fn refuse_resource(&self, resource: ResourceLimit) -> ResourceLimit {
         self.fuse.set(Some(resource));
         resource
+    }
+
+    /// Clears the fuse when it is `expected` and Part-scoped, so the next part
+    /// can run. Charges stay: a given-up part's usage is never refunded.
+    ///
+    /// # Errors
+    ///
+    /// Returns the fuse in force when it is another refusal.
+    pub(super) fn recover_part(&self, expected: ResourceLimit) -> Result<(), ResourceLimit> {
+        match self.fuse.get() {
+            Some(actual) if actual == expected && actual.scope == LimitScope::Part => {
+                self.fuse.set(None);
+                Ok(())
+            }
+            Some(actual) => Err(actual),
+            None => Ok(()),
+        }
     }
 
     pub(super) fn refuse(

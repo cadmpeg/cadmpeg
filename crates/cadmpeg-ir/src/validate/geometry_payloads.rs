@@ -9,12 +9,12 @@ use crate::report::{
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     let bodies = crate::index::identities::BorrowedIdentities::build(|add| {
-        for body in &ir.model.bodies {
+        for body in &ir.geometry.bodies {
             add(body.id.as_str(), ());
         }
     });
     let faces = crate::index::identities::BorrowedIdentities::build(|add| {
-        for face in &ir.model.faces {
+        for face in &ir.geometry.faces {
             add(face.id.as_str(), ());
         }
     });

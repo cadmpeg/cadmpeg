@@ -217,7 +217,7 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
             .translated(axis.cross(reference), radius * interval[1].sin());
         let declared_end = evaluated_end.translated(Vector3::new(0.0, 0.0005, 0.0), 1.0);
         let mut ir = CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -227,8 +227,9 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.points.extend([
+        ir.geometry.points.extend([
             Point::new(
                 start_id.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(start)
@@ -242,25 +243,30 @@ fn bounded_analytic_carrier_uses_admitted_source_endpoint_witnesses() {
                 None,
             ),
         ]);
-        ir.model.vertices.extend([
+        ir.geometry.vertices.extend([
             Vertex {
                 id: start_vertex.clone(),
                 point: start_id,
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: end_vertex.clone(),
                 point: end_id,
                 tolerance: None,
+                native_ref: None,
             },
         ]);
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: EdgeId::mint("test:model:edge#edge").expect("identity grammar"),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id.clone()), Some(interval))
                 .unwrap(),
-            start: start_vertex,
-            end: end_vertex,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                start_vertex,
+                end_vertex,
+            )),
             tolerance: None,
+            native_ref: None,
         });
 
         let (carrier, _) =

@@ -25,7 +25,7 @@ fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() 
     ir.model.appearance_bindings = vec![
         AppearanceBinding {
             id: AppearanceBindingId::mint("sldprt:test:binding#a-face").unwrap(),
-            target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+            target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
             appearance: appearance.clone(),
             source_entity_id: None,
             object_type: None,
@@ -34,7 +34,7 @@ fn normalized_appearance_bindings_remain_admissible_when_target_order_differs() 
         },
         AppearanceBinding {
             id: AppearanceBindingId::mint("sldprt:test:binding#b-body").unwrap(),
-            target: AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+            target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()).into(),
             appearance,
             source_entity_id: None,
             object_type: None,

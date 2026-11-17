@@ -37,9 +37,12 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -902,9 +905,12 @@ fn encoder_binds_multiple_authored_with_retained_native_envelope_sketches_by_obj
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -1013,9 +1019,12 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -1047,7 +1056,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges: EdgeSelection::Resolved {
-                        edges: vec![ir.model.edges[0].id.clone()],
+                        edges: vec![ir.geometry.edges[0].id.clone()],
                         native: "edge-a,edge-b".into(),
                     },
                     radius: RadiusSpec::Constant {
@@ -1072,7 +1081,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Shell {
             bodies: None,
             removed_faces: FaceSelection::Resolved {
-                faces: vec![ir.model.faces[0].id.clone()],
+                faces: vec![ir.geometry.faces[0].id.clone()],
                 native: "face-a".into(),
             },
             thickness: Some(cadmpeg_ir::scalar::PositiveLength::new(1.5).unwrap()),
@@ -1099,10 +1108,11 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(
                 BodySelection::Resolved {
-                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies
-                        [0]
-                    .id
-                    .clone()])
+                    bodies: cadmpeg_ir::features::DistinctMembers::try_from(vec![ir
+                        .geometry
+                        .bodies[0]
+                        .id
+                        .clone()])
                     .expect("distinct bodies"),
                     native: "body-a".into(),
                 },
@@ -1111,6 +1121,8 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             .unwrap(),
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
             faces: FaceSelection::Native("face-d".into()),
@@ -1193,8 +1205,10 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
                 .unwrap(),
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(20.0).unwrap(),
                 count: 4,
+                symmetric: false,
             }),
             omitted_instances: Vec::new(),
+            symmetric: false,
         })
         .unwrap(),
         PatternKind::new(PatternTransform::Circular {
@@ -1299,7 +1313,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
                     second: Some(cadmpeg_ir::features::patterns::LinearPatternDirection {
                         direction: actual_direction,
                         spacing: actual_spacing,
-                        count: 4,
+                        count: 4, ..
                     }),
                     ..
                 } if *actual_direction == Vector3::new(0.0, 1.0, 0.0)

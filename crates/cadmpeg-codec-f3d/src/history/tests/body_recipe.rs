@@ -12,13 +12,11 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let body = |slot| Body {
         id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![
-            RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar")
-        ],
         transform: None,
         name: None,
         color: None,
         visible: Some(true),
+        native_ref: None,
     };
     let bodies = [body(1), body(2)];
     let regions = [
@@ -26,24 +24,28 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             id: RegionId::mint("test:model:region#1").expect("identity grammar"),
             body: bodies[0].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#1").expect("identity grammar")],
+            native_ref: None,
         },
         Region {
             id: RegionId::mint("test:model:region#2").expect("identity grammar"),
             body: bodies[1].id.clone(),
             shells: vec![ShellId::mint("test:model:shell#2").expect("identity grammar")],
+            native_ref: None,
         },
     ];
     let shells = [
-        Shell::with_face(
+        Shell::new(
             ShellId::mint("test:model:shell#1").expect("identity grammar"),
             RegionId::mint("test:model:region#1").expect("identity grammar"),
-            FaceId::mint("test:model:face#1").expect("identity grammar"),
         ),
-        Shell::with_face(
+        Shell::new(
             ShellId::mint("test:model:shell#2").expect("identity grammar"),
             RegionId::mint("test:model:region#2").expect("identity grammar"),
-            FaceId::mint("test:model:face#2").expect("identity grammar"),
         ),
+    ];
+    let faces = [
+        crate::test_support::bare_face("test:model:face#1", "test:model:shell#1"),
+        crate::test_support::bare_face("test:model:face#2", "test:model:shell#2"),
     ];
     let operand = crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
         crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
@@ -99,15 +101,28 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut candidates =
-        crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[]);
+    let mut candidates = crate::history::body_candidates::BodyCandidates::new(
+        &bodies,
+        &regions,
+        &shells,
+        &faces,
+        &[],
+        &[],
+    );
     for _ in 0..1_000 {
         assert_eq!(candidates.external(&operand, None), None);
     }
     ctx.finish_session().unwrap();
     assert_eq!(
-        crate::history::body_candidates::BodyCandidates::new(&bodies, &regions, &shells, &[], &[])
-            .external(&operand, None),
+        crate::history::body_candidates::BodyCandidates::new(
+            &bodies,
+            &regions,
+            &shells,
+            &faces,
+            &[],
+            &[]
+        )
+        .external(&operand, None),
         None
     );
 
@@ -127,6 +142,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         bodies: &bodies,
         regions: &regions,
         shells: &shells,
+        faces: &faces,
     };
     let mut selection = BodySelection::NativeSet(vec![native.clone()].try_into().unwrap());
     bind_direct_body_recipe_body_selection(
@@ -137,6 +153,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),

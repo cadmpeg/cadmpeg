@@ -480,11 +480,11 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     let mut ir = CadIr::empty();
     let mut body_record = cadmpeg_ir::examples::unit_cube()
         .expect("unit cube fixture is admitted")
-        .model
+        .geometry
         .bodies
         .remove(0);
     body_record.id = body.clone();
-    ir.model.bodies.push(body_record);
+    ir.geometry.bodies.push(body_record);
     ir.model.features = vec![
         feature("synthetic:test:id#dependency", 1, Vec::new(), Vec::new()),
         feature(
@@ -982,6 +982,8 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
 
         op: BooleanKind::Join,
         keep_tools: false,
+
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     });
     assert_eq!(boolean_target_output(Some(&definition)), Some(&body));
 
@@ -994,6 +996,8 @@ fn boolean_target_output_requires_one_resolved_segment_body() {
 
         op: BooleanKind::Join,
         keep_tools: false,
+
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     });
     assert!(boolean_target_output(Some(&ambiguous)).is_none());
 }

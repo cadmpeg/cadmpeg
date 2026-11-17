@@ -219,13 +219,11 @@ fn name_admission_preserves_brep_spline_and_transformation_layouts() {
         }
     }
     let required = b"ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNIFORM_CURVE(1.E999,(),.UNSPECIFIED.,.F.,.F.);ENDSEC;END-ISO-10303-21;";
-    let (parsed, diagnostics) =
+    let (parsed, _) =
         crate::test_support::with_service_context(required, crate::parse::parse_inner)
-            .expect("unreadable required literal omits the bounded record");
+            .expect("unreadable required literal gives up the bounded record");
     assert!(parsed.records().is_empty());
-    assert!(diagnostics
-        .iter()
-        .any(|item| item.kind == crate::parse::ParseDiagnosticKind::RecordOmitted));
+    assert_eq!(parsed.given_up().len(), 1);
 }
 
 #[test]
@@ -238,9 +236,9 @@ fn omitted_name_recovery_keeps_required_coordinate_literals_strict() {
         let source = format!(
             "ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;{data}ENDSEC;END-ISO-10303-21;"
         );
-        let (parsed, diagnostics) =
+        let (parsed, _) =
             crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
-                .expect("unreadable coordinate omits only its containing instance");
+                .expect("unreadable coordinate gives up only its containing instance");
         let expected = if data.starts_with("#1=CARTESIAN_POINT();") {
             vec![1]
         } else {
@@ -251,11 +249,6 @@ fn omitted_name_recovery_keeps_required_coordinate_literals_strict() {
             expected,
             "{data}"
         );
-        assert!(
-            diagnostics
-                .iter()
-                .any(|item| item.kind == crate::parse::ParseDiagnosticKind::RecordOmitted),
-            "{data}"
-        );
+        assert_eq!(parsed.given_up().len(), 1, "{data}");
     }
 }
