@@ -330,8 +330,10 @@
         {
           "id": "f3d:appearance:binding#0_985:11111111-2222-3333-4444-555555555555",
           "target": {
-            "kind": "body",
-            "value": "f3d:brep:entity#1"
+            "entity": {
+              "kind": "body",
+              "value": "f3d:brep:entity#1"
+            }
           },
           "appearance": "f3d:design:appearance#11111111-2222-3333-4444-555555555555",
           "source_entity_id": "0_985",
@@ -376,7 +378,19 @@
       "evaluations": [],
       "names": []
     },
-    "process": {},
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
+    },
     "native": {
       "f3d": {
         "act_component_links": [

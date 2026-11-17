@@ -2332,8 +2332,10 @@
           "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%230",
           "source_entity_id": "/Looks/Box_face_1_material",
           "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:0"
+            "entity": {
+              "kind": "face",
+              "value": "usd:stage:face#/Occurrence:face:0"
+            }
           }
         },
         {
@@ -2342,8 +2344,10 @@
           "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%231",
           "source_entity_id": "/Looks/Box_face_1_material",
           "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:1"
+            "entity": {
+              "kind": "face",
+              "value": "usd:stage:face#/Occurrence:face:1"
+            }
           }
         },
         {
@@ -2352,8 +2356,10 @@
           "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%232",
           "source_entity_id": "/Looks/Box_face_1_material",
           "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:2"
+            "entity": {
+              "kind": "face",
+              "value": "usd:stage:face#/Occurrence:face:2"
+            }
           }
         },
         {
@@ -2362,8 +2368,10 @@
           "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%233",
           "source_entity_id": "/Looks/Box_face_1_material",
           "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:3"
+            "entity": {
+              "kind": "face",
+              "value": "usd:stage:face#/Occurrence:face:3"
+            }
           }
         },
         {
@@ -2372,8 +2380,10 @@
           "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%234",
           "source_entity_id": "/Looks/Box_face_1_material",
           "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:4"
+            "entity": {
+              "kind": "face",
+              "value": "usd:stage:face#/Occurrence:face:4"
+            }
           }
         },
         {
@@ -2382,8 +2392,10 @@
           "id": "usd:stage:subset-binding#/Occurrence:/Occurrence/Brep/Box_face_1_material%235",
           "source_entity_id": "/Looks/Box_face_1_material",
           "target": {
-            "kind": "face",
-            "value": "usd:stage:face#/Occurrence:face:5"
+            "entity": {
+              "kind": "face",
+              "value": "usd:stage:face#/Occurrence:face:5"
+            }
           }
         }
       ],
@@ -2862,7 +2874,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

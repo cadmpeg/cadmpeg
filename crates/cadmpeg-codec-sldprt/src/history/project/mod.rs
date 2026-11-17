@@ -946,7 +946,7 @@ pub(crate) fn custom_property_attributes(
             }
             attributes.push(SourceAttribute {
                 id,
-                target: AttributeTarget::Document,
+                target: AttributeTarget::Document.into(),
                 name,
                 values,
             });

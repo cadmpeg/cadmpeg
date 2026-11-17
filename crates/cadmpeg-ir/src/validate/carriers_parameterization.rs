@@ -128,7 +128,7 @@ pub(super) fn check_carrier_reachability(
         }
     });
     for binding in &ir.model.appearance_bindings {
-        match &binding.target {
+        match &binding.target.entity {
             crate::appearance::AppearanceTarget::Surface(id) => {
                 surfaces.insert_unique(id.as_str(), ());
             }
@@ -148,7 +148,7 @@ pub(super) fn check_carrier_reachability(
         .iter()
         .flat_map(|layer| &layer.items)
     {
-        match item {
+        match &item.entity {
             crate::presentation::PresentationItem::Surface { surface } => {
                 surfaces.insert_unique(surface.as_str(), ());
             }
