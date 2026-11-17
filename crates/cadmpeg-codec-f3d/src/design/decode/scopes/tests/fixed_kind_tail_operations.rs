@@ -429,6 +429,21 @@ pub(super) fn fixed_kind_tail_operations(
             }
         )) if distance.get() == -0.5
     ));
+    let mut distance_first_scope = offset_scope.clone();
+    distance_first_scope
+        .try_edit(|draft| {
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated(vec![73, 1, 2, 3]);
+            draft.layout_fixture_references();
+        })
+        .unwrap();
+    assert!(exact_direct_face_operation(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &distance_first_scope,
+        &mut Vec::new()
+    )
+    .is_none());
 
     let compact_offset_at = bytes.len();
     let mut compact_offset = vec![0; 275];
