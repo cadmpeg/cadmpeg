@@ -65,16 +65,16 @@ pub(crate) struct UnreadableDrops {
     pub(crate) records: Vec<String>,
 }
 
-/// The side files a Geometry property needs to hold its value. An exact
-/// shape needs only the entry of its direct `Part` carrier.
+/// The side files a Geometry property needs to hold its value: the entry
+/// of an exact shape's direct `Part` carrier, or of a mesh or point-cloud
+/// value root. A geometry list stores its value inline.
 fn payload_side_files(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Vec<String>, CodecError> {
-    let crate::native::PropertyBody::Persisted { values, .. } = &property.body else {
-        return Ok(Vec::new());
-    };
-    if property.family != PropertyFamily::Geometry {
+    if property.family != PropertyFamily::Geometry
+        || !matches!(property.body, crate::native::PropertyBody::Persisted { .. })
+    {
         return Ok(Vec::new());
     }
     if property.type_name == "Part::PropertyPartShape" {
@@ -82,17 +82,8 @@ fn payload_side_files(
             .into_iter()
             .collect());
     }
-    Ok(values
-        .iter()
-        .filter(|value| {
-            !matches!(
-                value.tag.as_str(),
-                "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
-            )
-        })
-        .flat_map(|value| &value.attributes)
-        .filter(|(key, name)| matches!(key.as_str(), "file" | "File") && !name.is_empty())
-        .map(|(_, name)| name.clone())
+    Ok(crate::application_geometry::payload_entry(ctx, property)?
+        .into_iter()
         .collect())
 }
 
@@ -154,9 +145,6 @@ pub(crate) fn resolve_side_entries(
         else {
             continue;
         };
-        if side_entries.iter().all(|name| entries.contains_key(name)) {
-            continue;
-        }
         let mut naming_files = HashSet::new();
         for value in values {
             for (key, name) in &value.attributes {

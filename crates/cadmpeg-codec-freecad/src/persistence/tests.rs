@@ -881,3 +881,81 @@ fn only_the_direct_part_entry_of_an_exact_shape_must_resolve() {
         }
     }
 }
+
+#[test]
+fn only_a_payload_entry_drops_or_requires_its_geometry_property() {
+    let cases = [
+        (
+            r#"<Property name="Shape" type="Part::PropertyPartShape"><Wrap><Part file="Box.Shape.brp"/></Wrap></Property>"#,
+            "Box.Shape.brp",
+            false,
+        ),
+        (
+            r#"<Property name="Shape" type="Part::PropertyPartShape"><Part File="Box.Shape.brp"/></Property>"#,
+            "Box.Shape.brp",
+            false,
+        ),
+        (
+            r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="MeshKernel.bms"/><X file="Note.bin"/></Property>"#,
+            "Note.bin",
+            false,
+        ),
+        (
+            r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="MeshKernel.bms"/></Property>"#,
+            "MeshKernel.bms",
+            true,
+        ),
+        (
+            r#"<Property name="Points" type="Points::PropertyPointKernel"><Points file="PointKernel.bin"/></Property>"#,
+            "PointKernel.bin",
+            true,
+        ),
+        (
+            r#"<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/><X file="Note.bin"/></Property>"#,
+            "Note.bin",
+            false,
+        ),
+    ];
+    for (property, entry, needed) in cases {
+        let document = format!(
+            "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+        );
+        let (dropped, resolves) =
+            crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+                let mut graph = parse(document.as_bytes(), "4", ctx).expect("geometry document");
+                let mut absent = parse(document.as_bytes(), "4", ctx).expect("geometry document");
+                let drops = super::drop_unreadable(
+                    ctx,
+                    &mut graph,
+                    &std::collections::BTreeSet::from([entry.to_owned()]),
+                )
+                .expect("bounded geometry property");
+                let payload = b"payload".to_vec();
+                let present = [
+                    "Box.Shape.brp",
+                    "MeshKernel.bms",
+                    "PointKernel.bin",
+                    "Note.bin",
+                ]
+                .into_iter()
+                .filter(|name| *name != entry)
+                .map(|name| {
+                    (
+                        name.to_owned(),
+                        cadmpeg_core::decode::View::over_retained(&payload),
+                    )
+                })
+                .collect();
+                let resolves = super::resolve_side_entries(
+                    ctx,
+                    &mut absent.properties,
+                    &present,
+                    &mut Vec::new(),
+                )
+                .is_ok();
+                (drops.contains_key(entry), resolves)
+            });
+        assert_eq!(dropped, needed, "{property}");
+        assert_eq!(resolves, !needed, "{property}");
+    }
+}

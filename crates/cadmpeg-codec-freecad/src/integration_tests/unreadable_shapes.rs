@@ -72,6 +72,24 @@ fn properties(ir: &cadmpeg_ir::CadIr) -> Vec<PropertyRecord> {
 }
 
 /// The ids in the `dropped=[...]` field of a `record.unreadable` message.
+/// The lowercase `file` of a Geometry property's direct payload carrier.
+fn payload_root_file(property: &PropertyRecord) -> Option<String> {
+    let tag = match property.type_name.as_str() {
+        "Part::PropertyPartShape" => "Part",
+        "Mesh::PropertyMeshKernel" => "Mesh",
+        "Points::PropertyPointKernel" => "Points",
+        _ => return None,
+    };
+    let document = roxmltree::Document::parse(property.xml.text()).ok()?;
+    document
+        .root_element()
+        .children()
+        .find(|node| node.has_tag_name(tag))?
+        .attribute("file")
+        .filter(|file| !file.is_empty())
+        .map(str::to_owned)
+}
+
 fn dropped_ids(message: &str) -> Vec<String> {
     message
         .split("; dropped=[")
@@ -123,8 +141,7 @@ fn an_unreadable_shape_entry_drops_only_the_properties_that_need_it() {
         for (entry, payload) in shape_entries(&original) {
             let needing = baseline_properties
                 .iter()
-                .filter(|property| property.family == crate::native::PropertyFamily::Geometry)
-                .filter(|property| property.side_entries().contains(&entry))
+                .filter(|property| payload_root_file(property).as_deref() == Some(entry.as_str()))
                 .map(|property| property.id.clone())
                 .collect::<BTreeSet<_>>();
             let mut changed = original.clone();
