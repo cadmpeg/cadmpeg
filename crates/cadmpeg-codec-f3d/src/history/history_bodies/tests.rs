@@ -969,10 +969,10 @@ fn link_attribute(body: i64, design_id: &str, design_reference: i64) -> SourceAt
         id: format!("f3d:history:attribute#{body}")
             .try_into()
             .expect("valid identity"),
-        target: AttributeTarget::Body(
+        target: cadmpeg_ir::references::InstanceTarget::new(AttributeTarget::Body(
             cadmpeg_ir::ids::BodyId::mint(format!("f3d:history:body#{body}"))
                 .expect("identity grammar"),
-        ),
+        )),
         name: "ATTRIB_CUSTOM-attrib".into(),
         values: vec![
             AttributeValue::String("generic_tag_attrib_def".into()),

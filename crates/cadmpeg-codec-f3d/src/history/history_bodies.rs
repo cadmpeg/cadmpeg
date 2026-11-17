@@ -414,7 +414,7 @@ fn identity_slot(
 ) -> Result<Option<i64>, CodecError> {
     let mut carriers = BTreeSet::new();
     for attribute in &brep.attributes {
-        let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &attribute.target else {
+        let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &attribute.target.entity else {
             continue;
         };
         let Some(slot) = super::stable_ref(body.as_str()) else {
