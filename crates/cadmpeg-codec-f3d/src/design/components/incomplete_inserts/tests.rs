@@ -180,7 +180,7 @@ fn repeated_native_tokens_keep_per_scope_occurrences_with_membership_assumptions
 }
 
 #[test]
-fn legacy_partial_insert_projection_names_its_frame_and_membership_assumptions() {
+fn legacy_partial_insert_projection_names_its_membership_assumption() {
     for frame in [256, 257, 261, 267, 385, 389, 399] {
         let mut scope = scope();
         scope
@@ -235,10 +235,7 @@ fn legacy_partial_insert_projection_names_its_frame_and_membership_assumptions()
         );
         assert_eq!(
             losses.iter().map(|loss| &loss.code).collect::<Vec<_>>(),
-            [
-                &F3dLossCode::FeatureLegacyInsertFrameAssumed.kind(),
-                &F3dLossCode::FeatureComponentInsertMembershipAssumed.kind(),
-            ]
+            [&F3dLossCode::FeatureComponentInsertMembershipAssumed.kind(),]
         );
     }
 }

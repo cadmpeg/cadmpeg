@@ -232,7 +232,7 @@ fn legacy_fixture(frame: usize, name: &str) -> (Vec<u8>, DesignParameterScope, u
     bytes[table + 5..table + 9].copy_from_slice(&20_u32.to_le_bytes());
     bytes[table + 15..table + 19].copy_from_slice(&u32::MAX.to_le_bytes());
     bytes[table + 19..ordinal].copy_from_slice(&crate::bytes::lp_utf16_bytes(name).unwrap());
-    if frame == 385 {
+    if matches!(frame, 257 | 385) {
         bytes[ordinal + 31..ordinal + 35].copy_from_slice(&u32::MAX.to_le_bytes());
     }
     let (_, mut scope) = fixture(272, false);
@@ -309,6 +309,7 @@ fn legacy_partial_placements_refuse_corrupt_prefixes_and_truncated_frames() {
         let (bytes, scope, relation, guid) = legacy_fixture(frame, "Component Insert");
         for at in [
             11,
+            relation - 4,
             relation,
             relation + 1,
             relation + 5,
@@ -329,6 +330,49 @@ fn legacy_partial_placements_refuse_corrupt_prefixes_and_truncated_frames() {
             let mut changed = bytes;
             changed[at..at + 8].copy_from_slice(&f64::NAN.to_le_bytes());
             assert!(unresolved_component_insert_placement(&changed, &scope).is_none());
+        }
+    }
+}
+
+#[test]
+fn complete_legacy_frames_use_the_stored_name_history_position() {
+    use super::super::{
+        exact_component_insert_scope_283_262_257, exact_component_insert_scope_283_262_385,
+    };
+    for frame in [257, 385] {
+        for name in ["Component Insert", "Einfügen", "Komponente einfügen"] {
+            let (mut bytes, scope, _, _) = legacy_fixture(frame, name);
+            let read = if frame == 257 {
+                exact_component_insert_scope_283_262_257
+            } else {
+                exact_component_insert_scope_283_262_385
+            };
+            let value = read(&bytes, &scope, 20).unwrap();
+            assert_eq!(value.1, if frame == 257 { None } else { Some(46) });
+            assert_eq!(value.2, 19);
+            assert_eq!(
+                value.0.rows(),
+                if frame == 257 {
+                    [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                } else {
+                    [
+                        [0.6, -0.8, 0.0, 1.0],
+                        [0.8, 0.6, 0.0, 2.0],
+                        [0.0, 0.0, 1.0, 3.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ]
+                }
+            );
+            let history =
+                (if frame == 257 { 211 } else { 339 }) + 2 * name.encode_utf16().count() - 32;
+            bytes[history..history + 4].copy_from_slice(&0_u32.to_le_bytes());
+            assert!(read(&bytes, &scope, 20).is_none());
+            assert!(unresolved_component_insert_placement(&bytes, &scope).is_some());
         }
     }
 }

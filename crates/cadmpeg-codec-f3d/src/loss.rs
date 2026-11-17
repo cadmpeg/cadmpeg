@@ -189,6 +189,7 @@ pub(crate) enum F3dLossCode {
     /// top-level inserts from internal operands.
     ComponentInsertOrderUnknown,
     ComponentInsertContainerAssumed,
+    ComponentInsertLegacyFrameAssumed,
     /// Component definitions stored as revised records that each bind a context
     /// UUID; the earliest record defines the component.
     ComponentDefinitionRevised,
@@ -367,7 +368,6 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesUnbound,
     FeatureDerivedInstanceComponentInsertAssumed,
     FeatureComponentInsertMembershipAssumed,
-    FeatureLegacyInsertFrameAssumed,
     FeatureDerivedInstanceSourcesUnresolved,
     FeatureDerivedInstanceCarrierPlacementAssumed,
     FeatureDerivedInstanceScopePlacementAssumed,
@@ -1147,6 +1147,7 @@ impl F3dLossCode {
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentInsertContainerAssumed,
+        Self::ComponentInsertLegacyFrameAssumed,
         Self::ComponentDefinitionRevised,
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
@@ -1270,7 +1271,6 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
         Self::FeatureComponentInsertMembershipAssumed,
-        Self::FeatureLegacyInsertFrameAssumed,
         Self::FeatureDerivedInstanceSourcesUnresolved,
         Self::FeatureDerivedInstanceCarrierPlacementAssumed,
         Self::FeatureDerivedInstanceScopePlacementAssumed,
@@ -1899,7 +1899,7 @@ impl F3dLossCode {
             Self::FeatureDerivedInstanceComponentInsertAssumed => {
                 "feature.derived-instance-component-insert-assumed"
             }
-            Self::FeatureLegacyInsertFrameAssumed => "assembly.legacy-insert-frame-assumed",
+            Self::ComponentInsertLegacyFrameAssumed => "assembly.legacy-insert-frame-assumed",
             Self::FeatureComponentInsertMembershipAssumed => {
                 "feature.component-insert-membership-assumed"
             }
@@ -2757,6 +2757,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentInsertContainerAssumed
+            | Self::ComponentInsertLegacyFrameAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -2806,7 +2807,6 @@ impl F3dLossCode {
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
             | Self::FeatureComponentInsertMembershipAssumed
-            | Self::FeatureLegacyInsertFrameAssumed
             | Self::FeatureDerivedInstanceSourcesUnresolved
             | Self::FeatureDerivedInstanceCarrierPlacementAssumed
             | Self::FeatureDerivedInstanceScopePlacementAssumed
@@ -3393,7 +3393,6 @@ impl F3dLossCode {
             | Self::FeatureStoredBodiesUnbound
             | Self::FeatureDerivedInstanceComponentInsertAssumed
             | Self::FeatureComponentInsertMembershipAssumed
-            | Self::FeatureLegacyInsertFrameAssumed
             | Self::FeatureDerivedInstanceSourcesUnresolved
             | Self::FeatureDerivedInstanceCarrierPlacementAssumed
             | Self::FeatureDerivedInstanceScopePlacementAssumed
@@ -3807,6 +3806,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentInsertContainerAssumed
+            | Self::ComponentInsertLegacyFrameAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -4051,6 +4051,7 @@ mod tests {
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-insert-container-assumed",
+                "assembly.legacy-insert-frame-assumed",
                 "assembly.component-definition-revised",
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
@@ -4174,7 +4175,6 @@ mod tests {
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",
                 "feature.component-insert-membership-assumed",
-                "assembly.legacy-insert-frame-assumed",
                 "feature.derived-instance-sources-unresolved",
                 "feature.derived-instance-carrier-placement-assumed",
                 "feature.derived-instance-scope-placement-assumed",
