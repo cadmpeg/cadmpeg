@@ -3,16 +3,21 @@
 //! specification).
 //!
 //! The resolvers read a value through the configuration that applies:
-//! [`CadIr::dimension_value`] resolves a bound dimension from its parameter's
-//! cache, and [`CadIr::is_stateless`] decides which features have
+//! [`dimension_value`](crate::CadIr::dimension_value) resolves a bound
+//! dimension from its parameter's cache, and
+//! [`is_stateless`](crate::CadIr::is_stateless) decides which features have
 //! evaluations. The edit helpers change one canonical fact and keep every
-//! cache that depends on it honest: [`CadIr::set_dimension`],
-//! [`CadIr::set_parameter_expression`], and [`CadIr::set_feature_definition`]
-//! mark the dependent states `Stale`, recompute the dependent caches they
-//! can, and clear the rest; [`CadIr::insert_member`] and
-//! [`CadIr::remove_member`] edit a container and keep every position valid;
-//! [`CadIr::set_active_configuration`] exchanges the current geometry of one
-//! scope for another configuration's state.
+//! cache that depends on it honest:
+//! [`set_dimension`](crate::CadIr::set_dimension),
+//! [`set_parameter_expression`](crate::CadIr::set_parameter_expression), and
+//! [`set_feature_definition`](crate::CadIr::set_feature_definition) mark the
+//! dependent states `Stale`, recompute the dependent caches they can, and
+//! clear the rest; [`insert_member`](crate::CadIr::insert_member) and
+//! [`remove_member`](crate::CadIr::remove_member) edit a container and keep
+//! every position valid; and
+//! [`set_active_configuration`](crate::CadIr::set_active_configuration)
+//! exchanges the current geometry of one scope for another configuration's
+//! state.
 //!
 //! Positions, references, measures, and constructions occur throughout the
 //! feature vocabulary. The helpers find them in a record's wire form, in which
@@ -113,7 +118,8 @@ pub enum EditError {
     Malformed(String),
 }
 
-/// What drives a parameter that [`CadIr::set_dimension`] refuses.
+/// What drives a parameter that
+/// [`set_dimension`](crate::CadIr::set_dimension) refuses.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParameterDrivers {
     /// Geometry determines the value: a reference dimension.
@@ -124,8 +130,9 @@ pub enum ParameterDrivers {
     References(Vec<ParameterRef>),
 }
 
-/// A literal value for [`CadIr::set_dimension`]: a number in its authored
-/// unit, a Boolean, or a text. An integer is a dimensionless number.
+/// A literal value for [`set_dimension`](crate::CadIr::set_dimension): a
+/// number in its authored unit, a Boolean, or a text. An integer is a
+/// dimensionless number.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     /// A number in its authored unit; an empty unit is dimensionless.
