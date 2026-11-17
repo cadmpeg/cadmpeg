@@ -109,6 +109,11 @@ fn version_4_table_poses_the_occurrence_of_its_one_reference_path() {
     assert!(parse(&marker).is_none());
     // The ordinal value does not select the grammar.
     assert_eq!(
+        parse(&path_ordinal_frame(&[10], 1, &[7])).map(|pose| pose.path_ordinal),
+        Some(Some(7))
+    );
+    assert_eq!(parse(&frame(6, true)).unwrap().path_ordinal, None);
+    assert_eq!(
         parse(&path_ordinal_frame(&[10], 1, &[7])).map(|pose| pose.target_record_index),
         Some(10)
     );
@@ -251,6 +256,7 @@ fn model() -> (cadmpeg_ir::CadIr, BTreeMap<String, OperationPose>) {
                 frame: body,
                 carrier: 20,
                 source_root_record_index: 3,
+                path_ordinal: None,
             },
         )]),
     )
@@ -280,6 +286,26 @@ fn operation_pose_updates_every_instance_of_one_definition() {
     assert!(reference_matches(&refs[0]));
     assert!(refs[0].current_pose.is_none());
     assert!(refs[0].operation_pose.is_some());
+}
+
+#[test]
+fn applied_version_4_table_charges_the_path_ordinal_loss() {
+    for (path_ordinal, charged) in [(None, false), (Some(7), true)] {
+        let (mut ir, mut poses) = model();
+        for pose in poses.values_mut() {
+            pose.path_ordinal = path_ordinal;
+        }
+        let mut losses = Vec::new();
+        let ctx = cadmpeg_test_support::service_decode_context();
+        project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut losses).unwrap();
+        assert_eq!(
+            losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::OperationPosePathOrdinalAssumed.kind()),
+            charged,
+            "{path_ordinal:?}"
+        );
+    }
 }
 
 #[test]

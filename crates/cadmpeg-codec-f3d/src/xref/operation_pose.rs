@@ -26,6 +26,8 @@ pub(crate) struct OperationPose {
     pub(super) frame: Vec<u8>,
     pub(super) carrier: u64,
     source_root_record_index: u64,
+    /// The path-ordinal value of a version-four table.
+    pub(super) path_ordinal: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -33,6 +35,7 @@ pub(super) struct DirectPose {
     pub(super) target_record_index: u64,
     pub(super) matrix: [[f64; 4]; 4],
     source_root_record_index: u64,
+    pub(super) path_ordinal: Option<u32>,
 }
 
 /// Grammar of an operation table between its name and its entry run.
@@ -106,11 +109,12 @@ fn parse_form(body: &[u8], form: TableForm) -> Option<DirectPose> {
     {
         return None;
     }
+    let mut path_ordinal = None;
     if form == TableForm::PathOrdinals {
         if body.get(at) != Some(&PATH_ORDINAL_FIELD) || View::u32_le_at(body, at + 1)? != 1 {
             return None;
         }
-        View::u32_le_at(body, at + 5)?;
+        path_ordinal = Some(View::u32_le_at(body, at + 5)?);
         at += 9;
     }
     let (source_root_record_index, root_type) =
@@ -150,6 +154,7 @@ fn parse_form(body: &[u8], form: TableForm) -> Option<DirectPose> {
         target_record_index: target,
         matrix,
         source_root_record_index,
+        path_ordinal,
     })
 }
 
@@ -267,6 +272,7 @@ fn register(
                 frame,
                 carrier,
                 source_root_record_index: pose.source_root_record_index,
+                path_ordinal: pose.path_ordinal,
             }));
         }
         std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -746,6 +752,19 @@ pub(crate) fn project(
                 )?;
             }
         }
+    }
+    let path_ordinals = applied
+        .iter()
+        .filter(|key| {
+            poses
+                .get(*key)
+                .is_some_and(|pose| pose.path_ordinal.is_some())
+        })
+        .count();
+    if path_ordinals != 0 {
+        losses.push(F3dLossCode::OperationPosePathOrdinalAssumed.note(format!(
+            "{path_ordinals} occurrence definition(s) take the pose of a version-four operation table; the path-ordinal value of the table is assumed to leave that pose unchanged (DR-520)."
+        )));
     }
     if !applied.is_empty() {
         losses.push(F3dLossCode::OperationPoseApplied.note(format!("{} occurrence definition(s) take their direct operation table's final pose in every instance; {count} instance transform(s) changed", applied.len())));
