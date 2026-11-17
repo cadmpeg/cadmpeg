@@ -149,7 +149,7 @@ pub(super) fn tail_second_reference(bytes: &[u8], scope: &DesignParameterScope) 
 }
 
 /// The loss of a 361-byte referenced-angle `Revolve` frame, whose second tail
-/// reference the decoder reads without a meaning (DR-646).
+/// reference the decoder reads without a meaning (DR-657).
 pub(super) fn referenced_revolve_reference_loss(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -161,7 +161,7 @@ pub(super) fn referenced_revolve_reference_loss(
     }
     let target = tail_second_reference(bytes, scope)?;
     Some(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(format!(
-        "Revolve scope {} stores a second tail reference with target {target} in its 361-byte referenced-angle frame; the decoder reads the other fields at the 351-byte offsets (DR-646).",
+        "Revolve scope {} stores a second tail reference with target {target} in its 361-byte referenced-angle frame; the decoder reads the other fields at the 351-byte offsets (DR-657).",
         scope.id
     )))
 }
@@ -239,7 +239,7 @@ fn referenced_angle_revolve_construction(
     let angle_record_index = marked_record_reference(bytes, start + angle_reference)?;
     let angle = referenced_revolve_angle_owner(scope, parameter_owners, angle_record_index)?;
     let value = angle.evaluated_value().get();
-    // Direction kind 1 is read for a full turn, whose swept solid is the same in each direction (DR-646).
+    // Direction kind 1 is read for a full turn, whose swept solid is the same in each direction (DR-657).
     if bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&1)
         && (value.abs() - std::f64::consts::TAU).abs() > FULL_TURN_TOLERANCE
     {
