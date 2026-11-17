@@ -311,19 +311,39 @@ pub(super) fn decode(
             };
         }
         let values = characteristic_values.get(&id);
-        let definition = PmiDimension::new(
-            kind,
-            values.and_then(|values| values.nominal),
-            values.and_then(|values| values.limits.clone()),
-        )
-        .and_then(|dimension| {
-            dimension.with_modifiers(
-                values
-                    .map(|values| values.modifiers.clone())
-                    .unwrap_or_default(),
+        let dimension = |kind: DimensionKind| {
+            PmiDimension::new(
+                kind,
+                values.and_then(|values| values.nominal),
+                values.and_then(|values| values.limits.clone()),
             )
-        })
-        .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
+            .and_then(|dimension| {
+                dimension.with_modifiers(
+                    values
+                        .map(|values| values.modifiers.clone())
+                        .unwrap_or_default(),
+                )
+            })
+        };
+        let definition = match dimension(kind.clone()) {
+            Ok(definition) => definition,
+            Err(error) if !matches!(kind, DimensionKind::Other(_)) => {
+                let entity_kind = DimensionKind::Other(dimension_name.to_ascii_lowercase());
+                let definition = dimension(entity_kind).map_err(|error| {
+                    CodecError::malformed(format_args!("dimension #{id}: {error}"))
+                })?;
+                losses.push(StepLossCode::PmiDimensionKindQuantityMismatch.note(format!(
+                    "dimension #{id}: {error}; the dimension keeps the kind {}",
+                    dimension_name.to_ascii_lowercase()
+                )));
+                definition
+            }
+            Err(error) => {
+                return Err(CodecError::malformed(format_args!(
+                    "dimension #{id}: {error}"
+                )));
+            }
+        };
         let aspect_ids = record
             .partials
             .iter()
