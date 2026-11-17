@@ -69,7 +69,7 @@ fn empty_hole_pattern_diameter_does_not_infer_nominal_from_suffix() {
     assert!(dimension.nominal().is_none(), "source supplies no nominal");
     assert!(matches!(
         annotation.targets.as_slice(),
-        [PmiTarget::ShapeAspect { source_id }] if source_id.as_str() == "FP"
+        [cadmpeg_ir::references::InstanceTarget { entity: PmiTarget::ShapeAspect { source_id }, .. }] if source_id.as_str() == "FP"
     ));
     assert_eq!(
         decoded

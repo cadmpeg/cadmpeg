@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ids::{AppearanceId, BodyId, EdgeId, FaceId, VertexId};
+use crate::references::InstanceTarget;
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::topology::Color;
 use cadmpeg_core::text::NonBlankString;
@@ -223,8 +224,9 @@ pub enum AppearanceTarget {
 pub struct AppearanceBinding {
     /// Globally unique deterministic assignment identity.
     pub id: crate::ids::AppearanceBindingId,
-    /// Assigned topology entity.
-    pub target: AppearanceTarget,
+    /// The assigned entity, in the placed instance and the state that hold
+    /// it.
+    pub target: InstanceTarget<AppearanceTarget>,
     /// Referenced appearance asset.
     pub appearance: AppearanceId,
     /// Fusion design-entity id, such as `0_985`.
