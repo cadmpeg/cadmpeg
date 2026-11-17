@@ -3312,6 +3312,16 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
 
+### DR-791. Placement carriers of 393- and 399-byte Component Insert scopes
+
+**Question.** Which occurrence placement grammar does the 527-byte carrier of a 393- or 399-byte Component Insert scope use, and which occurrence does that scope select?
+
+**Known.** The 393-byte frame stores the fields of the 404-byte frame through its null GUID. A 399-byte frame with fourteen zero bytes after its indexed header stores the fields of the 400-byte frame through its null GUID. Both frames name a 57-byte relation whose first reference names a 527-byte placement record. That record stores, at its offset 307, a rigid matrix equal to the scope transform, and its last LP-UTF16 GUID equals the role of one external-reference entry. One such record and the legacy typed identity placement of a 261-byte scope can have the same role. The legacy typed and repeated-target placement grammars of §1.4 do not admit the 527-byte record, and the external-reference table does not place its entry from it.
+
+**Need.** The grammar of the 527-byte record before its repeated target, and an assembly that inserts one external design twice, so that the pose of the second occurrence can be checked against final geometry.
+
+**Note.** These scopes keep native Component Insert features with `feature.definition-incomplete`.
+
 ### DR-780. Spatial Sketch frames without a nested region selection
 
 **Question.** Which profiles does an Extrude sketch-profile frame on a spatial Sketch select when the frame stores no nested region selection?
