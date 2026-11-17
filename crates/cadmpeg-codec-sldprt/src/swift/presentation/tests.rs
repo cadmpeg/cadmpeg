@@ -528,7 +528,7 @@ fn tolerance(id: &str, kind: GeometricToleranceKind, magnitude: f64, target: u32
         id: pmi(id),
         name: Some(id.into()),
         visible: None,
-        targets: vec![PmiTarget::Face { face: face(target) }],
+        targets: vec![PmiTarget::Face { face: face(target) }.into()],
         definition: PmiDefinition::GeometricTolerance {
             tolerance: kind,
             magnitude: PmiMagnitude::from_parts(

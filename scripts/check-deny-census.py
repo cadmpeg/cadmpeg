@@ -12,8 +12,8 @@ the module's own declaration, or what its ``use`` declarations bring in under
 that name, and never a same-named declaration in a descendant module. A path
 that starts with a type parameter of its item is that parameter.
 Declarations without attributes are included when following a read route.
-Nongeneric type aliases are followed to their targets; other alias shapes
-fail the static check when used as a read route.
+Type aliases are followed to their targets; an alias with a ``where`` clause
+fails the static check when used as a read route.
 
 A type name is resolved by its module path, so same-named declarations in two
 modules are each checked against their own declaration. A generic parameter is
@@ -1190,10 +1190,28 @@ def deserializer_helpers(path, contracts=None):
         if len(parts) < 2:
             continue
         target = parts[1].strip()
+        if call.group("macro") == "named_optional_field":
+            # `Wire as Value` reads `Wire` and converts it; `Wire` is the
+            # reader that meets the document.
+            target = wire_before_as(target)
         if not target:
             continue
         named[name] = (target, call.group("macro") == "named_optional_field")
     return forwarders, named
+
+
+def wire_before_as(target):
+    """The type a ``Wire as Value`` argument reads, or the argument itself."""
+    depth = 0
+    for match in re.finditer(r"[<>]|\s+as\s+", target):
+        token = match.group(0)
+        if token == "<":
+            depth += 1
+        elif token == ">":
+            depth -= 1
+        elif depth == 0:
+            return target[:match.start()].strip()
+    return target
 
 
 def split_metadata(text):
@@ -2818,8 +2836,19 @@ def untagged_arms(item):
 
 
 def alias_target(item):
-    """Read a nongeneric type alias; other alias shapes need explicit proof."""
+    """Read a type alias's target; a `where` clause needs explicit proof.
+
+    A generic alias's parameters reach only its target's arguments, so the
+    target's own generic-parameter proof follows them to every instantiation
+    of the alias.
+    """
     code = SOURCE_POLICY.mask_rust_non_code(item.body)
+    header = GENERIC_HEADER_RE.match(code)
+    if header is not None:
+        end = generic_end(code, header.end() - 1)
+        if end is None:
+            return None
+        code = code[:header.end() - 1] + code[end:]
     match = re.fullmatch(
         r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?type\s+\w+\s*=\s*(.*?)\s*;\s*",
         code,

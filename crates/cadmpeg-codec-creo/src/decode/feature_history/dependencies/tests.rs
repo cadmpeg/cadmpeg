@@ -216,7 +216,7 @@ fn feature_order_fixture_preserves_parent_before_child() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_for_ordering();
     crate::decode::with_service_context(|ctx| {
-        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut Vec::new())
     })
     .expect("feature ordering");
     assert_eq!(ir.model.features[0].ordinal, 0);
@@ -249,7 +249,7 @@ fn regeneration_fixture_preserves_parent_relation() {
     let scan = regeneration_scan();
     let mut ir = reconciliation_ir_for_ordering();
     crate::decode::with_service_context(|ctx| {
-        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut Vec::new())
     })
     .expect("regeneration parent");
     let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
@@ -258,11 +258,71 @@ fn regeneration_fixture_preserves_parent_relation() {
 }
 
 #[test]
+fn recipe_parent_stored_after_its_child_keeps_its_edge_after_ordering() {
+    let scan = regeneration_scan();
+    let mut ir = reconciliation_ir_for_ordering();
+    ir.model.features.reverse();
+    for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
+        feature.ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
+    }
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut losses)
+    })
+    .expect("a later recipe parent keeps the decode");
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
+    assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(ir.model.feature_regeneration_parent(&child), Some(&parent));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn recipe_parent_that_depends_on_its_child_drops_that_edge() {
+    let scan = regeneration_scan();
+    let mut ir = reconciliation_ir_for_ordering();
+    ir.model.features.reverse();
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
+    for (ordinal, feature) in ir.model.features.iter_mut().enumerate() {
+        feature.ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
+        if feature.id == parent {
+            feature.dependencies =
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![child.clone()])
+                    .expect("one dependency");
+        }
+    }
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut losses)
+    })
+    .expect("a cyclic recipe parent keeps the decode");
+    assert_eq!(ir.model.features.len(), 2);
+    assert_eq!(ir.model.feature_regeneration_parent(&child), None);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::FeatureRegenerationParentDropped
+            .note(String::new())
+            .code
+    );
+    assert!(losses[0].message.starts_with(
+        "feature creo:model:feature#10 keeps no regeneration parent creo:model:feature#3: "
+    ));
+}
+
+#[test]
 fn reconciled_native_dependency_preserves_emitted_parent() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = reconciliation_ir_with_emitted_parent();
     crate::decode::with_service_context(|ctx| {
-        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::from([(10, vec![3])]))
+        super::reconcile_feature_links(
+            ctx,
+            &scan,
+            &mut ir,
+            &BTreeMap::from([(10, vec![3])]),
+            &mut Vec::new(),
+        )
     })
     .expect("native dependency reconciliation");
     let feature = ir
@@ -353,4 +413,47 @@ fn generated_edge_dependencies_follow_the_producer_feature() {
             .collect::<Vec<_>>(),
         vec![producer]
     );
+}
+
+#[test]
+fn recipe_parent_naming_its_own_feature_is_charged() {
+    let mut scan = regeneration_scan();
+    if let Some(depdb) = scan.features.operations[0].depdb.as_mut() {
+        depdb.parent = 10;
+    }
+    let mut ir = reconciliation_ir_for_ordering();
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut losses)
+    })
+    .expect("a self-named recipe parent keeps the decode");
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    assert_eq!(ir.model.feature_regeneration_parent(&child), None);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].message,
+        "feature creo:model:feature#10 names itself as its recipe parent"
+    );
+}
+
+#[test]
+fn recipe_parent_in_a_cycle_stored_first_keeps_its_edge() {
+    let scan = regeneration_scan();
+    let mut ir = reconciliation_ir_for_ordering();
+    let child = IrFeatureId::mint("creo:model:feature#10").expect("fixture child ID");
+    let parent = IrFeatureId::mint("creo:model:feature#3").expect("fixture parent ID");
+    for feature in &mut ir.model.features {
+        if feature.id == parent {
+            feature.dependencies =
+                cadmpeg_ir::features::DistinctMembers::try_from(vec![child.clone()])
+                    .expect("one dependency");
+        }
+    }
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| {
+        super::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new(), &mut losses)
+    })
+    .expect("a cyclic recipe parent keeps the decode");
+    assert_eq!(ir.model.feature_regeneration_parent(&child), Some(&parent));
+    assert!(losses.is_empty());
 }

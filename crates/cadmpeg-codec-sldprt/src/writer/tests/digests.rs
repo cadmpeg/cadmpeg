@@ -16,7 +16,7 @@ fn metadata_document() -> CadIr {
     ] {
         ir.model.attributes.push(SourceAttribute {
             id: AttributeId::mint(id).unwrap(),
-            target: AttributeTarget::Document,
+            target: AttributeTarget::Document.into(),
             name: name.to_owned(),
             values: Vec::new(),
         });
@@ -86,7 +86,7 @@ fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
     let mut ir = CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
         id: AttributeId::mint("sldprt:metadata:transformed_reference_enclosure#0:6").unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "transformed_reference_enclosure".into(),
         values: vec![
             AttributeValue::vector([0., 0., 0.]).unwrap(),

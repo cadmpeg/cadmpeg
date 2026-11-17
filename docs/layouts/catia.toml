@@ -190,6 +190,37 @@ path = "crates/cadmpeg-codec-catia/src/container.rs"
 contains = "pub(crate) const DIR_MAGIC: &[u8; 16] = b\"CATIA_V5 CB0001\\0\";"
 note = "The parser's directory magic matches the stated `file[diroff : diroff+16]` value."
 
+[[record]]
+name = "visible_body_roster_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/container/body_selection.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A `CATSeeBodyCont` visible-body list"
+size = 4
+note = "The count is followed by count positive u32le allocation ends and four zero u32le words."
+
+[[record.field]]
+name = "count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "<count:u32le>"
+
+[[record]]
+name = "visible_body_roster_suffix"
+parsed_by = "crates/cadmpeg-codec-catia/src/container/body_selection.rs"
+kind = "byte"
+section = "3.1"
+anchor = "<zero:u32le[4]>"
+size = 16
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "bytes[16]"
+source = "spec"
+anchor = "<zero:u32le[4]>"
+
 # --- §3.5 SurfacicReps roster rows ------------------------------------------
 
 [[record]]
