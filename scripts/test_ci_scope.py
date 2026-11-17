@@ -237,7 +237,11 @@ class ScopeTests(unittest.TestCase):
     def test_core_selects_every_codec(self):
         scope = select(ROOT, ['crates/cadmpeg-core/src/decode/context.rs'])
         full = select(ROOT, [], full=True)
-        self.assertEqual(scope['packages'], full['packages'])
+        # cadmpeg-derive is a dependency of cadmpeg-core, not a dependent.
+        self.assertEqual(
+            scope['packages'],
+            [package for package in full['packages'] if package != 'cadmpeg-derive'],
+        )
         self.assertTrue(scope['schema'])
 
     def test_fuzz_only_keeps_independent_workspace_gate(self):
