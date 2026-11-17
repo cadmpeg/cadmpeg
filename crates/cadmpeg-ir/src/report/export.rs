@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use cadmpeg_core::dialect::DialectId;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -184,7 +185,7 @@ pub enum FidelityResolution {
 }
 
 /// The model against which export entity counts were measured.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

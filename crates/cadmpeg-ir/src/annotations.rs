@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -172,7 +173,7 @@ impl Display for FieldName {
 }
 
 /// Exactness of an entity that is not byte-exact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

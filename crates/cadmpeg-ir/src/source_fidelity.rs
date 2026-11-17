@@ -18,8 +18,6 @@ use crate::unknown::UnknownRecord;
 use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-mod classes;
-
 /// Retained-byte operation for one appended native unknown record.
 const ATTACH_UNKNOWN_RECORD: &str = "attach native unknown record";
 
@@ -172,7 +170,7 @@ pub struct RetainedSourceRecord {
     bytes: RetainedBytes,
     /// Content classes the bytes can hold where the decoder keeps the record
     /// without decoding it.
-    #[serde(serialize_with = "classes::serialize")]
+    #[serde(serialize_with = "cadmpeg_core::distinct_keys::set::serialize")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
     untyped: BTreeSet<ArenaClass>,
 }
@@ -190,7 +188,7 @@ struct RetainedSourceRecordWire {
     bytes: RetainedBytes,
     /// Content classes the bytes can hold where the decoder keeps the record
     /// without decoding it.
-    #[serde(deserialize_with = "classes::deserialize")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
     untyped: BTreeSet<ArenaClass>,
 }
@@ -380,7 +378,7 @@ struct SourceFidelityWire {
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     file_digests: BTreeMap<ProductDefinitionId, Sha256Digest>,
     /// Union of the retained records' untyped classes.
-    #[serde(deserialize_with = "classes::deserialize")]
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<String>"))]
     unrepresented: BTreeSet<ArenaClass>,
     /// Sparse source locations and conversion exactness.
@@ -417,13 +415,17 @@ impl TryFrom<SourceFidelityWire> for SourceFidelity {
 /// `process`).
 #[must_use]
 pub const fn arena_class_name(class: ArenaClass) -> &'static str {
-    classes::name(class)
+    match class {
+        ArenaClass::Model => "model",
+        ArenaClass::Design => "design",
+        ArenaClass::Process => "process",
+    }
 }
 
 fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
     classes
         .iter()
-        .map(|class| classes::name(*class))
+        .map(|class| arena_class_name(*class))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -432,7 +434,7 @@ fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
 struct SourceFidelityWriteWire<'a> {
     decode_digest: &'a Sha256Digest,
     file_digests: &'a BTreeMap<ProductDefinitionId, Sha256Digest>,
-    #[serde(serialize_with = "classes::serialize")]
+    #[serde(serialize_with = "cadmpeg_core::distinct_keys::set::serialize")]
     unrepresented: BTreeSet<ArenaClass>,
     annotations: &'a Annotations,
     retained_records: &'a BTreeMap<UnknownId, RetainedSourceRecord>,

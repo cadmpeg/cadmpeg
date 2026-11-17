@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -28,7 +29,10 @@ use crate::scalar::{Angle, Length};
 pub struct Technology {
     /// The feeds by role, each in the form the source authors.
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<(FeedRole, FeedRate)>"))]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeSet<(FeedRole, FeedRate)>")
+    )]
     pub feeds: BTreeMap<FeedRole, FeedRate>,
     /// The spindle speed.
     #[serde(
@@ -401,7 +405,7 @@ pub enum Spindle {
 }
 
 /// The spindle's turning direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SpindleDirection {
@@ -467,7 +471,7 @@ pub enum CutMode {
 }
 
 /// How steps are placed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum StepRule {
@@ -518,7 +522,7 @@ pub enum Compensation {
 }
 
 /// How the junctions inside a cutting pass are cut.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CornerMode {
@@ -529,7 +533,7 @@ pub enum CornerMode {
 }
 
 /// The move from one pass to the next.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PassTransition {
@@ -558,7 +562,7 @@ pub struct Tabs {
 }
 
 /// The shape of a tab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum TabShape {
@@ -662,7 +666,7 @@ pub enum HelixRise {
 }
 
 /// The side of the part a turning pass cuts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum TurningSide {

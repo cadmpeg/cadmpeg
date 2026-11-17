@@ -10,8 +10,9 @@
 //! Every map whose key is an identity or a source-supplied name reads through
 //! one of these functions, so a restated key is refused by name. A map whose
 //! key is not a JSON string is an array of `[key, value]` pairs sorted by key
-//! ([`pairs`]), and a set is an array sorted by value ([`set`]); each refuses
-//! a repeated key or member.
+//! ([`pairs`]), and a set is an array sorted by value ([`set`]), in the order
+//! of the key or member type's `Ord`. Each reads that order as the one
+//! spelling: it refuses a repeated key or member and an array out of order.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Display};
@@ -188,11 +189,11 @@ pub mod pairs {
         out.end()
     }
 
-    /// Reads the entries and refuses a key stated twice.
+    /// Reads the entries in key order, refusing a key stated twice.
     ///
     /// # Errors
     ///
-    /// Names the restated key.
+    /// Names the restated key, or the first key out of order.
     pub fn deserialize<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
     where
         D: Deserializer<'de>,
@@ -209,7 +210,8 @@ pub mod pairs {
             type Value = BTreeMap<K, V>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("an array of [key, value] pairs with distinct keys")
+                formatter
+                    .write_str("an array of [key, value] pairs in strictly increasing key order")
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
@@ -218,6 +220,11 @@ pub mod pairs {
                     if out.contains_key(&key) {
                         return Err(A::Error::custom(format_args!(
                             "key {key:?} is stated twice"
+                        )));
+                    }
+                    if out.last_key_value().is_some_and(|(last, _)| key < *last) {
+                        return Err(A::Error::custom(format_args!(
+                            "key {key:?} is out of key order"
                         )));
                     }
                     out.insert(key, value);
@@ -250,11 +257,12 @@ pub mod set {
         serializer.collect_seq(set)
     }
 
-    /// Reads the members and refuses a member stated twice.
+    /// Reads the members in order, refusing a member stated twice.
     ///
     /// # Errors
     ///
-    /// Refuses the array at the restated member.
+    /// Refuses the array at the restated member, or at the first member out
+    /// of order.
     pub fn deserialize<'de, D, T>(deserializer: D) -> Result<BTreeSet<T>, D::Error>
     where
         D: Deserializer<'de>,
@@ -266,15 +274,19 @@ pub mod set {
             type Value = BTreeSet<T>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str("an array of distinct values")
+                formatter.write_str("an array of values in strictly increasing order")
             }
 
             fn visit_seq<A: SeqAccess<'de>>(self, mut access: A) -> Result<Self::Value, A::Error> {
                 let mut out = BTreeSet::new();
                 while let Some(value) = access.next_element::<T>()? {
-                    if !out.insert(value) {
+                    if out.contains(&value) {
                         return Err(A::Error::custom("a set states a member twice"));
                     }
+                    if out.last().is_some_and(|last| value < *last) {
+                        return Err(A::Error::custom("a set states a member out of order"));
+                    }
+                    out.insert(value);
                 }
                 Ok(out)
             }
@@ -368,9 +380,43 @@ mod tests {
                 r#"{"pairs":[[1,"a"],[1,"b"]],"set":[]}"#,
                 "key 1 is stated twice",
             ),
+            (
+                r#"{"pairs":[[1,"a"],[2,"b"],[1,"c"]],"set":[]}"#,
+                "key 1 is stated twice",
+            ),
             (r#"{"pairs":[],"set":[1,1]}"#, "a set states a member twice"),
+            (
+                r#"{"pairs":[],"set":[1,2,1]}"#,
+                "a set states a member twice",
+            ),
         ] {
             let error = serde_json::from_str::<Sorted>(wire).expect_err("a repeat is refused");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+    }
+
+    #[test]
+    fn pairs_and_sets_refuse_an_array_out_of_order() {
+        for (wire, expected) in [
+            (
+                r#"{"pairs":[[2,"b"],[1,"a"]],"set":[]}"#,
+                "key 1 is out of key order",
+            ),
+            (
+                r#"{"pairs":[[1,"a"],[3,"c"],[2,"b"]],"set":[]}"#,
+                "key 2 is out of key order",
+            ),
+            (
+                r#"{"pairs":[],"set":[2,1]}"#,
+                "a set states a member out of order",
+            ),
+            (
+                r#"{"pairs":[],"set":[1,3,2]}"#,
+                "a set states a member out of order",
+            ),
+        ] {
+            let error =
+                serde_json::from_str::<Sorted>(wire).expect_err("an unsorted array is refused");
             assert!(error.to_string().contains(expected), "{error}");
         }
     }

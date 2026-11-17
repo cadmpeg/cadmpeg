@@ -1,6 +1,7 @@
 use crate::features::NonEmptyMembers;
 use crate::ids::{NativeId, SubdId};
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -217,7 +218,7 @@ impl FormReferenceGroup {
 cadmpeg_core::named_optional_field!(deserialize_inline_type_guid, String, "inline_type_guid");
 cadmpeg_core::named_optional_field!(deserialize_reference_group, FormReferenceGroup, "group");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = include_str!("form-api-item.md")]
@@ -340,7 +341,7 @@ pub struct FormNativeList {
     pub members: Vec<FormNativeMember>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = include_str!("form-api-item.md")]
@@ -494,7 +495,7 @@ impl FormInputs {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = include_str!("form-api-item.md")]
@@ -544,7 +545,7 @@ pub struct FormMember {
 }
 cadmpeg_core::named_optional_field!(deserialize_ordinal, u32, "ordinal");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = include_str!("form-api-item.md")]
@@ -555,7 +556,7 @@ pub enum FormKnownOrder {
     Assumed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = include_str!("form-api-item.md")]

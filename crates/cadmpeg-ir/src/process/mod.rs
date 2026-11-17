@@ -25,8 +25,6 @@ pub mod technology;
 pub mod tool;
 pub mod toolpath;
 
-mod wire;
-
 #[cfg(test)]
 mod tests;
 
@@ -70,7 +68,7 @@ pub struct Choice<T> {
     /// The parameters the variant is read from. The variant's own fields bind
     /// their own parameters, and this set does not name them.
     #[serde(with = "cadmpeg_core::distinct_keys::set")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<ProcessParameterId>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<ProcessParameterId>"))]
     pub parameters: BTreeSet<ProcessParameterId>,
 }
 

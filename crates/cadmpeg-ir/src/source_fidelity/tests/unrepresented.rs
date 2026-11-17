@@ -190,6 +190,40 @@ fn every_untyped_and_unrepresented_set_is_written_and_required() {
 }
 
 #[test]
+fn a_class_set_has_one_spelling() {
+    let mut fidelity = fidelity();
+    fidelity
+        .insert_retained_record(
+            id("part"),
+            record(b"part").with_untyped([ArenaClass::Model, ArenaClass::Design]),
+        )
+        .unwrap();
+    let wire = serde_json::to_value(&fidelity).unwrap();
+    assert_eq!(
+        wire["unrepresented"],
+        serde_json::json!(["model", "design"])
+    );
+    for (stated, refusal) in [
+        (serde_json::json!(["design", "model"]), "out of order"),
+        (serde_json::json!(["model", "model", "design"]), "twice"),
+        (serde_json::json!(["model", "geometry"]), "geometry"),
+    ] {
+        let mut set = wire.clone();
+        set["unrepresented"] = stated.clone();
+        let error = serde_json::from_value::<SourceFidelity>(set)
+            .expect_err("unrepresented is written once, in class order")
+            .to_string();
+        assert!(error.contains(refusal), "{stated}: {error}");
+        let mut marks = wire.clone();
+        marks["retained_records"]["synthetic:source:record#part"]["untyped"] = stated.clone();
+        let error = serde_json::from_value::<SourceFidelity>(marks)
+            .expect_err("untyped is written once, in class order")
+            .to_string();
+        assert!(error.contains(refusal), "{stated}: {error}");
+    }
+}
+
+#[test]
 fn a_record_read_back_keeps_its_marks() {
     let marked = record(b"part").with_untyped([ArenaClass::Model]);
     let wire = serde_json::to_value(&marked).unwrap();

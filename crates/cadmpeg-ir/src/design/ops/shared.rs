@@ -2,6 +2,7 @@
 //! Types that more than one operation family shares.
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -202,7 +203,7 @@ pub enum OffsetJoin {
 
 /// The faces of a sheet-metal wall that a cut's side faces are normal to, the
 /// cut being made as if the part were flat.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SheetCutNormal {
@@ -670,7 +671,7 @@ pub struct TableRow {
 /// What the source does with the tools of an operation. Which bodies the
 /// current geometry holds is stated by the current states, never derived from
 /// this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ToolDisposition {
@@ -683,7 +684,7 @@ pub enum ToolDisposition {
 }
 
 /// One member of a pair of elements.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PairElement {
@@ -1246,7 +1247,7 @@ pub enum DriveAxis {
 }
 
 /// How a drive's output applies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum DriveMode {
@@ -1257,7 +1258,7 @@ pub enum DriveMode {
 }
 
 /// Whether a tangent joint's elements touch from outside or from inside.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum TangentContact {

@@ -10,6 +10,7 @@ use std::fmt;
 use std::num::NonZeroU32;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::de::Error as _;
@@ -17,7 +18,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::setup::JobKind;
 use super::technology::Technology;
-use super::{wire, ProcessDimension};
+use super::ProcessDimension;
 use crate::design::construction::FrameAxis;
 use crate::design::ids::{MachineId, PresetId, ToolId};
 use crate::design::names::NativeName;
@@ -114,7 +115,7 @@ pub struct Tool {
 }
 
 /// The ISO 14649-111 and 14649-121 tool classes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ToolClass {
@@ -636,6 +637,17 @@ pub enum RotaryAxes {
     },
 }
 
+/// A set of linear axes, read as a §2.5 set.
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct AxisSet(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<FrameAxis>);
+
+impl From<AxisSet> for BTreeSet<FrameAxis> {
+    fn from(AxisSet(axes): AxisSet) -> Self {
+        axes
+    }
+}
+
 /// A pocket of a machine's tool table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -686,7 +698,7 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_library, LibraryRef, "library");
 cadmpeg_core::named_optional_field!(
     deserialize_linear_axes,
-    wire::Distinct<FrameAxis> as BTreeSet<FrameAxis>,
+    AxisSet as BTreeSet<FrameAxis>,
     "linear_axes"
 );
 cadmpeg_core::named_optional_field!(deserialize_link, NonBlankString, "link");

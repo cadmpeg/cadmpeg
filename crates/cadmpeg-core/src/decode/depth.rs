@@ -3,9 +3,10 @@
 
 use std::fmt;
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// How much of the source document a decode transfers.
 ///
@@ -14,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// depth requests one [`ContentScope`](super::ContentScope), and the decoded
 /// document records the scope it holds.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, DeserializeName,
 )]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]

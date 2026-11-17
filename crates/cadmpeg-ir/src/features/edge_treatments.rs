@@ -6,12 +6,13 @@ use super::{EdgeSelection, FaceSelection};
 use crate::scalar::{
     FiniteReal, Fraction, InteriorAngle, Length, NonNegativeLength, PositiveLength,
 };
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Identified radius law form for a radius that is not yet dimensioned.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -318,7 +319,7 @@ impl VariableRadius<Fraction, NonNegativeLength> {
 }
 
 /// Identified chamfer form for a chamfer that is not yet dimensioned.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

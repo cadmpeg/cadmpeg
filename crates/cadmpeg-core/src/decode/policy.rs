@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode modes, resource ceilings, and input-proportional allowances.
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,7 @@ const MIB: u64 = 1024 * 1024;
 const GIB: u64 = 1024 * MIB;
 
 /// Whether a successful decode may report mandatory transfer losses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

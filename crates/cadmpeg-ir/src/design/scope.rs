@@ -38,7 +38,7 @@ pub struct DesignScope {
     /// The arrangements in force in the scope's base, at most one of each
     /// kind.
     #[serde(with = "cadmpeg_core::distinct_keys::set")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<ArrangementId>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<ArrangementId>"))]
     pub active_arrangements: BTreeSet<ArrangementId>,
     /// The design state of each occurrence owned by a definition the scope
     /// spans, as base values.

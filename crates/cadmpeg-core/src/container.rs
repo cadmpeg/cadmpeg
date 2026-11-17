@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use crate::decode::u64_from_index;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 macro_rules! label_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident => $label:literal,)* }) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         pub enum $name {
             $(

@@ -81,6 +81,7 @@ pub struct BundleMetadata {
     /// Stripped root identities.
     pub roots: Vec<String>,
     /// Opaque application data.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::json_object")]
     pub context: Map<String, Value>,
     /// Consent-screen inventory.
     pub manifest: Vec<ManifestEntry>,

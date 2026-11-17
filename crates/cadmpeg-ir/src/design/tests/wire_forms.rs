@@ -84,6 +84,9 @@ fn maps_are_objects_or_sorted_pairs_and_refuse_a_repeated_key() {
     let entry = json!({"native": {"codec": "sldprt", "value": {"kind": "text", "value": "Body1"}}});
     let repeated = json!([[key, entry], [key, entry]]).to_string();
     assert!(refuses::<NameTable>(&repeated).contains("twice"));
+    let later = json!({"kind": "body", "value": "test:design:body#2"});
+    let unsorted = json!([[later, entry], [key, entry]]).to_string();
+    assert!(refuses::<NameTable>(&unsorted).contains("out of key order"));
 }
 
 #[test]
@@ -114,10 +117,20 @@ fn an_omitted_optional_field_refuses_null_and_unknown_fields_are_refused() {
 }
 
 #[test]
-fn a_set_refuses_a_repeated_member() {
+fn a_set_refuses_a_repeated_member_and_an_unsorted_array() {
     let leaf = to_value(&fixtures::generated(1));
     let merged = json!({"kind": "merged", "value": {"from": [leaf, leaf]}}).to_string();
     assert!(refuses::<TopoName>(&merged).contains("twice"), "{merged}");
+    let mut merged = to_value(&TopoName::Merged {
+        feature: None,
+        from: BTreeSet::from([fixtures::generated(1), fixtures::generated(2)]),
+    });
+    merged["value"]["from"].as_array_mut().unwrap().reverse();
+    let merged = merged.to_string();
+    assert!(
+        refuses::<TopoName>(&merged).contains("out of order"),
+        "{merged}"
+    );
 }
 
 /// Every `Option` field is omitted for `None` and refuses `null`, and every
@@ -222,7 +235,7 @@ fn members_are_distinct_by_identity_not_by_witness() {
 }
 
 /// An unordered member list sorts by `(target, context, native, domain)` and
-/// an ordered one keeps source order.
+/// reads only in that order; an ordered one keeps source order.
 #[test]
 fn unordered_members_sort_by_identity_and_ordered_members_keep_order() {
     let mut late = picked(1);
@@ -246,8 +259,9 @@ fn unordered_members_sort_by_identity_and_ordered_members_keep_order() {
     let back: Picks<Unordered> = read_desktop(&written).unwrap();
     assert_eq!(serde_json::to_string(&back).unwrap(), written);
     let unsorted = serde_json::to_string(&given).unwrap();
-    let read_set: Members<Picked, Unordered> = read_desktop(&unsorted).unwrap();
-    assert_eq!(read_set.as_slice(), sorted.as_slice());
+    assert!(refuses::<Members<Picked, Unordered>>(&unsorted).contains("identity-key order"));
+    let read_list: Members<Picked, Ordered> = read_desktop(&unsorted).unwrap();
+    assert_eq!(read_list.as_slice(), given.as_slice());
     let doubled = serde_json::to_string(&vec![first.clone(), first]).unwrap();
     assert!(refuses::<Members<Picked, Unordered>>(&doubled).contains("twice"));
     assert!(refuses::<Members<Picked, Ordered>>(&doubled).contains("twice"));

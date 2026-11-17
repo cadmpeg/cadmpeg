@@ -97,6 +97,14 @@ fn sets_are_sorted_arrays_and_refuse_a_repeated_member() {
     value["linear_axes"] = json!(["x", "x"]);
     let message = refuses::<Machine>(&value.to_string());
     assert!(message.contains("twice"), "{message}");
+
+    let message = refuses::<Machine>(
+        r#"{"id":"test:process:machine#1","pockets":[],"linear_axes":["z","x"]}"#,
+    );
+    assert!(message.contains("out of order"), "{message}");
+    let sorted = r#"{"id":"test:process:machine#1","linear_axes":["x","z"],"pockets":[]}"#;
+    let machine: Machine = serde_json::from_str(sorted).expect("sorted axes read");
+    assert_eq!(serde_json::to_string(&machine).expect("writes"), sorted);
 }
 
 #[test]

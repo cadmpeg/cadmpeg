@@ -19,9 +19,13 @@
 //! member declares, `null` for each member, each stated member left out, and
 //! the first key stated twice. An edit states a second spelling when the
 //! readers accept it and the document they write back differs at that object.
+//! Every data-free enum is read with its name stated as `{"<name>": null}`,
+//! and every array that states each member once with two members swapped
+//! (see `values`).
 
 mod generate;
 mod schema;
+mod values;
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -53,6 +57,15 @@ pub struct SchemaSweepReport {
     pub unreached: Vec<String>,
     /// Each second spelling a position admits, by schema location.
     pub accepting: BTreeSet<String>,
+    /// The data-free enum definitions read with their name stated as
+    /// `{"<name>": null}`.
+    pub names: usize,
+    /// The set and pair-map positions that refuse two members swapped.
+    pub sets: usize,
+    /// The member-list positions that keep two members swapped as stated.
+    pub ordered: usize,
+    /// The value positions no probe could read, with the reason.
+    pub unprobed: Vec<String>,
     /// The documents read.
     pub reads: usize,
 }
@@ -111,6 +124,8 @@ pub(crate) fn sweep_with(
             probe(&schema, location, sample, read, &mut report);
         }
     }
+    values::probe_names(&schema, &reached.samples, read, &mut report);
+    values::probe_orders(&schema, &reached.samples, &reached.known, read, &mut report);
     report
 }
 

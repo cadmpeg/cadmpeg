@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -75,7 +76,7 @@ pub struct StateContent {
 }
 
 /// The status of stored solved values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum EvaluationStatus {
@@ -123,7 +124,7 @@ pub struct StateDelta {
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(
         feature = "schema",
-        schemars(with = "Vec<(EntityRef, Option<NameEntry>)>")
+        schemars(with = "std::collections::BTreeSet<(EntityRef, Option<NameEntry>)>")
     )]
     pub names: BTreeMap<EntityRef, Option<NameEntry>>,
     /// The definition that owns a body.
@@ -136,7 +137,7 @@ pub struct StateDelta {
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(
         feature = "schema",
-        schemars(with = "Vec<(OccurrencePath, Option<Vec<BodyId>>)>")
+        schemars(with = "std::collections::BTreeSet<(OccurrencePath, Option<Vec<BodyId>>)>")
     )]
     pub instance_bodies: BTreeMap<OccurrencePath, Option<Vec<BodyId>>>,
     /// A placed instance's placement in the state, only where it differs from
@@ -144,7 +145,7 @@ pub struct StateDelta {
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(
         feature = "schema",
-        schemars(with = "Vec<(OccurrencePath, Option<Transform>)>")
+        schemars(with = "std::collections::BTreeSet<(OccurrencePath, Option<Transform>)>")
     )]
     pub poses: BTreeMap<OccurrencePath, Option<Transform>>,
 }
@@ -165,7 +166,7 @@ pub struct CurrentState {
     #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
     #[cfg_attr(
         feature = "schema",
-        schemars(with = "Vec<(OccurrencePath, Transform)>")
+        schemars(with = "std::collections::BTreeSet<(OccurrencePath, Transform)>")
     )]
     pub poses: BTreeMap<OccurrencePath, Transform>,
     /// The status the source records for the state.

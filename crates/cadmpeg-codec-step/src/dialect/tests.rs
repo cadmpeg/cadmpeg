@@ -5,9 +5,9 @@
 #![allow(clippy::unwrap_used)]
 
 use super::{
-    dialect_loss, AlternateEncoding, StepDialect, DECLARED_FILE_SCHEMA_IDENTIFIER,
-    DECLARED_FILE_SCHEMA_IDENTIFIERS, DECLARED_IMPLEMENTATION_LEVEL, DECLARED_LONG_FORM_ARCS,
-    FORMAT, NEAREST_STRATEGY,
+    dialect_loss, schema_edition_loss, AlternateEncoding, StepDialect,
+    DECLARED_FILE_SCHEMA_IDENTIFIER, DECLARED_FILE_SCHEMA_IDENTIFIERS,
+    DECLARED_IMPLEMENTATION_LEVEL, DECLARED_LONG_FORM_ARCS, FORMAT, NEAREST_STRATEGY,
 };
 use crate::loss::StepLossCode;
 use crate::options::StepSchema;
@@ -119,6 +119,11 @@ const CASES: &[Case] = &[
         identifiers: &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }"],
         id: "step:ap242-e2",
         arcs: Some(" 1 0 10303 442 3 1 4 "),
+    },
+    Case {
+        identifiers: &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 2 1 4 }"],
+        id: "step:ap242-e2",
+        arcs: Some(" 1 0 10303 442 2 1 4 "),
     },
     Case {
         identifiers: &["AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"],
@@ -272,6 +277,29 @@ fn the_edition_unspecified_row_is_admitted_and_charges_nothing() {
     assert_eq!(matched.admission(), &Admission::Admitted);
     assert!(dialect_loss(&matched).is_none());
     assert!(!matched.declared().contains_key(DECLARED_LONG_FORM_ARCS));
+}
+
+#[test]
+fn only_the_module_edition_2_identifier_charges_the_edition_assumption() {
+    let expected = StepLossCode::SourceSchemaEditionAssumed
+        .note(String::new())
+        .code;
+    for case in CASES {
+        let exchange = exchange(case.identifiers, "2;1");
+        let matched = StepDialect::classify(&exchange);
+        let charged =
+            schema_edition_loss(&exchange, &matched).is_some_and(|note| note.code == expected);
+        assert_eq!(
+            charged,
+            case.arcs == Some(" 1 0 10303 442 2 1 4 "),
+            "FILE_SCHEMA {:?}",
+            case.identifiers
+        );
+    }
+    let other_schema = exchange(&["AUTOMOTIVE_DESIGN { 1 0 10303 442 2 1 4 }"], "2;1");
+    let matched = StepDialect::classify(&other_schema);
+    assert_eq!(matched.dialect().as_str(), "step:ap214");
+    assert!(schema_edition_loss(&other_schema, &matched).is_none());
 }
 
 #[test]

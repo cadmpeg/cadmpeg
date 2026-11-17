@@ -5,6 +5,7 @@
 //! documents store exactness and source locations in
 //! [`crate::annotations::Annotations`].
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -192,7 +193,7 @@ impl<'de> Deserialize<'de> for CodecFormat {
 /// Whether source geometry is a standalone object or a support of another object.
 /// Supports retain their mathematics when their owner cannot be projected; writers
 /// must not promote them to standalone geometry merely because they are unused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SourceGeometryRole {
@@ -606,7 +607,7 @@ impl JsonSchema for Provenance<SourceLocation> {
 }
 
 /// How an entity or field value was established from its source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

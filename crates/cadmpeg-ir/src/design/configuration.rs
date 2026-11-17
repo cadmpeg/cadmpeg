@@ -57,7 +57,7 @@ pub struct DesignConfiguration {
     /// The arrangements the configuration puts in force, each in place of the
     /// arrangement of its kind that its parent or the base names.
     #[serde(with = "cadmpeg_core::distinct_keys::set")]
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<ArrangementId>"))]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<ArrangementId>"))]
     pub active_arrangements: BTreeSet<ArrangementId>,
     /// The materials that override the base material in this configuration.
     pub materials: Vec<MaterialOverride>,

@@ -8,6 +8,7 @@ use super::{
 use crate::ids::OccurrenceId;
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::units::UnitVector3;
+use cadmpeg_derive::DeserializeName;
 use curve_driven::CurveDrivenPatternParameters;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -505,7 +506,7 @@ impl StagePatternKind {
 }
 
 /// Identified pattern form for a pattern that is not yet resolved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -822,7 +823,7 @@ pub struct PatternStage {
 }
 
 /// Combination rule for a composite-pattern stage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

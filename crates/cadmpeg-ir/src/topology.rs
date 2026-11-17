@@ -16,6 +16,7 @@ use crate::ids::{
 use crate::math::Point3;
 use crate::scalar::{Fraction, UnitBinary32};
 use crate::transform::Transform;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -102,7 +103,7 @@ impl Color {
 ///
 /// For a coedge this compares traversal with its edge curve. For a face it
 /// compares the face normal with its surface normal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -114,7 +115,7 @@ pub enum Sense {
 }
 
 /// A top-level solid, sheet, wire, or general body.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -546,7 +547,7 @@ impl<'a> IntoIterator for &'a FaceLoops {
 ///
 /// Stored on [`FaceLoops`], not on [`Loop`], so a loop cannot disagree with
 /// face membership, and carried on the wire beside the loop id it classifies.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
