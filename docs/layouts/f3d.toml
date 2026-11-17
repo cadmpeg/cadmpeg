@@ -13697,6 +13697,75 @@ source = "spec"
 anchor = "the second marked reference starts at offset 47 and names a member of the table"
 
 [[record]]
+name = "coil_short_ten_reference_compact_scope"
+kind = "byte"
+section = "3.1"
+anchor = "The 454-byte ten-reference `CoilPrimitive` form has the compact prologue"
+size = 454
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "The shared compact prologue fields precede the control bytes."
+
+[[record.field]]
+name = "control_bytes"
+offset = 56
+type = "bytes[2]"
+value = [1, 1]
+source = "spec"
+anchor = "control bytes at offsets 56 and 57 are `1` and `1`"
+
+[[record.gap]]
+offset = 58
+size = 170
+note = "The compact section lanes precede the reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 228
+type = "u32"
+value = 10
+source = "spec"
+anchor = "u32 reference count at offset 228 is ten"
+
+[[record.field]]
+name = "reference_members"
+offset = 232
+type = "bytes[110]"
+source = "spec"
+anchor = "ten marked references start at offset 232"
+
+[[record.field]]
+name = "history_state_identity"
+offset = 342
+type = "u32"
+source = "spec"
+anchor = "u32 history-state identity is at offset 342"
+
+[[record.field]]
+name = "feature_kind_length"
+offset = 346
+type = "u32"
+value = 13
+source = "spec"
+anchor = "u32 feature-kind length at offset 346 is thirteen"
+
+[[record.field]]
+name = "feature_kind"
+offset = 350
+type = "bytes[26]"
+source = "spec"
+anchor = "UTF-16LE kind text at offset 350"
+
+[[record.field]]
+name = "scope_trailer"
+offset = 376
+type = "bytes[78]"
+source = "spec"
+anchor = "78-byte scope trailer at offset 376"
+
+[[record]]
 name = "coil_long_scope_matrix"
 kind = "byte"
 section = "3.1"
@@ -17870,11 +17939,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "the pitch marker at 21"
+anchor = "the modeled flag at 21"
 
 [[record.field]]
 name = "pitch"
@@ -17973,11 +18042,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "its scalar lanes use pitch marker `0`"
+anchor = "its scalar lanes use the same offsets as the compact tail"
 
 [[record.field]]
 name = "pitch"
@@ -18030,11 +18099,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "its scalar lanes use pitch marker `0`"
+anchor = "its scalar lanes use the same offsets as the compact tail"
 
 [[record.field]]
 name = "pitch"

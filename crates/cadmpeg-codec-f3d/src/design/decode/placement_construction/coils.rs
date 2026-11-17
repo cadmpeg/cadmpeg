@@ -19,23 +19,29 @@ fn resolved_placement(
     placements: &[DesignPlacementConstruction],
 ) -> Option<DesignCoilPlacement> {
     if scope.kind() != DesignFeatureKind::CoilPrimitive
-        || scope.frame_length() != 431
-        || scope.reference_members().len() != 8
         || scope.coil_placement().is_some()
         || scope.coil_transform().is_some()
     {
         return None;
     }
+    let (selection_ordinal, placement_ordinal, version) = if scope.coil_has_short_compact_prologue()
+    {
+        (2, 3, 9)
+    } else if scope.frame_length() == 431 && scope.reference_members().len() == 8 {
+        (0, 1, 8)
+    } else {
+        return None;
+    };
     let stream = native_stream(&scope.id)?;
-    let selection_index = *scope.reference_members().values().next()?;
-    let placement_index = *scope.reference_members().values().nth(1)?;
+    let selection_index = *scope.reference_members().values().nth(selection_ordinal)?;
+    let placement_index = *scope.reference_members().values().nth(placement_ordinal)?;
     let mut candidates = placements.iter().filter(|placement| {
         native_stream(&placement.id) == Some(stream)
             && placement.record_index == u64::from(placement_index)
     });
     let placement = candidates.next()?;
     if candidates.next().is_some()
-        || placement.type_version != 8
+        || placement.type_version != version
         || placement.fields.inferred_x_axis.value != 0
         || placement.fields.inferred_z_axis.value != 0
     {
