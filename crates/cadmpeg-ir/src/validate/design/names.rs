@@ -391,18 +391,25 @@ struct LayoutCoordinates<'a> {
 
 /// The values one coordinate of an instance index takes.
 enum Coordinate<'a> {
-    /// Every value from the first to the second, both included.
-    Range(i64, i64),
+    /// Every value from the first to the second, both included; `None`
+    /// bounds nothing on its side.
+    Range(Option<i64>, Option<i64>),
     /// A row's `instance` of a table.
     Row(&'a DimensionTable),
 }
 
 impl Coordinate<'_> {
-    const ANY: Self = Self::Range(i64::MIN, i64::MAX);
+    const ANY: Self = Self::Range(None, None);
+
+    const fn between(low: i64, high: i64) -> Self {
+        Self::Range(Some(low), Some(high))
+    }
 
     fn admits(&self, value: i64) -> bool {
         match self {
-            Self::Range(low, high) => (*low..=*high).contains(&value),
+            Self::Range(low, high) => {
+                low.is_none_or(|low| low <= value) && high.is_none_or(|high| value <= high)
+            }
             Self::Row(table) => table
                 .rows
                 .iter()
@@ -442,25 +449,23 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
             PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run)),
             PatternLayout::Points { points, .. } => {
                 let last = match &points.picks {
-                    Picks::Named(picks) => {
-                        i64::try_from(picks.as_slice().len()).unwrap_or(i64::MAX)
-                    }
-                    _ => i64::MAX,
+                    Picks::Named(picks) => i64::try_from(picks.as_slice().len()).ok(),
+                    _ => None,
                 };
-                coordinates.push(Coordinate::Range(1, last));
+                coordinates.push(Coordinate::Range(Some(1), last));
             }
             PatternLayout::Dimensions(runs) => {
                 coordinates.extend(runs.iter().map(|run| {
                     literal(&run.count).map_or(Coordinate::ANY, |count| {
-                        Coordinate::Range(0, i64::from(count) - 1)
+                        Coordinate::between(0, i64::from(count) - 1)
                     })
                 }));
             }
             PatternLayout::Table(table) => coordinates.push(Coordinate::Row(table)),
-            PatternLayout::Mirror { .. } => coordinates.push(Coordinate::Range(1, 1)),
+            PatternLayout::Mirror { .. } => coordinates.push(Coordinate::between(1, 1)),
             PatternLayout::Scale { count, .. } => {
-                let last = literal(count).map_or(i64::MAX, |count| i64::from(count) - 1);
-                coordinates.push(Coordinate::Range(1, last));
+                let last = literal(count).map(|count| i64::from(count) - 1);
+                coordinates.push(Coordinate::Range(Some(1), last));
             }
             PatternLayout::Composite(stages) => stack.extend(stages.iter().rev()),
             PatternLayout::Follow(_) | PatternLayout::Chain(_) | PatternLayout::Native(_) => {
@@ -484,27 +489,25 @@ fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
     };
     match &run.sides {
         Some(RunSides::One) => seed.map_or(Coordinate::ANY, |seed| {
-            Coordinate::Range(-seed, last - seed)
+            Coordinate::between(-seed, last - seed)
         }),
-        Some(RunSides::Against) => {
-            seed.map_or(Coordinate::ANY, |seed| Coordinate::Range(seed - last, seed))
-        }
+        Some(RunSides::Against) => seed.map_or(Coordinate::ANY, |seed| {
+            Coordinate::between(seed - last, seed)
+        }),
         Some(RunSides::Symmetric {
             count: Some(SymmetricMeasure::Total),
             ..
         }) => {
             let reverse = last.div_euclid(2);
-            Coordinate::Range(-reverse, last - reverse)
+            Coordinate::between(-reverse, last - reverse)
         }
-        Some(RunSides::Symmetric { .. }) => Coordinate::Range(-last, last),
-        Some(RunSides::Reverse(reverse)) => {
-            let low = spacing_count(reverse).map_or(i64::MIN, |count| 1 - i64::from(count));
-            seed.map_or(Coordinate::ANY, |seed| {
-                Coordinate::Range(low.min(-seed), last - seed)
-            })
-        }
+        Some(RunSides::Symmetric { .. }) => Coordinate::between(-last, last),
+        Some(RunSides::Reverse(reverse)) => seed.map_or(Coordinate::ANY, |seed| {
+            let low = spacing_count(reverse).map(|count| (1 - i64::from(count)).min(-seed));
+            Coordinate::Range(low, Some(last - seed))
+        }),
         None => seed.map_or(Coordinate::ANY, |seed| {
-            Coordinate::Range(-last.max(seed), last.max(seed))
+            Coordinate::between(-last.max(seed), last.max(seed))
         }),
     }
 }
