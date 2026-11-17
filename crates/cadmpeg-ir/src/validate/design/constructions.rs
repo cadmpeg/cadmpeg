@@ -1,0 +1,862 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The rules on constructions (§5.9, part 10 "Constructions").
+//!
+//! Each rule reads one construction, nested ones included, and the inputs
+//! it states; an input whose role the decoder did not determine is kept and
+//! checked against nothing. Where an input's reference is a rule selection
+//! or an unread one, its pick count is not stated and is not checked.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::design::construction::{
+    CurveValue, FrameValue, InputReference, PlaneValue, PostStep, Relation, ScalarDimension,
+    Subject,
+};
+use crate::design::dimension::Dimension;
+use crate::design::feature::FeatureOperation;
+use crate::design::names::NameKind;
+use crate::design::ops::datum::{Datum, DatumElement};
+use crate::design::selection::{
+    DatumPart, PickContext, PickTarget, Picked, Picks, PrincipalEntity,
+};
+use crate::math::{Point3, Vector3};
+use crate::report::check::{Check, Finding};
+use crate::report::Severity;
+use crate::units::UnitVector3;
+
+use super::index::{DesignIndex, Key};
+use super::names::derived_kinds;
+use super::walk::{ConstructionView, Kind};
+use super::{native_text, record_finding, Held, Holder};
+
+/// Checks every construction of the design.
+pub(super) fn check(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut Vec<Finding>) {
+    let tolerances = &index.ir.tolerances;
+    let geometry = Geometry {
+        linear: tolerances.linear.get(),
+        angular: tolerances.angular.get(),
+    };
+    for record in held {
+        let at = record.holder.record();
+        let scope = match record.holder {
+            Holder::Record { scope, .. } => scope.map(|scope| scope.as_str()),
+            Holder::Definition(_) | Holder::Owned { .. } => record
+                .holder
+                .feature()
+                .and_then(|feature| index.scope_of(Key::Feature(feature)))
+                .map(|scope| scope.as_str()),
+        };
+        for &construction in &record.constructions {
+            check_construction(index, construction, scope, geometry, at, findings);
+        }
+    }
+    for feature in &index.ir.design.features {
+        let at = feature.id.as_str();
+        let primitive = match &feature.definition.operation {
+            FeatureOperation::Primitive(primitive) => primitive.placement.as_ref(),
+            _ => None,
+        };
+        for placement in feature.placement.as_deref().into_iter().chain(primitive) {
+            if placement.inputs.is_empty()
+                && placement.after.iter().all(literal_step)
+                && placement.resolved.as_ref().is_some_and(is_identity)
+            {
+                record_finding(
+                    findings,
+                    Check::Spelling,
+                    Severity::Error,
+                    Some(at),
+                    format_args!("a placement with no inputs and no bound step resolves to the identity; it is absent"),
+                );
+            }
+        }
+        if let FeatureOperation::Datum(datum) = &feature.definition.operation {
+            check_datum_link(datum, at, findings);
+        }
+    }
+    check_principal_datums(index, held, findings);
+}
+
+#[derive(Clone, Copy)]
+struct Geometry {
+    linear: f64,
+    angular: f64,
+}
+
+fn check_construction(
+    index: &DesignIndex<'_>,
+    construction: ConstructionView<'_>,
+    scope: Option<&str>,
+    geometry: Geometry,
+    at: &str,
+    findings: &mut Vec<Finding>,
+) {
+    let kind = construction.kind();
+    let mut error = |check, message: std::fmt::Arguments<'_>| {
+        record_finding(findings, check, Severity::Error, Some(at), message);
+    };
+    let inputs = construction.inputs();
+    let after = construction.after();
+    if inputs.is_empty() && after.is_empty() && !construction.has_resolved() {
+        error(
+            Check::GeometricConsistency,
+            format_args!(
+                "a {} construction has no input, no step, and no resolved value",
+                kind.name()
+            ),
+        );
+    }
+    if construction.solution() == Some(0) {
+        error(
+            Check::GeometricConsistency,
+            format_args!("a construction's solution is 0; it counts from 1"),
+        );
+    }
+    for step in after {
+        match step {
+            PostStep::Flip(Dimension::Literal(false)) => {
+                error(
+                    Check::Spelling,
+                    format_args!("a Flip step with a literal false is absent"),
+                );
+            }
+            PostStep::AxisRotate { axis, .. }
+                if axis
+                    .iter()
+                    .all(|component| matches!(component, Dimension::Literal(_))) =>
+            {
+                error(
+                    Check::Spelling,
+                    format_args!(
+                        "an AxisRotate step binds no axis component; it is a Fixed and a Rotate"
+                    ),
+                );
+            }
+            _ => {}
+        }
+    }
+    let resolved_in = construction.resolved_in();
+    if inputs.is_empty() && after.is_empty() && !resolved_in.is_empty() {
+        error(
+            Check::GeometricConsistency,
+            format_args!("a construction with no inputs and no steps has resolved_in values"),
+        );
+    }
+    if let Some(scope) = scope {
+        let active = index
+            .scopes
+            .get(scope)
+            .and_then(|record| record.active_configuration.as_ref());
+        for configuration in resolved_in {
+            let other = index
+                .ir
+                .design
+                .configurations
+                .iter()
+                .any(|record| record.id == *configuration && record.scope.as_str() == scope);
+            if !other || active == Some(configuration) {
+                error(
+                    Check::ReferentialIntegrity,
+                    format_args!(
+                        "resolved_in names {}, which is not a configuration of the construction's scope other than its active one",
+                        configuration.as_str()
+                    ),
+                );
+            }
+        }
+    }
+    for input in inputs {
+        let Some(role) = &input.role else {
+            continue;
+        };
+        let (subject, relation) = (role.subject, &role.relation);
+        if !subject_admitted(kind, subject) {
+            error(
+                Check::GeometricConsistency,
+                format_args!("a {} construction has a {subject:?} subject", kind.name()),
+            );
+        }
+        if subject == Subject::ZAxis
+            && matches!(
+                relation,
+                Relation::Parallel | Relation::Perpendicular | Relation::Tangent
+            )
+        {
+            error(
+                Check::Spelling,
+                format_args!(
+                    "a ZAxis subject carries a {relation:?} relation; the whole carries it"
+                ),
+            );
+        }
+        if let Relation::Native(text) = relation {
+            if !native_text(text.as_str()) {
+                error(
+                    Check::Spelling,
+                    format_args!(
+                        "native relation {:?} is not written codec:name",
+                        text.as_str()
+                    ),
+                );
+            }
+        }
+        if !value_admitted(
+            kind,
+            subject,
+            relation,
+            input.value.as_ref(),
+            input.reference.is_some(),
+        ) {
+            error(
+                Check::GeometricConsistency,
+                format_args!(
+                    "a {relation:?} input of a {} construction has a value it does not take",
+                    kind.name()
+                ),
+            );
+        }
+        if let Some(ScalarDimension::PlaneEquation { a, b, c, .. }) = &input.value {
+            let zero = |value: &Dimension<crate::scalar::FiniteReal>| matches!(value, Dimension::Literal(value) if value.get() == 0.0);
+            if zero(a) && zero(b) && zero(c) {
+                error(
+                    Check::GeometricConsistency,
+                    format_args!("a PlaneEquation's literal a, b, and c are all zero"),
+                );
+            }
+        }
+        if matches!(relation, Relation::Radius | Relation::Limit) && kind != Kind::Curve {
+            error(
+                Check::GeometricConsistency,
+                format_args!(
+                    "a {relation:?} input occurs on a {} construction",
+                    kind.name()
+                ),
+            );
+        }
+        if matches!(relation, Relation::Fold)
+            && (!matches!(kind, Kind::Plane | Kind::Frame) || subject != Subject::Whole)
+        {
+            error(
+                Check::GeometricConsistency,
+                format_args!("a Fold input is not the Whole of a plane or frame"),
+            );
+        }
+        if input.reversed.is_some() && !reversible(relation) {
+            error(
+                Check::GeometricConsistency,
+                format_args!("a {relation:?} input states reversed"),
+            );
+        }
+        match &input.reference {
+            Some(InputReference::Picks(selection)) => {
+                if let Picks::Named(picks) = &selection.picks {
+                    let picks = picks.as_slice();
+                    if !pick_count_admitted(relation, picks.len()) {
+                        error(
+                            Check::GeometricConsistency,
+                            format_args!(
+                                "a {relation:?} input's reference holds {} picks",
+                                picks.len()
+                            ),
+                        );
+                    }
+                    if matches!(relation, Relation::Coordinates)
+                        && picks
+                            .first()
+                            .is_some_and(|first| !picks_frame(index, first))
+                    {
+                        error(
+                            Check::GeometricConsistency,
+                            format_args!("a Coordinates reference does not pick a frame first"),
+                        );
+                    }
+                    if matches!(input.value, Some(ScalarDimension::ParameterRatio(_)))
+                        && !(matches!(relation, Relation::AtParameter)
+                            && matches!(picks, [one] if picks_curve(index, one)))
+                    {
+                        error(
+                            Check::GeometricConsistency,
+                            format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
+                        );
+                    }
+                    if subject == Subject::Whole
+                        && matches!(relation, Relation::Coincident)
+                        && kind != Kind::Frame
+                        && matches!(picks, [one] if picks_whole_frame(index, one))
+                    {
+                        error(
+                            Check::GeometricConsistency,
+                            format_args!(
+                                "a Whole Coincident input on a whole frame is on a {} construction",
+                                kind.name()
+                            ),
+                        );
+                    }
+                }
+            }
+            Some(InputReference::Built(built)) => {
+                if matches!(relation, Relation::Fold | Relation::Centroid) {
+                    error(
+                        Check::GeometricConsistency,
+                        format_args!(
+                            "a nested construction is the reference of a {relation:?} input"
+                        ),
+                    );
+                }
+                if subject == Subject::Whole
+                    && matches!(relation, Relation::Coincident)
+                    && kind != Kind::Frame
+                {
+                    if let crate::design::construction::AnyConstruction::Frame(_) = built.as_ref() {
+                        error(
+                            Check::GeometricConsistency,
+                            format_args!(
+                                "a Whole Coincident input on a whole frame is on a {} construction",
+                                kind.name()
+                            ),
+                        );
+                    }
+                }
+                if matches!(input.value, Some(ScalarDimension::ParameterRatio(_)))
+                    && !(matches!(relation, Relation::AtParameter)
+                        && matches!(
+                            built.as_ref(),
+                            crate::design::construction::AnyConstruction::Curve(_)
+                        ))
+                {
+                    error(
+                        Check::GeometricConsistency,
+                        format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
+                    );
+                }
+            }
+            None => {
+                if matches!(input.value, Some(ScalarDimension::ParameterRatio(_))) {
+                    error(
+                        Check::GeometricConsistency,
+                        format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
+                    );
+                }
+            }
+        }
+    }
+    if matches!(kind, Kind::Plane | Kind::Frame) && leading_offset(index, construction) {
+        error(
+            Check::Spelling,
+            format_args!("a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
+        );
+    }
+    check_values(construction, geometry, at, findings);
+}
+
+const fn subject_admitted(kind: Kind, subject: Subject) -> bool {
+    match kind {
+        Kind::Point | Kind::Direction | Kind::Axis => matches!(subject, Subject::Whole),
+        Kind::Plane => !matches!(subject, Subject::ZAxis),
+        Kind::Frame => true,
+        Kind::Curve => matches!(subject, Subject::Whole | Subject::Origin),
+    }
+}
+
+/// The values each relation takes (part 10 "Values by relation").
+fn value_admitted(
+    kind: Kind,
+    subject: Subject,
+    relation: &Relation,
+    value: Option<&ScalarDimension>,
+    referenced: bool,
+) -> bool {
+    use ScalarDimension as V;
+    match relation {
+        Relation::Offset => matches!(value, Some(V::Length(_))),
+        Relation::Angle => matches!(value, Some(V::Angle(_))),
+        Relation::AtParameter => matches!(
+            value,
+            Some(V::Ratio(_) | V::ParameterRatio(_) | V::Length(_) | V::Uv { .. })
+        ),
+        Relation::Coordinates => match (kind, subject) {
+            (Kind::Point, Subject::Whole) | (_, Subject::Origin) => {
+                matches!(value, Some(V::Position { .. }))
+            }
+            (Kind::Direction | Kind::Axis, Subject::Whole) => {
+                matches!(value, Some(V::Components { .. }))
+            }
+            (Kind::Plane, Subject::Whole) => matches!(value, Some(V::PlaneEquation { .. })),
+            _ => matches!(
+                value,
+                Some(V::Position { .. } | V::Components { .. } | V::PlaneEquation { .. })
+            ),
+        },
+        Relation::Midway => matches!(value, None | Some(V::Ratio(_))),
+        Relation::Radius => matches!(value, Some(V::Length(_))) || value.is_none() && referenced,
+        Relation::Limit => {
+            matches!(value, Some(V::Length(_) | V::Angle(_))) || value.is_none() && referenced
+        }
+        Relation::Native(_) => true,
+        Relation::Coincident
+        | Relation::Parallel
+        | Relation::Perpendicular
+        | Relation::Tangent
+        | Relation::Center
+        | Relation::Centroid
+        | Relation::AxisOf
+        | Relation::Projection
+        | Relation::PrincipalNormal
+        | Relation::Binormal
+        | Relation::Fold => value.is_none(),
+    }
+}
+
+const fn reversible(relation: &Relation) -> bool {
+    matches!(
+        relation,
+        Relation::Parallel
+            | Relation::Perpendicular
+            | Relation::Tangent
+            | Relation::AxisOf
+            | Relation::Coincident
+            | Relation::PrincipalNormal
+            | Relation::Binormal
+            | Relation::AtParameter
+            | Relation::Native(_)
+    )
+}
+
+/// The number of picks each relation's reference holds.
+const fn pick_count_admitted(relation: &Relation, count: usize) -> bool {
+    match relation {
+        Relation::Midway => matches!(count, 1 | 2),
+        Relation::Centroid => count >= 1,
+        Relation::Fold => count == 4,
+        Relation::AtParameter | Relation::Coordinates => matches!(count, 1 | 2),
+        Relation::Native(_) => true,
+        _ => count == 1,
+    }
+}
+
+/// The element of a datum feature: `None` where the operation is not
+/// stated (unresolved, native, or no such feature), `Some(None)` where the
+/// feature is not a datum.
+fn datum_element<'a>(index: &DesignIndex<'a>, feature: &str) -> Option<Option<&'a DatumElement>> {
+    match index.operation(feature) {
+        Some(FeatureOperation::Datum(datum)) => Some(Some(&datum.element)),
+        Some(FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. }) | None => None,
+        Some(_) => Some(None),
+    }
+}
+
+/// Whether a pick may pick a coordinate frame: a frame datum, a principal or
+/// sketch frame, or a pick whose target is not stated.
+fn picks_frame(index: &DesignIndex<'_>, pick: &Picked) -> bool {
+    match &pick.target {
+        PickTarget::Datum { feature, part } => match part {
+            Some(DatumPart::Principal(entity)) => *entity == PrincipalEntity::Frame,
+            Some(DatumPart::Point(_)) => false,
+            None => matches!(
+                datum_element(index, feature.as_str()),
+                None | Some(Some(DatumElement::Frame(_)))
+            ),
+        },
+        PickTarget::Principal { entity, .. } | PickTarget::SketchFrame { entity, .. } => {
+            *entity == PrincipalEntity::Frame
+        }
+        PickTarget::Native { .. } => true,
+        _ => false,
+    }
+}
+
+/// Whether a pick is known to pick a whole frame.
+fn picks_whole_frame(index: &DesignIndex<'_>, pick: &Picked) -> bool {
+    match &pick.target {
+        PickTarget::Datum {
+            feature,
+            part: None,
+        } => {
+            matches!(
+                datum_element(index, feature.as_str()),
+                Some(Some(DatumElement::Frame(_)))
+            )
+        }
+        PickTarget::Datum {
+            part: Some(DatumPart::Principal(entity)),
+            ..
+        }
+        | PickTarget::Principal { entity, .. }
+        | PickTarget::SketchFrame { entity, .. } => *entity == PrincipalEntity::Frame,
+        _ => false,
+    }
+}
+
+/// Whether a pick may pick one edge or curve.
+fn picks_curve(index: &DesignIndex<'_>, pick: &Picked) -> bool {
+    match &pick.target {
+        PickTarget::Entity(name) => {
+            let kinds = derived_kinds(name);
+            kinds.len() == 1
+                && kinds
+                    .first()
+                    .is_some_and(|kind| matches!(kind, NameKind::Edge | NameKind::Curve))
+        }
+        PickTarget::SketchEntity(_)
+        | PickTarget::SpatialSketchEntity(_)
+        | PickTarget::Native { .. } => true,
+        PickTarget::Datum {
+            feature,
+            part: None,
+        } => {
+            matches!(
+                datum_element(index, feature.as_str()),
+                None | Some(Some(DatumElement::Axis(_)))
+            )
+        }
+        _ => false,
+    }
+}
+
+/// Whether a pick is known to pick a plane.
+fn picks_plane(index: &DesignIndex<'_>, pick: &Picked) -> bool {
+    let planar = |entity: &PrincipalEntity| {
+        matches!(
+            entity,
+            PrincipalEntity::XyPlane | PrincipalEntity::XzPlane | PrincipalEntity::YzPlane
+        )
+    };
+    match &pick.target {
+        PickTarget::Datum {
+            feature,
+            part: None,
+        } => {
+            matches!(
+                datum_element(index, feature.as_str()),
+                Some(Some(DatumElement::Plane(_)))
+            )
+        }
+        PickTarget::Datum {
+            part: Some(DatumPart::Principal(entity)),
+            ..
+        }
+        | PickTarget::Principal { entity, .. }
+        | PickTarget::SketchFrame { entity, .. } => planar(entity),
+        _ => false,
+    }
+}
+
+/// Whether a plane or frame whose whole is `Coincident` with one planar
+/// reference begins its steps with a translation along Z.
+fn leading_offset(index: &DesignIndex<'_>, construction: ConstructionView<'_>) -> bool {
+    let planar_whole = construction.inputs().iter().any(|input| {
+        let whole_coincident = input
+            .role
+            .as_ref()
+            .is_some_and(|role| role.subject == Subject::Whole && matches!(role.relation, Relation::Coincident));
+        whole_coincident
+            && match &input.reference {
+                Some(InputReference::Picks(selection)) => {
+                    matches!(&selection.picks, Picks::Named(picks) if matches!(picks.as_slice(), [one] if picks_plane(index, one)))
+                }
+                Some(InputReference::Built(built)) => {
+                    matches!(built.as_ref(), crate::design::construction::AnyConstruction::Plane(_))
+                }
+                None => false,
+            }
+    });
+    planar_whole
+        && matches!(
+            construction.after().first(),
+            Some(PostStep::Translate {
+                axis: crate::design::construction::FrameAxis::Z,
+                ..
+            })
+        )
+}
+
+const fn literal_step(step: &PostStep) -> bool {
+    match step {
+        PostStep::Flip(dimension) => matches!(dimension, Dimension::Literal(_)),
+        PostStep::Translate { distance, .. } => matches!(distance, Dimension::Literal(_)),
+        PostStep::Rotate { angle, .. } => matches!(angle, Dimension::Literal(_)),
+        PostStep::AxisRotate { axis, angle } => {
+            matches!(angle, Dimension::Literal(_))
+                && matches!(axis[0], Dimension::Literal(_))
+                && matches!(axis[1], Dimension::Literal(_))
+                && matches!(axis[2], Dimension::Literal(_))
+        }
+        PostStep::Fixed(_) => true,
+    }
+}
+
+fn is_identity(frame: &FrameValue) -> bool {
+    let origin = frame.origin.get();
+    origin.x == 0.0
+        && origin.y == 0.0
+        && origin.z == 0.0
+        && frame.x_axis == UnitVector3::X_AXIS
+        && frame.y_axis == UnitVector3::Y_AXIS
+        && frame.z_axis == UnitVector3::Z_AXIS
+}
+
+/// A datum with a link has a construction with one `Coincident` input or
+/// none; its link has no source, and a document only where the construction
+/// has no input.
+fn check_datum_link(datum: &Datum, at: &str, findings: &mut Vec<Finding>) {
+    let Some(link) = &datum.link else {
+        return;
+    };
+    let inputs: Vec<usize> = match &datum.element {
+        DatumElement::Points(points) => points.iter().map(|point| point.inputs.len()).collect(),
+        DatumElement::Axis(axis) => vec![axis.inputs.len()],
+        DatumElement::Plane(plane) => vec![plane.inputs.len()],
+        DatumElement::Frame(frame) => vec![frame.inputs.len()],
+    };
+    let coincident = |inputs: &[crate::design::construction::ConstructionInput]| match inputs {
+        [] => true,
+        [one] => one
+            .role
+            .as_ref()
+            .is_none_or(|role| matches!(role.relation, Relation::Coincident)),
+        _ => false,
+    };
+    let shapes = match &datum.element {
+        DatumElement::Points(points) => points.iter().all(|point| coincident(&point.inputs)),
+        DatumElement::Axis(axis) => coincident(&axis.inputs),
+        DatumElement::Plane(plane) => coincident(&plane.inputs),
+        DatumElement::Frame(frame) => coincident(&frame.inputs),
+    };
+    let mut error = |message: std::fmt::Arguments<'_>| {
+        record_finding(
+            findings,
+            Check::GeometricConsistency,
+            Severity::Error,
+            Some(at),
+            message,
+        );
+    };
+    if !shapes {
+        error(format_args!(
+            "a linked datum's construction has an input other than one Coincident input"
+        ));
+    }
+    if link.source.is_some() {
+        error(format_args!(
+            "a linked datum's link states a source; its construction's input picks it"
+        ));
+    }
+    if link.document.is_some() && inputs.iter().any(|count| *count > 0) {
+        error(format_args!(
+            "a linked datum's link states a document while its construction has an input"
+        ));
+    }
+}
+
+/// A datum feature whose construction is one `Coincident` input on a
+/// `Principal` entity, with no steps, is the only one for that entity and
+/// container, and every other pick of the entity in its definition picks
+/// the feature as `Datum` (§6.1, §6.2).
+fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut Vec<Finding>) {
+    let mut restating: BTreeMap<(&str, PrincipalEntity, Option<&str>), Vec<&str>> = BTreeMap::new();
+    for feature in &index.ir.design.features {
+        let FeatureOperation::Datum(datum) = &feature.definition.operation else {
+            continue;
+        };
+        let Some(scope) = index.scope_of(Key::Feature(feature.id.as_str())) else {
+            continue;
+        };
+        if let Some((entity, container)) = principal_restatement(datum) {
+            restating
+                .entry((scope.as_str(), entity, container))
+                .or_default()
+                .push(feature.id.as_str());
+        }
+    }
+    for ((_, entity, _), features) in &restating {
+        if let [first, others @ ..] = features.as_slice() {
+            for other in others {
+                record_finding(
+                    findings,
+                    Check::Spelling,
+                    Severity::Error,
+                    Some(other),
+                    format_args!("datum feature restates principal {entity:?}, which datum feature {first} already restates"),
+                );
+            }
+        }
+    }
+    let restated: BTreeSet<(&str, PrincipalEntity, Option<&str>)> =
+        restating.keys().copied().collect();
+    for record in held {
+        let Some(feature) = record.holder.feature() else {
+            continue;
+        };
+        let Some(definition) = index.owner_definition(feature) else {
+            continue;
+        };
+        let own: BTreeSet<&str> = restating.values().flatten().copied().collect();
+        if own.contains(feature) {
+            continue;
+        }
+        for selection in &record.selections {
+            for pick in selection.picks() {
+                let PickTarget::Principal { entity, container } = &pick.target else {
+                    continue;
+                };
+                if matches!(
+                    pick.context,
+                    Some(
+                        PickContext::Occurrence(_)
+                            | PickContext::Definition(_)
+                            | PickContext::InContext { .. }
+                    )
+                ) {
+                    continue;
+                }
+                let key = (
+                    definition.as_str(),
+                    *entity,
+                    container.as_ref().map(|container| container.as_str()),
+                );
+                if restated.contains(&key) {
+                    record_finding(
+                        findings,
+                        Check::Spelling,
+                        Severity::Error,
+                        Some(record.holder.record()),
+                        format_args!("a pick names principal {entity:?}, which a datum feature restates; it picks that feature as Datum"),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The principal entity and container a datum restates.
+fn principal_restatement(datum: &Datum) -> Option<(PrincipalEntity, Option<&str>)> {
+    let (inputs, after) = match &datum.element {
+        DatumElement::Axis(axis) => (&axis.inputs, &axis.after),
+        DatumElement::Plane(plane) => (&plane.inputs, &plane.after),
+        DatumElement::Frame(frame) => (&frame.inputs, &frame.after),
+        DatumElement::Points(points) => match points.as_slice() {
+            [point] => (&point.inputs, &point.after),
+            _ => return None,
+        },
+    };
+    let [input] = inputs.as_slice() else {
+        return None;
+    };
+    if !after.is_empty()
+        || !input
+            .role
+            .as_ref()
+            .is_some_and(|role| matches!(role.relation, Relation::Coincident))
+    {
+        return None;
+    }
+    let Some(InputReference::Picks(selection)) = &input.reference else {
+        return None;
+    };
+    let Picks::Named(picks) = &selection.picks else {
+        return None;
+    };
+    match picks.as_slice() {
+        [Picked {
+            target: PickTarget::Principal { entity, container },
+            context: None,
+            ..
+        }] => Some((
+            *entity,
+            container.as_ref().map(|container| container.as_str()),
+        )),
+        _ => None,
+    }
+}
+
+/// The resolved values of a construction are the values of its kind:
+/// a plane's x axis perpendicular to its normal, a frame orthonormal and
+/// right-handed, an arc's ends on its circle.
+fn check_values(
+    construction: ConstructionView<'_>,
+    geometry: Geometry,
+    at: &str,
+    findings: &mut Vec<Finding>,
+) {
+    let mut bad = Vec::new();
+    match construction {
+        ConstructionView::Plane(plane) => {
+            for value in plane.resolved.iter().chain(plane.resolved_in.values()) {
+                if !plane_ok(value, geometry) {
+                    bad.push("a plane's x axis is not perpendicular to its normal");
+                }
+            }
+        }
+        ConstructionView::Frame(frame) => {
+            for value in frame.resolved.iter().chain(frame.resolved_in.values()) {
+                if !frame_ok(value, geometry) {
+                    bad.push("a frame's axes are not orthonormal and right-handed");
+                }
+            }
+        }
+        ConstructionView::Curve(curve) => {
+            for value in curve.resolved.iter().chain(curve.resolved_in.values()) {
+                if !arc_ok(value, geometry) {
+                    bad.push("an arc's start or end is not on its circle");
+                }
+            }
+        }
+        ConstructionView::Point(_) | ConstructionView::Direction(_) | ConstructionView::Axis(_) => {
+        }
+    }
+    for message in bad {
+        record_finding(
+            findings,
+            Check::GeometricConsistency,
+            Severity::Error,
+            Some(at),
+            format_args!("{message}"),
+        );
+    }
+}
+
+fn plane_ok(plane: &PlaneValue, geometry: Geometry) -> bool {
+    Vector3::from(plane.x_axis)
+        .dot(Vector3::from(plane.normal))
+        .abs()
+        <= geometry.angular.sin()
+}
+
+fn frame_ok(frame: &FrameValue, geometry: Geometry) -> bool {
+    let (x, y, z) = (
+        Vector3::from(frame.x_axis),
+        Vector3::from(frame.y_axis),
+        Vector3::from(frame.z_axis),
+    );
+    let tolerance = geometry.angular.sin();
+    let cross = x.cross(y);
+    x.dot(y).abs() <= tolerance
+        && y.dot(z).abs() <= tolerance
+        && z.dot(x).abs() <= tolerance
+        && cross.dot(z) >= 1.0 - tolerance
+}
+
+fn arc_ok(curve: &CurveValue, geometry: Geometry) -> bool {
+    let CurveValue::Arc {
+        center,
+        normal,
+        radius,
+        start,
+        end,
+    } = curve
+    else {
+        return true;
+    };
+    let center = center.get();
+    let normal = Vector3::from(*normal);
+    let on_circle = |point: Point3| {
+        let offset = Vector3 {
+            x: point.x - center.x,
+            y: point.y - center.y,
+            z: point.z - center.z,
+        };
+        (offset.norm() - radius.get()).abs() <= geometry.linear
+            && offset.dot(normal).abs() <= geometry.linear
+    };
+    on_circle(start.get()) && on_circle(end.get())
+}

@@ -118,6 +118,12 @@ pub enum Check {
     /// quantity measured on the decoded geometry by more than the
     /// measurement's error terms, cannot be measured, or names no bodies.
     DeclaredMeasure,
+    /// A design record does not use the one spelling CADIR gives its
+    /// meaning: a name entry holds neither a name nor a native name, a rule
+    /// selection is a list, an input or step states what another form
+    /// states, native text is not written `codec:name`, or a pick names a
+    /// principal entity that a datum feature restates.
+    Spelling,
 }
 
 impl fmt::Display for Check {
@@ -146,6 +152,7 @@ impl fmt::Display for Check {
             Self::Orientation => "orientation",
             Self::MeasurementIncomplete => "measurement_incomplete",
             Self::DeclaredMeasure => "declared_measure",
+            Self::Spelling => "spelling",
         })
     }
 }
