@@ -781,6 +781,75 @@ fn legacy_sketch_nurbs_payload() -> Vec<u8> {
     bytes
 }
 
+/// A reference-run NURBS record whose four local references are typed.
+fn typed_reference_run_sketch_nurbs_payload() -> Vec<u8> {
+    const POINT: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
+    let mut bytes = Vec::new();
+    lp_ascii(&mut bytes, "431");
+    bytes.extend_from_slice(&1200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for (name, value) in [("crv_primary_id", 700u64), ("crv_secondary_id", 0)] {
+        lp_ascii(&mut bytes, name);
+        lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(bytes.len(), 133);
+    bytes.extend_from_slice(&[0xff; 8]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"432");
+    bytes.extend_from_slice(&1200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    push_typed_member_reference(&mut bytes, 1201, POINT);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&0.000_01f64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.push(1);
+    for target in [1202, 1203, 1204] {
+        push_typed_member_reference(&mut bytes, target, POINT);
+    }
+    bytes.extend_from_slice(&[1, 0]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e]);
+    for (values, count) in [
+        (vec![0.0f64, 0.0, 0.0, 1.0, 1.0, 1.0], 6u32),
+        (vec![1.0f64, 1.0, 1.0], 3),
+        (vec![0.0f64, 0.0, 0.0, 0.5, 0.75, 0.0, 1.0, 0.0, 0.0], 3),
+    ] {
+        bytes.extend_from_slice(&count.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+#[test]
+fn typed_reference_run_sketch_nurbs_decodes_its_counted_arrays() {
+    let bytes = typed_reference_run_sketch_nurbs_payload();
+    let (geometry, end) = tested_decode_legacy_sketch_nurbs(&bytes, 0)
+        .transpose()
+        .expect("valid source scaling")
+        .expect("typed reference run NURBS");
+    let SketchCurveGeometry::Nurbs { geometry, .. } = geometry else {
+        panic!("expected NURBS");
+    };
+    assert_eq!(end, bytes.len());
+    assert_eq!(geometry.degree(), 2);
+    assert_eq!(geometry.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(
+        geometry.poles().points().nth(1).copied().unwrap(),
+        Point3::new(5.0, 7.5, 0.0)
+    );
+    // The fifth byte after the fit tolerance is `01` in the typed form.
+    let mut invalid = bytes;
+    invalid[133 + 94] = 0;
+    assert!(tested_decode_legacy_sketch_nurbs(&invalid, 0).is_none());
+}
+
 #[test]
 fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     let mut bytes = legacy_sketch_nurbs_payload();

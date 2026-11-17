@@ -114,6 +114,7 @@ fn compact_thread_trailer_record_is_a_related_record() {
             0.3086, 0.2529, 0.2725,
         )
         .unwrap(),
+        modeled: false,
         extended: None,
     };
     let mut scope = DesignParameterScope::empty(
@@ -146,7 +147,7 @@ fn extended_compact_thread_retains_the_hole_header_outside_its_reference_table()
         "form": "compact_extended", "designation_offset": 46,
         "designation": "M8x1", "nominal_size_text": "8.0", "nominal_size": 8.0,
         "profile": "ISO Metric profile", "major_diameter": 0.8,
-        "minor_diameter": 0.6, "pitch_diameter": 0.7, "pitch": 0.1,
+        "minor_diameter": 0.6, "pitch_diameter": 0.7, "pitch": 0.1, "modeled": false,
         "face_group_record_indices": [109],
         "trailing_reference_record_index": 90, "trailing_reference_offset": 160
     }))

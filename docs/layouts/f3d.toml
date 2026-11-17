@@ -13619,6 +13619,75 @@ source = "spec"
 anchor = "the second marked reference starts at offset 47 and names a member of the table"
 
 [[record]]
+name = "coil_short_ten_reference_compact_scope"
+kind = "byte"
+section = "3.1"
+anchor = "The 454-byte ten-reference `CoilPrimitive` form has the compact prologue"
+size = 454
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "The shared compact prologue fields precede the control bytes."
+
+[[record.field]]
+name = "control_bytes"
+offset = 56
+type = "bytes[2]"
+value = [1, 1]
+source = "spec"
+anchor = "control bytes at offsets 56 and 57 are `1` and `1`"
+
+[[record.gap]]
+offset = 58
+size = 170
+note = "The compact section lanes precede the reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 228
+type = "u32"
+value = 10
+source = "spec"
+anchor = "u32 reference count at offset 228 is ten"
+
+[[record.field]]
+name = "reference_members"
+offset = 232
+type = "bytes[110]"
+source = "spec"
+anchor = "ten marked references start at offset 232"
+
+[[record.field]]
+name = "history_state_identity"
+offset = 342
+type = "u32"
+source = "spec"
+anchor = "u32 history-state identity is at offset 342"
+
+[[record.field]]
+name = "feature_kind_length"
+offset = 346
+type = "u32"
+value = 13
+source = "spec"
+anchor = "u32 feature-kind length at offset 346 is thirteen"
+
+[[record.field]]
+name = "feature_kind"
+offset = 350
+type = "bytes[26]"
+source = "spec"
+anchor = "UTF-16LE kind text at offset 350"
+
+[[record.field]]
+name = "scope_trailer"
+offset = 376
+type = "bytes[78]"
+source = "spec"
+anchor = "78-byte scope trailer at offset 376"
+
+[[record]]
 name = "coil_long_scope_matrix"
 kind = "byte"
 section = "3.1"
@@ -17792,11 +17861,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "the pitch marker at 21"
+anchor = "the modeled flag at 21"
 
 [[record.field]]
 name = "pitch"
@@ -17895,11 +17964,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "its scalar lanes use pitch marker `0`"
+anchor = "its scalar lanes use the same offsets as the compact tail"
 
 [[record.field]]
 name = "pitch"
@@ -17952,11 +18021,11 @@ source = "spec"
 anchor = "minor diameter at 13"
 
 [[record.field]]
-name = "pitch_marker"
+name = "modeled_flag"
 offset = 21
 type = "u8"
 source = "spec"
-anchor = "its scalar lanes use pitch marker `0`"
+anchor = "its scalar lanes use the same offsets as the compact tail"
 
 [[record.field]]
 name = "pitch"
@@ -27635,6 +27704,130 @@ offset = 54
 type = "bytes[76]"
 source = "spec"
 anchor = "All subsequent fields move four bytes later"
+
+[[record]]
+name = "component_insert_typed_matrix_scope_584_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The typed-reference Component Insert scope is written by the container generation"
+size = 290
+note = "The frame is 584 bytes; this record covers the prefix through the null GUID."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed-reference Component Insert scope is written by the container generation"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes at offsets 11 through 20, the occurrence identity u64 at offset 21"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "the occurrence identity u64 at offset 21"
+
+[[record.field]]
+name = "zero_after_identity"
+offset = 29
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offsets 29 through 32, and a 51-byte typed relation reference"
+
+[[record.field]]
+name = "relation_reference"
+offset = 33
+type = "bytes[51]"
+source = "spec"
+anchor = "a 51-byte typed relation reference at offset 33"
+
+[[record.field]]
+name = "matrix_markers"
+offset = 84
+type = "bytes[2]"
+source = "spec"
+anchor = "Bytes `01 00` at offset 84"
+
+[[record.field]]
+name = "transform"
+offset = 86
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid transform at offset 86"
+
+[[record.field]]
+name = "null_guid"
+offset = 214
+type = "bytes[76]"
+source = "spec"
+anchor = "The LP-UTF16 null GUID starts at offset 214"
+
+[[record]]
+name = "component_insert_typed_relation_177"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The typed relation is 177 bytes"
+size = 177
+note = "The paired indexed header begins at offset 177."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The typed relation is 177 bytes"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "It stores ten zero bytes after its indexed header and typed references at offsets 21, 74, and 126"
+
+[[record.field]]
+name = "carrier_reference"
+offset = 21
+type = "bytes[51]"
+source = "spec"
+anchor = "typed references at offsets 21, 74, and 126"
+
+[[record.field]]
+name = "zero_after_carrier"
+offset = 72
+type = "bytes[2]"
+source = "spec"
+anchor = "Two zero bytes follow the first reference"
+
+[[record.field]]
+name = "companion_reference"
+offset = 74
+type = "bytes[51]"
+source = "spec"
+anchor = "typed references at offsets 21, 74, and 126"
+
+[[record.field]]
+name = "zero_after_companion"
+offset = 125
+type = "u8"
+source = "spec"
+anchor = "one zero byte follows the second"
+value = 0
+
+[[record.field]]
+name = "scope_reference"
+offset = 126
+type = "bytes[51]"
+source = "spec"
+anchor = "typed references at offsets 21, 74, and 126"
 
 [[record]]
 name = "component_insert_identity_carrier"

@@ -7305,8 +7305,12 @@ fn named_spline_scalar_slot(
 }
 
 fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
+    let prefix = *body.get(offset)?;
+    if let Some(head) = scalar::positive_dict_head(prefix) {
+        return scalar::ieee7_dict(body, offset, head);
+    }
     // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
-    let second = body.get(offset)?.wrapping_sub(0x8b);
+    let second = prefix.wrapping_sub(0x8b);
     let first = if second >= 0x80 { 0x3f } else { 0x40 };
     scalar::ieee7_with_prefix(body, offset, first, second)
 }

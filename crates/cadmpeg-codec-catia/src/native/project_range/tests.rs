@@ -149,8 +149,8 @@ impl Fixture {
                     width: 1,
                 },
                 slots: Some([
-                    RangeIntervalSlot::Unset { offset: 20 },
-                    RangeIntervalSlot::Unset { offset: 21 },
+                    RangeIntervalSlot::ZeroLiteral { offset: 20 },
+                    RangeIntervalSlot::ZeroLiteral { offset: 21 },
                 ]),
             },
             nominal: Some(CatiaRangeNominal {

@@ -23,6 +23,7 @@ use cadmpeg_core::CodecError;
 pub mod admit;
 mod annotations_native;
 mod carriers_parameterization;
+mod design;
 mod drawings;
 pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
@@ -164,6 +165,7 @@ fn validate_model_with_index<'ir>(
     check_semantic_annotations(ir, ids, &mut findings);
     check_typed_references(ctx, ir, ids, &mut findings)?;
     history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
+    design::check_design(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),

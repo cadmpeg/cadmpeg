@@ -4244,6 +4244,25 @@ Unstated regions:
 
 - `0..45` (45 B): The coil_ten_reference_compact_prologue fields precede the flag bytes.
 
+## `coil_short_ten_reference_compact_scope`
+
+Spec §3.1 · layout: byte offsets · size: 454 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 2 | `control_bytes` | `bytes[2]` | little | spec | control bytes at offsets 56 and 57 are `1` and `1` · value `[1, 1]` |
+| 228 | 4 | `reference_count` | `u32` | little | spec | u32 reference count at offset 228 is ten · value `10` |
+| 232 | 110 | `reference_members` | `bytes[110]` | little | spec | ten marked references start at offset 232 |
+| 342 | 4 | `history_state_identity` | `u32` | little | spec | u32 history-state identity is at offset 342 |
+| 346 | 4 | `feature_kind_length` | `u32` | little | spec | u32 feature-kind length at offset 346 is thirteen · value `13` |
+| 350 | 26 | `feature_kind` | `bytes[26]` | little | spec | UTF-16LE kind text at offset 350 |
+| 376 | 78 | `scope_trailer` | `bytes[78]` | little | spec | 78-byte scope trailer at offset 376 |
+
+Unstated regions:
+
+- `0..56` (56 B): The shared compact prologue fields precede the control bytes.
+- `58..228` (170 B): The compact section lanes precede the reference table.
+
 ## `coil_long_scope_matrix`
 
 Spec §3.1 · layout: byte offsets · size: 128 B
@@ -5578,7 +5597,7 @@ Spec §3.1 · layout: byte offsets · size: 40 B
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | the five-byte construction marker is `00 01 00 00 00` |
 | 5 | 8 | `major_diameter` | `f64` | little | spec | Major diameter is at marker-relative offset 5 |
 | 13 | 8 | `minor_diameter` | `f64` | little | spec | minor diameter at 13 |
-| 21 | 1 | `pitch_marker` | `u8` | little | spec | the pitch marker at 21 |
+| 21 | 1 | `modeled_flag` | `u8` | little | spec | the modeled flag at 21 |
 | 22 | 8 | `pitch` | `f64` | little | spec | pitch at 22 |
 | 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
 | 38 | 2 | `standard_trailer` | `bytes[2]` | little | spec | The standard trailer at relative offset 38 is `00 01` |
@@ -5621,7 +5640,7 @@ Offsets are relative to the first byte after the third LP-UTF16 string. This cla
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | Its construction marker is `01 01 00 00 00` |
 | 5 | 8 | `major_diameter` | `f64` | little | spec | Major diameter is at marker-relative offset 5 |
 | 13 | 8 | `minor_diameter` | `f64` | little | spec | minor diameter at 13 |
-| 21 | 1 | `pitch_marker` | `u8` | little | spec | its scalar lanes use pitch marker `0` |
+| 21 | 1 | `modeled_flag` | `u8` | little | spec | its scalar lanes use the same offsets as the compact tail |
 | 22 | 8 | `pitch` | `f64` | little | spec | pitch at 22 |
 | 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
 | 38 | 4 | `legacy_trailer` | `bytes[4]` | little | spec | its no-reference trailer is `00 00 00 01` at relative offset 38 |
@@ -5637,7 +5656,7 @@ Offsets are relative to the first byte after the third LP-UTF16 string. This cla
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | Its construction marker is `01 01 00 00 00` |
 | 5 | 8 | `major_diameter` | `f64` | little | spec | Major diameter is at marker-relative offset 5 |
 | 13 | 8 | `minor_diameter` | `f64` | little | spec | minor diameter at 13 |
-| 21 | 1 | `pitch_marker` | `u8` | little | spec | its scalar lanes use pitch marker `0` |
+| 21 | 1 | `modeled_flag` | `u8` | little | spec | its scalar lanes use the same offsets as the compact tail |
 | 22 | 8 | `pitch` | `f64` | little | spec | pitch at 22 |
 | 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
 | 38 | 4 | `legacy_trailer` | `bytes[4]` | little | spec | its no-reference trailer is `00 00 00 01` at relative offset 38 |
@@ -8504,6 +8523,45 @@ Parsed by:
 | 46 | 6 | `zero_after_relation` | `bytes[6]` | little | spec | All subsequent fields move four bytes later |
 | 52 | 2 | `identity_markers` | `bytes[2]` | little | spec | All subsequent fields move four bytes later |
 | 54 | 76 | `null_guid` | `bytes[76]` | little | spec | All subsequent fields move four bytes later |
+
+## `component_insert_typed_matrix_scope_584_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 290 B
+
+The frame is 584 bytes; this record covers the prefix through the null GUID.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The typed-reference Component Insert scope is written by the container generation |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20, the occurrence identity u64 at offset 21 |
+| 21 | 8 | `occurrence_identity` | `u64` | little | spec | the occurrence identity u64 at offset 21 |
+| 29 | 4 | `zero_after_identity` | `bytes[4]` | little | spec | four zero bytes at offsets 29 through 32, and a 51-byte typed relation reference |
+| 33 | 51 | `relation_reference` | `bytes[51]` | little | spec | a 51-byte typed relation reference at offset 33 |
+| 84 | 2 | `matrix_markers` | `bytes[2]` | little | spec | Bytes `01 00` at offset 84 |
+| 86 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid transform at offset 86 |
+| 214 | 76 | `null_guid` | `bytes[76]` | little | spec | The LP-UTF16 null GUID starts at offset 214 |
+
+## `component_insert_typed_relation_177`
+
+Spec §3.1 · layout: byte offsets · size: 177 B
+
+The paired indexed header begins at offset 177.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/component_constructions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The typed relation is 177 bytes |
+| 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | It stores ten zero bytes after its indexed header and typed references at offsets 21, 74, and 126 |
+| 21 | 51 | `carrier_reference` | `bytes[51]` | little | spec | typed references at offsets 21, 74, and 126 |
+| 72 | 2 | `zero_after_carrier` | `bytes[2]` | little | spec | Two zero bytes follow the first reference |
+| 74 | 51 | `companion_reference` | `bytes[51]` | little | spec | typed references at offsets 21, 74, and 126 |
+| 125 | 1 | `zero_after_companion` | `u8` | little | spec | one zero byte follows the second · value `0` |
+| 126 | 51 | `scope_reference` | `bytes[51]` | little | spec | typed references at offsets 21, 74, and 126 |
 
 ## `component_insert_identity_carrier`
 

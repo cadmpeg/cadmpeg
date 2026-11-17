@@ -263,7 +263,11 @@ fn finite_slot(slot: &NumericPairSlot) -> Option<CatiaLocalPointSlot> {
                 payload_offset: u64_from_index(*offset),
             })
         }
-        NumericPairSlot::Binary64 { .. } | NumericPairSlot::ControlE8 { .. } => None,
+        NumericPairSlot::ZeroLiteral { offset } => Some(CatiaLocalPointSlot {
+            bits: 0.0_f64.to_bits(),
+            payload_offset: u64_from_index(*offset),
+        }),
+        NumericPairSlot::Binary64 { .. } => None,
     }
 }
 
