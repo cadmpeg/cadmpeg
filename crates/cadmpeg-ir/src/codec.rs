@@ -29,6 +29,7 @@ use cadmpeg_core::decode::{
 };
 use cadmpeg_core::dialect::FormatIdentity;
 use cadmpeg_core::{CodecError, ReadSeek};
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -58,7 +59,7 @@ impl fmt::Display for FormatId {
 }
 
 /// How confident a codec is that it can handle a given byte prefix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

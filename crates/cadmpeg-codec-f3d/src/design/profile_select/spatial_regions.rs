@@ -17,7 +17,7 @@ use super::cap_regions::spatial::profiles_agree;
 use super::{coincident_spatial_profile_geometry, spatial_profile_member_entity};
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::topology::sketch_profile::{
-    DesignSketchProfileOperand, DesignSketchProfileRegion,
+    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionSelection,
 };
 use cadmpeg_ir::sketches::{
     SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometryDefinition,
@@ -142,6 +142,34 @@ fn stored_region_profiles(frame: &SpatialFrame<'_>) -> Option<Vec<u32>> {
     (!resolved.is_empty()).then_some(resolved)
 }
 
+/// Whether every selected region of `selection` is one loop, or atomic
+/// regions of one loop each.
+pub(super) fn regions_without_holes(selection: &DesignSketchProfileRegionSelection) -> bool {
+    let mut ordinals = Vec::new();
+    for region in &selection.regions {
+        if !ordinals.contains(&region.region_ordinal) {
+            ordinals.push(region.region_ordinal);
+        }
+    }
+    ordinals.into_iter().all(|ordinal| {
+        let mut atomic = selection
+            .atomic_regions
+            .iter()
+            .filter(|atomic| atomic.region_ordinal == ordinal)
+            .peekable();
+        if atomic.peek().is_some() {
+            atomic.all(|atomic| atomic.loops.len() == 1)
+        } else {
+            selection
+                .regions
+                .iter()
+                .filter(|region| region.region_ordinal == ordinal)
+                .count()
+                == 1
+        }
+    })
+}
+
 /// The spatial profile whose boundary curves are exactly the curves `ring`
 /// names. A member names a boundary curve directly, or names a curve that
 /// traces the same geometry as that boundary curve.
@@ -204,7 +232,7 @@ fn ring_profile(
 /// `candidates` without each profile whose boundary traces the same geometry
 /// as an earlier kept candidate. `None` when a candidate index is out of
 /// range or a boundary curve is missing.
-fn distinct_profiles(frame: &SpatialFrame<'_>, candidates: &[u32]) -> Option<Vec<u32>> {
+pub(super) fn distinct_profiles(frame: &SpatialFrame<'_>, candidates: &[u32]) -> Option<Vec<u32>> {
     let mut kept: Vec<u32> = Vec::new();
     for candidate in candidates {
         let profile = frame

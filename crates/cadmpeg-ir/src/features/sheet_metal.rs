@@ -1,5 +1,6 @@
 use super::{FaceSelection, PathRef};
 use crate::scalar::{Angle, PositiveLength};
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -473,7 +474,7 @@ cadmpeg_core::named_optional_field!(
     "neutral_factor"
 );
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 #[doc = "Sheet thickness relative to the profile's plane normal and ordered tangent."]

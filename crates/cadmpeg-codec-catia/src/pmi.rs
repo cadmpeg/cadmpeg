@@ -9,7 +9,6 @@ use cadmpeg_ir::pmi::{
     DimensionKind, DimensionTolerance, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue,
 };
 
-use crate::entity_table::RangeIntervalSlot;
 use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{CatiaNative, CatiaRangeInterval};
 
@@ -111,13 +110,9 @@ fn range_only_dimension_definition(
         _ => return None,
     };
     let nominal = finite_length(range.nominal.as_ref()?.bits)?;
-    let [RangeIntervalSlot::Binary64 { bits: lower, .. }, RangeIntervalSlot::Binary64 { bits: upper, .. }] =
-        range.interval.slots.as_ref()?
-    else {
-        return None;
-    };
-    let lower_deviation = finite_length(*lower)?;
-    let upper_deviation = finite_length(*upper)?;
+    let [lower, upper] = range.interval.slots.as_ref()?;
+    let lower_deviation = finite_length(lower.bits())?;
+    let upper_deviation = finite_length(upper.bits())?;
     Some(PmiDefinition::Dimension(
         cadmpeg_ir::pmi::PmiDimension::new(
             dimension,
@@ -407,16 +402,6 @@ mod tests {
             .as_mut()
             .expect("source entity");
         *unresolved_source = unresolved_source.clone().without_entity();
-        let mut unset_deviation = range_only_entity("DiameterThread");
-        unset_deviation
-            .range_interval
-            .as_mut()
-            .expect("Range interval")
-            .interval
-            .slots
-            .as_mut()
-            .expect("deviation slots")[0] = RangeIntervalSlot::Unset { offset: 0 };
-
         let native = CatiaNative {
             entity_records: vec![
                 wrong_definition,
@@ -424,7 +409,6 @@ mod tests {
                 extra_selector,
                 duplicate_owner,
                 unresolved_owner,
-                unset_deviation,
             ],
             ..CatiaNative::default()
         };
@@ -442,6 +426,45 @@ mod tests {
             0
         );
         assert!(ir.model.pmi.is_empty());
+    }
+
+    #[test]
+    fn a_zero_literal_deviation_slot_is_a_zero_deviation() {
+        let mut zero_deviation = range_only_entity("DiameterThread");
+        zero_deviation
+            .range_interval
+            .as_mut()
+            .expect("Range interval")
+            .interval
+            .slots
+            .as_mut()
+            .expect("deviation slots")[0] = RangeIntervalSlot::ZeroLiteral { offset: 0 };
+        let native = CatiaNative {
+            entity_records: vec![zero_deviation],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty();
+        crate::test_support::with_service_context(|ctx| {
+            transfer_dimensions(
+                ctx,
+                &mut ir,
+                &native,
+                &crate::decode::ModelingGraphScope::Unscoped,
+                &HashSet::new(),
+            )
+        })
+        .expect("zero-deviation dimension");
+        let [annotation] = ir.model.pmi.as_slice() else {
+            panic!("one PMI entry");
+        };
+        assert!(matches!(
+            &annotation.definition,
+            PmiDefinition::Dimension(dimension)
+                if matches!(
+                    dimension.tolerance(),
+                    Some(DimensionTolerance::PlusMinus { lower, .. }) if lower.value.get() == 0.0
+                )
+        ));
     }
 
     #[test]
