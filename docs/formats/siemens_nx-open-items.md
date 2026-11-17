@@ -462,7 +462,7 @@ face or feature set assigns either group a selection role. Compact values that e
 
 **Question.** Which owning-pattern relations assign each counted instance-row scalar its physical role, units, and reference frame?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and `siemens_nx.md` §7.1 "`Pattern Feature` also admits the wide-row form" define the pattern atom encodings, the `1/4` value scale, exact values, row order, and boundaries. The decoder reads the exact-one terminal byte `01` as the value 1. `siemens_nx.md` §7.1 "The pattern row schema index addresses the owning OM section class declaration" defines the instance-class identity.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and `siemens_nx.md` §7.1 "`Pattern Feature` also admits the wide-row form" define the pattern atom encodings, the `1/4` value scale, exact values, row order, and boundaries. `siemens_nx.md` §7.1 "The pattern row schema index addresses the owning OM section class declaration" defines the instance-class identity.
 
 **Need.** Identify the owning pattern definition, scalar field roles, unit rules, reference frame, and meaning of the fifth wide-row cell before constructing neutral pattern coordinates or controls.
 
