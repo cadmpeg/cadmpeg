@@ -674,8 +674,10 @@ use crate::layout::base_feature_compact_repeated_body_entry as compact_entry;
 use crate::layout::base_feature_compact_result_body_count as compact_count;
 use crate::layout::base_feature_legacy_444_zero_body as legacy_444_zero_body;
 use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
+use crate::layout::base_feature_null_reference_count as null_count;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
+use crate::layout::base_feature_suffix_result_body as suffix_layout;
 use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
 use crate::layout::base_feature_wide_shifted_zero_body as shifted_zero_body;
 use crate::layout::base_feature_wide_zero_body as wide_zero_body;
@@ -702,6 +704,22 @@ fn read_base_feature_entry_at(
     };
     *cursor = at.checked_add(result_body_entry::LEN)?;
     Some(entry)
+}
+
+/// Reads the marked null reference at `at` and returns its flag.
+fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<bool> {
+    if bytes.get(at + null_count::NULL_REFERENCE_MARKER) != Some(&1)
+        || bytes.get(at + null_count::NULL_REFERENCE..at + null_count::NULL_REFERENCE_FLAG)
+            != Some(&[0; 8])
+        || bytes.get(at + null_count::NULL_REFERENCE_ZERO) != Some(&0)
+    {
+        return None;
+    }
+    match bytes.get(at + null_count::NULL_REFERENCE_FLAG)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
 }
 
 /// Repeated-run form selected by the count field of a result-body envelope
@@ -779,6 +797,8 @@ fn exact_typed_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1119,6 +1139,8 @@ fn exact_wide_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1200,6 +1222,8 @@ fn exact_wide_shifted_zero_body_base_feature(
         return None;
     }
     Some(DesignBaseFeatureConstruction::ResultBodies {
+        null_reference_flag_offset: None,
+        repeats_body_suffixes: false,
         bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
         metadata_record,
         metadata_record_offset: scope.byte_offset()
@@ -1240,6 +1264,8 @@ pub(super) fn exact_base_feature_construction(
         }
         if scope.frame_length() == 267 {
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record: View::u32_le_at(
                     bytes,
@@ -1297,6 +1323,8 @@ pub(super) fn exact_base_feature_construction(
                 return None;
             }
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
@@ -1384,6 +1412,8 @@ pub(super) fn exact_base_feature_construction(
                 return None;
             }
             return Some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+                null_reference_flag_offset: None,
+                repeats_body_suffixes: false,
                 bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
                 metadata_record,
                 metadata_record_offset: scope.byte_offset()
@@ -1432,19 +1462,19 @@ pub(super) fn exact_base_feature_construction(
                 (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
                 ("420", "258") | ("452", "266")
             );
-        let unclassed_count = if class_expanded || class_compact || legacy_444_263 {
-            None
-        } else {
-            unclassed_result_body_count(
-                bytes,
-                start
-                    + result_body::LEN
-                    + body_count
-                        .checked_mul(2)?
-                        .checked_mul(result_body_entry::LEN)?,
-                body_count,
-            )
-        };
+        let count_field = start
+            + result_body::LEN
+            + body_count
+                .checked_mul(2)?
+                .checked_mul(result_body_entry::LEN)?;
+        let flagged_null_reference =
+            ordinary && marked_null_reference_flag(bytes, count_field) == Some(true);
+        let unclassed_count =
+            if class_expanded || class_compact || legacy_444_263 || flagged_null_reference {
+                None
+            } else {
+                unclassed_result_body_count(bytes, count_field, body_count)
+            };
         let expanded = class_expanded || unclassed_count == Some(UnclassedResultBodyCount::Passive);
         let compact =
             class_compact || unclassed_count == Some(UnclassedResultBodyCount::BodySuffix);
@@ -1477,6 +1507,7 @@ pub(super) fn exact_base_feature_construction(
             entities.push(read_base_feature_entry_at(bytes, &mut cursor)?);
         }
         let mut references = Vec::new();
+        let mut null_reference_flag_offset = None;
         for _ in 0..body_count {
             let entry = read_base_feature_entry_at(bytes, &mut cursor)?;
             references.push(DesignBaseFeatureEntry {
@@ -1520,19 +1551,32 @@ pub(super) fn exact_base_feature_construction(
             }
             cursor += compact_count::LEN;
         } else {
-            if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 1..cursor + 11) != Some(&[0; 10])
+            if marked_null_reference_flag(bytes, cursor)? {
+                null_reference_flag_offset =
+                    Some(u64::try_from(cursor + null_count::NULL_REFERENCE_FLAG).ok()?);
+            }
+            if usize::try_from(View::u32_le_at(bytes, cursor + null_count::BODY_COUNT)?).ok()?
+                != body_count
             {
                 return None;
             }
-            cursor += 11;
-            if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
-                return None;
-            }
-            cursor += 4;
+            cursor += null_count::LEN;
         }
+        let repeated_value = |ordinal: usize| {
+            View::u32_le_at(
+                bytes,
+                cursor + ordinal * compact_entry::LEN + compact_entry::BODY_ENTITY_SUFFIX,
+            )
+        };
+        let repeats_body_suffixes = ordinary_metadata_width.is_some()
+            && !(0..body_count)
+                .all(|ordinal| repeated_value(ordinal) == Some(references[ordinal].value))
+            && (0..body_count).all(|ordinal| {
+                repeated_value(ordinal).map(u64::from) == Some(entities[ordinal].value)
+            });
         let mut repeated_reference_fields = Vec::new();
         for ordinal in 0..body_count {
-            let expected = if compact {
+            let expected = if compact || repeats_body_suffixes {
                 u32::try_from(entities[ordinal].value).ok()?
             } else {
                 references[ordinal].value
@@ -1607,6 +1651,8 @@ pub(super) fn exact_base_feature_construction(
                 .is_some_and(|padding| padding.iter().all(|byte| *byte == 0));
         let first = first?;
         admitted.then_some(Ok(DesignBaseFeatureConstruction::ResultBodies {
+            null_reference_flag_offset,
+            repeats_body_suffixes,
             bodies: DesignBaseFeatureResults::WithRepeatedFields { first, rest },
             metadata_record,
             metadata_record_offset,
@@ -1614,6 +1660,122 @@ pub(super) fn exact_base_feature_construction(
         }))
     })()
     .transpose()
+    .map(|construction| {
+        construction.or_else(|| {
+            usize::try_from(scope.byte_offset())
+                .ok()
+                .and_then(|start| exact_suffix_result_bodies(bytes, scope, start))
+        })
+    })
+}
+
+/// Kind-offset increase per body of a suffix result-body frame: one entity
+/// entry, one repeated entry and one result entry.
+const SUFFIX_RESULT_BODY_KIND_STRIDE: usize = 37;
+/// Kind offset of a suffix result-body frame less one stride per body.
+const SUFFIX_RESULT_BODY_KIND_BASE: usize = 169;
+/// Distance from the end of the zero tail to the scope kind.
+const SUFFIX_RESULT_BODY_TAIL_END_BEFORE_KIND: usize = 102;
+
+/// The suffix result-body form: u32 `N` at offset 20, `N` body entries, the
+/// marked null reference, u32 `N`, the repeated body suffixes, one zero byte,
+/// the metadata record with a six-byte field, u32 `N`, and `N` result entries.
+fn exact_suffix_result_bodies(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    if scope.kind() != scope::DesignFeatureKind::BaseFeature
+        || bytes.get(start + suffix_layout::ZERO_RUN_8..start + suffix_layout::BODY_COUNT_MARKER)?
+            != [0; 8]
+        || bytes.get(start + suffix_layout::BODY_COUNT_MARKER) != Some(&1)
+    {
+        return None;
+    }
+    let body_count =
+        usize::try_from(View::u32_le_at(bytes, start + suffix_layout::BODY_COUNT)?).ok()?;
+    let kind_offset =
+        usize::try_from(scope.kind_offset().checked_sub(scope.byte_offset())?).ok()?;
+    if body_count == 0
+        || kind_offset
+            != SUFFIX_RESULT_BODY_KIND_BASE
+                .checked_add(body_count.checked_mul(SUFFIX_RESULT_BODY_KIND_STRIDE)?)?
+    {
+        return None;
+    }
+    let mut cursor = start + suffix_layout::BODY_MARKER;
+    let mut bodies = Vec::new();
+    for _ in 0..body_count {
+        bodies.push(read_base_feature_entry_at(bytes, &mut cursor)?);
+    }
+    let flagged = marked_null_reference_flag(bytes, cursor)?;
+    let null_reference_flag_offset = if flagged {
+        Some(u64::try_from(cursor + null_count::NULL_REFERENCE_FLAG).ok()?)
+    } else {
+        None
+    };
+    if usize::try_from(View::u32_le_at(bytes, cursor + null_count::BODY_COUNT)?).ok()? != body_count
+    {
+        return None;
+    }
+    cursor += null_count::LEN;
+    let mut repeated_fields = Vec::new();
+    for body in &bodies {
+        if body.value == 0
+            || bytes.get(cursor + compact_entry::BODY_MARKER) != Some(&1)
+            || u64::from(View::u32_le_at(
+                bytes,
+                cursor + compact_entry::BODY_ENTITY_SUFFIX,
+            )?) != body.value
+        {
+            return None;
+        }
+        let field: [u8; 6] = bytes
+            .get(cursor + compact_entry::BODY_FIELD..cursor + compact_entry::LEN)?
+            .try_into()
+            .ok()?;
+        repeated_fields.push(field.into());
+        cursor += compact_entry::LEN;
+    }
+    if bytes.get(cursor) != Some(&0) || bytes.get(cursor + 1) != Some(&1) {
+        return None;
+    }
+    cursor += 1;
+    let metadata_record = u32::try_from(View::u64_le_at(bytes, cursor + 1)?).ok()?;
+    let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
+    let metadata_field = bytes.get(cursor + 9..cursor + 15)?.to_vec();
+    cursor += 15;
+    if usize::try_from(View::u32_le_at(bytes, cursor)?).ok()? != body_count {
+        return None;
+    }
+    cursor += 4;
+    let mut results = Vec::new();
+    for _ in 0..body_count {
+        if bytes.get(cursor) != Some(&1) {
+            return None;
+        }
+        results.push(DesignBaseFeatureEntry {
+            value: View::u32_le_at(bytes, cursor + 1)?,
+            offset: u64::try_from(cursor + 1).ok()?,
+            field: bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?,
+        });
+        cursor += 11;
+    }
+    let tail_end = start
+        .checked_add(kind_offset)?
+        .checked_sub(SUFFIX_RESULT_BODY_TAIL_END_BEFORE_KIND)?;
+    if bytes.get(cursor..tail_end)?.iter().any(|byte| *byte != 0) {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::SuffixResultBodies {
+        bodies,
+        repeated_fields,
+        results,
+        metadata_record,
+        metadata_record_offset,
+        metadata_field: metadata_field.into(),
+        null_reference_flag_offset,
+    })
 }
 
 fn exact_base_feature_body_snapshot(

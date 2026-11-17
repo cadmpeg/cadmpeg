@@ -101,8 +101,8 @@ fn decode_transfers_generated_protein_appearance() {
         appearance.id
     );
     assert!(matches!(
-        &result.ir().model.appearance_bindings[0].target,
-        cadmpeg_ir::appearance::AppearanceTarget::Body(body) if body == &result.ir().model.bodies[0].id
+        &result.ir().model.appearance_bindings[0].target.entity,
+        cadmpeg_ir::appearance::AppearanceTarget::Body(body) if body == &result.ir().geometry.bodies[0].id
     ));
     assert_eq!(
         result.ir().model.appearance_bindings[0]

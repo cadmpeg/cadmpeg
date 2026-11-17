@@ -47,7 +47,7 @@ pub(super) fn write_new(
     let has_native = loaded_native.is_some();
     let native = loaded_native.unwrap_or_default();
     let attributes = attributes::AttributeIndex::new(target, &native);
-    if !target.model.subds.is_empty() {
+    if !target.geometry.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D generation does not support SubD surfaces".into(),
         ));
@@ -193,7 +193,7 @@ pub(super) fn write_new(
 /// and the remaining document arenas come only from native records, so the
 /// neutral arenas are not represented.
 fn coverage(has_native: bool) -> ArenaDispositions {
-    use ArenaDisposition::{Dropped, Omitted, Written};
+    use ArenaDisposition::{Dropped, Ignored, Omitted, Written};
     ArenaDispositions {
         bodies: Written,
         regions: Written,
@@ -232,6 +232,7 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         view_presentations: Omitted,
         tessellations: Dropped,
         point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Written,
         appearance_bindings: Omitted,
         attributes: Omitted,
@@ -245,5 +246,7 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         physics_scenes: Omitted,
         solver_settings: Omitted,
         declared_measures: Omitted,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 }

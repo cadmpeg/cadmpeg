@@ -14,22 +14,22 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     });
     macro_rules! typed_identities {
-        ($arena:ident) => {
+        ($home:ident, $arena:ident) => {
             BorrowedIdentities::build(|add| {
-                for item in &ir.model.$arena {
+                for item in &ir.$home.$arena {
                     add(item.id.as_str(), ());
                 }
             })
         };
     }
-    let bodies = typed_identities!(bodies);
-    let faces = typed_identities!(faces);
-    let edges = typed_identities!(edges);
-    let vertices = typed_identities!(vertices);
-    let points = typed_identities!(points);
-    let curves = typed_identities!(curves);
-    let products = typed_identities!(product_definitions);
-    let occurrences = typed_identities!(occurrences);
+    let bodies = typed_identities!(geometry, bodies);
+    let faces = typed_identities!(geometry, faces);
+    let edges = typed_identities!(geometry, edges);
+    let vertices = typed_identities!(geometry, vertices);
+    let points = typed_identities!(geometry, points);
+    let curves = typed_identities!(geometry, curves);
+    let products = typed_identities!(model, product_definitions);
+    let occurrences = typed_identities!(model, occurrences);
     for annotation in &ir.model.pmi {
         let zone_targets = match &annotation.definition {
             PmiDefinition::GeometricTolerance { constraints, .. } => constraints
@@ -41,7 +41,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
             _ => Vec::new(),
         };
         for target in annotation.targets.iter().chain(zone_targets) {
-            let resolved = match target {
+            let resolved = match &target.entity {
                 PmiTarget::Body { body } => bodies.contains(body.as_str()),
                 PmiTarget::Face { face } => faces.contains(face.as_str()),
                 PmiTarget::Edge { edge } => edges.contains(edge.as_str()),

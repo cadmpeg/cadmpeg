@@ -146,10 +146,10 @@ fn thread_validation_accepts_metric_and_inch_coarse_and_fine_and_rejects_forged_
             "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": "0".repeat(64)
         }))?);
         let mut feature = serde_json::to_value(annotation(data.pm_dc_features[0].id()))?;
-        feature["definition"]["diameter"] = serde_json::json!(diameter_mm);
-        feature["definition"]["pitch"] = serde_json::json!(pitch_mm);
-        feature["definition"]["standard"] = serde_json::json!(standard);
-        feature["definition"]["designation"] = serde_json::json!(designation);
+        feature["definition"]["value"]["value"]["diameter"] = serde_json::json!(diameter_mm);
+        feature["definition"]["value"]["value"]["pitch"] = serde_json::json!(pitch_mm);
+        feature["definition"]["value"]["value"]["standard"] = serde_json::json!(standard);
+        feature["definition"]["value"]["value"]["designation"] = serde_json::json!(designation);
         let mut ir = cadmpeg_ir::CadIr::empty();
         ir.model
             .features
@@ -167,12 +167,12 @@ fn thread_validation_accepts_metric_and_inch_coarse_and_fine_and_rejects_forged_
         ] {
             let mut invalid_feature = feature.clone();
             if invalid.is_null() {
-                invalid_feature["definition"]
+                invalid_feature["definition"]["value"]["value"]
                     .as_object_mut()
                     .ok_or("missing definition object")?
                     .remove(field);
             } else {
-                invalid_feature["definition"][field] = invalid;
+                invalid_feature["definition"]["value"]["value"][field] = invalid;
             }
             ir.model.features[0] = serde_json::from_value(invalid_feature)?;
             findings.clear();
@@ -186,7 +186,7 @@ fn thread_validation_accepts_metric_and_inch_coarse_and_fine_and_rejects_forged_
         findings.clear();
         crate::validate::validate_features(&ctx, &ir, &data, &mut findings)?;
         assert_eq!(findings.len(), 1);
-        let fallback = feature["definition"]
+        let fallback = feature["definition"]["value"]["value"]
             .as_object_mut()
             .ok_or("missing definition")?;
         fallback.remove("diameter");

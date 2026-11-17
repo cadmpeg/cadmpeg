@@ -774,6 +774,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         let value = Some(
             DesignSketchProfileOperand::try_new(
                 crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                    sketch_absent: false,
                     scope_reference_ordinal: 1,
                     record_index: 101,
                     byte_offset: 0,
@@ -933,6 +934,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         base_feature.payload_mut()
     {
         *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
+            null_reference_flag_offset: None,
+            repeats_body_suffixes: false,
             bodies: crate::records::feature::base_feature::DesignBaseFeatureResults::WithoutRepeatedFields(vec![
                 crate::records::feature::base_feature::DesignBaseFeatureResultBody {
                     entity: crate::records::feature::base_feature::DesignBaseFeatureEntry {
@@ -981,11 +984,12 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 0.35995, 0.293, 0.3166,
             )
             .unwrap(),
+            modeled: true,
             extended: Some(crate::records::feature::thread::DesignThreadExtended {
                 class: "6g".into(),
                 external: true,
-                modeled: true,
                 full_length: Some(true),
+                right_handed: Some(true),
             }),
         });
     }
@@ -1180,7 +1184,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     else {
         panic!("the Thread scope carries its construction");
     };
-    cosmetic.extended.as_mut().expect("extended fields").modeled = false;
+    cosmetic.modeled = false;
     let cosmetic = project(&cosmetic_scopes, &[]);
     assert!(cosmetic.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
@@ -1303,13 +1307,13 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     }];
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::form_cages::bind_form_cages(
+            crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                 ctx,
-                scan,
                 std::slice::from_ref(&scope),
                 &mut features,
                 &cages,
@@ -1318,15 +1322,14 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         })
     })
     .expect("retained Form result owner");
-    assert_eq!(
-        *features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Native {
-                kind: "Form".into(),
-                parameters: Default::default(),
-            }
-        )
-    );
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Form(construction),
+    ) = features[0].evaluation.definition()
+    else {
+        panic!("neutral Form");
+    };
+    assert!(!construction.membership_is_complete());
+    assert_eq!(construction.inputs().references.len(), 1);
 }
 
 #[test]
@@ -1447,13 +1450,13 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
             source_object: None,
             cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
         }];
 
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
-                crate::design::feature_project::form_cages::bind_form_cages(
+                crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                     ctx,
-                    scan,
                     std::slice::from_ref(&scope),
                     &mut features,
                     &cages,
@@ -1462,15 +1465,14 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             })
         })
         .expect("long Form cage binding");
-        assert_eq!(
-            *features[0].evaluation.definition(),
-            cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Native {
-                    kind: "Form".into(),
-                    parameters: Default::default(),
-                }
-            )
-        );
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Form(construction),
+        ) = features[0].evaluation.definition()
+        else {
+            panic!("neutral Form");
+        };
+        assert!(!construction.membership_is_complete());
+        assert_eq!(construction.inputs().references.len(), 1);
     }
 }
 

@@ -153,7 +153,7 @@ fn validate_changed_annotations(
         .iter()
         .map(|value| (&value.id, value))
         .collect::<HashMap<_, _>>();
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         if points
             .get(&point.id)
             .is_some_and(|old| old.position().get() != point.position().get())
@@ -161,7 +161,7 @@ fn validate_changed_annotations(
             annotation_offset(annotations, &point.id, section)?;
         }
     }
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if surfaces
             .get(&surface.id)
             .is_some_and(|old| old.geometry != surface.geometry)
@@ -169,7 +169,7 @@ fn validate_changed_annotations(
             annotation_offset(annotations, &surface.id, section)?;
         }
     }
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if curves
             .get(&curve.id)
             .is_some_and(|old| old.geometry != curve.geometry)
@@ -230,12 +230,12 @@ fn site_key(block: &crate::container::Block) -> String {
 
 fn same_pcurves(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
     let current = ir
-        .model
+        .geometry
         .pcurves
         .iter()
         .map(|pcurve| (&pcurve.id, pcurve))
         .collect::<HashMap<_, _>>();
-    current.len() == ir.model.pcurves.len()
+    current.len() == ir.geometry.pcurves.len()
         && current.len() == native.pcurves.len()
         && native.pcurves.iter().all(|pcurve| {
             current
@@ -247,41 +247,25 @@ fn same_pcurves(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
 fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
     same_pcurves(ir, native)
         && ir
-            .model
+            .geometry
             .bodies
             .iter()
-            .map(|v| (&v.id, v.kind, &v.regions))
-            .eq(native.bodies.iter().map(|v| (&v.id, v.kind, &v.regions)))
+            .map(|v| (&v.id, v.kind))
+            .eq(native.bodies.iter().map(|v| (&v.id, v.kind)))
         && ir
-            .model
+            .geometry
             .regions
             .iter()
             .map(|v| (&v.id, &v.body, &v.shells))
             .eq(native.regions.iter().map(|v| (&v.id, &v.body, &v.shells)))
         && ir
-            .model
+            .geometry
             .shells
             .iter()
-            .map(|v| {
-                (
-                    &v.id,
-                    &v.region,
-                    v.faces(),
-                    v.wire_edges(),
-                    v.free_vertices(),
-                )
-            })
-            .eq(native.shells.iter().map(|v| {
-                (
-                    &v.id,
-                    &v.region,
-                    v.faces(),
-                    v.wire_edges(),
-                    v.free_vertices(),
-                )
-            }))
+            .map(|v| (&v.id, &v.region, &v.members))
+            .eq(native.shells.iter().map(|v| (&v.id, &v.region, &v.members)))
         && ir
-            .model
+            .geometry
             .faces
             .iter()
             .map(|v| (&v.id, &v.shell, &v.surface, v.sense, &v.loops, v.color))
@@ -290,13 +274,13 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
                 .iter()
                 .map(|v| (&v.id, &v.shell, &v.surface, v.sense, &v.loops, v.color)))
         && ir
-            .model
+            .geometry
             .loops
             .iter()
             .map(|v| (&v.id, &v.face, v.coedges()))
             .eq(native.loops.iter().map(|v| (&v.id, &v.face, v.coedges())))
         && ir
-            .model
+            .geometry
             .coedges
             .iter()
             .map(|v| {
@@ -320,28 +304,28 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
                 )
             }))
         && ir
-            .model
+            .geometry
             .edges
             .iter()
-            .map(|v| (&v.id, v.curve(), &v.start, &v.end, v.param_range()))
+            .map(|v| (&v.id, v.curve(), &v.ends, v.param_range()))
             .eq(native
                 .edges
                 .iter()
-                .map(|v| (&v.id, v.curve(), &v.start, &v.end, v.param_range())))
+                .map(|v| (&v.id, v.curve(), &v.ends, v.param_range())))
         && ir
-            .model
+            .geometry
             .vertices
             .iter()
             .map(|v| (&v.id, &v.point))
             .eq(native.vertices.iter().map(|v| (&v.id, &v.point)))
         && ir
-            .model
+            .geometry
             .points
             .iter()
             .map(|v| &v.id)
             .eq(native.points.iter().map(|v| &v.id))
         && ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .map(|v| (&v.id, surface_class(&v.geometry)))
@@ -350,7 +334,7 @@ fn same_graph(ir: &CadIr, native: &crate::brep::graph::Brep) -> bool {
                 .iter()
                 .map(|v| (&v.id, surface_class(&v.geometry))))
         && ir
-            .model
+            .geometry
             .curves
             .iter()
             .map(|v| (&v.id, curve_class(&v.geometry)))
@@ -401,7 +385,7 @@ fn patch_points(
     scale: f64,
 ) -> Result<Option<()>, CodecError> {
     let mut current = HashMap::new();
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         current.insert(&point.id, point);
     }
     for old in &native.points {
@@ -444,7 +428,7 @@ fn patch_surfaces(
         .iter()
         .map(|v| (&v.id, v))
         .collect::<std::collections::HashMap<_, _>>();
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         let Some(baseline) = old.get(&surface.id) else {
             return Ok(None);
         };
@@ -507,7 +491,7 @@ fn patch_curves(
         .iter()
         .map(|v| (&v.id, v))
         .collect::<std::collections::HashMap<_, _>>();
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         let Some(baseline) = old.get(&curve.id) else {
             return Ok(None);
         };

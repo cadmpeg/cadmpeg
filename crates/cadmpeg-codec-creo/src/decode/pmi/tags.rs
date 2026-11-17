@@ -135,8 +135,8 @@ pub(in crate::decode) fn transfer(
                     let id = if let DatumJoin::Existing(index) = join {
                         let item = &mut ir.model.pmi[index];
                         for face in &target {
-                            if !item.targets.contains(face) {
-                                item.targets.push(face.clone());
+                            if !item.targets.iter().any(|target| &target.entity == face) {
+                                item.targets.push(face.clone().into());
                             }
                         }
                         item.id.clone()
@@ -156,7 +156,7 @@ pub(in crate::decode) fn transfer(
                             id: id.clone(),
                             name: None,
                             visible: None,
-                            targets: target.clone(),
+                            targets: target.iter().cloned().map(Into::into).collect(),
                             definition: PmiDefinition::Datum {
                                 identification: tag.identification.clone(),
                             },
@@ -284,7 +284,11 @@ fn unique_surface_face(ir: &CadIr, id: u32) -> Option<PmiTarget> {
     let surface =
         crate::identity::compose_checked::<SurfaceId>(&crate::identity::VISIBGEOM_SURFACE, id)
             .ok()?;
-    let mut faces = ir.model.faces.iter().filter(|face| face.surface == surface);
+    let mut faces = ir
+        .geometry
+        .faces
+        .iter()
+        .filter(|face| face.surface == surface);
     let (Some(face), None) = (faces.next(), faces.next()) else {
         return None;
     };

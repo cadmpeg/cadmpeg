@@ -28,12 +28,12 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
     let curve = crate::ids::directory_lookup_key("iges:model:curve#D", sequence, &mut storage)?;
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let point_id = &ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|item| item.id == *vertex)?
             .point;
-        ir.model
+        ir.geometry
             .points
             .iter()
             .find(|item| item.id == *point_id)
@@ -41,14 +41,18 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
     };
     let mut result = None;
     for edge in ir
-        .model
+        .geometry
         .edges
         .iter()
         .filter(|edge| edge.curve().is_some_and(|id| id.as_str() == curve))
     {
-        let start = point(&edge.start)?;
-        let end = point(&edge.end)?;
-        let closed = cadmpeg_ir::math::Point3::distance(start, end) <= tolerance;
+        let closed = match &edge.ends {
+            Some(ends) => {
+                cadmpeg_ir::math::Point3::distance(point(&ends.start)?, point(&ends.end)?)
+                    <= tolerance
+            }
+            None => true,
+        };
         if result.is_some_and(|previous| previous != closed) {
             return None;
         }
@@ -341,7 +345,7 @@ pub(super) fn project(
         let profile_id =
             crate::ids::directory_lookup_key("iges:model:curve#D", profile, &mut profile_storage);
         if !ir
-            .model
+            .geometry
             .curves
             .iter()
             .any(|curve| Some(curve.id.as_str()) == profile_id)

@@ -65,7 +65,7 @@ fn assert_close(computed: f64, expected: f64, numeric: f64) {
 #[test]
 fn writer_round_trip_keeps_measured_body_geometry() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].transform = Some(
+    ir.geometry.bodies[0].transform = Some(
         Transform::affine([
             [0.0, -1.0, 0.0, 15.0],
             [1.0, 0.0, 0.0, 4.0],
@@ -194,7 +194,10 @@ fn reversed_shell_exchanges_have_no_orientation_findings() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("decode reversed-shell exchange");
-        assert!(!decoded.ir().model.faces.is_empty(), "{name} decodes faces");
+        assert!(
+            !decoded.ir().geometry.faces.is_empty(),
+            "{name} decodes faces"
+        );
         let findings = orientation_findings(decoded.ir());
         assert!(findings.is_empty(), "{name}: {findings:#?}");
     }
@@ -225,8 +228,8 @@ fn reversed_void_shell_measures_the_enclosed_volume_through_a_round_trip() {
         solid_representation(1, solid)
     );
     let decoded = decode_inline(&records);
-    assert_eq!(decoded.ir().model.regions.len(), 1);
-    assert_eq!(decoded.ir().model.regions[0].shells.len(), 2);
+    assert_eq!(decoded.ir().geometry.regions.len(), 1);
+    assert_eq!(decoded.ir().geometry.regions[0].shells.len(), 2);
     let findings = orientation_findings(decoded.ir());
     assert!(findings.is_empty(), "{findings:#?}");
     let before = measured("solid with a void", decoded.ir()).expect("the document is measured");
@@ -265,7 +268,7 @@ fn solid_cylinder_round_trip_keeps_measured_geometry() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(output), &DecodeOptions::default())
             .expect("decode the written cylinder");
-        assert_eq!(decoded.ir().model.bodies.len(), ir.model.bodies.len());
+        assert_eq!(decoded.ir().geometry.bodies.len(), ir.geometry.bodies.len());
         measures_agree("cylinder", &ir, decoded.ir())
             .expect("the round trip keeps its measured geometry");
     }

@@ -502,7 +502,7 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
 ) -> EndpointWitnesses {
     let mut procedural_by_id = BTreeMap::new();
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.geometry.procedural_curves {
         procedural_by_id.insert(&procedural.id, procedural);
     }
     let mut witnesses: EndpointWitnesses = BTreeMap::new();
@@ -510,7 +510,7 @@ pub(super) fn validated_support_uv_endpoint_witnesses(
         let Some(procedural) = procedural_by_id.get(procedural_id).copied() else {
             continue;
         };
-        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+        let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
             continue;
         };
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -813,7 +813,7 @@ pub(super) fn complete_ext11_support_uv_with_budget(
     drop(model_index);
     for (procedural_id, side, replacement) in replacements {
         let Some(procedural) = ir
-            .model
+            .geometry
             .procedural_curves
             .iter_mut()
             .find(|procedural| procedural.id == procedural_id)
@@ -969,7 +969,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
             else {
                 continue;
             };
-            let Some(owner) = index.ir().model.procedural_curve_owner(&procedural.id) else {
+            let Some(owner) = index.ir().geometry.procedural_curve_owner(&procedural.id) else {
                 continue;
             };
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -1090,7 +1090,7 @@ pub(super) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
     };
     for (procedural_id, side) in invalid {
         let Some(procedural) = ir
-            .model
+            .geometry
             .procedural_curves
             .iter_mut()
             .find(|procedural| procedural.id == procedural_id)
@@ -1185,7 +1185,7 @@ fn complete_support_uv_wave(
             };
             let Some(owner) = model_index
                 .ir()
-                .model
+                .geometry
                 .procedural_curve_owner(&procedural.id)
             else {
                 continue;
@@ -1661,7 +1661,7 @@ fn complete_support_uv_wave(
             }
         }
         let mut cache_backed_constructions = BTreeSet::<ProceduralCurveId>::new();
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             if curve.geometry.solved_cache().is_none() {
                 continue;
             }
@@ -1672,7 +1672,7 @@ fn complete_support_uv_wave(
         drop(model_index);
         for (procedural_id, side, pcurve, effective_fit_tolerance) in replacements {
             let Some(procedural) = ir
-                .model
+                .geometry
                 .procedural_curves
                 .iter_mut()
                 .find(|procedural| procedural.id == procedural_id)
@@ -1842,7 +1842,7 @@ fn complete_coupled_support_uv(
         };
         let Some(owner) = model_index
             .ir()
-            .model
+            .geometry
             .procedural_curve_owner(&procedural.id)
         else {
             continue;
@@ -2060,7 +2060,7 @@ fn complete_coupled_support_uv(
     drop(model_index);
     for (procedural_id, side, pcurve) in replacements {
         let Some(procedural) = ir
-            .model
+            .geometry
             .procedural_curves
             .iter_mut()
             .find(|procedural| procedural.id == procedural_id)
@@ -2125,7 +2125,7 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
     let replacements = {
         let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut replacements = Vec::new();
-        for (procedural_index, procedural) in ir.model.procedural_curves.iter().enumerate() {
+        for (procedural_index, procedural) in ir.geometry.procedural_curves.iter().enumerate() {
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
                 continue;
@@ -2157,7 +2157,8 @@ pub(super) fn complete_parameterization_equivalent_support_uv(
         replacements
     };
     for (procedural_index, side, source) in replacements {
-        let Some(context) = ir.model.procedural_curves[procedural_index].intersection_context_mut()
+        let Some(context) =
+            ir.geometry.procedural_curves[procedural_index].intersection_context_mut()
         else {
             continue;
         };
@@ -2364,16 +2365,16 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         source_prefixes.push(source.scope.prefix());
     }
     let mut loop_faces = BTreeMap::new();
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         loop_faces.insert(&loop_.id, &loop_.face);
     }
     let mut face_surfaces = BTreeMap::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         face_surfaces.insert(&face.id, &face.surface);
     }
     let mut edge_curves = BTreeMap::new();
     let mut edge_tolerances = BTreeMap::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if let Some(curve) = edge.curve() {
             edge_curves.insert(&edge.id, curve);
         }
@@ -2382,7 +2383,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         }
     }
     let mut coedge_candidates = Vec::new();
-    for (index, coedge) in ir.model.coedges.iter().enumerate() {
+    for (index, coedge) in ir.geometry.coedges.iter().enumerate() {
         if !coedge.pcurves.is_empty() {
             continue;
         }
@@ -2431,7 +2432,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         .unwrap_or(0);
     let multiple_sources = sources.len() > 1;
     for (index, procedural) in ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .enumerate()
@@ -2452,7 +2453,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         else {
             continue;
         };
-        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+        let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
             continue;
         };
         for side in context.sides() {
@@ -2647,7 +2648,12 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
             &cadmpeg_ir::identity_component!("intersection-pcurve-completed"),
             fin_xmt,
         )?;
-        if ir.model.pcurves.iter().any(|pcurve| pcurve.id == pcurve_id) {
+        if ir
+            .geometry
+            .pcurves
+            .iter()
+            .any(|pcurve| pcurve.id == pcurve_id)
+        {
             continue;
         }
         if let Some(fin) = source.graph.get(NodeKind::Fin, fin_xmt) {
@@ -2670,13 +2676,14 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
-        ir.model.pcurves.push(Pcurve {
+        ir.geometry.pcurves.push(Pcurve {
             id: pcurve_id.clone(),
             geometry,
             metadata,
+            native_ref: None,
         });
         if let Some(coedge) = ir
-            .model
+            .geometry
             .coedges
             .iter_mut()
             .find(|coedge| coedge.id == coedge_id && coedge.pcurves.is_empty())
@@ -2746,7 +2753,7 @@ mod tests {
         crate::test_support::with_decode_context(|ctx| {
             let surface = SurfaceId::mint("test:model:entity#synthetic:cached-plane").unwrap();
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -2757,6 +2764,7 @@ mod tests {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let budget = GeometryWorkBudget::from_context(ctx, 10_000);
@@ -2952,7 +2960,7 @@ mod tests {
             let surface_id = SurfaceId::mint("test:model:entity#synthetic:support-plane")
                 .expect("identity grammar");
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -2963,6 +2971,7 @@ mod tests {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
             let points = vec![Point3::new(0.0, 0.0, 0.0); MAX_SUPPORT_UV_SAMPLES + 1];
@@ -3057,10 +3066,11 @@ mod tests {
                 .expect("valid test surface");
                 let geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs.clone()));
                 let mut ir = CadIr::empty();
-                ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
                     id: surface_id.clone(),
                     geometry: geometry.clone(),
                     source_object: None,
+                    native_ref: None,
                 });
                 let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
@@ -3121,7 +3131,7 @@ mod tests {
     fn empty_support_uv_completion_does_not_index_unrelated_model_records() {
         let mut ir = CadIr::empty();
         for i in 0..1000 {
-            ir.model.points.push(cadmpeg_ir::topology::Point::new(
+            ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
                 cadmpeg_ir::ids::PointId::mint(format!("nx:model:point#{i}")).expect("identity"),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0., 0., 0.)).expect("point"),
                 None,

@@ -289,12 +289,19 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
             )
         }
         PcurveGeometry::Nurbs { nurbs } => {
-            let points = nurbs
+            let mut points = nurbs
                 .control_points()
                 .iter()
                 .map(|point| point2(e, point.get()))
                 .collect::<Vec<_>>();
-            let (knots, multiplicities) = compress_knots(nurbs.knots());
+            let mut weights = nurbs.pole_rows().weights();
+            let (knots, multiplicities) = curve_knots::continuous_curve_knots(
+                &mut points,
+                &mut weights,
+                nurbs.knots(),
+                nurbs.degree(),
+                nurbs.periodic(),
+            );
             let base = format!(
                 "{},{},.UNSPECIFIED.,{},.U.",
                 nurbs.degree(),
@@ -306,7 +313,7 @@ pub(crate) fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> 
                 int_list(&multiplicities),
                 real_list(e, &knots)
             );
-            if let Some(weights) = nurbs.pole_rows().weights() {
+            if let Some(weights) = weights {
                 e.emit_raw(
                     "B_SPLINE_CURVE_WITH_KNOTS",
                     &format!(
@@ -792,12 +799,19 @@ fn closed_flag(periodic: bool) -> &'static str {
 }
 
 fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
-    let pts: Vec<Ref> = n
+    let mut pts: Vec<Ref> = n
         .control_points()
         .iter()
         .map(|p| point(e, p.get()))
         .collect();
-    let (knots, mults) = compress_knots(n.knots());
+    let mut weights = n.pole_rows().weights();
+    let (knots, mults) = curve_knots::continuous_curve_knots(
+        &mut pts,
+        &mut weights,
+        n.knots(),
+        n.degree(),
+        n.periodic(),
+    );
     let ctrl = refs(&pts);
     let base = format!(
         "{},{ctrl},.UNSPECIFIED.,{},.U.",
@@ -809,7 +823,7 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
         int_list(&mults),
         real_list(e, &knots)
     );
-    match n.pole_rows().weights() {
+    match weights {
         None => e.emit(
             "B_SPLINE_CURVE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),
@@ -884,6 +898,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
 }
 
 mod bake;
+mod curve_knots;
 #[cfg(test)]
 mod replica_tests;
 #[cfg(test)]

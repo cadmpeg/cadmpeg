@@ -84,8 +84,8 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written procedural geometry");
-    assert_eq!(decoded.ir().model.procedural_curves.len(), 3);
-    assert_eq!(decoded.ir().model.procedural_surfaces.len(), 4);
+    assert_eq!(decoded.ir().geometry.procedural_curves.len(), 3);
+    assert_eq!(decoded.ir().geometry.procedural_surfaces.len(), 4);
 
     let bounded = StepCodec::default()
         .decode(
@@ -114,7 +114,7 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
         .expect("decode written curve-bounded surface");
     assert!(!decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
@@ -143,13 +143,13 @@ fn complex_swept_surfaces_decode_named_partials() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| { surface.id.as_str() == "step:construction:swept_surface#23" }));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| { surface.id.as_str() == "step:construction:swept_surface#25" }));
@@ -168,11 +168,11 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode linear-extrusion sheet");
 
-    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    assert_eq!(decoded.ir().geometry.pcurves.len(), 1);
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| !coedge.pcurves.is_empty())
@@ -218,11 +218,11 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode source-parameterized linear-extrusion pcurve");
 
-    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    assert_eq!(decoded.ir().geometry.pcurves.len(), 1);
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| !coedge.pcurves.is_empty())
@@ -231,7 +231,7 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
     );
     let used_id = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter())
@@ -242,7 +242,7 @@ fn linear_extrusion_pcurve_uses_source_directrix_parameterization() {
     assert_eq!(used_id.as_str(), "step:data:pcurve#56");
     let used = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == used_id)
@@ -275,7 +275,7 @@ fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
 
     let line_pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#19")
@@ -289,7 +289,7 @@ fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
 
     let revolution_pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#29")
@@ -302,7 +302,7 @@ fn directrix_parameter_scale_witness_uses_line_vector_and_plane_angle_units() {
     assert!((direction.u - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
     assert!((direction.v - degree_to_radian).abs() < EPS_TP03_PARAMETER_SCALE);
 
-    assert_eq!(decoded.ir().model.procedural_surfaces.len(), 2);
+    assert_eq!(decoded.ir().geometry.procedural_surfaces.len(), 2);
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -345,11 +345,11 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
     assert!(partials.du.y.abs() < 1.0e-12);
     assert!(partials.du.z.abs() < 1.0e-12);
     assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
-    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    assert_eq!(decoded.ir().geometry.pcurves.len(), 1);
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| !coedge.pcurves.is_empty())
@@ -389,7 +389,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
         assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
         let pcurve = decoded
             .ir()
-            .model
+            .geometry
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#22")
@@ -432,11 +432,11 @@ fn surface_of_revolution_selects_profile_parameter_pcurve() {
         .map(cadmpeg_ir::features::FinitePoint3::get),
         Ok(Point3::new(10.0, 0.0, 0.0))
     );
-    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    assert_eq!(decoded.ir().geometry.pcurves.len(), 1);
     assert_eq!(
         decoded
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| !coedge.pcurves.is_empty())
@@ -469,7 +469,7 @@ fn reversed_step_ellipse_axes_are_canonicalized() {
         .expect("decode reversed ellipse");
     let ellipse = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
@@ -515,7 +515,7 @@ fn reversed_step_ellipse_trim_preserves_source_parameterization() {
     assert!(start.y.abs() < 1.0e-12);
     assert!(end.x.abs() < 1.0e-12);
     assert!((end.y - 6.0).abs() < 1.0e-12);
-    assert!(result.ir().model.procedural_curves.iter().any(|curve| {
+    assert!(result.ir().geometry.procedural_curves.iter().any(|curve| {
         match curve.definition() { cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(matched_payload) => matches!((&matched_payload.parameter_range().endpoints(),), ([start, end],) if curve.id.as_str() == "step:construction:trimmed_curve#6"
                 && (*start + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
                 && end.abs() < 1.0e-12), _ => false }
@@ -533,7 +533,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
 
     let reversed = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#9")
@@ -552,7 +552,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
 
     let ordered = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
@@ -579,7 +579,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
             ProceduralCurveId::from(ids::construction(kind!("trimmed_curve"), curve_id));
         let construction = decoded
             .ir()
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .find(|curve| curve.id == construction_id)
@@ -650,7 +650,7 @@ fn annotation_plane_keeps_its_neutral_plane_reachable() {
         .expect("decode annotation plane");
     let plane = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#70")
@@ -683,7 +683,7 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
 #8=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
     );
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| {
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(surface.geometry.solved(), Some(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
             let half_angle = cone_surface.half_angle().get();
@@ -708,7 +708,7 @@ fn conical_surface_accepts_a_negative_semi_angle() {
 #8=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
     );
 
-    assert!(result.ir().model.surfaces.iter().any(|surface| {
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(surface.geometry.solved(), Some(SolvedSurfaceGeometry::Cone(cone_surface))
         if {
             let axis = *cone_surface.frame().axis().as_raw();
@@ -745,20 +745,20 @@ fn complex_geometry_instances_decode_named_partials() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex geometry instances");
 
-    assert!(decoded.ir().model.curves.iter().any(|curve| {
+    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#16"
             && matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Line(_)))
     }));
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
             && matches!(
                 surface.geometry.solved(),
                 Some(SolvedSurfaceGeometry::Plane(_))
             )
     }));
-    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    assert_eq!(decoded.ir().geometry.pcurves.len(), 1);
     assert!(matches!(
-        &decoded.ir().model.pcurves[0].geometry,
+        &decoded.ir().geometry.pcurves[0].geometry,
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(_)
     ));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
@@ -783,8 +783,8 @@ fn complex_points_and_directions_decode_named_partials() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex points and directions");
 
-    assert_eq!(decoded.ir().model.vertices.len(), 3);
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+    assert_eq!(decoded.ir().geometry.vertices.len(), 3);
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
             && matches!(
                 surface.geometry.solved(),
@@ -815,7 +815,7 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
 
     let composite = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#9")
@@ -847,8 +847,8 @@ fn geometric_surface_representation_salvages_valid_sibling_sets() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode geometric set with malformed sibling");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
     assert!(decoded
         .report()
         .losses
@@ -868,9 +868,9 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
 #4=(REPRESENTATION('free shape',(#3),#2) SHAPE_REPRESENTATION());",
     );
 
-    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().geometry.points.len(), 1);
     assert_eq!(
-        decoded.ir().model.points[0]
+        decoded.ir().geometry.points[0]
             .source_object
             .as_ref()
             .and_then(|source| source.name.as_deref()),
@@ -901,7 +901,7 @@ fn unreferenced_curve_is_associated_as_free_geometry() {
     );
     let curve = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#14")
@@ -938,7 +938,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
 #7=AUXILIARY_LEADER_LINE('auxiliary',(#1,#2),#5);",
     );
 
-    assert_eq!(decoded.ir().model.points.len(), 4);
+    assert_eq!(decoded.ir().geometry.points.len(), 4);
     for (id, expected) in [
         ("#1", (1.0, 2.0, 3.0)),
         ("#2", (4.0, 5.0, 6.0)),
@@ -947,7 +947,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
     ] {
         let point = decoded
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .find(|point| {
@@ -963,7 +963,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
     }
     let named_point = decoded
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| {
@@ -982,7 +982,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
     );
     let complex_point = decoded
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| {
@@ -1032,7 +1032,7 @@ fn invalid_apll_leader_point_stays_source_native() {
 #2=ANNOTATION_TO_MODEL_LEADER_LINE('invalid',(#1));",
     );
 
-    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded.ir().geometry.points.is_empty());
     assert!(decoded
         .ir()
         .native_unknowns("step")
@@ -1054,21 +1054,21 @@ fn tessellated_curve_set_transfers_each_line_strip_as_a_polyline() {
 
     let first = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#4")
         .expect("first tessellated line strip");
     let second = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#4-strip-1")
         .expect("second tessellated line strip");
     let complex = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#5")
@@ -1115,7 +1115,7 @@ fn tessellated_curve_set_with_invalid_indices_stays_source_native() {
 #2=TESSELLATED_CURVE_SET(#1,((0,1)));",
     );
 
-    assert!(!decoded.ir().model.curves.iter().any(|curve| {
+    assert!(!decoded.ir().geometry.curves.iter().any(|curve| {
         curve
             .source_object
             .as_ref()

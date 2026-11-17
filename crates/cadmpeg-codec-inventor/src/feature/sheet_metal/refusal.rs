@@ -37,7 +37,9 @@ pub(crate) enum PlateRefusal {
     PlateDirection,
     /// The first attachment direction is not along the sketch u axis.
     FirstDirection,
-    /// The second attachment direction is not along the sketch v axis.
+    /// The second attachment direction is not perpendicular to the first with a
+    /// positive sketch v component, nor antiparallel to v after a reversed first
+    /// direction.
     SecondDirection,
     /// The attachment thickness is not the slot-3 reference.
     ThicknessReference,
@@ -118,17 +120,17 @@ impl PlateRefusal {
 
 /// Turn a failed check into the refusal that names it.
 pub(crate) trait Refuse<T> {
-    fn refuse(self, refusal: PlateRefusal) -> Result<T, PlateRefusal>;
+    fn refuse<R>(self, refusal: R) -> Result<T, R>;
 }
 
 impl<T> Refuse<T> for Option<T> {
-    fn refuse(self, refusal: PlateRefusal) -> Result<T, PlateRefusal> {
+    fn refuse<R>(self, refusal: R) -> Result<T, R> {
         self.ok_or(refusal)
     }
 }
 
 /// Fail with `refusal` unless `condition` holds.
-pub(crate) fn require(condition: bool, refusal: PlateRefusal) -> Result<(), PlateRefusal> {
+pub(crate) fn require<R>(condition: bool, refusal: R) -> Result<(), R> {
     if condition {
         Ok(())
     } else {

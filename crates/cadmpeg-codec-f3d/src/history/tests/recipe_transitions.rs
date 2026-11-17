@@ -460,6 +460,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             face_group_record_indices: vec![100],
             diameters: crate::records::feature::thread::DesignThreadDiameters::new(0.4, 0.2, 0.3)
                 .unwrap(),
+            modeled: false,
             extended: None,
         });
     }
@@ -601,11 +602,11 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
     let body = |id: &str, kind| Body {
         id: BodyId::mint(id).expect("identity grammar"),
         kind,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let sweep = |id: &str, outputs: Vec<BodyId>| Feature {
         product_definition: None,

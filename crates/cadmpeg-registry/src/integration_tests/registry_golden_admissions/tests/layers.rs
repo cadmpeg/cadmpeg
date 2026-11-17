@@ -35,7 +35,8 @@ fn malformed_or_orphaned_layer_sets_are_rejected() {
     assert_rejected(&missing_extra, &registry, "invalid dialect layer set");
 
     let mut invalid_admission = report_view(&nx, &[kernel_loss("nx")]);
-    invalid_admission["identity"]["dialects"]["extra"][0]["admission"] = json!("recovered");
+    invalid_admission["identity"]["dialects"]["extra"][0]["admission"] =
+        json!({"kind": "recovered"});
     assert_rejected(&invalid_admission, &registry, "invalid dialect layer");
 
     let mut duplicate = report_view(&nx, &[kernel_loss("nx")]);

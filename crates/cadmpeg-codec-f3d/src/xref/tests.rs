@@ -665,7 +665,7 @@ fn repeated_target_frames_accept_both_reference_and_separator_forms() {
 
 #[test]
 fn local_occurrence_paths_belong_to_the_local_component_decoder() {
-    let (bulk, _) = crate::test_support::streams_test::nested_local_component_design(&[300]);
+    let (bulk, _) = crate::test_support::component_design::nested_local_component_design(&[300]);
     let records = super::indexed_records(&bulk);
     let local_records: Vec<_> = records
         .into_iter()
@@ -1964,4 +1964,5 @@ fn pathless_occurrence_placements_bind_the_target_role_and_close() {
     }
 }
 
+mod legacy_insert_carrier;
 mod reference_rows;

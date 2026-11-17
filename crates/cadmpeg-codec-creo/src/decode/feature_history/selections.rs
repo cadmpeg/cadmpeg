@@ -90,15 +90,20 @@ pub(in super::super) fn feature_edge_selection(
         }
     }
     if unique
-        && edges
-            .iter()
-            .all(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
+        && edges.iter().all(|edge| {
+            ir.geometry
+                .edges
+                .iter()
+                .any(|candidate| candidate.id == *edge)
+        })
     {
         Ok(Some(EdgeSelection::Resolved { edges, native }))
-    } else if edges
-        .iter()
-        .any(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
-    {
+    } else if edges.iter().any(|edge| {
+        ir.geometry
+            .edges
+            .iter()
+            .any(|candidate| candidate.id == *edge)
+    }) {
         // A typed generated selection names one result namespace. A roster
         // that mixes current B-rep edges with absent edges has no neutral
         // mixed identity, so retain the exact native selection.

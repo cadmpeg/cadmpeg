@@ -11,7 +11,7 @@ rewrite_record!(CurveDrivenPatternParameters, []; { path, count, spacing, distan
 
 rewrite_record!(CompositePattern, []; (field0));
 
-rewrite_record!(LinearPatternDirection, []; { direction, spacing, count });
+rewrite_record!(LinearPatternDirection, []; { direction, spacing, count, symmetric });
 
 rewrite_record!(PatternKind<C>, [C]; (field0));
 
@@ -34,7 +34,7 @@ rewrite_record!(PatternStage, []; { pattern });
 rewrite_enum!(PatternTransform<C>, [C]; {
     CurveDrivenPartial { parameters },
     Unresolved { form },
-    Linear { direction, spacing, count, second, omitted_instances },
+    Linear { direction, spacing, count, second, omitted_instances, symmetric },
     LinearOffsets { direction, offsets },
     Circular { axis_origin, axis_dir, angle, count },
     CircularAngles { axis_origin, axis_dir, angles },

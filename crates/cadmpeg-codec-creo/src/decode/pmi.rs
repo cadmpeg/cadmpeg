@@ -154,7 +154,10 @@ pub(super) fn transfer(
             elements: &element_tables,
             dimension_targets: &dimension_targets,
         },
-        scale.map(cadmpeg_ir::scalar::PositiveReal::get),
+        &dimensions::DimensionSource {
+            length_scale_mm: scale.map(cadmpeg_ir::scalar::PositiveReal::get),
+            release_major: crate::container::banner_release_major(&scan.framing.data),
+        },
         ir,
         annotations,
         losses,
@@ -295,7 +298,7 @@ pub(super) fn transfer(
                         id,
                         name: None,
                         visible: None,
-                        targets: target_faces,
+                        targets: target_faces.into_iter().map(Into::into).collect(),
                         definition: PmiDefinition::Presentation {
                             text: Some(text.to_owned()),
                             placement: None,
@@ -596,7 +599,7 @@ fn push_tolerance(
         id: id.clone(),
         name: None,
         visible: None,
-        targets,
+        targets: targets.into_iter().map(Into::into).collect(),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: definition.0,
             magnitude: definition.1,

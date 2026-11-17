@@ -17,14 +17,17 @@ pub(super) fn resolve(
     resolution: ScopedExtrudeProfileResolution<'_>,
     allow_assumptions: bool,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
-    let Some(selection) = &profile.region_selection else {
+    let Some(selection) = profile.planar_region_selection() else {
         return Ok(None);
     };
     let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
         return Ok(None);
     };
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
     let mut rings = Vec::new();
-    for region in &selection.regions {
+    for region in regions {
         let mut members = Vec::new();
         for member in &region.members {
             let Some(entity) =
@@ -102,15 +105,18 @@ pub(super) fn resolve_stale(
     states: (i64, i64),
     sweep: super::cap_regions::compact::Sweep<'_>,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
-    let Some(selection) = &profile.region_selection else {
+    let Some(selection) = profile.planar_region_selection() else {
         return Ok(None);
     };
     let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
         return Ok(None);
     };
     let mut stale = false;
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
     let mut owned = Vec::new();
-    for region in &selection.regions {
+    for region in regions {
         let mut members = Vec::new();
         for member in &region.members {
             let has_identity = curves.iter().any(|curve| {

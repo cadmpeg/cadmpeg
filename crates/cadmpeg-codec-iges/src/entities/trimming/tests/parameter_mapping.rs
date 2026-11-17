@@ -20,17 +20,18 @@ use cadmpeg_ir::CadIr;
 fn extrusions(count: usize) -> CadIr {
     let mut ir = CadIr::empty();
     let directrix = CurveId::mint("test:model:curve#line").unwrap();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
             LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
         )),
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     for ordinal in 0..count {
         let id = ProceduralSurfaceId::mint(format!("test:model:construction#{ordinal}")).unwrap();
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             id.clone(),
             ProceduralSurfaceDefinition::Extrusion(
                 ExtrusionSurfaceConstruction::try_new(
@@ -44,13 +45,14 @@ fn extrusions(count: usize) -> CadIr {
             ),
             Some(RecordBounds::try_new([Some(2.0), Some(5.0), None, None]).unwrap()),
         ));
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("test:model:surface#{ordinal}")).unwrap(),
             geometry: SurfaceGeometry::Procedural {
                 construction: id,
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
     }
     ir
@@ -73,7 +75,7 @@ fn repeated_parameter_charts_preserve_normalized_line_and_length_coordinates() {
     let geometry = plane();
     crate::test_support::with_policy_context(&[], &DecodePolicy::service(), |_| {
         let index = ModelIndex::new_model_only(&ir);
-        for surface in &ir.model.surfaces {
+        for surface in &ir.geometry.surfaces {
             let support = PcurveSupport {
                 surface_id: &surface.id,
                 geometry: &geometry,
@@ -96,10 +98,10 @@ fn repeated_parameter_charts_preserve_normalized_line_and_length_coordinates() {
 #[test]
 fn missing_procedural_chart_does_not_become_a_solved_parameter_map() {
     let mut ir = extrusions(1);
-    ir.model.procedural_surfaces.clear();
+    ir.geometry.procedural_surfaces.clear();
     ({
         let index = ModelIndex::new_model_only(&ir);
-        let surface = &ir.model.surfaces[0];
+        let surface = &ir.geometry.surfaces[0];
         let support = PcurveSupport {
             surface_id: &surface.id,
             geometry: &surface.geometry,

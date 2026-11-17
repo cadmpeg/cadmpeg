@@ -65,6 +65,7 @@ fn dual_lane_symmetric_extrude_doubles_whole_travel() {
                     extrude_profile: Some(
                         DesignSketchProfileOperand::try_new(
                             crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                                sketch_absent: false,
                                 scope_reference_ordinal: 0,
                                 record_index: 100,
                                 byte_offset: 300,

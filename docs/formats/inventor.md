@@ -648,7 +648,7 @@ Type `4a374949d211001d00083bab1b14dc09` stores a fillet edge-selection enumerati
 
 A single closed periodic polynomial spline is a whole profile ring when its named wire has one edge, the edge's spline degree and full knot vector equal those of the named sketch spline, its ordered poles map to the sketch poles in the sketch plane within the kernel linear tolerance, its parameter interval is the full knot domain, and both edge vertices equal the spline seam within that tolerance. The carrier and sketch curve have no rational weights. This join uses the edge's naming attribute and the consumed sketch's curve-type entity-style link.
 
-Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively. Feature-label class identifier `b54dd6f6d311c4966000f2b21d6eefb0` identifies a sheet-metal corner round. Its feature record uses the constant-radius edge-fillet slots and rounds the selected edges. Type `08dcddc3d311d0976000a7a99dccefb0` is a sheet-metal flange record. After the content header it stores `state:i32`, a type-2 reference list, and a u32 value. The list names the plate, bend, and corner feature records that form the flange, in that order. Type `904bc1c4d311ff2860004da99dccefb0` is a sheet-metal face record with the same envelope. The one-plate form names one plate feature record; its label lists the planar sketch and that plate. The plate-and-bend form names the plate and bend feature records in that order; its label lists the planar sketch, plate, and bend. The flange label's participants are its planar sketch, plate, bend, and corner, in that order. The flange and face state headers have no content-header stamps.
+Feature-label class identifiers `3111a90cd0118b83000819b00524dc09`, `dc15f7f1d1114205000830b00524dc09`, `3f7100f9d2118b6f6000f0a89dccefb0`, and `1a7d751fd2119c54a00020803603c8c9` identify extrusion, fillet, chamfer, and hole records respectively. Feature-label class identifier `b54dd6f6d311c4966000f2b21d6eefb0` identifies a sheet-metal corner round. Its feature record uses the constant-radius edge-fillet slots and rounds the selected edges. Type `08dcddc3d311d0976000a7a99dccefb0` is a sheet-metal flange record. After the content header it stores `state:i32`, a type-2 reference list, and a u32 value. The list names the plate, bend, and corner feature records that form the flange, in that order. Type `b07438a0d4113812600018aa9dccefb0` is a contour-flange record with the same envelope and child order; section 13.5 defines it. Type `904bc1c4d311ff2860004da99dccefb0` is a sheet-metal face record with the same envelope. The one-plate form names one plate feature record; its label lists the planar sketch and that plate. The plate-and-bend form names the plate and bend feature records in that order; its label lists the planar sketch, plate, and bend. The flange label's participants are its planar sketch, plate, bend, and corner, in that order. The flange and face state headers have no content-header stamps.
 
 The segment-major-29 one-plate face suffix occupies 28 bytes after the state content header. It stores `state:i32 = -1`, `marker:u16 = 2`, `signature:u16 = 0x3000`, `count:u32 = 1`, `metadata:u32[2] = [1, 16]`, one qualified plate reference, and `value:u32 = 0`. The segment-major-19 plate-and-bend face suffix occupies 32 bytes after the state content header. It stores `state:i32 = -1`, `marker:u16 = 2`, `signature:u16 = 0x3000`, `count:u32 = 2`, `metadata:u32[2] = [2, 0]`, qualified plate and bend references in that order, and `value:u32 = 0`. Each suffix ends after `value`.
 
@@ -1079,15 +1079,15 @@ One flange control form has the following values and reference relations. Direct
 | Attachment first mode, second mode | Enumeration `(9, 1)` |
 | Attachment states | `[1, 1, 1]` |
 | Attachment first direction | Parallel or antiparallel to the consumed sketch U axis; its sign does not change thickness side |
-| Attachment second direction | Parallel to the consumed sketch V axis, `normal × U`; antiparallel to V when the first direction is antiparallel to U. Neither sign changes the thickness side |
+| Attachment second direction | Perpendicular to the first direction, with a positive component along the consumed sketch V axis, `normal × U`; or antiparallel to V when the first direction is antiparallel to U. Neither sign nor the angle to V changes the thickness side |
 | Attachment thickness | Same reference as plate slot 3 |
 | Attachment extension | Absent, or state 10 with repeated thickness, radius, attachment, relief width, minimum remnant, and option references |
-| Relief control | Boolean true |
+| Relief control | Boolean |
 | Relief form | Same enumeration type and value as the document-style bend-relief form |
 | Relief width, minimum remnant | Same references as the attachment operands |
 | Relief width, depth | Positive lengths |
 | Relief minimum remnant, seam gap | Nonnegative lengths |
-| Transition control | Boolean true |
+| Transition control | Boolean |
 | Transition form | Same enumeration type and value as the document-style transition form |
 | Transition radius | Nonnegative length |
 | Corner control, option | Boolean |
@@ -1129,6 +1129,42 @@ The 9-property bend form has slots 0 through 8 of that table. Its slot 5 holds t
 Type `08dcddc3d311d0976000a7a99dccefb0` stores the flange parent. It contains the state content header without stamps, `state:i32`, a type-2 reference list, and `value:u32`, then ends. The reference list selects the plate, bend, and corner generic-feature records in that order. The parent's feature label has four ordered participants: the consumed planar sketch, that plate, that bend, and that corner. The consumed sketch defines the plate's planar profile. The attached-plate slot-0 kernel selection stores its construction wire; that wire is not the closed boundary of the consumed sketch.
 
 For a plate owned by a `08dcddc3d311d0976000a7a99dccefb0` flange record, slot 1 is antiparallel to the first attachment direction. Slot 1 is in the sketch plane. It does not define the thickness direction. Slot 2 Boolean false or enumeration `(2, 0)` places the plate between the sketch plane and its positive-normal offset by the thickness. Reversing the first attachment direction does not reverse this offset.
+
+Type `b07438a0d4113812600018aa9dccefb0` stores the contour-flange parent. Its payload has the flange-parent layout: the state content header without stamps, `state:i32`, a type-2 reference list, and `value:u32`, then ends. The reference list selects the plate, bend, and corner generic-feature records in that order. The parent's feature label carries the contour-flange name and the four ordered participants of a flange label: the consumed planar sketch, that plate, that bend, and that corner.
+
+The contour plate has the 17-property form with these slot roles:
+
+| Slot | Operand |
+| ---: | --- |
+| 0 | Plate profile selection, value 0; its kernel wire is the open profile path |
+| 1 | Travel direction along the consumed sketch normal |
+| 2 | Plate-side enumeration `(2, 0)` |
+| 3 | Travel length parameter |
+| 4 | Contour attachment control `40b45504d4115612600018aa9dccefb0` |
+| 5, 6, 12, 14 | Null |
+| 7 | Empty edge collection |
+| 8 | Feature dimensions |
+| 9 | Corner control |
+| 10 | Bend relief |
+| 11 | Transition |
+| 13 | Plate scalar control 0 |
+| 15 | Result object collection |
+| 16 | Part operation `(5, 1)`; the result is a new body |
+
+The slot-3 parameter is a length parameter, or a parameter with a dimensionless base unit whose value is the travel length in internal centimetres. Slot 12 is null, so the contour plate has no attachment selection list. The contour attachment control contains the attachment control fields followed by these fields, then ends:
+
+```text
+extension u32
+value u8
+```
+
+In the projected form, `thickness` is the sheet thickness and `radius` is the inside bend radius. The first direction is the same reference as plate slot 1. The second direction references a stored direction record; the contour flange does not consume its vector. `control`, `first_option`, and `second_option` are Boolean false. `first_mode` is enumeration `(9, 1)` and `second_mode` is enumeration `(9, 4)`. `states` is `[1, 1, 1]` and `value` is 0. `extension` references a state-10 attachment-state record whose `attachment` is the contour attachment control and whose other references repeat the thickness, radius, relief width, minimum remnant, and option references. The relief and transition satisfy the relief and transition relations of the flange control form, including equality with the document-style forms.
+
+The contour bend has the 11-property form. Slots 0, 3, 4, 7, and 9 are the same references as plate slots 7, 4, 10, 11, and 15. Slot 1 is the attachment radius reference and slot 2 is the attachment thickness reference. Slot 5 is null, slot 6 is a feature-dimension list, slot 8 is bend scalar 6 with state 1, and slot 10 is Boolean true. The contour corner has the seven-property form. Its slots 0, 3, 4, and 6 are the same references as plate slots 9, 12, 0, and 15; slots 1 and 5 are null; slot 2 is a feature-dimension list.
+
+For plate-side enumeration `(2, 0)` and contour attachment modes `(9, 1)` and `(9, 4)`, the thickness extends opposite the consumed sketch plane normal crossed with the tangent of the first selected profile curve in its stored direction. The profile curves follow the slot-0 wire order.
+
+A contour flange makes one sheet. The open profile is the ordered chain of whole curves of the consumed sketch that the slot-0 wire edges run along. The sheet travels from the profile plane along slot 1 by the slot-3 length. Its thickness is the attachment thickness, and the bends at the profile vertices have the attachment radius as inside radius. The bend and corner children store the bend and corner operands of that one sheet. They make no separate body: the plate, bend, and corner refer to one result collection.
 
 The bend radius in slot 1 repeats the radius reference of the attachment control. The flange record owns ordered plate, bend, and corner children. Each child is a separate generic feature with its own source index, label owner, state, and history position. Sharing an attachment control identifies the plate and bend pair. The bend is not a property sub-record of the plate. The plate and bend refer to a common result-body wrapper; result identity alone does not select a history revision. Neither the attachment control nor the bend's property vector contains an angle parameter.
 
@@ -1349,6 +1385,8 @@ A feature record has the `source_index` of its content header. The state after t
 A body key of a surface-body wrapper is the entity identifier of the kernel-entity link that the wrapper selects through the current-model join of section 13.4. A wrapper without that join has no body key.
 
 A Split with a solid target is bound only when its target body key leaves between the two states. The target wrapper is the slot-7 surface-body wrapper of the Split (section 13.3). The key is the key of a body record live in `state_before` and of no body record live in `state_after`. A Base feature is bound only when the body key of its result wrapper, the slot-1 wrapper of the Base (section 13.4), is the key of a body record live in `state_after` and of none in `state_before`. The two checks refuse a feature whose key does not resolve, whose state before is absent, or whose key does not change as stated. The disappearance or appearance of a body key without a naming tag that lists the source index does not bind a feature. Features of other kinds are bound by the naming tag alone.
+
+A bound Split or Base feature that projects to a neutral feature has a history body when the state that holds its body materializes to a closed solid. The state is `state_before` for a Split and `state_after` for a Base. The record table of a state has, for each slot of the entity-version map of the state, the record of the revision that the map selects. The record index is the slot, and each non-negative reference names the slot of the revision it referred to. The table exists when every reference names a slot of the map. The body of the feature is the `body` record with the checked body key, and the records it reaches through references. The body is closed when it is a solid body and each edge that has a carrier joins exactly two coedges. A carrier that a procedural construction produces keeps its solved cache as its geometry; a carrier without a cache gives no history body. The history body of a Split is consumed by the Split feature. The history body of a Base is produced by the Base feature. The native record of the feature names its history body.
 
 ### 13.11 Part annotations
 
