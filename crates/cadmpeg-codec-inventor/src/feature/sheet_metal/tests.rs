@@ -682,3 +682,17 @@ fn a_missing_edge_inventory_reports_its_reason_for_selecting_plates() {
     );
     assert!(losses[0].message.ends_with(": archive."));
 }
+
+#[test]
+fn a_style_record_without_a_layout_names_its_segment_version() {
+    let mut inventory = FeatureInventory::default();
+    assert!(native_kind_losses(&inventory, &[]).is_empty());
+    inventory.unread_style_versions.extend([30, 25]);
+    let losses = native_kind_losses(&inventory, &[]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sheet-metal-style-version-unread"
+    );
+    assert!(losses[0].message.contains("version(s) 25, 30 "));
+}

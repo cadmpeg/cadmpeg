@@ -193,6 +193,8 @@ pub(crate) struct FeatureInventory {
     pub(crate) properties: Vec<PmDcFeatureProperty>,
     pub(crate) sheet_metal_styles: Vec<sheet_metal::style::Style>,
     pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
+    /// Segment major versions of sheet-metal style records without a field layout.
+    pub(crate) unread_style_versions: std::collections::BTreeSet<u8>,
     pub(crate) dimensions: Vec<revolve::Dimension>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
     pub(crate) thread_definitions: Vec<thread::Definition>,
@@ -714,8 +716,12 @@ pub(crate) fn inventory(
                 continue;
             }
             let parsed = match record.type_id {
-                sheet_metal::style::TYPE if sheet_metal::style::prefix_len(version).is_some() => {
-                    sheet_metal::style::parse(ctx, record.payload, version).and_then(|style| {
+                sheet_metal::style::TYPE if sheet_metal::style::prefix_len(version).is_none() => {
+                    inventory.unread_style_versions.insert(version);
+                    Ok(())
+                }
+                sheet_metal::style::TYPE => sheet_metal::style::parse(ctx, record.payload, version)
+                    .and_then(|style| {
                         push_record(
                             ctx,
                             &mut inventory.sheet_metal_styles,
@@ -725,8 +731,7 @@ pub(crate) fn inventory(
                             record.ordinal,
                             "admit Inventor sheet-metal style",
                         )
-                    })
-                }
+                    }),
                 sheet_metal::flange::TYPE | sheet_metal::flange::CONTOUR_TYPE => {
                     sheet_metal::flange::parse(ctx, record.payload, version).and_then(|flange| {
                         push_record(

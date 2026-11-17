@@ -850,6 +850,17 @@ pub(crate) fn native_kind_losses(
     use crate::loss::InventorLossCode;
     let (attached_plates, bends, corner_rounds) = native_kind_counts(inventory, features);
     let mut losses: Vec<_> = edge_inventory_loss(inventory).into_iter().collect();
+    if !inventory.unread_style_versions.is_empty() {
+        losses.push(InventorLossCode::FeatureSheetMetalStyleVersionUnread.note(format!(
+            "Retained the sheet-metal style record(s) of segment major version(s) {} without their field layout; attached plates that need the style keep the style refusal.",
+            inventory
+                .unread_style_versions
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
     if attached_plates != 0 {
         losses.push(InventorLossCode::FeatureSheetMetalAttachmentControlsNative.note(format!(
             "Retained {attached_plates} attached plate(s) as native history features: the operands, controls, style defaults, or attachment selections do not close the neutral construction."

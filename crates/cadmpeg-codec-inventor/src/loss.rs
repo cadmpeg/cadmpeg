@@ -181,6 +181,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeInventoryUnavailable,
     /// A feature-label class has no recognized family; its features stay native and the note names the class.
     FeatureNativeClassUnrecognized,
+    /// A sheet-metal style record has a segment version without a field layout; plates that need the style stay native.
+    FeatureSheetMetalStyleVersionUnread,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
     /// `DeleteFace` Boolean construction roles remain unresolved.
@@ -411,6 +413,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalNativeUnexplained,
         Self::FeatureEdgeInventoryUnavailable,
         Self::FeatureNativeClassUnrecognized,
+        Self::FeatureSheetMetalStyleVersionUnread,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
         Self::FeatureFilletOperandsNative,
@@ -595,6 +598,7 @@ impl InventorLossCode {
             Self::FeatureSheetMetalNativeUnexplained => "feature.sheet-metal-native-unexplained",
             Self::FeatureEdgeInventoryUnavailable => "feature.edge-inventory-unavailable",
             Self::FeatureNativeClassUnrecognized => "feature.native-class-unrecognized",
+            Self::FeatureSheetMetalStyleVersionUnread => "feature.sheet-metal-style-version-unread",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureMirrorBooleanNative => "feature.mirror-boolean-native",
@@ -753,6 +757,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalNativeUnexplained
             | Self::FeatureEdgeInventoryUnavailable
             | Self::FeatureNativeClassUnrecognized
+            | Self::FeatureSheetMetalStyleVersionUnread
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureMirrorBooleanNative
@@ -944,6 +949,7 @@ mod tests {
                 "feature.sheet-metal-native-unexplained",
                 "feature.edge-inventory-unavailable",
                 "feature.native-class-unrecognized",
+                "feature.sheet-metal-style-version-unread",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
                 "feature.fillet-operands-native",
