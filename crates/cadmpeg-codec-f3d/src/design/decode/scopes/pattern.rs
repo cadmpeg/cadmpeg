@@ -28,6 +28,7 @@ use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::{View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
+use std::collections::HashMap;
 
 const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
 
@@ -38,6 +39,7 @@ pub(super) fn exact_rectangular_pattern_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
+    stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Result<Option<DesignRectangularPatternConstruction>, CodecError> {
     let parsed = (|| {
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::RectangularPattern) {
@@ -119,6 +121,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         scope,
         &construction,
         &directions,
+        stream_types,
     ));
     if directions.len() + usize::from(construction.secondary_direction().is_some())
         == construction.active_direction_count()
@@ -409,6 +412,7 @@ fn exact_rectangular_pattern_distribution(
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
     directions: &[patterns::DesignRectangularPatternDirection],
+    stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<patterns::DesignRectangularPatternDistribution> {
     use crate::layout::rectangular_pattern_payload_distribution as block;
     use crate::layout::rectangular_pattern_payload_prefix as prefix;
@@ -444,8 +448,17 @@ fn exact_rectangular_pattern_distribution(
     if eight_zero_at.checked_add(block::LEN)? > *end {
         return None;
     }
+    let mut untyped_body_references = 0_u32;
     for body in 0..bodies {
-        marked_record_reference(bytes, references_at + body * MARKED_REFERENCE_LEN)?;
+        let target = marked_record_reference(bytes, references_at + body * MARKED_REFERENCE_LEN)?;
+        let is_browser_node = stream_types
+            .get(&u64::from(target))
+            .is_some_and(|(type_guid, _)| {
+                type_guid.eq_ignore_ascii_case(crate::design::presentation::BROWSER_NODE_TYPE_GUID)
+            });
+        if !is_browser_node {
+            untyped_body_references = untyped_body_references.checked_add(1)?;
+        }
     }
     // After a leading byte `0`, one body reference can be followed by four
     // zero bytes in place of the eight.
@@ -501,6 +514,15 @@ fn exact_rectangular_pattern_distribution(
             value: compute_option,
             offset: u64::try_from(at + block::COMPUTE_OPTION).ok()?,
         },
+        seed_kind: crate::records::identity::Located {
+            value: View::u32_le_at(bytes, at + block::SEED_KIND)?,
+            offset: u64::try_from(at + block::SEED_KIND).ok()?,
+        },
+        body_references: crate::records::identity::Located {
+            value: u32::try_from(bodies).ok()?,
+            offset: u64::try_from(head + block::BODY_COUNT).ok()?,
+        },
+        untyped_body_references,
     })
 }
 

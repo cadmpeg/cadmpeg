@@ -7857,6 +7857,11 @@ fn project_rectangular_pattern_scalars(
         .map(|seed| vec![seed])
         .or(group_seed)
         .unwrap_or_default();
+    if let Some(note) = distribution.and_then(|distribution| {
+        pattern_seeds::distribution_seed_conflict(scope, distribution, &seeds)
+    }) {
+        losses.push(note);
+    }
     let (count, spacing, direction, second) = match active.as_slice() {
         // The instance run is the established direction of a single-direction
         // pattern; a direction record only fills it in when the run is absent

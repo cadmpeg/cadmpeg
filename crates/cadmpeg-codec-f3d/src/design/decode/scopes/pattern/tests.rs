@@ -34,7 +34,14 @@ fn tested_rectangular_pattern_construction(
     scope: &DesignParameterScope,
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Option<crate::records::feature::patterns::DesignRectangularPatternConstruction> {
-    super::exact_rectangular_pattern_construction(bytes, records, scope, parameter_owners).unwrap()
+    super::exact_rectangular_pattern_construction(
+        bytes,
+        records,
+        scope,
+        parameter_owners,
+        &std::collections::HashMap::new(),
+    )
+    .unwrap()
 }
 
 fn tested_rectangular_pattern_instances(
@@ -1929,6 +1936,7 @@ fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() 
             &scope,
             &construction,
             &[direction],
+            &std::collections::HashMap::new(),
         )
     };
 
@@ -1975,6 +1983,7 @@ fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() 
         &scope,
         &construction,
         &[],
+        &std::collections::HashMap::new(),
     )
     .is_none());
 }

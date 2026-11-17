@@ -7988,6 +7988,8 @@ pub(crate) mod rectangular_pattern_payload_distribution {
     pub(crate) const ZERO_RUN: usize = 4;
     /// Offset of `compute_option` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const COMPUTE_OPTION: usize = 12;
+    /// Offset of `seed_kind` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SEED_KIND: usize = 16;
     /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const SENTINEL: usize = 20;
     /// Offset of `distance_type` (`u8`). Spec §Assembly operands.

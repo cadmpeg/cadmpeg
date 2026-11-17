@@ -510,6 +510,13 @@ pub(crate) struct DesignRectangularPatternDistribution {
     pub(crate) total_extent: Located<bool>,
     /// Compute option: `0` Optimized, `1` Identical, `2` Adjust.
     pub(crate) compute_option: Located<u32>,
+    /// Seed kind: `0` face, `1` feature, `2` body.
+    pub(crate) seed_kind: Located<u32>,
+    /// Count of the marked body references before the fixed fields.
+    pub(crate) body_references: Located<u32>,
+    /// Body references whose record the stream does not register as a body
+    /// browser node.
+    pub(crate) untyped_body_references: u32,
 }
 
 /// Direction record of one active rectangular-pattern direction.
@@ -1356,6 +1363,15 @@ mod tests {
                 value: 2,
                 offset: 146,
             },
+            seed_kind: Located {
+                value: 1,
+                offset: 150,
+            },
+            body_references: Located {
+                value: 1,
+                offset: 134,
+            },
+            untyped_body_references: 0,
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
         assert_eq!(record.distribution(), wire.distribution.as_ref());

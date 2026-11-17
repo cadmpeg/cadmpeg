@@ -922,6 +922,15 @@ fn coincident_direction_scope(symmetric: bool, total_extent: bool) -> DesignPara
                                 value: 2,
                                 offset: 146,
                             },
+                            seed_kind: crate::records::identity::Located {
+                                value: 0,
+                                offset: 150,
+                            },
+                            body_references: crate::records::identity::Located {
+                                value: 0,
+                                offset: 134,
+                            },
+                            untyped_body_references: 0,
                         },
                     ),
                 },
@@ -1038,4 +1047,72 @@ fn rectangular_pattern_carries_a_symmetric_spacing_direction() {
     )
     .is_none());
     assert!(losses.is_empty());
+}
+
+#[test]
+fn a_payload_seed_kind_or_body_reference_that_disagrees_with_the_seed_group_is_charged() {
+    use crate::design::feature_project::pattern_seeds::distribution_seed_conflict;
+    use crate::records::{
+        feature::patterns::DesignRectangularPatternDistribution, identity::Located,
+    };
+
+    let scope = rectangular_scope();
+    let distribution =
+        |seed_kind: u32, bodies: u32, untyped: u32| DesignRectangularPatternDistribution {
+            record_index: 40,
+            symmetric: Located {
+                value: false,
+                offset: 109,
+            },
+            total_extent: Located {
+                value: false,
+                offset: 158,
+            },
+            compute_option: Located {
+                value: 1,
+                offset: 146,
+            },
+            seed_kind: Located {
+                value: seed_kind,
+                offset: 150,
+            },
+            body_references: Located {
+                value: bodies,
+                offset: 134,
+            },
+            untyped_body_references: untyped,
+        };
+    let faces = [PatternSeed::Faces(FaceSelection::Native(
+        "faces".to_owned(),
+    ))];
+    let bodies = [PatternSeed::Bodies(BodySelection::Native(
+        "bodies".to_owned(),
+    ))];
+    let features = [PatternSeed::Feature(crate::ids::neutral_feature_id(&scope))];
+    let code = |seeds: &[PatternSeed], distribution: &DesignRectangularPatternDistribution| {
+        distribution_seed_conflict(&scope, distribution, seeds).map(|note| note.code)
+    };
+    let charged = Some(crate::loss::F3dLossCode::FeaturePatternPayloadSeedUnconfirmed.kind());
+    // Agreeing words charge nothing; a feature seed can store body references.
+    assert_eq!(code(&faces, &distribution(0, 0, 0)), None);
+    assert_eq!(code(&features, &distribution(1, 2, 0)), None);
+    assert_eq!(code(&features, &distribution(1, 0, 0)), None);
+    assert_eq!(code(&bodies, &distribution(2, 0, 0)), None);
+    // A seed kind that names another kind of seed.
+    assert_eq!(code(&faces, &distribution(1, 0, 0)), charged);
+    assert_eq!(code(&bodies, &distribution(0, 0, 0)), charged);
+    // Body references with a face or body seed.
+    assert_eq!(code(&faces, &distribution(0, 1, 0)), charged);
+    assert_eq!(code(&bodies, &distribution(2, 1, 0)), charged);
+    // A body reference that names no body browser node.
+    assert_eq!(code(&features, &distribution(1, 2, 1)), charged);
+    // Unresolved seeds settle no seed kind.
+    let native = [PatternSeed::Native("seed".to_owned())];
+    assert_eq!(code(&native, &distribution(1, 0, 0)), None);
+    assert_eq!(code(&[], &distribution(1, 0, 0)), None);
+    let note = distribution_seed_conflict(&scope, &distribution(1, 1, 0), &faces).unwrap();
+    assert!(note
+        .message
+        .contains("seed kind 1 at byte 150 where its seed group selects faces"));
+    assert!(note.message.contains("1 body references at byte 134"));
 }

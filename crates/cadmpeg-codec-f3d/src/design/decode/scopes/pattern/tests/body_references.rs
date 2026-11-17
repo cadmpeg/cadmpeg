@@ -33,6 +33,7 @@ fn every_body_count_and_compute_option_reads_the_distance_type() {
             &scope,
             &construction,
             &[direction],
+            &std::collections::HashMap::new(),
         )
     };
     for (v_direction, head) in [(None, 134), (Some(24), 144)] {
@@ -72,6 +73,7 @@ fn a_distribution_block_with_a_misplaced_field_stays_unread() {
             &scope,
             &construction,
             &[direction],
+            &std::collections::HashMap::new(),
         )
     };
     let bytes = body_payload(None, &[30, 31], 1, 0);
@@ -99,6 +101,7 @@ fn one_body_reference_after_a_zero_byte_can_store_four_zero_bytes() {
             &scope,
             &construction,
             &[direction],
+            &std::collections::HashMap::new(),
         )
     };
     let four_zero = |v_direction: Option<u32>| {
@@ -117,4 +120,48 @@ fn one_body_reference_after_a_zero_byte_can_store_four_zero_bytes() {
     );
     assert_eq!(distribution.compute_option.value, 2);
     assert!(parse(&four_zero(Some(24))).is_none());
+}
+
+#[test]
+fn a_distribution_block_records_its_seed_kind_and_unregistered_body_references() {
+    let (scope, construction, direction) = super::distribution_inputs();
+    let browser_node = crate::design::presentation::BROWSER_NODE_TYPE_GUID;
+    let types = std::collections::HashMap::from([
+        (30, (browser_node, 1)),
+        (31, ("19031004-3AB6-4D13-ABBF-C51EE214688D", 1)),
+    ]);
+    let parse = |bytes: &[u8]| {
+        super::super::exact_rectangular_pattern_distribution(
+            bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            &scope,
+            &construction,
+            &[direction],
+            &types,
+        )
+        .unwrap()
+    };
+    for (seed_kind, bodies, untyped) in [
+        (0, &[][..], 0),
+        (1, &[30], 0),
+        (1, &[30, 31], 1),
+        (2, &[32], 1),
+    ] {
+        let mut bytes = body_payload(None, bodies, 1, 0);
+        let at = 134 + 11 * bodies.len();
+        bytes[at + 16..at + 20].copy_from_slice(&u32::to_le_bytes(seed_kind));
+        let distribution = parse(&bytes);
+        assert_eq!(
+            (distribution.seed_kind.value, distribution.seed_kind.offset),
+            (seed_kind, u64::try_from(at + 16).unwrap())
+        );
+        assert_eq!(
+            (
+                distribution.body_references.value,
+                distribution.body_references.offset
+            ),
+            (u32::try_from(bodies.len()).unwrap(), 134)
+        );
+        assert_eq!(distribution.untyped_body_references, untyped, "{bodies:?}");
+    }
 }
