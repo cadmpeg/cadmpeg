@@ -56,26 +56,37 @@ const RIGID_TRANSFORM_TYPE_VERSION: u32 = 2;
 const CONSTRUCTION_OPERAND_GROUP_TYPE_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
 const RIGID_TRANSFORM_TYPE_VERSION_3: u32 = 3;
 
-/// Primary-header offset of the marked distance reference of an `OffsetFaces`
-/// scope, or `None` when its prologue is not a known form.
+/// The distance record of an `OffsetFaces` scope, named by the marked
+/// distance reference of its prologue, or `None` when the prologue is not a
+/// known form.
 ///
 /// The 253- and 264-byte token-independent forms are identified by length.
 /// The other forms are identified by their prologue and by the offset of the
 /// ordered-reference count, because their scope tail can be 77 or 78 bytes.
 /// A marker-one prologue stores `1` at offset 20 and a u32 zero at 21, so its
 /// fields start four bytes later than those of a marker-zero prologue.
-fn offset_faces_distance_marker(
+fn offset_faces_distance_record(
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<usize> {
-    let references = scope.reference_members().len();
+) -> Option<u32> {
+    let members = scope.reference_members();
+    if members.len() < 3 {
+        return None;
+    }
+    let mut ordered = members.values().copied();
+    let first = ordered.next()?;
+    let second = ordered.next()?;
+    let last = ordered.next_back()?;
     if matches!(
-        (parameter_scope_payload_length(scope), references),
+        (parameter_scope_payload_length(scope), members.len()),
         (Some(264), 4) | (Some(253), 3)
     ) && bytes.get(start + 25) == Some(&1)
     {
-        return Some(25);
+        let distance = marked_record_reference(bytes, start + 25)?;
+        if distance == last {
+            return Some(distance);
+        }
     }
     let count_offset = usize::try_from(scope.reference_count_offset())
         .ok()?
@@ -86,19 +97,31 @@ fn offset_faces_distance_marker(
         _ => return None,
     };
     // A u32 one follows the marked distance reference, then the marked
-    // reference to the selected-face group, the first ordered reference.
-    let first_reference = scope.reference_members().values().next()?;
+    // reference to the selected-face group.
+    let distance = marked_record_reference(bytes, start + distance_marker)?;
+    let group = marked_record_reference(bytes, start + distance_marker + 15)?;
     (View::u32_le_at(bytes, start + distance_marker + 11) == Some(1)
-        && marked_record_reference(bytes, start + distance_marker + 15) == Some(*first_reference))
-    .then_some(distance_marker)
+        && ((group == first && distance == last) || (distance == first && group == second)))
+        .then_some(distance)
 }
 
+/// Whether the distance record of an `OffsetFaces` scope is the last of at
+/// least three ordered references, or the first with the selected-face group
+/// second.
 pub(crate) fn offset_faces_distance_reference_matches(
     scope: &DesignParameterScope,
     distance_record_index: u32,
+    is_face_group: impl Fn(u32) -> bool,
 ) -> bool {
-    scope.reference_members().len() >= 3
-        && scope.reference_members().values().next_back() == Some(&distance_record_index)
+    let members = scope.reference_members();
+    let mut ordered = members.values().copied();
+    match (ordered.next(), ordered.next(), ordered.next_back()) {
+        (Some(first), Some(second), Some(last)) => {
+            last == distance_record_index
+                || (first == distance_record_index && is_face_group(second))
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn exact_direct_face_operation(
@@ -110,11 +133,7 @@ pub(super) fn exact_direct_face_operation(
     let start = usize::try_from(scope.byte_offset()).ok()?;
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::OffsetFaces => {
-            let distance_marker = offset_faces_distance_marker(bytes, scope, start)?;
-            let distance_record_index = marked_record_reference(bytes, start + distance_marker)?;
-            if !offset_faces_distance_reference_matches(scope, distance_record_index) {
-                return None;
-            }
+            let distance_record_index = offset_faces_distance_record(bytes, scope, start)?;
             let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
             Some(DesignDirectFaceOperation::OffsetFaces(
                 direct_face::DesignOffsetFacesOperation {
