@@ -20,7 +20,10 @@ use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::evaluation::{
     CurrentState, Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
 };
-use crate::design::expr::{parse, Expression, Measure, MeasureKind, MeasureTarget, Neutral, Node};
+use crate::design::expr::{
+    parse, Expression, ExpressionDialect, ExpressionToken, Measure, MeasureKind, MeasureTarget,
+    Neutral, Node,
+};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::design::names::NameEntry;
 use crate::design::ops::datum::{Datum, DatumElement};
@@ -378,7 +381,7 @@ fn a_deep_tree_evaluates_on_a_small_thread() {
     let handle = std::thread::Builder::new()
         .stack_size(256 * 1024)
         .spawn(move || {
-            let checked = check_types(&node, &|_| Type::Unknown);
+            let checked = check_types(&node, &|_| Ok(Type::Unknown));
             let result = evaluate(&node, &mut |_| None);
             drop(node);
             (checked, result)
@@ -840,6 +843,47 @@ fn set_parameter_expression_refuses_an_ill_typed_tree() {
             .unwrap();
     }
     assert_eq!(cache(&document, 1), Some(ParameterValue::Number(real(3.0))));
+}
+
+#[test]
+fn set_parameter_expression_refuses_a_neutral_reference_to_a_native_kind() {
+    let source = |tokens| Expression::Source {
+        dialect: ExpressionDialect::Nx,
+        tokens,
+    };
+    let mut document = timeline();
+    document.design.parameters.push(parameter(
+        5,
+        ValueKind::Native(NonBlankString::new("nx:list").unwrap()),
+        ParameterDefinition::Expression(source(vec![ExpressionToken::Text("{1, 2}".into())])),
+        None,
+    ));
+    let before = document.clone();
+    for text in ["$0", "$0 + 1[mm]", "if(true, $0, 1[mm])"] {
+        let refused = document
+            .set_parameter_expression(&parameter_id(1), neutral(text, &[reference(5)], &[]));
+        assert!(
+            matches!(refused, Err(EditError::KindMismatch { .. })),
+            "{text} is refused: {refused:?}"
+        );
+        assert_eq!(document, before, "refusing {text} changes nothing");
+    }
+    document
+        .set_parameter_expression(
+            &parameter_id(5),
+            source(vec![ExpressionToken::Text("{3, 4}".into())]),
+        )
+        .unwrap();
+    document
+        .set_parameter_expression(
+            &parameter_id(1),
+            source(vec![
+                ExpressionToken::Text("size(".into()),
+                ExpressionToken::Reference(reference(5)),
+                ExpressionToken::Text(") * 1".into()),
+            ]),
+        )
+        .unwrap();
 }
 
 #[test]

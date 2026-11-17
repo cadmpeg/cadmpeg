@@ -116,7 +116,7 @@ fn kind_refusal(
     parameter: &ParameterId,
     expression: &Expression,
     kind: &ValueKind,
-    type_of: &dyn Fn(&ParameterRef) -> Type,
+    type_of: &dyn Fn(&ParameterRef) -> Result<Type, String>,
     value_of: &dyn Fn(&ParameterId) -> Option<Value>,
 ) -> Result<(), EditError> {
     let Expression::Neutral(Neutral(node)) = expression else {
@@ -287,10 +287,15 @@ impl CadIr {
             }
         }
         let type_of = |reference: &ParameterRef| match &reference.target {
-            RefTarget::Parameter(target) => self
-                .design_parameter(target)
-                .map_or(Type::Unknown, |record| Type::of_kind(&record.kind)),
-            RefTarget::External { .. } => Type::Unknown,
+            RefTarget::Parameter(target) => {
+                let kind = &self
+                    .design_parameter(target)
+                    .map_err(|error| error.to_string())?
+                    .kind;
+                Type::of_kind(kind)
+                    .ok_or_else(|| format!("{target} has the kind {kind:?}, with no neutral value"))
+            }
+            RefTarget::External { .. } => Ok(Type::Unknown),
         };
         kind_refusal(parameter, &expression, &kind, &type_of, &|target| {
             if target == parameter {

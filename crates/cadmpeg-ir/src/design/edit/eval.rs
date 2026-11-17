@@ -601,19 +601,20 @@ pub(super) enum Type {
     Boolean,
     /// A text.
     Text,
-    /// A reference whose kind the document does not type.
+    /// A reference to a parameter of a document that was not read.
     Unknown,
 }
 
 impl Type {
-    /// The type of a parameter of a kind.
-    pub(super) const fn of_kind(kind: &ValueKind) -> Self {
+    /// The type of a parameter of a kind, `None` for a `Native` kind, which
+    /// has no §5.13 type.
+    pub(super) const fn of_kind(kind: &ValueKind) -> Option<Self> {
         match kind {
-            ValueKind::Quantity(quantity) => Self::Number(*quantity),
-            ValueKind::Integer => Self::Number(DIMENSIONLESS),
-            ValueKind::Boolean => Self::Boolean,
-            ValueKind::Text => Self::Text,
-            ValueKind::Native(_) => Self::Unknown,
+            ValueKind::Quantity(quantity) => Some(Self::Number(*quantity)),
+            ValueKind::Integer => Some(Self::Number(DIMENSIONLESS)),
+            ValueKind::Boolean => Some(Self::Boolean),
+            ValueKind::Text => Some(Self::Text),
+            ValueKind::Native(_) => None,
         }
     }
 }
@@ -813,16 +814,16 @@ enum Check<'a> {
 
 /// Type-checks a parameter's neutral expression tree by the semantics table
 /// of §5.13 and the function arities of part 10, every branch of an `if`
-/// included. `reference` gives a reference's type. A parameter's expression
-/// has no law path and no bend in scope, so the law parameter and the bend
-/// variables are refused.
+/// included. `reference` gives a reference's type, or why the reference has
+/// none. A parameter's expression has no law path and no bend in scope, so
+/// the law parameter and the bend variables are refused.
 ///
 /// # Errors
 ///
 /// Returns why a node does not type-check.
 pub(super) fn check_types(
     root: &Node<ParameterRef>,
-    reference: &dyn Fn(&ParameterRef) -> Type,
+    reference: &dyn Fn(&ParameterRef) -> Result<Type, String>,
 ) -> Result<Type, String> {
     let mut tasks = vec![Check::Visit(root)];
     let mut types: Vec<Type> = Vec::new();
@@ -836,7 +837,7 @@ pub(super) fn check_types(
                 Node::Constant(_) => types.push(Type::Number(DIMENSIONLESS)),
                 Node::Boolean(_) => types.push(Type::Boolean),
                 Node::Text(_) => types.push(Type::Text),
-                Node::Reference(target) => types.push(reference(target)),
+                Node::Reference(target) => types.push(reference(target)?),
                 Node::Measure(measure) => {
                     types.push(Type::Number(measure_quantity(&measure.kind)));
                 }
@@ -907,7 +908,7 @@ pub(super) fn kind_type(kind: &ValueKind, found: Type) -> Result<(), String> {
     match (kind, found) {
         (ValueKind::Native(name), _) => Err(format!("the kind {name} has no neutral value")),
         (_, Type::Unknown) => Ok(()),
-        (kind, found) if Type::of_kind(kind) == found => Ok(()),
+        (kind, found) if Type::of_kind(kind) == Some(found) => Ok(()),
         (kind, found) => Err(format!("{found:?} is not a value of the kind {kind:?}")),
     }
 }
