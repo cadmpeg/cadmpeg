@@ -349,7 +349,8 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
             id: format!("inventor:brep:attribute#{}", 51 + i)
                 .try_into()
                 .expect("synthetic profile fixture"),
-            target: AttributeTarget::Edge(id(11 + i).try_into().expect("synthetic identity")),
+            target: AttributeTarget::Edge(id(11 + i).try_into().expect("synthetic identity"))
+                .into(),
             name: super::CUSTOM_NAMING_ATTRIBUTE.into(),
             values,
         });
@@ -358,7 +359,7 @@ fn a_profile_face_loop_uses_its_body_key_and_custom_edge_names() {
         id: "inventor:brep:attribute#60"
             .try_into()
             .expect("synthetic identity"),
-        target: AttributeTarget::Edge(id(11).try_into().expect("synthetic identity")),
+        target: AttributeTarget::Edge(id(11).try_into().expect("synthetic identity")).into(),
         name: super::CUSTOM_NAMING_ATTRIBUTE.into(),
         values: vec![AttributeValue::Integer(0); 5]
             .into_iter()

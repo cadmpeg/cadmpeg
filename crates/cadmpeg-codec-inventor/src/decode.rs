@@ -807,7 +807,7 @@ fn decode_container<'a>(
         .appearance_bindings
         .iter()
         .filter_map(|binding| {
-            if let cadmpeg_ir::appearance::AppearanceTarget::Face(face) = &binding.target {
+            if let cadmpeg_ir::appearance::AppearanceTarget::Face(face) = &binding.target.entity {
                 projected_colors
                     .get(&binding.appearance)
                     .copied()
