@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Process parameter definitions, owners, and groups (§7.7).
+//! Process parameters, their definitions and owners, and groups (§7.7).
 //!
 //! A group is a parent that operations share for values and geometry, and
 //! that they inherit from per value. An operation lists at most one group of
@@ -14,9 +14,53 @@ use super::operation::ProcessGeometry;
 use crate::design::dimension::ParamRef;
 use crate::design::expr::Expression;
 use crate::design::ids::{
-    MachineId, MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ProgramId, SetupId,
-    ToolId,
+    MachineId, MachiningFeatureId, OperationId, PresetId, ProcessGroupId, ProcessParameterId,
+    ProgramId, SetupId, ToolId,
 };
+use crate::design::parameter::ParameterValue;
+use crate::design::units::ValueKind;
+
+/// A named value of a process record.
+///
+/// A value with no typed field is a parameter. A typed field binds a
+/// parameter where the source gives its value an expression or a name other
+/// expressions can refer to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ProcessParameter {
+    /// The parameter's identity.
+    pub id: ProcessParameterId,
+    /// The record that owns the parameter.
+    pub owner: ProcessOwner,
+    /// The source's name, unique per owner.
+    pub name: NonBlankString,
+    /// The declared quantity. `None` states a number whose quantity the
+    /// decoder has not established: its value is the source's number,
+    /// unconverted, with meaning only to a writer of the same codec.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_kind"
+    )]
+    pub kind: Option<ValueKind>,
+    /// How the value is determined.
+    pub definition: ProcessDefinition,
+    /// The cache of the definition, in CADIR units.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_value"
+    )]
+    pub value: Option<ParameterValue>,
+    /// The source's own reference to its record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+}
 
 /// The definition of a process parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -123,6 +167,8 @@ pub enum GroupKind {
     Native(NonBlankString),
 }
 
+cadmpeg_core::named_optional_field!(deserialize_kind, ValueKind, "kind");
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_parent, ProcessGroupId, "parent");
+cadmpeg_core::named_optional_field!(deserialize_value, ParameterValue, "value");
