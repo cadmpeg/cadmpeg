@@ -171,6 +171,7 @@ pub(in crate::families::standard::decode) fn witnessed_cylinder_ellipse_branch(
     cylinder: &cadmpeg_ir::geometry::analytic::CylinderSurface,
     endpoints: [Point3; 2],
     witness: Point3,
+    bounds: &[Option<StandardFaceBounds>; 2],
 ) -> Option<(cadmpeg_ir::geometry::analytic::EllipseCurve, [f64; 2])> {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     let axis = *cylinder.frame().axis().as_raw();
@@ -204,5 +205,15 @@ pub(in crate::families::standard::decode) fn witnessed_cylinder_ellipse_branch(
     let CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(selected)) = geometry else {
         return None;
     };
-    Some((selected, range))
+    let reference = *selected.frame().reference().as_raw();
+    let tangent = selected.frame().axis().as_raw().cross(reference);
+    (bounds.iter().any(Option::is_some)
+        && branch_fits_bounds(
+            selected.center().get(),
+            reference.scale(selected.major_radius().get()),
+            tangent.scale(selected.minor_radius().get()),
+            range,
+            bounds,
+        ))
+    .then_some((selected, range))
 }
