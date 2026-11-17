@@ -1021,6 +1021,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Membership certainty and order certainty remain independent.
 
+### DR-658. Conflicting and foreign Form reference joins
+
+**Question.** Which Form cage belongs to a source slot when its body, serializer, tracking group or owned list carries conflicting type, owner, position or namespace evidence? What frames a sparse tracking run after an unreadable member?
+
+**Known.** Form reference runs retain local, segment and document targets, inline and separate type claims, qualified asset text, foreign link data, nulls and source positions. A body surface joins a serializer through a compatible local target. Distinct source counts or positions can describe incompatible membership claims. An unreadable variable-width tracking member leaves subsequent slots unvisited. A matching fixed-slot envelope permits an independently retained alternative.
+
+**Need.** Controlled saves that introduce a foreign component and vary each Form selection, body owner and serializer independently, with the producer's resolved cage membership and reference namespace recorded.
+
+**Conflict.** A retained inline type can differ from the registered type of its local target. Separate source records can establish different positions or counts for a Form.
+
+**Note.** `feature.form-reference-type-conflict`, `feature.form-foreign-reference-unresolved`, `feature.form-tracking-owner-conflict`, `feature.form-serializer-reference-unresolved` and `feature.form-membership-conflict` record the unresolved joins and membership claims. `feature.form-tracking-fixed-slots-assumed` records the alternative fixed-slot reading. `feature.form-tracking-run-unresolved` retains the decoded owner when the member count is unavailable or exceeds the frame. Compatible local sibling facts remain available.
+
 ### DR-325. Empty Form selection group
 
 **Question.** What does a zero member count in a Form selection group mean for the cages committed by its scope?
@@ -2725,7 +2737,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** Projection through explicit set references keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
@@ -2749,7 +2761,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** The result plane forms an angle of approximately 21.2 degrees with the second input plane and 38.8 degrees with the first. Each differs from the 30-degree IR angle.
 
-**Note.** Projection through explicit set references reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
+**Note.** Projection reports `feature.chamfer-angle-reference-assumed` when it reads the stored angle as the neutral reference-face angle. DR-341 tracks the input reference-face assignment.
 
 ### DR-640. Chamfer parameter recovery from incomplete definitions
 

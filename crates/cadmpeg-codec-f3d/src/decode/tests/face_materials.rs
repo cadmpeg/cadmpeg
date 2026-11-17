@@ -26,7 +26,7 @@ fn model() -> cadmpeg_ir::CadIr {
             id: format!("test:model:attribute#{index}")
                 .try_into()
                 .expect("identity"),
-            target: AttributeTarget::Face(ir.geometry.faces[index].id.clone()),
+            target: AttributeTarget::Face(ir.geometry.faces[index].id.clone()).into(),
             name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
@@ -82,7 +82,7 @@ fn distinct_face_material_revisions_report_loss_without_selecting_by_order() {
         assert_eq!(ir.model.appearance_bindings.len(), 1);
         assert_eq!(
             ir.model.appearance_bindings[0].target,
-            cadmpeg_ir::appearance::AppearanceTarget::Face(ir.geometry.faces[1].id.clone())
+            cadmpeg_ir::appearance::AppearanceTarget::Face(ir.geometry.faces[1].id.clone()).into()
         );
         assert_eq!(ir.geometry.faces[0].color, expected_color);
     }

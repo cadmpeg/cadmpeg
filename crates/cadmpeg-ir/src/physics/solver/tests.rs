@@ -14,7 +14,8 @@ fn settings() -> SolverSettings {
         schema: "PhysxJointAPI".to_owned(),
         target: SolverTarget::Joint {
             joint: JointId::mint("test:model:joint#0").unwrap(),
-        },
+        }
+        .into(),
         values: BTreeMap::from([
             (
                 "physxJoint:armature".to_owned(),
@@ -39,7 +40,8 @@ fn settings() -> SolverSettings {
                 SolverValue::Targets {
                     targets: vec![SolverTarget::Occurrence {
                         occurrence: OccurrenceId::mint("test:model:occurrence#0").unwrap(),
-                    }],
+                    }
+                    .into()],
                 },
             ),
         ]),
@@ -51,7 +53,7 @@ fn settings() -> SolverSettings {
 fn solver_settings_round_trip_through_json() {
     let record = settings();
     let json = serde_json::to_value(&record).unwrap();
-    assert_eq!(json["target"]["kind"], "joint");
+    assert_eq!(json["target"]["entity"]["kind"], "joint");
     assert_eq!(
         json["values"]["physxJoint:armature"]["dimension"],
         serde_json::json!({"length": 2, "mass": 1, "angle": 0})
