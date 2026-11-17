@@ -449,7 +449,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
                 })
                 .expect("original STEP witness search");
                 assert!(
-                    witness.is_some_and(|t| (pfirst..=plast).contains(&t.get())),
+                    witness.is_some_and(|t| (pfirst.min(plast)..=pfirst.max(plast)).contains(&t.get())),
                     "{id}: original STEP witness must remain on the stored plane pcurve"
                 );
                 let Some(SolvedCurveGeometry::Nurbs(model)) = curve.geometry.solved() else {
