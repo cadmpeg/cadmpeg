@@ -28,47 +28,9 @@ pub(super) fn lift_plane_pcurve(
     )
 }
 
-const PLANE_CURVE_TOLERANCE_MM: f64 = 1.0e-3;
-
-pub(super) fn project_curve(
-    curve: &NurbsCurve,
-    plane: &PlaneSurface,
-    refusal: &mut LaneRefusals,
-) -> Option<PcurveGeometry> {
-    use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
-    use cadmpeg_ir::math::Point2;
-
-    let origin = plane.origin().get();
-    let normal = *plane.frame().axis().as_raw();
-    let u = *plane.frame().reference().as_raw();
-    let v = normal.cross(u);
-    let mut controls = Vec::new();
-    for pole in curve.control_points() {
-        let offset = pole.get().vector_from(origin);
-        if offset.dot(normal).abs() > PLANE_CURVE_TOLERANCE_MM {
-            return None;
-        }
-        controls.push(Point2::new(offset.dot(u), offset.dot(v)));
-    }
-    let nurbs = crate::nurbs::note_refusal(
-        PcurveNurbs::from_lanes(
-            curve.degree(),
-            curve.knots().to_vec(),
-            controls,
-            curve
-                .weights()
-                .map(|weights| weights.into_iter().map(|weight| weight.get()).collect()),
-            curve.periodic(),
-        ),
-        refusal,
-        "weighted boundary curve projected onto its plane",
-    )?;
-    Some(PcurveGeometry::Nurbs { nurbs })
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{lift_plane_pcurve, project_curve};
+    use super::lift_plane_pcurve;
     use crate::nurbs::LaneRefusals;
     use cadmpeg_ir::eval::{decode::nurbs_curve_point_at, nurbs_pcurve_uv};
     use cadmpeg_ir::geometry::{
@@ -78,26 +40,7 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     #[test]
-    fn projection_rejects_a_curve_outside_the_plane_tolerance() {
-        let plane = PlaneSurface::try_new(
-            Point3::new(4.0, -3.0, 2.0),
-            Vector3::new(0.0, 1.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        )
-        .expect("plane frame");
-        let curve = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-            1,
-            vec![0.0, 0.0, 1.0, 1.0],
-            vec![Point3::new(4.0, -2.998, 2.0), Point3::new(5.0, -2.998, 3.0)],
-            None,
-            false,
-        )
-        .expect("curve outside the plane");
-        assert!(project_curve(&curve, &plane, &mut LaneRefusals::new()).is_none());
-    }
-
-    #[test]
-    fn plane_lift_and_projection_preserve_polynomial_and_rational_parameterizations() {
+    fn plane_lift_preserves_polynomial_and_rational_parameterizations() {
         let plane = PlaneSurface::try_new(
             Point3::new(4.0, -3.0, 2.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -131,12 +74,6 @@ mod tests {
             assert_eq!(lifted.periodic(), pcurve.periodic());
             assert_eq!(lifted.weights(), pcurve.weights());
             assert_eq!(lifted.knots(), pcurve.knots());
-            let PcurveGeometry::Nurbs { nurbs: projected } =
-                project_curve(&lifted, &plane, &mut refusal).expect("projected plane curve")
-            else {
-                panic!("expected a NURBS pcurve");
-            };
-            assert_eq!(projected, pcurve);
             assert_eq!(refusal.note_count(), 0);
             crate::test_support::with_service_context(|ctx| {
                 let points = pcurve

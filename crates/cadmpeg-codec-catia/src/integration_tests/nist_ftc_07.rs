@@ -118,12 +118,22 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     const ENDPOINT_TOLERANCE_MM: f64 = 2.0e-5;
     const STEP_SAMPLE_TOLERANCE_MM: f64 = 1.0e-4;
     const PLANE_JET_EDGES: [usize; 8] = [418, 425, 436, 443, 700, 728, 753, 761];
-    // Plane-jet samples come from CATIA native edge measurements in model space.
+    // Archived CATIA measurements: ftc07-native-edges.tsv, columns xm, ym, zm.
+    const NATIVE_BOUNDARY_SAMPLES_MM: [(usize, [f64; 3]); 8] = [
+        (418, [-94.612_545_562, -103.517_572_058, -96.624_369_478]),
+        (425, [141.074_369_346, -103.517_579_625, -69.212_551_771]),
+        (436, [-94.612_198_362, -103.517_913_248, 96.624_363_522]),
+        (443, [-141.074_363_413, -103.517_919_495, 69.212_205_915]),
+        (700, [94.612_198_458, -103.517_913_155, 96.624_363_524]),
+        (728, [-141.074_363_412, -103.517_919_588, -69.212_205_819]),
+        (753, [94.612_198_362, -103.517_913_248, -96.624_363_522]),
+        (761, [141.074_363_413, -103.517_919_495, 69.212_205_915]),
+    ];
     const BOUNDARY_SAMPLES_MM: [(usize, [f64; 3]); 64] = [
-        (418, [-94.612545562, -103.517572058, -96.624369478]),
-        (425, [141.074369346, -103.517579625, -69.212551771]),
-        (436, [-94.612198362, -103.517913248, 96.624363522]),
-        (443, [-141.074363413, -103.517919495, 69.212205915]),
+        (418, [-94.611_231_844, -103.516_638_909, -96.624_385_766]),
+        (425, [141.074_385_766, -103.516_638_905, -69.211_231_846]),
+        (436, [-94.611_234_209, -103.516_636_583, 96.624_385_806]),
+        (443, [-141.074_385_769, -103.516_638_717, 69.211_232_037]),
         (471, [152.419_630_201, -0.015_815_501, 105.047_870_591]),
         (472, [152.262_395_522, 0.326_387_930, 106.232_159_232]),
         (473, [150.685_277_757, 0.326_237_963, 107.815_552_885]),
@@ -172,15 +182,15 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         (675, [-95.348_251_038, -105.061_910_305, 95.083_690_320]),
         (698, [96.171_718_273, -104.256_040_730, 95.111_823_333]),
         (699, [95.348_251_038, -105.061_910_305, 95.083_690_320]),
-        (700, [94.612198458, -103.517913155, 96.624363524]),
-        (728, [-141.074363412, -103.517919588, -69.212205819]),
+        (700, [94.611_231_938, -103.516_638_815, 96.624_385_768]),
+        (728, [-141.074_385_806, -103.516_636_589, -69.211_234_202]),
         (730, [-139.533_690_250, -105.061_912_319, -69.948_253_065]),
         (731, [-139.561_823_278, -104.256_042_271, -70.771_719_768]),
-        (753, [94.612198362, -103.517913248, -96.624363522]),
+        (753, [94.611_234_209, -103.516_636_583, -96.624_385_806]),
         (754, [96.171_718_273, -104.256_040_730, -95.111_823_333]),
         (757, [-96.170_055_626, -104.254_325_444, -95.111_883_214]),
         (758, [-95.349_937_047, -105.063_602_637, -95.083_631_240]),
-        (761, [141.074363413, -103.517919495, 69.212205915]),
+        (761, [141.074_385_808, -103.516_636_488, 69.211_234_306]),
         (763, [139.533_690_250, -105.061_912_319, 69.948_253_065]),
         (764, [139.561_823_278, -104.256_042_271, 70.771_719_768]),
         (809, [139.561_883_141, -104.254_327_504, -70.770_057_607]),
@@ -314,19 +324,25 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
             let Some(SolvedCurveGeometry::Nurbs(spline)) = curve.geometry.solved() else {
                 panic!("NURBS boundary");
             };
+            let native = NATIVE_BOUNDARY_SAMPLES_MM
+                .iter()
+                .find(|(edge, _)| *edge == ordinal)
+                .expect("native CATIA SPA witness")
+                .1;
+            let native = Point3::new(native[0], native[1], native[2]);
             let witness = crate::test_support::with_service_context(|ctx| {
                 cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
                     ctx,
                     spline,
-                    expected,
+                    native,
                     STEP_SAMPLE_TOLERANCE_MM,
                     first.midpoint(last),
                 )
             })
-            .expect("curve witness search");
+            .expect("native curve witness search");
             assert!(
-                witness.is_some_and(|witness| (first..=last).contains(&witness.get())),
-                "{id}: CATIA native sample must lie on the active spline"
+                witness.is_some_and(|t| (first..=last).contains(&t.get())),
+                "{id}: native SPA sample must lie on the model curve"
             );
         } else {
             assert!(
@@ -401,25 +417,70 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
             }
             if plane_jet {
                 plane_pcurve_uses += 1;
-                let [cfirst, clast] = if direct <= reverse {
-                    [first, last]
-                } else {
-                    [last, first]
+                let tolerance = pcurve
+                    .metadata
+                    .fit_tolerance()
+                    .expect("class-25 fitted accuracy")
+                    .get();
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+                    &surface.geometry
+                else {
+                    panic!("planar carrier");
                 };
-                for (point, fraction) in lifted.iter().zip([0.0, 0.25, 0.5, 0.75, 1.0]) {
-                    let parameter = cfirst * (1.0 - fraction) + clast * fraction;
-                    let expected = cadmpeg_ir::eval::decode::curve_point(
+                let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
+                    &pcurve.geometry
+                else {
+                    panic!("stored plane jet");
+                };
+                assert_eq!(nurbs.degree(), 5, "stored quintic jet");
+                let u = *plane.frame().reference().as_raw();
+                let v = plane.frame().axis().as_raw().cross(u);
+                let stored = nurbs
+                    .lift(|uv| plane.origin().get().translated(u, uv.u).translated(v, uv.v))
+                    .expect("stored plane curve lift");
+                let witness = crate::test_support::with_service_context(|ctx| {
+                    cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                        ctx,
+                        &stored,
+                        expected,
+                        STEP_SAMPLE_TOLERANCE_MM,
+                        pfirst.midpoint(plast),
+                    )
+                })
+                .expect("original STEP witness search");
+                assert!(
+                    witness.is_some_and(|t| (pfirst..=plast).contains(&t.get())),
+                    "{id}: original STEP witness must remain on the stored plane pcurve"
+                );
+                let Some(SolvedCurveGeometry::Nurbs(model)) = curve.geometry.solved() else {
+                    panic!("model spline");
+                };
+                for point in lifted.iter().copied().chain([expected]) {
+                    let witness = crate::test_support::with_service_context(|ctx| {
+                        cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                            ctx,
+                            model,
+                            point,
+                            tolerance,
+                            first.midpoint(last),
+                        )
+                    })
+                    .expect("fitted model witness search");
+                    let parameter = witness
+                        .expect("model curve fit witness")
+                        .get()
+                        .clamp(first, last);
+                    let fitted = cadmpeg_ir::eval::decode::curve_point(
                         admission,
                         &curve.geometry,
                         parameter,
                     )
-                    .expect("plane-jet curve point")
+                    .expect("active model curve point")
                     .get();
-                    let miss = point.distance(expected);
                     assert!(
-                        miss < ENDPOINT_TOLERANCE_MM,
-                        "{id}: {} plane rechart misses the edge by {miss} mm",
-                        pcurve.id
+                        fitted.distance(point) <= tolerance,
+                        "{id}: stored-plane-to-model gap {} exceeds class-25 bound {tolerance} mm",
+                        fitted.distance(point)
                     );
                 }
             }
@@ -427,6 +488,18 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     }
     assert_eq!(freeform_pcurve_uses, 72);
     assert_eq!(plane_pcurve_uses, PLANE_JET_EDGES.len());
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code.local_code() == "geometry.parameter-map-accuracy-inferred"
+                    && loss.message.contains("stored plane pcurve")
+            })
+            .count(),
+        PLANE_JET_EDGES.len()
+    );
 }
 
 #[test]
@@ -549,48 +622,4 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             "sheet area {actual} vs STEP {expected}"
         );
     }
-}
-
-#[test]
-fn nist_ftc_07_plane_boundary_keeps_the_model_spline_parameterization() {
-    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
-
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(std::fs::read(path).expect("FTC-07")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode FTC-07");
-    let geometry = &decoded.ir().geometry;
-    let coedge = geometry
-        .coedges
-        .iter()
-        .find(|coedge| coedge.id.as_str() == "catia:standard:coedge#266:0:7")
-        .expect("planar boundary occurrence");
-    let edge = geometry
-        .edges
-        .iter()
-        .find(|edge| edge.id == coedge.edge)
-        .expect("shared edge");
-    let curve = geometry
-        .curves
-        .iter()
-        .find(|curve| Some(&curve.id) == edge.carrier.curve())
-        .expect("model spline");
-    let Some(SolvedCurveGeometry::Nurbs(curve)) = curve.geometry.solved() else {
-        panic!("expected a model spline");
-    };
-    let pcurve = geometry
-        .pcurves
-        .iter()
-        .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
-        .expect("planar pcurve");
-    let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
-        panic!("expected a planar spline");
-    };
-    assert_eq!(curve.degree(), nurbs.degree());
-    assert_eq!(curve.knots(), nurbs.knots());
-    assert_eq!(pcurve.parameter_range(), edge.carrier.param_range());
 }
