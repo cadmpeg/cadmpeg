@@ -104,7 +104,7 @@ fn complete_authored_inputs_cover_presentation_metadata_and_pmi() {
                 assert_eq!(ir.model.appearances.len(), 1);
                 assert_eq!(ir.model.appearance_bindings.len(), 1);
                 assert!(
-                    matches!(&ir.model.appearance_bindings[0].target, AppearanceTarget::Face(face) if face == &ir.geometry.faces[0].id)
+                    matches!(&ir.model.appearance_bindings[0].target.entity, AppearanceTarget::Face(face) if face == &ir.geometry.faces[0].id)
                 );
                 let color = ir.model.appearances[0]
                     .base_color
