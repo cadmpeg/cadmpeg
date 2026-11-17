@@ -60,7 +60,7 @@ fn appearance_asset_and_binding_round_trip() {
         id: "synthetic:test:appearance-binding#0"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Body(body),
+        target: AppearanceTarget::Body(body).into(),
         appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
             .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
@@ -72,7 +72,7 @@ fn appearance_asset_and_binding_round_trip() {
         id: "synthetic:test:appearance-binding#edge"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Edge(ir.geometry.edges[0].id.clone()),
+        target: AppearanceTarget::Edge(ir.geometry.edges[0].id.clone()).into(),
         appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
             .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
@@ -84,7 +84,7 @@ fn appearance_asset_and_binding_round_trip() {
         id: "synthetic:test:appearance-binding#vertex"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Vertex(ir.geometry.vertices[0].id.clone()),
+        target: AppearanceTarget::Vertex(ir.geometry.vertices[0].id.clone()).into(),
         appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
             .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
@@ -162,7 +162,8 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
         target: AppearanceTarget::TriangleGroup {
             tessellation: tessellation.clone(),
             group: group.to_owned(),
-        },
+        }
+        .into(),
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,

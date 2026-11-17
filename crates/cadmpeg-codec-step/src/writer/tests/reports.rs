@@ -663,7 +663,7 @@ fn writer_reports_dangling_appearance_binding() {
     let appearance = AppearanceId::mint("test:model:appearance#missing").expect("identity grammar");
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding.try_into().expect("valid identity"),
-        target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()),
+        target: AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()).into(),
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
@@ -709,7 +709,7 @@ fn writer_reports_appearance_without_base_color() {
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding.try_into().expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
@@ -776,7 +776,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     let mut bindings = vec![
         AppearanceBinding {
             id: "test:model:binding#red".try_into().expect("valid identity"),
-            target: target.clone(),
+            target: target.clone().into(),
             appearance: red,
             source_entity_id: None,
             object_type: None,
@@ -787,7 +787,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             id: "test:model:binding#blue"
                 .try_into()
                 .expect("valid identity"),
-            target,
+            target: target.into(),
             appearance: blue,
             source_entity_id: None,
             object_type: None,
@@ -1186,7 +1186,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         id: "test:model:appearance-binding#hidden-face"
             .try_into()
             .expect("valid identity"),
-        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()),
+        target: AppearanceTarget::Face(ir.geometry.faces[0].id.clone()).into(),
         appearance,
         source_entity_id: None,
         object_type: None,
@@ -1221,7 +1221,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
         name: "hidden layer".into(),
         description: None,
         visible: Some(false),
-        items: vec![PresentationItem::Body { body }],
+        items: vec![PresentationItem::Body { body }.into()],
     });
     let mut output = Vec::new();
     let report = write_step(

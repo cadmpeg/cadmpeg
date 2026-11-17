@@ -729,9 +729,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut losses,
     )?;
 
-    crate::design::feature_project::form_cages::project_forms(
+    crate::design::feature_project::form_cages::FormProjection::new(scan).project(
         ctx,
-        scan,
         &design.design_parameter_scopes,
         &mut model.features,
         geometry.subds,

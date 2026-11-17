@@ -1126,7 +1126,7 @@ Co 1001000 +2 0 *
             .appearance_bindings
             .iter()
             .filter(|binding| matches!(
-                binding.target,
+                &binding.target.entity,
                 cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
             ))
             .count(),
@@ -1139,7 +1139,7 @@ Co 1001000 +2 0 *
             .appearance_bindings
             .iter()
             .filter(|binding| matches!(
-                binding.target,
+                &binding.target.entity,
                 cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
             ))
             .count(),

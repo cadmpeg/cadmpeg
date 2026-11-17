@@ -128,7 +128,7 @@ fn value_text(attribute: &Attribute, value: &SolverValue) -> Option<String> {
             "[{}]",
             targets
                 .iter()
-                .map(|target| placeholder(target).map(|key| format!("<{key}>")))
+                .map(|target| placeholder(&target.entity).map(|key| format!("<{key}>")))
                 .collect::<Option<Vec<_>>>()?
                 .join(", ")
         ),

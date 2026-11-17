@@ -1255,3 +1255,89 @@ fn repeated_finalize_admits_thousands_of_sorted_long_identities() {
     geometry.finalize();
     assert_eq!(geometry, before);
 }
+
+#[test]
+fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
+    use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use crate::references::InstanceTarget;
+
+    let attribute = |target: InstanceTarget<AttributeTarget>, values| SourceAttribute {
+        id: crate::ids::AttributeId::mint("synthetic:test:attribute#part-number").unwrap(),
+        target,
+        name: "Part Number".into(),
+        values,
+    };
+    let configuration =
+        crate::features::ConfigurationId::mint("synthetic:test:configuration#large").unwrap();
+    let state = crate::design::refs::StateRef {
+        configuration: Some(configuration.clone()),
+        of: crate::design::refs::Evaluated::Tool(
+            crate::features::FeatureId::mint("synthetic:test:feature#cut").unwrap(),
+        ),
+    };
+    let attributes = ArenaName::parse("attributes");
+    for record in [
+        attribute(
+            AttributeTarget::Configuration(configuration).into(),
+            Vec::new(),
+        ),
+        attribute(
+            AttributeTarget::Document.into(),
+            vec![AttributeValue::Parameter(
+                crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
+            )],
+        ),
+        attribute(
+            InstanceTarget {
+                entity: AttributeTarget::Document,
+                path: None,
+                state: Some(state.clone()),
+            },
+            Vec::new(),
+        ),
+    ] {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        ir.set_scope(ContentScope::geometry()).unwrap();
+        ir.model.attributes.push(record);
+        let violation = ScopeViolation {
+            class: ArenaClass::Design,
+            arena: attributes,
+        };
+        assert_eq!(ir.check_scope(), Err(violation));
+        assert_eq!(
+            violation.to_string(),
+            "the document's scope excludes design but model arena `attributes` holds a reference into it"
+        );
+        assert!(serde_json::to_string(&ir).is_err());
+        ir.set_scope(ContentScope::design()).unwrap();
+        let json = serde_json::to_string(&ir).unwrap();
+        let error = CadIr::from_json(&with_scope(
+            &CadIr::from_json(&json).unwrap(),
+            serde_json::json!({"model": true, "design": false, "process": false}),
+        ))
+        .unwrap_err();
+        assert!(
+            error.to_string().contains(&violation.to_string()),
+            "{error}"
+        );
+    }
+
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    ir.set_scope(ContentScope::geometry()).unwrap();
+    ir.model
+        .declared_measures
+        .push(crate::declared_measures::DeclaredMeasure::new(
+            crate::ids::DeclaredMeasureId::mint("synthetic:test:declared_measure#volume").unwrap(),
+            crate::declared_measures::DeclaredTarget::State(state),
+            crate::declared_measures::DeclaredQuantity::Volume {
+                value: crate::scalar::FiniteReal::new(1.0).unwrap(),
+            },
+        ));
+    assert_eq!(
+        ir.check_scope(),
+        Err(ScopeViolation {
+            class: ArenaClass::Design,
+            arena: ArenaName::parse("declared_measures"),
+        })
+    );
+}

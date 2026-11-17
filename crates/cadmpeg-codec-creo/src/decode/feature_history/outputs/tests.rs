@@ -198,7 +198,13 @@ fn generated_face_outputs_follow_producer_history_after_feature_insertion() {
     );
 
     crate::decode::with_service_context(|ctx| {
-        super::super::dependencies::reconcile_feature_links(ctx, &scan, &mut ir, &BTreeMap::new())
+        super::super::dependencies::reconcile_feature_links(
+            ctx,
+            &scan,
+            &mut ir,
+            &BTreeMap::new(),
+            &mut Vec::new(),
+        )
     })
     .expect("the fixture feature links reconcile");
     assert_eq!(
