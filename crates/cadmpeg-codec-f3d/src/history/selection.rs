@@ -1183,7 +1183,10 @@ pub(crate) fn bind_mirror_selection_planes(
         let stream = crate::ids::native_stream(&scope.id).map(str::to_owned);
         let record_index = scope.record_index;
         let history_state_id = scope.history_state_id();
-        let previous_history_state_id = scope.previous_history_state_id();
+        // A scope that stores no preceding state takes it from its history
+        // state.
+        let previous_history_state_id =
+            crate::history::effective_scope_previous_history_state_id(scope, histories);
         let Some(construction) = scope.mirror_construction_mut() else {
             continue;
         };
