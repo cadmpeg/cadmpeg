@@ -2422,9 +2422,7 @@ impl CadIr {
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
-        serde_json::from_str::<CadIrReadWire>(s)?
-            .try_into()
-            .map_err(<serde_json::Error as serde::de::Error>::custom)
+        serde_json::from_str::<Self>(s)
     }
 
     /// Sort geometry, model, design, native, and unknown-record arenas by
