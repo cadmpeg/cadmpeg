@@ -2,6 +2,7 @@
 //! A definition's rule for every dimension that states no tolerance of its
 //! own (CADIR v11 §8.1).
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -77,7 +78,7 @@ pub enum AngularGeneral {
 }
 
 /// An ISO 2768-1 tolerance class.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum LinearGeneralClass {
