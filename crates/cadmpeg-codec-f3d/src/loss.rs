@@ -473,6 +473,10 @@ pub(crate) enum F3dLossCode {
     FeatureBaseFeatureSuffixRunOrderAssumed,
     /// A compact Fillet flag run or set frame stores nonzero bytes in its padding positions, which are read as padding.
     FeatureFilletPaddingAssumed,
+    /// Stored variable Fillet midpoint pairs are read in increasing edge position.
+    FeatureFilletMidpointOrderAssumed,
+    /// An explicit Fillet set retains a saved law input outside the neutral dimension domain.
+    FeatureFilletSetInputUnresolved,
     HoleStandardSizingAssumed,
     /// A clearance Hole's specification takes fixed values for the fields it does not store.
     HoleClearanceFieldsAssumed,
@@ -1355,6 +1359,8 @@ impl F3dLossCode {
         Self::FeatureBaseFeatureNullFlagAssumed,
         Self::FeatureBaseFeatureSuffixRunOrderAssumed,
         Self::FeatureFilletPaddingAssumed,
+        Self::FeatureFilletMidpointOrderAssumed,
+        Self::FeatureFilletSetInputUnresolved,
         Self::HoleStandardSizingAssumed,
         Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
@@ -2184,6 +2190,8 @@ impl F3dLossCode {
                 "feature.base-feature-suffix-run-order-assumed"
             }
             Self::FeatureFilletPaddingAssumed => "feature.fillet-padding-assumed",
+            Self::FeatureFilletMidpointOrderAssumed => "feature.fillet-midpoint-order-assumed",
+            Self::FeatureFilletSetInputUnresolved => "feature.fillet-set-input-unresolved",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
@@ -2963,6 +2971,8 @@ impl F3dLossCode {
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::FeatureFilletPaddingAssumed
+            | Self::FeatureFilletMidpointOrderAssumed
+            | Self::FeatureFilletSetInputUnresolved
             | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -3565,6 +3575,8 @@ impl F3dLossCode {
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::FeatureFilletPaddingAssumed
+            | Self::FeatureFilletMidpointOrderAssumed
+            | Self::FeatureFilletSetInputUnresolved
             | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -4277,6 +4289,8 @@ mod tests {
                 "feature.base-feature-null-flag-assumed",
                 "feature.base-feature-suffix-run-order-assumed",
                 "feature.fillet-padding-assumed",
+                "feature.fillet-midpoint-order-assumed",
+                "feature.fillet-set-input-unresolved",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",
