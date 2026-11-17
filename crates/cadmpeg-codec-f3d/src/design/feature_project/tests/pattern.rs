@@ -20,7 +20,9 @@ const EPS_SPACING: f64 = 1.0e-12;
 
 /// Authored timeline ordinals that list the test-stream scopes with record
 /// indices `record_indices`, in that order.
-pub(super) fn listed(record_indices: &[u32]) -> std::collections::HashMap<(&'static str, u32), u64> {
+pub(super) fn listed(
+    record_indices: &[u32],
+) -> std::collections::HashMap<(&'static str, u32), u64> {
     record_indices
         .iter()
         .zip(1..)
@@ -397,9 +399,16 @@ fn rectangular_pattern_direction_records_supply_both_directions() {
         direction_record(20, [2.0, 0.0, 0.0]),
         direction_record(30, [0.0, 2.5, 0.0]),
     ]);
-    let definition =
-        project_rectangular_pattern_scalars(&scope, &[], &[], &[], &[], &listed(&[5]), &mut Vec::new())
-            .expect("two-direction rectangular pattern");
+    let definition = project_rectangular_pattern_scalars(
+        &scope,
+        &[],
+        &[],
+        &[],
+        &[],
+        &listed(&[5]),
+        &mut Vec::new(),
+    )
+    .expect("two-direction rectangular pattern");
     let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = definition else {
         panic!("rectangular pattern definition");
     };
@@ -854,7 +863,14 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
     assert_eq!(seeds, vec![faces]);
 
     let seeds = |groups: &[DesignConstructionOperandGroup], operands: &[_]| {
-        unprojected_pattern_seeds(&rectangular_scope(), groups, operands, &[], &[], &listed(&[5]))
+        unprojected_pattern_seeds(
+            &rectangular_scope(),
+            groups,
+            operands,
+            &[],
+            &[],
+            &listed(&[5]),
+        )
     };
     let face_group = || group(10, 30, DesignOperandRole::ROLE_0X10);
     assert!(seeds(&[face_group()], &[]).is_empty());
