@@ -710,7 +710,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
             id: product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: Some("Cube part".into()),
             label: Some("Cube part".into()),
             description: None,
@@ -718,6 +718,14 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
             bom_properties: std::collections::BTreeMap::default(),
             bodies: vec![ir.geometry.bodies[0].id.clone()],
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
         id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#root-0")

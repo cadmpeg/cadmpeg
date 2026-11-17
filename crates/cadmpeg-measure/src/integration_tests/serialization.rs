@@ -156,7 +156,7 @@ fn quantities_that_do_not_apply_are_absent() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
             id: definition.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: None,
             label: None,
             description: None,
@@ -164,6 +164,14 @@ fn quantities_that_do_not_apply_are_absent() {
             bom_properties: std::collections::BTreeMap::default(),
             bodies: Vec::new(),
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
     let occurrence =
         cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#empty").expect("identity");

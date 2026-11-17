@@ -62,7 +62,7 @@ fn placed_point_product() -> CadIr {
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
         id: part.clone(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: Some("Pin".into()),
         label: None,
         description: None,
@@ -70,6 +70,14 @@ fn placed_point_product() -> CadIr {
         bom_properties: std::collections::BTreeMap::new(),
         bodies: vec![body],
         native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     });
     for (ordinal, x) in [(0, 100.0), (1, 200.0)] {
         ir.model.occurrences.push(Occurrence {

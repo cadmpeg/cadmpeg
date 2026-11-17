@@ -3601,9 +3601,6 @@ impl<'a> F3dDecodeSession<'a> {
             hidden_bodies: Some(&hidden_bodies),
             body_bindings: &prereqs.design_body_bindings,
             bodies: bodies.as_ref(),
-            root_ordinal_start: prereqs
-                .xref_table()
-                .map_or(0, crate::xref::local_root_ordinal_start),
             limits: self.ctx.policy().limits,
         };
         let local = crate::design::components::project_local_components_with_types(
@@ -3611,16 +3608,39 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_types,
         )?;
         self.component_definitions_by_record = local.component_definitions_by_record.clone();
+        let mut external_placements = Vec::new();
         if let Some(table) = prereqs.xref_table() {
             let external =
                 crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;
+            self.ir
+                .model
+                .product_definitions
+                .extend(external.definitions);
             self.ir.model.occurrences.extend(external.occurrences);
+            external_placements = external.placements;
             self.report.losses.extend(external.losses);
         }
         self.ir.model.product_definitions.extend(local.definitions);
         self.ir.model.occurrences.extend(local.occurrences);
+        // The external placements at the top level come first, as the source
+        // numbers them; the others sit in local occurrences.
+        let (top_external, nested_external): (Vec<_>, Vec<_>) = external_placements
+            .into_iter()
+            .partition(|(_, parent)| parent.is_none());
+        for (occurrence, parent) in top_external
+            .into_iter()
+            .chain(local.placements)
+            .chain(nested_external)
+        {
+            crate::tree::place_under(&mut self.ir.model, parent.as_ref(), occurrence);
+        }
+        let parents = crate::tree::parent_ids(
+            &self.ir.model.product_definitions,
+            &self.ir.model.occurrences,
+        );
         crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
             &mut self.ir.model.occurrences,
+            &parents,
             &prereqs.design_component_occurrences,
             prereqs
                 .xref_table()
@@ -3642,8 +3662,15 @@ impl<'a> F3dDecodeSession<'a> {
                 .map_or(&[], |table| table.references.as_slice()),
             &self.ir.model.occurrences,
         );
-        let unresolved_component_inserts =
-            component_inserts.unresolved_occurrences(self.ir.model.occurrences.len())?;
+        let (unresolved_definitions, unresolved_component_inserts) =
+            component_inserts.unresolved_occurrences()?;
+        self.ir
+            .model
+            .product_definitions
+            .extend(unresolved_definitions);
+        for occurrence in &unresolved_component_inserts {
+            crate::tree::place_top_level(&mut self.ir.model, occurrence.id.clone());
+        }
         self.ir
             .model
             .occurrences
@@ -3659,6 +3686,7 @@ impl<'a> F3dDecodeSession<'a> {
                 prereqs
                     .xref_table()
                     .map_or(&[], |table| table.references.as_slice()),
+                &self.ir.model.product_definitions,
                 &self.ir.model.occurrences,
                 &prereqs.design_parameter_scopes,
             ),
@@ -5102,20 +5130,25 @@ fn file_definition(
     model: &cadmpeg_ir::document::Model,
 ) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
     use cadmpeg_ir::ids::ProductDefinitionId;
-    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+    use cadmpeg_ir::products::Storage;
     use std::collections::BTreeSet;
-    fn local(occurrence: &cadmpeg_ir::products::Occurrence) -> Option<&ProductDefinitionId> {
-        match &occurrence.prototype {
-            PrototypeReference::Local { definition } => Some(definition),
-            _ => None,
-        }
-    }
+    let held = model
+        .product_definitions
+        .iter()
+        .filter(|definition| !matches!(definition.storage, Storage::External(_)))
+        .map(|definition| &definition.id)
+        .collect::<BTreeSet<_>>();
+    let local = |occurrence: &'_ cadmpeg_ir::products::Occurrence| -> Option<&ProductDefinitionId> {
+        held.get(&occurrence.prototype).copied()
+    };
     let own = |definition: &&ProductDefinitionId| !definition.as_str().starts_with("f3d:xref/");
     let root_prototypes = |stored_frame: bool| {
         model
             .occurrences
             .iter()
-            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter(|occurrence| {
+                crate::tree::is_top_level(&model.product_definitions, &occurrence.id)
+            })
             .filter(move |occurrence| {
                 crate::design::components::is_stored_frame_occurrence(occurrence) == stored_frame
             })
@@ -5136,6 +5169,7 @@ fn file_definition(
         top = model
             .product_definitions
             .iter()
+            .filter(|definition| !definition.is_root())
             .map(|definition| &definition.id)
             .filter(|definition| !placed.contains(definition))
             .filter(own)

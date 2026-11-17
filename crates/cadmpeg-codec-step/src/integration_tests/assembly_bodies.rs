@@ -26,7 +26,7 @@ fn product(name: &str, bodies: Vec<BodyId>) -> ProductDefinition {
         id: format!("test:assembly:product-definition#{name}")
             .try_into()
             .expect("product identity"),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: None,
         label: Some(name.into()),
         description: None,
@@ -35,6 +35,14 @@ fn product(name: &str, bodies: Vec<BodyId>) -> ProductDefinition {
         bodies,
         sketches: Vec::default(),
         native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     }
 }
 

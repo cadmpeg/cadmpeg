@@ -7,10 +7,9 @@ use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::OccurrenceId;
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, OccurrenceParent,
-    PrototypeReference,
+    AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, ProductDefinition, Storage,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -170,6 +169,8 @@ pub(crate) struct OccurrenceStates<'a> {
 
 #[derive(Debug)]
 pub(crate) struct AssemblyProjection {
+    /// One definition of external storage per document the occurrences place.
+    pub(crate) definitions: Vec<ProductDefinition>,
     pub(crate) occurrences: Vec<Occurrence>,
     pub(crate) joints: Vec<AssemblyJoint>,
     /// Hidden occurrences below a root occurrence; they stay in native records.
@@ -225,6 +226,7 @@ pub(crate) fn project_occurrences(
         )
     }));
     let mut emitted_ids = HashSet::new();
+    let mut definitions = BTreeMap::<u32, ProductDefinition>::new();
     let mut occurrences = Vec::new();
     let mut joints = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
@@ -299,22 +301,25 @@ pub(crate) fn project_occurrences(
             &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
             source.occurrence_id,
         );
-        occurrences.push(Occurrence {
-            id: id.clone(),
-            prototype: PrototypeReference::External {
-                document: reference.document(),
-                object: None,
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: source.ordinal,
-            transform,
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: source.title.clone().filter(|title| !title.is_empty()),
-            visible,
-            link: None,
-            native_ref: Some(source.id.clone()),
-        });
+        let prototype = match definitions.entry(reference.ordinal()) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.get().id.clone(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_entities(1, "project Inventor referenced document")?;
+                let definition = ProductDefinition::new(
+                    ProductDefinitionId::compose(
+                        &cadmpeg_ir::identity_namespace!("inventor", "assembly", "document"),
+                        reference.ordinal(),
+                    ),
+                    Storage::External(reference.document()),
+                );
+                entry.insert(definition).id.clone()
+            }
+        };
+        let mut occurrence = Occurrence::new(id.clone(), prototype, Some(transform));
+        occurrence.name = source.title.clone().filter(|title| !title.is_empty());
+        occurrence.visible = visible;
+        occurrence.native_ref = Some(source.id.clone());
+        occurrences.push(occurrence);
         if let Some(grounding) = grounded_record(occurrence_record, &grounding_records) {
             ctx.charge_entities(1, "project Inventor grounded joint")?;
             let object = source
@@ -340,6 +345,7 @@ pub(crate) fn project_occurrences(
     }
 
     Ok(AssemblyProjection {
+        definitions: definitions.into_values().collect(),
         occurrences,
         joints,
         nested_hidden,

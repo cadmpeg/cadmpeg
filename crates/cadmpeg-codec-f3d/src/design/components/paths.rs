@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent};
+use cadmpeg_ir::products::Occurrence;
 
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 use crate::records::feature::scope::DesignParameterScope;
@@ -22,9 +22,11 @@ impl LocalOccurrencePaths {
     pub(crate) fn new(
         native: &[DesignComponentOccurrence],
         external: &[crate::records::xref::XrefReference],
+        definitions: &[cadmpeg_ir::products::ProductDefinition],
         occurrences: &[Occurrence],
         scopes: &[DesignParameterScope],
     ) -> Self {
+        let parents = crate::tree::parent_ids(definitions, occurrences);
         let inserts = scopes
             .iter()
             .filter_map(|scope| {
@@ -104,7 +106,7 @@ impl LocalOccurrencePaths {
                     stream = Some(source_stream);
                     keys.push(key.to_ascii_lowercase());
                 }
-                let OccurrenceParent::Occurrence { occurrence: parent } = &current.parent else {
+                let Some(parent) = parents.get(&current.id) else {
                     break;
                 };
                 let Some(parent) = instances.get(parent) else {

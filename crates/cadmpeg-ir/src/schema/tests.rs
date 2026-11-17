@@ -17,7 +17,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
         id: owner.clone(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
         label: None,
         description: None,
@@ -25,6 +25,14 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
         bom_properties: std::collections::BTreeMap::new(),
         bodies: vec![target.clone()],
         native_ref: None,
+        generated_from: None,
+        storage: crate::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     });
 
     let mut references = Vec::new();
@@ -324,7 +332,7 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     let entity = ProductDefinition {
         sketches: Vec::default(),
         id: "test:model:product#owner".try_into().unwrap(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
         label: None,
         description: None,
@@ -332,6 +340,14 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
         bom_properties: std::collections::BTreeMap::new(),
         bodies: vec!["test:model:body#target".try_into().unwrap()],
         native_ref: None,
+        generated_from: None,
+        storage: crate::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

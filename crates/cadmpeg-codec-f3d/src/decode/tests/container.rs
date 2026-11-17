@@ -553,7 +553,7 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
     };
     let definition = |id: &str| ProductDefinition {
         id: ProductDefinitionId::mint(id).unwrap(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: None,
         label: None,
         description: None,
@@ -562,6 +562,14 @@ fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_defi
         bodies: Vec::new(),
         sketches: Vec::new(),
         native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     };
     let occurrence = |id: &str, definition: &str, parent: Option<&str>| Occurrence {
         id: OccurrenceId::mint(id).unwrap(),

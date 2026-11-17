@@ -6,6 +6,9 @@ use cadmpeg_core::text::NonBlankString;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use super::{
+    deserialize_representation, deserialize_suppressed, deserialize_transform, deserialize_visible,
+};
 use crate::design::selection::OccurrencePath;
 use crate::transform::Transform;
 
@@ -47,8 +50,3 @@ pub struct NestedOverride {
     )]
     pub representation: Option<NonBlankString>,
 }
-
-cadmpeg_core::named_optional_field!(deserialize_representation<T>, T, "representation");
-cadmpeg_core::named_optional_field!(deserialize_suppressed<T>, T, "suppressed");
-cadmpeg_core::named_optional_field!(deserialize_transform<T>, T, "transform");
-cadmpeg_core::named_optional_field!(deserialize_visible<T>, T, "visible");

@@ -19,7 +19,7 @@ fn definition(ir: &CadIr) -> ProductDefinition {
     ProductDefinition {
         sketches: Vec::default(),
         id: ProductDefinitionId::mint("test:model:product#1").expect("id"),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: None,
         label: None,
         description: None,
@@ -32,6 +32,14 @@ fn definition(ir: &CadIr) -> ProductDefinition {
             .map(|body| body.id.clone())
             .collect(),
         native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     }
 }
 

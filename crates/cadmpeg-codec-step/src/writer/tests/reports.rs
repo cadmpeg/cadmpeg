@@ -190,7 +190,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Group,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Group),
             source_name: Some("Group".into()),
             label: Some("Group".into()),
             description: None,
@@ -198,6 +198,14 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
             bom_properties,
             bodies: Vec::new(),
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
 
     let report = write_step(
@@ -292,7 +300,7 @@ fn writer_reports_root_occurrence_scale() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
             id: product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: Some("Scaled part".into()),
             label: Some("Scaled part".into()),
             description: None,
@@ -300,6 +308,14 @@ fn writer_reports_root_occurrence_scale() {
             bom_properties: std::collections::BTreeMap::new(),
             bodies: vec![ir.geometry.bodies[0].id.clone()],
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
         id: "test:model:occurrence#scaled"
@@ -457,7 +473,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
             id: product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: Some("Child part".into()),
             label: Some("Child part".into()),
             description: None,
@@ -465,6 +481,14 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
             bom_properties: std::collections::BTreeMap::default(),
             bodies: vec![ir.geometry.bodies[0].id.clone()],
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
     let parent = cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#external-parent")
         .expect("identity grammar");

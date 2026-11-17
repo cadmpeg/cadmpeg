@@ -68,12 +68,14 @@ pub(crate) fn validate_assembly_projection(
         &crate::design::components::paths::LocalOccurrencePaths::new(
             &native.design_component_occurrences,
             &native.xref_references,
+            &target.model.product_definitions,
             &target.model.occurrences,
             &native.design_parameter_scopes,
         ),
     );
     crate::f3z::merge::rebind_standalone_projected_joints(
         native,
+        &target.model.product_definitions,
         &target.model.occurrences,
         &mut projected.joints,
     );

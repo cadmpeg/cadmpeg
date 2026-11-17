@@ -17,7 +17,7 @@ fn unnamed_definition(
     cadmpeg_ir::products::ProductDefinition {
         sketches: Vec::default(),
         id: cadmpeg_ir::ids::ProductDefinitionId::mint(id).expect("identity grammar"),
-        kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+        kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
         source_name: None,
         label: None,
         description: None,
@@ -25,6 +25,14 @@ fn unnamed_definition(
         bom_properties: std::collections::BTreeMap::default(),
         bodies,
         native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     }
 }
 

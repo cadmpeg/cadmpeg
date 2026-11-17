@@ -21,12 +21,9 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, OccurrenceId, ProductDefinitionId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, ProductDefinitionId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
-};
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
@@ -291,7 +288,6 @@ pub(super) fn transfer_part_product(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let Some(model_name) = scan.framing.model_name.as_ref() else {
         return Ok(false);
@@ -302,24 +298,12 @@ pub(super) fn transfer_part_product(
         &crate::identity::MODEL_PRODUCT_DEFINITION,
         "root",
     )?;
-    let occurrence_id = crate::identity::compose_checked::<OccurrenceId>(
-        &crate::identity::MODEL_OCCURRENCE,
-        "root",
-    )?;
     annotate(
         annotations,
         &product_id,
         "archive_header",
         cadmpeg_core::decode::u64_from_index(model_name_offset),
         "part_product",
-        Exactness::Derived,
-    )?;
-    annotate(
-        annotations,
-        &occurrence_id,
-        "archive_header",
-        cadmpeg_core::decode::u64_from_index(model_name_offset),
-        "part_product_occurrence",
         Exactness::Derived,
     )?;
     ctx.charge_entities(1, "admit Creo model product_definitions")?;
@@ -335,38 +319,19 @@ pub(super) fn transfer_part_product(
     let source_name = model_name.to_owned();
     let label = model_name.to_owned();
     let part_number = model_name.to_owned();
-    ir.model.product_definitions.push(ProductDefinition {
-        sketches: Vec::default(),
-        id: product_ref,
-        kind: ProductDefinitionKind::Part,
-        source_name: Some(source_name),
-        label: Some(label),
-        description: None,
-        part_number: Some(part_number),
-        bom_properties: BTreeMap::default(),
-        bodies,
-        native_ref: None,
-    });
-    ctx.charge_entities(1, "admit Creo model occurrences")?;
-    let occurrence_name = model_name.to_owned();
-    source_carriers.admit_occurrence(
-        ir,
-        Occurrence {
-            id: occurrence_id,
-            prototype: PrototypeReference::Local {
-                definition: product_id,
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform: Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some(occurrence_name),
-            visible: None,
-            link: None,
-            native_ref: None,
+    let mut definition = ProductDefinition::root(product_ref, ExternalDocument::default());
+    definition.kind = Some(
+        if crate::decode::assembly::declares_assembly(&scan.framing.version_line) {
+            ProductDefinitionKind::Assembly
+        } else {
+            ProductDefinitionKind::Part
         },
-    )?;
+    );
+    definition.source_name = Some(source_name);
+    definition.label = Some(label);
+    definition.part_number = Some(part_number);
+    definition.bodies = bodies;
+    ir.model.product_definitions.push(definition);
     Ok(true)
 }
 
