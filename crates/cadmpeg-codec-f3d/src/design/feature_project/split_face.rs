@@ -27,6 +27,15 @@ pub(super) fn project_split_face(
     };
 
     let mut losses = Vec::new();
+    if scope
+        .split_face_operation()
+        .is_some_and(|operation| operation.carrier_type_assumed())
+    {
+        losses.push(crate::loss::F3dLossCode::FeatureSplitFaceCarrierTypeAssumed.note(format!(
+            "{}: the registered point-direction carrier is retained despite its conflicting inline type qualifier (DR-575).",
+            scope.id
+        )));
+    }
     let method = match scope.split_face_operation() {
         Some(operation) => match operation.method() {
             DesignSplitFaceMethod::SurfaceIntersection { extend } => {
@@ -189,7 +198,7 @@ pub(super) fn project_split_face(
         expected_references.extend(group.members().iter().map(|member| member.value));
     }
     if let Some(operation) = scope.split_face_operation() {
-        if let Some(reference) = operation.reference_record_index() {
+        if let Some(reference) = operation.direction_reference.local_record_index() {
             expected_references.push(reference);
         }
         expected_references.extend(

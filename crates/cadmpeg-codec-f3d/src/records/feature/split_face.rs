@@ -2,7 +2,6 @@ use crate::records::identity::Located;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
-cadmpeg_core::named_optional_field!(deserialize_operation, DesignSplitFaceOperation, "operation");
 cadmpeg_core::named_optional_field!(deserialize_control, DesignSplitFaceMethodControl, "control");
 cadmpeg_core::named_optional_field!(
     deserialize_carrier_frame,
@@ -16,16 +15,6 @@ cadmpeg_core::named_optional_field!(
     String,
     "same_document_asset"
 );
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub(crate) struct DesignSplitFaceScope {
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_operation"
-    )]
-    pub(crate) operation: Option<DesignSplitFaceOperation>,
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -164,7 +153,7 @@ impl DesignSplitFaceOperation {
         let Some(direction) = &self.direction else {
             return false;
         };
-        if self.reference_record_index().is_none()
+        if self.direction_reference.local_record_index().is_none()
             || carrier_start
                 .checked_add(cadmpeg_core::decode::u64_from_index(
                     crate::layout::design_hole_point_data_v1_prefix::DIRECTION,
@@ -230,13 +219,11 @@ impl DesignSplitFaceOperation {
         !self.inputs_complete || cursor == carrier_end
     }
 
-    pub(crate) fn reference_record_index(&self) -> Option<u32> {
-        match &self.direction_reference {
-            DesignSplitFaceDirectionReference::Local { target, .. } => u32::try_from(target.value)
-                .ok()
-                .filter(|target| *target != 0),
-            _ => None,
-        }
+    pub(crate) fn carrier_type_assumed(&self) -> bool {
+        self.carrier_frame.is_some()
+            && matches!(&self.direction_reference,
+                DesignSplitFaceDirectionReference::Local { inline_type_guid: Some(guid), .. }
+                if !guid.eq_ignore_ascii_case(crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID))
     }
 }
 
@@ -390,7 +377,6 @@ pub(crate) enum DesignSplitFaceMethod {
     AlongVector,
 }
 
-rewrite_native_record!(DesignSplitFaceScope, []; {operation});
 rewrite_native_record!(DesignSplitFaceOperation, []; {method_offset, control, direction_reference, carrier_frame, direction, inputs, input_count, inputs_complete});
 rewrite_native_record!(DesignSplitFaceCarrierFrame, []; {primary_offset, secondary_offset, end_offset, version});
 rewrite_native_record!(DesignSplitFaceMethodControl, []; {family, projection, extension});

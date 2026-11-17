@@ -1008,7 +1008,7 @@ pub(crate) fn decode_face_operands(
         let Some(operation) = scope.split_face_operation() else {
             continue;
         };
-        if let Some(reference) = operation.reference_record_index() {
+        if let Some(reference) = operation.direction_reference.local_record_index() {
             seen.insert((stream, scope.record_index, reference));
         }
         for input in &operation.inputs {

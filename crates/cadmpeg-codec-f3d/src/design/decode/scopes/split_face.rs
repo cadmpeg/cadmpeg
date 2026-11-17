@@ -38,6 +38,9 @@ pub(super) fn split_face_operation(
         return Ok(None);
     };
     let end = body.len();
+    if prologue_at > end {
+        return Ok(None);
+    }
     if body
         .get(zero_start..prologue_at)
         .is_none_or(|zeroes| zeroes.iter().any(|byte| *byte != 0))

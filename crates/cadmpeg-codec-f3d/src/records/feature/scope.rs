@@ -45,7 +45,7 @@ use super::sheet_metal::edge::{DesignEdgeFlangeScope, DesignReferenceEdgeFlange}
 use super::sheet_metal::{
     DesignBaseFlangeOperation, DesignEdgeFlangeOperation, DesignHemOperation,
 };
-use super::split_face::{DesignSplitFaceOperation, DesignSplitFaceScope};
+use super::split_face::DesignSplitFaceOperation;
 use super::surface_ops::{
     DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfacePatchBoundary, DesignSurfacePatchNormalState, DesignSurfacePatchScope,
@@ -471,12 +471,6 @@ impl ScopePayloadCompleteness for DesignCombineScope {
     }
 }
 
-impl ScopePayloadCompleteness for DesignSplitFaceScope {
-    fn is_uninterpreted(&self) -> bool {
-        self.operation.is_none()
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignNamedScopeReferences {
@@ -770,7 +764,7 @@ design_feature_kinds! {
         Fillet => "Fillet": super::fillet_set::DesignFilletScope,
         Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
         Combine => "Combine": DesignCombineScope,
-        SplitFace => "SplitFace": DesignSplitFaceScope,
+    SplitFace => "SplitFace": Option<DesignSplitFaceOperation>,
         Draft => "Draft": Option<DesignDraftOperation>,
         CPattern => "C-Pattern": Option<DesignCircularPatternConstruction>,
         CircularPattern => "Circular Pattern": Option<DesignCircularPatternConstruction>,
@@ -2107,9 +2101,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 operation: wire.combine_operation.take(),
                 named_tail: wire.combine_named_tail.take(),
             }),
-            DesignFeatureKind::SplitFace => DesignScopePayload::SplitFace(DesignSplitFaceScope {
-                operation: wire.split_face_operation.take(),
-            }),
+            DesignFeatureKind::SplitFace => {
+                DesignScopePayload::SplitFace(wire.split_face_operation.take())
+            }
             DesignFeatureKind::Draft => DesignScopePayload::Draft(wire.draft_operation.take()),
             DesignFeatureKind::ReplaceFace => DesignScopePayload::ReplaceFace,
             DesignFeatureKind::CPattern => {
@@ -2755,7 +2749,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.combine_named_tail = value.named_tail;
             }
             DesignScopePayload::SplitFace(value) => {
-                wire.split_face_operation = value.operation;
+                wire.split_face_operation = value;
             }
             DesignScopePayload::Thread(value) => wire.thread_construction = value,
             DesignScopePayload::Emboss(value) => wire.emboss_construction = value,
@@ -3046,7 +3040,7 @@ impl DesignParameterScope {
             }
         }
         if let DesignScopePayload::SplitFace(value) = &draft.payload {
-            if value.operation.as_ref().is_some_and(|operation| {
+            if value.as_ref().is_some_and(|operation| {
                 !operation.scope_offsets_valid(draft.byte_offset, draft.reference_count_offset)
             }) {
                 return Err(fail("split_face_operation"));
@@ -3461,7 +3455,7 @@ impl DesignParameterScope {
 
     pub(crate) fn split_face_operation(&self) -> Option<&DesignSplitFaceOperation> {
         match &self.payload {
-            DesignScopePayload::SplitFace(value) => value.operation.as_ref(),
+            DesignScopePayload::SplitFace(value) => value.as_ref(),
             _ => None,
         }
     }

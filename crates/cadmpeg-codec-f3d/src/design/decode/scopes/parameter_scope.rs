@@ -689,7 +689,7 @@ pub(crate) fn decode_parameter_scopes(
                     &split_face_frames,
                 )?;
                 if let scope::DesignScopePayloadMut::SplitFace(slot) = scope.payload_mut() {
-                    slot.operation = construction;
+                    *slot = construction;
                 }
             }
             {

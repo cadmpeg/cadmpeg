@@ -20,7 +20,7 @@ fn document() -> cadmpeg_ir::CadIr {
         draft.feature_ordinal_offset = 1330;
         draft.paired_byte_offset = 1408;
         let DesignScopePayload::SplitFace(value) = &mut draft.payload else { panic!("SplitFace payload") };
-        value.operation = Some(serde_json::from_slice(br#"{"method_offset":1032,"control":{"family":0,"projection":1,"extension":0},"direction_reference":{"kind":"local","target":{"value":55,"offset":1022},"inline_type_guid":null},"carrier_frame":{"primary_offset":120,"secondary_offset":228,"end_offset":239,"version":1},"direction":{"value":[2.4,0.0,0.0],"offset":169},"input_count":{"value":1,"offset":213},"inputs":[{"value":{"kind":"local","target":{"value":88,"offset":218},"inline_type_guid":null},"offset":217}],"inputs_complete":true}"#).unwrap());
+        *value = Some(serde_json::from_slice(br#"{"method_offset":1032,"control":{"family":0,"projection":1,"extension":0},"direction_reference":{"kind":"local","target":{"value":55,"offset":1022},"inline_type_guid":null},"carrier_frame":{"primary_offset":120,"secondary_offset":228,"end_offset":239,"version":1},"direction":{"value":[2.4,0.0,0.0],"offset":169},"input_count":{"value":1,"offset":213},"inputs":[{"value":{"kind":"local","target":{"value":88,"offset":218},"inline_type_guid":null},"offset":217}],"inputs_complete":true}"#).unwrap());
     }).unwrap();
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     {
@@ -96,6 +96,13 @@ fn split_face_carrier_snapshot_requires_its_registered_source_envelope() {
     let mut wrong_type = ir.clone();
     f3d_native_mut(&mut wrong_type).design_types.clear();
     assert!(invalid_split_face_frame(&wrong_type));
+    let mut ambiguous = ir.clone();
+    {
+        let mut native = f3d_native_mut(&mut ambiguous);
+        let duplicate = native.design_types[0].clone();
+        native.design_types.push(duplicate);
+    }
+    assert!(invalid_split_face_frame(&ambiguous));
 }
 
 #[test]
@@ -111,7 +118,7 @@ fn split_face_missing_carrier_remains_admitted_without_a_claimed_snapshot() {
         else {
             panic!("SplitFace payload")
         };
-        let operation = value.operation.as_mut().unwrap();
+        let operation = value.as_mut().unwrap();
         operation.carrier_frame = None;
         operation.direction = None;
         operation.input_count = None;
@@ -119,4 +126,28 @@ fn split_face_missing_carrier_remains_admitted_without_a_claimed_snapshot() {
         operation.inputs_complete = false;
     }
     assert!(!invalid_split_face_frame(&ir));
+}
+
+#[test]
+fn split_face_type_conflict_is_reported_with_valid_carrier() {
+    for (guid, warning) in [
+        ("F2A7590D-6654-4674-B393-A2AEF4FEC48A", false),
+        ("00000000-0000-0000-0000-000000000099", true),
+    ] {
+        let mut ir = document();
+        {
+            let mut native = f3d_native_mut(&mut ir);
+            native.design_parameter_scopes[0].try_edit(|draft| {
+                let DesignScopePayload::SplitFace(Some(operation)) = &mut draft.payload else { panic!("SplitFace") };
+                operation.method_offset = 1072;
+                let crate::records::feature::split_face::DesignSplitFaceDirectionReference::Local { inline_type_guid, .. } = &mut operation.direction_reference else { panic!("local") };
+                *inline_type_guid = Some(guid.to_owned());
+            }).unwrap();
+        }
+        let findings = crate::test_support::with_decode_context(|ctx| {
+            crate::validate::validate_native(ctx, &ir).unwrap()
+        });
+        assert!(!invalid_split_face_frame(&ir));
+        assert_eq!(findings.iter().any(|finding| finding.message == "Fusion SplitFace carrier registration conflicts with its inline type qualifier"), warning);
+    }
 }

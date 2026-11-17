@@ -199,6 +199,80 @@ fn decode_registered_carrier(
 }
 
 #[test]
+fn split_face_generic_prefix_boundaries_retain_admitted_scope_and_serde() {
+    let bytes = [0_u8; 408];
+    for (count_offset, expected) in [(18, None), (19, Some(19)), (20, Some(19)), (21, Some(21))] {
+        let mut scope = split_face_scope();
+        scope
+            .try_edit(|draft| {
+                draft.reference_count_offset = count_offset;
+                draft.layout_fixture_references();
+            })
+            .unwrap();
+        let operation = crate::test_support::with_decode_context(|ctx| {
+            split_face_operation(ctx, &bytes, &scope, &[])
+        })
+        .unwrap();
+        assert_eq!(
+            operation.as_ref().map(|value| value.method_offset),
+            expected
+        );
+        scope
+            .try_edit(|draft| {
+                let crate::records::feature::scope::DesignScopePayload::SplitFace(slot) =
+                    &mut draft.payload
+                else {
+                    panic!("SplitFace")
+                };
+                *slot = operation;
+            })
+            .unwrap();
+        let wire = serde_json::to_vec(&scope).unwrap();
+        let decoded: DesignParameterScope = serde_json::from_slice(&wire).unwrap();
+        assert_eq!(decoded.split_face_operation(), scope.split_face_operation());
+        crate::test_support::split_face::assert_native_scope(&decoded);
+    }
+}
+
+#[test]
+fn split_face_typed_local_carrier_keeps_qualifier_vector_and_width() {
+    let meta = carrier_metadata(
+        crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID,
+        1,
+        &[(55, 228)],
+    );
+    for (guid, assumed) in [
+        ("F2A7590D-6654-4674-B393-A2AEF4FEC48A", false),
+        ("00000000-0000-0000-0000-000000000099", true),
+    ] {
+        let mut bytes = carrier_bytes(false);
+        bytes[30..34].copy_from_slice(&36_u32.to_le_bytes());
+        bytes[34..70].copy_from_slice(guid.as_bytes());
+        bytes[70..72].copy_from_slice(&[0, 0]);
+        bytes[72..78].copy_from_slice(&[0, 0, 0, 0, 1, 0]);
+        let operation = decode_registered_carrier(&bytes, &meta);
+        assert_eq!(operation.method_offset, 72);
+        assert_eq!(
+            operation
+                .direction
+                .as_ref()
+                .unwrap()
+                .value
+                .map(cadmpeg_ir::scalar::FiniteReal::get),
+            [2.4, 0.0, 0.0]
+        );
+        assert!(
+            matches!(&operation.direction_reference, DesignSplitFaceDirectionReference::Local { target: Located { value: 55, offset: 22 }, inline_type_guid: Some(value) } if value == guid)
+        );
+        assert_eq!(operation.carrier_type_assumed(), assumed);
+        let wire = serde_json::to_vec(&operation).unwrap();
+        let decoded: crate::records::feature::split_face::DesignSplitFaceOperation =
+            serde_json::from_slice(&wire).unwrap();
+        assert_eq!(decoded, operation);
+    }
+}
+
+#[test]
 fn along_vector_reads_the_registered_non_unit_vector_despite_fake_same_id_header() {
     for fake_header in [false, true] {
         let bytes = carrier_bytes(fake_header);
@@ -608,7 +682,7 @@ fn reference_ending_at_scope_boundary_survives_serde() {
             else {
                 panic!("SplitFace")
             };
-            payload.operation = Some(operation);
+            *payload = Some(operation);
         })
         .unwrap();
     let encoded = serde_json::to_vec(&scope).unwrap();
@@ -644,7 +718,7 @@ fn unavailable_reference_at_scope_boundary_survives_serde() {
             else {
                 panic!("SplitFace")
             };
-            payload.operation = Some(operation);
+            *payload = Some(operation);
         })
         .unwrap();
     let encoded = serde_json::to_vec(&scope).unwrap();

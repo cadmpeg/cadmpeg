@@ -736,16 +736,12 @@ pub(crate) enum F3dLossCode {
     /// removed, though the companion body selections do not name exactly the
     /// tools.
     FeatureCombineToolConsumptionAssumed,
-    #[doc = "`SplitFace` method controls do not match a decoded method."]
     FeatureSplitFaceMethodUnresolved,
-    #[doc = "`SplitFace` direction source selection remains unresolved."]
     FeatureSplitFaceDirectionUnresolved,
-    #[doc = "`SplitFace` reference groups do not prove a complete partition."]
     FeatureSplitFaceGroupsUnresolved,
-    #[doc = "`SplitFace` face or tool selection remains unresolved."]
     FeatureSplitFaceSelectionUnresolved,
-    #[doc = "`SplitFace` face selection projection failed."]
     FeatureSplitFaceSelectionProjectionFailed,
+    FeatureSplitFaceCarrierTypeAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
     /// A parameter-owned Fillet scope's set list is not an admitted form; its operand groups have no radius assignment.
@@ -1517,6 +1513,7 @@ impl F3dLossCode {
         Self::FeatureSplitFaceGroupsUnresolved,
         Self::FeatureSplitFaceSelectionUnresolved,
         Self::FeatureSplitFaceSelectionProjectionFailed,
+        Self::FeatureSplitFaceCarrierTypeAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureFilletSetListNative,
         Self::FeatureExtrudeExtentNative,
@@ -2415,6 +2412,7 @@ impl F3dLossCode {
             Self::FeatureSplitFaceSelectionProjectionFailed => {
                 "feature.split-face-selection-projection-failed"
             }
+            Self::FeatureSplitFaceCarrierTypeAssumed => "feature.split-face-carrier-type-assumed",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureFilletSetListNative => "feature.fillet-set-list-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
@@ -3126,6 +3124,7 @@ impl F3dLossCode {
             | Self::FeatureSplitFaceGroupsUnresolved
             | Self::FeatureSplitFaceSelectionUnresolved
             | Self::FeatureSplitFaceSelectionProjectionFailed
+            | Self::FeatureSplitFaceCarrierTypeAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureFilletSetListNative
             | Self::FeatureExtrudeExtentNative
@@ -3722,6 +3721,7 @@ impl F3dLossCode {
             | Self::FeatureSplitFaceGroupsUnresolved
             | Self::FeatureSplitFaceSelectionUnresolved
             | Self::FeatureSplitFaceSelectionProjectionFailed
+            | Self::FeatureSplitFaceCarrierTypeAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureFilletSetListNative
             | Self::FeatureExtrudeExtentNative
@@ -4435,6 +4435,7 @@ mod tests {
                 "feature.split-face-groups-unresolved",
                 "feature.split-face-selection-unresolved",
                 "feature.split-face-selection-projection-failed",
+                "feature.split-face-carrier-type-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.fillet-set-list-native",
                 "feature.extrude-extent-native",

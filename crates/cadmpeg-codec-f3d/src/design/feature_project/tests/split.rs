@@ -512,7 +512,7 @@ fn set_split_face_operation(
             else {
                 panic!("expected a SplitFace scope payload");
             };
-            payload.operation = Some(operation);
+            *payload = Some(operation);
         })
         .unwrap();
     crate::test_support::split_face::assert_native_scope(scope);
@@ -758,6 +758,75 @@ fn along_vector_keeps_the_solved_vector_and_unresolved_source_identity() {
     assert!(projected.losses.iter().any(|loss| {
         loss.code == crate::loss::F3dLossCode::FeatureSplitFaceDirectionUnresolved.kind()
     }));
+}
+
+#[test]
+fn split_face_conflicting_carrier_qualifier_charges_assumption_and_keeps_vector() {
+    use crate::records::feature::split_face::{
+        DesignSplitFaceDirectionReference, DesignSplitFaceMethod,
+    };
+    use crate::records::identity::Located;
+    use cadmpeg_ir::features::{FeatureOperation, SplitFaceMethod};
+    for (guid, assumed) in [
+        ("F2A7590D-6654-4674-B393-A2AEF4FEC48A", false),
+        ("00000000-0000-0000-0000-000000000099", true),
+    ] {
+        let (mut scope, groups) = split_face_fixture(DesignOperandRole::ROLE_0X9);
+        let finite = |value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap();
+        let mut operation = split_face_native_operation(
+            DesignSplitFaceMethod::AlongVector,
+            DesignSplitFaceDirectionReference::Local {
+                target: Located {
+                    value: 700,
+                    offset: 22,
+                },
+                inline_type_guid: Some(guid.into()),
+            },
+            Some(Located {
+                value: [finite(2.5), finite(0.0), finite(0.0)],
+                offset: 169,
+            }),
+            vec![],
+        );
+        operation.method_offset = 1072;
+        operation.input_count = Some(Located {
+            value: 0,
+            offset: 213,
+        });
+        operation.inputs_complete = false;
+        set_split_face_operation(&mut scope, operation);
+        let projected = project_split_face(
+            &scope,
+            std::slice::from_ref(&scope),
+            &groups,
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(
+            projected.losses.iter().any(|loss| loss.code
+                == crate::loss::F3dLossCode::FeatureSplitFaceCarrierTypeAssumed.kind()),
+            assumed
+        );
+        let FeatureDefinition::Operation(FeatureOperation::SplitFace {
+            method:
+                SplitFaceMethod::AlongVector {
+                    direction,
+                    native_carrier,
+                    ..
+                },
+            ..
+        }) = projected.definition
+        else {
+            panic!("AlongVector")
+        };
+        assert_eq!(
+            direction.unwrap().get(),
+            cadmpeg_ir::math::Vector3::new(2.5, 0.0, 0.0)
+        );
+        assert!(native_carrier.unwrap().ends_with(guid));
+    }
 }
 
 #[test]

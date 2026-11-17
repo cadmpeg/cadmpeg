@@ -1445,6 +1445,7 @@ pub(super) fn scope_related_indices(
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(scope.split_face_operation().filter(|operation| operation.carrier_frame.is_some()).and_then(|operation| operation.direction_reference.local_record_index()))
             .chain(scope.move_operation().map(|operation| operation.transform_record_index))
             .chain(scope.move_operation().and_then(|operation| operation.face_group.as_ref().map(|group| group.value)))
             .chain(

@@ -11,7 +11,7 @@ use crate::records::topology::{
 };
 use cadmpeg_core::CodecError;
 
-fn face_scope_frame(scope: &DesignParameterScope) -> Option<(u64, u64)> {
+pub(super) fn face_scope_frame(scope: &DesignParameterScope) -> Option<(u64, u64)> {
     let count_offset = scope
         .reference_count_offset()
         .checked_sub(scope.byte_offset())?;

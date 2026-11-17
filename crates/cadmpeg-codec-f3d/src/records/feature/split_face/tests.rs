@@ -27,7 +27,7 @@ fn scope() -> DesignParameterScope {
             let DesignScopePayload::SplitFace(value) = &mut draft.payload else {
                 panic!("SplitFace payload")
             };
-            value.operation = Some(operation());
+            *value = Some(operation());
         })
         .unwrap();
     scope

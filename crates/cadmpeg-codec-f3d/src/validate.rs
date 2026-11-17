@@ -2256,10 +2256,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let split_face_link = scope.split_face_operation().is_none_or(|operation| {
             operation.scope_offsets_valid(scope.byte_offset(), scope.reference_count_offset())
                 && operation.carrier_frame.is_none_or(|frame| {
-                    operation.reference_record_index().is_some_and(|record_index| {
+                    operation.direction_reference.local_record_index().is_some_and(|record_index| {
                         records_by_index.get(&(native_stream, record_index)).is_some_and(|header| header.byte_offset == frame.primary_offset)
                             && stream_types.get(&u64::from(record_index)).is_some_and(|(guid, version)| {
                                 guid.eq_ignore_ascii_case(records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID) && *version == frame.version
+                            })
+                            && native_stream.strip_suffix("BulkStream.dat").is_some_and(|prefix| {
+                                native.design_types.iter().filter(|row| {
+                                    ids::native_stream(row.id()).and_then(|stream| stream.strip_suffix("MetaStream.dat")) == Some(prefix)
+                                }).flat_map(|row| row.entities.values()).filter(|id| **id == u64::from(record_index)).count() == 1
                             })
                             && native.design_record_headers.iter().filter(|header| design_stream(&header.id) == native_stream && header.byte_offset > frame.primary_offset).map(|header| header.byte_offset).min().is_none_or(|next| frame.end_offset <= next)
                     })
@@ -4496,6 +4501,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 "Fusion Design parameter scope has an invalid paired frame",
                 Some(scope.id.clone()),
             );
+        }
+        if split_face_link
+            && scope
+                .split_face_operation()
+                .is_some_and(|operation| operation.carrier_type_assumed())
+        {
+            findings.push(Finding {
+                related: Vec::new(),
+                check: Check::NativeLinks,
+                severity: Severity::Warning,
+                message:
+                    "Fusion SplitFace carrier registration conflicts with its inline type qualifier"
+                        .into(),
+                entity: Some(scope.id.clone()),
+            });
         }
     }
     Ok(())

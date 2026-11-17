@@ -18,7 +18,7 @@ pub(crate) fn assert_native_scope(scope: &crate::records::feature::scope::Design
         let carrier_index = scope
             .split_face_operation()
             .filter(|operation| operation.carrier_frame.is_some())
-            .and_then(crate::records::feature::split_face::DesignSplitFaceOperation::reference_record_index);
+            .and_then(|operation| operation.direction_reference.local_record_index());
         for (ordinal, record_index) in scope.reference_members().values().enumerate() {
             if Some(*record_index) == carrier_index {
                 continue;
@@ -34,7 +34,7 @@ pub(crate) fn assert_native_scope(scope: &crate::records::feature::scope::Design
             if let Some(frame) = operation.carrier_frame {
                 let start = frame.primary_offset;
                 let end = frame.end_offset;
-                let record_index = operation.reference_record_index().unwrap();
+                let record_index = operation.direction_reference.local_record_index().unwrap();
                 assert!(end < scope.byte_offset() || start > scope.paired_byte_offset());
                 let meta_stream = stream.strip_suffix("BulkStream.dat").unwrap();
                 native.design_types.push(
@@ -78,7 +78,8 @@ pub(crate) fn assert_native_scope(scope: &crate::records::feature::scope::Design
     assert!(
         findings
             .iter()
-            .all(|finding| finding.entity.as_deref() != Some(scope.id.as_str())),
+            .all(|finding| finding.entity.as_deref() != Some(scope.id.as_str())
+                || finding.message == "Fusion SplitFace carrier registration conflicts with its inline type qualifier"),
         "{findings:?}"
     );
 }

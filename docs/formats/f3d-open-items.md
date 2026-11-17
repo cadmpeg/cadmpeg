@@ -3372,3 +3372,15 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** The geometry carrier of these records.
 
 **Note.** The decoder reports `sketch.curve-unprojected` for each such curve.
+
+### DR-575. SplitFace direction carrier type disagreement
+
+**Question.** What does an inline target type that disagrees with the registered type of a SplitFace direction carrier mean?
+
+**Known.** The inline GUID names the target record type. The primary index and type registration identify the point-direction carrier and its bounded member frame.
+
+**Need.** Controlled files that independently identify the carrier when its inline qualifier and registration differ.
+
+**Conflict.** The reference qualifier and the registered carrier type make different type claims.
+
+**Note.** The decoder retains the uniquely registered point-direction carrier and its readable vector as the most likely interpretation, preserves the original qualifier, and records `feature.split-face-carrier-type-assumed`.
