@@ -43,7 +43,9 @@ fn whole_sketch_selection_names_every_profile_as_its_own_region() {
             .collect(),
     )
     .unwrap();
-    assert!(crate::design::profile_select::selects_whole_sketch(&every, &sketch));
+    assert!(crate::design::profile_select::selects_whole_sketch(
+        &every, &sketch
+    ));
 }
 
 #[test]
@@ -54,11 +56,15 @@ fn partial_or_holed_selection_is_not_the_whole_sketch() {
         vec![SketchProfileRegion::loops(0, Vec::new()).unwrap()],
     )
     .unwrap();
-    assert!(!crate::design::profile_select::selects_whole_sketch(&some, &sketch));
+    assert!(!crate::design::profile_select::selects_whole_sketch(
+        &some, &sketch
+    ));
     let holed = cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
         sketch.id.clone(),
         vec![SketchProfileRegion::loops(0, vec![1, 2]).unwrap()],
     )
     .unwrap();
-    assert!(!crate::design::profile_select::selects_whole_sketch(&holed, &sketch));
+    assert!(!crate::design::profile_select::selects_whole_sketch(
+        &holed, &sketch
+    ));
 }
