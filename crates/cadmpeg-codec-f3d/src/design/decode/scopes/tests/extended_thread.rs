@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::scopes::thread::exact_thread_construction;
+use crate::design::decode::scopes::thread::{exact_thread_construction, thread_modeled_flag_loss};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread::{
     DesignThreadConstruction, DesignThreadExtended, DesignThreadForm,
@@ -233,12 +233,17 @@ fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
     // A modeled thread whose scope has no result stores result flag 0.
     let mut unflagged = Fixture::modeled();
     unflagged.modeled_flag = 0;
-    assert!(
-        unflagged
-            .decode()
-            .expect("modeled thread without a result")
-            .modeled
+    let unflagged = unflagged.decode().expect("modeled thread without a result");
+    assert!(unflagged.modeled);
+    let scope = DesignParameterScope::empty(
+        "f3d:test:extended-thread#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        SCOPE,
     );
+    assert!(thread_modeled_flag_loss(&scope, &unflagged).is_none());
+    let cosmetic = Fixture::cosmetic().decode().expect("cosmetic thread");
+    assert!(!cosmetic.modeled);
+    assert!(thread_modeled_flag_loss(&scope, &cosmetic).is_none());
     let mut cases = Vec::new();
     let mut flagged = Fixture::cosmetic();
     flagged.modeled_flag = 1;

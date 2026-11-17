@@ -357,6 +357,8 @@ pub(crate) enum F3dLossCode {
     FeatureMeshSeparateMembershipUnresolved,
     /// A historical Thread selection has no complete proof of its live faces.
     ThreadLiveFaceUnproven,
+    /// A Thread scope without the extended prefix stores modeled flag `0`, which is read as a cosmetic thread.
+    ThreadModeledFlagAssumed,
     /// A stored-body operation has an empty proven body set.
     FeatureStoredBodiesEmpty,
     /// A decoded body snapshot supplies no construction recipe.
@@ -1265,6 +1267,7 @@ impl F3dLossCode {
         Self::FeatureMeshSeparateReferenceRolesAssumed,
         Self::FeatureMeshSeparateMembershipUnresolved,
         Self::ThreadLiveFaceUnproven,
+        Self::ThreadModeledFlagAssumed,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureHistoryBodyBounded,
@@ -2089,6 +2092,7 @@ impl F3dLossCode {
                 "feature.mesh-conversion-output-unresolved"
             }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
+            Self::ThreadModeledFlagAssumed => "feature.thread-modeled-flag-assumed",
             Self::FeatureMeshSeparateScopeUnparsed => "feature.mesh-separate-scope-unparsed",
             Self::FeatureMeshSeparateTailPartial => "feature.mesh-separate-tail-partial",
             Self::FeatureMeshSeparateReferenceUnresolved => {
@@ -2947,6 +2951,7 @@ impl F3dLossCode {
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::FeatureFilletPaddingAssumed
+            | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3545,6 +3550,7 @@ impl F3dLossCode {
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::FeatureFilletPaddingAssumed
+            | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -4171,6 +4177,7 @@ mod tests {
                 "feature.mesh-separate-reference-roles-assumed",
                 "feature.mesh-separate-membership-unresolved",
                 "feature.thread-live-face-unproven",
+                "feature.thread-modeled-flag-assumed",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.history-body-bounded",

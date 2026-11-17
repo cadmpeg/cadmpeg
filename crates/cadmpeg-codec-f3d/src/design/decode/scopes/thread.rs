@@ -19,6 +19,7 @@ use crate::records::feature::thread;
 use crate::records::feature::thread::DesignThreadConstruction;
 use crate::records::feature::thread::DesignThreadForm;
 use cadmpeg_core::decode::View;
+use cadmpeg_ir::report::loss::LossNote;
 
 pub(super) fn exact_thread_construction(
     bytes: &[u8],
@@ -180,6 +181,18 @@ fn extended_standard_face_groups(
     }
     let groups = DesignThreadForm::extended_standard_face_groups(&references, (offset, length));
     (entries == 0 || entries == groups.len()).then_some(groups)
+}
+
+pub(super) fn thread_modeled_flag_loss(
+    scope: &DesignParameterScope,
+    construction: &DesignThreadConstruction,
+) -> Option<LossNote> {
+    (construction.extended.is_none() && !construction.modeled).then(|| {
+        crate::loss::F3dLossCode::ThreadModeledFlagAssumed.note(format!(
+            "Thread scope {} has no extended prefix and stores modeled flag 0; it is read as a cosmetic thread, and a modeled thread whose scope has a null current history-state identity stores the same value (DR-142).",
+            scope.id
+        ))
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

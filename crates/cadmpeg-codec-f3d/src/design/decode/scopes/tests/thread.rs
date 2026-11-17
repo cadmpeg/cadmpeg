@@ -5,7 +5,9 @@ use cadmpeg_core::decode::u64_from_index;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
 use crate::design::decode::scopes::thread::ThreadPrefix;
-use crate::design::decode::scopes::thread::{exact_thread_construction, parse_thread_payload};
+use crate::design::decode::scopes::thread::{
+    exact_thread_construction, parse_thread_payload, thread_modeled_flag_loss,
+};
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread::{DesignThreadConstruction, DesignThreadForm};
@@ -349,6 +351,35 @@ fn the_byte_at_marker_offset_21_states_the_modeled_flag_in_every_form() {
             "modeled flag {flag}"
         );
     }
+}
+
+#[test]
+fn modeled_flag_zero_without_the_extended_prefix_charges_the_assumed_loss() {
+    let scope = DesignParameterScope::empty(
+        "f3d:scope#standard-thread",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        987,
+    );
+    assert_eq!(scope.history_state_id(), None);
+    let loss_codes = |flag| {
+        let bytes = flagged_thread_bytes([0, 1, 0, 0, 0], flag, &[0, 1]);
+        let construction = parse_thread_payload(&bytes, 38, &ThreadPrefix::Standard, vec![988])
+            .expect("standard Thread construction");
+        assert!(construction.extended.is_none());
+        let codes = thread_modeled_flag_loss(&scope, &construction)
+            .into_iter()
+            .map(|loss| loss.code)
+            .collect::<Vec<_>>();
+        (construction.modeled, codes)
+    };
+    assert_eq!(
+        loss_codes(0),
+        (
+            false,
+            vec![crate::loss::F3dLossCode::ThreadModeledFlagAssumed.kind()]
+        )
+    );
+    assert_eq!(loss_codes(1), (true, Vec::new()));
 }
 
 fn assert_thread_construction(
