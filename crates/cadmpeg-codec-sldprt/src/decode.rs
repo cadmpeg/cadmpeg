@@ -3770,6 +3770,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &all_lanes,
     )?;
+    crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
@@ -4919,6 +4920,7 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
+    crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
