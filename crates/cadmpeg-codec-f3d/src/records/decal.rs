@@ -11,6 +11,9 @@ cadmpeg_core::named_optional_field!(deserialize_placement, DesignDecalPlacement,
 /// Largest deviation of the squared placement normal length from one.
 pub(crate) const PLACEMENT_UNIT_NORMAL_TOLERANCE: f64 = 1.0e-9;
 
+/// Largest deviation from one of the absolute cosine between the placement normal and `U x V`.
+pub(crate) const PLACEMENT_NORMAL_PARALLEL_TOLERANCE: f64 = 1.0e-6;
+
 /// Placement frame stored by a Decal placement record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -44,6 +47,20 @@ pub(crate) struct DesignDecalPlacement {
 }
 
 impl DesignDecalPlacement {
+    /// Whether the normal is parallel to `U x V`, in either direction.
+    pub(crate) fn normal_is_parallel_to_axes(&self) -> bool {
+        let (u, v, n) = (self.u_axis, self.v_axis, self.normal);
+        let cross = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
+        let length = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
+        let projection: f64 = cross.iter().zip(n).map(|(a, b)| a * b).sum();
+        length > 0.0
+            && (projection.abs() / length - 1.0).abs() <= PLACEMENT_NORMAL_PARALLEL_TOLERANCE
+    }
+
     /// Whether one zero byte separates the trailing references and four precede the normal.
     pub(crate) fn has_stated_layout(&self) -> bool {
         (self.reference_separator, self.normal_gap) == (1, 4)

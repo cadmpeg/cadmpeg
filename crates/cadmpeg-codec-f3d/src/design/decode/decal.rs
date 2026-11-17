@@ -63,6 +63,7 @@ pub(crate) fn project_decal_images(
     let mut assumed_mappings = 0usize;
     let mut native_placements = 0usize;
     let mut assumed_layouts = 0usize;
+    let mut assumed_normals = 0usize;
     let mut unresolved_targets = 0usize;
     let mut unresolved_images = 0usize;
     let mut unresolved_definitions = 0usize;
@@ -89,6 +90,7 @@ pub(crate) fn project_decal_images(
             if let Some(placement) = &image.placement {
                 native_placements += 1;
                 assumed_layouts += usize::from(!placement.has_stated_layout());
+                assumed_normals += usize::from(!placement.normal_is_parallel_to_axes());
                 let target_faces = match targets.faces(scope, image.target_group_record_index) {
                     Some(FaceSelection::Resolved { faces, .. }) => Some(
                         faces
@@ -185,6 +187,11 @@ pub(crate) fn project_decal_images(
     if assumed_layouts != 0 {
         losses.push(F3dLossCode::DecalPlacementLayoutAssumed.note(format!(
             "{assumed_layouts} Decal placement record(s) store adjacent trailing references or five zero bytes before the normal; the decoder reads the frame at the one position that closes the record (DR-484)."
+        )));
+    }
+    if assumed_normals != 0 {
+        losses.push(F3dLossCode::DecalPlacementNormalAssumed.note(format!(
+            "{assumed_normals} Decal placement record(s) store a normal at an angle to U x V; the decoder keeps the stored frame (DR-484)."
         )));
     }
     if unresolved_targets != 0 {
@@ -873,6 +880,35 @@ mod tests {
                 loss_codes(&losses).contains(&"appearance.decal-placement-layout-assumed"),
                 assumed,
                 "separator {separator} gap {gap}"
+            );
+        }
+    }
+
+    #[test]
+    fn decal_placement_normal_at_an_angle_to_the_axes_charges_the_assumed_loss() {
+        let base = placement_record(0, 1, 4);
+        let normal_at = 36 + 3 * 8 + 4 + 24 + 3 + 11 + 21 + 11 + 1 + 11 + 4;
+        for (normal, charged) in [
+            ([0.0f64, 0.0, -1.0], false),
+            ([0.0, 0.0, 1.0], false),
+            ([0.0, 0.6, -0.8], true),
+            ([1.0, 0.0, 0.0], true),
+        ] {
+            let mut bytes = base.clone();
+            for (lane, value) in normal.iter().enumerate() {
+                bytes[normal_at + lane * 8..normal_at + lane * 8 + 8]
+                    .copy_from_slice(&value.to_le_bytes());
+            }
+            let image = placed_image(0x01, &bytes).unwrap();
+            let placement = image.placement.as_ref().expect("placement frame");
+            assert_eq!(placement.normal, normal);
+            assert_eq!(placement.u_axis, [0.5, 0.0, 0.0]);
+            assert_eq!(placement.v_axis, [0.0, -0.5, 0.0]);
+            let (_, _, losses) = project(&archive(true), &image, &[], &[]);
+            assert_eq!(
+                loss_codes(&losses).contains(&"appearance.decal-placement-normal-assumed"),
+                charged,
+                "{normal:?}"
             );
         }
     }
