@@ -84,7 +84,6 @@ pub enum SplitFaceMethod {
         )]
         native_carrier: Option<String>,
         #[doc = "Original source labels and null slots, in encoded input order."]
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         native_inputs: Vec<Option<String>>,
         #[doc = "Declared number of direction-source input slots."]
         #[serde(
@@ -94,15 +93,8 @@ pub enum SplitFaceMethod {
         )]
         native_input_count: Option<u32>,
         #[doc = "Whether the declared input run was read completely."]
-        #[serde(default)]
         native_inputs_complete: bool,
     },
-}
-
-impl SplitFaceMethod {
-    pub(super) fn is_unresolved(&self) -> bool {
-        matches!(self, Self::Unresolved {})
-    }
 }
 
 impl Default for SplitFaceMethod {

@@ -3867,7 +3867,6 @@ pub enum FeatureOperation {
         /// Geometry or datum plane that partitions the target faces.
         tool: SplitFaceTool,
         #[doc = "Method used to apply the splitting tool to the target faces."]
-        #[serde(default, skip_serializing_if = "SplitFaceMethod::is_unresolved")]
         method: SplitFaceMethod,
     },
     /// Deletes bodies directly or retains only the selected bodies.
