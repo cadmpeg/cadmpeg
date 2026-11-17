@@ -290,3 +290,52 @@ fn decoded_secondary_recipe_frame_can_end_at_stream_end() {
         1
     );
 }
+
+#[test]
+fn registered_secondary_recipe_frame_rejects_conflicting_duplicate_headers() {
+    let (scope, recipe, operand) = decoded(true);
+    for (index, offset) in [(103, 88), (103, 109), (104, 88)] {
+        for conflict_first in [true, false] {
+            let mut headers = vec![header(100, 0), header(103, 44), header(104, 98)];
+            let conflict = header(index, offset);
+            if conflict_first {
+                headers.insert(0, conflict);
+            } else {
+                headers.push(conflict);
+            }
+            assert_eq!(
+                frame_findings(scope.clone(), recipe.clone(), operand.clone(), headers),
+                1
+            );
+        }
+    }
+    let mut conflict = header(105, 44);
+    conflict.id = format!("{STREAM}:design-record-header#444");
+    assert_eq!(
+        frame_findings(
+            scope,
+            recipe,
+            operand,
+            vec![header(100, 0), conflict, header(103, 44), header(104, 98)]
+        ),
+        1
+    );
+}
+
+#[test]
+fn registered_secondary_recipe_frame_admits_consistent_paired_header_claims() {
+    let (scope, recipe, operand) = decoded(true);
+    for secondary_first in [true, false] {
+        let mut headers = vec![header(100, 0), header(103, 44), header(104, 98)];
+        let mut secondary = header(103, 87);
+        secondary.class_tag = "257".to_owned().try_into().unwrap();
+        headers.insert(if secondary_first { 1 } else { 2 }, secondary);
+        let mut future_secondary = header(104, 109);
+        future_secondary.class_tag = "257".to_owned().try_into().unwrap();
+        headers.push(future_secondary);
+        assert_eq!(
+            frame_findings(scope.clone(), recipe.clone(), operand.clone(), headers),
+            0
+        );
+    }
+}

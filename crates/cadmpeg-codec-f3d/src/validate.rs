@@ -7610,16 +7610,33 @@ fn validate_face_operands<'a>(
         })
         .collect::<std::collections::HashMap<_, _>>();
     let mut header_offsets_by_stream = std::collections::HashMap::<&str, Vec<u64>>::new();
+    let mut header_offset_claims = std::collections::HashMap::<(&str, u32), (u64, u64)>::new();
+    let mut header_index_claims = std::collections::HashMap::<(&str, u64), (u32, u32)>::new();
     if native
         .design_face_operands
         .iter()
         .any(|operand| operand.registered_recipe_frame().is_some())
     {
-        for header in records_by_index.values() {
+        for header in &native.design_record_headers {
+            let stream = design_stream(&header.id);
             header_offsets_by_stream
-                .entry(design_stream(&header.id))
+                .entry(stream)
                 .or_default()
                 .push(header.byte_offset);
+            header_offset_claims
+                .entry((stream, header.record_index))
+                .and_modify(|range| {
+                    range.0 = range.0.min(header.byte_offset);
+                    range.1 = range.1.max(header.byte_offset);
+                })
+                .or_insert((header.byte_offset, header.byte_offset));
+            header_index_claims
+                .entry((stream, header.byte_offset))
+                .and_modify(|range| {
+                    range.0 = range.0.min(header.record_index);
+                    range.1 = range.1.max(header.record_index);
+                })
+                .or_insert((header.record_index, header.record_index));
         }
         for offsets in header_offsets_by_stream.values_mut() {
             offsets.sort_unstable();
@@ -7717,22 +7734,31 @@ fn validate_face_operands<'a>(
                             crate::layout::indexed_design_record_header::LEN,
                         ))
                         .is_some_and(|end| end <= frame.end_offset)
-                    && records_by_index
+                    && header_offset_claims
                         .get(&(native_stream, frame.record_index))
-                        .is_none_or(|header| header.byte_offset == frame.primary_offset)
-                    && header_indices_by_offset
+                        .is_none_or(|range| {
+                            range.0 >= frame.primary_offset && range.1 < frame.end_offset
+                        })
+                    && header_index_claims
                         .get(&(native_stream, frame.primary_offset))
-                        .is_none_or(|index| *index == frame.record_index)
+                        .is_none_or(|range| *range == (frame.record_index, frame.record_index))
+                    && header_index_claims
+                        .get(&(native_stream, frame.secondary_offset))
+                        .is_none_or(|range| *range == (frame.record_index, frame.record_index))
                     && match frame.next_primary_index {
                         Some(index) => {
                             index != u64::from(frame.record_index)
                                 && u32::try_from(index)
                                     .ok()
-                                    .and_then(|index| records_by_index.get(&(native_stream, index)))
-                                    .is_none_or(|header| header.byte_offset == frame.end_offset)
-                                && header_indices_by_offset
+                                    .and_then(|index| {
+                                        header_offset_claims.get(&(native_stream, index))
+                                    })
+                                    .is_none_or(|range| range.0 >= frame.end_offset)
+                                && header_index_claims
                                     .get(&(native_stream, frame.end_offset))
-                                    .is_none_or(|actual| u64::from(*actual) == index)
+                                    .is_none_or(|range| {
+                                        u64::from(range.0) == index && u64::from(range.1) == index
+                                    })
                         }
                         None => header_offsets_by_stream
                             .get(native_stream)
@@ -7745,12 +7771,14 @@ fn validate_face_operands<'a>(
                     && header_offsets_by_stream
                         .get(native_stream)
                         .is_none_or(|offsets| {
-                            offsets
-                                .get(
-                                    offsets
-                                        .partition_point(|offset| *offset <= frame.primary_offset),
-                                )
-                                .is_none_or(|offset| *offset >= frame.end_offset)
+                            let first =
+                                offsets.partition_point(|offset| *offset <= frame.primary_offset);
+                            let end = offsets.partition_point(|offset| *offset < frame.end_offset);
+                            offsets.get(first..end).is_some_and(|inside| {
+                                inside
+                                    .iter()
+                                    .all(|offset| *offset == frame.secondary_offset)
+                            })
                         })
             }
             None => face_operand_next_header_matches(
