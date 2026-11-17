@@ -1021,7 +1021,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Membership certainty and order certainty remain independent.
 
-### DR-657. Conflicting and foreign Form reference joins
+### DR-658. Conflicting and foreign Form reference joins
 
 **Question.** Which Form cage belongs to a source slot when its body, serializer, tracking group or owned list carries conflicting type, owner, position or namespace evidence? What frames a sparse tracking run after an unreadable member?
 
