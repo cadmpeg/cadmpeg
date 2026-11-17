@@ -550,32 +550,21 @@ pub(super) fn check_references(
             _ => {}
         }
     }
-    let configurations = ir
-        .design
-        .configurations
-        .iter()
-        .map(|configuration| configuration.id.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
-    let parameters = ir
-        .design
-        .parameters
-        .iter()
-        .map(|parameter| parameter.id.as_str())
-        .collect::<std::collections::BTreeSet<_>>();
+    let records = crate::document::design_records::DesignRecords::of(ir);
     for attribute in &ir.model.attributes {
         use crate::attributes::{AttributeTarget, AttributeValue};
 
         let owner = attribute.id.as_str();
         for value in &attribute.values {
             if let AttributeValue::Parameter(id) = value {
-                if !parameters.contains(id.as_str()) {
+                if !records.holds_parameter(id) {
                     ref_error(findings, owner, "parameter", id.as_str());
                 }
             }
         }
         match &attribute.target.entity {
             AttributeTarget::Document => {}
-            AttributeTarget::Configuration(id) if !configurations.contains(id.as_str()) => {
+            AttributeTarget::Configuration(id) if !records.holds_configuration(id) => {
                 ref_error(findings, owner, "configuration", id.as_str());
             }
             AttributeTarget::Body(id)

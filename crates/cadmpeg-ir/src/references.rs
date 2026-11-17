@@ -156,9 +156,6 @@ pub enum ReferenceTarget {
 }
 
 impl ReferenceTarget {
-    /// Whether every record the target names is in `ir`: an entity by
-    /// `contains`, which looks a model-class identity up, and a feature in
-    /// the design's features.
     /// Whether the target references a record of the design class.
     pub(crate) fn reads_design(&self) -> bool {
         match self {
@@ -168,14 +165,17 @@ impl ReferenceTarget {
         }
     }
 
+    /// Whether every record the target names is in the document: an entity
+    /// by `contains`, which looks a model-class identity up, and a feature
+    /// in `records`.
     pub(crate) fn resolves(
         &self,
-        ir: &crate::document::CadIr,
+        records: &crate::document::design_records::DesignRecords<'_>,
         contains: impl Fn(&str) -> bool,
     ) -> bool {
         match self {
             Self::Entity(target) => contains(target.entity.id()),
-            Self::Feature(feature) => ir.design.features.iter().any(|item| &item.id == feature),
+            Self::Feature(feature) => records.holds_feature(feature),
             Self::Null | Self::External { .. } | Self::Unresolved => true,
         }
     }

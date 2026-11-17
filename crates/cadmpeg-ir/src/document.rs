@@ -49,6 +49,7 @@ use crate::unknown::NativeUnknownRecord;
 use cadmpeg_core::text::NonBlankString;
 
 pub(crate) mod census;
+pub(crate) mod design_records;
 mod design_references;
 pub(crate) mod feature_parents;
 mod legacy;
