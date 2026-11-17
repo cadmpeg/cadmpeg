@@ -4030,6 +4030,8 @@ mod tests {
                 "feature.chamfer-parameter-kind-assumed",
                 "feature.chamfer-parameter-unit-assumed",
                 "feature.coil-target-members-assumed",
+                "feature.coil-short-controls-assumed",
+                "feature.coil-target-unresolved",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
