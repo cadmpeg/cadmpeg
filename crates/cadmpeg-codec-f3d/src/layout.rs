@@ -10395,3 +10395,37 @@ pub(crate) mod mesh_plane_cut_scope_prefix {
     /// Offset of `fill_selector` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FILL_SELECTOR: usize = 157;
 }
+
+#[doc = "Byte offsets for the `replace_face_fixed_prefix` record."]
+#[doc = ""]
+#[doc = "Spec §3.1. Record length 26 B."]
+#[doc = ""]
+#[doc = "```text"]
+#[doc = "Flag-00 fixed prefix. Flag 01 inserts a u32 word before the Boolean control; its fixed prefix is 30 bytes. Counted group references and the identifier follow."]
+#[doc = "```"]
+pub(crate) mod replace_face_fixed_prefix {
+    #[doc = "Offset of `zero_run` (`bytes[9]`). Spec §3.1."]
+    pub(crate) const ZERO_RUN: usize = 11;
+    #[doc = "Offset of `prefix_flag` (`u8`). Spec §3.1."]
+    pub(crate) const PREFIX_FLAG: usize = 20;
+    #[doc = "Offset of `tangent_chain` (`u8`). Spec §3.1."]
+    pub(crate) const TANGENT_CHAIN: usize = 21;
+    #[doc = "Offset of `replacement_group_count` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const REPLACEMENT_GROUP_COUNT: usize = 22;
+}
+
+#[doc = "Byte offsets for the `replace_face_flagged_prefix` record."]
+#[doc = ""]
+#[doc = "Spec §3.1. Record length 30 B."]
+#[doc = ""]
+#[doc = "```text"]
+#[doc = "Flag-01 fixed prefix. Flag 00 omits the u32 word and has a 26-byte fixed prefix. Counted group references and the identifier follow."]
+#[doc = "```"]
+pub(crate) mod replace_face_flagged_prefix {
+    #[doc = "Offset of `word` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const WORD: usize = 21;
+    #[doc = "Offset of `tangent_chain` (`u8`). Spec §3.1."]
+    pub(crate) const TANGENT_CHAIN: usize = 25;
+    #[doc = "Offset of `replacement_group_count` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const REPLACEMENT_GROUP_COUNT: usize = 26;
+}

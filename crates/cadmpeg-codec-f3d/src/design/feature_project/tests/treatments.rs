@@ -1877,7 +1877,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
         };
         assert!(matches!(
             crate::test_support::with_decode_context(|decode_ctx| {
-                crate::design::feature_project::project_fillet_arm(
+                crate::design::feature_project::fillet::project(
                     decode_ctx,
                     &inputs,
                     &scope,
@@ -1886,8 +1886,8 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
                     &mut Vec::new(),
                 )
             }),
-            Ok(FeatureDefinition::Operation(
-                FeatureOperation::Native { .. }
+            Ok(super::super::fillet::FilletProjection::Existing(
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
             ))
         ));
     }
