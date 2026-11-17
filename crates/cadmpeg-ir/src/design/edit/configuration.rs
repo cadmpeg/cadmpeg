@@ -188,8 +188,11 @@ impl CadIr {
             .iter()
             .position(|candidate| &candidate.definition == scope)
             .ok_or_else(|| EditError::UnknownScope(scope.clone()))?;
+        for exchange in &exchanges {
+            self.retire(scope, scope_at, &outgoing, exchange, &kept)?;
+        }
         for exchange in exchanges {
-            self.exchange(scope, scope_at, &outgoing, exchange, &kept)?;
+            self.install(scope, scope_at, exchange);
         }
         self.exchange_scope_constructions(scope, &outgoing, configuration)?;
         self.design.scopes[scope_at].active_configuration = Some(configuration.clone());
@@ -198,12 +201,17 @@ impl CadIr {
         Ok(())
     }
 
-    fn exchange(
+    /// Writes one current state's outgoing extent into an evaluation of the
+    /// outgoing configuration, rebases the evaluations based on that state
+    /// onto it, and, where an incoming state replaces it, removes from the
+    /// geometry the outgoing records that no staying body reaches, with
+    /// their names and owners.
+    fn retire(
         &mut self,
         scope: &ProductDefinitionId,
         scope_at: usize,
         outgoing: &ConfigurationId,
-        exchange: Exchange,
+        exchange: &Exchange,
         kept: &BTreeSet<String>,
     ) -> Result<(), EditError> {
         let current = self.design.scopes[scope_at].current[exchange.index].clone();
@@ -257,10 +265,10 @@ impl CadIr {
             }
         }
         self.design.evaluations.push(written);
-        let Some((incoming, state)) = exchange.incoming else {
+        if exchange.incoming.is_none() {
             self.design.scopes[scope_at].current[exchange.index].status = EvaluationStatus::Stale;
             return Ok(());
-        };
+        }
         let leaving: BTreeSet<String> = super::states::ids(&exchange.outgoing.records)
             .into_iter()
             .filter(|record| !kept.contains(record))
@@ -268,6 +276,7 @@ impl CadIr {
         remove(&mut self.geometry, &leaving);
         let mut names = self.design.names.entries().clone();
         names.retain(|entity, _| !leaving.contains(entity.id()));
+        self.design.names = names.into();
         let outgoing_bodies: BTreeSet<&BodyId> = exchange
             .outgoing
             .records
@@ -280,6 +289,22 @@ impl CadIr {
                 !(outgoing_bodies.contains(body) && leaving.contains(body.as_str()))
             });
         }
+        Ok(())
+    }
+
+    /// Installs the incoming state of one current state: its records into
+    /// the geometry, its names, its bodies' owners, and its poses; lists its
+    /// bodies in the current state; removes its evaluation; and rebases the
+    /// evaluations based on that evaluation onto the current state.
+    fn install(&mut self, scope: &ProductDefinitionId, scope_at: usize, exchange: Exchange) {
+        let Some((incoming, state)) = exchange.incoming else {
+            return;
+        };
+        let from_current = StateBase::Current(
+            self.design.scopes[scope_at].current[exchange.index]
+                .at
+                .clone(),
+        );
         let bodies: Vec<BodyId> = state
             .records
             .bodies
@@ -287,6 +312,7 @@ impl CadIr {
             .map(|body| body.id.clone())
             .collect();
         upsert(&mut self.geometry, state.records);
+        let mut names = self.design.names.entries().clone();
         names.extend(state.names);
         self.design.names = names.into();
         for body in &bodies {
@@ -330,7 +356,6 @@ impl CadIr {
         target.poses = state.poses;
         target.status = status;
         target.native_ref = native_ref;
-        Ok(())
     }
 
     /// Exchanges the cached `resolved` value of every construction of a

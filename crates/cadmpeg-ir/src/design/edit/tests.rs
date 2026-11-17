@@ -953,6 +953,55 @@ fn switching_the_active_configuration_exchanges_each_extent() {
 }
 
 #[test]
+fn switching_exchanges_every_current_state_of_the_scope() {
+    let mut document = configured();
+    document
+        .design
+        .evaluations
+        .retain(|evaluation| evaluation.id != id("evaluation", 6));
+    document.geometry.bodies.push(body(3));
+    document.model.product_definitions[0]
+        .bodies
+        .push(id("body", 3));
+    document.design.scopes[0].current.push(CurrentState {
+        at: after(1),
+        bodies: vec![id("body", 3)],
+        poses: BTreeMap::new(),
+        status: EvaluationStatus::Current,
+        native_ref: None,
+    });
+    document.design.evaluations.push(evaluation(
+        7,
+        Evaluated::State(after(1)),
+        Some(configuration(2)),
+        Some(with_bodies(&[4])),
+    ));
+    document
+        .set_active_configuration(&definition(), &configuration(2))
+        .unwrap();
+    let bodies: Vec<BodyId> = document
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect();
+    assert_eq!(bodies, vec![id("body", 2), id("body", 4), id("body", 9)]);
+    let current = &document.design.scopes[0].current;
+    assert_eq!(current[0].bodies, vec![id("body", 2)]);
+    assert_eq!(current[1].bodies, vec![id("body", 4)]);
+    let written: Vec<_> = document
+        .design
+        .evaluations
+        .iter()
+        .filter(|evaluation| evaluation.configuration == Some(configuration(1)))
+        .map(|evaluation| evaluation.of.clone())
+        .collect();
+    assert_eq!(written.len(), 2);
+    assert!(written.contains(&Evaluated::State(after(1))));
+    assert!(written.contains(&Evaluated::State(after(3))));
+}
+
+#[test]
 fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
     let mut document = configured();
     document
