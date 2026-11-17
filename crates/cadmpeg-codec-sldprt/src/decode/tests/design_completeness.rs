@@ -829,7 +829,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
         }),
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
             faces: face.clone(),
-            distance: Some(cadmpeg_ir::scalar::PositiveLength::new(10.0).unwrap()),
+            distance: Some(cadmpeg_ir::scalar::NonZeroLength::new(10.0).unwrap()),
             method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
         }),
         FeatureDefinition::Operation(FeatureOperation::FilledSurface {

@@ -3699,13 +3699,13 @@ pub enum FeatureOperation {
     ExtendSurface {
         /// Surface faces whose boundaries are extended.
         faces: FaceSelection,
-        /// Positive extension distance in canonical millimeters.
+        /// Signed nonzero extension distance in canonical millimeters.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
             deserialize_with = "deserialize_distance"
         )]
-        distance: Option<PositiveLength>,
+        distance: Option<NonZeroLength>,
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
@@ -5923,7 +5923,7 @@ pub enum SurfaceExtension {
     Natural,
     /// Extend boundary tangents as ruled linear strips.
     Linear,
-    /// Extend boundary faces perpendicular to the source faces.
+    /// Extend along the source face normal, with the distance sign selecting its direction.
     Perpendicular,
 }
 
@@ -9926,7 +9926,7 @@ cadmpeg_core::named_optional_field!(deserialize_tangent_chain, bool, "tangent_ch
 cadmpeg_core::named_optional_field!(deserialize_feature_operation_outward, bool, "outward");
 cadmpeg_core::named_optional_field!(deserialize_feature_operation_angle, SlopeAngle, "angle");
 cadmpeg_core::named_optional_field!(deserialize_extension, Length, "extension");
-cadmpeg_core::named_optional_field!(deserialize_distance, PositiveLength, "distance");
+cadmpeg_core::named_optional_field!(deserialize_distance, NonZeroLength, "distance");
 cadmpeg_core::named_optional_field!(
     deserialize_feature_operation_gap_tolerance,
     PositiveLength,

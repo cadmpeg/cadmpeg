@@ -4,7 +4,7 @@
 use crate::records::{
     identity::NonEmptyVec, mesh::DesignRelaxedGuidText, references::DesignClassTag,
 };
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroLength, PositiveReal};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,6 +62,12 @@ pub(crate) struct DesignSurfaceExtendOperation {
     pub(crate) tolerance: cadmpeg_ir::scalar::PositiveReal,
     /// Byte offset of `tolerance`.
     pub(crate) tolerance_offset: u64,
+}
+
+impl DesignSurfaceExtendOperation {
+    pub(crate) fn distance_mm(&self) -> Option<NonZeroLength> {
+        NonZeroLength::new(self.distance.get() * 10.0)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

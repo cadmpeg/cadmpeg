@@ -16,7 +16,7 @@ use cadmpeg_ir::{
         BodySelection, EdgeSelection, FaceSelection, PathRef, RuledSurfaceCorner, RuledSurfaceMode,
         ShellJoin, ShellMode, SurfaceBoundary, SurfaceExtension, ThickenSide, TrimRegion,
     },
-    scalar::{Angle, Length},
+    scalar::{Angle, Length, NonZeroLength, PositiveLength},
 };
 
 /// The decoded fields of one `Shell` operation, borrowed from the feature definition.
@@ -90,7 +90,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_extend_surface(
         &self,
         faces: &FaceSelection,
-        distance: Option<&cadmpeg_ir::scalar::PositiveLength>,
+        distance: Option<&NonZeroLength>,
         method: SurfaceExtension,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -109,12 +109,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 ))
             })?;
+            let distance = PositiveLength::try_from(*distance).map_err(|_| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has a negative surface extension distance",
+                    feature.id
+                ))
+            })?;
             let mut parameters = existing
                 .map(|record| record.parameters.clone())
                 .unwrap_or_default();
             parameters.insert(
                 cadmpeg_core::nonblank_literal!("Distance"),
-                format_length_mm((*distance).into()),
+                format_length_mm(distance.into()),
             );
             let mut properties = feature.source_properties.clone();
             properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
