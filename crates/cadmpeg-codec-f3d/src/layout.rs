@@ -6755,6 +6755,20 @@ pub(crate) mod legacy_occurrence_target_reference {
     pub(crate) const SOURCE_OCCURRENCE_IDENTITY: usize = 10;
 }
 
+/// Byte offsets for the `legacy_compact_occurrence_placement_prefix` record.
+///
+/// Spec §1.4. Record length 307 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header. Identity flag `0` stores a 128-byte matrix after the flag; the closing tail is that of the legacy envelope.
+/// ```
+pub(crate) mod legacy_compact_occurrence_placement_prefix {
+    /// Offset of `path_terminator` (`u8`). Spec §1.4.
+    pub(crate) const PATH_TERMINATOR: usize = 88;
+    /// Stated value of `path_terminator` (`u8`). Spec §1.4.
+    pub(crate) const PATH_TERMINATOR_VALUE: u8 = 0;
+}
+
 /// Byte offsets for the `local_component_occurrence_attributed_prefix` record.
 ///
 /// Spec §3.1. Record length 44 B.

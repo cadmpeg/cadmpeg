@@ -857,6 +857,9 @@ pub(crate) enum F3dLossCode {
     XrefTableUndecoded,
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
+    /// A compact legacy occurrence placement stores only its insertion frame,
+    /// and no direct operation table states its pose.
+    XrefPlacementPoseUnstated,
     /// An external reference has no admitted occurrence placement.
     XrefOccurrenceUnplaced,
     /// An external reference keeps the identity fallback without placement proof.
@@ -1577,6 +1580,7 @@ impl F3dLossCode {
         Self::MeshScopePrefixUninterpreted,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
+        Self::XrefPlacementPoseUnstated,
         Self::XrefOccurrenceUnplaced,
         Self::XrefPlacementIdentityAssumed,
         Self::XrefPlacementMetadataNative,
@@ -2478,6 +2482,7 @@ impl F3dLossCode {
             Self::MeshScopePrefixUninterpreted => "mesh.scope-prefix-uninterpreted",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefPlacementPoseUnstated => "xref.placement-pose-unstated",
             Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
             Self::XrefPlacementIdentityAssumed => "xref.placement-identity-assumed",
             Self::XrefPlacementMetadataNative => "xref.placement-metadata-native",
@@ -3145,6 +3150,7 @@ impl F3dLossCode {
             | Self::MeshCollectionWordsNative
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementPoseUnstated
             | Self::XrefOccurrenceUnplaced
             | Self::XrefPlacementIdentityAssumed
             | Self::XrefPlacementRoleUnbound
@@ -3326,6 +3332,7 @@ impl F3dLossCode {
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementPoseUnstated
             | Self::XrefOccurrenceUnplaced
             | Self::XrefPlacementIdentityAssumed
             | Self::XrefPlacementRoleUnbound
@@ -4435,6 +4442,7 @@ mod tests {
                 "mesh.scope-prefix-uninterpreted",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
+                "xref.placement-pose-unstated",
                 "xref.occurrence-unplaced",
                 "xref.placement-identity-assumed",
                 "xref.placement-metadata-native",

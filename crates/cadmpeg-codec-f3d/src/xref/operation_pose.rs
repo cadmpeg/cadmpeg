@@ -16,7 +16,9 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
 
 const ROOT_COMPONENT_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
-const TYPE_GUID: &str = "549FBB80-B890-473E-A5C0-415D3D9BF4E6";
+pub(crate) const TYPE_GUID: &str = "549FBB80-B890-473E-A5C0-415D3D9BF4E6";
+/// Last type version whose operation table has the six-byte zero run.
+const LAST_VERSION: u32 = 4;
 const POSE_TRANSLATION_MM: f64 = 1.0e-4;
 const POSE_ROTATION: f64 = 1.0e-9;
 
@@ -177,7 +179,7 @@ fn read(
                 table.native += 1;
                 continue;
             };
-            if *version > 1 {
+            if *version > LAST_VERSION {
                 table.native += 1;
                 continue;
             }
@@ -199,6 +201,29 @@ fn read(
     Ok(table)
 }
 
+/// The direct pose of a table of type version `version`, when the zero run of
+/// that version closes it.
+fn admitted(body: &[u8], version: u32) -> Option<DirectPose> {
+    let prefix = match version {
+        0 => 2,
+        1..=LAST_VERSION => 6,
+        _ => return None,
+    };
+    parse(body).filter(|_| parse_prefix(body, prefix).is_some())
+}
+
+/// The occurrence-placement records named by the admitted direct operation
+/// tables of one Design stream, given each table's type version and body.
+pub(crate) fn direct_table_targets<'a>(
+    tables: impl IntoIterator<Item = (u32, &'a [u8])>,
+) -> std::collections::HashSet<u64> {
+    tables
+        .into_iter()
+        .filter_map(|(version, body)| admitted(body, version))
+        .map(|pose| pose.target_record_index)
+        .collect()
+}
+
 fn register(
     ctx: &DecodeContext<'_>,
     table: &mut OperationTables,
@@ -206,15 +231,7 @@ fn register(
     body: &[u8],
     version: Option<u32>,
 ) -> Result<(), CodecError> {
-    let pose = version.and_then(|version| {
-        let prefix = match version {
-            0 => 2,
-            1 => 6,
-            _ => return None,
-        };
-        parse(body).filter(|_| parse_prefix(body, prefix).is_some())
-    });
-    let Some(pose) = pose else {
+    let Some(pose) = version.and_then(|version| admitted(body, version)) else {
         table.native += 1;
         return Ok(());
     };
@@ -676,11 +693,24 @@ pub(crate) fn project(
                 .is_some_and(|o| !agree(*transform, o.transform))
         })
         .count();
+    let identity = Transform::identity().rows();
+    let mut left_identity = 0;
     for (i, transform) in placed {
         if let Some(o) = ir.model.occurrences.get_mut(i) {
+            if matches!(
+                o.prototype,
+                cadmpeg_ir::products::PrototypeReference::External { .. }
+            ) && o.transform.rows() == identity
+                && transform.rows() != identity
+            {
+                left_identity += 1;
+            }
             o.transform = transform;
         }
     }
+    // An inserted-design occurrence that its table moves off the identity
+    // has a stated pose; no joint has to place it.
+    crate::design::assembly::release_joint_placed(losses, left_identity);
     let ns = ir.native.namespace_mut("f3d");
     for name in ["xref_references", "design_component_occurrences"] {
         if let Some(records) = ns.arenas_mut().get_mut(name) {

@@ -5,6 +5,7 @@ use super::exact_component_insert_construction;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
 
+mod compact_legacy_insert;
 mod partial_placement;
 mod typed_insert;
 
@@ -13,7 +14,8 @@ fn tested_component_insert_construction(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<crate::records::feature::assembly_features::DesignComponentInsertConstruction> {
-    exact_component_insert_construction(bytes, records, scope).unwrap()
+    exact_component_insert_construction(bytes, records, scope, &std::collections::HashSet::new())
+        .unwrap()
 }
 
 #[test]

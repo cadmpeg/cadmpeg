@@ -7434,6 +7434,31 @@ Offsets are relative to the reference presence marker. The repeated references c
 | 23 | 36 | `type_guid` | `bytes[36]` | little | spec | Each legacy target reference is |
 | 59 | 1 | `terminator` | `u8` | little | spec | Each legacy target reference is · value `0` |
 
+## `legacy_compact_occurrence_placement_prefix`
+
+Spec §1.4 · layout: byte offsets · size: 307 B
+
+Offsets are relative to the indexed header. Identity flag `0` stores a 128-byte matrix after the flag; the closing tail is that of the legacy envelope.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 15 | `indexed_header` | `bytes[15]` | little | spec | The compact legacy typed occurrence placement replaces |
+| 15 | 4 | `name_length` | `u32` | little | spec | The compact legacy typed occurrence placement replaces · value `0` |
+| 19 | 1 | `path_marker` | `u8` | little | spec | The compact legacy typed occurrence placement replaces · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | The compact legacy typed occurrence placement replaces · value `1` |
+| 24 | 60 | `target_reference` | `bytes[60]` | little | spec | Each legacy target reference is |
+| 84 | 4 | `instance_discriminator` | `u32` | little | spec | The compact legacy typed occurrence placement replaces |
+| 88 | 1 | `path_terminator` | `u8` | little | spec | The compact legacy typed occurrence placement replaces · value `0` |
+| 89 | 4 | `ordinal` | `u32` | little | spec | a positive u32 ordinal |
+| 93 | 76 | `metadata_guid` | `bytes[76]` | little | spec | The compact legacy typed occurrence placement replaces |
+| 169 | 76 | `tracking_link_guid` | `bytes[76]` | little | spec | The compact legacy typed occurrence placement replaces |
+| 245 | 1 | `separator` | `u8` | little | spec | The compact legacy typed occurrence placement replaces · value `0` |
+| 246 | 60 | `repeated_target_reference` | `bytes[60]` | little | spec | Each legacy target reference is |
+| 306 | 1 | `identity_flag` | `u8` | little | spec | the matrix form is 527 bytes |
+
 ## `local_component_occurrence_attributed_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 44 B

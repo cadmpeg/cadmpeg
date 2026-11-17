@@ -24105,6 +24105,110 @@ source = "spec"
 anchor = "Each legacy target reference is"
 
 [[record]]
+name = "legacy_compact_occurrence_placement_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/xref.rs"
+kind = "byte"
+section = "1.4"
+anchor = "The compact legacy typed occurrence placement replaces"
+size = 307
+note = "Offsets are relative to the indexed header. Identity flag `0` stores a 128-byte matrix after the flag; the closing tail is that of the legacy envelope."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[15]"
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "name_length"
+offset = 15
+type = "u32"
+value = 0
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+value = 1
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+value = 1
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "target_reference"
+offset = 24
+type = "bytes[60]"
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "instance_discriminator"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "path_terminator"
+offset = 88
+type = "u8"
+value = 0
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "ordinal"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "a positive u32 ordinal"
+
+[[record.field]]
+name = "metadata_guid"
+offset = 93
+type = "bytes[76]"
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "tracking_link_guid"
+offset = 169
+type = "bytes[76]"
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "separator"
+offset = 245
+type = "u8"
+value = 0
+source = "spec"
+anchor = "The compact legacy typed occurrence placement replaces"
+
+[[record.field]]
+name = "repeated_target_reference"
+offset = 246
+type = "bytes[60]"
+source = "spec"
+anchor = "Each legacy target reference is"
+
+[[record.field]]
+name = "identity_flag"
+offset = 306
+type = "u8"
+source = "spec"
+anchor = "the matrix form is 527 bytes"
+[[record]]
 name = "local_component_occurrence_attributed_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
 kind = "byte"
