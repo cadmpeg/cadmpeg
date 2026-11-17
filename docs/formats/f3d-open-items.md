@@ -221,9 +221,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which form does a legacy `Scale` scope store when its payload length matches none of the 297-, 299- and 308-byte forms?
 
-**Known.** `f3d.md` §3.1 keys the legacy `Scale` forms on the payload length after the two serialized bytes per UTF-16 kind code unit are excluded: 297 bytes with five ordered references, 299 bytes with five, and 308 bytes with six. When the payload length matches none of them and the frame is 307 or 309 bytes with five ordered references or 318 bytes with six, the decoder reads the form whose English frame has that length. In a 309-byte frame it requires the null GUID, the reference table and the tail at the English offsets of the 299-byte-payload form. It reports `feature.scale-frame-length-form-assumed`.
+**Known.** The legacy uniform prefix has five-reference payloads of 297, 298, and 299 bytes and six-reference payloads of 308 bytes or 310 bytes with a named tail. The payload count excludes the kind and label code units. The decoder also reads a 307- or 309-byte frame with five references or a 318-byte frame with six according to the form that has that length under the English spelling. In a 309-byte frame it checks the null GUID, reference table, and tail at the English offsets of the 299-byte payload form. It reports `feature.scale-frame-length-form-assumed`.
 
-**Need.** A `Scale` scope whose kind spelling and frame length give a payload length outside the three forms, with its factor and center checked against the result volume.
+**Need.** A legacy uniform `Scale` scope outside the documented payload forms, with its factor and center checked against the result volume.
 
 **Conflict.** None.
 
