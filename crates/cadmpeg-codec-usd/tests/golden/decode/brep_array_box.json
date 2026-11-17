@@ -2473,7 +2473,8 @@
           "kind": "group",
           "native_ref": "/Occurrence",
           "sketches": [],
-          "source_name": "Occurrence"
+          "source_name": "Occurrence",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

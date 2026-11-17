@@ -63,7 +63,8 @@
           "bom_properties": {},
           "id": "inventor:document:product#root",
           "kind": "part",
-          "sketches": []
+          "sketches": [],
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

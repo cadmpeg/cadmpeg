@@ -709,6 +709,8 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Cube part".into()),

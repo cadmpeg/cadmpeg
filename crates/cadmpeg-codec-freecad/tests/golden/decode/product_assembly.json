@@ -3531,7 +3531,8 @@
           "label": "CC0 linkage assembly",
           "native_ref": "fcstd:native:object#Assembly",
           "sketches": [],
-          "source_name": "Assembly"
+          "source_name": "Assembly",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3543,7 +3544,8 @@
           "label": "BracketOccurrence",
           "native_ref": "fcstd:native:object#BracketOccurrence",
           "sketches": [],
-          "source_name": "BracketOccurrence"
+          "source_name": "BracketOccurrence",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3558,7 +3560,8 @@
           "native_ref": "fcstd:native:object#BracketPrototype",
           "part_number": "CC0-BRACKET-01",
           "sketches": [],
-          "source_name": "BracketPrototype"
+          "source_name": "BracketPrototype",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3570,7 +3573,8 @@
           "label": "ExternalOccurrence",
           "native_ref": "fcstd:native:object#ExternalOccurrence",
           "sketches": [],
-          "source_name": "ExternalOccurrence"
+          "source_name": "ExternalOccurrence",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3582,7 +3586,8 @@
           "label": "NestedBracketOccurrence",
           "native_ref": "fcstd:native:object#NestedBracketOccurrence",
           "sketches": [],
-          "source_name": "NestedBracketOccurrence"
+          "source_name": "NestedBracketOccurrence",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3594,7 +3599,8 @@
           "label": "Nested, array, and external occurrences",
           "native_ref": "fcstd:native:object#OccurrenceGroup",
           "sketches": [],
-          "source_name": "OccurrenceGroup"
+          "source_name": "OccurrenceGroup",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3606,7 +3612,8 @@
           "label": "PinArray",
           "native_ref": "fcstd:native:object#PinArray",
           "sketches": [],
-          "source_name": "PinArray"
+          "source_name": "PinArray",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3618,7 +3625,8 @@
           "label": "PinArray_i0",
           "native_ref": "fcstd:native:object#PinArray_i0",
           "sketches": [],
-          "source_name": "PinArray_i0"
+          "source_name": "PinArray_i0",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3630,7 +3638,8 @@
           "label": "PinArray_i1",
           "native_ref": "fcstd:native:object#PinArray_i1",
           "sketches": [],
-          "source_name": "PinArray_i1"
+          "source_name": "PinArray_i1",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3642,7 +3651,8 @@
           "label": "PinArray_i2",
           "native_ref": "fcstd:native:object#PinArray_i2",
           "sketches": [],
-          "source_name": "PinArray_i2"
+          "source_name": "PinArray_i2",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3657,7 +3667,8 @@
           "native_ref": "fcstd:native:object#PinPrototype",
           "part_number": "CC0-PIN-01",
           "sketches": [],
-          "source_name": "PinPrototype"
+          "source_name": "PinPrototype",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3669,7 +3680,8 @@
           "label": "Reusable prototypes",
           "native_ref": "fcstd:native:object#PrototypeGroup",
           "sketches": [],
-          "source_name": "PrototypeGroup"
+          "source_name": "PrototypeGroup",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

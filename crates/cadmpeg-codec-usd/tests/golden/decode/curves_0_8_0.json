@@ -1103,7 +1103,8 @@
           "kind": "group",
           "native_ref": "/Curves",
           "sketches": [],
-          "source_name": "Curves"
+          "source_name": "Curves",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1114,7 +1115,8 @@
           "kind": "object",
           "native_ref": "/Curves/Arc",
           "sketches": [],
-          "source_name": "Arc"
+          "source_name": "Arc",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1125,7 +1127,8 @@
           "kind": "object",
           "native_ref": "/Curves/Bezier",
           "sketches": [],
-          "source_name": "Bezier"
+          "source_name": "Bezier",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1136,7 +1139,8 @@
           "kind": "object",
           "native_ref": "/Curves/CatmullRom",
           "sketches": [],
-          "source_name": "CatmullRom"
+          "source_name": "CatmullRom",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1147,7 +1151,8 @@
           "kind": "object",
           "native_ref": "/Curves/Loop",
           "sketches": [],
-          "source_name": "Loop"
+          "source_name": "Loop",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1158,7 +1163,8 @@
           "kind": "object",
           "native_ref": "/Curves/Polyline",
           "sketches": [],
-          "source_name": "Polyline"
+          "source_name": "Polyline",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1169,7 +1175,8 @@
           "kind": "object",
           "native_ref": "/Curves/Splines",
           "sketches": [],
-          "source_name": "Splines"
+          "source_name": "Splines",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

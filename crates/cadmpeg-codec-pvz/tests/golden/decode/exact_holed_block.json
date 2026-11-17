@@ -3325,7 +3325,8 @@
           "kind": "part",
           "native_ref": "definition 0",
           "sketches": [],
-          "source_name": "TOP.ASM"
+          "source_name": "TOP.ASM",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3336,7 +3337,8 @@
           "kind": "part",
           "native_ref": "definition 1",
           "sketches": [],
-          "source_name": "PART.PRT"
+          "source_name": "PART.PRT",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

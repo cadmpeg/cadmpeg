@@ -93,6 +93,8 @@ pub(crate) fn definitions(
         )?;
         ir.model.product_definitions.push(ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: crate::ids::definition(index),
             kind: match definition.role {
                 DefinitionRole::Component => ProductDefinitionKind::Part,

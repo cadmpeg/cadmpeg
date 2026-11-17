@@ -387,7 +387,8 @@
           "kind": "group",
           "native_ref": "/Surfaces",
           "sketches": [],
-          "source_name": "Surfaces"
+          "source_name": "Surfaces",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -398,7 +399,8 @@
           "kind": "object",
           "native_ref": "/Surfaces/Bilinear",
           "sketches": [],
-          "source_name": "Bilinear"
+          "source_name": "Bilinear",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -409,7 +411,8 @@
           "kind": "object",
           "native_ref": "/Surfaces/Trimmed",
           "sketches": [],
-          "source_name": "Trimmed"
+          "source_name": "Trimmed",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

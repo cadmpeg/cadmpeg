@@ -733,7 +733,8 @@
           "kind": "group",
           "native_ref": "/Arm",
           "sketches": [],
-          "source_name": "Arm"
+          "source_name": "Arm",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -742,7 +743,8 @@
           "kind": "group",
           "native_ref": "/Arm/Base",
           "sketches": [],
-          "source_name": "Base"
+          "source_name": "Base",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -753,7 +755,8 @@
           "kind": "object",
           "native_ref": "/Arm/Base/Geom",
           "sketches": [],
-          "source_name": "Geom"
+          "source_name": "Geom",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -762,7 +765,8 @@
           "kind": "group",
           "native_ref": "/Arm/Slider",
           "sketches": [],
-          "source_name": "Slider"
+          "source_name": "Slider",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -773,7 +777,8 @@
           "kind": "object",
           "native_ref": "/Arm/Slider/Geom",
           "sketches": [],
-          "source_name": "Geom"
+          "source_name": "Geom",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -782,7 +787,8 @@
           "kind": "group",
           "native_ref": "/Arm/Upper",
           "sketches": [],
-          "source_name": "Upper"
+          "source_name": "Upper",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -793,7 +799,8 @@
           "kind": "object",
           "native_ref": "/Arm/Upper/Geom",
           "sketches": [],
-          "source_name": "Geom"
+          "source_name": "Geom",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [

@@ -295,7 +295,8 @@
           "kind": "part",
           "bom_properties": {},
           "bodies": [],
-          "sketches": []
+          "sketches": [],
+          "tessellations": []
         }
       ],
       "occurrences": [

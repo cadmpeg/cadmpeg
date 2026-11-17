@@ -256,7 +256,8 @@
           "kind": "group",
           "native_ref": "/Root",
           "sketches": [],
-          "source_name": "Root"
+          "source_name": "Root",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -267,7 +268,8 @@
           "kind": "object",
           "native_ref": "/Root/Cover",
           "sketches": [],
-          "source_name": "Cover"
+          "source_name": "Cover",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -278,7 +280,8 @@
           "kind": "object",
           "native_ref": "/Root/Plate",
           "sketches": [],
-          "source_name": "Plate"
+          "source_name": "Plate",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

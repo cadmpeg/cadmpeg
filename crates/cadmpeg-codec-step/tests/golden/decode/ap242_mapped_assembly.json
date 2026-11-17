@@ -143,7 +143,8 @@
           "native_ref": "#6",
           "part_number": "ROOT",
           "sketches": [],
-          "source_name": "Root assembly"
+          "source_name": "Root assembly",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -154,7 +155,8 @@
           "native_ref": "#10",
           "part_number": "CHILD",
           "sketches": [],
-          "source_name": "Child part"
+          "source_name": "Child part",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

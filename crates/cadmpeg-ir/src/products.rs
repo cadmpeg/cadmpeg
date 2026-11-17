@@ -12,6 +12,7 @@ use cadmpeg_core::text::NonBlankString;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::sketches::SketchId;
+use crate::tessellation::TessellationId;
 use crate::transform::Transform;
 
 crate::ids::id_type!(
@@ -79,6 +80,9 @@ pub struct ProductDefinition {
     pub bodies: Vec<BodyId>,
     /// Sketches owned by this reusable definition.
     pub sketches: Vec<SketchId>,
+    /// Tessellations owned by this reusable definition that represent no
+    /// body: the meshes of a part that the source states as triangles.
+    pub tessellations: Vec<TessellationId>,
     /// Format-native object supplying this definition.
     #[serde(
         default,

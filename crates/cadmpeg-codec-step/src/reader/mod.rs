@@ -445,6 +445,7 @@ fn decode_exchange_mode(
         exchange,
         &geometry.value,
         &topology.value,
+        &product.value.product_definition_ids_by_shape,
         &mut session.ir,
         session.ctx,
     )?;
