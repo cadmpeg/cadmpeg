@@ -718,12 +718,7 @@ fn passes_singular_point(
     samples: &[(f64, [f64; 2], bool)],
     alpha: f64,
 ) -> Measure<bool> {
-    let singular: Vec<Point3> = chart
-        .apex()
-        .map(|(_, apex)| apex)
-        .into_iter()
-        .chain(chart.poles().into_iter().flatten().map(|(_, pole)| pole))
-        .collect();
+    let singular: Vec<Point3> = chart.singular_points(alpha).collect();
     if singular.is_empty() {
         return Ok(false);
     }

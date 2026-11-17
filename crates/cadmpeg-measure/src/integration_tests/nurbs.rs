@@ -5,11 +5,14 @@
 
 use std::f64::consts::{FRAC_1_SQRT_2, PI};
 
+use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{EdgeId, SurfaceId, VertexId};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::CadIr;
 
-use crate::reason::CaveatCode;
+use crate::reason::{CaveatCode, UnavailableReason};
 use crate::report::{FaceMeasures, MeasureReport, RegionRule, WitnessKind};
 use crate::select::Selection;
 use crate::test_support::builders::{
@@ -223,4 +226,74 @@ fn a_patch_with_a_collapsed_side_measures_its_whole_area() {
         let report = measure(&ir, &faces());
         assert_measured(&report.faces[0].measures.area, 0.5, 1.0);
     }
+}
+
+/// The disk `r ≤ 50` at `z = 0` as a `u`-periodic rational quadratic by
+/// linear patch whose `v = 1` side collapses to the centre, bounded by a
+/// triangle whose first side runs along `y = 0.005` from `x = -24` to
+/// `x = 26`. That side passes within the allowance of the centre between
+/// two samples at every sample count up to the cap, where its parameter
+/// image turns by about half a period.
+#[test]
+fn a_side_grazing_a_collapsed_nurbs_side_between_samples_does_not_invert() {
+    let radius = 50.0;
+    let circle = [
+        (1.0, 0.0, 1.0),
+        (1.0, 1.0, FRAC_1_SQRT_2),
+        (0.0, 1.0, 1.0),
+        (-1.0, 1.0, FRAC_1_SQRT_2),
+        (-1.0, 0.0, 1.0),
+        (-1.0, -1.0, FRAC_1_SQRT_2),
+        (0.0, -1.0, 1.0),
+        (1.0, -1.0, FRAC_1_SQRT_2),
+        (1.0, 0.0, 1.0),
+    ];
+    let grid = circle
+        .iter()
+        .map(|(x, y, _)| {
+            vec![
+                Point3::new(radius * x, radius * y, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ]
+        })
+        .collect();
+    let weights = circle
+        .iter()
+        .map(|(_, _, weight)| vec![*weight, *weight])
+        .collect();
+    let mut builder = Builder::new();
+    let surface = builder.surface(SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
+                true,
+            ),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(grid, Some(weights)),
+            false,
+        )
+        .expect("disk"),
+    ));
+    let corners: Vec<VertexId> = [[-24.0, 0.005, 0.0], [26.0, 0.005, 0.0], [0.0, 20.0, 0.0]]
+        .iter()
+        .map(|corner| builder.vertex(*corner))
+        .collect();
+    let ring: Vec<_> = (0..3)
+        .map(|from| {
+            (
+                builder.line(&corners[from], &corners[(from + 1) % 3]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    builder.face(&surface, Sense::Forward, &[ring], true);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let area = only_face(&report)
+        .measures()
+        .area()
+        .unavailable()
+        .expect("unavailable area");
+    assert_eq!(area.reason(), UnavailableReason::BoundaryInversionFailed);
 }
