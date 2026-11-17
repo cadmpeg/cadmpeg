@@ -29,6 +29,14 @@ fn projected_with_losses(
     styles: &[Style],
     factor: Option<&str>,
 ) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
+    projected_with_style_factor(styles, factor, StyleFactor::Absent)
+}
+
+fn projected_with_style_factor(
+    styles: &[Style],
+    factor: Option<&str>,
+    style_factor: StyleFactor,
+) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
         "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
@@ -50,6 +58,7 @@ fn projected_with_losses(
             2 => Length::new(1.25),
             _ => None,
         },
+        |_| style_factor,
         active.as_ref(),
         &mut losses,
     )
@@ -132,6 +141,42 @@ fn sheet_metal_absent_or_equation_k_has_no_allowance() {
             codes(&losses),
             ["feature.sheet-metal-unfold-factor-native"],
             "{factor:?}"
+        );
+    }
+}
+
+#[test]
+fn sheet_metal_equal_style_k_parameter_keeps_rule_allowance() {
+    let (rules, losses) = projected_with_style_factor(
+        &[style(20)],
+        Some("0.440 ul"),
+        StyleFactor::Value(FiniteReal::new(0.44).expect("K")),
+    );
+    assert_eq!(
+        rules[0].allowance,
+        Some(BendAllowance::KFactor(Dimension::Literal(
+            FiniteReal::new(0.44).expect("K")
+        )))
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn sheet_metal_differing_or_unresolved_style_k_parameter_has_no_allowance() {
+    for style_factor in [
+        StyleFactor::Value(FiniteReal::new(0.5).expect("K")),
+        StyleFactor::Unresolved,
+    ] {
+        let (rules, losses) =
+            projected_with_style_factor(&[style(20), style(30)], Some("0.44 ul"), style_factor);
+        assert!(rules.iter().all(|rule| rule.allowance.is_none()));
+        assert_eq!(
+            codes(&losses),
+            [
+                "feature.sheet-metal-style-factor-conflict",
+                "feature.sheet-metal-style-factor-conflict"
+            ],
+            "{style_factor:?}"
         );
     }
 }

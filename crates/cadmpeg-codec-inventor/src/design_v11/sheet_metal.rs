@@ -10,7 +10,7 @@ use cadmpeg_ir::design::ids::SheetMetalRuleId;
 use cadmpeg_ir::design::ops::sheet_metal::{BendAllowance, BendSpec, SheetMetalRule};
 use cadmpeg_ir::features::ParameterValue;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{Length, PositiveLength};
+use cadmpeg_ir::scalar::{FiniteReal, Length, PositiveLength};
 use cadmpeg_ir::CadIr;
 
 use crate::feature::sheet_metal::{style::Style, unfold};
@@ -49,6 +49,22 @@ pub(super) fn project(
             _ => None,
         }
     };
+    let style_factor = |style: &Style| {
+        let mut named = parameters.iter().filter(|parameter| {
+            parameter.identity.segment_token == style.identity.segment_token
+                && parameter.name == STYLE_FACTOR_NAME
+        });
+        let Some(parameter) = named.next() else {
+            return StyleFactor::Absent;
+        };
+        if named.next().is_some() {
+            return StyleFactor::Unresolved;
+        }
+        match values.get(parameter.id().as_str()).and_then(Option::as_ref) {
+            Some(ParameterValue::Real(value)) => StyleFactor::Value(*value),
+            _ => StyleFactor::Unresolved,
+        }
+    };
     let active = unfold::active_rule(
         &inventory.sheet_metal_unfold_rules,
         &inventory.sheet_metal_unfold_selections,
@@ -82,6 +98,7 @@ pub(super) fn project(
         ir,
         &inventory.sheet_metal_styles,
         length,
+        style_factor,
         active.as_ref(),
         losses,
     )?;
@@ -94,10 +111,26 @@ pub(super) fn project(
     Ok(())
 }
 
+/// Name of the unitless K-factor parameter in the parameter segment of a
+/// sheet-metal style.
+const STYLE_FACTOR_NAME: &str = "KFactor";
+
 /// The active unfold rule of the document.
 struct DocumentRule<'a> {
     id: String,
     expression: &'a str,
+}
+
+/// The `KFactor` parameter in the parameter segment of a style.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum StyleFactor {
+    /// The segment has no `KFactor` parameter.
+    Absent,
+    /// The segment has one `KFactor` parameter with this unitless value.
+    Value(FiniteReal),
+    /// The segment has several `KFactor` parameters, or the value is not a
+    /// unitless real.
+    Unresolved,
 }
 
 fn rules(
@@ -105,6 +138,7 @@ fn rules(
     ir: &CadIr,
     styles: &[Style],
     length: impl Fn(&Style, PmDcReference) -> Option<Length>,
+    style_factor: impl Fn(&Style) -> StyleFactor,
     active: Option<&DocumentRule<'_>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SheetMetalRule>, CodecError> {
@@ -126,11 +160,27 @@ fn rules(
                 .ok()
                 .map(Dimension::Literal)
         };
+        let id =
+            SheetMetalRuleId::mint(crate::feature::history_feature_id(&style.identity)?.as_str())
+                .map_err(CodecError::malformed)?;
+        let allowance = match (factor, style_factor(style)) {
+            (Some(rule), StyleFactor::Absent) => Some(rule),
+            (Some(rule), StyleFactor::Value(parameter)) if parameter == rule => Some(rule),
+            (Some(rule), other) => {
+                let parameter = match other {
+                    StyleFactor::Value(value) => format!("value {}", value.get()),
+                    _ => "an unresolved value".to_owned(),
+                };
+                losses.push(InventorLossCode::FeatureSheetMetalStyleFactorConflict.note(format!(
+                    "Sheet-metal rule {id} has a style KFactor parameter with {parameter} and an active unfold rule with K-factor {}; the rule keeps no bend allowance and both sources stay native.",
+                    rule.get()
+                )));
+                None
+            }
+            (None, _) => None,
+        };
         rules.push(SheetMetalRule {
-            id: SheetMetalRuleId::mint(
-                crate::feature::history_feature_id(&style.identity)?.as_str(),
-            )
-            .map_err(CodecError::malformed)?,
+            id,
             scope: part.id.clone(),
             name: None,
             thickness: literal(style.thickness),
@@ -139,7 +189,7 @@ fn rules(
                 radius_side: None,
                 relief: None,
             },
-            allowance: factor.map(|value| BendAllowance::KFactor(Dimension::Literal(value))),
+            allowance: allowance.map(|value| BendAllowance::KFactor(Dimension::Literal(value))),
             native_options: BTreeMap::default(),
             source_settings: BTreeMap::default(),
             native_ref: Some(style.id()),
