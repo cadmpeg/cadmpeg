@@ -174,7 +174,9 @@ impl SketchRecordLists {
 /// The sketch whose first point record is `heads[first]`: the 14-byte header
 /// before it states *N*, the *N* heads from there are point records (or
 /// records projected from outside the sketch), and the next head is a curve
-/// record. The curve list is the run of curve records from there.
+/// record or a record projected from outside the sketch. The curve list is
+/// the run of curve records and projected records from there, up to its last
+/// curve record.
 fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchRecordList> {
     let head = *heads.get(first)?;
     let header = head.checked_sub(SKETCH_HEADER_LEN)?;
@@ -194,15 +196,16 @@ fn sketch_at(payload: &[u8], heads: &[usize], first: usize) -> Option<SketchReco
     {
         return None;
     }
-    let curves = heads
+    let run = heads
         .get(end..)?
         .iter()
         .copied()
-        .take_while(|&curve| curve_record(payload, curve))
+        .take_while(|&curve| curve_record(payload, curve) || external_record(payload, curve))
         .collect::<Vec<_>>();
-    if curves.is_empty() {
-        return None;
-    }
+    // Projected records stand among the curve records; the list ends at its
+    // last curve record.
+    let last = run.iter().rposition(|&curve| curve_record(payload, curve))?;
+    let curves = run.get(..=last)?.to_vec();
     Some(SketchRecordList {
         points: points.to_vec(),
         curves,

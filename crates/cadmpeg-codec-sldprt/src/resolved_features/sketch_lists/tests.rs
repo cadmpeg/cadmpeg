@@ -430,3 +430,48 @@ fn a_full_circle_and_a_point_record_have_no_listed_ends() {
         None
     );
 }
+
+/// A record projected from outside the sketch: an object pointer at +35.
+fn projected(out: &mut Vec<u8>) -> usize {
+    let at = out.len();
+    head(out);
+    out[at + 35..at + 37].copy_from_slice(&0x8001u16.to_le_bytes());
+    out.extend_from_slice(&[0; 40]);
+    at
+}
+
+#[test]
+fn a_projected_record_leading_the_curve_run_keeps_the_list() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 2);
+    let first = point(&mut payload, 0.0, 0.0);
+    point(&mut payload, 0.01, 0.0);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let outside = projected(&mut payload);
+    let line = curve(&mut payload, 0, 1, 0, None);
+    let trailing = projected(&mut payload);
+    let lists = SketchRecordLists::new(&payload);
+    assert_eq!(lists.record(first), Some(ListedRecord::Point));
+    assert!(lists.readable_curve(&payload, line));
+    assert!(!lists.readable_curve(&payload, outside));
+    assert_eq!(lists.record(trailing), None);
+    assert_eq!(
+        listed_record_geometry(&payload, &lists, line, &millimetres),
+        expected(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(10.0, 0.0),
+        })
+    );
+}
+
+#[test]
+fn projected_records_alone_frame_no_list() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 1);
+    let first = point(&mut payload, 0.0, 0.0);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    projected(&mut payload);
+    projected(&mut payload);
+    let lists = SketchRecordLists::new(&payload);
+    assert_eq!(lists.record(first), None);
+}
