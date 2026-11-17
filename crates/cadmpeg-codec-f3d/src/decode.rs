@@ -1739,7 +1739,7 @@ fn design_projection_gaps(
                     profile,
                     ProfileRef::Planar(
                         PlanarProfileRef::Native(_) | PlanarProfileRef::SketchSelection { .. }
-                    )
+                    ) | ProfileRef::SpatialSketchSelection { .. }
                 ) {
                     gaps.profile_selections += 1;
                 }
@@ -6060,7 +6060,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         std::collections::BTreeMap::<&str, Vec<&cadmpeg_ir::ids::FaceId>>::new();
     let mut guid_by_face = std::collections::BTreeMap::<&cadmpeg_ir::ids::FaceId, &str>::new();
     for attribute in &ir.model.attributes {
-        let AttributeTarget::Face(face) = &attribute.target else {
+        let AttributeTarget::Face(face) = &attribute.target.entity else {
             continue;
         };
         let strings = || {
@@ -6119,7 +6119,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         .appearance_bindings
         .iter()
         .filter_map(|binding| {
-            let AppearanceTarget::Face(face) = &binding.target else {
+            let AppearanceTarget::Face(face) = &binding.target.entity else {
                 return None;
             };
             Some((face, &binding.appearance))
@@ -6185,7 +6185,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 // reaches every face carrying it, so the assignment pair alone
                 // repeats across those faces.
                 id,
-                target,
+                target: target.into(),
                 appearance: appearance_id,
                 source_entity_id: None,
                 object_type: None,
@@ -6228,7 +6228,7 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
         let Some(color) = colors.get(&binding.appearance).copied() else {
             continue;
         };
-        match &binding.target {
+        match &binding.target.entity {
             AppearanceTarget::Body(id) => insert_appearance_color(&mut body_colors, id, color),
             AppearanceTarget::Face(id) => insert_appearance_color(&mut face_colors, id, color),
             _ => {}

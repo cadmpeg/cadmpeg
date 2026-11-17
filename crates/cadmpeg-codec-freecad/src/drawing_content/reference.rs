@@ -60,16 +60,9 @@ impl<'a> Sources<'a> {
         }
     }
 
-    pub(super) fn project(&self, view: &Drawing) -> Option<Projection> {
-        if !self.complete {
-            return None;
-        }
-        let sources = view.relationships.get("Source")?;
-        let owners = sources
-            .iter()
-            .map(|source| source.local_target())
-            .collect::<Option<Vec<_>>>()?;
-        if owners.is_empty() || sources.iter().any(|source| !source.subelements.is_empty()) {
+    /// Project the edges of the objects `owners` names into `view`.
+    pub(super) fn project(&self, view: &Drawing, owners: &[&str]) -> Option<Projection> {
+        if !self.complete || owners.is_empty() {
             return None;
         }
         let normal = Vector3::from(*view.direction?.as_raw()).unit()?;

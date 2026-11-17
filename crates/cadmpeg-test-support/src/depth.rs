@@ -110,7 +110,7 @@ pub fn assert_geometry_agrees_with_full<N: AsRef<str>>(
 }
 
 /// Decodes `bytes` at each depth and asserts that the document records the
-/// scope that depth requests and serializes an empty process home.
+/// scope that depth requests and holds no process record.
 ///
 /// # Panics
 ///
@@ -132,11 +132,12 @@ pub fn assert_each_depth_records_its_scope(codec: &dyn Codec, bytes: &[u8]) {
                         result.ir().scope()
                     ));
                 }
-                let process = serde_json::to_value(result.ir())
-                    .expect("serialize decoded document")["process"]
-                    .clone();
-                if process != serde_json::json!({}) {
-                    failures.push(format!("a {depth} decode holds process records: {process}"));
+                if result.ir().process.entity_count() != 0 {
+                    failures.push(format!(
+                        "a {depth} decode holds process records: {}",
+                        serde_json::to_string(&result.ir().process)
+                            .expect("serialize decoded process")
+                    ));
                 }
             }
             Err(error) => failures.push(format!("a {depth} decode refused: {error}")),

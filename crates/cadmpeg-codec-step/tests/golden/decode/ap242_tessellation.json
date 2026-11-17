@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -317,8 +323,10 @@
           "id": "step:presentation:binding#77:0-0",
           "source_entity_id": "#77",
           "target": {
-            "kind": "tessellation",
-            "value": "step:tessellation:mesh#7"
+            "entity": {
+              "kind": "tessellation",
+              "value": "step:tessellation:mesh#7"
+            }
           }
         }
       ],
@@ -573,7 +581,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

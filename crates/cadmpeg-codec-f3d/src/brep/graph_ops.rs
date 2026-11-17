@@ -104,7 +104,7 @@ impl Brep {
         }
         let mut attributed_faces = HashSet::new();
         for attribute in &self.asm.attributes {
-            if let AttributeTarget::Face(face) = &attribute.target {
+            if let AttributeTarget::Face(face) = &attribute.target.entity {
                 attributed_faces.insert(face.as_str());
             }
         }
@@ -279,7 +279,7 @@ impl Brep {
         self.asm.attributes = select_links(
             std::mem::take(&mut self.asm.attributes),
             &reachable,
-            |row| &row.target,
+            |row| &row.target.entity,
         );
         let mut annotations = Vec::new();
         for row in std::mem::take(&mut self.asm.annotation_records) {

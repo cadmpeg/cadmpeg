@@ -1000,14 +1000,20 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
             .expect("finite attribute values"),
         HashSet::from([1, 2])
     );
-    assert!(brep.attributes.iter().any(|attribute| attribute.target
-        == AttributeTarget::Shell(
-            ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar")
-        )));
-    assert!(brep.attributes.iter().any(|attribute| attribute.target
-        == AttributeTarget::Loop(
-            LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar")
-        )));
+    assert!(brep
+        .attributes
+        .iter()
+        .any(|attribute| attribute.target.entity
+            == AttributeTarget::Shell(
+                ShellId::mint(id(FORMAT, 3).into_string()).expect("identity grammar")
+            )));
+    assert!(brep
+        .attributes
+        .iter()
+        .any(|attribute| attribute.target.entity
+            == AttributeTarget::Loop(
+                LoopId::mint(id(FORMAT, 4).into_string()).expect("identity grammar")
+            )));
 }
 
 #[test]
@@ -1094,7 +1100,7 @@ fn lump_named_attributes_bind_to_their_owning_body() {
         vec![SourceAttribute {
             id: cadmpeg_ir::ids::AttributeId::mint("f3d:brep:attribute#3")
                 .expect("identity grammar"),
-            target: AttributeTarget::Body(body_id),
+            target: AttributeTarget::Body(body_id).into(),
             name: "name_attrib-gen-attrib".into(),
             values: vec![
                 AttributeValue::Reference("f3d:brep:entity#-1".into()),

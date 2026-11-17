@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,7 @@ use crate::document::CensusKey;
 use crate::report::{loss::LossNote, Severity};
 
 /// Which invariant a validation finding concerns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -118,6 +119,11 @@ pub enum Check {
     /// quantity measured on the decoded geometry by more than the
     /// measurement's error terms, cannot be measured, or names no bodies.
     DeclaredMeasure,
+    /// A record of the design layer breaks a rule of part 10 of the CADIR
+    /// v11 specification: a scope invariant, the container tree, a position,
+    /// an evaluation key or base, a current state, a resolved state, or a
+    /// configuration, arrangement, or override.
+    Design,
 }
 
 impl fmt::Display for Check {
@@ -146,6 +152,7 @@ impl fmt::Display for Check {
             Self::Orientation => "orientation",
             Self::MeasurementIncomplete => "measurement_incomplete",
             Self::DeclaredMeasure => "declared_measure",
+            Self::Design => "design",
         })
     }
 }

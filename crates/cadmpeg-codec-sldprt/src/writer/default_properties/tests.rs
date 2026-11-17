@@ -10,7 +10,7 @@ use crate::test_support::container::{make_block, outer_header, scan};
 fn property(id: &str, name: &str, value: AttributeValue) -> SourceAttribute {
     SourceAttribute {
         id: AttributeId::mint(id).unwrap(),
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: name.into(),
         values: vec![value],
     }
