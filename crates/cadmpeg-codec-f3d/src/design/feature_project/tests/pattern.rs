@@ -18,6 +18,16 @@ use cadmpeg_ir::features::{
 
 const EPS_SPACING: f64 = 1.0e-12;
 
+/// Authored timeline ordinals that list the test-stream scopes with record
+/// indices `record_indices`, in that order.
+pub(super) fn listed(record_indices: &[u32]) -> std::collections::HashMap<(&'static str, u32), u64> {
+    record_indices
+        .iter()
+        .zip(1..)
+        .map(|(record_index, ordinal)| (("f3d:Design/BulkStream.dat", *record_index), ordinal))
+        .collect()
+}
+
 fn group(
     scope_record_index: u32,
     record_index: u32,
@@ -161,6 +171,7 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("circular pattern");
@@ -196,6 +207,7 @@ fn a_symmetric_partial_turn_reports_its_dropped_distribution() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut losses,
         )
         .expect("circular pattern");
@@ -227,6 +239,7 @@ fn a_symmetric_partial_turn_reports_its_dropped_distribution() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("circular pattern");
@@ -255,6 +268,7 @@ fn a_separator_axis_projects_only_a_full_turn() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut Vec::new(),
         )
     };
@@ -296,6 +310,7 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("body rectangular pattern");
@@ -314,6 +329,7 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("face rectangular pattern");
@@ -382,7 +398,7 @@ fn rectangular_pattern_direction_records_supply_both_directions() {
         direction_record(30, [0.0, 2.5, 0.0]),
     ]);
     let definition =
-        project_rectangular_pattern_scalars(&scope, &[], &[], &[], &[], &mut Vec::new())
+        project_rectangular_pattern_scalars(&scope, &[], &[], &[], &[], &listed(&[5]), &mut Vec::new())
             .expect("two-direction rectangular pattern");
     let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = definition else {
         panic!("rectangular pattern definition");
@@ -421,6 +437,7 @@ fn two_active_directions_without_direction_records_do_not_project() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new()
     )
     .is_none());
@@ -507,6 +524,7 @@ fn a_single_direction_record_must_agree_with_the_instance_run() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("instance-run pattern"),
@@ -521,6 +539,7 @@ fn a_single_direction_record_must_agree_with_the_instance_run() {
             &[],
             &[],
             &[],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("agreeing pattern"),
@@ -534,6 +553,7 @@ fn a_single_direction_record_must_agree_with_the_instance_run() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("disagreeing pattern");
@@ -604,6 +624,7 @@ fn compact_entity_selection_seed_names_the_seed_feature() {
         &[],
         &[compact_entity_selection(30, 31, 5)],
         &[rectangular_scope(), feature.clone()],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("rectangular pattern");
@@ -615,6 +636,7 @@ fn compact_entity_selection_seed_names_the_seed_feature() {
         &[],
         &[compact_entity_selection(30, 31, 5)],
         &[circular_scope(), feature],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("circular pattern");
@@ -622,6 +644,34 @@ fn compact_entity_selection_seed_names_the_seed_feature() {
         panic!("circular pattern definition");
     };
     assert_eq!(seeds, vec![expected]);
+}
+
+#[test]
+fn compact_entity_selection_seed_naming_an_unlisted_scope_stays_native() {
+    let feature = seed_scope(5, Some(2));
+    let native = PatternSeed::Faces(FaceSelection::Native(
+        "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
+    ));
+    for (timeline, expected) in [
+        (
+            listed(&[5]),
+            PatternSeed::Feature(crate::ids::neutral_feature_id(&feature)),
+        ),
+        (listed(&[]), native.clone()),
+        (listed(&[10]), native),
+    ] {
+        let definition = project_rectangular_pattern_scalars(
+            &rectangular_scope(),
+            &[group(10, 30, DesignOperandRole::BODIES_A)],
+            &[],
+            &[compact_entity_selection(30, 31, 5)],
+            &[rectangular_scope(), feature.clone()],
+            &timeline,
+            &mut Vec::new(),
+        )
+        .expect("rectangular pattern");
+        assert_linear_seed(definition, expected);
+    }
 }
 
 #[test]
@@ -640,6 +690,7 @@ fn compact_entity_selection_seed_without_a_feature_scope_stays_native() {
             &[],
             &[compact_entity_selection(30, 31, identity)],
             &scopes,
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("rectangular pattern");
@@ -679,6 +730,7 @@ fn rectangular_pattern_payload_projects_both_axes_and_feature_seed() {
             &[],
             &[compact_entity_selection(30, 31, 5)],
             &[feature],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("spacing pattern");
@@ -781,6 +833,7 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
         &bounded,
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("rectangular pattern");
@@ -791,6 +844,7 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
         &bounded,
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("circular pattern");
@@ -800,7 +854,7 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
     assert_eq!(seeds, vec![faces]);
 
     let seeds = |groups: &[DesignConstructionOperandGroup], operands: &[_]| {
-        unprojected_pattern_seeds(&rectangular_scope(), groups, operands, &[], &[])
+        unprojected_pattern_seeds(&rectangular_scope(), groups, operands, &[], &[], &listed(&[5]))
     };
     let face_group = || group(10, 30, DesignOperandRole::ROLE_0X10);
     assert!(seeds(&[face_group()], &[]).is_empty());
@@ -858,6 +912,7 @@ fn an_unprojected_pattern_keeps_its_seeds() {
             &[],
             &[compact_entity_selection(30, 31, 5)],
             &[scope.clone(), feature.clone()],
+            &listed(&[5]),
         )
     };
     assert_eq!(
@@ -875,6 +930,7 @@ fn an_unprojected_pattern_keeps_its_seeds() {
             &[seed_face_operand(ConstructionRecipeKind::BoundedFace)],
             &[],
             &[],
+            &listed(&[5]),
         ),
         vec![PatternSeed::Faces(FaceSelection::Native(
             "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
@@ -958,6 +1014,7 @@ fn rectangular_pattern_drops_a_coincident_direction_and_reports_it() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("one active direction");
@@ -985,6 +1042,7 @@ fn rectangular_pattern_payload_distance_type_selects_extent_or_spacing() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut Vec::new(),
     )
     .expect("extent distance");
@@ -1002,6 +1060,7 @@ fn rectangular_pattern_carries_a_symmetric_spacing_direction() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .expect("symmetric spacing direction");
@@ -1030,6 +1089,7 @@ fn rectangular_pattern_carries_a_symmetric_spacing_direction() {
         &[],
         &[],
         &[],
+        &listed(&[5]),
         &mut losses,
     )
     .is_none());

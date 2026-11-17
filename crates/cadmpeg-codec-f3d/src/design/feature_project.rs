@@ -1002,6 +1002,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &source_ordinals,
                     &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
@@ -1012,6 +1013,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             face_operands,
                             entity_selection_operands,
                             scopes,
+                            &source_ordinals,
                         ),
                         pattern: PatternKind::UNRESOLVED_CIRCULAR,
                     })
@@ -1023,6 +1025,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         face_operands,
                         entity_selection_operands,
                         scopes,
+                        &source_ordinals,
                         &mut projection_losses,
                     )
                     .unwrap_or_else(|| {
@@ -1033,6 +1036,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 face_operands,
                                 entity_selection_operands,
                                 scopes,
+                                &source_ordinals,
                             ),
                             pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
@@ -1044,6 +1048,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     face_operands,
                     entity_selection_operands,
                     scopes,
+                    &source_ordinals,
                     &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
@@ -1054,6 +1059,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             face_operands,
                             entity_selection_operands,
                             scopes,
+                            &source_ordinals,
                         ),
                         pattern: PatternKind::UNRESOLVED_MIRROR,
                     })
@@ -7647,6 +7653,7 @@ fn project_circular_pattern(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -7670,6 +7677,7 @@ fn project_circular_pattern(
         face_operands,
         entity_selection_operands,
         scopes,
+        authored_ordinals,
     );
     let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
     let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
@@ -7752,6 +7760,7 @@ fn project_rectangular_pattern_scalars(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -7856,6 +7865,7 @@ fn project_rectangular_pattern_scalars(
             face_operands,
             entity_selection_operands,
             scopes,
+            authored_ordinals,
         )
     });
     let seeds = component_seed

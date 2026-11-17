@@ -22,6 +22,7 @@ pub(super) fn project_mirror(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &std::collections::HashMap<(&str, u32), u64>,
     losses: &mut Vec<LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -58,7 +59,9 @@ pub(super) fn project_mirror(
         .map(|reference| reference.value)
     {
         let seed_scope = unique_feature_match(scopes.iter().filter(|candidate| {
-            native_stream(&candidate.id) == Some(stream) && candidate.record_index == record_index
+            native_stream(&candidate.id) == Some(stream)
+                && candidate.record_index == record_index
+                && authored_ordinals.contains_key(&(stream, candidate.record_index))
         }));
         let seed_scope = seed_scope?;
         vec![PatternSeed::Feature(crate::ids::neutral_feature_id(
@@ -71,6 +74,7 @@ pub(super) fn project_mirror(
             face_operands,
             entity_selection_operands,
             scopes,
+            authored_ordinals,
         )
     };
     let assumed_plane_scope = match (&construction.plane, &construction.plane_scope_record_index) {

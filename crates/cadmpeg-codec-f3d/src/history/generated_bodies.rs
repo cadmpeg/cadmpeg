@@ -9,10 +9,12 @@ use std::collections::{HashMap, HashSet};
 /// bodies that an earlier feature generates.
 ///
 /// A body pattern seed resolved in its input state, and a body deletion whose
-/// operands resolved through their recipe identity, name ASM body slots. When
-/// every selected slot is absent from the model bodies, the one feature whose
-/// history transition inserts that slot generates the body, and the selection
-/// names it there.
+/// operands resolved through their recipe identity, name ASM body slots. Body
+/// slots are local to one ASM history, so they are read in the history of the
+/// selecting scope (see [`own_history`]). When every selected slot is absent
+/// from the model bodies, the one projected feature of the same Design stream
+/// whose transition in that history inserts the slot generates the body, and
+/// the selection names it there. Otherwise the selection stays as it is.
 /// The producer becomes a dependency of the selecting feature. Returns the
 /// result states of the producers, each listing every body slot that the
 /// producer's transition inserts.
@@ -33,25 +35,24 @@ pub(crate) fn bind_generated_body_selections(
         .iter()
         .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
         .collect::<HashMap<_, _>>();
-    let producer = |slot: i64| -> Option<(cadmpeg_ir::features::FeatureId, i64, Vec<i64>)> {
-        let mut inserting = inputs
-            .histories
-            .iter()
-            .flat_map(AsmHistory::states)
-            .filter(|state| {
-                state
-                    .transition
-                    .as_ref()
-                    .is_some_and(|transition| transition.topology.bodies.inserted.contains(&slot))
-            });
+    let producer = |history: &AsmHistory,
+                    stream: Option<&str>,
+                    slot: i64|
+     -> Option<(cadmpeg_ir::features::FeatureId, i64, Vec<i64>)> {
+        let mut inserting = history.states().iter().filter(|state| {
+            state
+                .transition
+                .as_ref()
+                .is_some_and(|transition| transition.topology.bodies.inserted.contains(&slot))
+        });
         let state = inserting.next()?;
         if inserting.next().is_some() {
             return None;
         }
-        let mut scopes = inputs
-            .scopes
-            .iter()
-            .filter(|scope| scope.history_state_id() == Some(state.state_id));
+        let mut scopes = inputs.scopes.iter().filter(|scope| {
+            crate::ids::native_stream(&scope.id) == stream
+                && scope.history_state_id() == Some(state.state_id)
+        });
         let scope = scopes.next()?;
         if scopes.next().is_some() {
             return None;
@@ -97,9 +98,16 @@ pub(crate) fn bind_generated_body_selections(
         if slots.is_empty() || slots.iter().any(|slot| live.contains(slot)) {
             continue;
         }
+        let Some(scope) = scope else {
+            continue;
+        };
+        let Some(history) = own_history(inputs.histories, scope) else {
+            continue;
+        };
+        let stream = crate::ids::native_stream(&scope.id);
         let Some(producers) = slots
             .iter()
-            .map(|slot| producer(*slot))
+            .map(|slot| producer(history, stream, *slot))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -160,6 +168,54 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect()
+}
+
+/// The ASM history whose body slots the selections of `scope` name: the one
+/// history that holds both the scope's state and its preceding state, else
+/// the one history that holds either of them. A file with one history uses
+/// it. `None` when no history or more than one history qualifies.
+fn own_history<'a>(
+    histories: &'a [AsmHistory],
+    scope: &crate::records::feature::scope::DesignParameterScope,
+) -> Option<&'a AsmHistory> {
+    let holds = |history: &AsmHistory, state_id: i64| {
+        history
+            .states()
+            .iter()
+            .any(|state| state.state_id == state_id)
+    };
+    let unique = |mut matching: std::vec::IntoIter<&'a AsmHistory>| {
+        let history = matching.next()?;
+        matching.next().is_none().then_some(history)
+    };
+    let states = [scope.history_state_id(), scope.previous_history_state_id()];
+    let both = histories
+        .iter()
+        .filter(|history| {
+            states
+                .iter()
+                .all(|state| state.is_some_and(|state_id| holds(history, state_id)))
+        })
+        .collect::<Vec<_>>();
+    if !both.is_empty() {
+        return unique(both.into_iter());
+    }
+    let either = histories
+        .iter()
+        .filter(|history| {
+            states
+                .iter()
+                .flatten()
+                .any(|state_id| holds(history, *state_id))
+        })
+        .collect::<Vec<_>>();
+    if !either.is_empty() {
+        return unique(either.into_iter());
+    }
+    match histories {
+        [history] => Some(history),
+        _ => None,
+    }
 }
 
 /// The body slots that the body recipe operands of construction-operand group

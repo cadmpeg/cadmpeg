@@ -521,7 +521,65 @@ fn generated_case(
     cadmpeg_ir::features::Feature,
     Vec<cadmpeg_ir::features::FeatureResultTopology>,
 ) {
+    generated_case_in(
+        live,
+        remove,
+        &[crate::test_support::history::history(
+            "history".into(),
+            0,
+            None,
+            false,
+            vec![history_state(77, vec![1]), history_state(2, Vec::new())],
+        )],
+    )
+}
+
+/// One state of a test history: `state_id` holds the body slots `bodies`.
+fn history_state(state_id: i64, bodies: Vec<i64>) -> crate::test_support::history::State {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+
+    let versions = bodies
+        .iter()
+        .map(|body| crate::history_records::AsmEntityVersion {
+            entity_ref: *body,
+            record_ref: state_id,
+        })
+        .collect();
+    (
+        AsmDeltaState {
+            id: format!("f3d:history:asm-delta-state#{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            transition: None,
+        },
+        Some(AsmHistoricalTopology {
+            bodies,
+            ..AsmHistoricalTopology::default()
+        }),
+        versions,
+    )
+}
+
+/// [`generated_case`] over `histories`: the extrude scope 5 has state 77 after
+/// state 2, and the selecting scope 8 has state 80 after state 79.
+fn generated_case_in(
+    live: &[cadmpeg_ir::topology::Body],
+    remove: bool,
+    histories: &[crate::history_records::AsmHistory],
+) -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+) {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed},
         BodyRetentionMode, BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
@@ -595,52 +653,13 @@ fn generated_case(
     ];
     let groups = [body_operand_group(group_id, 8)];
     let operands = [body_recipe_operand(8)];
-    let state = |state_id: i64, bodies: Vec<i64>| -> crate::test_support::history::State {
-        let versions = bodies
-            .iter()
-            .map(|body| crate::history_records::AsmEntityVersion {
-                entity_ref: *body,
-                record_ref: state_id,
-            })
-            .collect();
-        (
-            AsmDeltaState {
-                id: format!("f3d:history:asm-delta-state#{state_id}"),
-                parent: "history".into(),
-                byte_offset: 0,
-                state_id,
-                version_flag: 1,
-                state_flag: 0,
-                previous_ref: None,
-                next_ref: None,
-                node_index: state_id,
-                partner_ref: None,
-                owner_ref: 0,
-                bulletin_boards: Vec::new(),
-                records: Vec::new(),
-                transition: None,
-            },
-            Some(AsmHistoricalTopology {
-                bodies,
-                ..AsmHistoricalTopology::default()
-            }),
-            versions,
-        )
-    };
-    let histories = [crate::test_support::history::history(
-        "history".into(),
-        0,
-        None,
-        false,
-        vec![state(77, vec![1]), state(2, Vec::new())],
-    )];
     let inputs = FeatureBodySelectionInputs {
         scopes: &scopes,
         groups: &groups,
         body_recipe_operands: &operands,
         construction_recipes: &[],
         persistent_design_links: &[],
-        histories: &histories,
+        histories,
         bodies: live,
         regions: &[],
         shells: &[],
@@ -737,4 +756,77 @@ fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts
         .iter()
         .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
     assert_eq!(results.len(), 1);
+}
+
+/// A test history named `id` with `states`, newest first.
+fn named_history(
+    id: &str,
+    states: Vec<crate::test_support::history::State>,
+) -> crate::history_records::AsmHistory {
+    crate::test_support::history::history(id.into(), 0, None, false, states)
+}
+
+#[test]
+fn a_slot_that_only_another_history_inserts_keeps_the_seed_historical() {
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    // The selecting scope's states 80 and 79 are in history `own`, which never
+    // inserts slot 1. History `other` inserts its own slot 1 at state 77.
+    let histories = [
+        named_history(
+            "own",
+            vec![history_state(80, Vec::new()), history_state(79, Vec::new())],
+        ),
+        named_history(
+            "other",
+            vec![history_state(77, vec![1]), history_state(2, Vec::new())],
+        ),
+    ];
+    let (pattern, results) = generated_case_in(&[], false, &histories);
+    assert!(results.is_empty());
+    assert!(matches!(
+        pattern.evaluation.definition(),
+        FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. })
+            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Historical { .. })])
+    ));
+    assert!(pattern.dependencies.is_empty());
+}
+
+#[test]
+fn a_colliding_slot_is_generated_in_the_selecting_scopes_own_history() {
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    // Both histories insert a slot 1 at a state 77. The selecting scope's
+    // states 80 and 79 are in history `own`, so its slot 1 is the body that
+    // the transition 2 -> 77 of `own` inserts.
+    let histories = [
+        named_history(
+            "own",
+            vec![
+                history_state(80, vec![1]),
+                history_state(79, vec![1]),
+                history_state(77, vec![1]),
+                history_state(2, Vec::new()),
+            ],
+        ),
+        named_history(
+            "other",
+            vec![history_state(77, vec![1]), history_state(2, Vec::new())],
+        ),
+    ];
+    let (pattern, results) = generated_case_in(&[], false, &histories);
+    let FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
+        seeds, ..
+    }) = pattern.evaluation.definition()
+    else {
+        panic!("pattern definition");
+    };
+    let [PatternSeed::Bodies(BodySelection::Generated { bodies, .. })] = seeds.as_slice() else {
+        panic!("generated seed: {seeds:?}");
+    };
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].feature.as_str(), "f3d:test:feature#extrude");
+    assert_eq!(bodies[0].local_id.as_str(), "1");
+    let [result] = results.as_slice() else {
+        panic!("one result state");
+    };
+    assert_eq!(result.output_of.as_str(), "f3d:test:feature#extrude");
 }

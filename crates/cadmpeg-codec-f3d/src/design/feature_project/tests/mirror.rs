@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
+use super::pattern::listed;
 use crate::design::feature_project::mirror::project_mirror;
 use crate::records::{
     feature::{mirror::DesignMirrorConstruction, scope::DesignParameterScope},
@@ -108,7 +109,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
-        project_mirror(&body_scope, &body_groups, &[], &[], &[], &mut Vec::new())
+        project_mirror(&body_scope, &body_groups, &[], &[], &[], &listed(&[5]), &mut Vec::new())
             .expect("body mirror")
     else {
         panic!("mirror projects a pattern");
@@ -129,7 +130,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-        project_mirror(&face_scope, &face_groups, &[], &[], &[], &mut Vec::new())
+        project_mirror(&face_scope, &face_groups, &[], &[], &[], &listed(&[5]), &mut Vec::new())
             .expect("face mirror")
     else {
         panic!("mirror projects a pattern");
@@ -158,6 +159,7 @@ fn a_projected_mirror_reads_a_compact_feature_seed() {
             &[],
             &[compact_entity_selection(40, 41, 5)],
             &[scope.clone(), feature.clone()],
+            &listed(&[5]),
             &mut Vec::new(),
         )
         .expect("feature mirror")
@@ -251,6 +253,7 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
             &[],
             &[],
             &[scope.clone(), plane],
+            &listed(&[5]),
             &mut losses,
         );
         (definition, losses)

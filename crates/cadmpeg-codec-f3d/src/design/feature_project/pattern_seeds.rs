@@ -10,6 +10,7 @@ use crate::records::{
         face::DesignFaceOperand,
     },
 };
+use std::collections::HashMap;
 
 /// The seed group of a rectangular, circular, or Mirror pattern scope: its
 /// unique non-empty body- or face-role group, or, when it has none, its unique
@@ -51,6 +52,7 @@ pub(super) fn unprojected_pattern_seeds(
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
 ) -> Vec<cadmpeg_ir::features::patterns::PatternSeed> {
     pattern_seed_group(scope, groups)
         .map(|group| {
@@ -60,6 +62,7 @@ pub(super) fn unprojected_pattern_seeds(
                 face_operands,
                 entity_selection_operands,
                 scopes,
+                authored_ordinals,
             )
         })
         .filter(|seeds| {
@@ -111,13 +114,15 @@ fn precedes_in_history(
 /// names a feature scope, it selects those features in member order. A face
 /// seed group whose members all decode as bounded-face operands selects their
 /// historical faces, or the group's native faces; with any other member it
-/// selects nothing.
+/// selects nothing. `authored_ordinals` holds the scopes that the feature
+/// timeline lists.
 pub(super) fn pattern_group_seeds(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     face_operands: &[DesignFaceOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
 ) -> Vec<cadmpeg_ir::features::patterns::PatternSeed> {
     use cadmpeg_ir::features::patterns::PatternSeed;
 
@@ -163,23 +168,32 @@ pub(super) fn pattern_group_seeds(
     ) {
         return vec![PatternSeed::Faces(selection)];
     }
-    entity_selection_feature_seeds(scope, group, entity_selection_operands, scopes).unwrap_or_else(
-        || {
-            vec![PatternSeed::Faces(
-                cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
-            )]
-        },
+    entity_selection_feature_seeds(
+        scope,
+        group,
+        entity_selection_operands,
+        scopes,
+        authored_ordinals,
     )
+    .unwrap_or_else(|| {
+        vec![PatternSeed::Faces(
+            cadmpeg_ir::features::FaceSelection::Native(group.id.clone()),
+        )]
+    })
 }
 
 /// Feature seeds named by a face-role group whose members are all compact
 /// entity selections. Each compact identity is the record index of a
-/// modelling feature scope in the same stream other than `scope`.
+/// modelling feature scope in the same stream other than `scope` that the
+/// feature timeline lists. A scope that the timeline does not list is an
+/// internal operation operand and stays native, so the group selects no
+/// feature through it.
 pub(super) fn entity_selection_feature_seeds(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
+    authored_ordinals: &HashMap<(&str, u32), u64>,
 ) -> Option<Vec<cadmpeg_ir::features::patterns::PatternSeed>> {
     let stream = native_stream(&scope.id)?;
     if group.members().is_empty() {
@@ -205,6 +219,7 @@ pub(super) fn entity_selection_feature_seeds(
                     && candidate.record_index == record_index
                     && candidate.record_index != scope.record_index
                     && candidate.history_state_id().is_some()
+                    && authored_ordinals.contains_key(&(stream, candidate.record_index))
             }))?;
             Some(cadmpeg_ir::features::patterns::PatternSeed::Feature(
                 crate::ids::neutral_feature_id(seed_scope),
