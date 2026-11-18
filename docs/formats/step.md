@@ -1736,7 +1736,12 @@ representations omit only the failed independent member and retain complete
 members. A solid-root transaction rejects the root. CADIR has no tolerant-point
 or partial-solid carrier and does not infer coordinates. A geometric set with
 surface members forms a sheet carrier. Curve-only and point-only sets remain
-standalone geometry.
+standalone geometry. The writer states a sheet region whose faces are all
+forward faces with no loops on B-spline surfaces or rectangular trims as a
+`GEOMETRIC_SET` of those surfaces in a
+`GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION`, which a
+`SHAPE_REPRESENTATION_RELATIONSHIP` links to the product's shape
+representation.
 
 ISO 10303-42:2021 §5.5.18 defines `FACE_OUTER_BOUND` as a `FACE_BOUND` carrying
 the outer-boundary semantics and states that no more than one boundary of a
