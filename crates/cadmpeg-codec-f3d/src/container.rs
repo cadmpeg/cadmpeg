@@ -968,6 +968,15 @@ pub(crate) fn design_breps<'s>(
         .filter(|brep| scan.belongs_to_design_asset(&brep.name))
 }
 
+/// Mesh geometry container entries inside the manifest-selected Design asset.
+pub(crate) fn paramesh_entries<'s>(
+    scan: &'s ContainerScan<'_>,
+) -> impl Iterator<Item = &'s ContainerEntry> + 's {
+    scan.entries
+        .iter()
+        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
+}
+
 /// Names of the text-encoded ASM BREP entries, in archive order.
 ///
 /// [`ContainerScan::breps`] holds binary BREP candidate facts. Text streams are

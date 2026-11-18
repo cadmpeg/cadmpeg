@@ -202,3 +202,119 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
         .collect();
     assert!(super::super::saved_free_edge_bodies_loss(&ir).is_none());
 }
+
+/// Carriers of a Design asset with one `.paramesh` entry and nothing else.
+fn mesh_only_carriers() -> crate::decode::DesignCarriers {
+    crate::decode::DesignCarriers {
+        decoded_meshes: 0,
+        paramesh_entries: 1,
+        brep_streams: 0,
+        selected_brep_streams: 0,
+        text_brep_streams: 0,
+        declared_bodies: 0,
+        sketch_entities: 0,
+        reference_images: 0,
+    }
+}
+
+fn has_code(report: &cadmpeg_ir::codec::DecodeBody, code: F3dLossCode) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code == code.kind())
+}
+
+/// A mesh-only design whose mesh does not decode keeps its geometry losses and
+/// is never classified as sketch-only, whatever sketches it also carries.
+#[test]
+fn an_undecoded_mesh_only_design_with_a_sketch_names_its_mesh_containers() {
+    let mut report = brep_less_geometry_report();
+    report
+        .losses
+        .push(F3dLossCode::MeshContainerUndecoded.note("charged by the mesh decode"));
+    let carriers = crate::decode::DesignCarriers {
+        sketch_entities: 25,
+        ..mesh_only_carriers()
+    };
+    crate::decode::apply_carrier_classification(&mut report, &carriers, false);
+    assert!(!report.transfer.geometry_transferred());
+    assert!(!has_code(&report, F3dLossCode::BodylessDesignCarrier));
+    assert!(has_code(&report, F3dLossCode::MeshContainerUndecoded));
+    assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == F3dLossCode::MeshOnlyDesignUntransferred.kind()
+        && loss.severity == Severity::Error
+        && loss.message.contains("1 mesh geometry container(s)")));
+    assert_eq!(report.losses.len(), 5);
+}
+
+#[test]
+fn an_undecoded_mesh_only_design_reports_every_mesh_container() {
+    let mut report = brep_less_geometry_report();
+    let carriers = crate::decode::DesignCarriers {
+        paramesh_entries: 2,
+        ..mesh_only_carriers()
+    };
+    crate::decode::apply_carrier_classification(&mut report, &carriers, false);
+    assert!(!report.transfer.geometry_transferred());
+    assert_eq!(report.losses.len(), 4);
+    assert!(report.losses.iter().any(|loss| loss.code
+        == F3dLossCode::MeshOnlyDesignUntransferred.kind()
+        && loss.message.contains("2 mesh geometry container(s)")));
+}
+
+#[test]
+fn a_design_without_mesh_containers_keeps_its_sketch_only_classification() {
+    let mut report = brep_less_geometry_report();
+    let carriers = crate::decode::DesignCarriers {
+        paramesh_entries: 0,
+        sketch_entities: 25,
+        ..mesh_only_carriers()
+    };
+    crate::decode::apply_carrier_classification(&mut report, &carriers, false);
+    assert!(report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::BodylessDesignCarrier));
+    assert!(!has_code(&report, F3dLossCode::MeshOnlyDesignUntransferred));
+}
+
+#[test]
+fn a_mesh_container_beside_a_brep_stream_keeps_the_brep_classification() {
+    let mut report = brep_less_geometry_report();
+    let carriers = crate::decode::DesignCarriers {
+        brep_streams: 1,
+        selected_brep_streams: 1,
+        sketch_entities: 25,
+        ..mesh_only_carriers()
+    };
+    crate::decode::apply_carrier_classification(&mut report, &carriers, false);
+    assert!(!report.transfer.geometry_transferred());
+    assert_eq!(report.losses.len(), 3);
+}
+
+#[test]
+fn a_mesh_container_beside_a_text_brep_stream_keeps_the_brep_classification() {
+    let mut report = brep_less_geometry_report();
+    let carriers = crate::decode::DesignCarriers {
+        text_brep_streams: 1,
+        sketch_entities: 25,
+        ..mesh_only_carriers()
+    };
+    crate::decode::apply_carrier_classification(&mut report, &carriers, false);
+    assert!(!report.transfer.geometry_transferred());
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// A mesh-only design whose mesh decodes transfers its geometry as
+/// tessellation.
+#[test]
+fn a_decoded_mesh_only_design_transfers_its_geometry() {
+    let mut report = brep_less_geometry_report();
+    let carriers = crate::decode::DesignCarriers {
+        decoded_meshes: 1,
+        ..mesh_only_carriers()
+    };
+    crate::decode::apply_carrier_classification(&mut report, &carriers, false);
+    assert!(report.transfer.geometry_transferred());
+    assert_eq!(report.losses.len(), 1);
+    assert!(has_code(&report, F3dLossCode::MeshVertexPrecisionReduced));
+}
