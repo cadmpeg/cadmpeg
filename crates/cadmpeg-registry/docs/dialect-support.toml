@@ -155,7 +155,7 @@ level = 2
 scored = ["usd:usda-1.0"]
 
 [format.solidcraft]
-level = 3
+level = 5
 scored = ["solidcraft:container-1-v57", "solidcraft:json-v57"]
 
 
@@ -1225,14 +1225,17 @@ charge source.kernel-dialect-unverified from this layer"""
 
 [[support]]
 dialect = "solidcraft:container-1-v57"
-read = "L3"
+read = "L5"
 write = "none"
 reason = """
 the final state of the model cache decodes into connected neutral B-rep:
 SCBREP05 bodies with typed analytic and NURBS carriers, pcurves, oriented
 loops, radial coedge order, shells, and regions, and SCMESH01 bodies as
-tessellations. design-container-v57-cached.sc pins it. A container with no
-cache carries no geometry and is charged solidcraft/cache.model-absent"""
+tessellations, coloured by the document's body and face looks. The
+timeline decodes with sketches, extrudes, revolves, and primitives carrying
+their operation semantics. design-container-v57-cached.sc pins it. A
+container with no cache carries no geometry and is charged
+solidcraft/cache.model-absent"""
 
 [[support]]
 dialect = "solidcraft:container-1-v1-56"
@@ -1241,13 +1244,14 @@ write = "none"
 
 [[support]]
 dialect = "solidcraft:json-v57"
-read = "L3"
+read = "L5"
 write = "none"
 reason = """
-L2 and L3 are inapplicable: a plain JSON design holds no model cache and no
-geometry record, only the feature history whose evaluation is the
-geometry. Decode charges solidcraft/cache.model-absent.
-design-json-v57.sc pins the row"""
+L2, L3, and the geometry criteria of L5 are inapplicable: a plain JSON
+design holds no model cache and no geometry record, only the feature
+history whose evaluation is the geometry. Decode charges
+solidcraft/cache.model-absent. The timeline decodes as on the container
+row. design-json-v57.sc pins the row"""
 
 [[support]]
 dialect = "solidcraft:json-v1-56"

@@ -115,3 +115,26 @@ pub(crate) fn cached_design_with(replace: &[(&str, &[u8])]) -> Vec<u8> {
         .collect();
     archive(&entries)
 }
+
+/// The cached design with `edit` applied to its document, the cache
+/// manifest keyed to the edited document.
+pub(crate) fn cached_design_editing(edit: impl FnOnce(&mut Value)) -> Vec<u8> {
+    let members = members(CACHED_DESIGN);
+    let member = |name: &str| {
+        members
+            .iter()
+            .find(|(member, _)| member == name)
+            .map(|(_, bytes)| bytes.clone())
+            .unwrap()
+    };
+    let mut document: Value = serde_json::from_slice(&member("document.json")).unwrap();
+    edit(&mut document);
+    let document = serde_json::to_vec(&document).unwrap();
+    let mut manifest: Value = serde_json::from_slice(&member("cache/model.json")).unwrap();
+    manifest["document"] = Value::String(cadmpeg_ir::hash::sha256_hex(&document));
+    let manifest = serde_json::to_vec(&manifest).unwrap();
+    cached_design_with(&[
+        ("document.json", &document),
+        ("cache/model.json", &manifest),
+    ])
+}

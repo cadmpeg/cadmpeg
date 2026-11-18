@@ -21,6 +21,8 @@ mod emit;
 mod mesh;
 mod value;
 
+use std::collections::BTreeMap;
+
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
@@ -48,6 +50,8 @@ pub(crate) struct Outcome {
     pub(crate) bodies: usize,
     /// The losses of the cache.
     pub(crate) losses: Vec<LossNote>,
+    /// The bodies each feature made, by feature id.
+    pub(crate) outputs: BTreeMap<u64, Vec<BodyId>>,
 }
 
 /// One model body of the final state.
@@ -58,6 +62,10 @@ struct ModelBody<'a> {
     name: Option<String>,
     /// Its slice of the payload.
     slice: View<'a>,
+    /// The feature that made it.
+    feature: Option<u64>,
+    /// The persistent name of each face, in face order.
+    face_names: Vec<String>,
 }
 
 fn malformed(what: &str) -> CodecError {
@@ -86,6 +94,7 @@ pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     package: &Package<'_>,
     document: View<'_>,
+    appearances: Option<&Value>,
     ir: &mut CadIr,
     annotations: &mut Annotations,
 ) -> Result<Outcome, CodecError> {
@@ -132,6 +141,13 @@ pub(crate) fn decode(
         if body.slice.window().starts_with(mesh::SIGNATURE) {
             match mesh_body(ctx, &body, &mut ir.model.tessellations) {
                 Ok(record) => {
+                    if let Some(feature) = body.feature {
+                        outcome
+                            .outputs
+                            .entry(feature)
+                            .or_default()
+                            .push(record.id.clone());
+                    }
                     ir.geometry.bodies.push(record);
                     outcome.bodies += 1;
                 }
@@ -157,7 +173,11 @@ pub(crate) fn decode(
             )
         });
         match emitted {
-            Ok(Some(_)) => {
+            Ok(Some(id)) => {
+                if let Some(feature) = body.feature {
+                    outcome.outputs.entry(feature).or_default().push(id);
+                }
+                paint(&mut geometry, &body, appearances);
                 ir.geometry.extend_rewritten(geometry, &mut Unchanged)?;
                 annotations.append(body_builder.build())?;
                 tally.merge(body_tally);
@@ -207,6 +227,56 @@ pub(crate) fn probe_body(ctx: &DecodeContext<'_>, slice: View<'_>) -> Result<(),
         },
     )
     .map(|_| ())
+}
+
+/// The colour of an appearance look: `color` as eight-bit red, green, and
+/// blue, and `opacity` in `[0, 1]`.
+fn look_color(look: &Value) -> Option<Color> {
+    let channels = look.get("color")?.as_array()?;
+    let [r, g, b] = channels.as_slice() else {
+        return None;
+    };
+    let channel = |value: &Value| Some(f64::from(u8::try_from(value.as_u64()?).ok()?) / 255.0);
+    let opacity = look.get("opacity").and_then(Value::as_f64).unwrap_or(1.0);
+    Color::new(channel(r)?, channel(g)?, channel(b)?, opacity)
+}
+
+/// Applies the document's appearances to one body's records: the body's
+/// look by its name, and each face look whose persistent name is a face of
+/// the body.
+fn paint(geometry: &mut Topology, body: &ModelBody<'_>, appearances: Option<&Value>) {
+    let Some(appearances) = appearances else {
+        return;
+    };
+    if let Some(name) = &body.name {
+        let color = appearances
+            .get("bodies")
+            .and_then(|bodies| bodies.get(name))
+            .and_then(look_color);
+        if let (Some(color), Some(record)) = (color, geometry.bodies.first_mut()) {
+            record.color = Some(color);
+        }
+    }
+    let Some(looks) = appearances.get("faces").and_then(Value::as_array) else {
+        return;
+    };
+    for look in looks {
+        if look.get("body").and_then(Value::as_str) != body.name.as_deref() {
+            continue;
+        }
+        let (Some(name), Some(color)) = (
+            look.get("name").and_then(Value::as_str),
+            look.get("look").and_then(look_color),
+        ) else {
+            continue;
+        };
+        let Some(index) = body.face_names.iter().position(|face| face == name) else {
+            continue;
+        };
+        if let Some(face) = geometry.faces.get_mut(index) {
+            face.color = Some(color);
+        }
+    }
 }
 
 /// The body of a mesh slice, whose triangles go to `tessellations`.
@@ -322,6 +392,10 @@ fn select<'a>(
     let features = list(records, "features")?;
     let states = list(records, "states")?;
     let model_bodies = list(records, "model_bodies")?;
+    let names = records
+        .get("names")
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
     let Some(last) = features
         .iter()
         .rev()
@@ -364,6 +438,21 @@ fn select<'a>(
                     .and_then(Value::as_str)
                     .map(str::to_owned),
                 slice,
+                feature: model_body.get("feature").and_then(Value::as_u64),
+                face_names: model_body
+                    .get("names")
+                    .and_then(Value::as_u64)
+                    .and_then(|index| usize::try_from(index).ok())
+                    .and_then(|index| names.get(index))
+                    .and_then(|names| names.get("faces"))
+                    .and_then(Value::as_array)
+                    .map(|faces| {
+                        faces
+                            .iter()
+                            .map(|face| face.as_str().unwrap_or_default().to_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             });
         }
     }

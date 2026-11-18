@@ -143,6 +143,8 @@ pub(crate) struct Header {
 pub(crate) struct Document {
     /// The header facts of the document object.
     pub(crate) header: Header,
+    /// The document object.
+    pub(crate) object: serde_json::Map<String, Value>,
 }
 
 /// Parses the document text of `view` and reads its header.
@@ -157,6 +159,7 @@ pub(crate) fn parse(ctx: &DecodeContext<'_>, view: View<'_>) -> Result<Document,
     };
     Ok(Document {
         header: Header::of(&object),
+        object,
     })
 }
 

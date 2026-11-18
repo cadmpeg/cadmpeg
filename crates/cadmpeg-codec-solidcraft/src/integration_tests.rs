@@ -200,3 +200,109 @@ fn a_payload_that_its_digest_does_not_pin_is_malformed() {
         "{codes:?}"
     );
 }
+
+fn features(bytes: &[u8]) -> Vec<serde_json::Value> {
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    result
+        .ir()
+        .model
+        .features
+        .iter()
+        .map(|feature| serde_json::to_value(feature).unwrap())
+        .collect()
+}
+
+#[test]
+fn primitives_carry_their_evaluated_dimensions_and_placement() {
+    let features = features(crate::test_support::CACHED_DESIGN);
+    assert_eq!(features.len(), 3);
+    let block = &features[0]["definition"]["value"];
+    assert_eq!(block["kind"], "primitive");
+    assert_eq!(
+        block["value"]["solid"],
+        json!({"kind": "box", "length": 20.0, "width": 10.0, "height": 5.0})
+    );
+    assert_eq!(block["value"]["op"], "new_body");
+    assert_eq!(features[0]["outputs"].as_array().unwrap().len(), 1);
+    let hole = &features[1]["definition"]["value"]["value"];
+    assert_eq!(hole["solid"]["radius"], 2.0);
+    assert_eq!(hole["op"], "cut");
+    assert_eq!(hole["placement"][2][3], -1.0);
+    assert_eq!(features[2]["definition"]["value"]["kind"], "native");
+    assert_eq!(features[2]["source_tag"], "fillet");
+}
+
+#[test]
+fn a_sketch_and_its_extrude_resolve_through_the_parameters() {
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Plate",
+        "units": "mm",
+        "params": [{"name": "width", "expr": "40 mm", "unit": "mm", "model": false}],
+        "features": [
+            {"id": 1, "name": "Sketch1", "suppressed": false, "type": "sketch",
+             "plane": {"type": "origin", "name": "XZ"},
+             "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                                   {"id": "p1", "pos": [0.0, 0.0]}, {"id": "p2", "pos": [40.0, 0.0]},
+                                   {"id": "c", "pos": [10.0, 10.0]}],
+                        "curves": [{"id": "l1", "type": "line", "a": 1, "b": 2},
+                                   {"id": "c1", "type": "circle", "c": 3, "r": 2.0}],
+                        "constraints": []}},
+            {"id": 2, "name": "Extrude1", "suppressed": true, "type": "extrude", "sketch": 1,
+             "profiles": {"type": "all"},
+             "extent": {"distance": "width / 2", "direction": "symmetric", "convention": "legacy_per_side"},
+             "operation": "join"}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let features = features(&bytes);
+    assert_eq!(features[1]["suppressed"], true);
+    assert_eq!(
+        features[1]["dependencies"],
+        json!(["solidcraft:design:feature#1"])
+    );
+    let extrude = &features[1]["definition"]["value"]["value"];
+    assert_eq!(
+        extrude["extent"],
+        json!({"kind": "symmetric", "side": {"termination": {"kind": "blind", "length": 40.0}}})
+    );
+    assert_eq!(extrude["op"], "join");
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let sketch = serde_json::to_value(&result.ir().model.sketches[0]).unwrap();
+    assert_eq!(
+        sketch["placement"]["frame"]["normal"],
+        json!({"x": 0.0, "y": 1.0, "z": 0.0})
+    );
+    assert_eq!(result.ir().model.sketch_entities.len(), 2);
+}
+
+#[test]
+fn body_and_face_looks_colour_the_cached_body() {
+    let bytes = crate::test_support::cached_design_editing(|document| {
+        document["appearances"] = json!({
+            "bodies": {"Body1": {"name": "Custom", "color": [255, 0, 0], "opacity": 0.5}},
+            "faces": [{"body": "Body1", "point": [10.0, 0.0, 2.0], "name": "F2:side",
+                       "look": {"name": "Blue", "color": [0, 0, 255], "opacity": 1.0}}]
+        });
+    });
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let geometry = &result.ir().geometry;
+    let body = geometry.bodies[0].color.unwrap();
+    assert_eq!(
+        (body.r(), body.g(), body.b(), body.a()),
+        (1.0, 0.0, 0.0, 0.5)
+    );
+    let coloured: Vec<_> = geometry
+        .faces
+        .iter()
+        .filter_map(|face| face.color)
+        .collect();
+    assert_eq!(coloured.len(), 1);
+    assert_eq!((coloured[0].r(), coloured[0].b()), (0.0, 1.0));
+}

@@ -2837,7 +2837,125 @@
       "drawings": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "primitive",
+              "value": {
+                "op": "new_body",
+                "placement": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                ],
+                "solid": {
+                  "height": 5.0,
+                  "kind": "box",
+                  "length": 20.0,
+                  "width": 10.0
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "solidcraft:design:feature#1",
+          "name": "Block",
+          "ordinal": 0,
+          "outputs": [
+            "solidcraft:cache:body#dd661e55794eda8b"
+          ],
+          "source_content": [],
+          "source_properties": {},
+          "source_tag": "box",
+          "suppressed": false
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "primitive",
+              "value": {
+                "op": "cut",
+                "placement": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    10.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    5.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    -1.0
+                  ]
+                ],
+                "solid": {
+                  "angle": 6.283185307179586,
+                  "height": 7.0,
+                  "kind": "cylinder",
+                  "radius": 2.0
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "solidcraft:design:feature#2",
+          "name": "Hole",
+          "ordinal": 1,
+          "outputs": [],
+          "source_content": [],
+          "source_properties": {},
+          "source_tag": "cylinder",
+          "suppressed": false
+        },
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "native",
+              "value": {
+                "kind": "solidcraft:fillet",
+                "parameters": {
+                  "radius": "1"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "solidcraft:design:feature#3",
+          "name": "Round",
+          "ordinal": 2,
+          "outputs": [],
+          "source_content": [],
+          "source_properties": {},
+          "source_tag": "fillet",
+          "suppressed": false
+        }
+      ],
       "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
@@ -2960,18 +3078,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "history.features-undecoded",
-            "kind": "feature_history_retained",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "3 feature records are retained without decoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "document.section-undecoded",
             "kind": "record_not_typed",
             "namespace": "solidcraft"
@@ -3004,6 +3110,18 @@
         },
         "message": "8 cached pcurves are in the parameters of a NURBS form that the neutral carrier does not use, and are omitted",
         "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.features-undecoded",
+            "kind": "feature_history_retained",
+            "namespace": "solidcraft"
+          }
+        },
+        "message": "1 feature records are native operations without neutral semantics: 1 fillet",
+        "severity": "warning"
       }
     ],
     "notes": [],

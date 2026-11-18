@@ -12,7 +12,7 @@
 //! every member as a named native record.
 //!
 //! <!-- generated: capability solidcraft -->
-//! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidcraft-sc-and-solidcraft)).
+//! Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidcraft-sc-and-solidcraft)).
 //! <!-- /generated: capability solidcraft -->
 //!
 //! # Quick start
@@ -39,6 +39,7 @@ mod decode;
 mod detect;
 mod dialect;
 mod document;
+mod history;
 mod inspect;
 mod loss;
 mod package;

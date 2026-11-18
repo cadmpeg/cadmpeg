@@ -52,7 +52,33 @@
       "drawings": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "native",
+              "value": {
+                "kind": "solidcraft:import",
+                "parameters": {
+                  "file": "part.step",
+                  "step": "",
+                  "step_blob": "blobs/26bc00aab228090c3200c04badb0b00620df848f2fef515cd61dff8a07e85a7c.step"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "solidcraft:design:feature#1",
+          "name": "Import1",
+          "ordinal": 0,
+          "outputs": [],
+          "source_content": [],
+          "source_properties": {},
+          "source_tag": "import",
+          "suppressed": false
+        }
+      ],
       "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
@@ -171,18 +197,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "history.features-undecoded",
-            "kind": "feature_history_retained",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "1 feature records are retained without decoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "cache.model-absent",
             "kind": "missing_geometry_stream",
             "namespace": "solidcraft",
@@ -202,6 +216,18 @@
           }
         },
         "message": "blob payloads retained without decoding: 1 step",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.features-undecoded",
+            "kind": "feature_history_retained",
+            "namespace": "solidcraft"
+          }
+        },
+        "message": "1 feature records are native operations without neutral semantics: 1 import",
         "severity": "warning"
       }
     ],

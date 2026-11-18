@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, DecodeDepth, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
@@ -83,15 +83,49 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     ));
     let mut annotations = Annotations::default();
     let mut geometry_transferred = false;
+    let mut outputs = BTreeMap::new();
     if let (Some(package), Some(_)) = (&source.package, source.header()) {
         if !ctx.container_only() && has_cache(package) {
             let document = package.member(ctx, DOCUMENT_MEMBER)?;
-            let outcome = crate::cache::decode(ctx, package, document, &mut ir, &mut annotations)?;
+            let appearances = source
+                .document
+                .as_ref()
+                .and_then(|document| document.object.get("appearances"));
+            let outcome = crate::cache::decode(
+                ctx,
+                package,
+                document,
+                appearances,
+                &mut ir,
+                &mut annotations,
+            )?;
             geometry_transferred = outcome.bodies > 0;
             losses.extend(outcome.losses);
-            ir.finalize();
+            outputs = outcome.outputs;
         }
     }
+    if let Some(document) = &source.document {
+        // An earlier format reads its records through the migrations to the
+        // current one, which this decoder does not apply: its history stays
+        // retained.
+        let current = document
+            .header
+            .tag
+            .version()
+            .is_some_and(|version| version >= crate::dialect::CURRENT_FORMAT);
+        if !current && document.header.features > 0 {
+            losses.push(SolidcraftLossCode::HistoryUndecoded.note(format!(
+                "{} feature records of an earlier document format are retained without \
+                 decoding: their format is read through migrations that this decoder does not \
+                 apply",
+                document.header.features
+            )));
+        } else if ctx.depth() >= DecodeDepth::Design {
+            let outcome = crate::history::decode(ctx, &document.object, &outputs, &mut ir)?;
+            losses.extend(outcome.losses);
+        }
+    }
+    ir.finalize();
     let mut source_fidelity =
         SourceFidelity::with_annotations(annotations, Sha256Digest::digest(root.window()));
     if !ctx.container_only() {
@@ -112,12 +146,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
 /// decoding.
 fn document_losses(header: &Header) -> Vec<LossNote> {
     let mut losses = Vec::new();
-    if header.features > 0 {
-        losses.push(SolidcraftLossCode::HistoryUndecoded.note(format!(
-            "{} feature records are retained without decoding",
-            header.features
-        )));
-    }
     if header.params > 0 {
         losses.push(SolidcraftLossCode::ParametersUndecoded.note(format!(
             "{} parameter records are retained without decoding",

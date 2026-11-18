@@ -68,6 +68,10 @@ pub(crate) enum SolidcraftLossCode {
     BlendReduced,
     /// A face that two shells use is written in the first shell only.
     FaceShared,
+    /// A sketch curve has no neutral sketch entity.
+    SketchCurveUntyped,
+    /// A sketch plane depends on the model and is unresolved.
+    SketchPlaneUnresolved,
 }
 
 impl SolidcraftLossCode {
@@ -97,6 +101,8 @@ impl SolidcraftLossCode {
         Self::PcurveOmitted,
         Self::BlendReduced,
         Self::FaceShared,
+        Self::SketchCurveUntyped,
+        Self::SketchPlaneUnresolved,
     ];
 
     #[must_use]
@@ -126,6 +132,8 @@ impl SolidcraftLossCode {
             Self::PcurveOmitted => "geometry.pcurve-omitted",
             Self::BlendReduced => "geometry.blend-reduced",
             Self::FaceShared => "topology.face-shared",
+            Self::SketchCurveUntyped => "history.sketch-curve-untyped",
+            Self::SketchPlaneUnresolved => "history.sketch-plane-unresolved",
         }
     }
 
@@ -154,7 +162,9 @@ impl SolidcraftLossCode {
             | Self::CurveUntyped
             | Self::CurveApproximated
             | Self::SurfaceUntyped
-            | Self::FaceShared => Severity::Warning,
+            | Self::FaceShared
+            | Self::SketchCurveUntyped
+            | Self::SketchPlaneUnresolved => Severity::Warning,
             Self::DocumentUnreadable => Severity::Error,
         }
     }
@@ -169,7 +179,9 @@ impl SolidcraftLossCode {
             Self::BlobMissing | Self::BlobUnreferenced | Self::PayloadUndecoded => {
                 LossTaxonomy::AssetNotTransferred
             }
-            Self::HistoryUndecoded => LossTaxonomy::FeatureHistoryRetained,
+            Self::HistoryUndecoded | Self::SketchCurveUntyped | Self::SketchPlaneUnresolved => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::ParametersUndecoded
             | Self::DocumentSectionUndecoded
             | Self::EntryRetained
@@ -239,6 +251,8 @@ mod tests {
                 "geometry.pcurve-omitted",
                 "geometry.blend-reduced",
                 "topology.face-shared",
+                "history.sketch-curve-untyped",
+                "history.sketch-plane-unresolved",
             ]
         );
     }

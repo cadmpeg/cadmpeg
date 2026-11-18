@@ -149,3 +149,64 @@ changes after format `N` that the writing build applied.
 Other top-level members hold the components, occurrences, assembly, rules,
 configurations, canvases, point clouds, materials, appearances, views, notes,
 render settings, and application data. Each member that is empty is absent.
+
+### 3.3 Expressions
+
+A length or an angle is a number or an expression string over the
+parameters: `2 * width + 5 mm`, `angle / 2`, `atan2(h; w)`. The units are
+`mm`, `cm`, `m`, `um`, `in`, `inch`, `ft`, `yd`, `km`, `mil`, `nm`, `deg`,
+and `rad`; `°`, `"`, and `'` are degrees, inches, and feet. A unitless operand
+of `+` or `-` takes the other operand's unit, and a unitless result takes
+the expected unit: millimetres for a length, degrees for an angle. Function
+arguments are separated by `;`, and a comma outside a call is a decimal
+separator. A parameter's value is its `expr` in its `unit`.
+
+### 3.4 Sketches
+
+A `sketch` feature has a `plane` and a `sketch` record. A plane is a named
+origin plane (`XY` with normal +Z; `XZ` with x +X, y −Z, and normal +Y; `YZ`
+with x +Y, y +Z, and normal +X), a `custom` frame (`origin`, `x_dir`,
+`y_dir`), a `placed` frame whose origin is length expressions, an `offset`
+of another plane along its normal, a `flipped` plane, a `face` plane (with
+the frame it had when it was picked, in `plane`), or a `construction`
+plane feature. A sketch point `(u, v)` is `origin + u x + v y`, and the
+sketch normal is x × y.
+
+The sketch record lists `points` (`id`, `pos`, `fixed`) and `curves` that
+index them: a `line` from `a` to `b`, a `circle` of centre `c` and radius
+`r`, an `arc` counterclockwise about `c` from `a` to `b`, an `ellipse` of
+centre `c`, major-axis end `m`, and minor radius `r`, a `spline` through
+`pts` (a clamped uniform B-spline of `degree` over them when `control`),
+and a `conic`. A curve marked `construction`, `centerline`, or `infinite`
+bounds no profile.
+
+### 3.5 Operations
+
+An `extrude` sweeps the profiles of its `sketch` along the sketch normal.
+Its `extent` has a `distance`, a `direction` (`positive`, `negative`, or
+`symmetric`), and optionally `distance2` (the other side), `start_offset`,
+`through_all`, `to`, and `from`. A symmetric distance is the travel to
+each side under the `legacy_per_side` convention, and the total travel
+under `total_distance`. A negative distance reverses the side.
+
+A `revolve` turns the profiles of its `sketch` about its `axis` (a
+`sketch_axis` `x` or `y`, a `world` axis, a `sketch_line`, a model edge, or
+a construction axis) by `angle`, with `angle2` on the other side or split
+evenly when `symmetric`. The sweep leaves the profile toward the sketch
+normal: the rotation axis is the axis or its reverse, whichever turns the
+profile's centre toward the normal.
+
+A `box` has a `corner`, a `length`, a `width`, and a `height` along x, y,
+and z, centred on the corner when `centred`. A `cylinder` and a `cone`
+stand on `base` along `axis` with a `radius` (and a `top_radius`) and a
+`height`. A `sphere` has a `center` and a `radius`, and a `torus` a
+`center`, a `major`, and a `minor` radius about +Z. The `operation` of each
+is `new_body`, `join`, `cut`, or `intersect`.
+
+### 3.6 Appearances
+
+`appearances.bodies` maps a body name to a look: `name`, `color` as
+eight-bit RGB, `opacity`, and optional physically based parameters.
+`appearances.faces` lists face looks: the `body`, a `point` on the face, the
+face's persistent `name`, and the `look`. The model cache's `names` records
+list each body's face names in face order.

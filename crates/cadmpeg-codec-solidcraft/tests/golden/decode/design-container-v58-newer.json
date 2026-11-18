@@ -52,7 +52,54 @@
       "drawings": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "primitive",
+              "value": {
+                "op": "new_body",
+                "placement": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                ],
+                "solid": {
+                  "height": 5.0,
+                  "kind": "box",
+                  "length": 20.0,
+                  "width": 10.0
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "solidcraft:design:feature#1",
+          "name": "Box1",
+          "ordinal": 0,
+          "outputs": [],
+          "source_content": [],
+          "source_properties": {},
+          "source_tag": "box",
+          "suppressed": false
+        }
+      ],
       "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
@@ -174,18 +221,6 @@
           }
         },
         "message": "the document declares format 58, past the newest released format 57; the file was read without a declared document grammar",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "history.features-undecoded",
-            "kind": "feature_history_retained",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "1 feature records are retained without decoding",
         "severity": "warning"
       },
       {
