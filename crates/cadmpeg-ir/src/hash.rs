@@ -18,6 +18,7 @@ use crate::units::{CanonicalUnitsWire, Tolerances};
 pub mod digest;
 pub mod finite_json;
 
+use finite_json::admission::CanonicalAdmission;
 use finite_json::{write_canonical_json, CanonicalJsonError};
 
 /// Bytes gathered before the hasher sees them; the pretty JSON writer emits one
@@ -65,7 +66,7 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
 ) -> Result<String, DigestError> {
     let mut buffered =
         std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(ctx, &mut buffered, value)?;
+    write_canonical_json(CanonicalAdmission::limited(ctx), &mut buffered, value)?;
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;

@@ -133,7 +133,8 @@ pub(super) fn rewrite<T: Serialize + DeserializeOwned>(
     if !edit(&mut json)? {
         return Ok(false);
     }
-    *record = serde_json::from_value(json).map_err(malformed)?;
+    // Reading text shares the document reader's monomorphized deserializers.
+    *record = serde_json::from_str(&json.to_string()).map_err(malformed)?;
     Ok(true)
 }
 
