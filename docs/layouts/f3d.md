@@ -25,7 +25,7 @@ Primary indexed-header prefixes use header-relative offsets.
 Shared record notes:
 Records `design_decal_scope_prefix`, `design_decal_scope_extended_prefix`, `design_decal_scope_typed_prefix`, `design_decal_scope_typed_extended_prefix`: Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
 Records `chamfer_set_equal`, `chamfer_set_two_distances`, `chamfer_set_distance_angle`, `chamfer_set_compact_equal`: Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
-Records `fillet_set_constant`, `fillet_set_chordal`, `fillet_set_compact_constant`: Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+Records `fillet_set_constant`, `fillet_set_chordal`, `fillet_set_compact_constant`, `fillet_set_asymmetric`, `fillet_set_variable`: Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
 Records `design_draft_scope_class318_shifted`, `design_draft_scope_class372`, `design_draft_scope_class448`: Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
 Records `paramesh_flagged_mesh_body_join_prefix`, `paramesh_mesh_body_join_prefix`: Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
 Records `paramesh_mesh_collection_prefix`, `paramesh_flagged_mesh_collection_prefix`: Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix.
@@ -858,6 +858,59 @@ Parsed by:
 | 74 | 4 | `set_ordinal` | `u32` | little | spec | `+74: u32 set ordinal` |
 | 78 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+78: TangencyWeight owner reference` |
 | 89 | 4 | `tangency_weight_owner_padding` | `bytes[4]` | little | spec | `+89: four bytes` |
+
+## `fillet_set_asymmetric`
+
+Spec §3.1 · layout: byte offsets · size: 97 B
+
+Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
+| 21 | 1 | `form_marker` | `u8` | little | spec | `+21: u8 1` · value `1` |
+| 22 | 5 | `zero_run_5_at_22` | `bytes[5]` | little | spec | Every byte that the form does not name is zero |
+| 27 | 4 | `compatibility_word` | `u32` | little | spec | `+27: u32 1` · value `1` |
+| 31 | 11 | `offset_one_owner_reference` | `bytes[11]` | little | spec | `+31: EdgeOffset1 owner reference` |
+| 42 | 11 | `offset_two_owner_reference` | `bytes[11]` | little | spec | `+42: EdgeOffset2 owner reference` |
+| 53 | 19 | `zero_run_19_at_53` | `bytes[19]` | little | spec | Every byte that the form does not name is zero |
+| 72 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+72: edge-group reference` |
+| 83 | 1 | `zero_run_1_at_83` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 84 | 4 | `first_control_word` | `u32` | little | spec | `+84: u32 2` · value `2` |
+| 88 | 5 | `zero_run_5_at_88` | `bytes[5]` | little | spec | Every byte that the form does not name is zero |
+| 93 | 4 | `second_control_word` | `u32` | little | spec | `+93: u32 3` · value `3` |
+
+## `fillet_set_variable`
+
+Spec §3.1 · layout: byte offsets · size: 153 B
+
+Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 18 | `zero_run_18_at_11` | `bytes[18]` | little | spec | Every byte that the form does not name is zero |
+| 29 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+29: edge-group reference` |
+| 40 | 7 | `zero_run_7_at_40` | `bytes[7]` | little | spec | Every byte that the form does not name is zero |
+| 47 | 4 | `midpoint_parameter_count` | `u32` | little | spec | `+47: u32 2` · value `2` |
+| 51 | 11 | `midpoint_parameter_one_owner_reference` | `bytes[11]` | little | spec | `+51: first MidParams owner reference` |
+| 62 | 11 | `midpoint_parameter_two_owner_reference` | `bytes[11]` | little | spec | `+62: second MidParams owner reference` |
+| 73 | 4 | `zero_run_4_at_73` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+| 77 | 4 | `radius_count` | `u32` | little | spec | `+77: u32 4` · value `4` |
+| 81 | 11 | `start_radius_owner_reference` | `bytes[11]` | little | spec | `+81: StartRadius owner reference` |
+| 92 | 11 | `end_radius_owner_reference` | `bytes[11]` | little | spec | `+92: EndRadius owner reference` |
+| 103 | 11 | `middle_radius_one_owner_reference` | `bytes[11]` | little | spec | `+103: first MidRadius owner reference` |
+| 114 | 11 | `middle_radius_two_owner_reference` | `bytes[11]` | little | spec | `+114: second MidRadius owner reference` |
+| 125 | 13 | `zero_run_13_at_125` | `bytes[13]` | little | spec | Every byte that the form does not name is zero |
+| 138 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+138: TangencyWeight owner reference` |
+| 149 | 4 | `zero_run_4_at_149` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
 
 ## `thicken_scope_prologue`
 
@@ -11901,6 +11954,41 @@ Parsed by:
 Unstated regions:
 
 - `0..21` (21 B): Indexed header and mesh scope prefix.
+
+## `replace_face_fixed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Flag-00 fixed prefix. Flag 01 inserts a u32 word before the Boolean control; its fixed prefix is 30 bytes. Counted group references and the identifier follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ReplaceFace prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The ReplaceFace prologue |
+| 20 | 1 | `prefix_flag` | `u8` | little | spec | The ReplaceFace prologue |
+| 21 | 1 | `tangent_chain` | `u8` | little | spec | The ReplaceFace prologue |
+| 22 | 4 | `replacement_group_count` | `u32` | little | spec | The ReplaceFace prologue |
+
+## `replace_face_flagged_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Flag-01 fixed prefix. Flag 00 omits the u32 word and has a 26-byte fixed prefix. Counted group references and the identifier follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ReplaceFace prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The ReplaceFace prologue |
+| 20 | 1 | `prefix_flag` | `u8` | little | spec | The ReplaceFace prologue |
+| 21 | 4 | `word` | `u32` | little | spec | The ReplaceFace prologue |
+| 25 | 1 | `tangent_chain` | `u8` | little | spec | The ReplaceFace prologue |
+| 26 | 4 | `replacement_group_count` | `u32` | little | spec | The ReplaceFace prologue |
 
 ## Not tabulated
 

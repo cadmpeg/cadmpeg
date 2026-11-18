@@ -6,6 +6,28 @@ use crate::records::{
 };
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignReplaceFaceOperation {
+    pub(crate) tangent_chain: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_replace_face_flagged_prefix_word"
+    )]
+    pub(crate) flagged_prefix_word: Option<u32>,
+    pub(crate) replacement_group_record_indices: Vec<u32>,
+    pub(crate) target_group_record_indices: Vec<u32>,
+    pub(crate) trailing_identity: DesignRelaxedGuidText,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_replace_face_flagged_prefix_word,
+    u32,
+    "flagged_prefix_word"
+);
+
 /// Fixed operation records named by a `SurfaceStitch` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSurfaceStitchOperation {

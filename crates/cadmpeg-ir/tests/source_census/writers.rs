@@ -48,6 +48,11 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str)] = &[
         "HoleShape",
     ),
     (
+        "crates/cadmpeg-ir/src/features/replace_face.rs",
+        "ReplaceFaceOperandsWire",
+        "ReplaceFaceOperands",
+    ),
+    (
         "crates/cadmpeg-ir/src/geometry/nurbs.rs",
         "NurbsSurfaceWire",
         "NurbsSurface",

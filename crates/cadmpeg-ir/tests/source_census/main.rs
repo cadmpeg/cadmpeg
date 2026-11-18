@@ -99,6 +99,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "PatternKind",
         "wire",
     ),
+    (
+        "crates/cadmpeg-ir/src/features/replace_face.rs",
+        "ReplaceFaceOperands",
+        "wire",
+    ),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "keyless"),
     ("crates/cadmpeg-ir/src/features.rs", "BodyMember", "wire"),
@@ -419,6 +424,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "HoleShape",
         "diameter",
         "HoleShapeWire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features/replace_face.rs",
+        "ReplaceFaceOperands",
+        "tangent_chain",
+        "ReplaceFaceOperandsWire",
     ),
     (
         "crates/cadmpeg-ir/src/geometry.rs",

@@ -979,7 +979,10 @@ pub(crate) fn decode_face_operands(
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft);
         let is_replace_face_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::ReplaceFace)
-            && group.role() == DesignOperandRole::ROLE_0X10;
+            && matches!(
+                group.role(),
+                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10
+            );
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
             && group.role() == DesignOperandRole::PROFILE;
@@ -1152,6 +1155,18 @@ pub(crate) fn decode_face_operands(
             else {
                 continue;
             };
+            if scope.kind() == crate::records::feature::scope::DesignFeatureKind::ReplaceFace
+                && groups.iter().any(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == scope.record_index
+                        && group
+                            .members()
+                            .iter()
+                            .any(|member| member.value == record_index)
+                })
+            {
+                continue;
+            }
             if !seen.insert((stream, scope.record_index, record_index)) {
                 continue;
             }
@@ -2721,7 +2736,7 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
 }
 
 /// Outcome of reading a scope reference member as a construction-operand group.
-pub(super) enum ConstructionOperandGroupParse {
+pub(crate) enum ConstructionOperandGroupParse {
     /// The record does not open a construction-operand group.
     NotAGroup,
     /// The record opens a group the grammar does not close.
@@ -2823,10 +2838,10 @@ fn extrude_operand_role(
 
 /// Indexed frame identity and stream position.
 #[derive(Clone, Debug)]
-pub(super) struct RecordFrame {
-    pub(super) record_index: u32,
-    pub(super) class_tag: crate::records::references::DesignClassTag,
-    pub(super) byte_offset: u64,
+pub(crate) struct RecordFrame {
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
+    pub(crate) byte_offset: u64,
 }
 
 impl From<&DesignRecordHeader> for RecordFrame {
@@ -2856,7 +2871,7 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// this record's own index. That paired header is the next indexed header
 /// with this record's index, and the record's fields are read from the bytes
 /// before it.
-pub(super) fn parse_construction_operand_group(
+pub(crate) fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
@@ -6951,7 +6966,7 @@ pub(crate) struct FaceOperandFrame<'a> {
     pub(crate) header: &'a DesignRecordHeader,
 }
 
-pub(super) fn parse_face_operand(
+pub(crate) fn parse_face_operand(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,

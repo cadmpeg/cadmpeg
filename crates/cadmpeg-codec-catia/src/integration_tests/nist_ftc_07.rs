@@ -52,6 +52,16 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         .arena_as("consolidated_a5_charts")
         .expect("reload native chart records");
     assert_eq!(charts.len(), 20);
+    let inferences: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "geometry.conic-branch-bounds-inferred")
+        .collect();
+    assert_eq!(inferences.len(), 28);
+    assert!(inferences
+        .iter()
+        .all(|loss| loss.message.contains("stored-box excess")));
 }
 
 #[test]
@@ -526,5 +536,101 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             (actual - expected).abs() < 1.0e-5,
             "sheet area {actual} vs STEP {expected}"
         );
+    }
+}
+
+#[test]
+fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes() {
+    use cadmpeg_ir::topology::{FaceLoops, Sense};
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(std::fs::read(path).expect("native part")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode native part");
+    let geometry = &decoded.ir().geometry;
+    let edges: HashMap<_, _> = geometry.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = geometry
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect();
+    let coedges: HashMap<_, _> = geometry
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect();
+    for (ordinal, hole_count) in [(245, 5), (58, 1), (266, 6), (287, 3), (288, 2)] {
+        let id = format!("catia:standard:face#{ordinal}");
+        let face = geometry
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == id)
+            .expect("planar rim");
+        let surface = geometry
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .expect("rim carrier");
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &surface.geometry else {
+            panic!("planar rim carrier");
+        };
+        let FaceLoops::Classified { outer, inner } = &face.loops else {
+            panic!("classified rim boundaries");
+        };
+        assert_eq!(inner.len(), hole_count);
+        let area = |id: &cadmpeg_ir::ids::LoopId| {
+            let boundary = geometry
+                .loops
+                .iter()
+                .find(|boundary| &boundary.id == id)
+                .expect("rim boundary");
+            let mut points = Vec::new();
+            let cadmpeg_ir::topology::LoopBoundary::Ring(ring) = &boundary.boundary else {
+                panic!("curve boundary");
+            };
+            for id in ring.coedges() {
+                let coedge = coedges[id];
+                let edge = edges[&coedge.edge];
+                let curve = curves[edge.curve().expect("rim curve")];
+                let [mut first, mut last] = edge.param_range().expect("rim interval").get();
+                if coedge.sense == Sense::Reversed {
+                    std::mem::swap(&mut first, &mut last);
+                }
+                for index in 0..16 {
+                    let fraction = f64::from(index) / 16.0;
+                    points.push(
+                        cadmpeg_ir::eval::decode::curve_point(
+                            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                            &curve.geometry,
+                            first * (1.0 - fraction) + last * fraction,
+                        )
+                        .expect("rim point")
+                        .get(),
+                    );
+                }
+            }
+            points
+                .iter()
+                .zip(points.iter().cycle().skip(1))
+                .take(points.len())
+                .map(|(a, b)| {
+                    a.vector_from(plane.origin().get())
+                        .cross(b.vector_from(plane.origin().get()))
+                        .dot(*plane.frame().axis().as_raw())
+                })
+                .sum::<f64>()
+                * 0.5
+        };
+        let outer_area = area(outer);
+        assert!(outer_area.abs() > 1.0);
+        for hole in inner {
+            assert!(
+                outer_area * area(hole) < 0.0,
+                "rim hole counterwinds the outer boundary"
+            );
+        }
     }
 }
