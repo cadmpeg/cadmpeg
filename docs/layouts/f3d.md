@@ -10184,8 +10184,8 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 20 | 4 | `body_reference_count` | `u32` | little | spec | The body reference count at offset 20 is u32 2 · value `2` |
-| 24 | 11 | `first_body_reference` | `bytes[11]` | little | spec | Two plain local body references begin at offsets 24 and 41 |
-| 41 | 11 | `result_body_reference` | `bytes[11]` | little | spec | The second names the saved result body entity |
+| 24 | 15 | `first_body_reference` | `bytes[15]` | little | spec | Two marked 15-byte local body entries begin at offsets 24 and 39 |
+| 39 | 15 | `result_body_reference` | `bytes[15]` | little | spec | The second names the saved result body entity |
 | 621 | 11 | `companion_reference` | `bytes[11]` | little | spec | A plain local companion reference begins at offset 621 |
 | 632 | 2 | `closing_zeroes` | `bytes[2]` | little | spec | two zero bytes begin at offset 632 |
 | 634 | 30 | `paired_header` | `bytes[30]` | little | spec | the 30-byte paired header begins at offset 634 |
@@ -10193,8 +10193,7 @@ Parsed by:
 Unstated regions:
 
 - `0..20` (20 B): Indexed header and prologue.
-- `35..41` (6 B): Body-reference trailer.
-- `52..621` (569 B): The owner reference is in derived_base_owner_reference.
+- `54..621` (567 B): The owner reference is in derived_base_owner_reference.
 
 ## `derived_base_mirror_companion`
 

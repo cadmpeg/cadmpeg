@@ -34127,25 +34127,20 @@ value = 2
 [[record.field]]
 name = "first_body_reference"
 offset = 24
-type = "bytes[11]"
+type = "bytes[15]"
 source = "spec"
-anchor = "Two plain local body references begin at offsets 24 and 41"
-
-[[record.gap]]
-offset = 35
-size = 6
-note = "Body-reference trailer."
+anchor = "Two marked 15-byte local body entries begin at offsets 24 and 39"
 
 [[record.field]]
 name = "result_body_reference"
-offset = 41
-type = "bytes[11]"
+offset = 39
+type = "bytes[15]"
 source = "spec"
 anchor = "The second names the saved result body entity"
 
 [[record.gap]]
-offset = 52
-size = 569
+offset = 54
+size = 567
 note = "The owner reference is in derived_base_owner_reference."
 
 [[record.field]]

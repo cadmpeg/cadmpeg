@@ -9221,10 +9221,10 @@ pub(crate) mod derived_base_mirror_scope {
     pub(crate) const BODY_REFERENCE_COUNT: usize = 20;
     /// Stated value of `body_reference_count` (`u32`). Spec §3.1.
     pub(crate) const BODY_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
-    /// Offset of `first_body_reference` (`bytes[11]`). Spec §3.1.
+    /// Offset of `first_body_reference` (`bytes[15]`). Spec §3.1.
     pub(crate) const FIRST_BODY_REFERENCE: usize = 24;
-    /// Offset of `result_body_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const RESULT_BODY_REFERENCE: usize = 41;
+    /// Offset of `result_body_reference` (`bytes[15]`). Spec §3.1.
+    pub(crate) const RESULT_BODY_REFERENCE: usize = 39;
     /// Offset of `companion_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const COMPANION_REFERENCE: usize = 621;
     /// Offset of `closing_zeroes` (`bytes[2]`). Spec §3.1.
