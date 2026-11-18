@@ -22,11 +22,15 @@ use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn bind_joint_origin_frames_from_assemblies(
     bytes: &[u8],
     scopes: &mut [DesignParameterScope],
+    direct_joint_origin_offsets: &HashSet<u64>,
 ) {
     let mut candidates = Vec::new();
     let mut envelopes = Vec::new();
@@ -99,10 +103,16 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
         let Some(transform) = scope.joint_origin_transform() else {
             continue;
         };
-        resolved_origins.insert(scope.record_index, transform);
+        let has_direct_frame = direct_joint_origin_offsets.contains(&scope.byte_offset());
+        resolved_origins.insert(scope.record_index, (transform, has_direct_frame));
     }
     for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
-        if resolved_origins.get(&joint_origin_record_index) != Some(&transform) {
+        if !resolved_origins
+            .get(&joint_origin_record_index)
+            .is_some_and(|(origin_transform, has_direct_frame)| {
+                *has_direct_frame || *origin_transform == transform
+            })
+        {
             continue;
         }
         let mut assemblies = scopes.iter_mut().filter(|scope| {

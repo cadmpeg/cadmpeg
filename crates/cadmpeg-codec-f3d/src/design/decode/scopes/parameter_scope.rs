@@ -89,7 +89,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Design records that parameter-scope decoding reads.
 #[derive(Debug, Clone, Copy, Default)]
@@ -166,6 +166,7 @@ pub(crate) fn decode_parameter_scopes(
             })
             .unwrap_or_default();
         let stream_scope_start = out.len();
+        let mut direct_joint_origin_offsets = HashSet::new();
         let mut mesh_scope_ranges = HashMap::new();
         if class_types.values().any(|info| {
             !info.entities.is_empty()
@@ -385,9 +386,13 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
+                let direct_frame =
+                    direct_joint_origin_frame(bytes, &records, &scope, &stream_types);
+                if direct_frame.is_some() {
+                    direct_joint_origin_offsets.insert(scope.byte_offset());
+                }
                 if let Some(frame) =
-                    direct_joint_origin_frame(bytes, &records, &scope, &stream_types)
-                        .or_else(|| exact_joint_origin_frame(bytes, &records, &scope))
+                    direct_frame.or_else(|| exact_joint_origin_frame(bytes, &records, &scope))
                 {
                     if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignJointOriginTransform {
@@ -894,7 +899,11 @@ pub(crate) fn decode_parameter_scopes(
             &stream_types,
             &mut out[stream_scope_start..],
         )?;
-        bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
+        bind_joint_origin_frames_from_assemblies(
+            bytes,
+            &mut out[stream_scope_start..],
+            &direct_joint_origin_offsets,
+        );
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
