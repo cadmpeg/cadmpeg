@@ -2170,16 +2170,6 @@
             -1.0,
             0.0
           ],
-          "edge_classes": {
-            "hidden_hard": false,
-            "hidden_iso": false,
-            "hidden_seam": false,
-            "hidden_smooth": false,
-            "iso_count": 0,
-            "visible_iso": false,
-            "visible_seam": false,
-            "visible_smooth": true
-          },
           "hidden_line": "exact",
           "id": "fcstd:model:drawing#Detail:entity",
           "kind": "detail",
@@ -2275,16 +2265,6 @@
             -1.0,
             0.0
           ],
-          "edge_classes": {
-            "hidden_hard": false,
-            "hidden_iso": false,
-            "hidden_seam": false,
-            "hidden_smooth": false,
-            "iso_count": 0,
-            "visible_iso": false,
-            "visible_seam": false,
-            "visible_smooth": true
-          },
           "hidden_line": "exact",
           "id": "fcstd:model:drawing#Front:entity",
           "kind": "view",
@@ -2568,16 +2548,6 @@
             -1.0,
             0.0
           ],
-          "edge_classes": {
-            "hidden_hard": false,
-            "hidden_iso": false,
-            "hidden_seam": false,
-            "hidden_smooth": false,
-            "iso_count": 0,
-            "visible_iso": false,
-            "visible_seam": false,
-            "visible_smooth": true
-          },
           "hidden_line": "exact",
           "id": "fcstd:model:drawing#ProjItem:entity",
           "kind": "projection",
@@ -2702,16 +2672,6 @@
             0.0,
             0.0
           ],
-          "edge_classes": {
-            "hidden_hard": false,
-            "hidden_iso": false,
-            "hidden_seam": false,
-            "hidden_smooth": false,
-            "iso_count": 0,
-            "visible_iso": false,
-            "visible_seam": false,
-            "visible_smooth": true
-          },
           "hidden_line": "exact",
           "id": "fcstd:model:drawing#Section:entity",
           "kind": "section",
@@ -2911,16 +2871,6 @@
             0.0,
             1.0
           ],
-          "edge_classes": {
-            "hidden_hard": false,
-            "hidden_iso": false,
-            "hidden_seam": false,
-            "hidden_smooth": false,
-            "iso_count": 0,
-            "visible_iso": false,
-            "visible_seam": false,
-            "visible_smooth": true
-          },
           "hidden_line": "exact",
           "id": "fcstd:model:drawing#Top:entity",
           "kind": "view",
@@ -2974,16 +2924,6 @@
             0.0,
             1.0
           ],
-          "edge_classes": {
-            "hidden_hard": false,
-            "hidden_iso": false,
-            "hidden_seam": false,
-            "hidden_smooth": false,
-            "iso_count": 0,
-            "visible_iso": false,
-            "visible_seam": false,
-            "visible_smooth": true
-          },
           "hidden_line": "exact",
           "id": "fcstd:model:drawing#TriangleView:entity",
           "kind": "view",
