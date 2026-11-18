@@ -71,6 +71,7 @@ use replace_face::ReplaceFaceOperands;
 
 #[doc = "Surface operation settings and constructors."]
 pub mod surfaces;
+use surfaces::SilhouetteSplitMode;
 use surfaces::UntrimLoops;
 
 macro_rules! checked_feature_geometry {
@@ -3867,6 +3868,20 @@ pub enum FeatureOperation {
         targets: FaceSelection,
         /// Geometry or datum plane that partitions the target faces.
         tool: SplitFaceTool,
+    },
+    /// Partitions a body's faces or volume along its silhouette in a given direction.
+    SilhouetteSplit {
+        /// Body selected before the split.
+        target: BodySelection,
+        /// Saved model-space silhouette direction.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_direction"
+        )]
+        direction: Option<FeatureDirection3>,
+        /// Result of the partition.
+        mode: SilhouetteSplitMode,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {

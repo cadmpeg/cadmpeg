@@ -46,6 +46,7 @@ pub(in crate::design) mod shared_frames;
 pub(crate) mod sheet_metal;
 mod sheet_metal_rule;
 pub(in crate::design) mod shell_observation;
+mod silhouette_split;
 mod solid_primitive;
 mod sphere;
 mod surfaces;
