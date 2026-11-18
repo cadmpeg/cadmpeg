@@ -350,6 +350,42 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Identify the positioning control and its signed offset rule in terms of the sheet thickness, bend radius, and attachment directions.
 
+### DE-21. Face joining edge
+
+**Question.** Which record selects the edge of the existing sheet that the bend of a plate-and-bend face record joins?
+
+**Known.** Section 13 defines the plate-and-bend form of face record `904bc1c4d311ff2860004da99dccefb0`: it names a plate and a bend, and its label lists the planar sketch, plate, and bend. The plate has an attachment control in slot 4, null slots 9 through 13, and no attachment selection list. The bend shares the plate attachment control and the plate slot-7 edge collection, and that collection is empty. The face record, its label, and the plate and bend properties store no edge selector of the existing sheet.
+
+**Need.** The record or rule that identifies the joined edge of the existing sheet, so that the plate can carry an exact attachment selection.
+
+### DE-22. Corner seam and relief fields
+
+**Question.** Which fields of the corner control `83ce7786a946cde11ebd99b4fe02afb2` store the seam option (gap, overlap, or no overlap), the overlap side, the corner relief shape, and the relief size?
+
+**Known.** Section 13.5 defines the corner control layout: `control`, `gap`, `size`, `relief_form`, `corner_form`, `secondary_form`, `jacobi_radius`, `value`, and `option`. `gap`, `size`, and `jacobi_radius` reference length parameters. `relief_form` and `secondary_form` reference enumeration type 304 or 501. `corner_form` references enumeration type 8. The record has no ratio or percentage operand. In 308 corners, `corner_form` is `(8, 3)` in 307 corners and `(8, 5)` in 1 corner, `value` is 0, `option` is true, and `secondary_form` has value 303. `relief_form` has value 103 in type 304, and value 100, 101, 102, 103, or 106 in type 501. 14 corners in 13 designs change the body: their source index occurs in generated names. The other corners leave the body unchanged.
+
+**Need.** Controlled parts that change one option at a time: each seam option, each overlap side, each relief shape, and two relief sizes. Each part needs its stored body, so that the gap or overlap distance and the relief shape can be measured on the faces.
+
+### DE-23. PmDc version-30 sheet-metal style layout
+
+**Question.** What is the field layout of the sheet-metal style record `13234560d3117a0d6000ecb21d6eefb0` in PmDc segment major version 30?
+
+**Known.** Section 13.5 defines the style operand layout for segment major versions 19, 20, 23, 29, and 31. In 9666 local parts, 418 parts have a sheet-metal style record. Their versions are 19, 20, 23, 29, and 31. No local part has a version-30 style record.
+
+**Need.** Version-30 sheet-metal parts from at least two designs, so that each operand reference can be joined to its named style parameter with its unit.
+
+**Note.** The decoder reports `feature.sheet-metal-style-version-unread` for a style record without a layout, and attached plates that need the style stay native.
+
+### DE-24. Feature class `55dbdf16d3118c9b6000f2b21d6eefb0`
+
+**Question.** What are the operand layout and the operation of feature-label class `55dbdf16d3118c9b6000f2b21d6eefb0`?
+
+**Known.** One local design has one feature of this class. Its label has one sketch participant. Its feature record has 34 property slots, and the slot pattern is similar to the extrusion layout. Slot 0 is the part-operation enumeration `(5, 2)`. Slot 6 is an enumeration of type 12.
+
+**Need.** Parts with this class from several designs, with their stored bodies, so that the profile, the extent, and the direction can be checked against the body faces.
+
+**Note.** The decoder reports `feature.native-class-unrecognized` for this class.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

@@ -2536,11 +2536,7 @@ pub(crate) fn decode_mesh_bodies(
 ) -> Result<MeshDecode, CodecError> {
     let mut design_records = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
-    {
+    for entry in crate::container::paramesh_entries(scan) {
         let container = match scan
             .entry_bytes(&entry.name)
             .and_then(|bytes| decode_mesh_container(ctx, bytes))
