@@ -107,3 +107,18 @@ fn a_pole_at_the_seam_uses_the_boundary_parameter() {
     assert_eq!(outer[0].uv, outer[outer.len() - 1].uv);
     assert_eq!(outer[outer.len() - 2].uv, outer[outer.len() - 3].uv);
 }
+
+#[test]
+fn two_wrapping_loops_bound_the_strip_through_a_periodic_seam() {
+    let frame = Frame {
+        periods: [Some(TAU), Some(TAU)],
+        domain: Some([[0.0, TAU], [0.0, TAU]]),
+        poles: Vec::new(),
+    };
+    // The falling ring lies below the rising one: the face runs up from
+    // the rising ring through the seam of `v` to the falling ring.
+    let found = regions(vec![circle(1.0, false), circle(2.0, true)], &frame).unwrap();
+    assert_eq!(found.len(), 1);
+    let outer: Vec<_> = found[0].outer.iter().map(|node| node.uv).collect();
+    assert!((signed_area(&outer) / 2.0 - TAU * (TAU - 1.0)).abs() < 1e-9);
+}
