@@ -43,6 +43,7 @@ use crate::layout::construction_operand_affine_transform_frame as trailing_affin
 use crate::layout::construction_operand_extended_path_prefix as extended_path;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::legacy_extrude_group_tail_marker as group_tail_marker;
 use crate::layout::legacy_loft_body_carrier as legacy_loft;
 use crate::layout::legacy_loft_body_carrier_owner_tail as legacy_loft_tail;
 use crate::layout::legacy_loft_body_carrier_three_flag as legacy_loft_three;
@@ -3141,12 +3142,10 @@ fn parse_construction_operand_group_with_offsets(
                         let [target] = records.offsets(first_tail_target) else {
                             return false;
                         };
-                        use crate::layout::legacy_extrude_group_tail_marker as marker;
-
-                        let marker_end = *target + marker::LEN;
+                        let marker_end = *target + group_tail_marker::LEN;
                         *target > after_tag
                             && bytes
-                                .get(*target + marker::ZERO_PAYLOAD..marker_end)
+                                .get(*target + group_tail_marker::ZERO_PAYLOAD..marker_end)
                                 .is_some_and(|payload| payload.iter().all(|&byte| byte == 0))
                             && indexed_record_header_at(bytes, marker_end).is_some()
                     }))
