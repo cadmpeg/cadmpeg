@@ -2445,7 +2445,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the body references of the distribution block. A feature seed stores the references, and each one names a body browser node. In the decoded files, the entity suffix names a body that the pattern acts on, and the marked reference after the suffix names the feature scope that made that body. The decoder checks the node type and counts the references.
 
-**Need.** A writer must emit one reference for each body that the pattern acts on, and a reader must know whether the references select the pattern's target bodies.
+**Need.** A rectangular pattern of features whose target body is a body that a scope other than the seed's scope made, with its body references, to tell whether the entity suffix selects the target body or the seed's body.
 
 ### DR-643. Persistent tags of omitted bodies
 
