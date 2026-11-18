@@ -3724,6 +3724,9 @@ fn check_feature_references(
                     ),
                 }
             }
+            FeatureOperation::SilhouetteSplit { target, .. } => {
+                body_selections.push(target);
+            }
             FeatureOperation::SplitFace {
                 targets,
                 tool,

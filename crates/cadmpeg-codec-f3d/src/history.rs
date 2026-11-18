@@ -2203,6 +2203,23 @@ pub(crate) fn bind_feature_body_selections(
             ) {
                 break 'feature_edit;
             }
+            if let FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit { target, .. }) =
+                definition
+            {
+                if let Some(previous_state_id) =
+                    effective_scope_previous_history_state_id(scope, histories)
+                {
+                    bind_body_recipe_body_selection(
+                        target,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                break 'feature_edit;
+            }
             if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells }) =
                 definition
             {

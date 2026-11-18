@@ -2,6 +2,7 @@
 
 use super::{EdgeSelection, FaceSelection, FeatureOperation, FiniteVector3, ThickenSide};
 use crate::scalar::PositiveLength;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,21 @@ pub enum UntrimLoops {
         #[doc = "Edges of the selected trim loops."]
         edges: EdgeSelection,
     },
+}
+
+/// Result of partitioning a body along its silhouette.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum SilhouetteSplitMode {
+    /// The result mode is unresolved.
+    Unresolved,
+    /// Partition the faces while preserving the body.
+    FacesOnly,
+    /// Partition a hollow body with new internal faces.
+    ShelledBody,
+    /// Partition a solid body into solid bodies.
+    SolidBody,
 }
 
 impl FeatureOperation {
