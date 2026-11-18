@@ -213,8 +213,8 @@ fn constant_set_names_group_radius_and_tangency_owners() {
             radius_owner_record_index: LAW_OWNER
         }
     );
-    assert_eq!(set.tangency_weight_owner_record_index, TANGENCY_OWNER);
-    assert!(set.tangent_chain);
+    assert_eq!(set.tangency_weight_owner_record_index, Some(TANGENCY_OWNER));
+    assert_eq!(set.tangent_chain, Some(true));
     assert_eq!(set.curvature_continuity, Some(false));
     assert!(list.rolling_ball_corner);
 }
@@ -715,4 +715,150 @@ fn set_ordinals_form_a_permutation_of_the_list_positions() {
     assert!(!ordinals_are_a_permutation(&[0, 0]));
     assert!(!ordinals_are_a_permutation(&[1]));
     assert!(!ordinals_are_a_permutation(&[0, 2]));
+}
+
+#[test]
+fn asymmetric_fillet_set_requires_two_offset_owners_and_the_prefix_word() {
+    use crate::layout::fillet_set_asymmetric as layout;
+
+    let (mut bytes, scope) = stream(&Fixture::default());
+    let set_at = usize::try_from(scope.frame_length()).unwrap() + header(b"257", SCOPE).len();
+    let prefix_word_at = header(b"336", SCOPE).len() + 10 + size_of::<u32>() + reference(SET).len();
+    bytes[prefix_word_at] = 1;
+    let mut frame = header(b"350", SET);
+    frame.resize(layout::LEN, 0);
+    frame[layout::FORM_MARKER] = layout::FORM_MARKER_VALUE;
+    for (at, value) in [
+        (layout::COMPATIBILITY_WORD, layout::COMPATIBILITY_WORD_VALUE),
+        (layout::FIRST_CONTROL_WORD, layout::FIRST_CONTROL_WORD_VALUE),
+        (
+            layout::SECOND_CONTROL_WORD,
+            layout::SECOND_CONTROL_WORD_VALUE,
+        ),
+    ] {
+        frame[at..at + size_of::<u32>()].copy_from_slice(&value.to_le_bytes());
+    }
+    for (at, target) in [
+        (layout::EDGE_GROUP_REFERENCE, GROUP),
+        (layout::OFFSET_ONE_OWNER_REFERENCE, LAW_OWNER),
+        (layout::OFFSET_TWO_OWNER_REFERENCE, TANGENCY_OWNER),
+    ] {
+        let marked = reference(target);
+        frame[at..at + marked.len()].copy_from_slice(&marked);
+    }
+    bytes[set_at..set_at + frame.len()].copy_from_slice(&frame);
+    let (first, first_owner) = owned(LAW_OWNER, "EdgeOffset1");
+    let (second, second_owner) = owned(TANGENCY_OWNER, "EdgeOffset2");
+    let parameters = [first, second];
+    let owners = [first_owner, second_owner];
+    let read = |stream: &[u8], owners: &[DesignParameterOwner]| {
+        fillet_set_list(
+            stream,
+            &crate::design::test_support::indexed_record_offsets_for_test(stream),
+            &scope,
+            &parameters,
+            owners,
+        )
+    };
+    let set = read(&bytes, &owners).unwrap().sets.remove(0);
+    assert_eq!(
+        set.law,
+        DesignFilletSetLaw::Asymmetric {
+            offset_one_owner_record_index: LAW_OWNER,
+            offset_two_owner_record_index: TANGENCY_OWNER,
+        }
+    );
+    assert_eq!(set.tangency_weight_owner_record_index, None);
+    assert_eq!(set.tangent_chain, None);
+    assert!(read(&bytes, &owners[..1]).is_none());
+    assert!(read(&bytes[..set_at + frame.len()], &owners).is_none());
+    bytes[prefix_word_at] = 0;
+    assert!(read(&bytes, &owners).is_none());
+}
+
+#[test]
+fn variable_fillet_set_keeps_midpoint_owner_pairs_and_refuses_repeated_links() {
+    use crate::layout::fillet_set_variable as layout;
+    use crate::records::feature::fillet_set::DesignFilletMidpointOwners;
+
+    let (mut bytes, scope) = stream(&Fixture::default());
+    let set_at = usize::try_from(scope.frame_length()).unwrap() + header(b"257", SCOPE).len();
+    let mut frame = header(b"350", SET);
+    frame.resize(layout::LEN, 0);
+    for (at, value) in [
+        (
+            layout::MIDPOINT_PARAMETER_COUNT,
+            layout::MIDPOINT_PARAMETER_COUNT_VALUE,
+        ),
+        (layout::RADIUS_COUNT, layout::RADIUS_COUNT_VALUE),
+    ] {
+        frame[at..at + size_of::<u32>()].copy_from_slice(&value.to_le_bytes());
+    }
+    let inputs = [
+        (layout::START_RADIUS_OWNER_REFERENCE, 300, "StartRadius"),
+        (layout::END_RADIUS_OWNER_REFERENCE, 303, "EndRadius"),
+        (layout::MIDDLE_RADIUS_ONE_OWNER_REFERENCE, 306, "MidRadius"),
+        (layout::MIDDLE_RADIUS_TWO_OWNER_REFERENCE, 309, "MidRadius"),
+        (
+            layout::MIDPOINT_PARAMETER_ONE_OWNER_REFERENCE,
+            312,
+            "MidParams",
+        ),
+        (
+            layout::MIDPOINT_PARAMETER_TWO_OWNER_REFERENCE,
+            315,
+            "MidParams",
+        ),
+        (
+            layout::TANGENCY_WEIGHT_OWNER_REFERENCE,
+            TANGENCY_OWNER,
+            "TangencyWeight",
+        ),
+    ];
+    let mut parameters = Vec::new();
+    let mut owners = Vec::new();
+    for (at, index, kind) in inputs {
+        let marked = reference(index);
+        frame[at..at + marked.len()].copy_from_slice(&marked);
+        let (parameter, owner) = owned(index, kind);
+        parameters.push(parameter);
+        owners.push(owner);
+    }
+    let group = reference(GROUP);
+    frame[layout::EDGE_GROUP_REFERENCE..layout::EDGE_GROUP_REFERENCE + group.len()]
+        .copy_from_slice(&group);
+    drop(bytes.splice(
+        set_at..set_at + set_frame(Form::Constant, GROUP).len(),
+        frame,
+    ));
+    let read = |stream: &[u8]| {
+        fillet_set_list(
+            stream,
+            &crate::design::test_support::indexed_record_offsets_for_test(stream),
+            &scope,
+            &parameters,
+            &owners,
+        )
+    };
+    assert_eq!(
+        read(&bytes).unwrap().sets[0].law,
+        DesignFilletSetLaw::Variable {
+            start_radius_owner_record_index: 300,
+            end_radius_owner_record_index: 303,
+            middle: [
+                DesignFilletMidpointOwners {
+                    radius_owner_record_index: 306,
+                    position_owner_record_index: 312,
+                },
+                DesignFilletMidpointOwners {
+                    radius_owner_record_index: 309,
+                    position_owner_record_index: 315,
+                },
+            ],
+        }
+    );
+    let at = set_at + layout::MIDPOINT_PARAMETER_TWO_OWNER_REFERENCE;
+    let repeated = reference(312);
+    bytes[at..at + repeated.len()].copy_from_slice(&repeated);
+    assert!(read(&bytes).is_none());
 }

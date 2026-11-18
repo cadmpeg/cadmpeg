@@ -13,6 +13,7 @@ mod design_parameters;
 mod emboss_operands;
 mod external_placement;
 mod f30_placements;
+mod fillet_projection;
 mod fusion_mirror_remove;
 mod fusion_profile_regions;
 mod history_deltas;

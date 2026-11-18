@@ -134,6 +134,7 @@ pub(super) fn encode_design_bulkstream(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
+                source_parameters: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
                 timelines: &native.design_feature_timelines,
@@ -146,6 +147,7 @@ pub(super) fn encode_design_bulkstream(
                 design_types: &native.design_types,
                 curve_identities: &native.sketch_curve_identities,
                 face_operands: &native.design_face_operands,
+                face_source_groups: &native.design_face_source_groups,
                 body_recipe_operands: &native.design_body_recipe_operands,
                 placements: &native.design_sketch_placements,
                 placement_constructions: &native.design_placement_constructions,

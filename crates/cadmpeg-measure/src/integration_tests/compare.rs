@@ -203,6 +203,8 @@ fn occurrences_that_place_bodies_keep_the_verdict_inconclusive() {
         let definition = ProductDefinitionId::mint("synthetic:cube:product#1").expect("id");
         cube.model.product_definitions.push(ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: definition.clone(),
             kind: ProductDefinitionKind::Part,
             source_name: None,

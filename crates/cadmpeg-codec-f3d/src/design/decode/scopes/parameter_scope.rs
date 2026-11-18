@@ -48,6 +48,7 @@ use super::path_feature::{
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
 use super::point_data::exact_work_point_construction;
+use super::replace_face::exact_replace_face_operation;
 use super::sheet_metal::bind_hem_operation_from_parameters;
 use super::sheet_metal::exact_base_flange_operation;
 use super::sheet_metal::exact_edge_flange_operation;
@@ -60,10 +61,9 @@ use super::surfaces::exact_surface_untrim_operation;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::thread::thread_modeled_flag_loss;
-use super::work_geometry::exact_work_axis_construction;
-use super::work_geometry::exact_work_plane_frame;
-use super::work_geometry::work_axis_loss_notes;
-use super::work_geometry::{direct_joint_origin_frame, exact_joint_origin_frame};
+use super::work_geometry::{
+    direct_joint_origin_frame, exact_joint_origin_frame, exact_work_plane_frame,
+};
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -104,6 +104,7 @@ pub(crate) struct ParameterScopeSources<'a> {
 
 #[derive(Debug, Default)]
 pub(crate) struct DecodedParameterScopes {
+    pub(crate) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     pub(crate) scopes: Vec<DesignParameterScope>,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) work_plane_inferred_axes: HashMap<String, (u64, [u8; 2])>,
@@ -124,6 +125,7 @@ pub(crate) fn decode_parameter_scopes(
         component_occurrences,
         recipes,
     } = sources;
+    let mut given_up = Vec::new();
     let mut out = Vec::new();
     let mut losses = Vec::new();
     let mut work_plane_inferred_axes = HashMap::new();
@@ -132,12 +134,19 @@ pub(crate) fn decode_parameter_scopes(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("WorkAxis source stream is unavailable"))?;
+        let bytes = source.window();
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
+        let axis_classes = class_types
+            .iter()
+            .map(|(code, row)| (*code, (row.type_guid.as_str(), row.version)))
+            .collect::<HashMap<_, _>>();
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
         let metadata = if body_owners
             .values()
@@ -218,6 +227,18 @@ pub(crate) fn decode_parameter_scopes(
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            if let scope::DesignScopePayload::SilhouetteSplit(_) = scope.payload() {
+                let operation = super::silhouette_split::decode(
+                    bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    &mut losses,
+                );
+                if let scope::DesignScopePayloadMut::SilhouetteSplit(slot) = scope.payload_mut() {
+                    *slot = operation;
+                }
+            }
             let face_groups = super::mesh_face_groups::decode_prefix(
                 ctx,
                 bytes,
@@ -338,11 +359,21 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(axis) = exact_work_axis_construction(bytes, &records, &scope, &stream_types)
-            {
-                losses.extend(work_axis_loss_notes(&scope, &axis));
+            if scope.kind() == scope::DesignFeatureKind::WorkAxis {
+                let evidence = super::work_axes::decode_work_axis(
+                    ctx,
+                    source,
+                    &records,
+                    &scope,
+                    &entry.name,
+                    super::work_axes::WorkAxisRegistrations {
+                        entities: &stream_types,
+                        classes: &axis_classes,
+                    },
+                    &mut given_up,
+                )?;
                 if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
-                    *slot = Some(axis.construction);
+                    *slot = Some(evidence);
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
@@ -551,6 +582,12 @@ pub(crate) fn decode_parameter_scopes(
                     );
                 }
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_replace_face_operation(ctx, bytes, &scope)?;
+                if let scope::DesignScopePayloadMut::ReplaceFace(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
@@ -873,6 +910,7 @@ pub(crate) fn decode_parameter_scopes(
         ));
     }
     Ok(DecodedParameterScopes {
+        given_up: cadmpeg_ir::unknown::part::GivenUpPart::coalesce(given_up)?,
         scopes: out,
         losses,
         work_plane_inferred_axes,
@@ -1495,7 +1533,7 @@ fn parameter_scope_previous_history_offset_for_form(
     match tail_form {
         ScopeTailForm::Named => return None,
         ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => {
-            return typed_scope_previous_history_offset(kind, tail_length)
+            return typed_scope_previous_history_offset(kind, tail_length);
         }
         ScopeTailForm::Fixed => {}
     }
@@ -1521,7 +1559,7 @@ fn parameter_scope_previous_history_offset_for_form(
 }
 
 #[cfg(test)]
-pub(in crate::design::decode) fn parse_parameter_scope(
+pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
@@ -2396,7 +2434,10 @@ fn scope_feature_kind(
     let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
     Some(match (literal, type_family) {
         (_, Some(family)) => family.clone(),
-        (scope::DesignFeatureKind::PathPattern, None) => scope::DesignFeatureKind::native(stored),
+        (
+            scope::DesignFeatureKind::PathPattern | scope::DesignFeatureKind::SilhouetteSplit,
+            None,
+        ) => scope::DesignFeatureKind::native(stored),
         (literal, None) => literal,
     })
 }

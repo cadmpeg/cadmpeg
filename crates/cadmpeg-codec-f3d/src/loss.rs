@@ -26,6 +26,11 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    BaseFaceRegionsNative,
+    BaseFaceSourceCarrierUnresolved,
+    BaseFaceThicknessUnresolved,
+    BaseFaceMaterialSideUnresolved,
+    BaseFaceResultChoiceUnresolved,
     ContourVectorOwnerDistanceRoleAssumed,
     ContourProfileNative,
     ContourDefaultSideOneLeftAssumed,
@@ -191,6 +196,7 @@ pub(crate) enum F3dLossCode {
     /// top-level inserts from internal operands.
     ComponentInsertOrderUnknown,
     ComponentInsertContainerAssumed,
+    ComponentInsertLegacyFrameAssumed,
     /// Component definitions stored as revised records that each bind a context
     /// UUID; the earliest record defines the component.
     ComponentDefinitionRevised,
@@ -473,6 +479,12 @@ pub(crate) enum F3dLossCode {
     FeatureBaseFeatureSuffixRunOrderAssumed,
     /// A compact Fillet flag run or set frame stores nonzero bytes in its padding positions, which are read as padding.
     FeatureFilletPaddingAssumed,
+    /// Stored variable Fillet midpoint pairs are read in increasing edge position.
+    FeatureFilletMidpointOrderAssumed,
+    /// An explicit Fillet set retains a saved law input outside the neutral dimension domain.
+    FeatureFilletSetInputUnresolved,
+    /// An explicit Fillet set references an unresolved edge operand group.
+    FeatureFilletSetGroupUnresolved,
     HoleStandardSizingAssumed,
     /// A clearance Hole's specification takes fixed values for the fields it does not store.
     HoleClearanceFieldsAssumed,
@@ -695,10 +707,24 @@ pub(crate) enum F3dLossCode {
     FeatureScaleUnlistedGroupsAssumed,
     FeatureWorkAxisRuleUnassigned,
     FeatureWorkAxisEndpointToleranceAssumed,
+    FeatureWorkAxisNonzeroParametersSolvedAssumed,
+    FeatureWorkAxisPartialCarrierSolvedAssumed,
+    FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed,
+    FeatureWorkAxisTwoPointConflictSolvedAssumed,
+    FeatureWorkAxisGeometryUnrepresentable,
+    FeatureWorkAxisBindingUnresolved,
+    FeatureWorkAxisLeadingBlockLayoutAssumed,
+    FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
+    FeatureWorkAxisLegacyLayoutAssumed,
+    FeatureWorkAxisCandidatesUnresolved,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
+    FeatureSilhouetteSplitPrefixUnparsed,
+    FeatureSilhouetteSplitModeUnresolved,
+    FeatureSilhouetteSplitDirectionUnresolved,
+    FeatureSilhouetteSplitTargetUnresolved,
     FeatureFaceGroupsTypeUnverified,
     FeatureFaceGroupsPrefixUnparsed,
     FeatureFaceGroupsSourceAssumed,
@@ -713,6 +739,14 @@ pub(crate) enum F3dLossCode {
     FeatureFaceGroupsMethodUnmapped,
     FeatureFaceGroupsBoundaryDistanceAssumed,
     FeatureFaceGroupsSettingUnassigned,
+    ReplaceFaceFrameAssumed,
+    ReplaceFaceGroupsAggregatedAssumed,
+    ReplaceFaceOverlapUnresolved,
+    ReplaceFaceSelectionAssumed,
+    ReplaceFaceTangentChainAssumed,
+    ReplaceFaceSupportAssumed,
+    ReplaceFaceIdentityAssumed,
+    ReplaceFaceFlaggedPrefixWordAssumed,
     SurfaceUntrimFrameAssumed,
     SurfaceUntrimGroupSelectionAssumed,
     SurfaceUntrimStoredLoopGroupsAssumed,
@@ -749,6 +783,12 @@ pub(crate) enum F3dLossCode {
     FeatureCombineToolConsumptionAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
+    #[doc = "A Fillet selection has no decoded radius law or dimension."]
+    FeatureFilletRadiusUnresolved,
+    #[doc = "Fillet source references do not establish complete dimensional bindings."]
+    FeatureFilletReferencesUnresolved,
+    #[doc = "A structurally identified full-round Fillet has an unresolved center."]
+    FeatureFilletFullRoundCenterUnresolved,
     /// A parameter-owned Fillet scope's set list is not an admitted form; its operand groups have no radius assignment.
     FeatureFilletSetListNative,
     /// Extrude scope retains an unassigned extent payload.
@@ -1036,6 +1076,11 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::SceneOverrideRefused,
+        Self::BaseFaceRegionsNative,
+        Self::BaseFaceSourceCarrierUnresolved,
+        Self::BaseFaceThicknessUnresolved,
+        Self::BaseFaceMaterialSideUnresolved,
+        Self::BaseFaceResultChoiceUnresolved,
         Self::ContourVectorOwnerDistanceRoleAssumed,
         Self::ContourProfileNative,
         Self::ContourDefaultSideOneLeftAssumed,
@@ -1157,6 +1202,7 @@ impl F3dLossCode {
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentInsertContainerAssumed,
+        Self::ComponentInsertLegacyFrameAssumed,
         Self::ComponentDefinitionRevised,
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
@@ -1355,6 +1401,9 @@ impl F3dLossCode {
         Self::FeatureBaseFeatureNullFlagAssumed,
         Self::FeatureBaseFeatureSuffixRunOrderAssumed,
         Self::FeatureFilletPaddingAssumed,
+        Self::FeatureFilletMidpointOrderAssumed,
+        Self::FeatureFilletSetInputUnresolved,
+        Self::FeatureFilletSetGroupUnresolved,
         Self::HoleStandardSizingAssumed,
         Self::HoleClearanceFieldsAssumed,
         Self::HoleCarrierAxisAssumed,
@@ -1481,8 +1530,22 @@ impl F3dLossCode {
         Self::FeatureScaleUnlistedGroupsAssumed,
         Self::FeatureWorkAxisRuleUnassigned,
         Self::FeatureWorkAxisEndpointToleranceAssumed,
+        Self::FeatureWorkAxisNonzeroParametersSolvedAssumed,
+        Self::FeatureWorkAxisPartialCarrierSolvedAssumed,
+        Self::FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed,
+        Self::FeatureWorkAxisTwoPointConflictSolvedAssumed,
+        Self::FeatureWorkAxisGeometryUnrepresentable,
+        Self::FeatureWorkAxisBindingUnresolved,
+        Self::FeatureWorkAxisLeadingBlockLayoutAssumed,
+        Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
+        Self::FeatureWorkAxisLegacyLayoutAssumed,
+        Self::FeatureWorkAxisCandidatesUnresolved,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
+        Self::FeatureSilhouetteSplitPrefixUnparsed,
+        Self::FeatureSilhouetteSplitModeUnresolved,
+        Self::FeatureSilhouetteSplitDirectionUnresolved,
+        Self::FeatureSilhouetteSplitTargetUnresolved,
         Self::FeatureFaceGroupsTypeUnverified,
         Self::FeatureFaceGroupsPrefixUnparsed,
         Self::FeatureFaceGroupsSourceAssumed,
@@ -1497,6 +1560,14 @@ impl F3dLossCode {
         Self::FeatureFaceGroupsMethodUnmapped,
         Self::FeatureFaceGroupsBoundaryDistanceAssumed,
         Self::FeatureFaceGroupsSettingUnassigned,
+        Self::ReplaceFaceFrameAssumed,
+        Self::ReplaceFaceGroupsAggregatedAssumed,
+        Self::ReplaceFaceOverlapUnresolved,
+        Self::ReplaceFaceSelectionAssumed,
+        Self::ReplaceFaceTangentChainAssumed,
+        Self::ReplaceFaceSupportAssumed,
+        Self::ReplaceFaceIdentityAssumed,
+        Self::ReplaceFaceFlaggedPrefixWordAssumed,
         Self::SurfaceUntrimFrameAssumed,
         Self::SurfaceUntrimGroupSelectionAssumed,
         Self::SurfaceUntrimStoredLoopGroupsAssumed,
@@ -1520,6 +1591,9 @@ impl F3dLossCode {
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineToolConsumptionAssumed,
         Self::FeatureFixedFilletAssignmentNative,
+        Self::FeatureFilletRadiusUnresolved,
+        Self::FeatureFilletReferencesUnresolved,
+        Self::FeatureFilletFullRoundCenterUnresolved,
         Self::FeatureFilletSetListNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureExtrudeTerminationMissing,
@@ -1687,6 +1761,11 @@ impl F3dLossCode {
             Self::ContourVectorOwnerDistanceRoleAssumed => {
                 "feature.contour-vector-owner-distance-role-assumed"
             }
+            Self::BaseFaceRegionsNative => "feature.base-face-regions-native",
+            Self::BaseFaceSourceCarrierUnresolved => "feature.base-face-source-carrier-unresolved",
+            Self::BaseFaceThicknessUnresolved => "feature.base-face-thickness-unresolved",
+            Self::BaseFaceMaterialSideUnresolved => "feature.base-face-material-side-unresolved",
+            Self::BaseFaceResultChoiceUnresolved => "feature.base-face-result-choice-unresolved",
             Self::ContourProfileNative => "feature.contour-profile-native",
             Self::ContourDefaultSideOneLeftAssumed => {
                 "feature.contour-default-side-one-left-assumed"
@@ -1913,6 +1992,7 @@ impl F3dLossCode {
             Self::FeatureDerivedInstanceComponentInsertAssumed => {
                 "feature.derived-instance-component-insert-assumed"
             }
+            Self::ComponentInsertLegacyFrameAssumed => "assembly.legacy-insert-frame-assumed",
             Self::FeatureComponentInsertMembershipAssumed => {
                 "feature.component-insert-membership-assumed"
             }
@@ -2184,6 +2264,9 @@ impl F3dLossCode {
                 "feature.base-feature-suffix-run-order-assumed"
             }
             Self::FeatureFilletPaddingAssumed => "feature.fillet-padding-assumed",
+            Self::FeatureFilletMidpointOrderAssumed => "feature.fillet-midpoint-order-assumed",
+            Self::FeatureFilletSetInputUnresolved => "feature.fillet-set-input-unresolved",
+            Self::FeatureFilletSetGroupUnresolved => "feature.fillet-set-group-unresolved",
             Self::HoleStandardSizingAssumed => "feature.hole-standard-sizing-assumed",
             Self::HoleClearanceFieldsAssumed => "feature.hole-clearance-fields-assumed",
             Self::HoleCarrierAxisAssumed => "feature.hole-carrier-axis-assumed",
@@ -2339,11 +2422,47 @@ impl F3dLossCode {
             Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
             Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
             Self::FeatureWorkAxisRuleUnassigned => "feature.work-axis-rule-unassigned",
+            Self::FeatureWorkAxisNonzeroParametersSolvedAssumed => {
+                "feature.work-axis-nonzero-parameters-solved-assumed"
+            }
+            Self::FeatureWorkAxisPartialCarrierSolvedAssumed => {
+                "feature.work-axis-partial-carrier-solved-assumed"
+            }
+            Self::FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed => {
+                "feature.work-axis-two-point-operands-unresolved-solved-assumed"
+            }
+            Self::FeatureWorkAxisTwoPointConflictSolvedAssumed => {
+                "feature.work-axis-two-point-conflict-solved-assumed"
+            }
+            Self::FeatureWorkAxisGeometryUnrepresentable => {
+                "feature.work-axis-geometry-unrepresentable"
+            }
+            Self::FeatureWorkAxisBindingUnresolved => "feature.work-axis-binding-unresolved",
+            Self::FeatureWorkAxisLeadingBlockLayoutAssumed => {
+                "feature.work-axis-leading-block-layout-assumed"
+            }
+            Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed => {
+                "feature.work-axis-unsupported-version-legacy-layout-assumed"
+            }
+            Self::FeatureWorkAxisLegacyLayoutAssumed => "feature.work-axis-legacy-layout-assumed",
+            Self::FeatureWorkAxisCandidatesUnresolved => "feature.work-axis-candidates-unresolved",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
+            Self::FeatureSilhouetteSplitPrefixUnparsed => {
+                "feature.silhouette-split-prefix-unparsed"
+            }
+            Self::FeatureSilhouetteSplitModeUnresolved => {
+                "feature.silhouette-split-mode-unresolved"
+            }
+            Self::FeatureSilhouetteSplitDirectionUnresolved => {
+                "feature.silhouette-split-direction-unresolved"
+            }
+            Self::FeatureSilhouetteSplitTargetUnresolved => {
+                "feature.silhouette-split-target-unresolved"
+            }
             Self::FeatureFaceGroupsTypeUnverified => "feature.mesh-face-groups-type-unverified",
             Self::FeatureFaceGroupsPrefixUnparsed => "feature.mesh-face-groups-prefix-unparsed",
             Self::FeatureFaceGroupsSourceAssumed => "feature.mesh-face-groups-source-assumed",
@@ -2375,6 +2494,18 @@ impl F3dLossCode {
             }
             Self::FeatureFaceGroupsSettingUnassigned => {
                 "feature.mesh-face-groups-setting-unassigned"
+            }
+            Self::ReplaceFaceFrameAssumed => "feature.replace-face-frame-assumed",
+            Self::ReplaceFaceGroupsAggregatedAssumed => {
+                "feature.replace-face-groups-aggregated-assumed"
+            }
+            Self::ReplaceFaceOverlapUnresolved => "feature.replace-face-overlap-unresolved",
+            Self::ReplaceFaceSelectionAssumed => "feature.replace-face-selection-assumed",
+            Self::ReplaceFaceTangentChainAssumed => "feature.replace-face-tangent-chain-assumed",
+            Self::ReplaceFaceSupportAssumed => "feature.replace-face-support-assumed",
+            Self::ReplaceFaceIdentityAssumed => "feature.replace-face-identity-assumed",
+            Self::ReplaceFaceFlaggedPrefixWordAssumed => {
+                "feature.replace-face-flagged-prefix-word-assumed"
             }
             Self::SurfaceUntrimFrameAssumed => "feature.surface-untrim-frame-assumed",
             Self::SurfaceUntrimGroupSelectionAssumed => {
@@ -2419,6 +2550,11 @@ impl F3dLossCode {
                 "feature.combine-tool-consumption-assumed"
             }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
+            Self::FeatureFilletRadiusUnresolved => "feature.fillet-radius-unresolved",
+            Self::FeatureFilletReferencesUnresolved => "feature.fillet-references-unresolved",
+            Self::FeatureFilletFullRoundCenterUnresolved => {
+                "feature.fillet-full-round-center-unresolved"
+            }
             Self::FeatureFilletSetListNative => "feature.fillet-set-list-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
@@ -2643,6 +2779,11 @@ impl F3dLossCode {
             | Self::EdgeWidthUnresolved
             | Self::EdgeHeightTargetNative
             | Self::EdgeHeightTargetScopeAssumed
+            | Self::BaseFaceRegionsNative
+            | Self::BaseFaceSourceCarrierUnresolved
+            | Self::BaseFaceThicknessUnresolved
+            | Self::BaseFaceMaterialSideUnresolved
+            | Self::BaseFaceResultChoiceUnresolved
             | Self::ContourVectorOwnerDistanceRoleAssumed
             | Self::ContourProfileNative
             | Self::ContourDefaultSideOneLeftAssumed
@@ -2777,6 +2918,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentInsertContainerAssumed
+            | Self::ComponentInsertLegacyFrameAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -2963,6 +3105,9 @@ impl F3dLossCode {
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::FeatureFilletPaddingAssumed
+            | Self::FeatureFilletMidpointOrderAssumed
+            | Self::FeatureFilletSetInputUnresolved
+            | Self::FeatureFilletSetGroupUnresolved
             | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -3092,8 +3237,22 @@ impl F3dLossCode {
             | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
+            | Self::FeatureWorkAxisNonzeroParametersSolvedAssumed
+            | Self::FeatureWorkAxisPartialCarrierSolvedAssumed
+            | Self::FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed
+            | Self::FeatureWorkAxisTwoPointConflictSolvedAssumed
+            | Self::FeatureWorkAxisGeometryUnrepresentable
+            | Self::FeatureWorkAxisBindingUnresolved
+            | Self::FeatureWorkAxisLeadingBlockLayoutAssumed
+            | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
+            | Self::FeatureWorkAxisLegacyLayoutAssumed
+            | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::FeatureSilhouetteSplitPrefixUnparsed
+            | Self::FeatureSilhouetteSplitModeUnresolved
+            | Self::FeatureSilhouetteSplitDirectionUnresolved
+            | Self::FeatureSilhouetteSplitTargetUnresolved
             | Self::FeatureFaceGroupsTypeUnverified
             | Self::FeatureFaceGroupsPrefixUnparsed
             | Self::FeatureFaceGroupsSourceAssumed
@@ -3108,6 +3267,14 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::ReplaceFaceFrameAssumed
+            | Self::ReplaceFaceGroupsAggregatedAssumed
+            | Self::ReplaceFaceOverlapUnresolved
+            | Self::ReplaceFaceSelectionAssumed
+            | Self::ReplaceFaceTangentChainAssumed
+            | Self::ReplaceFaceSupportAssumed
+            | Self::ReplaceFaceIdentityAssumed
+            | Self::ReplaceFaceFlaggedPrefixWordAssumed
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
             | Self::SurfaceUntrimStoredLoopGroupsAssumed
@@ -3131,6 +3298,9 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
+            | Self::FeatureFilletRadiusUnresolved
+            | Self::FeatureFilletReferencesUnresolved
+            | Self::FeatureFilletFullRoundCenterUnresolved
             | Self::FeatureFilletSetListNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
@@ -3289,6 +3459,11 @@ impl F3dLossCode {
             | Self::EdgeWidthUnresolved
             | Self::EdgeHeightTargetNative
             | Self::EdgeHeightTargetScopeAssumed
+            | Self::BaseFaceRegionsNative
+            | Self::BaseFaceSourceCarrierUnresolved
+            | Self::BaseFaceThicknessUnresolved
+            | Self::BaseFaceMaterialSideUnresolved
+            | Self::BaseFaceResultChoiceUnresolved
             | Self::ContourVectorOwnerDistanceRoleAssumed
             | Self::ContourProfileNative
             | Self::ContourDefaultSideOneLeftAssumed
@@ -3565,6 +3740,9 @@ impl F3dLossCode {
             | Self::FeatureBaseFeatureNullFlagAssumed
             | Self::FeatureBaseFeatureSuffixRunOrderAssumed
             | Self::FeatureFilletPaddingAssumed
+            | Self::FeatureFilletMidpointOrderAssumed
+            | Self::FeatureFilletSetInputUnresolved
+            | Self::FeatureFilletSetGroupUnresolved
             | Self::ThreadModeledFlagAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -3689,8 +3867,22 @@ impl F3dLossCode {
             | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
+            | Self::FeatureWorkAxisNonzeroParametersSolvedAssumed
+            | Self::FeatureWorkAxisPartialCarrierSolvedAssumed
+            | Self::FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed
+            | Self::FeatureWorkAxisTwoPointConflictSolvedAssumed
+            | Self::FeatureWorkAxisGeometryUnrepresentable
+            | Self::FeatureWorkAxisBindingUnresolved
+            | Self::FeatureWorkAxisLeadingBlockLayoutAssumed
+            | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
+            | Self::FeatureWorkAxisLegacyLayoutAssumed
+            | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::FeatureSilhouetteSplitPrefixUnparsed
+            | Self::FeatureSilhouetteSplitModeUnresolved
+            | Self::FeatureSilhouetteSplitDirectionUnresolved
+            | Self::FeatureSilhouetteSplitTargetUnresolved
             | Self::FeatureFaceGroupsTypeUnverified
             | Self::FeatureFaceGroupsPrefixUnparsed
             | Self::FeatureFaceGroupsSourceAssumed
@@ -3705,6 +3897,14 @@ impl F3dLossCode {
             | Self::FeatureFaceGroupsMethodUnmapped
             | Self::FeatureFaceGroupsBoundaryDistanceAssumed
             | Self::FeatureFaceGroupsSettingUnassigned
+            | Self::ReplaceFaceFrameAssumed
+            | Self::ReplaceFaceGroupsAggregatedAssumed
+            | Self::ReplaceFaceOverlapUnresolved
+            | Self::ReplaceFaceSelectionAssumed
+            | Self::ReplaceFaceTangentChainAssumed
+            | Self::ReplaceFaceSupportAssumed
+            | Self::ReplaceFaceIdentityAssumed
+            | Self::ReplaceFaceFlaggedPrefixWordAssumed
             | Self::SurfaceUntrimFrameAssumed
             | Self::SurfaceUntrimGroupSelectionAssumed
             | Self::SurfaceUntrimStoredLoopGroupsAssumed
@@ -3728,6 +3928,9 @@ impl F3dLossCode {
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
             | Self::FeatureFixedFilletAssignmentNative
+            | Self::FeatureFilletRadiusUnresolved
+            | Self::FeatureFilletReferencesUnresolved
+            | Self::FeatureFilletFullRoundCenterUnresolved
             | Self::FeatureFilletSetListNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
@@ -3833,6 +4036,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentInsertContainerAssumed
+            | Self::ComponentInsertLegacyFrameAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -3958,6 +4162,11 @@ mod tests {
             codes,
             [
                 "scene.override-refused",
+                "feature.base-face-regions-native",
+                "feature.base-face-source-carrier-unresolved",
+                "feature.base-face-thickness-unresolved",
+                "feature.base-face-material-side-unresolved",
+                "feature.base-face-result-choice-unresolved",
                 "feature.contour-vector-owner-distance-role-assumed",
                 "feature.contour-profile-native",
                 "feature.contour-default-side-one-left-assumed",
@@ -4079,6 +4288,7 @@ mod tests {
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-insert-container-assumed",
+                "assembly.legacy-insert-frame-assumed",
                 "assembly.component-definition-revised",
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
@@ -4277,6 +4487,9 @@ mod tests {
                 "feature.base-feature-null-flag-assumed",
                 "feature.base-feature-suffix-run-order-assumed",
                 "feature.fillet-padding-assumed",
+                "feature.fillet-midpoint-order-assumed",
+                "feature.fillet-set-input-unresolved",
+                "feature.fillet-set-group-unresolved",
                 "feature.hole-standard-sizing-assumed",
                 "feature.hole-clearance-fields-assumed",
                 "feature.hole-carrier-axis-assumed",
@@ -4403,8 +4616,22 @@ mod tests {
                 "feature.scale-unlisted-groups-assumed",
                 "feature.work-axis-rule-unassigned",
                 "feature.work-axis-endpoint-tolerance-assumed",
+                "feature.work-axis-nonzero-parameters-solved-assumed",
+                "feature.work-axis-partial-carrier-solved-assumed",
+                "feature.work-axis-two-point-operands-unresolved-solved-assumed",
+                "feature.work-axis-two-point-conflict-solved-assumed",
+                "feature.work-axis-geometry-unrepresentable",
+                "feature.work-axis-binding-unresolved",
+                "feature.work-axis-leading-block-layout-assumed",
+                "feature.work-axis-unsupported-version-legacy-layout-assumed",
+                "feature.work-axis-legacy-layout-assumed",
+                "feature.work-axis-candidates-unresolved",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
+                "feature.silhouette-split-prefix-unparsed",
+                "feature.silhouette-split-mode-unresolved",
+                "feature.silhouette-split-direction-unresolved",
+                "feature.silhouette-split-target-unresolved",
                 "feature.mesh-face-groups-type-unverified",
                 "feature.mesh-face-groups-prefix-unparsed",
                 "feature.mesh-face-groups-source-assumed",
@@ -4419,6 +4646,14 @@ mod tests {
                 "feature.mesh-face-groups-method-unmapped",
                 "feature.mesh-face-groups-boundary-distance-assumed",
                 "feature.mesh-face-groups-setting-unassigned",
+                "feature.replace-face-frame-assumed",
+                "feature.replace-face-groups-aggregated-assumed",
+                "feature.replace-face-overlap-unresolved",
+                "feature.replace-face-selection-assumed",
+                "feature.replace-face-tangent-chain-assumed",
+                "feature.replace-face-support-assumed",
+                "feature.replace-face-identity-assumed",
+                "feature.replace-face-flagged-prefix-word-assumed",
                 "feature.surface-untrim-frame-assumed",
                 "feature.surface-untrim-group-selection-assumed",
                 "feature.surface-untrim-stored-loop-groups-assumed",
@@ -4442,6 +4677,9 @@ mod tests {
                 "feature.combine-operand-list-refused",
                 "feature.combine-tool-consumption-assumed",
                 "feature.fixed-fillet-assignment-native",
+                "feature.fillet-radius-unresolved",
+                "feature.fillet-references-unresolved",
+                "feature.fillet-full-round-center-unresolved",
                 "feature.fillet-set-list-native",
                 "feature.extrude-extent-native",
                 "feature.extrude-termination-missing",

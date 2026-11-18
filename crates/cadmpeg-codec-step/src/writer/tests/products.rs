@@ -16,6 +16,7 @@ fn unnamed_definition(
 ) -> cadmpeg_ir::products::ProductDefinition {
     cadmpeg_ir::products::ProductDefinition {
         sketches: Vec::default(),
+        tessellations: Vec::new(),
         id: cadmpeg_ir::ids::ProductDefinitionId::mint(id).expect("identity grammar"),
         kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
         source_name: None,

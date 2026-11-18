@@ -181,6 +181,9 @@ impl Serialize for DesignParameterScope {
             DesignScopePayload::Thicken(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Thicken(value));
             }
+            DesignScopePayload::SilhouetteSplit(Some(value)) => {
+                emit!("silhouette_split_operation", value);
+            }
             DesignScopePayload::Move(Some(value)) | DesignScopePayload::MoveFace(Some(value)) => {
                 emit!("move_operation", value);
             }
@@ -196,6 +199,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());
         emit_opt!("surface_extend_operation", self.surface_extend_operation());
         emit_opt!("surface_untrim_operation", self.surface_untrim_operation());
+        emit_opt!("replace_face_operation", self.replace_face_operation());
         emit_opt!("surface_offset_operation", self.surface_offset_operation());
         emit_opt!("ruled_surface_operation", self.ruled_surface_operation());
         if let Some(base_flange) = self.base_flange() {

@@ -99,6 +99,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "PatternKind",
         "wire",
     ),
+    (
+        "crates/cadmpeg-ir/src/features/replace_face.rs",
+        "ReplaceFaceOperands",
+        "wire",
+    ),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "wire"),
     ("crates/cadmpeg-ir/src/features.rs", "$name", "keyless"),
     ("crates/cadmpeg-ir/src/features.rs", "BodyMember", "wire"),
@@ -419,6 +424,12 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "HoleShape",
         "diameter",
         "HoleShapeWire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/features/replace_face.rs",
+        "ReplaceFaceOperands",
+        "tangent_chain",
+        "ReplaceFaceOperandsWire",
     ),
     (
         "crates/cadmpeg-ir/src/geometry.rs",
@@ -1311,7 +1322,7 @@ fn record_unguarded_fields(
                 continue;
             }
         };
-        let written = if writer == *reader {
+        let written = if writer.owner == *reader && writer.variant.is_none() {
             // The reading and writing declarations are one declaration, so the
             // field states both halves and no key lookup is needed. A field
             // with no name states no key at all, and is only reachable here.
@@ -1325,7 +1336,11 @@ fn record_unguarded_fields(
                 }
             }
         };
-        record_spelling_match(&at, read, written, &writer.to_string(), offenders);
+        let source = match writer.variant {
+            Some(variant) => format!("{}::{variant}", writer.owner),
+            None => writer.owner.to_string(),
+        };
+        record_spelling_match(&at, read, written, &source, offenders);
     }
 }
 

@@ -42,7 +42,10 @@ mod decode_clone;
 mod membership;
 mod operation;
 mod selection_overlap;
+mod source_literals;
 
+#[doc = "Checked datum geometry and construction inputs."]
+pub mod datums;
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
 
@@ -62,8 +65,13 @@ use sheet_metal::SheetMetalBendLinesConstruction;
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
+#[doc = "Face replacement operands and tangent-chain settings."]
+pub mod replace_face;
+use replace_face::ReplaceFaceOperands;
+
 #[doc = "Surface operation settings and constructors."]
 pub mod surfaces;
+use surfaces::SilhouetteSplitMode;
 use surfaces::UntrimLoops;
 
 macro_rules! checked_feature_geometry {
@@ -2475,16 +2483,7 @@ selection_operands!(
     |_: &FaceSelection| true,
     face_selections_overlap
 );
-selection_operands!(
-    ReplaceFaceOperands,
-    ReplaceFaceOperandsWire,
-    FaceSelection,
-    targets,
-    replacements,
-    |_: &FaceSelection| true,
-    face_selections_overlap,
-    try_edit
-);
+
 selection_operands!(
     SectionOperands,
     SectionOperandsWire,
@@ -2518,13 +2517,6 @@ impl CombineOperands {
     /// Move both selections out of this admitted pair.
     pub fn into_parts(self) -> (BodySelection, BodySelection) {
         (self.target, self.tools)
-    }
-}
-
-impl ReplaceFaceOperands {
-    /// Move both selections out of this admitted pair.
-    pub fn into_parts(self) -> (FaceSelection, FaceSelection) {
-        (self.targets, self.replacements)
     }
 }
 
@@ -2940,10 +2932,8 @@ pub enum FeatureOperation {
     },
     /// Constructed reference axis.
     DatumAxis {
-        /// Point on the axis in model space.
-        origin: FinitePoint3,
-        /// Axis direction.
-        direction: FeatureDirection3,
+        #[doc = "Readable geometry, construction inputs and source options."]
+        axis: datums::DatumAxis,
     },
     /// Constructed reference point.
     DatumPoint {
@@ -3355,9 +3345,21 @@ pub enum FeatureOperation {
         /// Closed profile defining the planar sheet boundary.
         profile: PlanarProfileRef,
         /// Finished sheet thickness.
-        thickness: PositiveLength,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thickness"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "PositiveLength"))]
+        thickness: Option<PositiveLength>,
         /// Distribution of thickness relative to the profile plane.
-        side: SheetMetalThicknessSide,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_base_flange_side"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "SheetMetalThicknessSide"))]
+        side: Option<SheetMetalThicknessSide>,
     },
     /// Flat plate attached to an existing sheet edge.
     /// Replay the plate before its paired `SheetMetalBend`. The bend builds the joining region.
@@ -3866,6 +3868,20 @@ pub enum FeatureOperation {
         targets: FaceSelection,
         /// Geometry or datum plane that partitions the target faces.
         tool: SplitFaceTool,
+    },
+    /// Partitions a body's faces or volume along its silhouette in a given direction.
+    SilhouetteSplit {
+        /// Body selected before the split.
+        target: BodySelection,
+        /// Saved model-space silhouette direction.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_direction"
+        )]
+        direction: Option<FeatureDirection3>,
+        /// Result of the partition.
+        mode: SilhouetteSplitMode,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
@@ -9806,6 +9822,11 @@ cadmpeg_core::named_optional_field!(
     "bodies"
 );
 cadmpeg_core::named_optional_field!(deserialize_thickness, PositiveLength, "thickness");
+cadmpeg_core::named_optional_field!(
+    deserialize_base_flange_side,
+    SheetMetalThicknessSide,
+    "side"
+);
 cadmpeg_core::named_optional_field!(deserialize_outward, bool, "outward");
 cadmpeg_core::named_optional_field!(deserialize_mode, ShellMode, "mode");
 cadmpeg_core::named_optional_field!(deserialize_join, ShellJoin, "join");

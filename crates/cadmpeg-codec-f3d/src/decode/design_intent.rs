@@ -639,6 +639,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ctx,
         &crate::design::feature_project::ProjectInputs {
             native: &projection_parameters,
+            source_parameters: &prereqs.design_parameters,
             owners: &prereqs.design_parameter_owners,
             scopes: &design.design_parameter_scopes,
             timelines,
@@ -651,6 +652,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             design_types: &prereqs.design_types,
             curve_identities: &design.sketch_curve_identities,
             face_operands: &design.design_face_operands,
+            face_source_groups: &design.design_face_source_groups,
             body_recipe_operands: &design.design_body_recipe_operands,
             placements: &design.design_sketch_placements,
             placement_constructions: &design.design_placement_constructions,

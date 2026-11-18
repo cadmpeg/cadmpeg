@@ -15,6 +15,8 @@
     test,
     allow(clippy::default_trait_access, clippy::field_reassign_with_default)
 )]
+mod work_axis_completeness;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_ir::annotations::StreamHandle;
@@ -262,9 +264,13 @@ fn unresolved_dimension_companion_count(
 
 fn report_unresolved_dimension_companions(report: &mut DecodeBody, count: usize) {
     if count != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::DimensionCompanionUntyped, format_args!(
-            "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::DimensionCompanionUntyped,
+            format_args!(
+                "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
+            ),
+        );
     }
 }
 
@@ -275,57 +281,85 @@ fn report_unresolved_configuration_rules(
     ir: &CadIr,
 ) {
     if unbound_roots != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationActiveRowUnbound, format_args!(
-            "{unbound_roots} Design configuration root record(s) were retained without an admitted active row of a unique table document."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ConfigurationActiveRowUnbound,
+            format_args!(
+                "{unbound_roots} Design configuration root record(s) were retained without an admitted active row of a unique table document."
+            ),
+        );
     }
     let count =
         crate::design::configurations::unresolved_configuration_member_count(configurations);
     if count != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationMemberUnassigned, format_args!(
-            "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ConfigurationMemberUnassigned,
+            format_args!(
+                "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
+            ),
+        );
     }
     let count = crate::design::configurations::unresolved_configuration_rule_count(
         configurations,
         &ir.model.configurations,
     );
     if count != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationRuleUnbound, format_args!(
-            "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ConfigurationRuleUnbound,
+            format_args!(
+                "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
+            ),
+        );
     }
     let count = crate::design::configurations::unresolved_configuration_parameter_override_count(
         &ir.model.configurations,
     );
     if count != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationParameterOverrideUnbound, format_args!(
-            "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ConfigurationParameterOverrideUnbound,
+            format_args!(
+                "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
+            ),
+        );
     }
     let count = crate::design::configurations::unresolved_configuration_suppressed_feature_count(
         &ir.model.configurations,
     );
     if count != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationFeatureSuppressionUnbound, format_args!(
-            "{count} Design configuration feature state(s) were retained without an unambiguous neutral feature identity."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ConfigurationFeatureSuppressionUnbound,
+            format_args!(
+                "{count} Design configuration feature state(s) were retained without an unambiguous neutral feature identity."
+            ),
+        );
     }
     let count = crate::design::configurations::inferred_configuration_suppression_count(
         &ir.model.configurations,
     );
     if count != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationSuppressionInferred, format_args!(
-            "{count} suppressed feature state(s) of the active Design configuration were taken from the current feature state, assuming that no suppression column without a neutral feature names those features."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ConfigurationSuppressionInferred,
+            format_args!(
+                "{count} suppressed feature state(s) of the active Design configuration were taken from the current feature state, assuming that no suppression column without a neutral feature names those features."
+            ),
+        );
     }
 }
 
 fn report_untyped_material_distances(report: &mut DecodeBody, count: usize) {
     if count != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::MaterialDistanceUnitUntyped, format_args!(
-            "{count} Protein texture Distance property value(s) retain an untyped unit tag; their typed texture carriers were omitted."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::MaterialDistanceUnitUntyped,
+            format_args!(
+                "{count} Protein texture Distance property value(s) retain an untyped unit tag; their typed texture carriers were omitted."
+            ),
+        );
     }
 }
 
@@ -692,9 +726,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
             !datum_plane_frame_is_resolved(*frame)
         }
-        FeatureDefinition::Operation(FeatureOperation::DatumAxis { direction, .. }) => {
-            direction.unit().is_none()
-        }
+        FeatureDefinition::Operation(FeatureOperation::DatumAxis { axis }) => work_axis_completeness::incomplete(axis),
         FeatureDefinition::Operation(FeatureOperation::DatumCoordinateSystem { .. }) => false,
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { frame, points }) => {
             !datum_plane_frame_is_resolved(*frame)
@@ -1015,7 +1047,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             groups.is_empty()
                 || groups
                     .iter()
-                    .any(|group| !edge_selection_is_resolved(&group.edges))
+                    .any(|group| !edge_selection_is_resolved(&group.edges) || group.radius.is_unresolved())
         }
         FeatureDefinition::Operation(
             FeatureOperation::DeleteFace { faces, .. } | FeatureOperation::UnstitchFaces { faces },
@@ -1026,6 +1058,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let targets = operands.targets();
             let replacements = operands.replacements();
             !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements)
+        }
+        FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit {
+            target, direction, mode,
+        }) => {
+            !body_selection_is_resolved(target)
+                || direction.is_none()
+                || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
         }
         FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
             !body_selection_is_resolved(targets)
@@ -1040,8 +1079,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             faces, distance, ..
         }) => !face_selection_is_resolved(faces) || distance.is_none(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-            profile, ..
-        }) => !planar_profile_ref_is_resolved(profile),
+            profile, thickness, side
+        }) => !planar_profile_ref_is_resolved(profile) || thickness.is_none() || side.is_none(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
             !construction.has_all_inputs()
                 || construction.edges.as_ref().is_none_or(|edges| !edge_selection_is_resolved(edges))
@@ -1710,6 +1749,9 @@ fn design_projection_gaps(
             }
             FeatureDefinition::Operation(FeatureOperation::InsertBodies { bodies }) => {
                 gaps.body_selections += usize::from(!bodies.is_resolved());
+            }
+            FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit { target, .. }) => {
+                gaps.body_selections += native_body_selection_count(target);
             }
             FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
                 let target = operands.target();
@@ -2461,9 +2503,13 @@ fn report_design_projection_gaps(
         .filter(|history| history.binding_budget_exceeded)
         .count();
     if history_budget_skips != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
-            "{history_budget_skips} ASM history stream(s) retain only their state headers, with no bulletin boards, history records or historical topology, because their estimated retained size exceeded the decode session's remaining retained-byte allowance."
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::HistoryBindingBudgetExceeded,
+            format_args!(
+                "{history_budget_skips} ASM history stream(s) retain only their state headers, with no bulletin boards, history records or historical topology, because their estimated retained size exceeded the decode session's remaining retained-byte allowance."
+            ),
+        );
     }
     let recipe_search_skips = crate::design::decode::operands::recipe_side_searches_exhausted(
         ctx,
@@ -2480,18 +2526,26 @@ fn report_design_projection_gaps(
             .filter(|construction| construction.instance_search_cap() == Some(cap))
             .count();
         if capped_pattern_searches != 0 {
-            push_loss_vec(&mut report.losses, F3dLossCode::FeaturePatternInstanceSearchCapped, format_args!(
-                "{capped_pattern_searches} rectangular pattern(s) have no instance transforms or direction because their instance search exceeded the local cap {} ({}).",
-                cap.name(),
-                cap.limit(),
-            ),);
+            push_loss_vec(
+                &mut report.losses,
+                F3dLossCode::FeaturePatternInstanceSearchCapped,
+                format_args!(
+                    "{capped_pattern_searches} rectangular pattern(s) have no instance transforms or direction because their instance search exceeded the local cap {} ({}).",
+                    cap.name(),
+                    cap.limit(),
+                ),
+            );
         }
     }
     if recipe_search_skips != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::RecipeSideSearchBudgetExceeded, format_args!(
-            "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded the local work cap RECIPE_SIDE_SEARCH_WORK ({}).",
-            crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::RecipeSideSearchBudgetExceeded,
+            format_args!(
+                "{recipe_search_skips} Design recipe program(s) retain no recipe structure because their side-sequence search exceeded the local work cap RECIPE_SIDE_SEARCH_WORK ({}).",
+                crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
+            ),
+        );
     }
     for error in native
         .asm_histories
@@ -2529,36 +2583,54 @@ fn report_design_projection_gaps(
         );
     }
     if gaps.native_reference_images != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ReferenceImageNativeRetained, format_args!(
-            "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
-            gaps.native_reference_images
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ReferenceImageNativeRetained,
+            format_args!(
+                "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
+                gaps.native_reference_images
+            ),
+        );
     }
     if gaps.assumed_reference_image_flags != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::ReferenceImageFlagAssumed, format_args!(
-            "{} Canvas image(s) store a zero flag byte before the second boundary segment; the decoder places each image by its boundary segments and payload frame and assumes that the byte leaves the placement unchanged (DR-308).",
-            gaps.assumed_reference_image_flags
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ReferenceImageFlagAssumed,
+            format_args!(
+                "{} Canvas image(s) store a zero flag byte before the second boundary segment; the decoder places each image by its boundary segments and payload frame and assumes that the byte leaves the placement unchanged (DR-308).",
+                gaps.assumed_reference_image_flags
+            ),
+        );
     }
     if gaps.native_decals != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::DecalNativeRetained, format_args!(
-            "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
-            gaps.native_decals
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::DecalNativeRetained,
+            format_args!(
+                "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
+                gaps.native_decals
+            ),
+        );
     }
     if gaps.unrepaired_lost_edge_references != 0 {
-        push_loss_vec(&mut report.losses, F3dLossCode::EdgeReferenceLostUnrepaired, format_args!(
-            "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
-            gaps.unrepaired_lost_edge_references
-        ),);
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::EdgeReferenceLostUnrepaired,
+            format_args!(
+                "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
+                gaps.unrepaired_lost_edge_references
+            ),
+        );
     }
     for scope in &native.design_parameter_scopes {
         if scope.kind() != crate::records::feature::scope::DesignFeatureKind::Emboss {
             continue;
         }
         let (code, reason) = if scope.emboss_construction().is_some() {
-            (F3dLossCode::EmbossControlsNative,
-             "control words, native pairs, selection links, contour membership, and placement retain their native interpretation; scalar-owner links also expose independent Wrap parameters")
+            (
+                F3dLossCode::EmbossControlsNative,
+                "control words, native pairs, selection links, contour membership, and placement retain their native interpretation; scalar-owner links also expose independent Wrap parameters",
+            )
         } else {
             (
                 F3dLossCode::EmbossPrefixUnparsed,
@@ -2597,8 +2669,13 @@ fn report_design_projection_gaps(
             uninterpreted_scopes += 1;
         }
     }
-    push(F3dLossCode::FeatureScopePayloadUninterpreted, uninterpreted_scopes,
-        format_args!("{uninterpreted_scopes} native feature scope(s) retain their source envelope without interpreted specialized operation data."))?;
+    push(
+        F3dLossCode::FeatureScopePayloadUninterpreted,
+        uninterpreted_scopes,
+        format_args!(
+            "{uninterpreted_scopes} native feature scope(s) retain their source envelope without interpreted specialized operation data."
+        ),
+    )?;
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,
@@ -2880,7 +2957,7 @@ fn try_decode_text_model(
             None => {
                 return Err(CodecError::malformed(format_args!(
                     "text BREP entry {name} was not framed"
-                )))
+                )));
             }
         };
         let decoded = brep::decode_text(ctx, stream, bytes, name, crate::ids::ID_FORMAT)?;
@@ -3054,6 +3131,7 @@ impl FinalizePath {
 
 /// Private decode accumulator for one `.f3d` document.
 struct F3dDecodeSession<'a> {
+    given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     ctx: &'a DecodeContext<'a>,
     scan: &'a ContainerScan<'a>,
     native: F3dNative,
@@ -3146,6 +3224,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         Ok((
             Self {
+                given_up: Vec::new(),
                 ctx,
                 scan,
                 native,
@@ -3199,6 +3278,7 @@ impl<'a> F3dDecodeSession<'a> {
         }
         Ok((
             Self {
+                given_up: Vec::new(),
                 ctx,
                 scan,
                 native,
@@ -3307,13 +3387,13 @@ impl<'a> F3dDecodeSession<'a> {
         let failure = match &prereqs.design_feature_timelines {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
                 Ok(design) => {
-                    return Ok(DesignState::Projected(Box::new(self.merge_design(design))))
+                    return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
                 }
                 Err(error)
                     if matches!(error, CodecError::ResourceLimit(_))
                         || self.ctx.resource_refusal().is_some() =>
                 {
-                    return Err(error)
+                    return Err(error);
                 }
                 Err(error) => error.to_string(),
             },
@@ -3325,7 +3405,9 @@ impl<'a> F3dDecodeSession<'a> {
         push_loss_vec(
             &mut self.report.losses,
             F3dLossCode::DesignIntentUndecoded,
-            format_args!("Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"),
+            format_args!(
+                "Design intent was dropped because its decoding failed, so the dimension-companion and configuration reports were not produced: {failure}"
+            ),
         );
         self.native
             .design_intent_failures
@@ -3406,7 +3488,9 @@ impl<'a> F3dDecodeSession<'a> {
                 )?
             }
         };
-        prereqs::decode(self.ctx, self.scan, design_body_bindings)
+        let mut prereqs = prereqs::decode(self.ctx, self.scan, design_body_bindings)?;
+        self.given_up.append(&mut prereqs.given_up);
+        Ok(prereqs)
     }
 
     /// Phase 2: decode design intent over the prerequisites and the geometry.
@@ -3485,8 +3569,13 @@ impl<'a> F3dDecodeSession<'a> {
             .filter(|link| link.references.tracked_entity != 3)
             .count();
         if unresolved_links != 0 {
-            push_loss_vec(&mut self.report.losses, F3dLossCode::ActComponentLinkUnresolved,
-                format_args!("{unresolved_links} ACT component link(s) were retained natively without a resolved product-structure role."));
+            push_loss_vec(
+                &mut self.report.losses,
+                F3dLossCode::ActComponentLinkUnresolved,
+                format_args!(
+                    "{unresolved_links} ACT component link(s) were retained natively without a resolved product-structure role."
+                ),
+            );
         }
         self.native.act_entities = act.entities;
         self.native.act_guids = act.guids;
@@ -3828,6 +3917,7 @@ impl<'a> F3dDecodeSession<'a> {
                     self.ir,
                     self.report,
                     RetainedArtifacts {
+                        given_up: self.given_up,
                         annotations,
                         unknowns: self.unknowns,
                         source_image,
@@ -3866,6 +3956,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir,
             self.report,
             RetainedArtifacts {
+                given_up: self.given_up,
                 annotations,
                 unknowns: self.unknowns,
                 source_image,
@@ -4013,7 +4104,7 @@ fn decode_scanned_document<'a>(
             }
             Ok(None) => {}
             Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
-                return Err(error)
+                return Err(error);
             }
             Err(error) => report_xref_parse_loss(&mut report, &error),
         }
@@ -4024,6 +4115,7 @@ fn decode_scanned_document<'a>(
             ir,
             report,
             RetainedArtifacts {
+                given_up: Vec::new(),
                 annotations,
                 unknowns,
                 source_image,
@@ -4257,17 +4349,29 @@ fn collect_mesh_outcome(
         MeshContainerOutcome::Joined(body) => {
             bodies.push(body);
         }
-        MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerUnjoined, format_args!(
+        MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::MeshContainerUnjoined,
+            format_args!(
                 "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
-            ),),
+            ),
+        ),
         MeshContainerOutcome::Failed {
             error: error @ CodecError::ResourceLimit(_),
             ..
         } => return Err(error),
-        MeshContainerOutcome::Failed { entry_name, error } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerUndecoded, format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),),
-        MeshContainerOutcome::Missing { entry_name } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerMissing, format_args!(
+        MeshContainerOutcome::Failed { entry_name, error } => push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::MeshContainerUndecoded,
+            format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),
+        ),
+        MeshContainerOutcome::Missing { entry_name } => push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::MeshContainerMissing,
+            format_args!(
                 "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
-            ),),
+            ),
+        ),
     }
     Ok(())
 }
@@ -4801,14 +4905,18 @@ fn report_xref_placement_failures(report: &mut DecodeBody, table: &crate::xref::
         push_loss_vec(
             &mut report.losses,
             F3dLossCode::XrefPlacementMetadataNative,
-            format_args!("{native_metadata} legacy external placement frame(s) retain their source occurrence identity, auxiliary metadata UUID, path discriminator, ordinal and cross-segment metadata reference only in native source frames"),
+            format_args!(
+                "{native_metadata} legacy external placement frame(s) retain their source occurrence identity, auxiliary metadata UUID, path discriminator, ordinal and cross-segment metadata reference only in native source frames"
+            ),
         );
     }
     if table.placement_metadata_missing && !table.references.is_empty() {
         push_loss_vec(
             &mut report.losses,
             F3dLossCode::XrefPlacementMetadataMissing,
-            format_args!("external-reference placements were not inferred from Design streams without a paired MetaStream type table and record index"),
+            format_args!(
+                "external-reference placements were not inferred from Design streams without a paired MetaStream type table and record index"
+            ),
         );
     }
     for failure in &table.placement_failures {
@@ -4848,10 +4956,14 @@ fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref:
         else {
             continue;
         };
-        push_loss_vec(&mut report.losses, F3dLossCode::XrefPlacementSuperseded, format_args!(
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::XrefPlacementSuperseded,
+            format_args!(
                 "{count} structured placement record(s) for external occurrence {} and role {} were superseded by scope-bound Component Insert carrier(s)",
                 reference.relative_path, reference.neutron_role
-            ),);
+            ),
+        );
     }
 }
 
@@ -4911,9 +5023,15 @@ fn apply_bodyless_design_classification(
     });
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::at(report.transfer.depth(), true);
     let message = match (sketch_entities, reference_images) {
-        (0, _) => format!("presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"),
-        (_, 0) => format!("sketch-only design: the document declares no body, and its {sketch_entities} sketch entity(s) are its complete geometry"),
-        _ => format!("bodyless design: the document declares no body; its {sketch_entities} sketch entity(s) are its complete geometry, and its {reference_images} reference-image timeline object(s) require no BREP geometry"),
+        (0, _) => format!(
+            "presentation-only design: the document declares no body, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
+        ),
+        (_, 0) => format!(
+            "sketch-only design: the document declares no body, and its {sketch_entities} sketch entity(s) are its complete geometry"
+        ),
+        _ => format!(
+            "bodyless design: the document declares no body; its {sketch_entities} sketch entity(s) are its complete geometry, and its {reference_images} reference-image timeline object(s) require no BREP geometry"
+        ),
     };
 
     report
@@ -5006,6 +5124,7 @@ impl AuthoredDecoded {
 }
 
 struct RetainedArtifacts {
+    given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
@@ -5038,6 +5157,11 @@ fn decode_result(
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     commit_given_up_parts(ctx, scan, &mut ir, &mut source_fidelity)?;
+    for part in retained.given_up {
+        report
+            .losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     if !retained.untyped.is_empty() {
         source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
     }
@@ -5526,7 +5650,7 @@ fn try_decode_brep(
         Ok(r) if !r.is_empty() => r,
         Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error.into()),
         Err(cadmpeg_asm::stream_error::StreamFailure::Operation(error)) => {
-            return Err(error.into_codec_error())
+            return Err(error.into_codec_error());
         }
         _ => return Ok(None),
     };
@@ -5710,11 +5834,15 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
         );
     }
     if s.missing_face_surfaces() > 0 {
-        push_loss_vec(&mut losses, F3dLossCode::FaceSurfaceReferenceDangling, format_args!(
-            "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
-            s.missing_face_surfaces(),
-            KindCounts(&s.missing_face_surface_kinds)
-        ),);
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::FaceSurfaceReferenceDangling,
+            format_args!(
+                "{} face(s) were omitted because their required surface reference was null or dangling. Reference conditions: {}.",
+                s.missing_face_surfaces(),
+                KindCounts(&s.missing_face_surface_kinds)
+            ),
+        );
     }
     if s.unknown_surface_faces() > 0 {
         push_loss_vec(
@@ -5733,22 +5861,26 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
         );
     }
     if s.mesh_surface_faces > 0 {
-        push_loss_vec(&mut losses, F3dLossCode::MeshSurfaceSentinel, format_args!(
-            "{} face(s) use zero-payload mesh_surface sentinels. Their exact surfaces are absent by definition; the emitted unknown surface preserves that distinction from tessellation attributes.",
-            s.mesh_surface_faces
-        ),);
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::MeshSurfaceSentinel,
+            format_args!(
+                "{} face(s) use zero-payload mesh_surface sentinels. Their exact surfaces are absent by definition; the emitted unknown surface preserves that distinction from tessellation attributes.",
+                s.mesh_surface_faces
+            ),
+        );
     }
     if s.procedural_curve_edges() > 0 {
         push_loss_vec(
             &mut losses,
             F3dLossCode::ProceduralCurveUndecoded,
             format_args!(
-            "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
+                "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
              B-spline cache; the edge was emitted with its vertices and parameter range but no \
              attributed curve carrier. Native kinds: {}.",
-            s.procedural_curve_edges(),
-            KindCounts(&s.procedural_curve_kinds)
-        ),
+                s.procedural_curve_edges(),
+                KindCounts(&s.procedural_curve_kinds)
+            ),
         );
     }
     if s.undecoded_pcurve_refs() > 0 {
@@ -5765,10 +5897,14 @@ fn geometry_losses(decoded: &Brep) -> Vec<cadmpeg_ir::report::loss::LossNote> {
         );
     }
     if s.partial_procedural_supports > 0 {
-        push_loss_vec(&mut losses, F3dLossCode::BlendSupportPartial, format_args!(
-            "{} rolling-ball blend definition(s) retain their signed radius and solved cache, but only one of two native supports resolved.",
-            s.partial_procedural_supports
-        ),);
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::BlendSupportPartial,
+            format_args!(
+                "{} rolling-ball blend definition(s) retain their signed radius and solved cache, but only one of two native supports resolved.",
+                s.partial_procedural_supports
+            ),
+        );
     }
     if s.other_records() > 0 {
         push_loss_vec(
