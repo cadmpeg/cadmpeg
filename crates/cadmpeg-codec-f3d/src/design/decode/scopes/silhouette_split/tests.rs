@@ -94,13 +94,26 @@ fn types() -> HashMap<u64, (&'static str, u32)> {
     ])
 }
 
+fn read(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    types: &HashMap<u64, (&str, u32)>,
+    losses: &mut Vec<LossNote>,
+) -> Option<DesignSilhouetteSplit> {
+    crate::test_support::with_decode_context(|ctx| {
+        decode(ctx, bytes, records, scope, types, losses)
+    })
+    .unwrap()
+}
+
 #[test]
 fn silhouette_split_keeps_the_mode_and_solved_carrier_in_both_prefixes() {
     for (mode_word, expanded) in [(0, false), (1, true), (2, true)] {
         let (bytes, mut scope) = fixture(mode_word, expanded, GROUP, SELECTOR);
         let records = IndexedRecordOffsets::build(&bytes);
         let mut losses = Vec::new();
-        let operation = decode(&bytes, &records, &scope, &types(), &mut losses).unwrap();
+        let operation = read(&bytes, &records, &scope, &types(), &mut losses).unwrap();
         assert!(losses.is_empty());
         assert_eq!(operation.mode_word, mode_word);
         let carrier = operation.carrier.as_ref().unwrap();
@@ -129,14 +142,14 @@ fn silhouette_split_requires_scope_registration_and_matching_references() {
     let (bytes, scope) = fixture(2, true, GROUP, BODY);
     let records = IndexedRecordOffsets::build(&bytes);
     let mut losses = Vec::new();
-    assert!(decode(&bytes, &records, &scope, &HashMap::new(), &mut losses).is_none());
-    let operation = decode(&bytes, &records, &scope, &types(), &mut losses).unwrap();
+    assert!(read(&bytes, &records, &scope, &HashMap::new(), &mut losses).is_none());
+    let operation = read(&bytes, &records, &scope, &types(), &mut losses).unwrap();
     assert_eq!(operation.mode_word, 2);
     assert!(operation.carrier.is_none());
     assert!(losses.is_empty());
 
     let (bytes, scope) = fixture(1, true, BODY, SELECTOR);
-    assert!(decode(
+    assert!(read(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
         &scope,
@@ -162,7 +175,7 @@ fn silhouette_split_keeps_the_mode_when_the_carrier_input_is_cross_segment() {
     bytes.splice(segment_at..segment_at, 42_u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
     let mut losses = Vec::new();
-    let operation = decode(&bytes, &records, &scope, &types(), &mut losses).unwrap();
+    let operation = read(&bytes, &records, &scope, &types(), &mut losses).unwrap();
     assert_eq!(operation.mode_word, 1);
     assert!(operation.carrier.is_none());
 }

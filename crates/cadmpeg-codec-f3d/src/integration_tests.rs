@@ -32,6 +32,8 @@ mod profile_region_selection;
 mod reference_rows;
 mod scene;
 mod sketch_regions;
+mod split_face_binding;
+mod split_face_secondary_proof;
 mod tracking_path_headers;
 mod treatment_losses;
 mod work_planes;
