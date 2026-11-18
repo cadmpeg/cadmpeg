@@ -2587,9 +2587,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which records can the trailing reference of a `SurfaceExtend` or boundary-carrier `SurfaceOffset` group name, what does the boolean of a compact flag record state, and where does a `SurfaceExtend` scope with another prologue store its extension method?
 
-**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner, the boundary carrier, and the scope prologue with the extension method. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`. The boolean is `1` for each extension method with edge chaining on.
+**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner, the boundary carrier, and the scope prologue with the extension method. The perpendicular extension in DR-312 has a shorter prologue: eighteen zero bytes follow its indexed header, then the marked distance-owner reference. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`. The boolean is `1` for each extension method with edge chaining on.
 
-**Need.** Two saves of one extension that differ only in the edge-chaining option, compared byte for byte. Controlled saves and record comparisons that establish the trailing reference target forms and their effect on the operation. A `SurfaceExtend` scope whose prologue differs from the fixed prologue, with its extension method.
+**Need.** Two saves of one extension that differ only in the edge-chaining option, compared byte for byte. Controlled saves and record comparisons that establish the trailing reference target forms and their effect on the operation. Controlled saves with the shorter prologue and different extension methods.
 
 **Conflict.** None.
 
@@ -2597,11 +2597,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-312. Negative SurfaceExtend distance
 
-**Question.** What operation does a negative `SurfaceExtend` extension distance select?
+**Question.** Which saved fields distinguish a completed negative `SurfaceExtend` operation from a failed extension?
 
-**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive. A natural extension with a negative distance is a failed feature in Fusion: the scope keeps its frame, its signed distance and a history state, and the body keeps its unextended boundary.
+**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive. A natural extension with a negative distance is a failed feature in Fusion: the scope keeps its frame, its signed distance and a history state, and the body keeps its unextended boundary. A shorter-prologue scope stores `-3 mm`. Its ASM transition adds a planar face perpendicular to the source patch. The new face extends 3 mm along the negative normal of the patch.
 
-**Need.** Saves of a perpendicular extension and of a tangent extension of one edge by a positive distance and by its negation, with the resulting body geometry of each.
+**Need.** Paired saves of one perpendicular extension and one tangent extension at a positive distance and its negation, with the feature health and result body of each save. Compare the scope and ASM transition of each pair.
 
 **Conflict.** None.
 
