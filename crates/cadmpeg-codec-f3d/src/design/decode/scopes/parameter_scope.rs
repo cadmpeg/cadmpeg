@@ -48,6 +48,7 @@ use super::path_feature::{
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
 use super::point_data::exact_work_point_construction;
+use super::replace_face::exact_replace_face_operation;
 use super::sheet_metal::bind_hem_operation_from_parameters;
 use super::sheet_metal::exact_base_flange_operation;
 use super::sheet_metal::exact_edge_flange_operation;
@@ -548,6 +549,12 @@ pub(crate) fn decode_parameter_scopes(
                     );
                 }
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_replace_face_operation(ctx, bytes, &scope)?;
+                if let scope::DesignScopePayloadMut::ReplaceFace(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
@@ -1518,7 +1525,7 @@ fn parameter_scope_previous_history_offset_for_form(
 }
 
 #[cfg(test)]
-pub(in crate::design::decode) fn parse_parameter_scope(
+pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,

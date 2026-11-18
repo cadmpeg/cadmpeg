@@ -342,6 +342,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 self.encode_delete_face(faces, *heal)
             }
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
+                if operands.tangent_chain().is_some() {
+                    return self.encode_unsupported();
+                }
                 let targets = operands.targets();
                 let replacements = operands.replacements();
                 self.encode_replace_face(targets, replacements)

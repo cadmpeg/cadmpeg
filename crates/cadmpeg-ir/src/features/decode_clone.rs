@@ -15,16 +15,15 @@ use super::{
     GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
     LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
     NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
-    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
-    RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter,
-    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
-    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
-    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
-    SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
-    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
-    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
-    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    VertexSelection,
+    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolveConstruction,
+    RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands,
+    SelectionMembers, SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths,
+    SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth,
+    SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection,
+    SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions,
+    SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
+    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
+    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -449,8 +448,6 @@ rewrite_enum!(ProfileRef, []; {
     SpatialSketchSelection { sketch, selections },
     Planar(field0),
 });
-
-rewrite_record!(ReplaceFaceOperands, []; { targets, replacements });
 
 rewrite_record!(RevolutionAxis, []; { origin, direction, reference });
 

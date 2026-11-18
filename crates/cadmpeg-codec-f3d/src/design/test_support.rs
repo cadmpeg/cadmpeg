@@ -15,7 +15,7 @@ pub(crate) fn with_test_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> 
 }
 
 /// Build a record index under the default test decode policy.
-pub(in crate::design) fn indexed_record_offsets_for_test(
+pub(crate) fn indexed_record_offsets_for_test(
     bytes: &[u8],
 ) -> crate::design::decode::sketch::IndexedRecordOffsets {
     crate::design::decode::sketch::IndexedRecordOffsets::build(bytes)

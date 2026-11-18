@@ -2518,25 +2518,67 @@ fn nurbs_local_sum(
 ) -> Option<Homogeneous> {
     scratch.admit(Homogeneous::sum(
         scratch,
-        u_values
-            .iter()
-            .copied()
-            .enumerate()
-            .flat_map(|(i, u_value)| {
-                v_values
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .map(move |(j, v_value)| {
-                        let (pole_u, pole_v) = (u_span - u_degree + i, v_span - v_degree + j);
-                        Some((
-                            [u_value, v_value],
-                            surface.weight(pole_u, pole_v).map_or(1.0, NonZeroReal::get),
-                            surface.pole(pole_u, pole_v)?,
-                        ))
-                    })
-            }),
+        LocalPoleTerms {
+            surface,
+            first: [u_span - u_degree, v_span - v_degree],
+            values: [u_values, v_values],
+            at: [0, 0],
+        },
     ))?
+}
+
+/// The terms of [`nurbs_local_sum`] in `u`-major order: each blend pair with
+/// its pole's weight and position. Its size hint is that of a row-by-row
+/// traversal, so the sum charges its work at the same terms.
+#[derive(Clone)]
+struct LocalPoleTerms<'a> {
+    surface: &'a NurbsSurface,
+    first: [usize; 2],
+    values: [&'a [f64]; 2],
+    at: [usize; 2],
+}
+
+impl Iterator for LocalPoleTerms<'_> {
+    type Item = Option<([f64; 2], f64, FinitePoint3)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let [i, j] = self.at;
+        let u_value = *self.values[0].get(i)?;
+        let Some(&v_value) = self.values[1].get(j) else {
+            // An empty `v` window yields no term in any row.
+            self.at = [self.values[0].len(), 0];
+            return None;
+        };
+        self.at = if j + 1 < self.values[1].len() {
+            [i, j + 1]
+        } else {
+            [i + 1, 0]
+        };
+        let (pole_u, pole_v) = (self.first[0] + i, self.first[1] + j);
+        Some(Some((
+            [u_value, v_value],
+            self.surface
+                .weight(pole_u, pole_v)
+                .map_or(1.0, NonZeroReal::get),
+            match self.surface.pole(pole_u, pole_v) {
+                Some(pole) => pole,
+                None => return Some(None),
+            },
+        )))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let [rows, columns] = [self.values[0].len(), self.values[1].len()];
+        let [i, j] = self.at;
+        // A row is drawn when its first term is; `at` names the next term.
+        let drawn = if j == 0 { i } else { i + 1 };
+        let in_row = if j == 0 { 0 } else { columns - j };
+        if drawn < rows {
+            (in_row, None)
+        } else {
+            (in_row, Some(in_row))
+        }
+    }
 }
 
 impl NurbsSurfaceLocal<'_> {
@@ -8518,8 +8560,9 @@ fn polar_angle_differential(
             let mut numerator = ExactSignedSum::default();
             numerator.add_product(point.u, acceleration.v);
             numerator.add_product(-point.v, acceleration.u);
-            numerator.add_scaled_product(dot.finish(), first.negated())?;
-            numerator.add_scaled_product(dot.finish(), first.negated())?;
+            let dot = dot.finish();
+            numerator.add_scaled_product(dot, first.negated())?;
+            numerator.add_scaled_product(dot, first.negated())?;
             numerator
                 .finish()
                 .map_or(Some(FiniteReal::ZERO), |value| value.quotient(radius).ok())
