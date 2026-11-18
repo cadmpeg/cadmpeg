@@ -5039,11 +5039,14 @@ pub(crate) fn apply_carrier_classification(
 ) {
     let untransferred_mesh_containers = carriers
         .paramesh_entries
-        .saturating_sub(carriers.unjoined_mesh_containers);
+        .checked_sub(carriers.unjoined_mesh_containers)
+        .filter(|containers| *containers > 0);
     if carriers.decoded_meshes > 0 {
         apply_mesh_body_classification(report, carriers.brep_streams, carriers.decoded_meshes);
     } else if !assembly {
-        if untransferred_mesh_containers > 0 && carriers.brep_entries == 0 {
+        if let (Some(untransferred_mesh_containers), 0) =
+            (untransferred_mesh_containers, carriers.brep_entries)
+        {
             push_loss_vec(
                 &mut report.losses,
                 F3dLossCode::MeshOnlyDesignUntransferred,
