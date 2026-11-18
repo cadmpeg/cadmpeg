@@ -545,3 +545,55 @@ fn surface_untrim_face_groups_admit_both_face_envelopes_with_exact_ownership() {
         );
     }
 }
+
+#[test]
+fn replacement_face_groups_validate_both_face_envelopes_and_record_bounds() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    for (kind, length) in [
+        (ConstructionRecipeKind::Face, 16),
+        (ConstructionRecipeKind::BoundedFace, 24),
+    ] {
+        for role in [DesignOperandRole::ROLE_0X9, DesignOperandRole::ROLE_0X10] {
+            let findings = operand_findings(
+                DesignFeatureKind::ReplaceFace,
+                kind,
+                length,
+                1_047,
+                Some(role),
+                None,
+                0,
+            );
+            assert!(findings.is_empty(), "{findings:#?}");
+            assert_eq!(
+                operand_findings(
+                    DesignFeatureKind::ReplaceFace,
+                    kind,
+                    length,
+                    1_047,
+                    Some(role),
+                    Some(1_047 + length + 7),
+                    0
+                )
+                .len(),
+                1
+            );
+        }
+        for role in [None, Some(DesignOperandRole::ROLE_0X21)] {
+            assert_eq!(
+                operand_findings(
+                    DesignFeatureKind::ReplaceFace,
+                    kind,
+                    length,
+                    1_047,
+                    role,
+                    None,
+                    0
+                )
+                .len(),
+                1
+            );
+        }
+    }
+}

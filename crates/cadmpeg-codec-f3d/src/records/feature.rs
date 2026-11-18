@@ -6,10 +6,12 @@ pub(crate) mod assembly;
 pub(crate) mod assembly_features;
 pub(crate) mod base_feature;
 pub(crate) mod body_ops;
+pub(crate) mod boundary_fill;
 pub(crate) mod chamfer_set;
 pub(crate) mod coil;
 pub(crate) mod combine;
 pub(crate) mod deleted_members;
+pub(crate) mod derived_base;
 pub(crate) mod direct_face;
 pub(crate) mod emboss;
 pub(crate) mod extrude;
@@ -26,10 +28,12 @@ pub(crate) mod position;
 pub(crate) mod primitives;
 pub(crate) mod scope;
 pub(crate) mod sheet_metal;
+pub(crate) mod silhouette_split;
 pub(crate) mod surface_ops;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
 pub(crate) mod thread;
+pub(crate) mod work_axes;
 pub(crate) mod work_geometry;

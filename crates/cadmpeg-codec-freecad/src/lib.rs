@@ -883,7 +883,7 @@ impl CodecBackend for FcstdCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let scan = container::scan(ctx, root)?;
-        Ok(container::summarize(&scan))
+        container::summarize(ctx, scan)
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
@@ -943,10 +943,8 @@ impl CodecBackend for FcstdCodec {
                 ctx,
             )?;
         }
-        for given_up in std::mem::take(&mut scan.given_up) {
-            let loss = given_up.commit(ctx, &mut ir, &mut source_fidelity)?;
-            scan.losses.push(loss);
-        }
+        let unreadable_losses_at = scan.losses.len();
+        let mut unreadable_drops = std::collections::BTreeMap::new();
         let namespace = ir.native.namespace_mut("fcstd");
         if let Some(persistence) = &scan.persistence {
             namespace.set_arena(ctx, "document", std::slice::from_ref(&persistence.document))?;
@@ -964,8 +962,15 @@ impl CodecBackend for FcstdCodec {
                 document_xml,
                 persistence::Vocabulary::from_declaration(schema_version)?,
             )?;
-            scan.losses.extend(graph.losses);
-            persistence::resolve_side_entries(&mut graph.properties, &scan.data, &mut scan.losses)?;
+            scan.losses.extend(std::mem::take(&mut graph.losses));
+            unreadable_drops =
+                persistence::drop_unreadable(ctx, &mut graph, &scan.unreadable_names)?;
+            persistence::resolve_side_entries(
+                ctx,
+                &mut graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
             let mut entry_records = container::entry_records(ctx, &scan, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(ctx, &graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) = element_map::parse(
@@ -1249,6 +1254,13 @@ impl CodecBackend for FcstdCodec {
                 "byte_coverage",
                 std::slice::from_ref(&coverage),
             )?;
+        }
+        for (index, entry) in std::mem::take(&mut scan.unreadable).into_iter().enumerate() {
+            let drops = unreadable_drops.get(&entry.name);
+            let loss = entry
+                .give_up(ctx, drops)?
+                .commit(ctx, &mut ir, &mut source_fidelity)?;
+            scan.losses.insert(unreadable_losses_at + index, loss);
         }
         let mut losses = if ctx.container_only() {
             Vec::new()

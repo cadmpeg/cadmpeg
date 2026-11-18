@@ -56,7 +56,18 @@ pub(crate) struct FlangePayload {
     state: i32,
     pub(crate) children: PmDcReferenceList,
     value: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_attachment_edges"
+    )]
+    pub(crate) attachment_edges: Option<super::contour::AttachmentEdges>,
 }
+cadmpeg_core::named_optional_field!(
+    deserialize_attachment_edges,
+    super::contour::AttachmentEdges,
+    "attachment_edges"
+);
 
 impl RecordPayload for FlangePayload {
     const KIND: &'static str = "sheet-metal-flange";
@@ -79,7 +90,24 @@ pub(crate) fn parse(
         state,
         children,
         value,
+        attachment_edges: None,
     })
+}
+
+impl Flange {
+    pub(super) fn with_attachment_edges(
+        &self,
+        edges: Option<super::contour::AttachmentEdges>,
+    ) -> Self {
+        let mut payload = (**self).clone();
+        payload.attachment_edges = edges;
+        Self::new(
+            payload,
+            self.identity.type_id.clone(),
+            self.identity.segment_token.clone(),
+            self.identity.record_ordinal,
+        )
+    }
 }
 
 pub(crate) fn valid<'a>(flange: &Flange, type_at: impl Fn(u32) -> Option<&'a str>) -> bool {

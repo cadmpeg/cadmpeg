@@ -9,6 +9,8 @@ mod partial_geometry;
 mod plant_units;
 mod pmi_scope;
 mod schema_module_edition;
+mod spindle_sheets;
+mod tessellated_parts;
 mod tolerance_zones;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
