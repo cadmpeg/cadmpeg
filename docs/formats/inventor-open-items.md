@@ -342,6 +342,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Unfold and Refold records with slot 3 false, a nonempty fold list, another fold enumeration value, and a partial bend selection. A record or join that names the Unfold whose bends a Refold restores, including for several open Unfolds on one body. The face-revision join of state-3 face selectors.
 
+### DE-20. Contour-flange bend position
+
+**Question.** Which contour-attachment operands set the signed setback from the selected input boundary to the bend tangent line?
+
+**Known.** The slot-12 list selects a free boundary of the input sheet through an edge-selector source index and key. The bend tangent line can lie inside the input face at a setback from that boundary.
+
+**Need.** Identify the positioning control and its signed offset rule in terms of the sheet thickness, bend radius, and attachment directions.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions
