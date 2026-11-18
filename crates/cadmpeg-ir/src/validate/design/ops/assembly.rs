@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Assembly operations (§6.7).
-//!
-//! An occurrence is owned by the definition that places it. Until product
-//! definitions list their occurrences, a child occurrence is owned by its
-//! parent occurrence's prototype, and a root occurrence's owner is not
-//! decided here, so no ownership rule fires on it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -23,22 +18,29 @@ use crate::design::ops::shared::{
 };
 use crate::design::selection::{PickContext, PickTarget, StepRef};
 use crate::ids::OccurrenceId;
-use crate::products::OccurrenceParent;
 use crate::report::check::Finding;
 use crate::scalar::{Angle, Length};
 
 use super::super::records::{DesignRecords, MemberKey};
 
-/// The definition that owns an occurrence, where its parent decides it.
+/// The definition whose `occurrences` lists an occurrence (§8.1).
 fn owner<'a>(index: &DesignRecords<'a>, occurrence: &str) -> Option<&'a str> {
-    match &index.occurrences.get(occurrence)?.parent {
-        OccurrenceParent::Occurrence { occurrence: parent } => index.prototype(parent.as_str()),
-        OccurrenceParent::Root {} => None,
-    }
+    index
+        .ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| {
+            definition
+                .occurrences
+                .iter()
+                .any(|o| o.as_str() == occurrence)
+        })
+        .map(|definition| definition.id.as_str())
 }
 
-/// An occurrence a feature names exists, and its owner, where decided, is a
-/// definition the feature's scope spans.
+/// An occurrence a feature names exists and is owned by a definition the
+/// feature's scope spans.
 fn check_owned(
     index: &DesignRecords<'_>,
     site: Site<'_>,
@@ -54,7 +56,15 @@ fn check_owned(
         );
         return;
     }
-    let (Some(scope), Some(owner)) = (site.scope, owner(index, occurrence)) else {
+    let Some(owner) = owner(index, occurrence) else {
+        error(
+            findings,
+            site.entity,
+            format_args!("{field} names {occurrence}, which no definition owns"),
+        );
+        return;
+    };
+    let Some(scope) = site.scope else {
         return;
     };
     if !index.spanned_definitions(scope).contains(owner) {

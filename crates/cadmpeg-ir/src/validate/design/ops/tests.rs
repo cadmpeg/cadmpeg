@@ -50,6 +50,7 @@ use crate::design::selection::{
 use crate::design::units::ValueKind;
 use crate::document::CadIr;
 use crate::features::{FeatureId, ParameterId};
+use crate::ids::OccurrenceId;
 use crate::math::Point2;
 use crate::products::Occurrence;
 use crate::report::Severity;
@@ -842,16 +843,23 @@ fn a_flange_states_one_width_per_edge() {
 
 // ----------------------------------------------------------------- assembly operations
 
-fn occurrence(key: &str) -> Occurrence {
-    serde_json::from_value(serde_json::json!({
-        "id": format!("test:design:occurrence#{key}"),
-        "prototype": {"kind": "local", "definition": "test:design:definition#part"},
-        "parent": {"kind": "root"},
-        "ordinal": 0,
-        "transform": serde_json::to_value(Transform::identity()).unwrap(),
-        "scale": [1.0, 1.0, 1.0]
-    }))
-    .unwrap()
+/// Adds occurrences of the part, owned by the part.
+fn own_occurrences(ir: &mut CadIr, keys: &[&str]) {
+    for key in keys {
+        let occurrence: OccurrenceId = id("occurrence", key);
+        ir.model.occurrences.push(Occurrence::new(
+            occurrence.clone(),
+            id("definition", "part"),
+            None,
+        ));
+        ir.model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id.as_str() == "test:design:definition#part")
+            .unwrap()
+            .occurrences
+            .push(occurrence);
+    }
 }
 
 #[test]
@@ -864,7 +872,7 @@ fn a_place_set_lists_two_distinct_occurrences() {
         }))
     };
     let mut ir = with(set(&["a", "a"]));
-    ir.model.occurrences.push(occurrence("a"));
+    own_occurrences(&mut ir, &["a"]);
     assert_finding(&ir, "lists an occurrence twice, or fewer than 2");
     assert_finding(
         &with(set(&["absent", "b"])),
@@ -884,7 +892,7 @@ fn a_place_states_its_base_with_its_placement() {
         source_settings: BTreeMap::new(),
     };
     let mut ir = with(FeatureOperation::Place(Box::new(place)));
-    ir.model.occurrences.push(occurrence("a"));
+    own_occurrences(&mut ir, &["a"]);
     assert_finding(&ir, "Place.base is present where placement is not");
 }
 
@@ -966,9 +974,7 @@ fn component_instances_hold_one_occurrence_per_seed() {
         source_settings: BTreeMap::new(),
     };
     let mut ir = with(FeatureOperation::ComponentPattern(Box::new(pattern)));
-    ir.model
-        .occurrences
-        .extend([occurrence("a"), occurrence("b")]);
+    own_occurrences(&mut ir, &["a", "b"]);
     assert_finding(&ir, "lists 2 occurrences for 1 seeds");
     let mirror = MirrorComponents {
         seeds: named(vec![entity(NameKind::Body, 1)]),
@@ -1004,7 +1010,7 @@ fn a_new_component_is_created_once() {
     };
     ir.design.features[1].definition.operation =
         FeatureOperation::MirrorComponents(Box::new(mirror));
-    ir.model.occurrences.push(occurrence("a"));
+    own_occurrences(&mut ir, &["a"]);
     assert_finding(&ir, "which this combine's new_component creates");
 }
 
