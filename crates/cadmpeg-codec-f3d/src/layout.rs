@@ -10885,6 +10885,42 @@ pub(crate) mod sheet_metal_contour_compact_carrier {
     pub(crate) const CARRIER_REFERENCE: usize = 5;
 }
 
+/// Byte offsets for the `split_body_scope_prefix` record.
+///
+/// Spec §3.1. Record length 20 B.
+///
+/// ```text
+/// The common parameter-scope prologue begins at the leading-block presence byte.
+/// ```
+pub(crate) mod split_body_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `leading_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_BLOCK_PRESENCE: usize = 19;
+    /// Stated value of `leading_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_BLOCK_PRESENCE_VALUE: u8 = 0;
+}
+
+/// Byte offsets for the `split_body_extension` record.
+///
+/// Spec §3.1. Record length 5 B.
+///
+/// ```text
+/// Offsets start at the end of the parameter-scope prologue. A nullable local record reference follows this control.
+/// ```
+pub(crate) mod split_body_extension {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `extend_tool` (`u8`). Spec §3.1.
+    pub(crate) const EXTEND_TOOL: usize = 0;
+    /// Offset of `following_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FOLLOWING_WORD: usize = 1;
+    /// Stated value of `following_word` (`u32`). Spec §3.1.
+    pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0001;
+}
+
 /// Byte offsets for the `mesh_plane_cut_scope_prefix` record.
 ///
 /// Spec §3.1. Record length 162 B.
