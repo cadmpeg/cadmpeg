@@ -2,11 +2,18 @@
 //! The v11 operation of one feature-tree node: the operation family its
 //! native class establishes, or the native operation where none does.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_ir::design::construction::{
+    Construction, ConstructionInput, InputReference, InputRole, Relation, Subject,
+};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::options::NativeOptions;
+use cadmpeg_ir::design::selection::{
+    Anchor, Members, PickTarget, Picked, Picks, PrincipalEntity, Selection,
+};
 
 use crate::classification::{classify, principal_plane_with_siblings, FeatureClass};
 use crate::history::classify::principal_plane_in_history;
@@ -41,9 +48,46 @@ pub(super) fn operation(
     }
 }
 
-/// The datum of an origin feature (§6.2).
+/// The datum of the Origin feature (§6.2): one point coincident with the
+/// definition's principal origin.
 pub(super) fn origin() -> FeatureOperation {
-    unresolved(OperationFamily::Datum)
+    let pick = Picked {
+        target: PickTarget::Principal {
+            entity: PrincipalEntity::Origin,
+            container: None,
+        },
+        context: None,
+        native: None,
+        domain: None,
+        witness: None,
+        resolved: None,
+    };
+    let input = ConstructionInput {
+        role: Some(InputRole {
+            subject: Subject::Whole,
+            relation: Relation::Coincident,
+        }),
+        reference: Some(InputReference::Picks(Selection {
+            at: Anchor::Input,
+            picks: Members::new(vec![pick]).map_or(Picks::Unread, Picks::Named),
+            native: None,
+        })),
+        value: None,
+        reversed: None,
+    };
+    FeatureOperation::Datum(Box::new(Datum {
+        element: DatumElement::Points(vec![Construction {
+            inputs: vec![input],
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved: None,
+            resolved_in: BTreeMap::new(),
+        }]),
+        link: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+    }))
 }
 
 fn unresolved(family: OperationFamily) -> FeatureOperation {

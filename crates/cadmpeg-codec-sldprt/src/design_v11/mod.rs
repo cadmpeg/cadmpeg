@@ -5,12 +5,15 @@
 //!
 //! The part is one design scope over its root definition, which owns the
 //! bodies of the current geometry. The feature tree is one ordered timeline
-//! whose current state, at its end, holds those bodies. A part whose history
+//! whose current state, at its end, holds those bodies; the scope holds the
+//! part's parameters and configurations. A part whose history
 //! holds no feature, or that has no history the decoder reads, follows the
 //! no-timeline rule: one unordered group holding one stored base feature per
 //! body.
 
+mod configurations;
 mod operation;
+mod parameters;
 #[cfg(test)]
 mod tests;
 mod tree;
@@ -47,6 +50,9 @@ pub(crate) fn project(
         return Ok(0);
     }
     let definition = root_definition();
+    let parameters = parameters::parameters(histories, &timeline, &definition)?;
+    let configurations =
+        configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let (container, features, current) = if timeline.features.is_empty() {
         no_timeline(&bodies)?
     } else {
@@ -70,7 +76,7 @@ pub(crate) fn project(
         };
         (container, timeline.features, current)
     };
-    let added = 3 + features.len();
+    let added = 3 + features.len() + parameters.len() + configurations.records.len();
     ir.model.product_definitions.push(ProductDefinition {
         id: definition.clone(),
         kind: ProductDefinitionKind::Part,
@@ -87,13 +93,15 @@ pub(crate) fn project(
     ir.design.scopes.push(DesignScope {
         definition,
         roots: vec![container.id().clone()],
-        active_configuration: None,
+        active_configuration: configurations.active,
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current,
     });
     ir.design.containers.push(container);
     ir.design.features.extend(features);
+    ir.design.parameters.extend(parameters);
+    ir.design.configurations.extend(configurations.records);
     Ok(added)
 }
 

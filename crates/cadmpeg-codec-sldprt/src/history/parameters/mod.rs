@@ -854,6 +854,11 @@ impl<'a> ExpressionIdentifier<'a> {
         &self.value
     }
 
+    /// The token as the source spells it, quotes included.
+    pub(crate) fn raw(&self) -> &'a str {
+        self.raw
+    }
+
     /// Whether the source spelled this identifier in quotes.
     pub(super) fn is_quoted(&self) -> bool {
         self.quoted

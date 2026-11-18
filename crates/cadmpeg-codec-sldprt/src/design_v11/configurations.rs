@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The part's configurations (§5.11).
 //!
-//! SolidWorks configurations are peers, so the base is the configuration
+//! `SolidWorks` configurations are peers, so the base is the configuration
 //! active at decode, which states no overrides. Another configuration states
 //! the material it assigns where that differs from the active one's. Its
 //! parameter and suppression differences live in its own feature-input lane,
@@ -42,7 +42,12 @@ pub(super) fn configurations(
         .collect::<Vec<_>>();
     let selectors = native
         .iter()
-        .map(|configuration| (Some(configuration.name.as_str()), configuration.source_index))
+        .map(|configuration| {
+            (
+                Some(configuration.name.as_str()),
+                configuration.source_index,
+            )
+        })
         .collect::<Vec<_>>();
     let Some(active) = crate::decode::active_configuration_position(source, &selectors) else {
         return Ok(Configurations::default());

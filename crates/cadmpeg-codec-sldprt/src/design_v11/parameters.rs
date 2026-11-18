@@ -5,7 +5,7 @@
 //!
 //! A dimension whose text is one literal holds a `Neutral` expression that
 //! keeps the literal's authored unit. Any other text is a `Source`
-//! expression in the SolidWorks dialect, its references to parameters as
+//! expression in the `SolidWorks` dialect, its references to parameters as
 //! reference tokens. A value is the cache the file stores: the literal, or
 //! the dimension's stored `Value`.
 
@@ -15,7 +15,9 @@ use std::num::NonZeroI8;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp};
+use cadmpeg_ir::design::expr::{
+    Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
+};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
@@ -157,7 +159,12 @@ fn read(entry: &Entry<'_>, aliases: &Aliases) -> Reading {
             None,
         ),
     };
-    let display = display.filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH));
+    let display = display
+        .filter(|_| kind == ValueKind::Quantity(Quantity::LENGTH))
+        .map(|display| match display {
+            cadmpeg_ir::features::DimensionDisplay::Diameter => DimensionDisplay::Diameter,
+            cadmpeg_ir::features::DimensionDisplay::Radius => DimensionDisplay::Radius,
+        });
     Reading {
         kind,
         expression: Expression::Source {
@@ -205,7 +212,7 @@ fn is_text(text: &str) -> bool {
         && text.parse::<f64>().is_err()
 }
 
-/// The units a SolidWorks literal may carry, longest suffix first.
+/// The units a `SolidWorks` literal may carry, longest suffix first.
 const LITERAL_UNITS: [(&str, UnitSymbol); 11] = [
     ("deg", UnitSymbol::Deg),
     ("rad", UnitSymbol::Rad),
@@ -235,7 +242,11 @@ fn literal(
     let text = text.trim();
     if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("false") {
         let flag = text.eq_ignore_ascii_case("true");
-        return Some((Node::Boolean(flag), ValueKind::Boolean, ParameterValue::Boolean(flag)));
+        return Some((
+            Node::Boolean(flag),
+            ValueKind::Boolean,
+            ParameterValue::Boolean(flag),
+        ));
     }
     let (number, unit) = LITERAL_UNITS
         .iter()
@@ -249,7 +260,10 @@ fn literal(
     {
         return None;
     }
-    let signed = number.parse::<f64>().ok().filter(|value| value.is_finite())?;
+    let signed = number
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())?;
     let magnitude = NonNegativeReal::new(signed.abs())?;
     let (kind, value) = match unit {
         Some(symbol) => {
