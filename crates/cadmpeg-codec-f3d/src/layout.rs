@@ -10336,6 +10336,32 @@ pub(crate) mod captured_position_suffix {
     pub(crate) const ZERO_TAIL_VALUE: [u8; 3] = [0x00, 0x00, 0x00];
 }
 
+/// Byte offsets for the `captured_position_v4` record.
+///
+/// Spec §Captured component positions. Record length 319 B.
+pub(crate) mod captured_position_v4 {
+    /// Record length in bytes. Spec §Captured component positions.
+    pub(crate) const LEN: usize = 319;
+    /// Offset of `row_count` (`u32`, little-endian). Spec §Captured component positions.
+    pub(crate) const ROW_COUNT: usize = 95;
+    /// Stated value of `row_count` (`u32`). Spec §Captured component positions.
+    pub(crate) const ROW_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `row` (`bytes[141]`). Spec §Captured component positions.
+    pub(crate) const ROW: usize = 99;
+    /// Offset of `identity_length` (`u32`, little-endian). Spec §Captured component positions.
+    pub(crate) const IDENTITY_LENGTH: usize = 240;
+}
+
+/// Byte offsets for the `captured_position_v4_identity_locator` record.
+///
+/// Spec §Captured component positions. Record length 62 B.
+pub(crate) mod captured_position_v4_identity_locator {
+    /// Record length in bytes. Spec §Captured component positions.
+    pub(crate) const LEN: usize = 62;
+    /// Stated value of `discriminator` (`u32`). Spec §Captured component positions.
+    pub(crate) const DISCRIMINATOR_VALUE: u32 = 0x0000_0001;
+}
+
 /// Byte offsets for the `unmarked_sphere_local_frame` record.
 ///
 /// Spec §3.1. Record length 128 B.
