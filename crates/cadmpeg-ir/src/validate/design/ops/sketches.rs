@@ -964,22 +964,20 @@ fn check_bound_scope<T: serde::Serialize>(
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn check_relation<S: Space>(
     ops: &Operands<'_, '_, S>,
     relation: &SketchRelation<S>,
     findings: &mut Vec<Finding>,
 ) {
-    use SketchRelation as R;
     match relation {
-        R::Coincident { a, b }
-        | R::Collinear { a, b }
-        | R::Parallel { a, b }
-        | R::Perpendicular { a, b } => {
+        SketchRelation::Coincident { a, b }
+        | SketchRelation::Collinear { a, b }
+        | SketchRelation::Parallel { a, b }
+        | SketchRelation::Perpendicular { a, b } => {
             ops.operand(a, findings);
             ops.operand(b, findings);
         }
-        R::Concentric { a, b } => {
+        SketchRelation::Concentric { a, b } => {
             for operand in [a, b] {
                 ops.operand(operand, findings);
                 if ops
@@ -993,7 +991,7 @@ fn check_relation<S: Space>(
                 }
             }
         }
-        R::Tangent { a, b, contact } | R::Curvature { a, b, contact } => {
+        SketchRelation::Tangent { a, b, contact } | SketchRelation::Curvature { a, b, contact } => {
             ops.operand(a, findings);
             ops.operand(b, findings);
             match contact {
@@ -1024,7 +1022,7 @@ fn check_relation<S: Space>(
                 None => {}
             }
         }
-        R::Horizontal { a, b } | R::Vertical { a, b } => {
+        SketchRelation::Horizontal { a, b } | SketchRelation::Vertical { a, b } => {
             ops.planar_only(findings, "Horizontal or Vertical");
             ops.operand(a, findings);
             let fits = match b {
@@ -1043,7 +1041,7 @@ fn check_relation<S: Space>(
                 );
             }
         }
-        R::Midpoint { point, of } => {
+        SketchRelation::Midpoint { point, of } => {
             ops.entity(point, findings);
             ops.operand(of, findings);
             if !ops.point(point) || ops.shape(of).is_some_and(|shape| !shape.bounded()) {
@@ -1053,12 +1051,12 @@ fn check_relation<S: Space>(
                 );
             }
         }
-        R::Symmetric { a, b, about } => {
+        SketchRelation::Symmetric { a, b, about } => {
             for operand in [a, b, about] {
                 ops.operand(operand, findings);
             }
         }
-        R::Equal { members } => {
+        SketchRelation::Equal { members } => {
             for member in members {
                 ops.operand(member, findings);
             }
@@ -1069,13 +1067,13 @@ fn check_relation<S: Space>(
                 ops.refuse(findings, format_args!("Equal takes at least two members of one kind class, lines or circular entities"));
             }
         }
-        R::EqualDistance { first, second } => {
+        SketchRelation::EqualDistance { first, second } => {
             for operand in first.iter().chain(second) {
                 ops.operand(operand, findings);
             }
         }
-        R::Fixed { of } => ops.operand(of, findings),
-        R::Distance {
+        SketchRelation::Fixed { of } => ops.operand(of, findings),
+        SketchRelation::Distance {
             a, b, along, value, ..
         } => {
             ops.operand(a, findings);
@@ -1096,7 +1094,7 @@ fn check_relation<S: Space>(
                 None => {}
             }
         }
-        R::Angle {
+        SketchRelation::Angle {
             between, sector, ..
         } => {
             if matches!(sector, Some(AngleSector::Directed { .. })) {
@@ -1131,7 +1129,7 @@ fn check_relation<S: Space>(
                 }
             }
         }
-        R::Radial { of, measure, .. } => {
+        SketchRelation::Radial { of, measure, .. } => {
             ops.entity(of, findings);
             let ellipse = matches!(
                 measure,
@@ -1151,7 +1149,7 @@ fn check_relation<S: Space>(
                 );
             }
         }
-        R::Length { of, .. } => {
+        SketchRelation::Length { of, .. } => {
             if of.is_empty() {
                 ops.refuse(findings, format_args!("Length.of is empty"));
             }
@@ -1159,7 +1157,7 @@ fn check_relation<S: Space>(
                 ops.entity(entity, findings);
             }
         }
-        R::Offset(offset) => {
+        SketchRelation::Offset(offset) => {
             if offset.pairs.is_empty() {
                 ops.refuse(findings, format_args!("SketchOffset.pairs is empty"));
             }
@@ -1174,8 +1172,8 @@ fn check_relation<S: Space>(
                 }
             }
         }
-        R::Pattern(pattern) => check_pattern(ops, pattern, findings),
-        R::Polygon(polygon) => {
+        SketchRelation::Pattern(pattern) => check_pattern(ops, pattern, findings),
+        SketchRelation::Polygon(polygon) => {
             ops.entity(&polygon.center, findings);
             for edge in &polygon.edges {
                 ops.entity(edge, findings);
@@ -1212,7 +1210,7 @@ fn check_relation<S: Space>(
                 None => {}
             }
         }
-        R::Slot(slot) => {
+        SketchRelation::Slot(slot) => {
             for entity in slot.centers.iter().chain(&slot.edges) {
                 ops.entity(entity, findings);
             }
@@ -1223,14 +1221,14 @@ fn check_relation<S: Space>(
                 );
             }
         }
-        R::Pierce { point, curve } => {
+        SketchRelation::Pierce { point, curve } => {
             ops.entity(point, findings);
             ops.operand(curve, findings);
             if !ops.point(point) {
                 ops.refuse(findings, format_args!("Pierce.point is no point entity"));
             }
         }
-        R::Weight { pole, .. } => {
+        SketchRelation::Weight { pole, .. } => {
             ops.entity(pole, findings);
             let holds = ops
                 .entities
@@ -1249,7 +1247,7 @@ fn check_relation<S: Space>(
                 );
             }
         }
-        R::FixedLength { of } | R::FixedAngle { of } => {
+        SketchRelation::FixedLength { of } | SketchRelation::FixedAngle { of } => {
             for entity in of {
                 ops.entity(entity, findings);
             }
@@ -1265,7 +1263,7 @@ fn check_relation<S: Space>(
                 );
             }
         }
-        R::Native { operands, .. } => {
+        SketchRelation::Native { operands, .. } => {
             for operand in operands {
                 ops.operand(operand, findings);
             }

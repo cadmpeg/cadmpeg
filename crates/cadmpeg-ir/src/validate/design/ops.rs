@@ -108,59 +108,76 @@ fn check_operation(
     operation: &FeatureOperation,
     findings: &mut Vec<Finding>,
 ) {
-    use FeatureOperation as Op;
     match operation {
-        Op::Extrude(extrude) => swept::check_extrude(index, site, extrude, findings),
-        Op::Revolve(revolve) => swept::check_revolve(index, site, revolve, findings),
-        Op::Sweep(sweep) => swept::check_sweep(index, site, sweep, findings),
-        Op::HelicalSweep(sweep) => swept::check_helical_sweep(index, site, sweep, findings),
-        Op::Rib(rib) => swept::check_rib(index, site, rib, findings),
-        Op::Primitive(primitive) => swept::check_primitive(index, site, primitive, findings),
-        Op::Loft(loft) => swept::check_loft(index, site, loft, findings),
-        Op::Fillet(fillet) => dressup::check_fillet(site, fillet, findings),
-        Op::Chamfer(chamfer) => dressup::check_chamfer(site, chamfer, findings),
-        Op::Shell(shell) => dressup::check_shell(site, shell, findings),
-        Op::Draft(draft) => dressup::check_draft(site, draft, findings),
-        Op::Thicken(thicken) => dressup::check_thicken(index, site, thicken, findings),
-        Op::Offset(offset) => dressup::check_offset(index, site, offset, findings),
-        Op::Hole(hole) => dressup::check_hole(index, site, hole, findings),
-        Op::Thread(thread) => dressup::check_thread(index, site, thread, findings),
-        Op::Emboss(emboss) => dressup::check_emboss(index, site, emboss, findings),
-        Op::Dome(dome) => dressup::check_dome(site, dome, findings),
-        Op::Decal(decal) => dressup::check_decal(site, decal, findings),
-        Op::Pattern(pattern) => body::check_pattern(index, site, pattern, findings),
-        Op::TemplateInstance(instance) => {
+        FeatureOperation::Extrude(extrude) => swept::check_extrude(index, site, extrude, findings),
+        FeatureOperation::Revolve(revolve) => swept::check_revolve(index, site, revolve, findings),
+        FeatureOperation::Sweep(sweep) => swept::check_sweep(index, site, sweep, findings),
+        FeatureOperation::HelicalSweep(sweep) => {
+            swept::check_helical_sweep(index, site, sweep, findings)
+        }
+        FeatureOperation::Rib(rib) => swept::check_rib(index, site, rib, findings),
+        FeatureOperation::Primitive(primitive) => {
+            swept::check_primitive(index, site, primitive, findings)
+        }
+        FeatureOperation::Loft(loft) => swept::check_loft(index, site, loft, findings),
+        FeatureOperation::Fillet(fillet) => dressup::check_fillet(site, fillet, findings),
+        FeatureOperation::Chamfer(chamfer) => dressup::check_chamfer(site, chamfer, findings),
+        FeatureOperation::Shell(shell) => dressup::check_shell(site, shell, findings),
+        FeatureOperation::Draft(draft) => dressup::check_draft(site, draft, findings),
+        FeatureOperation::Thicken(thicken) => {
+            dressup::check_thicken(index, site, thicken, findings)
+        }
+        FeatureOperation::Offset(offset) => dressup::check_offset(index, site, offset, findings),
+        FeatureOperation::Hole(hole) => dressup::check_hole(index, site, hole, findings),
+        FeatureOperation::Thread(thread) => dressup::check_thread(index, site, thread, findings),
+        FeatureOperation::Emboss(emboss) => dressup::check_emboss(index, site, emboss, findings),
+        FeatureOperation::Dome(dome) => dressup::check_dome(site, dome, findings),
+        FeatureOperation::Decal(decal) => dressup::check_decal(site, decal, findings),
+        FeatureOperation::Pattern(pattern) => body::check_pattern(index, site, pattern, findings),
+        FeatureOperation::TemplateInstance(instance) => {
             body::check_template_instance(index, site, instance, findings);
         }
-        Op::Combine(combine) => body::check_combine(site, combine, findings),
-        Op::Split(split) => body::check_split(site, split, findings),
-        Op::TransformBodies(transform) => body::check_transform_bodies(site, transform, findings),
-        Op::Flex(flex) => body::check_flex(site, flex, findings),
-        Op::MoveFaces(faces) => body::check_move_faces(site, faces, findings),
-        Op::DeleteFaces(faces) => body::check_delete_faces(site, faces, findings),
-        Op::ReplaceFaces(faces) => body::check_replace_faces(site, faces, findings),
-        Op::Graft(graft) => body::check_graft(site, graft, findings),
-        Op::Patch(patch) => surface::check_patch(index, site, patch, findings),
-        Op::Knit(knit) => surface::check_knit(index, site, knit, findings),
-        Op::Unsew(unsew) => surface::check_unsew(site, unsew, findings),
-        Op::Extend(extend) => surface::check_extend(index, site, extend, findings),
-        Op::ImplicitSweep(sweep) => surface::check_implicit_sweep(index, site, sweep, findings),
-        Op::BoundaryFill(fill) => surface::check_boundary_fill(index, site, fill, findings),
-        Op::Curve(curve) => surface::check_curve(site, curve, findings),
-        Op::Form(form) => surface::check_form(site, form, findings),
-        Op::SheetMetal(sheet) => sheet_metal::check_sheet_metal(index, site, sheet, findings),
-        Op::Mesh(mesh) => surface::check_mesh(index, site, mesh, findings),
-        Op::Place(place) => assembly::check_place(index, site, place, findings),
-        Op::PlaceSet(set) => assembly::check_place_set(index, site, set, findings),
-        Op::Joint(joint) => assembly::check_joint(site, joint, findings),
-        Op::RigidGroup(group) => assembly::check_rigid_group(index, site, group, findings),
-        Op::ComponentPattern(pattern) => {
+        FeatureOperation::Combine(combine) => body::check_combine(site, combine, findings),
+        FeatureOperation::Split(split) => body::check_split(site, split, findings),
+        FeatureOperation::TransformBodies(transform) => {
+            body::check_transform_bodies(site, transform, findings)
+        }
+        FeatureOperation::Flex(flex) => body::check_flex(site, flex, findings),
+        FeatureOperation::MoveFaces(faces) => body::check_move_faces(site, faces, findings),
+        FeatureOperation::DeleteFaces(faces) => body::check_delete_faces(site, faces, findings),
+        FeatureOperation::ReplaceFaces(faces) => body::check_replace_faces(site, faces, findings),
+        FeatureOperation::Graft(graft) => body::check_graft(site, graft, findings),
+        FeatureOperation::Patch(patch) => surface::check_patch(index, site, patch, findings),
+        FeatureOperation::Knit(knit) => surface::check_knit(index, site, knit, findings),
+        FeatureOperation::Unsew(unsew) => surface::check_unsew(site, unsew, findings),
+        FeatureOperation::Extend(extend) => surface::check_extend(index, site, extend, findings),
+        FeatureOperation::ImplicitSweep(sweep) => {
+            surface::check_implicit_sweep(index, site, sweep, findings)
+        }
+        FeatureOperation::BoundaryFill(fill) => {
+            surface::check_boundary_fill(index, site, fill, findings)
+        }
+        FeatureOperation::Curve(curve) => surface::check_curve(site, curve, findings),
+        FeatureOperation::Form(form) => surface::check_form(site, form, findings),
+        FeatureOperation::SheetMetal(sheet) => {
+            sheet_metal::check_sheet_metal(index, site, sheet, findings)
+        }
+        FeatureOperation::Mesh(mesh) => surface::check_mesh(index, site, mesh, findings),
+        FeatureOperation::Place(place) => assembly::check_place(index, site, place, findings),
+        FeatureOperation::PlaceSet(set) => assembly::check_place_set(index, site, set, findings),
+        FeatureOperation::Joint(joint) => assembly::check_joint(site, joint, findings),
+        FeatureOperation::RigidGroup(group) => {
+            assembly::check_rigid_group(index, site, group, findings)
+        }
+        FeatureOperation::ComponentPattern(pattern) => {
             assembly::check_component_pattern(index, site, pattern, findings);
         }
-        Op::MirrorComponents(mirror) => assembly::check_mirror(index, site, mirror, findings),
-        Op::AssemblyFeature(feature) => {
+        FeatureOperation::MirrorComponents(mirror) => {
+            assembly::check_mirror(index, site, mirror, findings)
+        }
+        FeatureOperation::AssemblyFeature(feature) => {
             assembly::check_assembly_feature(site, feature, findings);
-            if !matches!(*feature.operation, Op::AssemblyFeature(_)) {
+            if !matches!(*feature.operation, FeatureOperation::AssemblyFeature(_)) {
                 let nested = Site {
                     in_assembly_feature: true,
                     ..site
@@ -168,17 +185,17 @@ fn check_operation(
                 check_operation(index, nested, &feature.operation, findings);
             }
         }
-        Op::Sketch(_)
-        | Op::SpatialSketch(_)
-        | Op::Spreadsheet(_)
-        | Op::Datum(_)
-        | Op::DeleteBodies(_)
-        | Op::Extract(_)
-        | Op::UnsewFaces(_)
-        | Op::MaterialRemoval
-        | Op::Stored { .. }
-        | Op::Unresolved { .. }
-        | Op::Native { .. } => {}
+        FeatureOperation::Sketch(_)
+        | FeatureOperation::SpatialSketch(_)
+        | FeatureOperation::Spreadsheet(_)
+        | FeatureOperation::Datum(_)
+        | FeatureOperation::DeleteBodies(_)
+        | FeatureOperation::Extract(_)
+        | FeatureOperation::UnsewFaces(_)
+        | FeatureOperation::MaterialRemoval
+        | FeatureOperation::Stored { .. }
+        | FeatureOperation::Unresolved { .. }
+        | FeatureOperation::Native { .. } => {}
     }
 }
 

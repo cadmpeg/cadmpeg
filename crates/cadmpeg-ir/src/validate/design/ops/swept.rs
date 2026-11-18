@@ -6,7 +6,7 @@ use std::f64::consts::TAU;
 use super::options;
 use super::{error, picks, Site};
 use crate::design::dimension::Dimension;
-use crate::design::ops::shared::{Limit, Span};
+use crate::design::ops::shared::{Limit, RadialDimension, Span};
 use crate::design::ops::swept::{
     CenterlineAt, CornerTransition, DraftNeutral, Extrude, ExtrudeDraft, GuideFrame,
     HelicalSection, HelicalSweep, HoleDraft, Loft, PathExtent, Primitive, PrimitiveShape,
@@ -387,15 +387,12 @@ pub(super) fn check_primitive(
     }
     match &primitive.shape {
         PrimitiveShape::Cone { radii, .. } => {
-            let zero = |radius: &crate::design::ops::shared::RadialDimension<_>| {
-                use crate::design::ops::shared::RadialDimension as R;
-                matches!(radius, R::Radius(Dimension::Literal(r)) | R::Diameter(Dimension::Literal(r)) if crate::scalar::NonNegativeLength::get(*r) == 0.0)
-            };
-            let literal = |radius: &crate::design::ops::shared::RadialDimension<_>| {
-                use crate::design::ops::shared::RadialDimension as R;
+            let zero = |radius: &RadialDimension<_>| matches!(radius, RadialDimension::Radius(Dimension::Literal(r)) | RadialDimension::Diameter(Dimension::Literal(r)) if crate::scalar::NonNegativeLength::get(*r) == 0.0);
+            let literal = |radius: &RadialDimension<_>| {
                 matches!(
                     radius,
-                    R::Radius(Dimension::Literal(_)) | R::Diameter(Dimension::Literal(_))
+                    RadialDimension::Radius(Dimension::Literal(_))
+                        | RadialDimension::Diameter(Dimension::Literal(_))
                 )
             };
             if radii.iter().all(literal) && radii.iter().all(zero) {
