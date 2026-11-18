@@ -1234,6 +1234,30 @@ fn a_byte_twenty_frame_reports_the_prologue_it_assumes() {
 }
 
 #[test]
+fn a_byte_twenty_frame_whose_prologues_agree_assumes_no_prologue() {
+    let mut fixture = OperandListFixture::new(0, 0);
+    fixture.property_block = true;
+    let (operation, losses) = fixture.decode_with_losses();
+    let operation = operation.expect("standard reading");
+    assert_eq!(operation.form, DesignCombineForm::Standard);
+    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert!(!operation.keep_tools);
+    assert!(losses.is_empty());
+
+    // The operand-list keep-tools Boolean is outside the standard prologue.
+    let mut kept = OperandListFixture::new(0, 1);
+    kept.property_block = true;
+    let (operation, losses) = kept.decode_with_losses();
+    let operation = operation.expect("standard reading");
+    assert_eq!(operation.form, DesignCombineForm::Standard);
+    assert!(!operation.keep_tools);
+    assert_eq!(
+        losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+        [F3dLossCode::FeatureCombinePrologueAssumed.kind()]
+    );
+}
+
+#[test]
 fn a_frame_whose_lists_name_its_operands_keeps_main_reading_when_a_field_contradicts_it() {
     let contradicting = |property_block: bool| {
         let mut invalid_keep_tools = OperandListFixture::new(0, 2);

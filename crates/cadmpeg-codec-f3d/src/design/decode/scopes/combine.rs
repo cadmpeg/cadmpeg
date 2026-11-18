@@ -59,6 +59,9 @@ pub(super) fn exact_combine_operation(
     };
     let mut operand_list_refusal = None;
     let mut contradiction = None;
+    // The Boolean state of a complete operand-list reading that the standard
+    // prologue also reads.
+    let mut overlapping_state = None;
     for prologue in combine_prologues(bytes, start, scope) {
         let operand_lists = prologue.lists.is_some();
         match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
@@ -76,10 +79,18 @@ pub(super) fn exact_combine_operation(
                             "its lists name its operands, and the standard prologue also reads it"
                                 .to_owned(),
                         );
+                        overlapping_state = Some(BooleanState::of(&operation));
                         continue;
                     }
                 }
-                if let Some(reason) = &operand_list_refusal {
+                // Both prologues give the same Boolean state, so the
+                // decoded operation does not depend on the prologue.
+                let prologue_decides_nothing = operation.form == DesignCombineForm::Standard
+                    && overlapping_state == Some(BooleanState::of(&operation));
+                if let Some(reason) = operand_list_refusal
+                    .as_ref()
+                    .filter(|_| !prologue_decides_nothing)
+                {
                     losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
                         "{}: the Combine frame matches the fixed operand-list fields and {reason}; it is read in the standard prologue",
                         scope.id
@@ -128,6 +139,27 @@ pub(super) fn exact_combine_operation(
         )));
     }
     Ok(None)
+}
+
+/// The decoded Boolean state that the standard and operand-list prologues
+/// can read differently.
+#[derive(Clone, Copy, PartialEq)]
+struct BooleanState {
+    operation: cadmpeg_ir::features::BooleanKind,
+    keep_tools: bool,
+    destination: DesignCombineDestination,
+    target_record_index: u32,
+}
+
+impl BooleanState {
+    fn of(operation: &DesignCombineOperation) -> Self {
+        Self {
+            operation: operation.operation,
+            keep_tools: operation.keep_tools,
+            destination: operation.destination,
+            target_record_index: operation.target_record_index,
+        }
+    }
 }
 
 /// Whether the standard prologue reads the fixed fields and the keep-tools
