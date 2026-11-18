@@ -73,7 +73,9 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
         if ordinary_locator && index == 64 {
             push_marked(&mut bytes, 75);
             bytes.push(0);
-            for value in Transform::identity().rows().iter().flatten() {
+            let mut rows = Transform::identity().rows();
+            rows[0][3] = 2.5;
+            for value in rows.iter().flatten() {
                 bytes.extend_from_slice(&value.to_le_bytes());
             }
         } else {
@@ -252,6 +254,8 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
         matches!(&connector.operand.container, OperandContainer::Occurrence { occurrence, .. }
             if occurrence == &crate::ids::neutral_component_occurrence_id(&expected.occurrence_guid))
     }));
+    let expected_x = if ordinary_locator { 25.0 } else { 0.0 };
+    assert!((connectors[0].frame.rows()[0][3] - expected_x).abs() < f64::EPSILON);
     assert_eq!(
         crate::test_support::loss_codes(&projected.losses),
         [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()],
