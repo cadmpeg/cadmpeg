@@ -21,7 +21,8 @@ fn component(sketch: &Sketch) -> ProductDefinition {
         "kind": "part",
         "bom_properties": {},
         "bodies": [],
-        "sketches": [sketch.id]
+        "sketches": [sketch.id],
+        "tessellations": []
     }))
     .unwrap()
 }
