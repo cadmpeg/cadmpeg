@@ -3081,6 +3081,46 @@ Offsets are relative to the primary indexed scope header. The ordered parameter-
 | 24 | 1 | `zero_flag` | `u8` | little | spec | byte 24 is zero |
 | 25 | 1 | `form_marker` | `u8` | little | spec | byte 25 is `0x01` |
 
+## `prefixed_cylinder_header`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_prefix` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `prefix_word` | `u32` | little | spec | u32 `1` at offset 20 |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | zero at offset 24 |
+| 25 | 1 | `form_marker` | `u8` | little | spec | `0x01` at offset 25 |
+
+## `counted_cylinder_reference`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `count` | `u32` | little | spec | The count is u32 `1` |
+| 4 | 11 | `reference` | `bytes[11]` | little | spec | followed by one marked reference |
+
+## `typed_cylinder_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 506 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 26 | `shifted_prefix` | `bytes[26]` | little | spec | after the shifted operation |
+| 26 | 1 | `nested_marker` | `u8` | little | spec | a byte `0x01` after the shifted operation |
+| 27 | 204 | `typed_references` | `bytes[204]` | little | spec | Four 51-byte typed references follow |
+| 231 | 1 | `matrix_flag` | `u8` | little | spec | A zero byte precedes the rigid matrix |
+| 232 | 128 | `matrix` | `f64[16]` | little | spec | A zero byte precedes the rigid matrix |
+| 360 | 4 | `one_count` | `u32` | little | spec | The matrix is followed by u32 `1` |
+| 364 | 51 | `tail_reference` | `bytes[51]` | little | spec | a typed reference, eight zero bytes |
+| 415 | 8 | `zero_run_8` | `bytes[8]` | little | spec | a typed reference, eight zero bytes |
+| 423 | 4 | `guid_code_unit_count` | `u32` | little | spec | a 36-code-unit LP-UTF16 GUID |
+| 427 | 72 | `guid` | `bytes[72]` | little | spec | a 36-code-unit LP-UTF16 GUID |
+| 499 | 3 | `zero_run_3` | `bytes[3]` | little | spec | and three zero bytes |
+| 502 | 4 | `reference_count` | `u32` | little | spec | The ordered reference count is `5` |
+
 ## `shifted_cylinder_primitive_352_frame`
 
 Spec §3.1 · layout: byte offsets · size: 352 B
