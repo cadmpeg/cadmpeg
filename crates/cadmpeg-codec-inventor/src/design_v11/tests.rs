@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::test_support::root_part_ir;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::features::{
     DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId, SketchFeatureBinding,
@@ -35,10 +36,7 @@ fn property(feature: &mut LegacyFeature, key: &str, value: &str) {
 }
 
 fn part(features: Vec<LegacyFeature>) -> CadIr {
-    let mut ir = CadIr::empty();
-    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
-    })).expect("part"));
+    let mut ir = root_part_ir();
     ir.model.features = features;
     ir
 }
