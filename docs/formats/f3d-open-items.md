@@ -3166,7 +3166,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which source occurrence and containing component does a Component Insert scope select when its relation carrier or authored placement path remains unresolved?
 
-**Known.** The shared identity and matrix scope forms in §3.1 of `f3d.md` retain an occurrence identity, one relation reference, and a scope-local placement. The carrier contributes the source occurrence role used by external-reference binding. The scope occurrence identity can repeat across scopes.
+**Known.** The shared identity and matrix scope forms in §3.1 of `f3d.md` retain an occurrence identity, one relation reference, and a scope-local placement. This includes the 256-, 257-, 261- and 267-byte identity scopes and the 385-, 389- and 399-byte matrix scopes with legacy tails. The carrier contributes the source occurrence role used by external-reference binding. The scope occurrence identity can repeat across scopes.
 
 **Need.** Controlled public assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
 
@@ -3391,6 +3391,16 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A Design record that names a saved free edge, or a rule that relates a saved free edge to the feature that creates it, and the visibility of that edge in the component.
 
 **Note.** `f3d.md` §3.1 "A local occurrence is a child of each occurrence" excludes saved free-edge bodies from component body coverage. A saved free-edge body without a product-definition owner is reported as `assembly.saved-free-edge-body-unowned`.
+
+### DR-792. Pose of an unresolved legacy insertion
+
+**Question.** Which current occurrence pose accompanies a legacy insertion whose source carrier or operation table remains unresolved?
+
+**Known.** The insertion scope stores an identity or rigid insertion frame. A separate occurrence carrier or operation table can store the current pose. The scope retains its occurrence identity and relation reference independently of those records.
+
+**Need.** Controlled public assemblies that move an inserted occurrence while retaining the insertion scope and independently varying its source carrier and operation table.
+
+**Note.** `assembly.legacy-insert-frame-assumed` names the assumption that an unresolved occurrence uses its scope-local insertion frame as its current frame. `feature.component-insert-membership-assumed` separately names unresolved source membership. A decoded source binding takes precedence over this fallback. The public API separates [initial position](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_initialTransform.htm) from [assembly-context position and orientation](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_transform2.htm).
 
 ### DR-796. Healed DeleteFace transitions that delete more faces than the group has members
 

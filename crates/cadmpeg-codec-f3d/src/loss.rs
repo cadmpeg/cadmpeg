@@ -191,6 +191,7 @@ pub(crate) enum F3dLossCode {
     /// top-level inserts from internal operands.
     ComponentInsertOrderUnknown,
     ComponentInsertContainerAssumed,
+    ComponentInsertLegacyFrameAssumed,
     /// Component definitions stored as revised records that each bind a context
     /// UUID; the earliest record defines the component.
     ComponentDefinitionRevised,
@@ -1177,6 +1178,7 @@ impl F3dLossCode {
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentInsertContainerAssumed,
+        Self::ComponentInsertLegacyFrameAssumed,
         Self::ComponentDefinitionRevised,
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
@@ -1947,6 +1949,7 @@ impl F3dLossCode {
             Self::FeatureDerivedInstanceComponentInsertAssumed => {
                 "feature.derived-instance-component-insert-assumed"
             }
+            Self::ComponentInsertLegacyFrameAssumed => "assembly.legacy-insert-frame-assumed",
             Self::FeatureComponentInsertMembershipAssumed => {
                 "feature.component-insert-membership-assumed"
             }
@@ -2831,6 +2834,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentInsertContainerAssumed
+            | Self::ComponentInsertLegacyFrameAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -3915,6 +3919,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentInsertContainerAssumed
+            | Self::ComponentInsertLegacyFrameAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -4161,6 +4166,7 @@ mod tests {
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-insert-container-assumed",
+                "assembly.legacy-insert-frame-assumed",
                 "assembly.component-definition-revised",
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
