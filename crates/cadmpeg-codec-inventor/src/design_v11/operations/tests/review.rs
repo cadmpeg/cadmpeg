@@ -229,3 +229,67 @@ fn extrusion_amounts_require_resolved_travel_and_origin() {
         .expect("resolved travel and origin")
         .is_empty());
 }
+
+#[test]
+fn native_draft_operands_validate_after_canonical_zero_round_trip() {
+    let mut operation = extrude();
+    let LegacyOperation::Extrude {
+        profile,
+        direction,
+        extent: old::ExtrudeExtent::TwoSided { first, .. },
+        ..
+    } = &mut operation
+    else {
+        panic!("extrude")
+    };
+    *profile = old::ProfileRef::Planar(old::PlanarProfileRef::Native(
+        "inventor:pmdc:profile#text-0.0".into(),
+    ));
+    *direction = old::ExtrudeDirection::Explicit {
+        vector: old::FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(-0.0, 0.0, 1.0))
+            .expect("direction"),
+        source: None,
+    };
+    first.draft = Some(cadmpeg_ir::scalar::SlopeAngle::new(0.2).expect("draft"));
+    assert_canonical_native_round_trip(&operation);
+}
+
+#[test]
+fn native_body_motion_operands_validate_after_canonical_zero_round_trip() {
+    assert_canonical_native_round_trip(&legacy(
+        "move_body",
+        json!({"bodies":native_selection(),"translation":[1.0,0.0,0.0],"rotation":{"origin":[-0.0,1.0,2.0],"direction":[0.0,0.0,1.0],"angle":0.5},"copies":0}),
+    ));
+}
+
+fn assert_canonical_native_round_trip(operation: &LegacyOperation) {
+    let mut ir = part(operation.clone());
+    let losses = project_part(&mut ir);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        InventorLossCode::FeatureDesignOperationNative.kind()
+    );
+    assert!(matches!(
+        ir.design.features[0].definition.operation,
+        FeatureOperation::Native { .. }
+    ));
+    let FeatureOperation::Native { native_options, .. } =
+        &ir.design.features[0].definition.operation
+    else {
+        panic!("native")
+    };
+    let NativeOption::Text(Dimension::Literal(text)) =
+        &native_options[&cadmpeg_core::nonblank_literal!("inventor:legacy_operation")]
+    else {
+        panic!("retained")
+    };
+    assert_eq!(
+        &serde_json::from_str::<LegacyOperation>(text.as_str()).expect("retained operands"),
+        operation
+    );
+    assert!(validate(&ir).expect("decoded operands").is_empty());
+    let wire = ir.to_canonical_json().expect("canonical document");
+    let restored = CadIr::from_json(&wire).expect("restored document");
+    assert!(validate(&restored).expect("restored operands").is_empty());
+}

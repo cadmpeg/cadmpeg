@@ -171,7 +171,7 @@ fn typed(
 }
 
 fn retained(operation: &LegacyOperation) -> Result<FeatureOperation, CodecError> {
-    let value = serde_json::to_string(operation)
+    let value = cadmpeg_ir::hash::finite_json::to_canonical_json_string(operation)
         .map_err(|error| CodecError::malformed(error.to_string()))?;
     Ok(FeatureOperation::Native {
         kind: cadmpeg_core::nonblank_literal!("inventor:operation"),
