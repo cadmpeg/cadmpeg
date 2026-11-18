@@ -2297,7 +2297,7 @@ impl ComponentInserts {
                 inserts.assumed_containers += 1;
                 if matches!(
                     scope.canonical_name_frame_length(),
-                    Some(256 | 257 | 261 | 267 | 385 | 389 | 399)
+                    Some(256 | 257 | 261 | 267 | 271 | 275 | 385 | 389 | 399)
                 ) {
                     inserts.frame_assumptions.push(F3dLossCode::ComponentInsertLegacyFrameAssumed.note(format!(
                         "{} uses its legacy scope-local insertion frame as its unresolved occurrence frame, with the current pose assumed equal to the insertion frame (DR-792).", scope.id

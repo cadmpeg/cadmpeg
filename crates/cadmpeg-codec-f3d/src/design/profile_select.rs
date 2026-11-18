@@ -354,7 +354,9 @@ pub(crate) fn bind_split_face_sketch_selections(
             else {
                 break 'feature_edit;
             };
-            let SplitFaceTool::Path(PathRef::Native(group_id)) = tool else {
+            let (SplitFaceTool::Native(group_id) | SplitFaceTool::Path(PathRef::Native(group_id))) =
+                tool
+            else {
                 break 'feature_edit;
             };
             let mut matching_groups = resolution.groups.iter().filter(|group| {

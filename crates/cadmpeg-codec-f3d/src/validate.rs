@@ -193,10 +193,10 @@ fn as_built_operand_frame_link(
         .byte_offset()
         .checked_sub(locator)
         .and_then(|length| usize::try_from(length).ok());
-    let rigid = design::assembly::rigid_as_built_scope(scope);
-    let layout = rigid_group_locator_layout(path, stream_types);
-    if rigid {
-        let Some(layout) = layout else {
+    if design::assembly::rigid_as_built_scope(scope)
+        || design::assembly::compact_placement_as_built_scope(scope)
+    {
+        let Some(layout) = as_built_locator_layout(scope, path, stream_types) else {
             return false;
         };
         let reference = if layout.null_construction {
@@ -243,17 +243,21 @@ fn as_built_operand_frame_link(
         && frame.reference_record_index != 0
 }
 
-fn rigid_group_locator_layout(
+fn as_built_locator_layout(
+    scope: &records::feature::scope::DesignParameterScope,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
     stream_types: &std::collections::HashMap<u64, (&str, u32)>,
 ) -> Option<design::assembly::RigidGroupLocatorLayout> {
     let link = path.link();
-    design::assembly::RigidGroupLocatorLayout::admit(
-        stream_types
-            .get(&u64::from(link.locator_record_index))
-            .copied(),
-        usize::try_from(path.byte_offset().checked_sub(link.locator_byte_offset)?).ok()?,
-    )
+    let registered = stream_types
+        .get(&u64::from(link.locator_record_index))
+        .copied();
+    let length = usize::try_from(path.byte_offset().checked_sub(link.locator_byte_offset)?).ok()?;
+    if design::assembly::compact_placement_as_built_scope(scope) {
+        design::assembly::RigidGroupLocatorLayout::admit_compact_as_built(registered, length)
+    } else {
+        design::assembly::RigidGroupLocatorLayout::admit(registered, length)
+    }
 }
 
 fn valid_assembly_operand_path_link(
@@ -273,7 +277,9 @@ fn valid_assembly_operand_path_link(
     else {
         return false;
     };
-    let variable_reference = !design::assembly::rigid_as_built_scope(scope)
+    let compact_as_built = design::assembly::compact_placement_as_built_scope(scope);
+    let variable_reference = !compact_as_built
+        && !design::assembly::rigid_as_built_scope(scope)
         && design::assembly::variable_reference_assembly_generation(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
@@ -283,10 +289,13 @@ fn valid_assembly_operand_path_link(
         .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family)
         || design::assembly::wide_as_built_scope(scope);
     let (locator_length, scope_backlink, wrapper_reference) =
-        if design::assembly::rigid_as_built_scope(scope) {
-            let Some(layout) = rigid_group_locator_layout(path, stream_types) else {
+        if compact_as_built || design::assembly::rigid_as_built_scope(scope) {
+            let Some(layout) = as_built_locator_layout(scope, path, stream_types) else {
                 return false;
             };
+            if compact_as_built && !path.admitted_by_type() {
+                return false;
+            }
             let (length, backlink, wrapper, _, _) = layout.offsets();
             (
                 u64_from_index(length),
@@ -349,7 +358,7 @@ fn valid_assembly_operand_path_link(
         && link.locator_record_index.checked_add(1) == Some(path.record_index)
         // A variable-reference or wide locator's path can continue over
         // further records before its wrapper.
-        && if variable_reference || wide {
+        && if variable_reference || wide || compact_as_built {
             link.locator_record_index
                 .checked_add(2)
                 .zip(link.locator_record_index.checked_add(65))
@@ -2124,8 +2133,7 @@ fn placement_ordered_references_hold(
     owners: &[(u32, u32)],
 ) -> bool {
     use crate::layout::assembly_as_built_scope_owner_run as layout;
-    let Some(count) = design::assembly::as_built_additional_owner_count(scope.frame_length())
-    else {
+    let Some(count) = design::assembly::as_built_additional_owner_count(scope) else {
         return false;
     };
     let Some(run) = &alignment.additional_owner_run else {
@@ -2146,11 +2154,12 @@ fn placement_ordered_references_hold(
             .iter()
             .zip(owners)
             .all(|(reference, (_, index))| reference.value == *index)
-        && table.len() == 9 + count
-        && (count != 0
-            || table
-                .values_in(5..9)
-                .is_some_and(|values| values.eq(alignment.owners.iter().map(|owner| &owner.value))))
+        && (design::assembly::compact_placement_as_built_scope(scope)
+            || (table.len() == 9 + count
+                && (count != 0
+                    || table.values_in(5..9).is_some_and(|values| {
+                        values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                    }))))
         && run
             .references
             .iter()
@@ -2266,6 +2275,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .copied()
             }),
         );
+        let split_face_link = scope.split_face_operation().is_none_or(|operation| {
+            operation.scope_offsets_valid(scope.byte_offset(), scope.reference_count_offset())
+                && operation.carrier_frame.is_none_or(|frame| {
+                    operation.direction_reference.local_record_index().is_some_and(|record_index| {
+                        records_by_index.get(&(native_stream, record_index)).is_some_and(|header| header.byte_offset == frame.primary_offset)
+                            && stream_types.get(&u64::from(record_index)).is_some_and(|(guid, version)| {
+                                guid.eq_ignore_ascii_case(records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID) && *version == frame.version
+                            })
+                            && native_stream.strip_suffix("BulkStream.dat").is_some_and(|prefix| {
+                                native.design_types.iter().filter(|row| {
+                                    ids::native_stream(row.id()).and_then(|stream| stream.strip_suffix("MetaStream.dat")) == Some(prefix)
+                                }).flat_map(|row| row.entities.values()).filter(|id| **id == u64::from(record_index)).count() == 1
+                            })
+                            && native.design_record_headers.iter().filter(|header| design_stream(&header.id) == native_stream && header.byte_offset > frame.primary_offset).map(|header| header.byte_offset).min().is_none_or(|next| frame.end_offset <= next)
+                    })
+                })
+        });
         let offset_faces_link = match scope.payload() {
             records::feature::scope::DesignScopePayload::OffsetFaces(Some(operation)) => {
                 design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
@@ -2649,7 +2675,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 };
                 let generation = design::assembly::AssemblyScopeGeneration::for_scope(scope);
                 let operand_frame_variant = generation.operand_frame_variant();
-                let variable_reference = !design::assembly::rigid_as_built_scope(scope)
+                let compact_as_built = design::assembly::compact_placement_as_built_scope(scope);
+                let variable_reference = !compact_as_built
+                    && !design::assembly::rigid_as_built_scope(scope)
                     && design::assembly::variable_reference_assembly_generation(
                         scope.class_tag.as_str(),
                         scope.paired_class_tag.as_str(),
@@ -2674,7 +2702,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let rigid_as_built = design::assembly::rigid_as_built_scope(scope);
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-                    && (scope.frame_length() == 399 || wide_as_built);
+                    && (scope.frame_length() == 399 || wide_as_built || compact_as_built);
                 let as_built_421_generation = design::assembly::legacy_as_built_421_generation(
                     scope.frame_length(),
                     scope.class_tag.as_str(),
@@ -2823,7 +2851,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
                                 let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference || wide_as_built
+                                    let continuation_count = if variable_reference || wide_as_built || compact_as_built
                                         || operand_frame_variant.is_some_and(
                                             design::assembly::AssemblyOperandFrameVariant::is_wide_family,
                                         ) {
@@ -2834,8 +2862,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     } else {
                                         0
                                     };
-                                    let stride = if rigid_as_built {
-                                        rigid_group_locator_layout(path, stream_types)?.reference_stride()
+                                    let stride = if rigid_as_built || compact_as_built {
+                                        as_built_locator_layout(scope, path, stream_types)?.reference_stride()
                                     } else { 11 };
                                     u64::try_from(path_wrapper::PATH_REFERENCE + stride)
                                         .ok()?
@@ -3047,12 +3075,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .values()
                         .take(alignment.owners.len())
                         .eq(alignment.owners.iter().map(|owner| &owner.value))
-                } else if !design::assembly::rigid_as_built_scope(scope)
-                    && design::assembly::variable_reference_assembly_generation(
-                        scope.class_tag.as_str(),
-                        scope.paired_class_tag.as_str(),
-                    )
-                {
+                } else if variable_reference {
                     (0..scope.reference_members().len())
                         .filter(|&start| {
                             scope
@@ -3105,7 +3128,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         scope.canonical_name_frame_length(),
                         placement.matrix.as_ref(),
                     ) {
-                        (Some(256 | 257 | 261 | 267 | 272 | 276), None) => true,
+                        (Some(256 | 257 | 261 | 267 | 271 | 272 | 275 | 276), None) => true,
                         (Some(385), Some(matrix)) => {
                             scope.byte_offset().checked_add(u64_from_index(
                                 crate::layout::component_insert_scope_283_262_385::TRANSFORM,
@@ -3135,7 +3158,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     scope.paired_class_tag.as_str(),
                     construction.placement.as_ref(),
                 ) {
-                    (272 | 276, _, None) => true,
+                    (271 | 272 | 275 | 276, _, None) => true,
                     (261, "263", None) if scope.class_tag.as_str() == "296" => true,
                     (261, "261", None) if scope.class_tag.as_str() == "410" => true,
                     (261, "258", None) if scope.class_tag.as_str() == "426" => true,
@@ -4528,6 +4551,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && emboss_profile_link
             && move_link
             && offset_faces_link
+            && split_face_link
             && base_flange_link
             && fold_links
             && edge_flange_link
@@ -4574,6 +4598,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 "Fusion Design parameter scope has an invalid paired frame",
                 Some(scope.id.clone()),
             );
+        }
+        if split_face_link
+            && scope.split_face_operation().is_some_and(
+                crate::records::feature::split_face::DesignSplitFaceOperation::carrier_type_assumed,
+            )
+        {
+            findings.push(Finding {
+                related: Vec::new(),
+                check: Check::NativeLinks,
+                severity: Severity::Warning,
+                message:
+                    "Fusion SplitFace carrier registration conflicts with its inline type qualifier"
+                        .into(),
+                entity: Some(scope.id.clone()),
+            });
         }
     }
     Ok(())
@@ -5522,7 +5561,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 {
                     matches!(
                         group.role(),
-                        DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
+                        DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 None if matches!(
@@ -7702,6 +7741,39 @@ fn validate_face_operands<'a>(
             )
         })
         .collect::<std::collections::HashMap<_, _>>();
+    let mut header_offsets_by_stream = std::collections::HashMap::<&str, Vec<u64>>::new();
+    let mut header_offset_claims = std::collections::HashMap::<(&str, u32), (u64, u64)>::new();
+    let mut header_index_claims = std::collections::HashMap::<(&str, u64), (u32, u32)>::new();
+    if native
+        .design_face_operands
+        .iter()
+        .any(|operand| operand.registered_recipe_frame().is_some())
+    {
+        for header in &native.design_record_headers {
+            let stream = design_stream(&header.id);
+            header_offsets_by_stream
+                .entry(stream)
+                .or_default()
+                .push(header.byte_offset);
+            header_offset_claims
+                .entry((stream, header.record_index))
+                .and_modify(|range| {
+                    range.0 = range.0.min(header.byte_offset);
+                    range.1 = range.1.max(header.byte_offset);
+                })
+                .or_insert((header.byte_offset, header.byte_offset));
+            header_index_claims
+                .entry((stream, header.byte_offset))
+                .and_modify(|range| {
+                    range.0 = range.0.min(header.record_index);
+                    range.1 = range.1.max(header.record_index);
+                })
+                .or_insert((header.record_index, header.record_index));
+        }
+        for offsets in header_offsets_by_stream.values_mut() {
+            offsets.sort_unstable();
+        }
+    }
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
@@ -7779,13 +7851,76 @@ fn validate_face_operands<'a>(
             .collect::<Vec<_>>();
         expected_alternate_selector_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_alternate_selector_faces.dedup();
-        let next_header_matches = face_operand_next_header_matches(
-            header_indices_by_offset
-                .get(&(native_stream, operand.next_byte_offset()))
-                .copied(),
-            operand.next_record_index,
-            records_by_index.contains_key(&(native_stream, operand.next_record_index)),
-        );
+        let next_header_matches = match operand.registered_recipe_frame() {
+            Some(frame) => {
+                scope.is_some_and(|scope| {
+                    scope.kind() == records::feature::scope::DesignFeatureKind::SplitFace
+                }) && frame.record_index == operand.recipe_record_index()
+                    && frame.primary_offset == operand.recipe_record_byte_offset()
+                    && frame.record_index == operand.next_record_index
+                    && frame.secondary_offset == operand.next_byte_offset()
+                    && frame.primary_offset < frame.secondary_offset
+                    && frame
+                        .secondary_offset
+                        .checked_add(u64_from_index(
+                            crate::layout::indexed_design_record_header::LEN,
+                        ))
+                        .is_some_and(|end| end <= frame.end_offset)
+                    && header_offset_claims
+                        .get(&(native_stream, frame.record_index))
+                        .is_none_or(|range| {
+                            range.0 >= frame.primary_offset && range.1 < frame.end_offset
+                        })
+                    && header_index_claims
+                        .get(&(native_stream, frame.primary_offset))
+                        .is_none_or(|range| *range == (frame.record_index, frame.record_index))
+                    && header_index_claims
+                        .get(&(native_stream, frame.secondary_offset))
+                        .is_none_or(|range| *range == (frame.record_index, frame.record_index))
+                    && match frame.next_primary_index {
+                        Some(index) => {
+                            index != u64::from(frame.record_index)
+                                && u32::try_from(index)
+                                    .ok()
+                                    .and_then(|index| {
+                                        header_offset_claims.get(&(native_stream, index))
+                                    })
+                                    .is_none_or(|range| range.0 == frame.end_offset)
+                                && header_index_claims
+                                    .get(&(native_stream, frame.end_offset))
+                                    .is_none_or(|range| {
+                                        u64::from(range.0) == index && u64::from(range.1) == index
+                                    })
+                        }
+                        None => header_offsets_by_stream
+                            .get(native_stream)
+                            .is_none_or(|offsets| {
+                                offsets
+                                    .last()
+                                    .is_none_or(|offset| *offset < frame.end_offset)
+                            }),
+                    }
+                    && header_offsets_by_stream
+                        .get(native_stream)
+                        .is_none_or(|offsets| {
+                            let first =
+                                offsets.partition_point(|offset| *offset <= frame.primary_offset);
+                            let end = offsets.partition_point(|offset| *offset < frame.end_offset);
+                            offsets.get(first..end).is_some_and(|inside| {
+                                inside
+                                    .iter()
+                                    .all(|offset| *offset == frame.secondary_offset)
+                            })
+                        })
+            }
+            None => face_operand_next_header_matches(
+                header_indices_by_offset
+                    .get(&(native_stream, operand.next_byte_offset()))
+                    .copied(),
+                operand.next_record_index,
+                records_by_index.contains_key(&(native_stream, operand.next_record_index)),
+            ),
+        };
         let expected_node_offsets = operand
             .recipe_program
             .windows(3)
@@ -8038,9 +8173,9 @@ fn validate_face_operands<'a>(
                                 == crate::records::feature::scope::DesignFeatureKind::SplitFace =>
                             {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::ROLE_0X10
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::BoundedFace
+                                    matches!(group.role(), DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10)
+                                }) && matches!(operand.recipe_kind,
+                                    records::recipes::ConstructionRecipeKind::BoundedFace | records::recipes::ConstructionRecipeKind::Face)
                             }
                             None if group.is_some_and(|group| {
                                 design::decode::operands::is_surface_untrim_face_group(scope, group)
@@ -8088,6 +8223,10 @@ fn validate_face_operands<'a>(
                                 operand.recipe_kind,
                                 records::recipes::ConstructionRecipeKind::BoundedFace
                                     | records::recipes::ConstructionRecipeKind::Face
+                            ),
+                            None if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace => matches!(
+                                operand.recipe_kind,
+                                records::recipes::ConstructionRecipeKind::BoundedFace | records::recipes::ConstructionRecipeKind::Face
                             ),
                             Some(design::DesignFeatureFamily::Assemble)
                                 if scope.kind()

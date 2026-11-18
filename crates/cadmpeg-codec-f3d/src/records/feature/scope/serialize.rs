@@ -196,6 +196,9 @@ impl Serialize for DesignParameterScope {
         emit_opt!("reverse_normal_operation", self.reverse_normal_operation());
         emit_opt!("path_pattern_settings", self.path_pattern_settings());
         emit_opt!("mesh_face_groups", self.mesh_face_groups());
+        if let DesignScopePayload::Split(split) = &self.payload {
+            emit_opt!("split_tool_extension", split.extend_tool.as_ref());
+        }
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());
         emit_opt!("surface_extend_operation", self.surface_extend_operation());
         emit_opt!("surface_untrim_operation", self.surface_untrim_operation());
@@ -261,6 +264,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("combine_operation", self.combine_operation());
         emit_opt!("combine_named_tail", self.combine_named_tail());
+        emit_opt!("split_face_operation", self.split_face_operation());
         if let Some(fill) = self.boundary_fill() {
             emit_opt!("boundary_fill", fill.prefix.as_ref());
             emit_opt!("boundary_fill_named_tail", fill.named_tail.as_ref());
