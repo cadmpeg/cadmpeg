@@ -379,7 +379,7 @@ impl CadIr {
             }
             Ok(())
         }
-        let history = super::history::History::new(&self.design)?;
+        let history = super::history::History::new(&self.design);
         let in_scope = |member: Member| history.scope_of(&member) == Some(scope);
         let features: BTreeSet<_> = self
             .design
