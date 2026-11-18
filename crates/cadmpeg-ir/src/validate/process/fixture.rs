@@ -7,11 +7,11 @@ use std::fmt::Debug;
 
 use cadmpeg_core::text::NonBlankString;
 
-use crate::design::dimension::Dimension;
+use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::evaluation::{EvaluationStatus, StateBase, StateDelta};
 use crate::design::names::{CodecId, NativeName, NativeNameValue};
 use crate::design::parameter::ParameterValue;
-use crate::design::selection::{Anchor, Picks, Selection};
+use crate::design::selection::{Anchor, OccurrencePath, PathStep, Picks, Selection, StepRef};
 use crate::design::units::{Quantity, ValueKind};
 use crate::document::CadIr;
 use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
@@ -31,6 +31,7 @@ use crate::process::technology::Technology;
 use crate::process::tool::{Cutter, Machine, NcNumbers, Preset, Tool, ToolClass, ToolPocket};
 use crate::process::toolpath::{Motion, Toolpath, ToolpathContent};
 use crate::process::{Choice, ProcessDimension, WorkpieceSelection};
+use crate::products::Occurrence;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::scalar::FiniteReal;
@@ -388,6 +389,46 @@ pub(super) fn document() -> CadIr {
         ),
     ];
     ir
+}
+
+/// Places a `pin` definition in the fixture's part through occurrence `pin`,
+/// with an occurrence `nested` of the pin inside the pin, and adds a design
+/// length parameter `width`.
+pub(super) fn place_pin(ir: &mut CadIr) {
+    let mut pin = ir.model.product_definitions[0].clone();
+    pin.id = design::id("definition", "pin");
+    pin.bodies.clear();
+    pin.occurrences = vec![design::id("occurrence", "nested")];
+    ir.model.product_definitions[0].occurrences = vec![design::id("occurrence", "pin")];
+    ir.model.product_definitions.push(pin);
+    let occurrence = |key: &str| Occurrence {
+        id: design::id("occurrence", key),
+        prototype: design::id("definition", "pin"),
+        transform: None,
+        suppressed: None,
+        visible: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
+        native_ref: None,
+    };
+    ir.model.occurrences.push(occurrence("nested"));
+    ir.model.occurrences.push(occurrence("pin"));
+    ir.design.parameters.push(design::parameter(
+        "width",
+        ValueKind::Quantity(Quantity::LENGTH),
+    ));
+}
+
+/// A reference to `place_pin`'s `width` through occurrence `occurrence`.
+pub(super) fn width_through(occurrence: &str) -> ParamRef {
+    ParamRef::Design(ParameterRef {
+        target: RefTarget::Parameter(design::id("parameter", "width")),
+        through: Some(OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(design::id("occurrence", occurrence)),
+            configuration: None,
+        }])),
+    })
 }
 
 pub(super) fn process_findings(ir: &CadIr) -> Vec<Finding> {

@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
+use crate::design::dimension::Dimension;
 use crate::design::refs::{Member, Position};
-use crate::design::selection::{Anchor, OccurrencePath, PathStep, StepRef};
-use crate::design::units::{Quantity, ValueKind};
+use crate::design::selection::Anchor;
 use crate::process::groups::ProcessOwner;
 use crate::process::operation::{GeometryRole, GeometrySource, ProcessGeometry};
-use crate::products::Occurrence;
 use crate::validate::design::fixture as design;
 use crate::validate::process::fixture::{
-    assert_error, assert_no_process_finding, document, id, workpiece_selection,
+    assert_error, assert_no_process_finding, document, id, place_pin, width_through,
+    workpiece_selection,
 };
 
 #[test]
@@ -110,38 +109,8 @@ fn the_setups_that_use_a_record_machine_one_scope() {
 #[test]
 fn a_through_path_resolves_from_the_setups_scope() {
     let mut ir = document();
-    let mut pin = ir.model.product_definitions[0].clone();
-    pin.id = design::id("definition", "pin");
-    pin.bodies.clear();
-    pin.occurrences = vec![design::id("occurrence", "nested")];
-    ir.model.product_definitions[0].occurrences = vec![design::id("occurrence", "pin")];
-    ir.model.product_definitions.push(pin);
-    let occurrence = |key: &str| Occurrence {
-        id: design::id("occurrence", key),
-        prototype: design::id("definition", "pin"),
-        transform: None,
-        suppressed: None,
-        visible: None,
-        representation: None,
-        overrides: Vec::new(),
-        name: None,
-        native_ref: None,
-    };
-    ir.model.occurrences.push(occurrence("nested"));
-    ir.model.occurrences.push(occurrence("pin"));
-    ir.design.parameters.push(design::parameter(
-        "width",
-        ValueKind::Quantity(Quantity::LENGTH),
-    ));
-    let reference = |occurrence: &str| {
-        ParamRef::Design(ParameterRef {
-            target: RefTarget::Parameter(design::id("parameter", "width")),
-            through: Some(OccurrencePath(vec![PathStep {
-                occurrence: StepRef::Occurrence(design::id("occurrence", occurrence)),
-                configuration: None,
-            }])),
-        })
-    };
+    place_pin(&mut ir);
+    let reference = width_through;
     let through = |occurrence: &str| Some(Dimension::Parameter(reference(occurrence)));
     ir.process.operations[2].technology.stepdown = through("pin");
     assert_no_process_finding(&ir);

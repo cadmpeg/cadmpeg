@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use crate::design::dimension::{Dimension, ParamRef};
+use crate::design::parameter::ParameterValue;
 use crate::design::selection::{Members, Picks};
 use crate::features::FinitePoint3;
 use crate::math::Point3;
@@ -20,10 +22,12 @@ use crate::process::settings::{
 use crate::process::stock::WcsOrigin;
 use crate::process::technology::{JetCut, StepRule, TabPlacement, TabShape, Tabs};
 use crate::process::toolpath::{Motion, ToolpathContent};
-use crate::scalar::{Angle, Length};
+use crate::process::{Choice, ProcessDimension};
+use crate::scalar::{Angle, FiniteReal, Length};
 use crate::transform::Transform;
 use crate::validate::process::fixture::{
-    assert_error, assert_no_process_finding, constant, document, lit, text, workpiece_selection,
+    assert_error, assert_no_process_finding, constant, document, id, lit, place_pin, text,
+    width_through, workpiece_selection,
 };
 
 fn length(value: f64) -> Length {
@@ -170,8 +174,15 @@ fn heights_measured_from_geometry_need_it() {
 
 fn lead(turn: LineTurn, arc: Option<f64>) -> Lead {
     Lead {
-        enabled: None,
         arc_radius: arc.map(|arc| lit(length(arc))),
+        ..lead_on(turn, lit(length(0.0)))
+    }
+}
+
+fn lead_on(turn: LineTurn, arc: ProcessDimension<Length>) -> Lead {
+    Lead {
+        enabled: None,
+        arc_radius: Some(arc),
         arc_sweep: None,
         line_length: None,
         vertical_radius: None,
@@ -202,6 +213,41 @@ fn lead_angles() {
         exit: Some(lead(angle_turn(45.0, None), Some(2.0))),
     });
     assert_error(&ir, "a literal lead angle lies outside 0° to 90°");
+    assert_error(&ir, "a lead with an arc states a `LineTurn::Angle`");
+
+    let mut ir = document();
+    ir.process.parameters[0].value = Some(ParameterValue::Number(FiniteReal::new(0.0).unwrap()));
+    ir.process.operations[2].leads = Some(Leads {
+        entry: Some(lead_on(
+            angle_turn(45.0, None),
+            Dimension::Parameter(ParamRef::Process(id("parameter", "depth"))),
+        )),
+        exit: None,
+    });
+    assert_no_process_finding(&ir);
+    ir.process.parameters[0].value = None;
+    assert_error(&ir, "a lead with an arc states a `LineTurn::Angle`");
+    ir.process.operations[2].leads = Some(Leads {
+        entry: Some(lead_on(
+            angle_turn(45.0, None),
+            Dimension::Parameter(ParamRef::Process(id("parameter", "missing"))),
+        )),
+        exit: None,
+    });
+    assert_error(&ir, "a lead with an arc states a `LineTurn::Angle`");
+
+    let mut ir = document();
+    place_pin(&mut ir);
+    if let Some(width) = ir.design.parameters.last_mut() {
+        width.value = Some(ParameterValue::Number(FiniteReal::new(2.0).unwrap()));
+    }
+    ir.process.operations[2].leads = Some(Leads {
+        entry: Some(lead_on(
+            angle_turn(45.0, None),
+            Dimension::Parameter(width_through("pin")),
+        )),
+        exit: None,
+    });
     assert_error(&ir, "a lead with an arc states a `LineTurn::Angle`");
 
     let mut ir = document();
@@ -329,6 +375,14 @@ fn a_tool_axis_control_picks_its_count() {
 fn a_frame_origin_needs_a_frame_orientation() {
     let mut ir = document();
     ir.process.setups[0].wcs.origin = Some(constant(WcsOrigin::FrameOrigin));
+    assert_error(
+        &ir,
+        "WCS origin `frame_origin` is stated without a `frame` orientation",
+    );
+    ir.process.setups[0].wcs.orientation = Some(Choice {
+        value: None,
+        parameters: BTreeSet::from([id("parameter", "depth")]),
+    });
     assert_error(
         &ir,
         "WCS origin `frame_origin` is stated without a `frame` orientation",

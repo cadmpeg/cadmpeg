@@ -102,7 +102,9 @@ impl ClassField {
 }
 
 /// The cached number a process dimension states: its literal, or the cached
-/// number of the parameter it binds, negated for `Negated`.
+/// number of the parameter it binds, negated for `Negated`. `None` for a
+/// reference `through` an occurrence path, which reads the occurrence's
+/// cache (§5.13), not the parameter's own.
 fn number(records: &ProcessRecords<'_>, dimension: &ProcessDimension<Length>) -> Option<f64> {
     let cached = |reference: &ParamRef| {
         let value = match reference {
@@ -402,8 +404,9 @@ fn check_radii(operation: &Operation, findings: &mut Vec<Finding>) {
     }
 }
 
-/// A literal `LineTurn::Angle` lies from 0° to 90°, on a lead with no arc,
-/// and `SpindleAxis` occurs only on a turning operation.
+/// A literal `LineTurn::Angle` lies from 0° to 90°, on a lead with no arc
+/// (its `arc_radius` not stated, or known to be zero), and `SpindleAxis`
+/// occurs only on a turning operation.
 fn check_leads(
     records: &ProcessRecords<'_>,
     operation: &Operation,
@@ -435,8 +438,8 @@ fn check_leads(
         let arc = lead
             .arc_radius
             .as_ref()
-            .and_then(|radius| number(records, radius));
-        if arc.is_some_and(|radius| radius != 0.0) {
+            .is_some_and(|radius| number(records, radius) != Some(0.0));
+        if arc {
             super::error(
                 findings,
                 id,
@@ -586,16 +589,14 @@ fn check_wcs(holder: &str, wcs: &Wcs, findings: &mut Vec<Finding>) {
     if !frame_origin {
         return;
     }
-    let orientation = wcs.orientation.as_ref();
-    let unknown = orientation.is_some_and(|orientation| orientation.value.is_none());
     let frame = matches!(
-        orientation,
+        wcs.orientation,
         Some(Choice {
             value: Some(WcsOrientation::Frame(_)),
             ..
         })
     );
-    if !frame && !unknown {
+    if !frame {
         super::error(
             findings,
             holder,
