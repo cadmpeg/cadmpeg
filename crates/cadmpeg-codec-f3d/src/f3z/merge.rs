@@ -954,24 +954,7 @@ fn rebind_joints(
             .as_ref()
             .is_some_and(|id| complete_scopes.contains(id))
         {
-            if mode == JointRebind::CompleteScopes {
-                let mut descended = joint.clone();
-                let mut nested = joint.clone();
-                if complete_joint_descent(&mut descended, complete_children, &instances) {
-                    *joint = descended;
-                } else if nest_residual_descent(&mut nested, complete_children, &instances) {
-                    losses.push(F3dLossCode::AssemblyOperandNestedPathRetained.note(format!(
-                        "joint {}: the occurrence path continues inside an unmerged inserted document; the remaining keys stay a nested occurrence path",
-                        joint.id
-                    )));
-                    *joint = nested;
-                } else {
-                    losses.push(F3dLossCode::AssemblyJointSourceBindingAssumed.note(format!(
-                        "joint {}: the timeline feature uses the decoded joint with unresolved source operand identities; their document and occurrence bindings are assumed",
-                        joint.id
-                    )));
-                }
-            } else if !retain_complete_joint(joint, complete_children, &instances, losses) {
+            if !retain_complete_joint(joint, complete_children, &instances, mode, losses) {
                 refused.insert(joint_id.clone());
             }
             continue;
@@ -1081,15 +1064,55 @@ fn retain_complete_joint(
     joint: &mut cadmpeg_ir::products::AssemblyJoint,
     children: &JointChildren<'_>,
     instances: &std::collections::BTreeSet<&cadmpeg_ir::ids::OccurrenceId>,
+    mode: JointRebind,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> bool {
-    if complete_joint_descent(joint, children, instances) {
+    let mut descended = joint.clone();
+    if complete_joint_descent(&mut descended, children, instances) {
+        *joint = descended;
+        return true;
+    }
+    if mode == JointRebind::CompleteScopes {
+        let mut nested = joint.clone();
+        if nest_residual_descent(&mut nested, children, instances) {
+            losses.push(F3dLossCode::AssemblyOperandNestedPathRetained.note(format!(
+                "joint {}: the occurrence path continues inside an unmerged inserted document; the remaining keys stay a nested occurrence path",
+                joint.id
+            )));
+            *joint = nested;
+            return true;
+        }
+    }
+    if mode == JointRebind::CompleteScopes || has_qualified_external_operands(joint, instances) {
+        losses.push(F3dLossCode::AssemblyJointSourceBindingAssumed.note(format!(
+            "joint {}: the timeline feature uses the decoded joint with unresolved source operand identities; their document and occurrence bindings are assumed",
+            joint.id
+        )));
         return true;
     }
     losses.push(F3dLossCode::AssemblyOperandDescentUnresolved.note(format!(
         "joint {}: the complete occurrence path has no unique merged insertion instance; the joint stays native", joint.id
     )));
     false
+}
+
+fn has_qualified_external_operands(
+    joint: &cadmpeg_ir::products::AssemblyJoint,
+    instances: &std::collections::BTreeSet<&cadmpeg_ir::ids::OccurrenceId>,
+) -> bool {
+    use cadmpeg_ir::products::OperandContainer;
+    let mut external = false;
+    joint
+        .connectors()
+        .all(|connector| match &connector.operand.container {
+            OperandContainer::Root {} => true,
+            OperandContainer::Occurrence { occurrence, .. } => instances.contains(occurrence),
+            OperandContainer::External { external_document } => {
+                external = true;
+                external_document.document_id.is_some()
+            }
+        })
+        && external
 }
 
 /// Descend each occurrence operand through keyed children to an occurrence

@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::derived_base_owner;
+use super::{
+    companion, derived_base_owner, mirror, mirror_owner, owner, DesignPrimaryFrame, View,
+    MIRROR_DERIVED_BASE, PRESENTATION,
+};
+use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData, DESIGN_MODULE_FUSION};
+use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use crate::records::identity::ReferenceRun;
+use crate::records::references::DesignClassTag;
+use std::collections::HashSet;
 
 /// A derived base frame of `len` bytes that names `owner` at offset 59 and
 /// again twelve bytes before its end, with a zero last byte.
@@ -52,5 +60,112 @@ fn a_derived_base_owner_needs_two_equal_well_formed_references() {
         ),
     ] {
         assert_eq!(derived_base_owner(&frame, 0), None, "{reason}");
+    }
+}
+
+#[test]
+fn mirror_derived_base_owner_requires_registered_reciprocal_references() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#6",
+        DesignFeatureKind::native("Derived Base Feature"),
+        6,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(3);
+            draft.previous_history_state_id = Some(2);
+            draft.paired_byte_offset = 634;
+            draft.frame_length = 634;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+
+    let type_row = |guid: &str, version| SegmentTypeData {
+        byte_offset: 0,
+        type_guid: guid.to_owned().try_into().unwrap(),
+        type_guid_offset: 0,
+        base_type_guid: BaseTypeGuid::Absent,
+        version,
+        version_offset: 0,
+        module: DESIGN_MODULE_FUSION.into(),
+        entities: ReferenceRun::unlocated(Vec::new()),
+    };
+    let scope_type = type_row(MIRROR_DERIVED_BASE, 10);
+    let companion_type = type_row(PRESENTATION, 1);
+    let tag = DesignClassTag::try_from("256".to_owned()).unwrap();
+    let frames = [
+        DesignPrimaryFrame {
+            entity_id: 6,
+            class_tag: tag.clone(),
+            start: 0,
+            member_end: 634,
+            end: 664,
+            design_type: &scope_type,
+        },
+        DesignPrimaryFrame {
+            entity_id: 7,
+            class_tag: tag,
+            start: 664,
+            member_end: 779,
+            end: 779,
+            design_type: &companion_type,
+        },
+    ];
+    let mut bytes = [0; 779];
+    bytes[20..24].copy_from_slice(&2_u32.to_le_bytes());
+    let reference = |bytes: &mut [u8], at: usize, index: u64| {
+        bytes[at] = 1;
+        bytes[at + 1..at + 9].copy_from_slice(&index.to_le_bytes());
+    };
+    for (at, index) in [
+        (mirror::FIRST_BODY_REFERENCE, 9),
+        (mirror::RESULT_BODY_REFERENCE, 10),
+        (owner::MARKER, 4),
+        (mirror::COMPANION_REFERENCE, 7),
+        (664 + companion::OWNER_REFERENCE, 4),
+        (664 + companion::SCOPE_REFERENCE, 6),
+        (664 + companion::REPEATED_SCOPE_REFERENCE, 6),
+    ] {
+        reference(&mut bytes, at, index);
+    }
+    let owners = HashSet::from([4]);
+    let read = |bytes: &[u8], frames: &[DesignPrimaryFrame<'_>], owners: &HashSet<u64>| {
+        mirror_owner(View::over_retained(bytes), &scope, frames, owners)
+    };
+    let binding = read(&bytes, &frames, &owners).unwrap();
+    assert_eq!(binding.record_index.value, 4);
+    assert_eq!(binding.record_index.offset, 60);
+    assert_eq!(binding.repeat_offset, 695);
+    let result = binding.result_body.unwrap();
+    assert_eq!(result.value, 10);
+    assert_eq!(result.offset, 42);
+    let mut bound_scope = scope.clone();
+    bound_scope.derived_base_owner = Some(binding);
+    let wire = serde_json::to_value(&bound_scope).unwrap();
+    let decoded: DesignParameterScope = serde_json::from_value(wire).unwrap();
+    assert_eq!(decoded.derived_base_owner, Some(binding));
+    let mut missing_result = bytes;
+    missing_result[mirror::RESULT_BODY_REFERENCE] = 0;
+    let owner_only = read(&missing_result, &frames, &owners).unwrap();
+    assert_eq!(owner_only.record_index, binding.record_index);
+    assert_eq!(owner_only.result_body, None);
+
+    let mut wrong_type = frames.clone();
+    wrong_type[1].design_type = &scope_type;
+    assert!(read(&bytes, &wrong_type, &owners).is_none());
+    assert!(read(&bytes, &frames, &HashSet::new()).is_none());
+    assert!(read(&bytes[..778], &frames, &owners).is_none());
+    for at in [
+        owner::MARKER + 9,
+        mirror::COMPANION_REFERENCE + 1,
+        mirror::CLOSING_ZEROES,
+        664 + companion::OWNER_REFERENCE + 1,
+        664 + companion::SCOPE_REFERENCE + 1,
+        664 + companion::REPEATED_SCOPE_REFERENCE + 1,
+    ] {
+        let mut malformed = bytes;
+        malformed[at] ^= 1;
+        assert!(read(&malformed, &frames, &owners).is_none(), "{at}");
     }
 }
