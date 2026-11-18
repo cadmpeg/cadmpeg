@@ -107,7 +107,7 @@ fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     ir.model.colliders.push(cadmpeg_ir::physics::Collider {
         id: crate::ids::collider("collider"),
         target: PhysicsTarget::Body { body }.into(),
-        shape: cadmpeg_ir::physics::ColliderShape::ConvexHull {},
+        shape: cadmpeg_ir::physics::ColliderShape::ConvexHull,
         enabled: true,
         material: None,
         native_ref: None,
@@ -135,7 +135,7 @@ fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     ));
     assert!(matches!(
         model.colliders[0].shape,
-        cadmpeg_ir::physics::ColliderShape::ConvexHull {}
+        cadmpeg_ir::physics::ColliderShape::ConvexHull
     ));
 }
 

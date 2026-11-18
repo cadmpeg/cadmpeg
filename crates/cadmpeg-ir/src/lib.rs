@@ -113,8 +113,9 @@ pub use native::{
     LossCount, Native, NativeConvertError, NativeField, NativeNamespace, NativeRecord,
 };
 pub use pmi::{
-    DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-    PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionModifier, FitStandard, FitZone,
+    GeometricToleranceKind, LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension,
+    PmiDimensionKind, PmiQuantity, PmiTarget, PmiValue,
 };
 pub use presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
