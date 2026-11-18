@@ -213,12 +213,23 @@ and box from the pcurve uses of its first coedge, mapped through that
 coedge's face surface.
 
 An inverted 3D curve interval that passes within the allowance of a cone
-apex, a sphere pole, or the point to which a whole `v` side of a NURBS pole
-grid collapses inside the interval is not split there: the face's
-bounded quantities are `boundary.inversion-failed`. The resolver detects the
-pass at a sample, or between two samples whose parameter image turns by a
-quarter period or more, by a golden-section search of the distance to the
-singular points.
+apex, a sphere pole, a torus sheet pole, or the point to which a whole `v`
+side of a NURBS pole grid collapses inside the interval splits there into
+two pieces that meet at the singular point. The resolver detects the pass at
+a sample, or between two samples whose parameter image turns by a quarter
+period or more. A golden-section search of the distance to the singular
+points between the two regular samples that bracket the pass gives the
+split parameter. Each part is inverted again, so an interval that passes
+several singular points splits at each of them, up to 4 times; a fifth pass
+makes the face's bounded quantities `evaluation.work-exhausted`. The loop
+then meets the singular point between the two pieces as at a vertex, and the
+pole or apex segment below applies. The face's area, flux and region
+quantities integrate over the two pieces; the coedge's length and box are
+those of the whole edge. The face's bounded quantities are `boundary.inversion-failed`
+when the minimum distance exceeds the allowance, when its parameter is an
+end of the interval, or when the samples that bracket a pass through a cone
+apex lie on opposite sides of the apex, where the curve continues onto the
+opposite nappe.
 
 An inverted 3D curve interval whose end lies within the allowance of a cone
 apex, a sphere pole, or a collapsed `v` side of a NURBS patch keeps, from
