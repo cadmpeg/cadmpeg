@@ -895,7 +895,7 @@ fn bind_native_construction_features(
     }
 }
 
-pub(crate) struct EncodedNativeKey<'a>(pub(crate) &'a str);
+struct EncodedNativeKey<'a>(&'a str);
 
 impl fmt::Display for EncodedNativeKey<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

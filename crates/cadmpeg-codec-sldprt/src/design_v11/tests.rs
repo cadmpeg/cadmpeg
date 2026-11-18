@@ -5,9 +5,9 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback, UnorderedKind};
+use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
+use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::document::CadIr;
@@ -197,45 +197,13 @@ fn feature_tree_is_one_timeline_of_the_root_definition() {
 }
 
 #[test]
-fn part_without_a_history_is_a_group_of_stored_bodies() {
+fn part_without_a_history_states_no_design() {
     let ir = decode(&sldprt_with_body(&triangle_body()));
-    let bodies = body_ids(&ir);
-    let [body] = bodies.as_slice() else {
-        panic!("one body: {bodies:?}");
-    };
-    let [scope] = ir.design.scopes.as_slice() else {
-        panic!("one scope");
-    };
-    let [Container::Unordered {
-        id,
-        kind: UnorderedKind::Group,
-        members,
-    }] = ir.design.containers.as_slice()
-    else {
-        panic!("one group: {:#?}", ir.design.containers);
-    };
-    assert_eq!(scope.roots, vec![id.clone()]);
-    let [feature] = ir.design.features.as_slice() else {
-        panic!("one stored feature");
-    };
-    assert!(members.contains(&Member::Feature(feature.id.clone())));
-    let FeatureOperation::Stored {
-        bodies: Some(stored),
-        origin: StoredOrigin::Base {},
-        ..
-    } = &feature.definition.operation
-    else {
-        panic!("stored base feature: {feature:#?}");
-    };
-    assert_eq!(stored[0].as_str(), body);
-    let [current] = scope.current.as_slice() else {
-        panic!("one current state");
-    };
-    assert_eq!(
-        current.at,
-        Position::After(Member::Feature(feature.id.clone()))
-    );
-    assert_no_design_findings(&ir);
+    assert!(!ir.geometry.bodies.is_empty());
+    assert!(ir.design.scopes.is_empty());
+    assert!(ir.design.containers.is_empty());
+    assert!(ir.design.features.is_empty());
+    assert!(ir.model.product_definitions.is_empty());
 }
 
 fn parameter_named<'a>(

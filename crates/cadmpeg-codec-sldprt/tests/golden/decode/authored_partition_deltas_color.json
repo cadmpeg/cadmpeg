@@ -2,88 +2,15 @@
   "ir": {
     "design": {
       "arrangements": [],
-      "configurations": [
-        {
-          "active_arrangements": [],
-          "id": "sldprt:model:configuration#425:0",
-          "materials": [],
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#425:0",
-          "overrides": {
-            "definitions": {},
-            "features": {},
-            "occurrences": {},
-            "parameters": {}
-          },
-          "scope": "sldprt:model:product-definition#root"
-        }
-      ],
-      "containers": [
-        {
-          "kind": "unordered",
-          "value": {
-            "id": "sldprt:model:container#group",
-            "kind": "group",
-            "members": [
-              {
-                "kind": "feature",
-                "value": "sldprt:model:feature#stored:700"
-              }
-            ]
-          }
-        }
-      ],
+      "configurations": [],
+      "containers": [],
       "evaluations": [],
-      "features": [
-        {
-          "definition": {
-            "operation": {
-              "kind": "stored",
-              "value": {
-                "bodies": [
-                  "sldprt:brep:body#700"
-                ],
-                "origin": {
-                  "kind": "base"
-                },
-                "tessellations": []
-              }
-            }
-          },
-          "id": "sldprt:model:feature#stored:700"
-        }
-      ],
+      "features": [],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [
-        {
-          "active_arrangements": [],
-          "active_configuration": "sldprt:model:configuration#425:0",
-          "current": [
-            {
-              "at": {
-                "kind": "after",
-                "value": {
-                  "kind": "feature",
-                  "value": "sldprt:model:feature#stored:700"
-                }
-              },
-              "bodies": [
-                "sldprt:brep:body#700"
-              ],
-              "poses": [],
-              "status": "current"
-            }
-          ],
-          "definition": "sldprt:model:product-definition#root",
-          "occurrences": {},
-          "roots": [
-            "sldprt:model:container#group"
-          ]
-        }
-      ],
+      "scopes": [],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -344,25 +271,7 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [
-        {
-          "bodies": [
-            "sldprt:brep:body#700"
-          ],
-          "bom_properties": {},
-          "id": "sldprt:model:product-definition#root",
-          "instance_bodies": [],
-          "kind": "part",
-          "occurrences": [],
-          "representations": [],
-          "sketches": [],
-          "storage": {
-            "document": {},
-            "kind": "file"
-          },
-          "tessellations": []
-        }
-      ],
+      "product_definitions": [],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
