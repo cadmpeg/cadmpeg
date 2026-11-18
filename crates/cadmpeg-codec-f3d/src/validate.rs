@@ -47,6 +47,8 @@ use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::records::feature::scope::{DesignJointOriginTransform, DesignParameterScope};
+use crate::records::feature::work_geometry::joint_origin::DirectJointOriginCarrier;
 use crate::{design, history, ids, native, records};
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::u64_from_index;
@@ -2616,6 +2618,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         })
             }
         };
+        let direct_joint_origin_carrier_link =
+            |target: &DesignParameterScope, origin: &DesignJointOriginTransform| {
+                DirectJointOriginCarrier::for_scope(target)
+                    .into_iter()
+                    .flatten()
+                    .any(|carrier| {
+                        carrier.matches_offsets(origin)
+                            && carrier.has_registered_types(target, stream_types)
+                            && records_by_index
+                                .get(&(native_stream, carrier.record_index))
+                                .is_some_and(|header| header.byte_offset == carrier.start)
+                    })
+            };
         let assembly_alignment_link = match scope.assembly_alignment() {
             None => true,
             Some(alignment)
@@ -2927,12 +2942,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     && target.kind()
                                         == crate::records::feature::scope::DesignFeatureKind::JointOrigin
                                     && target.record_index == record_index
-                                    && scope
-                                        .byte_offset()
-                                        .checked_add(36)
-                                        .is_some_and(|offset| {
-                                            target.joint_origin_transform_offset() == Some(offset)
-                                        })
+                                    && (scope.byte_offset().checked_add(36).is_some_and(|offset| {
+                                        target.joint_origin_transform_offset() == Some(offset)
+                                    }) || target.joint_origin_frame().is_some_and(|origin| {
+                                        direct_joint_origin_carrier_link(target, origin)
+                                    }))
                             })
                     });
                 let alignment_scalars_link = if let Some(generation) = as_built_421_generation {
@@ -3546,20 +3560,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             == assembly.byte_offset().checked_add(25)
                 })
             });
-            let direct_carrier =
-                records::feature::work_geometry::joint_origin::DirectJointOriginCarrier::for_scope(
-                    scope,
-                )
-                .into_iter()
-                .flatten()
-                .any(|carrier| {
-                    carrier.matches_offsets(origin)
-                        && carrier.has_registered_types(scope, stream_types)
-                        && records_by_index
-                            .get(&(native_stream, carrier.record_index))
-                            .is_some_and(|header| header.byte_offset == carrier.start)
-                });
-            inline || assembly_operand || single_operand_assembly || direct_carrier
+            inline
+                || assembly_operand
+                || single_operand_assembly
+                || direct_joint_origin_carrier_link(scope, origin)
         });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream)?;
         let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);
