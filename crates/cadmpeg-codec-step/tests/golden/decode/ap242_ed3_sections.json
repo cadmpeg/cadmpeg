@@ -73,7 +73,8 @@
           "native_ref": "#1",
           "part_number": "P1",
           "sketches": [],
-          "source_name": "Part"
+          "source_name": "Part",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

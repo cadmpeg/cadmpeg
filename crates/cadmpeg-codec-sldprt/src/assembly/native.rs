@@ -149,6 +149,7 @@ impl NativeDefinition {
             bom_properties: BTreeMap::default(),
             bodies: Vec::new(),
             sketches: Vec::new(),
+            tessellations: Vec::new(),
             native_ref: Some(self.native_ref),
         }
     }

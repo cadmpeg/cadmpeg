@@ -600,6 +600,8 @@ pub(crate) fn transfer_neutral(
             .unwrap_or_default();
         definitions.push(ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: definition_id(object)?,
             kind,
             source_name: source_object.map(|object| object.name().to_owned()),

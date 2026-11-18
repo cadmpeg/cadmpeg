@@ -160,6 +160,7 @@ pub(super) fn document() -> CadIr {
         bom_properties: BTreeMap::new(),
         bodies: vec![body.clone()],
         sketches: Vec::new(),
+        tessellations: Vec::new(),
         native_ref: None,
     });
     let design = &mut ir.design;

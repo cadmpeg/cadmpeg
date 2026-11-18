@@ -64,6 +64,7 @@ pub(crate) enum DesignFeatureFamily {
     Split,
     Scale,
     Thread,
+    SheetMetalBaseFace,
     SheetMetalEdgeFlange,
     SheetMetalHem,
     SheetMetalBend,
@@ -109,6 +110,7 @@ pub(crate) fn design_feature_family(
         Kind::Split => Some(DesignFeatureFamily::Split),
         Kind::Scale => Some(DesignFeatureFamily::Scale),
         Kind::Thread => Some(DesignFeatureFamily::Thread),
+        Kind::Face => Some(DesignFeatureFamily::SheetMetalBaseFace),
         Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
         Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
         Kind::Bend => Some(DesignFeatureFamily::SheetMetalBend),
@@ -148,8 +150,7 @@ pub(crate) fn design_feature_family(
         | Kind::SurfaceUntrim
         | Kind::UnStitch
         | Kind::RemoveBody
-        | Kind::ReverseNormal
-        | Kind::Face => None,
+        | Kind::ReverseNormal => None,
     }
 }
 
