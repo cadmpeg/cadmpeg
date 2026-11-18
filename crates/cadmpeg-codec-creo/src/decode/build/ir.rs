@@ -183,6 +183,7 @@ pub(super) fn angular_termination_has_unresolved_operands(
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}
         | AngularTermination::ToLast {}
+        | AngularTermination::ToPlane { .. }
         | AngularTermination::Angle { .. } => false,
     }
 }

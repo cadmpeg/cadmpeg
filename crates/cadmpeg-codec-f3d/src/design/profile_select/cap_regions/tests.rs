@@ -21,8 +21,10 @@ use crate::history_records::{
 
 use super::{
     changed_planes, face_cap, face_cap_reading, face_outlines_cover_caps, outlines_agree,
-    polygon_area, sample_regions, Agreement, PlaneFrame, Sampled,
+    polygon_area, sample_regions, trimmed_selection, Agreement, PlaneFrame, Sampled,
 };
+use crate::design::profile_select::ResolvedProfileSelection;
+use cadmpeg_ir::features::SketchProfileRegion;
 
 const TOLERANCE: f64 = 1e-6;
 /// The cap face every test topology draws.
@@ -1379,4 +1381,48 @@ fn region_sampler_finds_a_band_between_grid_points() {
     assert!(in_frame(point.u) || in_frame(point.v));
     let inner = sampled[1].point;
     assert!((1.0..=99.0).contains(&inner.u) && (1.0..=99.0).contains(&inner.v));
+}
+
+/// The hole-ring counts of the trimmed regions that `selected` makes from a
+/// square face with a circle face nested directly in it.
+fn square_and_nested_circle_holes(selected: &[usize]) -> Vec<usize> {
+    let square = polygon("square", &[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]);
+    let disk = circle("disk", (2.0, 2.0), 1.0);
+    let outer = region(&square, &[[0.0, 1.0]; 4]);
+    let inner = region(std::slice::from_ref(&disk), &[[0.0, TAU]]);
+    let sampled = vec![
+        Sampled {
+            region: &outer,
+            point: Point2::new(0.5, 0.5),
+            nested: vec![1],
+        },
+        Sampled {
+            region: &inner,
+            point: Point2::new(2.0, 2.0),
+            nested: Vec::new(),
+        },
+    ];
+    let Some(ResolvedProfileSelection::Regions(regions)) = trimmed_selection(&sampled, selected)
+    else {
+        panic!("trimmed regions");
+    };
+    regions
+        .iter()
+        .map(|region| match region {
+            SketchProfileRegion::Trimmed {
+                hole_boundaries, ..
+            } => hole_boundaries.len(),
+            SketchProfileRegion::Loops { .. } => panic!("a trimmed region"),
+        })
+        .collect()
+}
+
+#[test]
+fn a_selected_region_keeps_a_selected_nested_region_as_a_hole() {
+    // Both faces selected: the square face excludes the disk, which is its
+    // own region, so the two regions do not overlap.
+    assert_eq!(square_and_nested_circle_holes(&[0, 1]), [1, 0]);
+    // Controls: either face alone.
+    assert_eq!(square_and_nested_circle_holes(&[0]), [1]);
+    assert_eq!(square_and_nested_circle_holes(&[1]), [0]);
 }

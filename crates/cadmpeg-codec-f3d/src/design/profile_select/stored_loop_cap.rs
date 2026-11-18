@@ -42,7 +42,7 @@ pub(super) fn resolve(
     certified_regions_bounded_by(source, &curves, scoped, states, sweep)
 }
 
-fn certified_regions_bounded_by(
+pub(super) fn certified_regions_bounded_by(
     sketch: &Sketch,
     curves: &[Vec<SketchEntityId>],
     scoped: ScopedExtrudeProfileResolution<'_>,

@@ -251,6 +251,13 @@ mod tests {
     }
 
     #[test]
+    fn payload_atoms_outside_the_pattern_lane_keep_the_shifted_binary32_reading() {
+        let atom = PayloadScalarAtom::read(&[0x50, 0x54, 0, 0]).unwrap();
+        assert_eq!(atom.encoding(), super::PayloadScalarEncoding::Binary32);
+        assert_eq!(atom.value().get(), 3.3125);
+    }
+
+    #[test]
     fn shifted_binary64_retains_bytes_and_derives_the_value() {
         let mut raw = 1.0_f64.to_be_bytes();
         raw[0] -= 0x10;

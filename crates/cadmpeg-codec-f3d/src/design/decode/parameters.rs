@@ -293,7 +293,7 @@ const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 
 /// Parse one indexed parameter frame in a Design `BulkStream` test fixture.
 #[cfg(test)]
-pub(in crate::design) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
+pub(crate) fn parse_design_parameter_record(payload: &[u8]) -> Option<DesignParameter> {
     parse_design_parameter(payload)
         .unwrap()?
         .into_record(TEST_PARAMETER_STREAM, 0)
@@ -577,11 +577,15 @@ fn parse_header_form(
     }
     let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
         let name_at = first_at + 4;
-        let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
+        let (name, name_end) = parameter_text!(payload, name_at, 0..=256);
         (None, name, name_at, name_end)
     } else {
         let (first, first_end) = parameter_text!(payload, first_at, 1..=256);
-        let second_field = lp_utf16_bounded(payload, first_end, 1..=256);
+        let second_field = lp_utf16_bounded(payload, first_end, 0..=256).filter(|(_, end)| {
+            end.checked_add(8)
+                .and_then(|at| payload.get(at..))
+                .is_some_and(is_parameter_tail)
+        });
         if let Some((second, second_end)) = second_field {
             (
                 Some(ParsedParameterUnit {
@@ -695,7 +699,7 @@ fn parse_comment_discriminated_parameter(
         } else {
             (None, first_at)
         };
-        let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
+        let (name, name_end) = lp_utf16_bounded(payload, name_at, 0..=256)?;
         let evaluated_value = View::f64_le_at(payload, name_end)?;
         if !is_parameter_tail(payload.get(name_end.checked_add(8)?..)?) {
             return None;
@@ -834,11 +838,11 @@ fn compact_trailer_parameter(
     let (source_kind, source_kind_end) = parameter_text!(payload, source_kind_at, 1..=256);
     let (unit, name, name_at, name_end) = if View::u32_le_at(payload, source_kind_end) == Some(0) {
         let name_at = source_kind_end.checked_add(4)?;
-        let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
+        let (name, name_end) = parameter_text!(payload, name_at, 0..=256);
         (None, name, name_at, name_end)
     } else {
         let (unit, unit_end) = parameter_text!(payload, source_kind_end, 1..=64);
-        let (name, name_end) = parameter_text!(payload, unit_end, 1..=256);
+        let (name, name_end) = parameter_text!(payload, unit_end, 0..=256);
         let unit_offset = source_kind_end.checked_add(4)?;
         (
             Some(ParsedParameterUnit {
@@ -1058,7 +1062,7 @@ fn parse_typed_compact_design_parameter(
         let (unit, name, name_at, name_end) = match first {
             Some(first) if first_end == scalar_at => (None, first, source_kind_end, first_end),
             first => {
-                let (name, name_end) = parameter_text!(payload, first_end, 1..=256);
+                let (name, name_end) = parameter_text!(payload, first_end, 0..=256);
                 if name_end != scalar_at {
                     return None;
                 }
@@ -1129,7 +1133,7 @@ fn parse_legacy_design_parameter(
         let unit_at = source_kind_end;
         let (unit, unit_end) = parameter_text!(payload, unit_at, 1..=64);
         let name_at = unit_end;
-        let (name, name_end) = parameter_text!(payload, name_at, 1..=256);
+        let (name, name_end) = parameter_text!(payload, name_at, 0..=256);
         let evaluated_value = View::f64_le_at(payload, name_end)?;
         if !is_parameter_tail(payload.get(name_end + 8..)?) || source_kind.is_empty() {
             return None;
@@ -1499,7 +1503,7 @@ impl FrameRelative {
 }
 
 /// Parameter owner parsed in frame-relative coordinates.
-pub(in crate::design) struct ParsedParameterOwner {
+pub(crate) struct ParsedParameterOwner {
     pub(super) frame_length: u64,
     pub(super) class_tag: crate::records::references::DesignClassTag,
     pub(super) record_index: u32,
@@ -1520,7 +1524,7 @@ pub(in crate::design) struct ParsedParameterOwner {
 
 impl ParsedParameterOwner {
     /// Locate this owner in its containing stream.
-    pub(in crate::design) fn into_record(
+    pub(crate) fn into_record(
         self,
         stream: &str,
         frame_start: u64,
@@ -1554,7 +1558,7 @@ impl ParsedParameterOwner {
     }
 }
 
-pub(in crate::design) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
+pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<ParsedParameterOwner> {
     parse_parameter_owner_with(frame, OwnerReferenceForm::Plain, OwnerScalar::Numeric).or_else(
         || parse_parameter_owner_with(frame, OwnerReferenceForm::Typed, OwnerScalar::Numeric),
     )

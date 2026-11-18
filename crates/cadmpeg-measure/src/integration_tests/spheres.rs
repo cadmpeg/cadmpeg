@@ -682,3 +682,79 @@ fn a_negative_radius_lune_sweeps_from_the_stored_reference_direction() {
         );
     }
 }
+
+/// The geodesic triangle of the sphere `R = 10` about the origin with the
+/// corners at longitude 40° and latitude 60°, near the north pole, and at
+/// longitude 0 and latitude 30°. The middle corner lies `3e-3` from the pole,
+/// inside the allowance `0.01`, at longitude 90°. Both great-circle arcs to
+/// it miss the pole by about that distance, so their longitude turns by
+/// about 17° between the edge of the allowance and the corner. The area is
+/// `R²·E` with the spherical excess `E` of the three corners, within the
+/// model uncertainty that the path inside the allowance adds.
+#[test]
+fn a_geodesic_triangle_with_a_corner_inside_the_pole_allowance() {
+    fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    }
+    fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    }
+    fn unit(a: [f64; 3]) -> [f64; 3] {
+        let norm = dot(a, a).sqrt();
+        [a[0] / norm, a[1] / norm, a[2] / norm]
+    }
+    fn on_sphere(longitude: f64, latitude: f64) -> [f64; 3] {
+        let (sin_u, cos_u) = longitude.to_radians().sin_cos();
+        let (sin_v, cos_v) = latitude.to_radians().sin_cos();
+        [10.0 * cos_v * cos_u, 10.0 * cos_v * sin_u, 10.0 * sin_v]
+    }
+    let radius = 10.0_f64;
+    let offset = 3.0e-3_f64;
+    let corners = [
+        on_sphere(40.0, 60.0),
+        [0.0, offset, (radius * radius - offset * offset).sqrt()],
+        on_sphere(0.0, 30.0),
+    ];
+    let mut builder = Builder::new();
+    let vertices: Vec<VertexId> = corners
+        .iter()
+        .map(|corner| builder.vertex(*corner))
+        .collect();
+    let mut ring = Vec::new();
+    for index in 0..3 {
+        let next = (index + 1) % 3;
+        let (start, end) = (unit(corners[index]), unit(corners[next]));
+        let arc = builder.arc(
+            Circle {
+                frame: Frame {
+                    origin: [0.0; 3],
+                    axis: unit(cross(start, end)),
+                    reference: start,
+                },
+                radius,
+            },
+            [0.0, dot(start, end).acos()],
+            &vertices[index],
+            &vertices[next],
+        );
+        ring.push((arc, Sense::Forward));
+    }
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), radius);
+    builder.face(&sphere, Sense::Forward, &[ring], false);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let measures = only_face(&report).measures();
+    assert_eq!(*measures.region(), Some(RegionRule::DeclaredOrientation));
+    let [a, b, c] = corners.map(unit);
+    let excess = 2.0
+        * dot(a, cross(b, c))
+            .abs()
+            .atan2(1.0 + dot(a, b) + dot(b, c) + dot(c, a));
+    let area = measures.area().measured().expect("area");
+    let allowed = area.numeric_error().get() + area.model_uncertainty().get();
+    assert!((area.value().value.get() - radius * radius * excess).abs() <= allowed);
+}

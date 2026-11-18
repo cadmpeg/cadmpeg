@@ -1318,7 +1318,8 @@
           "kind": "group",
           "native_ref": "/Scene",
           "sketches": [],
-          "source_name": "Scene"
+          "source_name": "Scene",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1329,7 +1330,8 @@
           "kind": "group",
           "native_ref": "/Scene/Box",
           "sketches": [],
-          "source_name": "Box"
+          "source_name": "Box",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -1338,7 +1340,8 @@
           "kind": "group",
           "native_ref": "/Scene/Robot",
           "sketches": [],
-          "source_name": "Robot"
+          "source_name": "Robot",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -1347,7 +1350,8 @@
           "kind": "group",
           "native_ref": "/Scene/Shelf",
           "sketches": [],
-          "source_name": "Shelf"
+          "source_name": "Shelf",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

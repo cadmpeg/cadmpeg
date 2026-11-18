@@ -5540,8 +5540,8 @@ fn decode_inline_surface_suffix_at(
             ([value, 0.0], end)
         }
         SurfaceKind::TorusOrSphere => {
-            let (major, next) = scalar::decode_inline_surface_suffix_scalar(local, cursor, cache)?;
-            let (minor, end) = scalar::decode_inline_surface_suffix_scalar(local, next, cache)?;
+            let (major, next) = scalar::decode_type26_radius_slot(local, cursor, cache)?;
+            let (minor, end) = scalar::decode_type26_radius_slot(local, next, cache)?;
             ([major, minor], end)
         }
         _ => return None,
