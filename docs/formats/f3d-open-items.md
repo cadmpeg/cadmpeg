@@ -3518,7 +3518,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Need.** Controlled saves that vary the auxiliary references and settings while keeping the selected cells and tools fixed.
 
-### DR-811. Region member lists across a crossing curve that leaves the arrangement
+### DR-820. Region member lists across a crossing curve that leaves the arrangement
 
 **Question.** Does a node where a curve crosses a profile curve split that profile curve into two fragments of a counted member list when the crossing curve leaves the arrangement?
 
