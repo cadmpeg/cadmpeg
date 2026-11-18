@@ -3528,7 +3528,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The profile stays native and the decoder reports `feature.profile-selection-native`.
 
-### DR-811. Opaque word in a typed one-sided distance Extrude
+### DR-819. Opaque word in a typed one-sided distance Extrude
 
 **Question.** What does a nonzero opaque distance word encode in the direct typed-reference scope?
 
