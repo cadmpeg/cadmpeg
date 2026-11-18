@@ -3292,6 +3292,33 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     && records_by_index.contains_key(&(native_stream, operation.angle_record_index))
                     && records_by_index
                         .contains_key(&(native_stream, operation.opposite_angle_record_index))
+                    && operation
+                        .flags
+                        .and_then(|flags| flags.parting)
+                        .is_none_or(|parting| {
+                            [
+                                Some(parting.pull),
+                                Some(parting.tool),
+                                Some(parting.faces),
+                                parting.fixed_edges,
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .all(|reference| {
+                                reference.value != 0
+                                    && reference.offset >= scope.byte_offset()
+                                    && reference
+                                        .offset
+                                        .checked_add(11)
+                                        .is_some_and(|end| end <= scope.reference_count_offset())
+                                    && scope
+                                        .reference_members()
+                                        .values()
+                                        .any(|value| *value == reference.value)
+                                    && records_by_index
+                                        .contains_key(&(native_stream, reference.value))
+                            })
+                        })
             }
         };
         let combine_link = match scope.combine_operation() {
@@ -3761,11 +3788,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 side_extent_discriminators,
                 side_extent_discriminator_offsets,
                 first_side_target_ordinal,
+                opaque_distance_word,
                 extent,
                 direction_face_extend_offsets,
                 direction_reversed_offset,
                 solid_operation_offset,
+                solid_operation,
                 start_offset,
+                start,
                 ..
             }) => {
                 let typed_references = scope_has_typed_references(scope);
@@ -3922,6 +3952,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .is_some_and(|slot_expansion| {
                         extent_slot_expansion_valid(typed_references, slot_expansion)
                     });
+                let opaque_distance_word_valid = opaque_distance_word.is_none_or(|word| {
+                    typed_references
+                        && scope.byte_offset().checked_add(u64_from_index(
+                            crate::layout::typed_reference_extrude_prologue::OPERATION,
+                        )) == Some(operation_offset)
+                        && direction_face_extend_values == [1, 2]
+                        && side_extent_discriminators == [1, 0]
+                        && solid_operation
+                        && start == records::feature::extrude::DesignExtrudeStart::ProfilePlane
+                        && side_extent_discriminator_offsets[0].checked_add(u64_from_index(
+                            crate::layout::current_extrude_non_target_extent_pair::TARGET_OPTION,
+                        )) == Some(word.byte_offset)
+                });
                 let second_side_offset_valid = (if side_extent_discriminators == [2, 2]
                     || (side_extent_discriminators == [2, 1]
                         && extent == records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero)
@@ -3965,6 +4008,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         || dual_lane_symmetric_extent)
                     && first_side_target_ordinal.is_none_or(|_| side_extent_discriminators[0] == 2)
                     && target_ordinal_valid
+                    && opaque_distance_word_valid
                     && first_side_offset_valid
                     && second_side_offset_valid
                     && operation_offset
@@ -5219,6 +5263,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     .map(records::feature::extrude::DesignExtrudePrologue::start)
                                     == Some(records::feature::extrude::DesignExtrudeStart::FromFace)
                                     || design::decode::operands::extrude_has_selected_termination(scope)
+                                    || (group.extrude_face_role()
+                                        == Some(records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
+                                        && group.members().len() == 1
+                                        && design::decode::operands::allows_slotted_extrude_face_targets(scope))
                             }
                         },
                         records::topology::construction::DesignConstructionOperandRole::Other(role) => {
@@ -5255,10 +5303,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Draft) => {
-                    matches!(
-                        group.role(),
-                        DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
-                    ) && group.extrude_role().is_none()
+                    (matches!(group.role(), DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21)
+                        || (group.role() == DesignOperandRole::BODIES_B
+                            && scope.draft_operation().and_then(|operation| operation.flags)
+                                .and_then(|flags| flags.parting).is_some_and(|parting| {
+                                    parting.tool.value == group.record_index
+                                        || parting.fixed_edges.is_some_and(|fixed| fixed.value == group.record_index)
+                                }))) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::ReplaceFace) => {
                     matches!(
@@ -5356,7 +5407,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::SurfacePatch) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::PROFILE
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::PROFILE
+                            | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::SurfaceOffset) => {
@@ -6616,7 +6669,7 @@ fn validate_body_recipe_operands<'a>(
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
     );
-    history::bind_body_recipe_operand_history_candidates(
+    history::body_recipe_operands::bind_body_recipe_operand_history_candidates(
         &mut expected_operands,
         &native.construction_recipes,
         &native.design_parameter_scopes,
