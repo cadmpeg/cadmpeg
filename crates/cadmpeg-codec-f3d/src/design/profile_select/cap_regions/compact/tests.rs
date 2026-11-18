@@ -219,7 +219,7 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
             )
         })
         .collect::<Vec<_>>();
-    let run = |topology, length| {
+    let run = |topology, length, operation: BooleanOp| {
         let states = [(2, topology), (1, AsmHistoricalTopology::default())]
             .into_iter()
             .map(|(state_id, topology)| {
@@ -268,7 +268,7 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
                 resolution,
                 (2, 1),
                 super::Sweep {
-                    operation: &BooleanOp::Join,
+                    operation: &operation,
                     start: &ExtrudeStart::ProfilePlane {},
                     direction: &ExtrudeDirection::ProfileNormal {},
                     extent: &ExtrudeExtent::OneSided {
@@ -284,9 +284,13 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
         })
         .unwrap()
     };
-    assert!(run(prism_topology(), 2.0).is_some());
-    assert!(run(prism_topology(), 1.0).is_none());
+    assert!(run(prism_topology(), 2.0, BooleanOp::Join).is_some());
+    assert!(run(prism_topology(), 2.0, BooleanOp::NewBody).is_some());
+    assert!(run(prism_topology(), 1.0, BooleanOp::Join).is_none());
+    // A Cut or Intersect far cap cannot show a profile over no material.
+    assert!(run(prism_topology(), 2.0, BooleanOp::Cut).is_none());
+    assert!(run(prism_topology(), 2.0, BooleanOp::Intersect).is_none());
     let mut unsupported = prism_topology();
     unsupported.surface_planes[2].origin = Point3::new(0.0, 0.5, 0.0);
-    assert!(run(unsupported, 2.0).is_none());
+    assert!(run(unsupported, 2.0, BooleanOp::Join).is_none());
 }

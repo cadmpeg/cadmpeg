@@ -46,9 +46,10 @@ use super::sheet_metal::{
     DesignBaseFlangeOperation, DesignEdgeFlangeOperation, DesignHemOperation,
 };
 use super::surface_ops::{
-    DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfacePatchBoundary, DesignSurfacePatchNormalState, DesignSurfacePatchScope,
-    DesignSurfacePatchSelection, DesignSurfaceStitchOperation, DesignSurfaceUntrimOperation,
+    DesignReplaceFaceOperation, DesignRuledSurfaceOperation, DesignSurfaceExtendOperation,
+    DesignSurfaceOffsetOperation, DesignSurfacePatchBoundary, DesignSurfacePatchNormalState,
+    DesignSurfacePatchScope, DesignSurfacePatchSelection, DesignSurfaceStitchOperation,
+    DesignSurfaceUntrimOperation,
 };
 use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
@@ -338,6 +339,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_surface_extend_operation,
     DesignSurfaceExtendOperation,
     "surface_extend_operation"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_replace_face_operation,
+    DesignReplaceFaceOperation,
+    "replace_face_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_surface_untrim_operation,
@@ -776,6 +782,7 @@ design_feature_kinds! {
         Combine => "Combine": DesignCombineScope,
         BoundaryFill => "BoundaryFill": super::boundary_fill::DesignBoundaryFillScope,
         Draft => "Draft": Option<DesignDraftOperation>,
+        ReplaceFace => "ReplaceFace": Option<DesignReplaceFaceOperation>,
         CPattern => "C-Pattern": Option<DesignCircularPatternConstruction>,
         CircularPattern => "Circular Pattern": Option<DesignCircularPatternConstruction>,
         RPattern => "R-Pattern": Option<DesignRectangularPatternConstruction>,
@@ -830,7 +837,6 @@ design_feature_kinds! {
         SurfaceRuled => "SurfaceRuled": DesignRuledSurfaceOperation,
     }
     names {
-        ReplaceFace => "ReplaceFace",
         SurfaceTrim => "SurfaceTrim",
         Split => "Split",
         Canvas => "Canvas",
@@ -1191,6 +1197,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_surface_untrim_operation"
     )]
     surface_untrim_operation: Option<DesignSurfaceUntrimOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_replace_face_operation"
+    )]
+    replace_face_operation: Option<DesignReplaceFaceOperation>,
     /// Exact distance and boundary records carried by a `SurfaceOffset` scope.
     #[serde(
         default,
@@ -2118,7 +2130,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 named_tail: wire.combine_named_tail.take(),
             }),
             DesignFeatureKind::Draft => DesignScopePayload::Draft(wire.draft_operation.take()),
-            DesignFeatureKind::ReplaceFace => DesignScopePayload::ReplaceFace,
+            DesignFeatureKind::ReplaceFace => {
+                DesignScopePayload::ReplaceFace(wire.replace_face_operation.take())
+            }
             DesignFeatureKind::CPattern => {
                 DesignScopePayload::CPattern(wire.circular_pattern_construction.take())
             }
@@ -2619,6 +2633,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             surface_stitch_operation: None,
             surface_extend_operation: None,
             surface_untrim_operation: None,
+            replace_face_operation: None,
             surface_offset_operation: None,
             ruled_surface_operation: None,
             base_flange: None,
@@ -2710,7 +2725,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::CylinderPrimitive(value) => {
                 wire.solid_primitive = value.map(DesignSolidPrimitive::Cylinder);
             }
-            DesignScopePayload::ReplaceFace => {}
+            DesignScopePayload::ReplaceFace(value) => wire.replace_face_operation = value,
             DesignScopePayload::OffsetFaces(value) => {
                 wire.direct_face_operation = value.map(DesignDirectFaceOperation::OffsetFaces);
             }
@@ -3396,6 +3411,13 @@ impl DesignParameterScope {
     pub(crate) fn surface_extend_operation(&self) -> Option<&DesignSurfaceExtendOperation> {
         match &self.payload {
             DesignScopePayload::SurfaceExtend(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn replace_face_operation(&self) -> Option<&DesignReplaceFaceOperation> {
+        match &self.payload {
+            DesignScopePayload::ReplaceFace(value) => value.as_ref(),
             _ => None,
         }
     }
