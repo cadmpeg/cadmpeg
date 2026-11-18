@@ -6,7 +6,8 @@ use super::compact_wide::{push_header, push_lp_utf16, push_marked, push_wide_ope
 
 #[test]
 fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
-    use crate::design::assembly::{project_assembly_joints, AS_BUILT_SCOPE_TYPE_GUID};
+    use crate::design::assembly::{project_assembly_joints_with_paths, AS_BUILT_SCOPE_TYPE_GUID};
+    use crate::design::components::paths::LocalOccurrencePaths;
     use crate::design::components::ComponentInserts;
     use crate::design::decode::joint_motion::JOINT_TYPE_GUID;
     use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
@@ -22,7 +23,7 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
     use crate::records::feature::scope::DesignScopePayloadMut;
     use crate::records::identity::Located;
     use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
-    use cadmpeg_ir::products::{JointOperands, OperandContainer, PairedJointKind};
+    use cadmpeg_ir::products::{JointOperands, Occurrence, OperandContainer, PairedJointKind};
 
     let mut bytes = Vec::new();
     push_header(&mut bytes, b"405", 10);
@@ -179,15 +180,35 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
             rest_malformed: false,
         }),
     };
-    let project = |motions: &[DesignJointMotion]| {
-        project_assembly_joints(
-            std::slice::from_ref(&scope),
+    let model_occurrences: [Occurrence; 2] = occurrences.each_ref().map(|carrier| {
+        serde_json::from_value(serde_json::json!({
+            "id": crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
+            "prototype": {"kind": "local", "definition": "f3d:model:product_definition#1"},
+            "parent": {"kind": "root"},
+            "ordinal": 0,
+            "transform": [[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.]],
+            "scale": [1., 1., 1.],
+            "native_ref": carrier.id,
+        }))
+        .unwrap()
+    });
+    let project = |motions: &[DesignJointMotion], projected: &[Occurrence]| {
+        let scopes = std::slice::from_ref(&scope);
+        project_assembly_joints_with_paths(
+            scopes,
             &occurrences,
             &ComponentInserts::default(),
             motions,
+            &LocalOccurrencePaths::new(&occurrences, &[], projected, scopes),
         )
     };
-    let projected = project(&[motion]);
+    let refused = project(std::slice::from_ref(&motion), &model_occurrences[..1]);
+    assert!(refused.joints.is_empty());
+    assert_eq!(
+        crate::test_support::loss_codes(&refused.losses),
+        [crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()],
+    );
+    let projected = project(&[motion], &model_occurrences);
     let [joint] = projected.joints.as_slice() else {
         panic!("one As-built joint");
     };
@@ -215,7 +236,7 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         crate::test_support::loss_codes(&projected.losses),
         [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()],
     );
-    assert!(project(&[]).joints.is_empty());
+    assert!(project(&[], &model_occurrences).joints.is_empty());
 }
 
 fn push_ordinary_tail(bytes: &mut Vec<u8>, additional_reference: bool, wide_field: bool) {

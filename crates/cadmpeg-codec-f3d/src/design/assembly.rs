@@ -1336,6 +1336,15 @@ fn project_assembly_joint(
         }
         None => (None, None),
     };
+    if compact_as_built
+        && operands
+            .iter()
+            .any(|operand| !paths.has_projected_joint_operand(&operand.container))
+    {
+        return Err(CodecError::NotImplemented(
+            "As-built joint operand has no projected occurrence".into(),
+        ));
+    }
     let [first_operand, second_operand] = operands;
     let angle = cadmpeg_ir::scalar::FiniteReal::new(alignment.angle())
         .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
