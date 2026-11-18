@@ -2065,6 +2065,27 @@ retain their governing root type, even when they share shell carriers.
 ISO 10303-44 defines each `NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one individual
 constituent occurrence. A second use of the same child is a distinct
 `NEXT_ASSEMBLY_USAGE_OCCURRENCE` when position or orientation is assigned.
+CADIR decision: a `NEXT_ASSEMBLY_USAGE_OCCURRENCE` relates two product
+definitions, so every use of a parent definition has the same children. An
+instance at an occurrence path that shows its own bodies
+(`ProductDefinition.instance_bodies`) or its own nested placement
+(`NestedOverride.transform`) is written as an occurrence of a further
+`PRODUCT_DEFINITION` of its prototype's `PRODUCT_DEFINITION_FORMATION`. That
+definition holds the instance's bodies, or else its prototype's bodies, and a
+copy of each occurrence of its prototype. A copy carries the nested placement
+that the instance states for it, and the next step of the path places a further
+definition of the same form. The writer records
+`product.instance-definition-split` for each definition it adds this way,
+naming the path of the instance that definition places. A definition of the
+document whose every occurrence now places such a further definition is not
+written, nor are the occurrences it owns, so the file has no root that the
+document lacks. The first further definition then states the `PRODUCT` and
+carries the identifier the prototype would have carried. Bodies of such a
+definition that no written definition holds are not written, and the writer
+records `product.instance-prototype-bodies-omitted` for that definition. A
+path whose steps do not each name an occurrence of the previous step's
+prototype is `product.instance-path-unresolved`, and the writer applies
+none of it.
 ISO 10303-43 defines `representation.items` as `SET[1:?]` and
 `representation_map.map_usage` as `SET[1:?]`. A representation may contain
 several mapped items, and one representation map may be used by several mapped
