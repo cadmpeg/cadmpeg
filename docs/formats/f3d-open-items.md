@@ -3650,7 +3650,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
 
-### DR-811. Region member lists across a crossing curve that leaves the arrangement
+### DR-820. Region member lists across a crossing curve that leaves the arrangement
 
 **Question.** Which stored relation selects one member per fragment or one member per curve run at an interior crossing whose other curve leaves the arrangement?
 
