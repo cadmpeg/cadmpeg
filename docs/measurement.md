@@ -611,6 +611,13 @@ Each face region gives five flux integrals over the face, with
 Green's theorem each is `∮ F du` over the region's loops with the inner
 integral `F(u, v) = −∫_{v₀}^{v} f(u, s) ds` from the region's base `v₀`,
 plus the whole domain when the region reaches the domain's natural edges.
+On a NURBS chart with no periodic parameter whose `u` knots bound fewer
+spans than its `v` knots, the area and each flux are `∮ G dv` with the
+inner integral `G(u, v) = ∫_{u₀}^{u} f(s, v) ds` from the lower end `u₀`
+of the `u` domain, and each boundary piece's quadrature also breaks where
+the piece crosses an interior `v` knot. On a NURBS chart an inner integral
+along one parameter has the area goal over the knot domain width of the
+other parameter as its error goal.
 `P_ref` is the centre of the body's edge and vertex box; for a body with
 neither, the centre of its faces' whole carriers (the critical points of a
 sphere or torus, the control net of a NURBS carrier); else the origin.
