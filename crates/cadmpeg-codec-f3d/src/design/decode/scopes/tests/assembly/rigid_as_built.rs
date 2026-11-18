@@ -6,6 +6,15 @@ use super::compact_wide::{push_header, push_lp_utf16, push_marked, push_wide_ope
 
 #[test]
 fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
+    assert_compact_slider(5, false);
+}
+
+#[test]
+fn legacy_placement_as_built_projects_a_slider_with_an_ordinary_locator() {
+    assert_compact_slider(4, true);
+}
+
+fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
     use crate::design::assembly::{project_assembly_joints_with_paths, AS_BUILT_SCOPE_TYPE_GUID};
     use crate::design::components::paths::LocalOccurrencePaths;
     use crate::design::components::ComponentInserts;
@@ -39,9 +48,13 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
     push_marked(&mut bytes, 9);
     push_lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
     bytes.extend_from_slice(&[0; 3]);
-    let members = [70, 72, 73, 50, 53, 56, 59];
+    let members: &[u32] = if ordinary_locator {
+        &[70, 72, 73, 75, 76, 50, 53, 56, 59]
+    } else {
+        &[70, 72, 73, 50, 53, 56, 59]
+    };
     bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
-    for member in members {
+    for &member in members {
         push_marked(&mut bytes, member);
     }
     bytes.extend_from_slice(&u32::MAX.to_le_bytes());
@@ -56,8 +69,18 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         (67, "66666666-6666-6666-6666-666666666666"),
     ] {
         push_header(&mut bytes, b"283", index);
-        bytes.extend_from_slice(&[0; 11]);
-        bytes.push(1);
+        bytes.extend_from_slice(&[0; 10]);
+        if ordinary_locator && index == 64 {
+            push_marked(&mut bytes, 75);
+            bytes.push(0);
+            let mut rows = Transform::identity().rows();
+            rows[0][3] = 2.5;
+            for value in rows.iter().flatten() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        } else {
+            bytes.extend_from_slice(&[0, 1]);
+        }
         bytes.push(0);
         push_marked(&mut bytes, 10);
         push_marked(&mut bytes, index + 2);
@@ -109,7 +132,7 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         .collect();
     let locator_type = "2E3AC990-483D-4A55-8662-C064B976A957";
     let mut types = std::collections::HashMap::from([
-        (9, (JOINT_TYPE_GUID, 5)),
+        (9, (JOINT_TYPE_GUID, joint_version)),
         (10, (AS_BUILT_SCOPE_TYPE_GUID, 1)),
         (64, (locator_type, 3)),
         (65, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
@@ -136,7 +159,7 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
             .operand_frames()
             .unwrap()
             .map(|frame| frame.reference_record_index),
-        [64, 67]
+        [if ordinary_locator { 75 } else { 64 }, 67]
     );
 
     types.remove(&9);
@@ -231,6 +254,8 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         matches!(&connector.operand.container, OperandContainer::Occurrence { occurrence, .. }
             if occurrence == &crate::ids::neutral_component_occurrence_id(&expected.occurrence_guid))
     }));
+    let expected_x = if ordinary_locator { 25.0 } else { 0.0 };
+    assert!((connectors[0].frame.rows()[0][3] - expected_x).abs() < f64::EPSILON);
     assert_eq!(
         crate::test_support::loss_codes(&projected.losses),
         [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()],
