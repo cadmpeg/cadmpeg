@@ -13,6 +13,7 @@ use super::names::{
     TopoName,
 };
 use super::options::NativeOption;
+use super::parameter::Deviations;
 use super::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Position, StateRef};
 use super::selection::{
     Anchor, BoundaryUse, Continuity, DatumPart, DefinitionRef, Fragment, Keyed, MemberOrder,
@@ -20,6 +21,7 @@ use super::selection::{
     Picked, Picks, PrincipalEntity, Propagation, RuleTerm, Selection, SelectionRule, SketchRegion,
     StepRef, Unordered, Witness,
 };
+use super::units::UnitSystem;
 use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -120,6 +122,8 @@ rewrite_scalar!(AxisValue);
 rewrite_scalar!(PlaneValue);
 rewrite_scalar!(FrameValue);
 rewrite_scalar!(CurveValue);
+rewrite_scalar!(UnitSystem);
+rewrite_scalar!(Deviations);
 
 rewrite_enum!(TopoName, []; {
     Generated {kind, feature, role, generator, index},

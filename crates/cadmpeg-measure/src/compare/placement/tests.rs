@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
-
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -16,49 +13,41 @@ use super::class;
 use crate::compare::PlacementClass;
 
 fn definition(ir: &CadIr) -> ProductDefinition {
-    ProductDefinition {
-        sketches: Vec::default(),
-        tessellations: Vec::new(),
-        id: ProductDefinitionId::mint("test:model:product#1").expect("id"),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
-        bodies: ir
-            .geometry
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect(),
-        native_ref: None,
-    }
+    let mut definition = ProductDefinition::new(
+        ProductDefinitionId::mint("test:model:product#1").expect("id"),
+        Storage::Embedded,
+    );
+    definition.kind = Some(ProductDefinitionKind::Part);
+    definition.bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect();
+    definition
 }
 
 fn occurrence(n: u32, transform: Transform) -> Occurrence {
-    let one = FiniteReal::new(1.0).expect("finite");
-    Occurrence {
-        id: OccurrenceId::mint(format!("test:model:occurrence#{n}")).expect("id"),
-        prototype: PrototypeReference::Local {
-            definition: ProductDefinitionId::mint("test:model:product#1").expect("id"),
-        },
-        parent: OccurrenceParent::Root {},
-        ordinal: n,
-        transform,
-        linked_prototype: None,
-        scale: [one; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: None,
-    }
+    Occurrence::new(
+        OccurrenceId::mint(format!("test:model:occurrence#{n}")).expect("id"),
+        ProductDefinitionId::mint("test:model:product#1").expect("id"),
+        Some(transform),
+    )
 }
 
+/// The cube's part, placed by `occurrences` that a root definition owns.
 fn cube_with(occurrences: Vec<Occurrence>) -> CadIr {
     let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
     let definition = definition(&cube);
-    cube.model.product_definitions.push(definition);
+    let mut root = ProductDefinition::root(
+        ProductDefinitionId::mint("test:model:product#root").expect("id"),
+        ExternalDocument::default(),
+    );
+    root.occurrences = occurrences
+        .iter()
+        .map(|occurrence| occurrence.id.clone())
+        .collect();
+    cube.model.product_definitions.extend([definition, root]);
     cube.model.occurrences = occurrences;
     cube
 }
@@ -70,7 +59,7 @@ fn a_document_without_occurrences_is_trivial() {
 }
 
 #[test]
-fn one_identity_root_occurrence_is_trivial() {
+fn one_identity_occurrence_is_trivial() {
     let cube = cube_with(vec![occurrence(0, Transform::identity())]);
     assert_eq!(class(&cube), PlacementClass::Trivial);
 }

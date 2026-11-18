@@ -499,9 +499,9 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does the flag byte after the `variant` byte of a parameter owner store?
 
-**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
+**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero. The owner of a driven dimension stores variant zero and flag zero. One save pair stores the same dimension driving and driven. The 104-byte owner frames of the pair differ in one byte, the last digit of the class tag: `361` in the driving save and `363` in the driven save. Each tag is `256` plus the type-table index of type `D91D429C-1BB5-4640-B49F-69AF14F463E9` in its save, and all four parameter owners of each save carry the tag of that save.
 
-**Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
+**Need.** The flag can mark a suppressed parameter. A design that suppresses the feature of one scalar owner, saved in each state, and a save that creates a scalar owner with `variant` one.
 
 ### DR-88. Secondary asset-folder run
 
@@ -2575,17 +2575,17 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection retains both selections and reports `feature.shell-group-roles-assumed`. The wall-selection solver uses the admitted complete construction; partial wall assumptions remain separate from its geometry proof.
 
-### DR-311. Extension method of a SurfaceExtend scope
+### DR-311. Trailing reference of a surface boundary carrier and other SurfaceExtend prologues
 
-**Question.** Which field of a `SurfaceExtend` scope stores the extension method, and which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?
+**Question.** Which records can the trailing reference of a `SurfaceExtend` or boundary-carrier `SurfaceOffset` group name, what does the boolean of a compact flag record state, and where does a `SurfaceExtend` scope with another prologue store its extension method?
 
-**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner and the boundary carrier. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. The candidate fields are the boolean of a compact flag record, the group `variant` and closing flag, and the u32 fields that precede the scope's marked references to the distance owner and the boundary carrier. Each candidate holds one value in every available scope. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`.
+**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner, the boundary carrier, and the scope prologue with the extension method. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`. The boolean is `1` for each extension method with edge chaining on.
 
-**Need.** Three saves that extend the same edge by the same distance, one with each extension method, compared byte for byte. Controlled saves and record comparisons that establish the trailing reference target forms and their effect on the operation.
+**Need.** Two saves of one extension that differ only in the edge-chaining option, compared byte for byte. Controlled saves and record comparisons that establish the trailing reference target forms and their effect on the operation. A `SurfaceExtend` scope whose prologue differs from the fixed prologue, with its extension method.
 
 **Conflict.** None.
 
-**Note.** The decoder projects each `SurfaceExtend` scope with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. It retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
+**Note.** The decoder reads the extension method from the fixed scope prologue. A scope with another prologue, or with a method code above `2`, projects with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. The decoder retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
 
 ### DR-312. Negative SurfaceExtend distance
 
