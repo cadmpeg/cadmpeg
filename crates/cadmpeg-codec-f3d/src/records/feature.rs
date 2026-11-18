@@ -26,10 +26,12 @@ pub(crate) mod position;
 pub(crate) mod primitives;
 pub(crate) mod scope;
 pub(crate) mod sheet_metal;
+pub(crate) mod silhouette_split;
 pub(crate) mod surface_ops;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
 pub(crate) mod thread;
+pub(crate) mod work_axes;
 pub(crate) mod work_geometry;

@@ -1445,7 +1445,7 @@ pub(crate) enum FaceSourceType {
 impl FaceSourceType {
     fn matches(self, registration: &crate::records::entity_header::SegmentTypeData) -> bool {
         let (guid, module, versions): (&str, &str, &[u32]) = match self {
-            Self::Scope => ("7AFA0A65-B53C-472C-ACA4-5C7C0A65001C", "Fusion", &[3]),
+            Self::Scope => ("7AFA0A65-B53C-472C-ACA4-5C7C0A65001C", "Fusion", &[3, 4]),
             Self::Carrier => ("CAA55628-037B-4D01-9C74-26118F70B63E", "Fusion", &[0]),
             Self::Settings => ("E75C86D6-76D8-4F1F-BC16-AB8CB74958B0", "Fusion", &[2, 3]),
             Self::Identity => (
@@ -1953,6 +1953,10 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceRuled)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::BoundaryFill)
+            || matches!(
+                scope.payload(),
+                crate::records::feature::scope::DesignScopePayload::SilhouetteSplit(Some(_))
+            )
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::ReplaceFace)
@@ -1999,6 +2003,11 @@ pub(crate) fn decode_construction_operand_groups(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
+            if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SilhouetteSplit
+                && ordinal != 2
+            {
+                continue;
+            }
             if scope.emboss_operand_construction().is_some() && !matches!(ordinal, 0 | 2) {
                 continue;
             }

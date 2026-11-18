@@ -440,6 +440,19 @@ impl MergeSession<'_, '_> {
                 let definition = define_member(self.ctx, &mut component_ir, label)?;
                 append_feature_history(&parent_ir.model, &mut component_ir.model)?;
                 let targets = native_record_targets(&component_ir.native, &occurrence);
+                let mut member_parts = std::collections::BTreeSet::new();
+                for stub in component_ir.native_unknowns_iter("f3d") {
+                    let stub = stub?;
+                    if stub
+                        .links
+                        .iter()
+                        .all(|link| !targets.contains_key(link.as_str()))
+                    {
+                        if let Some(target) = targets.get(stub.id.as_str()) {
+                            member_parts.insert(target);
+                        }
+                    }
+                }
                 rescope_partial_pattern_sources(&mut component_ir.model, &occurrence);
                 let native_text = TextReplacements::build(targets.iter())?;
                 let mut scope = OccurrenceScope {
@@ -501,6 +514,9 @@ impl MergeSession<'_, '_> {
                     .filter(|(id, _)| id.contains(":source:part#"))
                     .collect::<Vec<_>>();
                 for (_, stub) in &given_up {
+                    if !member_parts.contains(stub) {
+                        continue;
+                    }
                     cadmpeg_ir::unknown::part::link_committed(
                         parent_ir,
                         "f3d",

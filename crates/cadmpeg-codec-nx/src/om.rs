@@ -111,7 +111,10 @@ pub(crate) mod fset_references;
 pub(crate) mod pattern;
 pub(crate) mod pattern_references;
 pub(crate) mod projected_references;
-use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
+use pattern::{
+    PatternAtom, PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWide,
+    PatternWideValues,
+};
 pub(crate) mod scalar;
 pub(crate) mod swp104_state;
 use scalar::{
@@ -1712,7 +1715,7 @@ pub(crate) fn pattern_payload_transform_lane(
             (record.payload().get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
                 .then_some(())?;
             at += 1 + prefix_tail.len();
-            let scalar = ShiftedScalar::read(record.payload().get(at..)?)?;
+            let scalar = PatternAtom::read(record.payload().get(at..)?)?;
             let width = scalar.raw().len();
             let value = PatternValue {
                 scalar,
@@ -1764,7 +1767,7 @@ pub(crate) fn pattern_payload_transform_lane(
             at += 1;
             let mut decode_value = |value_ordinal| {
                 let value_offset = at;
-                let scalar = ShiftedBinary64::read(record.payload().get(at..at + 8)?)?;
+                let scalar = PatternWide::read(record.payload().get(at..at + 8)?)?;
                 let value = PatternValue {
                     scalar,
                     offset: record.payload_offset() + value_offset,

@@ -145,6 +145,59 @@ fn a_committed_stub_is_linked_to_the_record_defined_after_it() {
 }
 
 #[test]
+fn repeated_source_parts_commit_once_with_every_containing_record() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(SOURCE, &arena, &DecodePolicy::default()).unwrap();
+    let give_up = |owner| {
+        ctx.give_up_part(
+            Part::new("synthetic", "record", root, [ArenaClass::Design])
+                .contained_in(identity(owner)),
+            CodecError::malformed("damaged"),
+        )
+        .unwrap()
+    };
+    let first = give_up("synthetic:native:scope#one");
+    let second = give_up("synthetic:native:scope#two");
+    let id = first.id().clone();
+    let merged = GivenUpPart::coalesce(vec![first.clone(), second, first.clone()]).unwrap();
+    assert_eq!(merged.len(), 1);
+    let mut ir = CadIr::empty();
+    let mut fidelity = SourceFidelity::for_root(root);
+    let loss = merged
+        .into_iter()
+        .next()
+        .unwrap()
+        .commit(&ctx, &mut ir, &mut fidelity)
+        .unwrap();
+    assert_eq!(loss.code, first.loss().code);
+    let stubs = ir.native_unknowns("synthetic").unwrap();
+    assert_eq!(
+        stubs[0].links,
+        vec![
+            identity("synthetic:native:scope#one"),
+            identity("synthetic:native:scope#two")
+        ]
+    );
+    assert_eq!(
+        fidelity.retained_record(id.as_str()).unwrap().data(),
+        Some(SOURCE)
+    );
+    let mut different = first.clone();
+    different.retained = crate::source_fidelity::RetainedSourceRecord::from_bytes(
+        crate::provenance::SourceOwner::Root,
+        0,
+        RetainedBytes::Inline {
+            data: b"different".to_vec(),
+        },
+    )
+    .unwrap()
+    .with_untyped([ArenaClass::Design]);
+    assert!(GivenUpPart::coalesce(vec![first, different]).is_err());
+    ctx.finish_session().unwrap();
+}
+
+#[test]
 fn the_loss_states_lost_entries_and_what_else_the_part_cost() {
     let arena = DecodeArena::new();
     let (ctx, root) =
