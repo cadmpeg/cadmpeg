@@ -87,7 +87,7 @@ fn decode_keeps_stream_and_model_entity_admission_additive() {
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit NX entities"
+                    && limit.operation == "root product definition"
         ),
         "{error:?}"
     );
