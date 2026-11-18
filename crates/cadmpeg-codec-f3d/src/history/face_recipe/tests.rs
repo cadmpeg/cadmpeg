@@ -204,6 +204,15 @@ fn a_one_clause_node_binds_a_closed_edge_by_the_fan_at_its_one_vertex() {
     let index = FaceRecipeIndex::new(&topology_with_inner_loop());
     let mut operand = operand();
     add_closed_edge_node(&mut operand, [4, 0]);
+    assert_eq!(operand.recipe_program[2], 4);
+    assert_eq!(
+        operand
+            .recipe_nodes
+            .iter()
+            .map(|node| node.recipe_structure.as_ref().unwrap().prelude[1])
+            .collect::<Vec<_>>(),
+        [2, 2, 2, 1]
+    );
     assert_eq!(index.resolve(&operand), Some(100));
     let mut operand = self::operand();
     add_closed_edge_node(&mut operand, [4, 1]);
