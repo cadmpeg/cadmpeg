@@ -233,9 +233,10 @@ fn a_patch_with_a_collapsed_side_measures_its_whole_area() {
 /// triangle whose first side runs along `y = 0.005` from `x = -24` to
 /// `x = 26`. That side passes within the allowance of the centre between
 /// two samples at every sample count up to the cap, where its parameter
-/// image turns by about half a period.
+/// image turns by about half a period. The side splits at the centre, and
+/// the loop reaches the region rule for a periodic NURBS domain.
 #[test]
-fn a_side_grazing_a_collapsed_nurbs_side_between_samples_does_not_invert() {
+fn a_side_grazing_a_collapsed_nurbs_side_between_samples_splits_there() {
     let radius = 50.0;
     let circle = [
         (1.0, 0.0, 1.0),
@@ -295,5 +296,5 @@ fn a_side_grazing_a_collapsed_nurbs_side_between_samples_does_not_invert() {
         .area()
         .unavailable()
         .expect("unavailable area");
-    assert_eq!(area.reason(), UnavailableReason::BoundaryInversionFailed);
+    assert_eq!(area.reason(), UnavailableReason::RegionDomainUnsupported);
 }

@@ -158,6 +158,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 position_offset: 200,
                 reference_type: 17,
                 vertex_input: None,
+                plane: None,
             }],
         });
     }
