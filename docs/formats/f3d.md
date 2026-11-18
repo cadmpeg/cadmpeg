@@ -982,6 +982,8 @@ The relation for both class-`283` forms is the 57-byte three-reference form desc
 
 The 272-byte Component Insert scope stores fourteen zero bytes at offsets 11 through 24, its occurrence identity u64 at offset 25, four zero bytes at offset 33, its marked relation reference at offset 37, six zero bytes at offset 42, and identity bytes `01 01` at offset 48. The LP-UTF16 null GUID starts at offset 50. Three zero bytes follow it, then the one-member ordered reference table at offset 129. A 276-byte frame replaces the fourteen zero bytes with nine zero bytes, `01 00 00 00 00`, and four zero bytes. All subsequent fields move four bytes later. The 400-byte frame stores the fields of the 272-byte frame through offset 47, bytes `01 00` at offset 48, and a row-major rigid transform at offset 50. Its LP-UTF16 null GUID starts at offset 178, and the later fields of the 272-byte frame move 128 bytes later. Both frames have an identity placement and a 58-byte relation with marked references at offsets 21, 35, and 47. The first names the carrier; the last references the scope. The relation has ten zero bytes after the header, six zero bytes after the carrier reference, `01 00 00` at offset 32, seven zero bytes after the middle reference, and six zero bytes after the scope reference. The 272-, 276-, 400-, and 404-byte frames can name an attributed legacy occurrence placement as their carrier. Its occurrence-role GUID is the occurrence role of the insert. The identity frames name a placement with identity flag `1`. The 400- and 404-byte frames name a placement with identity flag `0` whose matrix equals the scope transform. Component Insert frame lengths count the stored feature-family name `Component Insert`. A stored name of `L` UTF-16 code units adds `2 * (L - 16)` bytes to the frame length.
 
+The 271- and 275-byte identity scopes use the respective 272- and 276-byte prefixes and ordered reference tables. The sole reference selects a 57-byte relation. Its first marked reference selects a legacy typed occurrence placement with identity flag `1`. Its last marked reference selects the scope. The carrier ends at the relation header and its role selects the occurrence.
+
 Shifted identity insertion scopes have a 122-byte prefix. The 256-byte form uses that prefix through its null GUID, then the sole relation table, the 16-code-unit kind name and a 76-byte scope tail. The 257- and 267-byte forms retain the same identity prefix with their respective bounded tails. The 261-byte identity form and the 385-, 389- and 399-byte matrix forms retain their documented prologues independently of the source relation and carrier. The occurrence identity and stored placement belong to the scope; the referenced carrier supplies a separate source binding. The 385-byte matrix starts immediately after the two transform markers; all sixteen matrix values belong to the transform.
 
 The 404-byte matrix scope uses the 276-byte prologue. Its fields after that prologue follow the 400-byte matrix scope with a four-byte shift: the matrix starts at offset 54 and the null GUID starts at offset 182. The scope placement and occurrence identity are independent of the relation carrier that supplies the source occurrence role.
@@ -1012,6 +1014,7 @@ The Component Insert generation map is:
 | dynamic / any | 272 | implicit identity | 58 | 420-byte identity insertion carrier or attributed legacy placement |
 | dynamic / any | 276 | implicit identity | 58 | 420-byte identity insertion carrier or attributed legacy placement |
 | dynamic / any | 400 | matrix at +50 | 58 | attributed legacy placement with equal matrix |
+| dynamic / any | 271 or 275 | implicit identity | 57 | legacy typed identity placement |
 | dynamic / any | 261 (272-byte prefix) | implicit identity | 57 | legacy typed identity placement; its role selects the occurrence |
 | dynamic / any | 584 (typed references) | matrix at +86 | 177 (typed) | repeated-target carrier with equal matrix; repeated role selects the occurrence |
 
@@ -1983,10 +1986,13 @@ A fillet set is one indexed record. Its frame ends at the next indexed header an
 | constant | 97 | `+23: u8 1`; `+25: u8 curvature continuity`; `+26: u8 tangent chain`; `+29: edge-group reference`; `+63: Radius owner reference`; `+78: u32 set ordinal`; `+82: TangencyWeight owner reference` |
 | chordal | 97 | `+22: u8 1`; `+26: u8 flag`; `+28: ChordLen owner reference`; `+39: edge-group reference`; `+78: u32 set ordinal`; `+82: TangencyWeight owner reference` |
 | compact constant | 93 | `+22: u8 1`; `+24: u8 flag`; `+27: edge-group reference`; `+59: Radius owner reference`; `+70: four bytes`; `+74: u32 set ordinal`; `+78: TangencyWeight owner reference`; `+89: four bytes` |
+| short constant | 80 | `+22: u8 1`, `+26: edge-group reference`, `+57: Radius owner reference` |
 | asymmetric without weight | 97 | `+21: u8 1`; `+27: u32 1`; `+31: EdgeOffset1 owner reference`; `+42: EdgeOffset2 owner reference`; `+72: edge-group reference`; `+84: u32 2`; `+93: u32 3` |
 | variable with two midpoint controls | 153 | `+29: edge-group reference`; `+47: u32 2`; `+51: first MidParams owner reference`; `+62: second MidParams owner reference`; `+77: u32 4`; `+81: StartRadius owner reference`; `+92: EndRadius owner reference`; `+103: first MidRadius owner reference`; `+114: second MidRadius owner reference`; `+138: TangencyWeight owner reference` |
 
 The asymmetric and variable forms above each occupy a singleton set list with implicit ordinal zero. The asymmetric form stores two offsets and omits a tangency weight. In the variable form, midpoint radii and positions pair by their index in their respective lists. The two endpoint radii precede the midpoint radii.
+
+The short constant form uses its position in the compact set list as its ordinal. Its referenced edge group starts at the next indexed header. The set applies its Radius parameter to that group. In a list of short constant sets, one unclaimed dimensionless `TangencyWeight` parameter per edge group pairs by increasing owner-local ordinal and scope-reference group order. Each weight ordinal and group reference occurs once.
 
 For forms with a stored ordinal, the set ordinals of a prefix's `N` sets are the integers `0` through `N - 1`, each used once. List order and ordinal order can differ. The edge-group reference equals the prefix's edge-group reference at the set's list position. Each owner reference names an indexed parameter owner of the scope. That owner references exactly one Design parameter, and the parameter references the owner back. The parameter's source kind is the kind the form names. The set's radius-law and `TangencyWeight` parameters apply to its edge group. In the constant form, the tangent-chain byte is `1` when the set extends its edges along tangent edges and `0` otherwise, and the curvature-continuity byte is `1` when the set has curvature (G2) continuity and `0` for tangent continuity. The flag byte of the chordal and compact forms is `0` or `1`.
 
@@ -2271,13 +2277,15 @@ A suppressed edge-treatment scope resolves its recipes against the unique termin
 
 #### Captured component positions
 
-A Position scope has type GUID `8EE00B00-76BB-49AB-8C25-E837FEC5BDA5`, version 6. Its stored kind can be `Position` or `Posición`. The inline prefix starts with the eleven-byte indexed header, eighteen zero bytes at offset 11, and a u32 row count at offset 29. Ordered rows start at offset 33. The count includes every row in source order; repeated targets remain separate rows. An empty row sequence has count zero.
+A Position scope has type GUID `8EE00B00-76BB-49AB-8C25-E837FEC5BDA5`, version 4 or 6. Its stored kind can be `Position` or `Posición`. The inline prefix starts with the eleven-byte indexed header in version 6, followed by eighteen zero bytes at offset 11 and a u32 row count at offset 29. Ordered rows start at offset 33. The count includes every row in source order; repeated targets remain separate rows. An empty row sequence has count zero.
 
 Each Position row starts with byte zero at offset 0, a marked same-segment reference at offset 1, and a matrix marker at offset 12. The reference stores marker 1, a u64 record index at offset 2, and a zero u16 at offset 10. The record index fits u32. Matrix marker 0 is followed by sixteen row-major finite f64 coefficients at offset 13; that row spans 141 bytes. Matrix marker 1 omits the coefficients; that row spans 13 bytes.
 
-The Position suffix spans 83 bytes between the rows and the normal ordered-reference count. It stores u32 zero at offset 0, u32 value 36 at offset 4, the UTF-16LE text `00000000-0000-0000-0000-000000000000` at offset 8, and three zero bytes at offset 80. The last row ends at the suffix start. The suffix ends at the scope's ordered-reference count.
+The Position suffix spans 83 bytes in version 6 between the rows and the normal ordered-reference count. It stores u32 zero at offset 0, u32 value 36 at offset 4, the UTF-16LE text `00000000-0000-0000-0000-000000000000` at offset 8, and three zero bytes at offset 80. The last row ends at the suffix start. The suffix ends at the scope's ordered-reference count.
 
-Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`, version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
+The version-4 prefix before the ordered-reference count spans 319 bytes. A u32 row count of one occurs at offset 95. The 141-byte row at offset 99 stores one matrix, with coefficients starting at offset 112. The version-4 suffix starts at offset 240 with the u32 GUID length, followed by the same UTF-16LE null GUID and three zero bytes.
+
+Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`. Version 4 uses locator version 3. Its 62-byte identity locator stores u32 discriminator one at offset 56. Version 6 uses locator version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
 
 #### Assembly operands
 
@@ -2576,15 +2584,17 @@ the operand construction references and transforms. The 378-, 422-, and
 reference and transform, or the identity when the locator's identity flag is 1.
 
 An `As-built` scope of type `AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0` version 1
-with no additional owners can use two compact version-3 locators with null
-construction references. The owner count at offset 43 is zero and the
+with no additional owners can use two version-3 locators. Each locator has
+either the compact null-construction layout or the ordinary construction
+layout. The owner count at offset 43 is zero and the
 locator count at offset 47 is two. The two locator references are followed
-by a marked reference to the version-5 joint at the scope index minus one.
+by a marked reference to the version-4 or version-5 joint at the scope index
+minus one.
 The reference-table count at offset 163 is seven or nine. The four alignment
 owners occur once and contiguously in the reference table, in local order
 `OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ`. The scope tail from the feature
 ordinal occupies 87 bytes. With the eight-code-unit name the scope spans
-355 or 377 bytes. Each compact locator supplies one frame and its wrapper
+355 or 377 bytes. Each locator supplies one frame and its wrapper
 names the typed occurrence paths in operand order.
 
 The wide locator identity frame is 97 bytes. Its zero separator is at offset
@@ -2783,9 +2793,11 @@ An assembly joint has a joint record and, when the joint has relative motion, a 
 A version-3 motion record of type `8C188F11-5D1B-4E1C-8E87-AF7214CA3C83`
 stores its parent count at offset 20 and its first parent reference at
 offset 24. Each 15-byte parent entry stores an eleven-byte marked reference
-followed by a u32. In the As-built form with a version-5 joint, the final
-parent reference names the joint. The preceding entries, when present,
-name occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
+followed by a u32. Version 2 uses the same parent run. In the compact
+As-built form, the final parent reference
+names the joint. Version-2 motion names a version-4 joint. Version-3 motion
+names a version-5 joint. The preceding entries, when present, name
+occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
 
 The class-363 carrier subform uses the operand-frame reference as its locator.
 The class-363 frame is 389 bytes and has a paired class-264 header. Its rigid
