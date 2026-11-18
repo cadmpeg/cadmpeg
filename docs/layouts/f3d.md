@@ -12046,6 +12046,22 @@ Unstated regions:
 - `0..56` (56 B): Shared identity-locator fields.
 - `60..62` (2 B): Shared identity-locator tail.
 
+## `captured_position_v4_path_wrapper`
+
+Spec §Captured component positions · layout: byte offsets · size: 37 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 1 | `marker` | `u8` | little | spec | marker zero at offset 21 · value `0` |
+
+Unstated regions:
+
+- `0..21` (21 B): Shared indexed header and zero run.
+- `22..37` (15 B): Shared path count and marked path reference.
+
 ## `unmarked_sphere_local_frame`
 
 Spec §3.1 · layout: byte offsets · size: 128 B

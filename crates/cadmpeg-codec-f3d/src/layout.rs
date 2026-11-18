@@ -10695,6 +10695,19 @@ pub(crate) mod captured_position_v4_identity_locator {
     pub(crate) const DISCRIMINATOR_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `captured_position_v4_path_wrapper` record.
+///
+/// Spec §Captured component positions. Record length 37 B.
+pub(crate) mod captured_position_v4_path_wrapper {
+    /// Record length in bytes. Spec §Captured component positions.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 37;
+    /// Offset of `marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const MARKER: usize = 21;
+    /// Stated value of `marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const MARKER_VALUE: u8 = 0;
+}
+
 /// Byte offsets for the `unmarked_sphere_local_frame` record.
 ///
 /// Spec §3.1. Record length 128 B.
