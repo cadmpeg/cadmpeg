@@ -12411,6 +12411,34 @@ Unstated regions:
 
 - `0..19` (19 B): The indexed header and zero prefix precede the body-reference count.
 
+## `assembly_motion_parent_run`
+
+Spec §Assembly operands · layout: byte offsets · size: not stated
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/joint_motion.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `count` | `u32` | little | spec | parent count at offset 20 |
+| 24 | 11 | `first_reference` | `bytes[11]` | little | spec | first parent reference at |
+
+Unstated regions:
+
+- `0..20` (20 B): Record prefix before the parent count.
+
+## `assembly_motion_parent_entry`
+
+Spec §Assembly operands · layout: byte offsets · size: 15 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/joint_motion.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `reference` | `bytes[11]` | little | spec | stores an eleven-byte marked reference |
+| 11 | 4 | `word` | `u32` | little | spec | followed by a u32 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
