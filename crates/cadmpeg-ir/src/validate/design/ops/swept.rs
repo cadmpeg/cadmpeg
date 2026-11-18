@@ -334,7 +334,9 @@ pub(super) fn check_helix_circle(
         error(
             findings,
             site.entity,
-            format_args!("HelixStart::Circle picks a sketch entity whose curve is no circle or arc"),
+            format_args!(
+                "HelixStart::Circle picks a sketch entity whose curve is no circle or arc"
+            ),
         );
     }
 }

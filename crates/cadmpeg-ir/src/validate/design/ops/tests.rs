@@ -16,12 +16,12 @@ use crate::design::ops::assembly::{
     AssemblyFeature, ComponentInstance, ComponentPattern, MirrorComponents, MirrorResult, Place,
     PlaceSet,
 };
-use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::body::{
     Combine, InstanceChange, InstanceOverride, NewComponent, Pattern, PatternInstances,
     PatternSeeds, TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep,
     Transformation,
 };
+use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::dressup::{
     BlendControls, Bore, Draft, DraftAngle, DraftSet, Fillet, FilletSection, FilletSet, FilletSize,
     Hole, HoleHead, HolePositions, HoleShape, StageHole, StandardSize, ThreadSpec, Transition,

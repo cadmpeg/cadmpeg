@@ -7,6 +7,7 @@ use crate::design::construction::{InputReference, Relation};
 use crate::design::dimension::Dimension;
 use crate::design::feature::FeatureOperation;
 use crate::design::names::{GenerationRole, HoleFaceRole, TopoName};
+use crate::design::ops::datum::DatumElement;
 use crate::design::ops::dressup::{
     Along, BlendControls, Bore, Chamfer, ChamferSize, ConicShape, Decal, Dome, Draft, DraftAngle,
     Emboss, Fillet, FilletProfile, FilletSet, FilletSize, Hole, HoleBottom, HoleHead,
@@ -14,7 +15,6 @@ use crate::design::ops::dressup::{
     StageHole, StationAt, Stations, Thicken, Thread, ThreadLength, ThreadSpec, Transition,
     TransitionKind,
 };
-use crate::design::ops::datum::DatumElement;
 use crate::design::ops::shared::Limit;
 use crate::design::selection::{DatumPart, PickTarget, PrincipalEntity};
 use crate::report::check::Finding;

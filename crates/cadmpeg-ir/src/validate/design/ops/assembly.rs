@@ -12,7 +12,6 @@ use crate::design::feature::{Driver, Feature, FeatureOperation, OperationFamily}
 use crate::design::ops::assembly::{
     AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
-use crate::design::ops::body::SplitMode;
 use crate::design::ops::dressup::OffsetResult;
 use crate::design::ops::shared::{
     AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
@@ -545,10 +544,11 @@ pub(super) fn check_assembly_feature(
     }
 }
 
-/// Whether `operation` states bodies it acts on or combines with: a
-/// Boolean's `targets`, a hole's or an emboss's `targets`, a shell's
-/// `bodies`, a combine's `target` or `tools`, or a body pick of a split's
-/// targets or of a body operation's bodies.
+/// Whether `operation` states, in a field it may leave absent, the bodies
+/// it acts on or combines with: a Boolean's `targets`, a hole's or an
+/// emboss's `targets`, or a shell's `bodies`. The required operands of a
+/// combine, a split, and the body operations are not read, since §6.7's
+/// table runs an assembly split and a CATIA Remove, which state them.
 fn states_body_operand(operation: &FeatureOperation) -> bool {
     let states = |selection: &SetSelection| {
         !matches!(selection.picks, Picks::Unread) && !picks::is_empty(selection)
@@ -558,10 +558,7 @@ fn states_body_operand(operation: &FeatureOperation) -> bool {
         Some(Targets::Selected(selection)) => states(selection),
         None => false,
     };
-    let boolean = |boolean: Option<&Boolean>| {
-        matches!(boolean, Some(Boolean::Apply { targets: t, .. }) if targets(t.as_ref()))
-    };
-    let bodies = |selection: &SetSelection| picks::classes(selection).into_iter().any(picks::is_body);
+    let boolean = |boolean: Option<&Boolean>| matches!(boolean, Some(Boolean::Apply { targets: t, .. }) if targets(t.as_ref()));
     let output = |output: &SolidOutput| boolean(output.boolean.as_ref());
     let sheet = |output: &SheetOutput| boolean(output.boolean.as_ref());
     match operation {
@@ -582,20 +579,6 @@ fn states_body_operand(operation: &FeatureOperation) -> bool {
         FeatureOperation::Hole(op) => targets(op.targets.as_ref()),
         FeatureOperation::Emboss(op) => targets(op.targets.as_ref()),
         FeatureOperation::Shell(op) => op.bodies.as_ref().is_some_and(states),
-        FeatureOperation::Combine(op) => {
-            op.target.as_ref().is_some_and(states)
-                || !matches!(op.tools.picks, Picks::Unread) && !picks::is_empty(&op.tools)
-        }
-        FeatureOperation::Split(op) => match &op.mode {
-            SplitMode::ByTools { targets, .. } => bodies(targets),
-            SplitMode::Mutual { elements, .. } => {
-                picks::classes(elements).into_iter().any(picks::is_body)
-            }
-        },
-        FeatureOperation::DeleteBodies(op) => bodies(&op.bodies),
-        FeatureOperation::TransformBodies(op) => bodies(&op.bodies),
-        FeatureOperation::Flex(op) => bodies(&op.bodies),
-        FeatureOperation::Graft(op) => bodies(&op.body),
         _ => false,
     }
 }
