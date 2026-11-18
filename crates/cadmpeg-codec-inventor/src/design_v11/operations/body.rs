@@ -60,7 +60,15 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                     source_settings: BTreeMap::default(),
                 }))
             }
-            LegacyOperation::SplitBody { targets, tool } => split(
+            LegacyOperation::SplitBody {
+                extend_tool: Some(_),
+                ..
+            } => return Err("the split body states a tool extension"),
+            LegacyOperation::SplitBody {
+                targets,
+                tool,
+                extend_tool: None,
+            } => split(
                 selections::set(selections::bodies(targets)?)?,
                 match tool {
                     old::SplitBodyTool::Plane { plane } => {
