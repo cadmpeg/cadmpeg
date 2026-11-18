@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::design::feature_project::replace_face::project_replace_face;
 use cadmpeg_test_support::wire;
 
-use crate::design::feature_project::{
-    bind_surface_trim_cell_selections, project_replace_face, project_surface_trim,
-};
+use crate::design::feature_project::{bind_surface_trim_cell_selections, project_surface_trim};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -19,6 +18,61 @@ use crate::records::{
     },
 };
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+#[test]
+fn replacement_missing_definitions_retains_control_and_typed_selections() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#40",
+        crate::records::feature::scope::DesignFeatureKind::ReplaceFace,
+        40,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::ReplaceFace(value) =
+        scope.payload_mut()
+    {
+        *value = Some(
+            crate::records::feature::surface_ops::DesignReplaceFaceOperation {
+                tangent_chain: true,
+                flagged_prefix_word: Some(0x1122_3344),
+                replacement_group_record_indices: vec![44],
+                target_group_record_indices: vec![50],
+                trailing_identity: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "00000000-0000-0000-0000-000000000000".to_owned(),
+                )
+                .unwrap(),
+            },
+        );
+    } else {
+        panic!("replacement payload");
+    }
+    let mut losses = Vec::new();
+    let definition = project_replace_face(&scope, &[], &[], &[], &mut losses).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) = definition
+    else {
+        panic!("typed replacement");
+    };
+    assert_eq!(operands.tangent_chain(), Some(true));
+    assert_eq!(
+        operands.targets(),
+        &FaceSelection::Native("f3d:test:scope#40".into())
+    );
+    assert_eq!(
+        operands.replacements(),
+        &FaceSelection::Native("f3d:test:scope#40".into())
+    );
+    assert_eq!(losses.len(), 4);
+    assert!(losses.iter().all(|loss| [
+        crate::loss::F3dLossCode::ReplaceFaceFlaggedPrefixWordAssumed
+            .note("x")
+            .code,
+        crate::loss::F3dLossCode::ReplaceFaceTangentChainAssumed
+            .note("x")
+            .code,
+        crate::loss::F3dLossCode::ReplaceFaceSelectionAssumed
+            .note("x")
+            .code,
+    ]
+    .contains(&loss.code)));
+}
 
 fn body_recipe_limit_fixture() -> (
     DesignParameterScope,
@@ -76,6 +130,27 @@ fn body_recipe_limit_fixture() -> (
     )
     .unwrap();
     (scope, group, operand)
+}
+
+#[test]
+fn replacement_entity_support_retains_its_group_when_its_definition_is_unresolved() {
+    let (scope, mut group, _) = body_recipe_limit_fixture();
+    group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
+        );
+    let mut losses = Vec::new();
+    let definition =
+        project_replace_face(&scope, std::slice::from_ref(&group), &[], &[], &mut losses).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) = definition
+    else {
+        panic!("typed replacement");
+    };
+    assert_eq!(operands.replacements(), &FaceSelection::Native(group.id));
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::F3dLossCode::ReplaceFaceSupportAssumed
+            .note("x")
+            .code));
 }
 
 #[test]
@@ -277,6 +352,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         &[replacement_group.clone(), target_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
+        &mut Vec::new(),
     )
     .expect("typed ReplaceFace");
     assert!(matches!(
@@ -297,10 +373,11 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         &[target_group.clone(), replacement_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
+        &mut Vec::new(),
     );
     assert!(matches!(
         reversed,
-        Some(FeatureDefinition::Operation(
+        Ok(FeatureDefinition::Operation(
             FeatureOperation::ReplaceFace { .. }
         ))
     ));
@@ -312,9 +389,10 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             target_group.clone()
         ],
         std::slice::from_ref(&target),
-        std::slice::from_ref(&replacement)
+        std::slice::from_ref(&replacement),
+        &mut Vec::new(),
     )
-    .is_none());
+    .is_ok());
 
     let mut invalid_scope = scope;
     invalid_scope
@@ -328,9 +406,10 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         &invalid_scope,
         &[replacement_group, target_group],
         std::slice::from_ref(&target),
-        std::slice::from_ref(&replacement)
+        std::slice::from_ref(&replacement),
+        &mut Vec::new(),
     )
-    .is_none());
+    .is_ok());
 }
 
 fn trim_body_draft(

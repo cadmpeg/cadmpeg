@@ -39479,3 +39479,100 @@ offset = 161
 type = "u8"
 source = "spec"
 anchor = "and a control byte"
+
+[[record]]
+name = "replace_face_fixed_prefix"
+rust_doc_attributes = true
+kind = "byte"
+section = "3.1"
+anchor = "The ReplaceFace prologue"
+size = 26
+note = "Flag-00 fixed prefix. Flag 01 inserts a u32 word before the Boolean control; its fixed prefix is 30 bytes. Counted group references and the identifier follow."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "prefix_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "tangent_chain"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "replacement_group_count"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record]]
+name = "replace_face_flagged_prefix"
+rust_doc_attributes = true
+kind = "byte"
+section = "3.1"
+anchor = "The ReplaceFace prologue"
+size = 30
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs"
+note = "Flag-01 fixed prefix. Flag 00 omits the u32 word and has a 26-byte fixed prefix. Counted group references and the identifier follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "prefix_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "tangent_chain"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "The ReplaceFace prologue"
+
+[[record.field]]
+name = "replacement_group_count"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "The ReplaceFace prologue"

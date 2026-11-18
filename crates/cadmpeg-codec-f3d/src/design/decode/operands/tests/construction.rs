@@ -907,7 +907,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     let split_groups = [split_target_group.clone(), split_tool_group.clone()];
     assert!(matches!(
-        project_split(&split_body_scope, &[], &split_groups, &[], std::slice::from_ref(&split_tool), &mut Vec::new(),).unwrap(),
+        project_split(&split_body_scope, &[], &split_groups, &[], std::slice::from_ref(&split_tool), &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(ref tool)),
@@ -942,7 +942,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         operand_offset: None,
     }];
     assert!(matches!(
-        project_split(&historical_split_scope, &[], &split_groups, &[], std::slice::from_ref(&historical_split_tool), &mut Vec::new(),).unwrap(),
+        project_split(&historical_split_scope, &[], &split_groups, &[], std::slice::from_ref(&historical_split_tool), &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { faces, native, .. }),
             ..
@@ -980,6 +980,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             &[split_tool_group.clone(), multiple_targets],
             &[],
             std::slice::from_ref(&split_tool),
+            &[],
             &mut Vec::new(),
         )
         .unwrap(),
@@ -1018,7 +1019,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     split_target_group.scope_reference_ordinal = 3;
     assert!(matches!(
-        project_split(&construction_tool_scope, &[], &[split_target_group.clone(), construction_tool], &[], &[], &mut Vec::new(),).unwrap(),
+        project_split(&construction_tool_scope, &[], &[split_target_group.clone(), construction_tool], &[], &[], &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(ref tool)),
             ..
@@ -1093,6 +1094,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         groups,
         &[],
         std::slice::from_ref(&split_tool),
+        &[],
         &mut Vec::new(),
     )
     .unwrap()
@@ -1105,6 +1107,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         &split_groups,
         &[],
         std::slice::from_ref(&nonterminal_tool),
+        &[],
         &mut Vec::new(),
     )
     .unwrap()

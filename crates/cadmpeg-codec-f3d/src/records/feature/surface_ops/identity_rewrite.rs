@@ -2,13 +2,14 @@
 //! Direct identity walks for native record fields.
 
 use super::{
-    DesignPatchContinuity, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
-    DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport, DesignSurfacePatchBoundary, DesignSurfacePatchNormalState,
-    DesignSurfacePatchScope, DesignSurfaceStitchOperation, DesignSurfaceUntrimLoops,
-    DesignSurfaceUntrimOperation,
+    DesignPatchContinuity, DesignReplaceFaceOperation, DesignRuledSurfaceCorner,
+    DesignRuledSurfaceMethod, DesignRuledSurfaceOperation, DesignSurfaceExtendOperation,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfacePatchBoundary,
+    DesignSurfacePatchNormalState, DesignSurfacePatchScope, DesignSurfaceStitchOperation,
+    DesignSurfaceUntrimLoops, DesignSurfaceUntrimOperation,
 };
 
+rewrite_native_record!(DesignReplaceFaceOperation, []; {tangent_chain, flagged_prefix_word, replacement_group_record_indices, target_group_record_indices, trailing_identity});
 rewrite_native_scalar!(DesignPatchContinuity);
 rewrite_native_scalar!(DesignRuledSurfaceCorner);
 rewrite_native_scalar!(DesignRuledSurfaceMethod);

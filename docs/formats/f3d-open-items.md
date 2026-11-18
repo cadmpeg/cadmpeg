@@ -2643,7 +2643,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** None.
+**Note.** A scope without a decoded radius carrier projects as a neutral Fillet with an unresolved radius law and dimension. `feature.fillet-radius-unresolved` identifies that uncertainty; `feature.fillet-references-unresolved` retains the unclassified reference contribution. Decoded source records and ordered references remain in `fillet:source` and the scope reference properties. A full-round projection requires the documented group structure and a matching bounded-face operand; a native or partial center selection carries `feature.fillet-full-round-center-unresolved`. A missing bounded-face definition does not establish full-round semantics.
 
 ### DR-322. Selected-face Extrude start without a start group
 
@@ -3328,6 +3328,26 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
 
+### DR-705. Cut Extrude whose removed planes disagree with the sampled regions
+
+**Question.** Which rule selects the atomic regions of a Cut `Extrude` whose counted selection matches no arrangement face when the planes that the Cut changed select more regions than its transition certifies?
+
+**Known.** A public RailCore Mini Cut `Extrude` has a Sketch of three profiles and an arrangement of 14 atomic regions. The Cut changes three planes parallel to the Sketch. The regions whose interior points a changed plane held before the Cut and not after it do not pass the exact transition certificate. Its counted selection lists four rings of four, four, one, and four curves, and one ring has incidence words greater than two. No ring matches an arrangement face.
+
+**Need.** The rule that relates the incidence words greater than two to the removed regions, or a certificate that selects the removed regions without the sampled points.
+
+**Note.** The selection stays native with `feature.profile-selection-native`.
+
+### DR-706. Cut Extrude with atomic regions that have no sample point
+
+**Question.** How are the atomic regions of a Cut `Extrude` found when the arrangement has a region that holds no sample point of the grid?
+
+**Known.** A public RailCore Mini Cut `Extrude` has a Sketch of 54 profiles and a counted selection of eight rings of three curves. The arrangement has 72 faces. Sampling the atomic regions finds no interior point for at least one region, so no removed-region candidate forms. The rings come in pairs of the same three curves in opposite order.
+
+**Need.** An interior point rule for narrow regions, or a certificate that does not sample.
+
+**Note.** The selection stays native with `feature.profile-selection-native`.
+
 ### DR-791. Placement carriers of 393- and 399-byte Component Insert scopes
 
 **Question.** Which occurrence placement grammar does the 527-byte carrier of a 393- or 399-byte Component Insert scope use, and which occurrence does that scope select?
@@ -3357,6 +3377,16 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Planar frames with nonzero secondary members whose selected regions are proven against the stored Extrude bodies.
 
 **Note.** The decoder resolves a planar frame whose nested selection has a member with a nonzero secondary identity as a frame without a nested selection.
+
+### DR-810. ReplaceFace control and partial support selections
+
+**Question.** Does the prologue Boolean expand the target selection to tangent faces, and which selection applies when a referenced support definition is incomplete or names a construction plane, what does the flagged-prefix word mean, and what does the trailing identifier select?
+
+**Known.** The flag-01 prologue retains a u32 word before its Boolean. Each form retains a Boolean, separate ordered replacement and target group runs, and a trailing identifier. Replacement groups use roles `0x09` or `0x21`; target groups use role `0x10`.
+
+**Need.** Controlled saves that change tangent chaining, construction-plane support, the flagged-prefix word and the trailing identifier independently, with complete definitions for each selected group.
+
+**Note.** `feature.replace-face-flagged-prefix-word-assumed` retains the word as auxiliary metadata while applying the selections. `feature.replace-face-tangent-chain-assumed` retains the Boolean as target tangent expansion. `feature.replace-face-frame-assumed` uses owned group roles when the prefix is unresolved. `feature.replace-face-selection-assumed` keeps scope selections for incomplete or ambiguous definitions. `feature.replace-face-groups-aggregated-assumed` keeps several group references as one scope selection. `feature.replace-face-overlap-unresolved` retains native selectors when the resolved memberships overlap. `feature.replace-face-support-assumed` retains entity support through its native group. `feature.replace-face-identity-assumed` retains a nonnull identifier as auxiliary metadata.
 
 ### DR-665. Planar face of an Extrude profile selection with an unbound member identity
 
