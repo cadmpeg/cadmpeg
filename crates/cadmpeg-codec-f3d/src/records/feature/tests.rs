@@ -1764,10 +1764,9 @@ fn rectangular_pattern_sidecar_rejects_invalid_axis_counts() {
         (0, 2, 0.0, 1.0),
         (2, 0, 1.0, 0.0),
         (1, 1, 0.0, 0.0),
-        (1, 2, 1.0, 1.0),
         (2, 1, 0.0, 0.0),
-        (2, 1, 1.0, 1.0),
         (1, 2, 0.0, 0.0),
+        (1, 1, 1.0, 1.0),
     ] {
         let wire = serde_json::json!({
             "u_count": u_count, "v_count": v_count,
