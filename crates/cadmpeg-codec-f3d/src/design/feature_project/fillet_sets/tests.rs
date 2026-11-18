@@ -147,7 +147,7 @@ fn short_fillet_set_weights_follow_scope_group_order() {
             for (group, expected) in groups.iter().zip(expected) {
                 match (group.tangency_weight, expected) {
                     (Some(weight), Some(expected)) => {
-                        assert!((weight.get() - expected).abs() < TOLERANCE)
+                        assert!((weight.get() - expected).abs() < TOLERANCE);
                     }
                     (None, None) => (),
                     _ => panic!("unexpected tangency-weight assignment"),
