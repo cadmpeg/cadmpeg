@@ -2,6 +2,7 @@
 use super::*;
 use crate::feature::sheet_metal::style;
 use crate::record_identity::{Located, RecordTypeId};
+use crate::test_support::root_part_ir;
 use crate::test_support::test_fixtures::parse;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::ids::IdentityKey;
@@ -37,10 +38,7 @@ fn projected_with_style_factor(
     factor: Option<&str>,
     style_factor: StyleFactor,
 ) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
-    let mut ir = CadIr::empty();
-    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
-    })).expect("part"));
+    let ir = root_part_ir();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
@@ -205,10 +203,7 @@ fn projected_document(
     use crate::pmdc::PmDcContentHeader;
     use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
 
-    let mut ir = CadIr::empty();
-    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
-    })).expect("part"));
+    let mut ir = root_part_ir();
     let null = PmDcReference::from_packed(0);
     let mut parameters: Vec<PmDcParameter> = Vec::new();
     if let Some(value) = style_factor {
@@ -367,10 +362,7 @@ fn sheet_metal_projection_joins_parameter_literals_and_retains_unread_fields() {
     use crate::pmdc::PmDcContentHeader;
     use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
 
-    let mut ir = CadIr::empty();
-    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
-    })).expect("part"));
+    let mut ir = root_part_ir();
     let null = PmDcReference::from_packed(0);
     let raw: PmDcParameter = Located::new(
         PmDcParameterPayload {
@@ -446,10 +438,7 @@ fn sheet_metal_binds_projected_length_parameters() {
     use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
     use cadmpeg_ir::design::units::{Quantity, ValueKind};
 
-    let mut ir = CadIr::empty();
-    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
-    })).expect("part"));
+    let mut ir = root_part_ir();
     let (raw, legacy) = crate::feature::fillet::tests::parameter(
         0,
         ParameterValue::Length(Length::new(0.75).expect("length")),
