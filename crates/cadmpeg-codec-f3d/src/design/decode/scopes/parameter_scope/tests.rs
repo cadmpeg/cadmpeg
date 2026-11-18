@@ -660,6 +660,25 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
 }
 
 #[test]
+fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
+    let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
+    let closing_references_width = 2 * 11 + 1;
+    reciprocal.insert(reciprocal.len() - closing_references_width, 0);
+    let mut tail = reciprocal[..8].to_vec();
+    lp_utf16(&mut tail, "Tapped Hole");
+    let count_at = tail.len();
+    tail.extend_from_slice(&reciprocal[12..]);
+    let scope = parse_hole_scope(&tail).expect("named reciprocal Hole");
+    assert_eq!(
+        scope.label.as_ref().map(|label| label.value.as_str()),
+        Some("Tapped Hole")
+    );
+    assert_eq!(scope.previous_history_state_id(), Some(8));
+    tail[count_at] = 1;
+    assert!(parse_hole_scope(&tail).is_none());
+}
+
+#[test]
 fn reciprocal_hole_tail_needs_its_own_members_and_companion_chain() {
     assert!(parse_hole_scope(&reciprocal_hole_tail(&[13], false, false)).is_none());
     assert!(parse_hole_scope(&reciprocal_hole_tail(&[12, 12], false, false)).is_none());

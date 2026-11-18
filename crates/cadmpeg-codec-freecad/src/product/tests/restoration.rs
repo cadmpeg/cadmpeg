@@ -39,9 +39,13 @@ fn part_number_carrier_depends_on_runtime_not_string_contents() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            let [definition] = decoded.ir().model.product_definitions.as_slice() else {
-                panic!("one definition")
-            };
+            let definition = decoded
+                .ir()
+                .model
+                .product_definitions
+                .iter()
+                .find(|definition| definition.source_name.as_deref() == Some("Item"))
+                .expect("the item's definition");
             let is_part = runtime != "App::DocumentObjectGroup";
             assert_eq!(
                 definition.part_number.as_deref(),
@@ -130,7 +134,7 @@ fn array_restore_uses_expansion_mode_and_element_objects() {
                 } else {
                     0.0
                 };
-                assert_eq!(occurrence.transform.rows()[0][3], 100.0 + 2.0 * x);
+                assert_eq!(occurrence.transform.unwrap().rows()[0][3], 100.0 + 2.0 * x);
                 let element_scale = if expanded && index == 1 {
                     [4.0, 5.0, 6.0]
                 } else if !expanded && array && index == 0 {
@@ -140,22 +144,10 @@ fn array_restore_uses_expansion_mode_and_element_objects() {
                 };
                 for (axis, parent_scale) in [2.0, 3.0, 4.0].into_iter().enumerate() {
                     assert_eq!(
-                        occurrence.transform.rows()[axis][axis],
+                        occurrence.transform.unwrap().rows()[axis][axis],
                         parent_scale * element_scale[axis]
                     );
                 }
-                assert_eq!(
-                    occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-                    [1.0; 3]
-                );
-                assert_eq!(
-                    occurrence
-                        .link
-                        .as_ref()
-                        .and_then(|link| link.element_component())
-                        .is_some(),
-                    expanded
-                );
             }
             let records = decoded
                 .ir()
@@ -172,6 +164,7 @@ fn array_restore_uses_expansion_mode_and_element_objects() {
                 record.element_count(),
                 stated.map(|value| u64::try_from(value).unwrap())
             );
+            assert_eq!(record.element_objects().len(), 2);
             assert_eq!(record.element_transforms().len(), 2);
             assert_eq!(record.element_scales().len(), 1);
             assert_eq!(record.element_visibility(), [false]);
@@ -228,6 +221,7 @@ fn parent_nonuniform_scale_precedes_rotated_array_element() {
     ];
     for (actual, expected) in occurrence
         .transform
+        .unwrap()
         .rows()
         .into_iter()
         .flatten()
@@ -235,10 +229,6 @@ fn parent_nonuniform_scale_precedes_rotated_array_element() {
     {
         assert!((actual - expected).abs() < 1e-12);
     }
-    assert_eq!(
-        occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-        [1.0; 3]
-    );
     assert_valid_document(decoded.ir());
 }
 
@@ -284,15 +274,11 @@ fn link_scales_precede_the_linked_prototype_placement() {
         let [occurrence] = decoded.ir().model.occurrences.as_slice() else {
             panic!("one link use, no duplicate element")
         };
-        let effective = occurrence.effective_transform().unwrap().rows();
+        let effective = occurrence.transform.unwrap().rows();
         assert_eq!(effective[0][3], if count == 0 { 11.0 } else { 30.0 });
         assert_eq!(effective[0][0], if count == 0 { 2.0 } else { 1.0 });
         assert_eq!(effective[1][1], 3.0);
         assert_eq!(effective[2][2], if count == 0 { 4.0 } else { 6.0 });
-        assert_eq!(
-            occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-            [1.0; 3]
-        );
         assert_valid_document(decoded.ir());
     }
 }
@@ -358,7 +344,7 @@ fn element_list_membership_controls_link_element_occurrence_roots() {
                     })
                     .unwrap();
                 if is_link_element_member {
-                    let rows = array.effective_transform().unwrap().rows();
+                    let rows = array.transform.unwrap().rows();
                     let expected_x = if expanded { 122.0 } else { 100.0 };
                     let expected_scale = if expanded { 6.0 } else { 2.0 };
                     assert!(
@@ -388,10 +374,7 @@ fn element_list_membership_controls_link_element_occurrence_roots() {
                             occurrence.native_ref.as_deref() == Some("fcstd:native:object#Member")
                         })
                         .unwrap();
-                    assert!(matches!(
-                        member.parent,
-                        cadmpeg_ir::products::OccurrenceParent::Root {}
-                    ));
+                    assert!(owner_id(decoded.ir(), &member.id).ends_with("#document:root"));
                 }
                 let namespace = decoded.ir().native.namespace("fcstd").unwrap();
                 let records = namespace
@@ -435,10 +418,7 @@ fn unlisted_link_element_with_live_owner_remains_an_occurrence() {
         .iter()
         .find(|occurrence| occurrence.native_ref.as_deref() == Some("fcstd:native:object#Member"))
         .unwrap();
-    assert!(matches!(
-        member.parent,
-        cadmpeg_ir::products::OccurrenceParent::Root {}
-    ));
+    assert!(owner_id(decoded.ir(), &member.id).ends_with("#document:root"));
     assert_valid_document(decoded.ir());
 }
 
@@ -485,8 +465,8 @@ fn each_link_array_uses_its_own_membership_for_a_shared_element() {
         .map(|occurrence| {
             (
                 occurrence.native_ref.as_deref(),
-                &occurrence.parent,
-                occurrence.transform.rows(),
+                owner_id(decoded.ir(), &occurrence.id),
+                occurrence.transform,
             )
         })
         .collect::<Vec<_>>();
@@ -495,10 +475,7 @@ fn each_link_array_uses_its_own_membership_for_a_shared_element() {
         .iter()
         .find(|occurrence| occurrence.native_ref.as_deref() == Some("fcstd:native:object#Assembly"))
         .unwrap();
-    assert!(matches!(
-        assembly.parent,
-        cadmpeg_ir::products::OccurrenceParent::Root {}
-    ));
+    assert!(owner_id(decoded.ir(), &assembly.id).ends_with("#document:root"));
     let first = occurrences
         .iter()
         .find(|occurrence| {
@@ -512,14 +489,10 @@ fn each_link_array_uses_its_own_membership_for_a_shared_element() {
         })
         .unwrap();
     for array in [first, second] {
-        assert!(matches!(
-            &array.parent,
-            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
-                if occurrence == &assembly.id
-        ));
+        assert!(owner_id(decoded.ir(), &array.id).ends_with("#Assembly:definition"));
     }
     for (occurrence, expected_x) in [(first, 111.0), (second, 211.0)] {
-        let rows = occurrence.effective_transform().unwrap().rows();
+        let rows = occurrence.transform.unwrap().rows();
         assert!(
             (rows[0][3] - expected_x).abs() < 1e-12,
             "{}: transform={rows:?}",
@@ -578,15 +551,11 @@ fn link_restore_migrates_uniform_scale_vector_from_scalar_scale() {
             };
             for (axis, expected) in expected.into_iter().enumerate() {
                 assert_eq!(
-                    occurrence.transform.rows()[axis][axis],
+                    occurrence.transform.unwrap().rows()[axis][axis],
                     expected,
                     "{runtime}: vector={vector:?}, scalar={scalar:?}"
                 );
             }
-            assert_eq!(
-                occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
-                [1.0; 3]
-            );
             let properties = decoded
                 .ir()
                 .native
