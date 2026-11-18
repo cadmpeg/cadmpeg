@@ -264,6 +264,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("combine_operation", self.combine_operation());
         emit_opt!("combine_named_tail", self.combine_named_tail());
+        emit_opt!("split_face_operation", self.split_face_operation());
         if let Some(fill) = self.boundary_fill() {
             emit_opt!("boundary_fill", fill.prefix.as_ref());
             emit_opt!("boundary_fill_named_tail", fill.named_tail.as_ref());
