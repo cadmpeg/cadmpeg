@@ -150,20 +150,33 @@ pub(crate) fn decode_parameter_scopes(
             .map(|(code, row)| (*code, (row.type_guid.as_str(), row.version)))
             .collect::<HashMap<_, _>>();
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
-        let metadata = if body_owners
+        let needs_browser_metadata = body_owners
             .values()
             .flatten()
-            .any(TimelineBodyOwner::keeps_sources)
-        {
+            .any(TimelineBodyOwner::keeps_sources);
+        let metadata = if needs_browser_metadata
+            || class_types.values().any(|row| {
+                row.type_guid.as_str().eq_ignore_ascii_case(
+                    crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID,
+                )
+            }) {
             crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)
                 .ok()
                 .flatten()
         } else {
             None
         };
-        let browser_nodes = metadata
+        let split_face_frames = metadata
+            .as_ref()
             .and_then(|metadata| {
-                crate::design::decode::presentation::browser_node_suffixes(bytes, &metadata).ok()
+                crate::design::decode::meta::unambiguous_design_primary_frames(bytes, metadata).ok()
+            })
+            .unwrap_or_default();
+        let browser_nodes = metadata
+            .as_ref()
+            .filter(|_| needs_browser_metadata)
+            .and_then(|metadata| {
+                crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
             })
             .unwrap_or_default();
         let stream_scope_start = out.len();
@@ -238,12 +251,13 @@ pub(crate) fn decode_parameter_scopes(
             }
             if let scope::DesignScopePayload::SilhouetteSplit(_) = scope.payload() {
                 let operation = super::silhouette_split::decode(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
                     &stream_types,
                     &mut losses,
-                );
+                )?;
                 if let scope::DesignScopePayloadMut::SilhouetteSplit(slot) = scope.payload_mut() {
                     *slot = operation;
                 }
@@ -411,6 +425,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_hole_construction(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
@@ -429,7 +444,10 @@ pub(crate) fn decode_parameter_scopes(
                         .map(|row| row.version),
                 );
                 if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-                    slot.point = construction;
+                    slot.point = construction.map(|hole| {
+                        losses.extend(hole.input_loss);
+                        hole.construction
+                    });
                     slot.extent = extent;
                 }
             }
@@ -714,6 +732,17 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
+                let construction = super::split_face::split_face_operation(
+                    ctx,
+                    bytes,
+                    &scope,
+                    &split_face_frames,
+                )?;
+                if let scope::DesignScopePayloadMut::SplitFace(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
                 let construction = exact_thread_construction(bytes, &scope, parameter_owners);
                 losses.extend(
                     construction
@@ -792,8 +821,10 @@ pub(crate) fn decode_parameter_scopes(
                         recipes,
                         solved_frame,
                     ) {
-                        Ok(Some(carriers)) => carriers,
-                        Ok(None) => return None,
+                        Ok((carriers, input_loss)) => {
+                            losses.extend(input_loss);
+                            carriers?
+                        }
                         Err(error) => return Some(Err(error)),
                     };
                     Some(Ok(
