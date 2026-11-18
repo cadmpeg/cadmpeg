@@ -50,6 +50,7 @@ use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
 pub(crate) mod primitive_placement;
 mod sketch_cache;
+pub(crate) mod v11;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 /// Endpoint relations that profile chaining may examine in one
@@ -9210,13 +9211,8 @@ fn is_chamfer(kind: &str) -> bool {
 /// and the shape of every member of a `PartDesign::Body`, including its `Tip`.
 /// A body shows its `Tip` result through its own `Shape`. This runs after GUI
 /// transfer, so these structural roles win over stored member visibility.
-pub(crate) fn hide_intermediate_bodies(
-    ir: &mut cadmpeg_ir::CadIr,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-) {
-    let mut members = std::collections::HashSet::new();
+fn body_members(objects: &[ObjectRecord], properties: &[PropertyRecord]) -> HashSet<String> {
+    let mut members = HashSet::new();
     for object in objects.iter().filter(|object| is_body(&object.type_name)) {
         let owned = properties
             .iter()
@@ -9232,6 +9228,99 @@ pub(crate) fn hide_intermediate_bodies(
             );
         }
     }
+    members
+}
+
+/// State the document's root definition where the decoder holds none, and
+/// give it the `Shape` of each `PartDesign::Body` outside every other Body
+/// that no definition owns.
+pub(crate) fn state_root_definition(
+    ir: &mut cadmpeg_ir::CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+) -> Result<(), CodecError> {
+    let members = body_members(objects, properties);
+    let mut feature_ids = HashMap::new();
+    for object in objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+    {
+        feature_ids.insert(object.id().as_str(), feature_id(object)?);
+    }
+    let mut top = HashSet::new();
+    for object in objects
+        .iter()
+        .filter(|object| is_body(&object.type_name) && !members.contains(object.id().as_str()))
+    {
+        let owned = properties
+            .iter()
+            .filter(|property| property.owner == *object.id())
+            .collect::<Vec<_>>();
+        if body_definition(&owned, &feature_ids)?.is_some() {
+            top.insert(object.id().as_str());
+        }
+    }
+    let shapes = properties
+        .iter()
+        .filter(|property| property.name == "Shape" && top.contains(property.owner.as_str()))
+        .map(|property| property.id.as_str())
+        .collect::<HashSet<_>>();
+    let candidates = crate::gui::select_shape_bodies(
+        ir,
+        payloads
+            .iter()
+            .filter(|payload| shapes.contains(payload.property.as_str()))
+            .map(|payload| payload.id.as_str()),
+    );
+    let mut owned = ir
+        .model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| {
+            definition.bodies.iter().chain(
+                definition
+                    .instance_bodies
+                    .iter()
+                    .flat_map(|instance| &instance.bodies),
+            )
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let bodies = candidates
+        .into_iter()
+        .filter(|body| owned.insert(body.clone()))
+        .collect::<Vec<_>>();
+    let definitions = &mut ir.model.product_definitions;
+    let index = match definitions
+        .iter()
+        .position(cadmpeg_ir::products::ProductDefinition::is_root)
+    {
+        Some(index) => index,
+        None => {
+            let id = crate::product::document_definition_id()?;
+            let at = definitions.partition_point(|definition| definition.id < id);
+            definitions.insert(
+                at,
+                cadmpeg_ir::products::ProductDefinition::root(
+                    id,
+                    cadmpeg_ir::products::ExternalDocument::default(),
+                ),
+            );
+            at
+        }
+    };
+    definitions[index].bodies.extend(bodies);
+    Ok(())
+}
+
+pub(crate) fn hide_intermediate_bodies(
+    ir: &mut cadmpeg_ir::CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+) {
+    let members = body_members(objects, properties);
     let hidden = payloads.iter().filter_map(|payload| {
         let property = properties
             .iter()

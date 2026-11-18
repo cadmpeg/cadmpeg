@@ -730,7 +730,7 @@ pub(crate) fn transfer_neutral(
 
 /// The root definition: the document, which places the objects no container
 /// holds.
-fn document_definition_id() -> Result<ProductDefinitionId, CodecError> {
+pub(crate) fn document_definition_id() -> Result<ProductDefinitionId, CodecError> {
     ProductDefinitionId::mint(crate::native::model_id(
         "product_definition",
         "document",

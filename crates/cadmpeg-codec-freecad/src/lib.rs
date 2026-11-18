@@ -1158,6 +1158,15 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &shape_payloads,
             );
+            design::state_root_definition(
+                &mut ir,
+                &graph.objects,
+                &graph.properties,
+                &shape_payloads,
+            )?;
+            if ctx.depth() >= DecodeDepth::Design {
+                design::v11::project(&mut ir)?;
+            }
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.entity_count()),
