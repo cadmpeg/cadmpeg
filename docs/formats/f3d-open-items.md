@@ -3556,8 +3556,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder retains the word and its offset. Neutral projection uses the stored blind distance and reports `feature.extrude-opaque-distance-word-assumed`.
 
-
-### DR-819. Connector GUIDs in version-four Assemble scopes
+### DR-821. Connector GUIDs in version-four Assemble scopes
 
 **Question.** What identity does each connector GUID select in a version-four `Assemble` scope, and how does that identity affect its operand context and joint relation?
 
