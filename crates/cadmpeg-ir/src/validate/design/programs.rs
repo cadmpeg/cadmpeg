@@ -46,7 +46,7 @@ pub(super) fn check_programs(index: &DesignRecords<'_>, findings: &mut Vec<Findi
         let mut named = BTreeSet::new();
         for target in targets {
             // An `External` target names a parameter of a document that was
-            // not read, so no record states its definition (interim, G2-04).
+            // not read, so no record states its definition (interim, G2-22).
             let RefTarget::Parameter(parameter) = &target.target else {
                 continue;
             };
