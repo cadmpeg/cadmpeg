@@ -31,6 +31,21 @@ pub(super) fn project(
     if let Some(construction) = scope.draft_operation() {
         if let Some(flags) = construction.flags {
             if let Some(controls) = flags.parting {
+                let mut groups = nonempty_anchor_groups(scope, inputs.construction_groups)
+                    .map(|group| group.record_index);
+                if matches!(
+                    (groups.next(), groups.next(), groups.next()),
+                    (Some(first), Some(second), None)
+                        if [first, second] == [controls.pull.value, controls.tool.value]
+                            || [second, first] == [controls.pull.value, controls.tool.value]
+                ) {
+                    if let Some(definition) = exact(scope, inputs)? {
+                        losses.push(F3dLossCode::DraftPartingControlsPartial.note(format!(
+                            "Draft scope {} transfers the work-plane pull and face tool from its two anchor groups and retains the remaining parting controls in its native construction (DR-812).", scope.id
+                        )));
+                        return Ok(definition);
+                    }
+                }
                 return parting(scope, inputs, construction, flags, controls, losses);
             }
         }
@@ -92,6 +107,18 @@ pub(super) fn project(
         outward: None,
         second_side: None,
     }))
+}
+
+fn nonempty_anchor_groups<'a>(
+    scope: &'a DesignParameterScope,
+    groups: &'a [DesignConstructionOperandGroup],
+) -> impl Iterator<Item = &'a DesignConstructionOperandGroup> {
+    groups.iter().filter(|group| {
+        native_stream(&group.id) == native_stream(&scope.id)
+            && group.scope_record_index == scope.record_index
+            && group.role() == DesignOperandRole::ROLE_0X21
+            && !group.members().is_empty()
+    })
 }
 
 fn scope_group(scope: &DesignParameterScope, group: &DesignConstructionOperandGroup) -> bool {
@@ -233,15 +260,7 @@ pub(super) fn exact(
         scope,
         DesignOperandRole::ROLE_0X10
     ));
-    let mut role_groups = Vec::new();
-    for group in groups.iter().filter(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
-            && group.role() == DesignOperandRole::ROLE_0X21
-            && !group.members().is_empty()
-    }) {
-        role_groups.push(group);
-    }
+    let role_groups: Vec<_> = nonempty_anchor_groups(scope, groups).collect();
     let member_of_scope = |group: &DesignConstructionOperandGroup| {
         group
             .members()

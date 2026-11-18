@@ -640,52 +640,66 @@ fn parting_scope(form: u32) -> DesignParameterScope {
 
 #[test]
 fn legacy_parting_groups_keep_the_work_plane_and_tool_selection() {
-    let mut scope = parting_scope(2);
-    if let DesignScopePayloadMut::Draft(Some(operation)) = scope.payload_mut() {
-        operation.opposite_angle = Some(cadmpeg_ir::scalar::Angle::new(0.0).unwrap());
-        let parting = operation.flags.as_mut().unwrap().parting.as_mut().unwrap();
-        parting.mode = 1;
-        parting.pull.value = 103;
-        parting.tool.value = 102;
-    }
     let [faces, plane_group] = groups();
     let tool = group(103, 113, DesignOperandRole::ROLE_0X21);
     let expected_tool = FaceSelection::Native(tool.id.clone());
     let construction_groups = [faces, plane_group, tool];
-    crate::design::decode::scopes::draft::preserve_legacy_parting_groups(
-        &mut scope,
-        &construction_groups,
-    );
-    let operation = scope.draft_operation().unwrap();
-    assert_eq!(operation.flags, None);
-    assert_eq!(operation.opposite_angle, None);
     let plane = work_plane_scope();
     let expected_plane = crate::ids::neutral_feature_id(&plane);
-    let mut losses = Vec::new();
-    let definition = super::super::draft::project(
-        &scope,
-        &super::super::ProjectInputs {
-            scopes: &[scope.clone(), plane],
-            construction_groups: &construction_groups,
-            entity_selection_operands: &[selection(282, &[])],
-            ..Default::default()
-        },
-        &mut losses,
-    )
-    .unwrap();
-    let FeatureDefinition::Operation(FeatureOperation::Draft {
-        anchor: DraftAnchor::PartingLine { tool, pull },
-        angle,
-        ..
-    }) = definition
-    else {
-        panic!("expected the resolved parting-line Draft");
-    };
-    assert_eq!(tool, expected_tool);
-    assert_eq!(pull.plane, Some(expected_plane));
-    assert_eq!(pull.direction.get(), Vector3::new(0.0, 0.0, 1.0));
-    assert_eq!(angle.unwrap().get(), 0.25);
-    assert!(losses.is_empty());
+    for (form, mode, flipped, opposite) in
+        [(2, 1, false, 0.0), (2, 2, true, 0.0), (3, 2, true, 0.25)]
+    {
+        let mut scope = parting_scope(form);
+        if let DesignScopePayloadMut::Draft(Some(operation)) = scope.payload_mut() {
+            operation.opposite_angle = Some(cadmpeg_ir::scalar::Angle::new(opposite).unwrap());
+            let flags = operation.flags.as_mut().unwrap();
+            flags.flipped = flipped;
+            flags.tangent_chain = true;
+            let parting = flags.parting.as_mut().unwrap();
+            parting.mode = mode;
+            if form == 2 && mode == 1 {
+                std::mem::swap(&mut parting.pull.value, &mut parting.tool.value);
+            }
+        }
+        let operation = scope.draft_operation().unwrap();
+        assert_eq!(operation.opposite_angle.unwrap().get(), opposite);
+        let flags = operation.flags.unwrap();
+        assert!(flags.tangent_chain);
+        assert_eq!(flags.parting.unwrap().fixed_edges.is_some(), form == 3);
+        let mut losses = Vec::new();
+        let definition = super::super::draft::project(
+            &scope,
+            &super::super::ProjectInputs {
+                scopes: &[scope.clone(), plane.clone()],
+                construction_groups: &construction_groups,
+                entity_selection_operands: &[selection(282, &[])],
+                ..Default::default()
+            },
+            &mut losses,
+        )
+        .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Draft {
+            anchor: DraftAnchor::PartingLine { tool, pull },
+            angle,
+            second_side: None,
+            ..
+        }) = definition
+        else {
+            panic!("expected the resolved parting-line Draft");
+        };
+        assert_eq!(tool, expected_tool);
+        assert_eq!(pull.plane.as_ref(), Some(&expected_plane));
+        assert_eq!(
+            pull.direction.get(),
+            Vector3::new(0.0, 0.0, if flipped { -1.0 } else { 1.0 })
+        );
+        assert_eq!(angle.unwrap().get(), 0.25);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.draft-parting-controls-partial"
+        );
+    }
 }
 
 #[test]

@@ -272,6 +272,19 @@ fn parting_prefixes_retain_both_angles_and_explicit_group_roles() {
 }
 
 #[test]
+fn rejected_parting_controls_leave_the_single_angle_available() {
+    for form in [2, 3] {
+        let mut fixture = parting_fixture(form);
+        fixture.opposite_value = 0.0;
+        fixture.tail[16] = 2;
+        let operation = fixture.decode().unwrap();
+        assert_eq!(operation.angle.get(), 0.25);
+        assert_eq!(operation.flags, None);
+        assert_eq!(operation.opposite_angle, None);
+    }
+}
+
+#[test]
 fn parting_prefixes_reject_truncation_invalid_flags_and_foreign_or_duplicate_references() {
     for form in [2, 3] {
         let fixture = parting_fixture(form);

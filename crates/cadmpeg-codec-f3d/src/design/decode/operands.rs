@@ -2028,7 +2028,6 @@ pub(crate) fn decode_construction_operand_groups(
             }
         }
         scope.unclosed_construction_operand_groups = unclosed;
-        super::scopes::draft::preserve_legacy_parting_groups(scope, &out[scope_group_start..]);
         if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude) {
             let seventh_slot_record_index = scope.extrude_prologue().and_then(|prologue| {
                 crate::design::decode::scopes::extrude::extrude_seventh_slot_record_index(

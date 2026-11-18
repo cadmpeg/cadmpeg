@@ -14,55 +14,15 @@ use crate::records::feature::direct_face::DesignDraftFlags;
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::direct_face::DesignDraftParting;
 use crate::records::feature::direct_face::DesignDraftTwoSided;
-use crate::records::feature::scope::{DesignParameterScope, DesignScopePayloadMut};
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
 use crate::records::parameters::DesignParameterOwner;
-use crate::records::topology::construction::DesignConstructionOperandGroup;
-use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
 
 const MODE_SINGLE_ANGLE: u32 = 1;
 const MARKED_REFERENCE_LEN: usize = 11;
-
-pub(in crate::design) fn preserve_legacy_parting_groups(
-    scope: &mut DesignParameterScope,
-    groups: &[DesignConstructionOperandGroup],
-) {
-    let DesignScopePayloadMut::Draft(Some(operation)) = scope.payload_mut() else {
-        return;
-    };
-    let Some(parting) = operation.flags.and_then(|flags| flags.parting) else {
-        return;
-    };
-    if parting.form != 2
-        || parting.mode != MODE_SINGLE_ANGLE
-        || parting.fixed_edges.is_some()
-        || !operation
-            .opposite_angle
-            .is_some_and(|angle| angle.get() == 0.0)
-    {
-        return;
-    }
-    let mut legacy_groups = groups
-        .iter()
-        .filter(|group| group.role() == DesignOperandRole::ROLE_0X21 && !group.members().is_empty())
-        .map(|group| group.record_index);
-    let (Some(first), Some(second), None) = (
-        legacy_groups.next(),
-        legacy_groups.next(),
-        legacy_groups.next(),
-    ) else {
-        return;
-    };
-    if [first, second] == [parting.pull.value, parting.tool.value]
-        || [second, first] == [parting.pull.value, parting.tool.value]
-    {
-        operation.flags = None;
-        operation.opposite_angle = None;
-    }
-}
 
 pub(super) fn exact_draft_operation_with_owners(
     bytes: &[u8],
@@ -158,9 +118,11 @@ fn draft_flags(
     let length = usize::try_from(scope.frame_length()).map_err(|_| ())?;
     let end = start.checked_add(length).ok_or(())?.min(bytes.len());
     let frame = bytes.get(start..end).ok_or(())?;
+    let Some(form @ 1..=3) = View::u32_le_at(frame, prefix::ANCHOR_KIND) else {
+        return Ok(None);
+    };
     let names_lanes = frame.get(prefix::ZERO_RUN_10..prefix::FORM) == Some(&[0; 10])
         && View::u32_le_at(frame, prefix::FORM) == Some(prefix::FORM_VALUE)
-        && matches!(View::u32_le_at(frame, prefix::ANCHOR_KIND), Some(1..=3))
         && marked_record_reference(frame, prefix::ANGLE_REFERENCE) == Some(angle_record_index)
         && marked_record_reference(frame, prefix::OPPOSITE_ANGLE_REFERENCE)
             == Some(opposite_angle_record_index);
@@ -168,19 +130,26 @@ fn draft_flags(
         return Ok(None);
     }
     let flag = |offset| match frame.get(offset) {
-        Some(0) => Ok(false),
-        Some(1) => Ok(true),
-        _ => Err(()),
+        Some(0) => Some(false),
+        Some(1) => Some(true),
+        _ => None,
     };
-    let flipped = flag(prefix::FLIPPED)?;
-    let tangent_chain = flag(prefix::TANGENT_CHAIN)?;
     let mode = View::u32_le_at(frame, prefix::MODE).ok_or(())?;
-    let parting = match View::u32_le_at(frame, prefix::ANCHOR_KIND).ok_or(())? {
-        1 => None,
-        form => Some(parting_groups(frame, scope, form, mode).ok_or(())?),
-    };
+    if form != 1 {
+        return Ok(
+            parting_groups(frame, scope, form, mode).and_then(|parting| {
+                Some(DesignDraftFlags {
+                    flipped: flag(prefix::FLIPPED)?,
+                    tangent_chain: flag(prefix::TANGENT_CHAIN)?,
+                    two_sided: None,
+                    parting: Some(parting),
+                })
+            }),
+        );
+    }
+    let flipped = flag(prefix::FLIPPED).ok_or(())?;
+    let tangent_chain = flag(prefix::TANGENT_CHAIN).ok_or(())?;
     let two_sided = match mode {
-        _ if parting.is_some() => None,
         MODE_SINGLE_ANGLE => None,
         mode => Some(DesignDraftTwoSided::try_from(mode).map_err(|_| ())?),
     };
@@ -188,7 +157,7 @@ fn draft_flags(
         flipped,
         tangent_chain,
         two_sided,
-        parting,
+        parting: None,
     }))
 }
 
