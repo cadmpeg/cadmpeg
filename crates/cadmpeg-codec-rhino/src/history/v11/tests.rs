@@ -205,7 +205,7 @@ fn history_records_are_native_members_of_one_group_holding_their_descendants() {
     else {
         panic!("one unordered group");
     };
-    assert_eq!(scope.roots, [group.clone()]);
+    assert_eq!(scope.roots, std::slice::from_ref(group));
 
     let [feature] = ir.design.features.as_slice() else {
         panic!("one feature");
@@ -317,10 +317,10 @@ fn an_object_two_records_list_is_in_neither_current_state() {
     assert_eq!(ir.model.product_definitions.len(), 1);
 }
 
-fn selection(
-    options: &NativeOptions,
-    key: &str,
-) -> (Anchor, Vec<(String, Option<Vec<EntityRef>>)>) {
+/// A pick's native name and its resolved entities.
+type PickSummary = (String, Option<Vec<EntityRef>>);
+
+fn selection(options: &NativeOptions, key: &str) -> (Anchor, Vec<PickSummary>) {
     let Some((_, NativeOption::Selection(selection))) =
         options.iter().find(|(name, _)| name.as_str() == key)
     else {
