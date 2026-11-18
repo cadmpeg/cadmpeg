@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use crate::test_support::root_part_ir;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::design::names::NativeNameValue;
 use cadmpeg_ir::design::selection::{Anchor, OrderedSelection, Picks};
@@ -13,10 +14,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::Length;
 
 fn project_operation(operation: LegacyOperation) -> FeatureOperation {
-    let mut ir = CadIr::empty();
-    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
-    })).expect("part"));
+    let mut ir = root_part_ir();
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("inventor:design:feature#datum").expect("id"),

@@ -5356,7 +5356,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::SurfacePatch) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::PROFILE
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::PROFILE
+                            | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::SurfaceOffset) => {
