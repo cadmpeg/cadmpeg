@@ -279,6 +279,7 @@ fn dimensions_and_global_variables_are_parameters_of_the_scope() {
                 <Dimension Name="D3">0.5in</Dimension>
                 <Dimension Name="D4">90deg</Dimension>
                 <Dimension Name="D5">D1@Boss * 2</Dimension>
+                <Dimension Name="D6">25</Dimension>
             </Extrusion>
         </Keywords>"#,
         &[],
@@ -358,6 +359,11 @@ fn dimensions_and_global_variables_are_parameters_of_the_scope() {
     let tokens = &expression_json(d5)["value"]["tokens"];
     assert_eq!(tokens[0]["value"]["target"]["value"], d1.id.as_str());
     assert_eq!(d5.value, None);
+
+    let d6 = parameter_named(&ir, "D6");
+    assert!(matches!(&d6.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"));
+    assert_eq!(d6.value, None);
+    assert_eq!(expression_json(d6)["value"]["tokens"][0]["value"], "25");
     assert_no_design_findings(&ir);
 }
 

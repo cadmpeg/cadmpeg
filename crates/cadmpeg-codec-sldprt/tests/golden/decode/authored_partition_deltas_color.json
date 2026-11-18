@@ -351,8 +351,15 @@
           ],
           "bom_properties": {},
           "id": "sldprt:model:product-definition#root",
+          "instance_bodies": [],
           "kind": "part",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],

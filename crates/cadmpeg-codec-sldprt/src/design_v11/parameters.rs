@@ -36,8 +36,8 @@ use crate::history::parameters::{
 use crate::history::project::{neutral_parameter_id, projected_parameter_names};
 use crate::records::{Feature, FeatureHistory};
 
-/// The kind of a dimension whose quantity the decoder has not read: its
-/// expression references other parameters and the file stores no value.
+/// The kind of a dimension whose quantity the decoder has not read: a bare
+/// number, or an expression over other parameters with no stored value.
 const UNREAD_KIND: &str = "sldprt:dimension";
 
 /// One parameter of the source, before its expression is read.
@@ -120,7 +120,7 @@ struct Reading {
 fn read(entry: &Entry<'_>, aliases: &Aliases) -> Reading {
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
-    if let Some((node, kind, value)) = literal(feature, name, text, user) {
+    if let Some((node, kind, value)) = literal(text, user) {
         return Reading {
             kind,
             expression: Expression::Neutral(Neutral(node)),
@@ -148,7 +148,14 @@ fn read(entry: &Entry<'_>, aliases: &Aliases) -> Reading {
         .and_then(|properties| properties.get("Value"));
     let parsed = parsed
         .or_else(|| stored.and_then(|value| parse_native_parameter_literal(feature, name, value)));
-    let (kind, value) = match parsed.and_then(|value| cache(value, user)) {
+    let parsed = parsed.filter(|value| {
+        user || !matches!(
+            value,
+            cadmpeg_ir::features::ParameterValue::Integer(_)
+                | cadmpeg_ir::features::ParameterValue::Real(_)
+        )
+    });
+    let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
         None if native_parameter_is_length(feature, name, Some(text)) => {
@@ -177,12 +184,9 @@ fn read(entry: &Entry<'_>, aliases: &Aliases) -> Reading {
 }
 
 /// The kind and canonical cache of a value the v10 literal reader parsed. A
-/// user parameter has no declared quantity, so a whole number there is a
-/// dimensionless real.
-fn cache(
-    value: cadmpeg_ir::features::ParameterValue,
-    user: bool,
-) -> Option<(ValueKind, ParameterValue)> {
+/// bare number reaches here only for a global variable, which has no
+/// declared quantity, so a whole number is a dimensionless real.
+fn cache(value: cadmpeg_ir::features::ParameterValue) -> Option<(ValueKind, ParameterValue)> {
     use cadmpeg_ir::features::ParameterValue as Parsed;
     let number = |quantity, value: f64| {
         Some((
@@ -194,8 +198,7 @@ fn cache(
         Parsed::Length(length) => number(Quantity::LENGTH, length.get()),
         Parsed::Angle(angle) => number(Quantity::ANGLE, angle.get()),
         Parsed::Real(real) => number(Quantity::REAL, real.get()),
-        Parsed::Integer(integer) if user => number(Quantity::REAL, exact_integer_f64(integer)?),
-        Parsed::Integer(integer) => Some((ValueKind::Integer, ParameterValue::Integer(integer))),
+        Parsed::Integer(integer) => number(Quantity::REAL, exact_integer_f64(integer)?),
         Parsed::Boolean(flag) => Some((ValueKind::Boolean, ParameterValue::Boolean(flag))),
         Parsed::String(text) => Some((ValueKind::Text, ParameterValue::Text(text))),
     }
@@ -227,18 +230,14 @@ const LITERAL_UNITS: [(&str, UnitSymbol); 11] = [
     ("m", UnitSymbol::M),
 ];
 
-/// A literal of one number, with a unit the vocabulary names or none, or a
-/// Boolean: its tree, kind, and canonical value.
+/// A literal of one number with a unit the vocabulary names, a Boolean, or a
+/// global variable's bare number, which is dimensionless: its tree, kind, and
+/// canonical value.
 ///
-/// A number with no unit is a literal only where the parameter is not a
-/// length: a unit-blind length takes the definition's authoring unit, which
-/// the decoder does not read (§5.13, §5.15).
-fn literal(
-    feature: &Feature,
-    name: &str,
-    text: &str,
-    user: bool,
-) -> Option<(Node<ParameterRef>, ValueKind, ParameterValue)> {
+/// A dimension's bare number is no literal here: it is a length or an angle
+/// in the definition's authoring unit, or a count, and the decoder reads
+/// neither the unit nor which (§5.13, §5.15).
+fn literal(text: &str, user: bool) -> Option<(Node<ParameterRef>, ValueKind, ParameterValue)> {
     let text = text.trim();
     if text.eq_ignore_ascii_case("true") || text.eq_ignore_ascii_case("false") {
         let flag = text.eq_ignore_ascii_case("true");
@@ -273,14 +272,11 @@ fn literal(
                 ParameterValue::Number(FiniteReal::new(signed * scale)?),
             )
         }
-        None if native_parameter_is_length(feature, name, Some(text)) => return None,
-        None => match number.parse::<i64>() {
-            Ok(integer) if !user => (ValueKind::Integer, ParameterValue::Integer(integer)),
-            _ => (
-                ValueKind::Quantity(Quantity::REAL),
-                ParameterValue::Number(FiniteReal::new(signed)?),
-            ),
-        },
+        None if user => (
+            ValueKind::Quantity(Quantity::REAL),
+            ParameterValue::Number(FiniteReal::new(signed)?),
+        ),
+        None => return None,
     };
     let unit = match unit {
         Some(symbol) => Unit(vec![UnitFactor {
@@ -304,10 +300,13 @@ fn literal(
     Some((node, kind, value))
 }
 
+/// Millimetres in one nanometre.
+const MM_PER_NM: f64 = 1.0e-6;
+
 /// The quantity of a literal unit and its factor to the canonical unit.
 fn canonical(symbol: UnitSymbol) -> Option<(Quantity, f64)> {
     Some(match symbol {
-        UnitSymbol::Nm => (Quantity::LENGTH, 1.0e-6),
+        UnitSymbol::Nm => (Quantity::LENGTH, MM_PER_NM),
         UnitSymbol::Um => (Quantity::LENGTH, 1.0e-3),
         UnitSymbol::Mm => (Quantity::LENGTH, 1.0),
         UnitSymbol::Cm => (Quantity::LENGTH, 10.0),

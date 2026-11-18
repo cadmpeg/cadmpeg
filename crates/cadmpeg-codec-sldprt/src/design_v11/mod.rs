@@ -30,7 +30,7 @@ use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
-use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 
 use crate::history::project::EncodedNativeKey;
 use crate::records::FeatureHistory;
@@ -77,19 +77,10 @@ pub(crate) fn project(
         (container, timeline.features, current)
     };
     let added = 3 + features.len() + parameters.len() + configurations.records.len();
-    ir.model.product_definitions.push(ProductDefinition {
-        id: definition.clone(),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
-        bodies,
-        sketches: Vec::new(),
-        tessellations: Vec::new(),
-        native_ref: None,
-    });
+    let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
+    root.kind = Some(ProductDefinitionKind::Part);
+    root.bodies = bodies;
+    ir.model.product_definitions.push(root);
     ir.design.scopes.push(DesignScope {
         definition,
         roots: vec![container.id().clone()],
@@ -105,7 +96,7 @@ pub(crate) fn project(
     Ok(added)
 }
 
-/// The definition of the part file itself, which no occurrence places.
+/// The root definition: the part file itself, which no occurrence places.
 fn root_definition() -> ProductDefinitionId {
     ProductDefinitionId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "model", "product-definition"),
