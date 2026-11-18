@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -78,12 +79,15 @@ pub mod kinds {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
-    schemars(bound = "K: JsonSchema, K::Value: JsonSchema")
+    schemars(
+        bound = "K: JsonSchema, K::Value: JsonSchema",
+        with = "ConstructionWire<K>"
+    )
 )]
 #[serde(
-    bound(serialize = "K: Clone", deserialize = ""),
-    try_from = "ConstructionWire<K>",
-    into = "ConstructionWire<K>"
+    bound = "",
+    rename(serialize = "ConstructionWire"),
+    try_from = "ConstructionWire<K>"
 )]
 pub struct Construction<K: ConstructionKind> {
     /// The constraints the source stores, in the source's priority order.
@@ -93,22 +97,38 @@ pub struct Construction<K: ConstructionKind> {
     pub after: Vec<PostStep>,
     /// The selector the source stores for its choice among the solutions
     /// that the inputs admit.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub solution: Option<u32>,
     /// The source's name for its construction method, with the method
     /// options the source stores beside it.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<SourceMode>,
     /// The construction's value in its anchored state, for the active
     /// configuration, after the steps of `after`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<K::Value>,
     /// The construction's value in each other configuration for which the
     /// source stores one.
     pub resolved_in: BTreeMap<ConfigurationId, K::Value>,
 }
 
+impl<K: ConstructionKind> Default for Construction<K> {
+    fn default() -> Self {
+        Self {
+            inputs: Vec::new(),
+            after: Vec::new(),
+            solution: None,
+            mode: None,
+            resolved: None,
+            resolved_in: BTreeMap::new(),
+        }
+    }
+}
+
 /// The wire form of [`Construction`]. Each construction nested in its
 /// inputs has passed the construction ceiling; reading admits this one
 /// level above the deepest of them.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(
     feature = "schema",
@@ -174,27 +194,6 @@ impl<K: ConstructionKind> TryFrom<ConstructionWire<K>> for Construction<K> {
         };
         read::within(Ceiling::Construction, construction.depth())?;
         Ok(construction)
-    }
-}
-
-impl<K: ConstructionKind> From<Construction<K>> for ConstructionWire<K> {
-    fn from(construction: Construction<K>) -> Self {
-        let Construction {
-            inputs,
-            after,
-            solution,
-            mode,
-            resolved,
-            resolved_in,
-        } = construction;
-        Self {
-            inputs,
-            after,
-            solution,
-            mode,
-            resolved,
-            resolved_in,
-        }
     }
 }
 
@@ -313,7 +312,7 @@ pub struct InputRole {
 }
 
 /// The part of a construction's result that an input constrains.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Subject {
@@ -497,7 +496,7 @@ pub enum PostStep {
 }
 
 /// An axis of a frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum FrameAxis {
@@ -612,3 +611,6 @@ cadmpeg_core::named_optional_field!(deserialize_reversed, bool, "reversed");
 cadmpeg_core::named_optional_field!(deserialize_role, InputRole, "role");
 cadmpeg_core::named_optional_field!(deserialize_solution, u32, "solution");
 cadmpeg_core::named_optional_field!(deserialize_value, ScalarDimension, "value");
+
+#[cfg(test)]
+mod tests;

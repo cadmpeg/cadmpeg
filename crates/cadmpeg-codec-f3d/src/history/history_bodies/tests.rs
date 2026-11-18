@@ -290,6 +290,7 @@ fn run_roles(
             state: 12,
             slot,
             identity: None,
+            capture_current: false,
         })
         .collect::<Vec<_>>();
     let mut bodies = Vec::new();
@@ -561,6 +562,61 @@ fn an_unchanged_body_needs_no_history_body() {
     let (bodies, losses) = run(false, RefWidth::Eight, 1, MAX_HISTORY_BODY_WORK);
     assert!(bodies.is_empty());
     assert!(losses.is_empty());
+}
+
+#[test]
+fn a_captured_derived_result_preserves_the_current_body() {
+    let bytes = carrier_bytes(RefWidth::Eight, true);
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let mut allowance = u64::MAX;
+    let history = super::super::decode(
+        &ctx,
+        &bytes,
+        "test",
+        RefWidth::Eight,
+        &mut allowance,
+        &WorkBudget::new(1 << 20),
+    )
+    .unwrap()
+    .unwrap();
+    let feature = feature("derived");
+    let mut bodies = Vec::new();
+    let mut losses = Vec::new();
+    fill_history(
+        &ctx,
+        &bytes,
+        &history,
+        &[Want {
+            origin: &feature,
+            producer: Some(&feature),
+            consumer: None,
+            identity: None,
+            state: 13,
+            slot: 1,
+            capture_current: true,
+        }],
+        &mut bodies,
+        &WorkBudget::new(MAX_HISTORY_BODY_WORK),
+        &mut losses,
+    )
+    .unwrap();
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].state.identifier, 13);
+    assert_eq!(bodies[0].produced_by.as_ref(), Some(&feature.id));
+    assert_eq!(bodies[0].topology.faces.len(), 1);
+    assert_eq!(bodies[0].topology.surfaces.len(), 1);
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+        &bodies[0].topology.surfaces[0].geometry
+    else {
+        panic!("sphere")
+    };
+    assert_eq!(
+        sphere.center().get(),
+        cadmpeg_ir::math::Point3::new(10.0 * 10.0, 0.0, 0.0)
+    );
 }
 
 #[test]

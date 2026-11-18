@@ -38,6 +38,7 @@ struct Want<'a> {
     consumer: Option<&'a Feature>,
     state: i64,
     slot: i64,
+    capture_current: bool,
     /// A slot that the state names only by the persistent design identity of
     /// its body. `slot` is not read while this is present.
     identity: Option<BodyIdentity>,
@@ -72,10 +73,136 @@ pub(crate) struct Inputs<'a> {
     pub(crate) recipes: &'a [ConstructionRecipe],
 }
 
+pub(crate) fn derived_base_snapshots(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    scopes: &mut [DesignParameterScope],
+    histories: &[AsmHistory],
+    bindings: &[crate::records::bodies::DesignBodyBinding],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<HistoryBody>, CodecError> {
+    use crate::records::feature::derived_base::DesignDerivedBaseSnapshot;
+    use cadmpeg_ir::features::{
+        BodySelection, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureOperation,
+    };
+
+    let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
+    let mut bodies = Vec::new();
+    for scope in scopes {
+        let Some(source) = scope.derived_base_source.as_ref() else {
+            continue;
+        };
+        let Some(stream) = crate::ids::native_stream(&scope.id) else {
+            continue;
+        };
+        let unique_binding = |suffix| {
+            let mut matches = bindings.iter().filter(|binding| {
+                crate::ids::native_stream(binding.id()) == Some(stream)
+                    && binding.entity_suffix == suffix
+            });
+            let first = matches.next()?;
+            matches.next().is_none().then_some(first)
+        };
+        let (Some(_), Some(result)) = (
+            unique_binding(source.source_body.value),
+            unique_binding(source.result_body.value),
+        ) else {
+            continue;
+        };
+        if !result.history_only || result.pair_count() != 1 {
+            continue;
+        }
+        let Some(blob) = result.blob_name().strip_prefix("BREP.") else {
+            continue;
+        };
+        let mut matching = histories
+            .iter()
+            .filter(|history| super::historical_brep_source(&history.id) == Some(blob));
+        let Some(history) = matching.next() else {
+            continue;
+        };
+        if matching.next().is_some() {
+            continue;
+        }
+        let (Some(current), Some(previous)) =
+            (scope.history_state_id(), scope.previous_history_state_id())
+        else {
+            continue;
+        };
+        let Some((_, state, _)) =
+            super::unique_history_state_pair(std::slice::from_ref(history), current, previous)
+        else {
+            continue;
+        };
+        let Some(topology) = history.topology(state) else {
+            continue;
+        };
+        let [slot] = topology.bodies.as_slice() else {
+            continue;
+        };
+        let slot = *slot;
+        let Some(facts) = container::history_breps(scan).find(|facts| {
+            history
+                .id
+                .starts_with(&format!("f3d:{}:asm-history#", facts.name))
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&facts.name)?;
+        let feature = Feature {
+            product_definition: None,
+            id: crate::ids::neutral_feature_id(scope),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::BaseFeature {
+                    bodies: BodySelection::Unresolved,
+                },
+            )),
+            native_ref: Some(scope.id.clone()),
+        };
+        let before = bodies.len();
+        fill_history(
+            ctx,
+            bytes,
+            history,
+            &[Want {
+                origin: &feature,
+                producer: Some(&feature),
+                consumer: None,
+                identity: None,
+                state: current,
+                slot,
+                capture_current: true,
+            }],
+            &mut bodies,
+            &work,
+            losses,
+        )?;
+        if bodies.len() > before {
+            let snapshot = DesignDerivedBaseSnapshot {
+                history_body: bodies[before].id.clone(),
+                body_slot: slot,
+            };
+            if let Some(source) = &mut scope.derived_base_source {
+                source.snapshot = Some(snapshot);
+            }
+        }
+    }
+    Ok(bodies)
+}
+
 pub(crate) fn fill(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     inputs: Inputs<'_>,
+    mut bodies_out: Vec<HistoryBody>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<HistoryBody>, CodecError> {
     let Inputs {
@@ -86,7 +213,6 @@ pub(crate) fn fill(
         primary_brep,
         ..
     } = inputs;
-    let mut bodies_out = Vec::new();
     let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
     for feature in features {
         let Some(bodies) = super::stored_bodies::bound_result_bodies(feature) else {
@@ -139,6 +265,7 @@ pub(crate) fn fill(
                     state: current,
                     slot,
                     identity: None,
+                    capture_current: false,
                 });
             }
         }
@@ -158,6 +285,7 @@ pub(crate) fn fill(
                 state,
                 slot,
                 identity: None,
+                capture_current: false,
             });
         }
     }
@@ -181,6 +309,7 @@ pub(crate) fn fill(
                     state,
                     slot,
                     identity: None,
+                    capture_current: false,
                 }),
             }
         }
@@ -196,6 +325,7 @@ pub(crate) fn fill(
             state,
             slot: -1,
             identity: Some(identity),
+            capture_current: false,
         });
     }
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
@@ -511,7 +641,7 @@ fn fill_history(
                 // body as this state holds it only in the record archive. The
                 // transition of a Split that names its target by identity
                 // states the revision.
-                let produced = want.producer.filter(|_| changed);
+                let produced = want.producer.filter(|_| changed || want.capture_current);
                 let consumed = want.consumer.filter(|_| changed || want.identity.is_some());
                 if produced.is_none() && consumed.is_none() {
                     continue;
@@ -562,6 +692,7 @@ fn fill_history(
                                     state: want.state,
                                     slot,
                                     identity: None,
+                                    capture_current: false,
                                 };
                                 &resolved
                             }

@@ -121,6 +121,8 @@ pub(crate) struct NurbsChart<'ir> {
     pub(crate) evaluation: Option<&'ir SurfaceId>,
     pub(crate) offset_reach: f64,
     pub(crate) column_offset: Option<f64>,
+    /// The distance within which the poles of a `v` side coincide.
+    pub(crate) collapse_tolerance: f64,
     /// The `u` and `v` knot domains.
     pub(crate) domain: [[f64; 2]; 2],
     pub(crate) periods: [Option<f64>; 2],
@@ -239,12 +241,39 @@ impl<'ir> NurbsChart<'ir> {
             evaluation: None,
             offset_reach: 0.0,
             column_offset: None,
+            collapse_tolerance: 0.0,
             domain: [u, v],
             periods: [
                 surface.u_periodic().then_some(u[1] - u[0]),
                 surface.v_periodic().then_some(v[1] - v[0]),
             ],
         })
+    }
+
+    /// The model points to which a whole `v` side of the pole grid
+    /// collapses: along such a side the surface is one point and `u` is not
+    /// defined.
+    pub(crate) fn collapsed_v_sides(&self) -> Vec<Point3> {
+        let (columns, rows) = (self.surface.u_count(), self.surface.v_count());
+        let mut points = Vec::new();
+        let Some(last) = rows.checked_sub(1) else {
+            return points;
+        };
+        for side in [0, last] {
+            let Some(first) = self.surface.pole(0, side) else {
+                continue;
+            };
+            let first = self.placement.point(first.get());
+            let collapsed = (1..columns).all(|column| {
+                self.surface.pole(column, side).is_some_and(|pole| {
+                    self.placement.point(pole.get()).distance(first) <= self.collapse_tolerance
+                })
+            });
+            if collapsed && !points.contains(&first) {
+                points.push(first);
+            }
+        }
+        points
     }
 
     pub(crate) fn closed_domain(&self, tolerance: f64) -> bool {
@@ -724,16 +753,38 @@ impl Chart<'_> {
         }
     }
 
-    /// Whether `point` lies within `tolerance` of a point where `u` is not
-    /// defined: a cone apex or a sphere pole.
-    pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
+    /// The chart with a NURBS `v` side collapsed where its poles coincide
+    /// within `tolerance`.
+    pub(crate) fn collapsing_within(self, tolerance: f64) -> Self {
+        match self {
+            Self::Nurbs(nurbs) => Self::Nurbs(NurbsChart {
+                collapse_tolerance: tolerance,
+                ..nurbs
+            }),
+            other => other,
+        }
+    }
+
+    /// The points where `u` is not defined: a cone apex, the poles of a
+    /// closed chart, and the points to which a whole `v` side of a NURBS
+    /// pole grid collapses within the chart's collapse tolerance.
+    pub(crate) fn singular_points(&self) -> impl Iterator<Item = Point3> {
+        let collapsed = match self {
+            Self::Nurbs(nurbs) => nurbs.collapsed_v_sides(),
+            _ => Vec::new(),
+        };
         self.apex()
-            .is_some_and(|(_, apex)| apex.distance(point) <= tolerance)
-            || self.poles().is_some_and(|poles| {
-                poles
-                    .iter()
-                    .any(|(_, pole)| pole.distance(point) <= tolerance)
-            })
+            .map(|(_, apex)| apex)
+            .into_iter()
+            .chain(self.poles().into_iter().flatten().map(|(_, pole)| pole))
+            .chain(collapsed)
+    }
+
+    /// Whether `point` lies within `tolerance` of one of the
+    /// [`singular_points`](Self::singular_points).
+    pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
+        self.singular_points()
+            .any(|singular| singular.distance(point) <= tolerance)
     }
 
     /// The profile span of a closed chart.

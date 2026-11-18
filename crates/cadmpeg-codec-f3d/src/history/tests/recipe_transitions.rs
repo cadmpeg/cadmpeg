@@ -460,6 +460,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             face_group_record_indices: vec![100],
             diameters: crate::records::feature::thread::DesignThreadDiameters::new(0.4, 0.2, 0.3)
                 .unwrap(),
+            modeled: false,
             extended: None,
         });
     }
@@ -1089,6 +1090,7 @@ fn entry_location(position: [f64; 3]) -> crate::records::feature::hole::DesignHo
         position_offset: 0,
         reference_type: 10,
         vertex_input: None,
+        plane: None,
     }
 }
 

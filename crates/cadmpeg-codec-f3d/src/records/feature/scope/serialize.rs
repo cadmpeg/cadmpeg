@@ -181,6 +181,9 @@ impl Serialize for DesignParameterScope {
             DesignScopePayload::Thicken(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Thicken(value));
             }
+            DesignScopePayload::SilhouetteSplit(Some(value)) => {
+                emit!("silhouette_split_operation", value);
+            }
             DesignScopePayload::Move(Some(value)) | DesignScopePayload::MoveFace(Some(value)) => {
                 emit!("move_operation", value);
             }
@@ -196,6 +199,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());
         emit_opt!("surface_extend_operation", self.surface_extend_operation());
         emit_opt!("surface_untrim_operation", self.surface_untrim_operation());
+        emit_opt!("replace_face_operation", self.replace_face_operation());
         emit_opt!("surface_offset_operation", self.surface_offset_operation());
         emit_opt!("ruled_surface_operation", self.ruled_surface_operation());
         if let Some(base_flange) = self.base_flange() {
@@ -257,6 +261,10 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("combine_operation", self.combine_operation());
         emit_opt!("combine_named_tail", self.combine_named_tail());
+        if let Some(fill) = self.boundary_fill() {
+            emit_opt!("boundary_fill", fill.prefix.as_ref());
+            emit_opt!("boundary_fill_named_tail", fill.named_tail.as_ref());
+        }
         emit_opt!("thread_construction", self.thread_construction());
         emit_opt!("emboss_construction", self.emboss_construction());
         emit_opt!("draft_operation", self.draft_operation());
@@ -338,6 +346,10 @@ impl Serialize for DesignParameterScope {
         if let Some(deleted_members) = &self.deleted_members {
             emit!("deleted_members", deleted_members);
         }
+        if let Some(derived_base_owner) = &self.derived_base_owner {
+            emit!("derived_base_owner", derived_base_owner);
+        }
+        emit_opt!("derived_base_source", self.derived_base_source.as_ref());
         emit_opt!("hole_construction", self.hole_construction());
         emit_opt!("hole_extent", self.hole_extent());
         if let Some(sketch) = self.sketch_entity() {

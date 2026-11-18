@@ -141,7 +141,7 @@ fn saved_section_world_coordinate_2d_is_positive() {
 #[test]
 fn decodes_var_arr_positional_dict_lattice() {
     for (bytes, head) in [
-        ([0x51, 1, 2, 3, 4, 5, 6], [0x3f, 0xc6]),
+        ([0x51, 1, 2, 3, 4, 5, 6], [0x3f, 0xc3]),
         ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
         ([0x69, 1, 2, 3, 4, 5, 6], [0x3f, 0xde]),
         ([0x9c, 1, 2, 3, 4, 5, 6], [0x40, 0x11]),

@@ -280,22 +280,21 @@ fn datum_axes_require_a_finite_nonzero_direction() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                .unwrap(),
-        })
+        &FeatureDefinition::Operation(FeatureOperation::datum_axis(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+        ))
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+        &FeatureDefinition::Operation(FeatureOperation::datum_axis(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                 f64::EPSILON / 2.0,
                 0.0,
                 0.0
             ))
             .unwrap(),
-        })
+        ))
     ));
 }
 
@@ -353,7 +352,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     };
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 resolved("target"),
                 resolved("replacement"),
             )
@@ -362,7 +361,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 FaceSelection::Native("native:target".into()),
                 resolved("replacement"),
             )
@@ -371,7 +370,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 resolved("target"),
                 FaceSelection::Native("native:replacement".into()),
             )

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::products::{ProductDefinitionKind, PrototypeReference};
+use cadmpeg_ir::products::{ProductDefinitionKind, Storage};
 use cadmpeg_ir::topology::BodyKind;
 
 use crate::loss::UsdLossCode;
@@ -28,8 +28,8 @@ fn lengths_scale_from_scene_units_to_millimetres() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("A"))
         .unwrap();
-    assert_eq!(root.transform.affine_rows()[0][3], 10.0);
-    assert_eq!(root.transform.affine_rows()[2][3], 30.0);
+    assert_eq!(root.transform.unwrap().affine_rows()[0][3], 10.0);
+    assert_eq!(root.transform.unwrap().affine_rows()[2][3], 30.0);
     let vertices = ir.model.tessellations[0].vertices();
     assert!((vertices[1].get().x - 10.0).abs() <= EPS_LENGTH);
     assert_eq!(
@@ -55,7 +55,7 @@ fn prims_become_definitions_and_occurrences() {
         .model
         .product_definitions
         .iter()
-        .map(|definition| definition.kind.clone())
+        .filter_map(|definition| definition.kind)
         .collect();
     assert!(kinds.contains(&ProductDefinitionKind::Part));
     assert!(kinds.contains(&ProductDefinitionKind::Object));
@@ -69,18 +69,34 @@ fn instances_of_one_prototype_share_definitions() {
     let result = decode(
         "#usda 1.0\nclass \"Proto\"\n{\n    def Mesh \"Part\"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n        uniform token subdivisionScheme = \"none\"\n    }\n}\ndef \"I1\" (\n    instanceable = true\n    references = </Proto>\n)\n{\n}\ndef \"I2\" (\n    instanceable = true\n    references = </Proto>\n)\n{\n}\n",
     );
+    // §8.1: both instances place one definition, which states its `Part`
+    // occurrence once.
     let ir = result.ir();
-    assert_eq!(ir.model.occurrences.len(), 4);
+    assert_eq!(ir.model.occurrences.len(), 3);
     assert_eq!(ir.model.tessellations.len(), 1);
-    let parts: Vec<_> = ir
+    let prototype = |name: &str| {
+        ir.model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.name.as_deref() == Some(name))
+            .map(|occurrence| occurrence.prototype.clone())
+            .unwrap()
+    };
+    assert_eq!(prototype("I1"), prototype("I2"));
+    let shared = ir
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.id == prototype("I1"))
+        .unwrap();
+    let [part] = shared.occurrences.as_slice() else {
+        panic!("one Part occurrence: {:?}", shared.occurrences);
+    };
+    assert!(ir
         .model
         .occurrences
         .iter()
-        .filter(|occurrence| occurrence.name.as_deref() == Some("Part"))
-        .map(|occurrence| occurrence.prototype.clone())
-        .collect();
-    assert_eq!(parts.len(), 2);
-    assert_eq!(parts[0], parts[1]);
+        .any(|occurrence| &occurrence.id == part && occurrence.name.as_deref() == Some("Part")));
 }
 
 #[test]
@@ -90,14 +106,14 @@ fn an_external_arc_is_an_external_prototype() {
     let external: Vec<_> = result
         .ir()
         .model
-        .occurrences
+        .product_definitions
         .iter()
-        .filter_map(|occurrence| match &occurrence.prototype {
-            PrototypeReference::External { object, .. } => Some(object.clone()),
+        .filter_map(|definition| match &definition.storage {
+            Storage::External(document) => Some(document.object.clone()),
             _ => None,
         })
         .collect();
-    assert_eq!(external, [Some("/Bolt".to_owned())]);
+    assert_eq!(external, [cadmpeg_core::text::NonBlankString::new("/Bolt")]);
     assert!(has_loss(&result, UsdLossCode::CompositionExternalArc));
 }
 

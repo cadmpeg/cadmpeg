@@ -11,6 +11,16 @@ fn marked_named_combine(
     middle: Option<u32>,
     closing: Option<u32>,
 ) -> Vec<u8> {
+    marked_named_scope("Combine", label, associated, middle, closing)
+}
+
+fn marked_named_scope(
+    kind: &str,
+    label: &str,
+    associated: &[u32],
+    middle: Option<u32>,
+    closing: Option<u32>,
+) -> Vec<u8> {
     use crate::test_support::{indexed_header, push_reference_u64};
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, *b"300", 100);
@@ -20,7 +30,7 @@ fn marked_named_combine(
         push_reference_u64(&mut bytes, member);
     }
     bytes.extend_from_slice(&u32::MAX.to_le_bytes());
-    lp_utf16(&mut bytes, "Combine");
+    lp_utf16(&mut bytes, kind);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
     lp_utf16(&mut bytes, label);
@@ -61,6 +71,37 @@ fn parse_marked_named_combine(bytes: &[u8]) -> Option<super::DesignParameterScop
         0,
     )
     .unwrap()
+}
+
+#[test]
+fn registered_boundary_fill_admits_a_named_tail_with_odd_associated_reference_count() {
+    let bytes = marked_named_scope("BoundaryFill", "Fill", &[700], None, Some(701));
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let class = "300".to_owned().try_into().unwrap();
+    let scope = super::parse_parameter_scope_with_type_guid(
+        &bytes,
+        &records,
+        100,
+        &class,
+        0,
+        Some("49004167-470D-4892-B50E-5C589B1486D2"),
+    )
+    .unwrap()
+    .unwrap();
+    let tail = scope.boundary_fill().unwrap().named_tail.as_ref().unwrap();
+    assert_eq!(tail.associated[0].value, 700);
+    assert_eq!(tail.closing.as_ref().unwrap().value, 701);
+    assert_eq!(scope.previous_history_state_id(), None);
+    let wire = serde_json::to_value(&scope).unwrap();
+    assert_eq!(
+        serde_json::from_value::<super::DesignParameterScope>(wire).unwrap(),
+        scope
+    );
+    assert!(
+        super::parse_parameter_scope(&bytes, &records, 100, &class, 0)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
@@ -616,6 +657,25 @@ fn reciprocal_hole_tail_length_follows_its_members_and_further_reference() {
             assert_eq!(serde_json::to_string(&decoded).unwrap(), wire);
         }
     }
+}
+
+#[test]
+fn named_reciprocal_hole_retains_its_label_and_preceding_state() {
+    let mut reciprocal = reciprocal_hole_tail(&[12, 100], false, false);
+    let closing_references_width = 2 * 11 + 1;
+    reciprocal.insert(reciprocal.len() - closing_references_width, 0);
+    let mut tail = reciprocal[..8].to_vec();
+    lp_utf16(&mut tail, "Tapped Hole");
+    let count_at = tail.len();
+    tail.extend_from_slice(&reciprocal[12..]);
+    let scope = parse_hole_scope(&tail).expect("named reciprocal Hole");
+    assert_eq!(
+        scope.label.as_ref().map(|label| label.value.as_str()),
+        Some("Tapped Hole")
+    );
+    assert_eq!(scope.previous_history_state_id(), Some(8));
+    tail[count_at] = 1;
+    assert!(parse_hole_scope(&tail).is_none());
 }
 
 #[test]

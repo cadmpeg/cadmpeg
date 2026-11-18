@@ -169,19 +169,8 @@
           "id": "usd:stage:occurrence#/Root",
           "name": "Root",
           "native_ref": "/Root",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Root",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Root",
           "transform": [
             [
               1.0,
@@ -207,20 +196,8 @@
           "id": "usd:stage:occurrence#/Root/Cage",
           "name": "Cage",
           "native_ref": "/Root/Cage",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Root/Cage",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Root/Cage",
           "transform": [
             [
               1.0,
@@ -247,20 +224,8 @@
           "id": "usd:stage:occurrence#/Root/Panel",
           "name": "Panel",
           "native_ref": "/Root/Panel",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Root/Panel",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Root/Panel",
           "transform": [
             [
               1.0,
@@ -295,10 +260,20 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Root",
+          "occurrences": [
+            "usd:stage:occurrence#/Root/Panel",
+            "usd:stage:occurrence#/Root/Cage"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Root"
+          "source_name": "Root",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -306,10 +281,17 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root/Cage",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Root/Cage",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Cage"
+          "source_name": "Cage",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -317,10 +299,33 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Root/Panel",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Root/Panel",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Panel"
+          "source_name": "Panel",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Root"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

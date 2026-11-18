@@ -28,12 +28,14 @@ use self::closure_ids::ClosureIds;
 
 mod claims;
 mod closure_ids;
+mod csg;
 pub(crate) mod dependencies;
 mod drawing;
 pub(crate) mod geometry;
 mod groups;
 mod index;
 mod ownership;
+mod plant_dimensions;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
@@ -41,6 +43,7 @@ mod reference;
 mod representation;
 pub(crate) mod tessellation;
 pub(crate) mod topology;
+mod torus_sheet;
 mod validation;
 
 /// Container facts available when the STEP source identity is authored.
@@ -149,6 +152,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
+        let schema_edition_loss = crate::dialect::schema_edition_loss(exchange, &primary);
         let ir = CadIr::empty();
 
         let mut body = DecodeBody::new(if ctx.container_only() {
@@ -166,9 +170,8 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
                 entry.name, entry.uri
             ));
         }
-        if let Some(loss) = dialect_loss {
-            body.losses.push(loss);
-        }
+        body.losses.extend(dialect_loss);
+        body.losses.extend(schema_edition_loss);
         for diagnostic in diagnostics {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::RecordOmitted => {
@@ -377,6 +380,8 @@ fn decode_exchange_mode(
     }
     session.charge_pending_ir_entities("step_geometry_decode")?;
     let (mut geometry, carrier_index) = geometry::decode(exchange, &mut session.ir, session.ctx)?;
+    let mut unit_contradictions = plant_dimensions::check(exchange, session.ctx)?;
+    geometry.losses.append(&mut unit_contradictions);
     session.charge_pending_ir_entities("step_dependency_decode")?;
     let mut dependencies = dependencies::decode(exchange)?;
     session.charge_pending_ir_entities("step_carrier_index")?;
@@ -384,6 +389,8 @@ fn decode_exchange_mode(
 
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx, &mut geometry.losses)?;
+    session.charge_pending_ir_entities("step_torus_sheet_selection")?;
+    torus_sheet::select_spindle_sheets(&mut session.ir, session.ctx, &mut geometry.losses)?;
     let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
     session.charge_pending_ir_entities("step_topology_association")?;
     geometry::associate_topology_carriers(
@@ -431,6 +438,14 @@ fn decode_exchange_mode(
     )?;
     session.charge_pending_ir_entities("step_source_ownership")?;
     ownership::mark_supports(exchange, &mut session.ir, session.ctx)?;
+    session.charge_pending_ir_entities("step_csg_decode")?;
+    let mut csg = csg::decode(
+        exchange,
+        &geometry.value,
+        &mut topology.value,
+        &mut session.ir,
+        session.ctx,
+    )?;
     session.charge_pending_ir_entities("step_product_decode")?;
     let mut product = product::decode(
         exchange,
@@ -440,11 +455,20 @@ fn decode_exchange_mode(
         session.ctx,
         &mut session.admitted_ir_entities,
     )?;
+    session.charge_pending_ir_entities("step_csg_design")?;
+    let mut design_losses = csg::attach_design(
+        &csg.value,
+        exchange,
+        &product.value.product_definition_ids_by_shape,
+        &mut session.ir,
+    );
+    csg.losses.append(&mut design_losses);
     session.charge_pending_ir_entities("step_tessellation_decode")?;
     let mut tessellation = tessellation::decode(
         exchange,
         &geometry.value,
         &topology.value,
+        &product.value.product_definition_ids_by_shape,
         &mut session.ir,
         session.ctx,
     )?;
@@ -489,6 +513,7 @@ fn decode_exchange_mode(
     session.absorb(&mut product);
     session.absorb(&mut tessellation);
     session.absorb(&mut topology);
+    session.absorb(&mut csg);
     session.absorb(&mut geometry);
     session.absorb(&mut pmi);
     session.absorb(&mut validation);
@@ -538,6 +563,14 @@ fn decode_exchange_mode(
     let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::new(decode_digest);
+    if !csg.value.derived.is_empty() {
+        let mut annotations =
+            cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut source_fidelity.annotations));
+        for identity in &csg.value.derived {
+            annotations.exactness(identity, cadmpeg_ir::Exactness::Derived);
+        }
+        source_fidelity.annotations = annotations.build();
+    }
     if matches!(mode, DecodeMode::Decode(_)) {
         let metadata_offsets = diagnostics
             .iter()

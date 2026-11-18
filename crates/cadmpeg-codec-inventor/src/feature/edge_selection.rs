@@ -751,10 +751,13 @@ fn sketch_entity(
     crate::sketch::entity_id(entity)
 }
 
+/// `consumed` maps a bend or corner record that a projected contour flange
+/// represents to that contour flange, which then produces its edges.
 pub(super) fn generated_names(
     inventory: &super::FeatureInventory,
     history: &super::history::History,
     sketches: &crate::sketch::SketchInventory,
+    consumed: &std::collections::BTreeMap<(String, u32), cadmpeg_ir::features::FeatureId>,
 ) -> HashMap<(String, u32), Option<GeneratedEdgeRef>> {
     let features = unique_index(inventory.features.iter().map(|feature| {
         (
@@ -775,7 +778,10 @@ pub(super) fn generated_names(
                 features.get(&(token.as_str(), name.generator))?.as_ref()?;
             history.placement(feature.identity.record_ordinal)?;
             let entity = sketch_entity(inventory, sketches, feature, name)?;
-            let feature = super::history_feature_id(&feature.identity).ok()?;
+            let feature = match consumed.get(&(token.clone(), feature.identity.record_ordinal)) {
+                Some(contour) => contour.clone(),
+                None => super::history_feature_id(&feature.identity).ok()?,
+            };
             let local_id = cadmpeg_ir::features::SelectionReference::new(format!(
                 "inventor:nmx:{}:sketch-entity:{}:role:{}",
                 name.family, entity, name.role

@@ -15,11 +15,11 @@ use crate::{
 ///
 /// A read-only wire whose owner states `try_from` or `from` is paired by that
 /// attribute, and a type that derives `Serialize` writes its own keys. What is
-/// left is a wire a hand-written reader names in code, and an owner whose
-/// `Serialize` is hand-written. Each pair here was read at both declarations,
-/// as (file, reading type, writing type); the writing type is resolved from
-/// the reading type's own module.
-const WRITING_DECLARATIONS: &[(&str, &str, &str)] = &[
+/// left is a wire named in a hand-written reader, a hand-written writer, or
+/// an enum variant. Each entry gives the file, reading type, writing type,
+/// and optional writing variant. The writing type resolves from the reading
+/// type's own module.
+const WRITING_DECLARATIONS: &[(&str, &str, &str, Option<&str>)] = &[
     // `Feature` writes through `serialization::FeatureWriteWire` on both
     // routes: the standalone `Serialize` impl builds one, and the model route
     // builds a `Vec<FeatureWriteWire>` beside the `Vec<FeatureRowWire>` it
@@ -28,17 +28,20 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str)] = &[
         "crates/cadmpeg-ir/src/features.rs",
         "FeatureReadWire",
         "serialization::FeatureWriteWire",
+        None,
     ),
     (
         "crates/cadmpeg-ir/src/features.rs",
         "FeatureRowWire",
         "serialization::FeatureWriteWire",
+        None,
     ),
     // `CadIr` writes through `CadIrWriteWire` in its hand-written `Serialize`.
     (
         "crates/cadmpeg-ir/src/document.rs",
         "CadIrReadWire",
         "CadIrWriteWire",
+        None,
     ),
     // Each of these is read by a hand-written `Deserialize` impl for the type
     // named beside it, which derives `Serialize` and writes the keys.
@@ -46,21 +49,31 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str)] = &[
         "crates/cadmpeg-ir/src/features/holes.rs",
         "HoleShapeWire",
         "HoleShape",
+        None,
+    ),
+    (
+        "crates/cadmpeg-ir/src/features/replace_face.rs",
+        "ReplaceFaceOperandsWire",
+        "ReplaceFaceOperands",
+        None,
     ),
     (
         "crates/cadmpeg-ir/src/geometry/nurbs.rs",
         "NurbsSurfaceWire",
         "NurbsSurface",
+        None,
     ),
     (
         "crates/cadmpeg-ir/src/features.rs",
         "SweepCircularRegionWire",
         "SweepCircularRegion",
+        None,
     ),
     (
         "crates/cadmpeg-ir/src/features.rs",
         "TreeChildrenWire",
         "TreeChildren",
+        None,
     ),
     // `TSplineSubtransform` writes its `Inline` form by delegating to
     // `InlineTSplineSubtransform`, which derives `Serialize`.
@@ -68,8 +81,37 @@ const WRITING_DECLARATIONS: &[(&str, &str, &str)] = &[
         "crates/cadmpeg-ir/src/geometry.rs",
         "TSplineSubtransformWire",
         "InlineTSplineSubtransform",
+        None,
+    ),
+    (
+        "crates/cadmpeg-ir/src/design/names.rs",
+        "SplitName",
+        "TopoName",
+        Some("Split"),
+    ),
+    (
+        "crates/cadmpeg-ir/src/design/names.rs",
+        "MergedName",
+        "TopoName",
+        Some("Merged"),
     ),
 ];
+
+type FieldSpellings = BTreeMap<String, Result<WriteSpelling, String>>;
+
+pub(crate) struct WritingDeclaration {
+    pub(crate) owner: Declaration,
+    pub(crate) variant: Option<&'static str>,
+}
+
+impl From<Declaration> for WritingDeclaration {
+    fn from(owner: Declaration) -> Self {
+        Self {
+            owner,
+            variant: None,
+        }
+    }
+}
 
 /// Keys whose writing declaration is hand-written code, with the spelling read
 /// at that code, as (file, reading type, key, spelling).
@@ -103,6 +145,7 @@ pub(crate) struct WireIndex {
     /// named field. A key one type writes two ways is absent here and present
     /// in `split_keys`.
     written_keys: BTreeMap<Declaration, BTreeMap<String, WriteSpelling>>,
+    written_variants: BTreeMap<Declaration, BTreeMap<String, FieldSpellings>>,
     /// The `(type, key)` pairs one declaration writes two ways.
     split_keys: BTreeSet<(Declaration, String)>,
     /// The `(type, key)` pairs whose optionality the census cannot read,
@@ -127,7 +170,10 @@ pub(crate) struct WireIndex {
 
 impl WireIndex {
     /// The writing declaration for the type `reader`, or why there is none.
-    pub(crate) fn writing_declaration(&self, reader: &Declaration) -> Result<Declaration, String> {
+    pub(crate) fn writing_declaration(
+        &self,
+        reader: &Declaration,
+    ) -> Result<WritingDeclaration, String> {
         if self.twice_declared.contains(reader) {
             return Err(format!(
                 "{reader} is declared twice in one module, so its path addresses no declaration"
@@ -137,10 +183,10 @@ impl WireIndex {
             return writer;
         }
         if let Some(target) = self.writes_through.get(reader) {
-            return target.clone();
+            return target.clone().map(Into::into);
         }
         if self.writes_own_keys.contains(reader) {
-            return Ok(reader.clone());
+            return Ok(reader.clone().into());
         }
         if let Some(owner) = self
             .unresolved_routes
@@ -162,10 +208,10 @@ impl WireIndex {
             return writer;
         }
         if let Some(target) = self.writes_through.get(owner) {
-            return target.clone();
+            return target.clone().map(Into::into);
         }
         if self.writes_own_keys.contains(owner) {
-            return Ok(owner.clone());
+            return Ok(owner.clone().into());
         }
         Err(format!(
             "{reader} is read for {owner}, which derives no Serialize and names no writing declaration"
@@ -173,19 +219,37 @@ impl WireIndex {
     }
 
     /// The writer [`WRITING_DECLARATIONS`] states for `reader`, if listed.
-    fn listed_writer(&self, reader: &Declaration) -> Option<Result<Declaration, String>> {
+    fn listed_writer(&self, reader: &Declaration) -> Option<Result<WritingDeclaration, String>> {
         WRITING_DECLARATIONS
             .iter()
-            .find(|(file, named, _)| *file == reader.path && *named == reader.name)
-            .map(|(_, _, writer)| self.declarations.resolve_named(reader, writer))
+            .find(|(file, named, _, _)| *file == reader.path && *named == reader.name)
+            .map(|(_, _, writer, variant)| {
+                self.declarations
+                    .resolve_named(reader, writer)
+                    .map(|owner| WritingDeclaration {
+                        owner,
+                        variant: *variant,
+                    })
+            })
     }
 
     /// How the writing declaration `writer` spells `None` at `key`.
     pub(crate) fn spelling(
         &self,
-        writer: &Declaration,
+        writer: &WritingDeclaration,
         key: &str,
     ) -> Result<WriteSpelling, String> {
+        let owner = &writer.owner;
+        if let Some(variant) = writer.variant {
+            return self
+                .written_variants
+                .get(owner)
+                .and_then(|variants| variants.get(variant))
+                .and_then(|fields| fields.get(key))
+                .cloned()
+                .unwrap_or_else(|| Err(format!("{owner}::{variant} writes no key named {key}")));
+        }
+        let writer = owner;
         let pair = (writer.clone(), key.to_owned());
         if self.split_keys.contains(&pair) {
             return Err(format!(
@@ -211,6 +275,7 @@ pub(crate) fn wire_index(root: &Path) -> WireIndex {
     let mut index = WireIndex {
         declarations: Declarations::read(root),
         written_keys: BTreeMap::new(),
+        written_variants: BTreeMap::new(),
         split_keys: BTreeSet::new(),
         unread_keys: BTreeMap::new(),
         writes_own_keys: BTreeSet::new(),
@@ -268,7 +333,7 @@ fn index_declarations(
                 declaration.ident.to_string(),
                 &declaration.attrs,
                 &declaration.generics,
-                vec![&declaration.fields],
+                vec![(None, &declaration.fields)],
             ),
             syn::Item::Enum(declaration) => (
                 declaration.ident.to_string(),
@@ -277,7 +342,7 @@ fn index_declarations(
                 declaration
                     .variants
                     .iter()
-                    .map(|variant| &variant.fields)
+                    .map(|variant| (Some(variant.ident.to_string()), &variant.fields))
                     .collect(),
             ),
             syn::Item::Mod(module) => {
@@ -340,7 +405,8 @@ fn index_declarations(
             continue;
         }
         index.writes_own_keys.insert(declared.clone());
-        for group in fields {
+        for (variant, group) in fields {
+            let mut variant_fields = BTreeMap::new();
             for field in group {
                 let Some(key) = field.ident.as_ref().map(syn::Ident::to_string) else {
                     continue;
@@ -348,8 +414,12 @@ fn index_declarations(
                 let optional = index
                     .declarations
                     .is_optional(&declared, generics, &field.ty);
-                let spelling = match optional {
-                    Ok(optional) => write_spelling(field, optional),
+                let spelling = optional.map(|optional| write_spelling(field, optional));
+                if variant.is_some() {
+                    variant_fields.insert(key.clone(), spelling.clone());
+                }
+                let spelling = match spelling {
+                    Ok(spelling) => spelling,
                     Err(reason) => {
                         index.unread_keys.insert((declared.clone(), key), reason);
                         continue;
@@ -362,6 +432,13 @@ fn index_declarations(
                     }
                     Some(_) | None => {}
                 }
+            }
+            if let Some(variant) = variant {
+                index
+                    .written_variants
+                    .entry(declared.clone())
+                    .or_default()
+                    .insert(variant, variant_fields);
             }
         }
     }

@@ -37,7 +37,7 @@ rewrite_scalar!(CurveProjectionDirection);
 rewrite_scalar!(CurveProjectionDirectionState);
 rewrite_scalar!(DecalMapping);
 rewrite_record!(DesignConfiguration, []; {id, ordinal, active, source_index, name, material, properties, parameter_overrides, bodies, parameter_values, feature_states, native_ref});
-rewrite_record!(DesignParameter, []; {id, product_definition, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref});
+rewrite_record!(DesignParameter, []; {id, product_definition, owner, dependencies, pmi, native_ref}; literal {ordinal, name, expression, display, value, properties});
 rewrite_scalar!(DimensionDisplay);
 rewrite_scalar!(FeatureCircularArc);
 rewrite_scalar!(FeatureCoordinateFrame);
@@ -60,16 +60,8 @@ rewrite_scalar!(HelixConstructionStyle);
 rewrite_scalar!(HelixShape);
 rewrite_scalar!(InnerWireTaper);
 rewrite_scalar!(NoGeneratedSection);
-rewrite_record!(ParameterPmi, []; {subtype, precision, display_text, basic, inspection, reference_only, native_ref});
-rewrite_enum!(PmiDimensionSubtype, []; {
-    Linear,
-    Angle,
-    Diameter,
-    Radial,
-    Ordinate,
-    Count,
-    Native(field0),
-});
+rewrite_record!(ParameterPmi, []; {native_ref}; literal {subtype, precision, display_text, basic, inspection, reference_only});
+rewrite_scalar!(PmiDimensionSubtype);
 rewrite_scalar!(PolygonSideCount);
 rewrite_scalar!(PrincipalPlane);
 rewrite_scalar!(RevolutionFuseOrder);

@@ -161,8 +161,26 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalBendControlsRetained,
     /// Projected sheet-metal relief and transition forms remain in native style records.
     FeatureSheetMetalStyleFormsNative,
+    /// The active unfold rule states no decimal K-factor; sheet-metal rules keep no allowance.
+    FeatureSheetMetalUnfoldFactorNative,
+    /// A style `KFactor` parameter differs from the active unfold-rule K-factor; the rule keeps no allowance.
+    FeatureSheetMetalStyleFactorConflict,
+    /// No active unfold rule resolves in a part with sheet-metal styles.
+    FeatureSheetMetalUnfoldRuleUnresolved,
+    /// A sheet-metal rule takes its K-factor from the style `KFactor` parameter without an active unfold rule.
+    FeatureSheetMetalStyleFactorAssumed,
     /// An attached plate stays native; the note names the first refused admission check.
     FeatureSheetMetalPlateRefused,
+    /// Projected contour flanges retain construction controls and their bend and corner records natively.
+    FeatureSheetMetalContourControlsRetained,
+    /// A contour flange stays native; the note names the first refused admission check.
+    FeatureSheetMetalContourFlangeRefused,
+    /// Projected Unfold and Refold features retain controls and face operands natively.
+    FeatureSheetMetalFoldControlsRetained,
+    /// A Refold record stores no reference to the Unfold whose bends it restores.
+    FeatureSheetMetalRefoldSourceUnresolved,
+    /// An Unfold or Refold stays native; the note names the first refused admission check.
+    FeatureSheetMetalFoldRefused,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
     /// `DeleteFace` Boolean construction roles remain unresolved.
@@ -383,7 +401,16 @@ impl InventorLossCode {
         Self::FeatureSheetMetalAttachmentControlsRetained,
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
+        Self::FeatureSheetMetalUnfoldFactorNative,
+        Self::FeatureSheetMetalStyleFactorConflict,
+        Self::FeatureSheetMetalUnfoldRuleUnresolved,
+        Self::FeatureSheetMetalStyleFactorAssumed,
         Self::FeatureSheetMetalPlateRefused,
+        Self::FeatureSheetMetalContourControlsRetained,
+        Self::FeatureSheetMetalContourFlangeRefused,
+        Self::FeatureSheetMetalFoldControlsRetained,
+        Self::FeatureSheetMetalRefoldSourceUnresolved,
+        Self::FeatureSheetMetalFoldRefused,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
         Self::FeatureFilletOperandsNative,
@@ -550,7 +577,28 @@ impl InventorLossCode {
                 "feature.sheet-metal-bend-controls-retained"
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
+            Self::FeatureSheetMetalUnfoldFactorNative => "feature.sheet-metal-unfold-factor-native",
+            Self::FeatureSheetMetalStyleFactorConflict => {
+                "feature.sheet-metal-style-factor-conflict"
+            }
+            Self::FeatureSheetMetalUnfoldRuleUnresolved => {
+                "feature.sheet-metal-unfold-rule-unresolved"
+            }
+            Self::FeatureSheetMetalStyleFactorAssumed => "feature.sheet-metal-style-factor-assumed",
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
+            Self::FeatureSheetMetalContourControlsRetained => {
+                "feature.sheet-metal-contour-controls-retained"
+            }
+            Self::FeatureSheetMetalContourFlangeRefused => {
+                "feature.sheet-metal-contour-flange-refused"
+            }
+            Self::FeatureSheetMetalFoldControlsRetained => {
+                "feature.sheet-metal-fold-controls-retained"
+            }
+            Self::FeatureSheetMetalRefoldSourceUnresolved => {
+                "feature.sheet-metal-refold-source-unresolved"
+            }
+            Self::FeatureSheetMetalFoldRefused => "feature.sheet-metal-fold-refused",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureMirrorBooleanNative => "feature.mirror-boolean-native",
@@ -699,7 +747,16 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
+            | Self::FeatureSheetMetalUnfoldFactorNative
+            | Self::FeatureSheetMetalStyleFactorConflict
+            | Self::FeatureSheetMetalUnfoldRuleUnresolved
+            | Self::FeatureSheetMetalStyleFactorAssumed
             | Self::FeatureSheetMetalPlateRefused
+            | Self::FeatureSheetMetalContourControlsRetained
+            | Self::FeatureSheetMetalContourFlangeRefused
+            | Self::FeatureSheetMetalFoldControlsRetained
+            | Self::FeatureSheetMetalRefoldSourceUnresolved
+            | Self::FeatureSheetMetalFoldRefused
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureMirrorBooleanNative
@@ -881,7 +938,16 @@ mod tests {
                 "feature.sheet-metal-attachment-controls-retained",
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
+                "feature.sheet-metal-unfold-factor-native",
+                "feature.sheet-metal-style-factor-conflict",
+                "feature.sheet-metal-unfold-rule-unresolved",
+                "feature.sheet-metal-style-factor-assumed",
                 "feature.sheet-metal-plate-refused",
+                "feature.sheet-metal-contour-controls-retained",
+                "feature.sheet-metal-contour-flange-refused",
+                "feature.sheet-metal-fold-controls-retained",
+                "feature.sheet-metal-refold-source-unresolved",
+                "feature.sheet-metal-fold-refused",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
                 "feature.fillet-operands-native",

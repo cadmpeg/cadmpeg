@@ -217,8 +217,10 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-measure`        | `src/quadrature/gauss_kronrod.rs`                 | `MAX_QUADRATURE_INTERVALS`               | `1 << 12`                                              | 4    | Panels of one adaptive integral. At the cap the subdivision stops; an estimate above the acceptance limit makes the quantity `quadrature.not-converged`; measurement continues. |
 | `cadmpeg-measure`        | `src/quadrature/extremum.rs`                      | `MAX_EXTREMUM_REFINEMENT_STEPS`          | `64`                                                   | 4    | Bisection steps of one extremum root. Exhaustion keeps the last bracket, whose width enters the numeric error; measurement continues. |
 | `cadmpeg-measure`        | `src/traversal.rs`                                | `MAX_RING_CHAIN_STEPS`                   | `1 << 16`                                              | 4    | Steps of one ring traversal search. Exhaustion makes the face's bounded quantities `evaluation.work-exhausted`; measurement continues. |
-| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_NESTING_SAMPLES_PER_PIECE`          | `1 << 10`                                              | 4    | Samples of one boundary piece's unwrap reference and polyline. An unwrap that needs more makes the face's bounded quantities `evaluation.work-exhausted`, or `boundary.inversion-failed` when the curve passes through a carrier singular point between two samples; a polyline stops refining at the cap; measurement continues. |
-| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_SINGULAR_APPROACH_STEPS`            | `64`                                                   | 4    | Golden-section steps of the search for a carrier singular point between two unwrap samples whose parameter image jumps by a quarter period or more, run when the unwrap reaches its sample cap. A point within the allowance makes the face's bounded quantities `boundary.inversion-failed`; otherwise they are `evaluation.work-exhausted`; measurement continues. |
+| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_NESTING_SAMPLES_PER_PIECE`          | `1 << 10`                                              | 4    | Samples of one boundary piece's unwrap reference and polyline. An unwrap that needs more makes the face's bounded quantities `evaluation.work-exhausted`, unless the curve passes through a carrier singular point between two samples, where the piece splits; a polyline stops refining at the cap; measurement continues. |
+| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_SINGULAR_APPROACH_STEPS`            | `64`                                                   | 4    | Golden-section steps of the search for a carrier singular point between two unwrap samples that bracket a singular sample, or whose parameter image jumps by a quarter period or more when the unwrap reaches its sample cap. A minimum within the allowance inside the interval splits the piece there; otherwise the face's bounded quantities are `boundary.inversion-failed` or `evaluation.work-exhausted`; measurement continues. |
+| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_SINGULAR_CROSSINGS_PER_PIECE`       | `4`                                                    | 4    | Splits of one inverted coedge interval at passes through carrier singular points. A further pass makes the face's bounded quantities `evaluation.work-exhausted`; measurement continues. |
+| `cadmpeg-measure`        | `src/boundary/piece.rs`                           | `MAX_SINGULAR_ENTRY_STEPS`               | `64`                                                   | 4    | Bisection steps of the search for the parameter where a boundary piece enters the allowance of a carrier singular point. The search runs every step, which resolves the parameter to double precision, and each step charges one unit of the face's work; exhaustion makes the face's remaining quantities `evaluation.work-exhausted`. |
 | `cadmpeg-measure`        | `src/boundary/pcurve.rs`                          | `MAX_PCURVE_RECOVERY_STEPS`              | `32`                                                   | 4    | Newton steps of one pcurve endpoint recovery from one seed. Exhaustion tries the next seed; when no seed converges, no recovered interval qualifies and the face's bounded quantities are `boundary.inversion-failed`; measurement continues. |
 | `cadmpeg-measure`        | `src/canonical/surface.rs`                        | `MAX_INVERSION_REFINEMENT_STEPS`         | `16`                                                   | 4    | Gauss–Newton steps refining one point inverted onto a NURBS carrier. The last step enters the numeric error; a refined point that does not map within the allowance makes the face's bounded quantities `boundary.inversion-failed`; measurement continues. |
 | `cadmpeg-measure`        | `src/canonical/column.rs`                         | `MAX_COLUMN_DEGREE`                      | `15`                                                   | N    | Highest NURBS degree a column evaluates along its isoline with stack basis buffers. A higher degree is evaluated point by point; the output does not change. |
@@ -290,6 +292,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-inventor` | `src/feature/edge_selection/historical.rs`         | `MAX_SELECTOR_GENERATORS`                 | `4`                                                     | 1    | Generator array length of a direct edge selector. A longer array is another selector form, and its feature keeps a native selection. |
 | `cadmpeg-codec-inventor` | `src/feature/history_bodies.rs`                    | `MAX_HISTORY_BODIES`                      | `8`                                                     | 4    | History bodies of one part. Each materializes and decodes a whole history state. A request past the cap gets no history body and `feature.history-body-bounded` counts it. |
 | `cadmpeg-codec-inventor` | `src/feature/history_bodies.rs`                    | `MAX_HISTORY_BODY_WORK`                   | `1 << 21`                                               | 4    | Records materialized for the history bodies of one part, a `WorkBudget`. A state that passes it gets no history body and `feature.history-body-bounded` counts it. |
+| `cadmpeg-codec-inventor` | `src/feature/sheet_metal/contour/attachment.rs`   | `MAX_ATTACHMENT_WORK`                     | `1 << 21`                                               | 4    | Records materialized to resolve the attachment edges of one edge-attached contour flange, a `WorkBudget`. A list that passes it keeps the `reserved-slot` refusal. |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_SKETCH_RECORDS`                      | `1_000_000`                                             | 2    | Declared sketch, spreadsheet, dimension and record counts (excess is `Malformed`); spline pole, knot and multiplicity counts, binary point and value lists checked with `View::counted`, and pattern occurrence counts (excess returns `None` and the item is not built).    |
 | `cadmpeg-codec-freecad`  | `src/design.rs`                                    | `MAX_PROFILE_ENDPOINT_CANDIDATES`         | `1 << 24`                                               | 4    | Per-sketch `WorkBudget` for the endpoint candidates sketch profile chaining examines. Exhaustion keeps the sketch, its entities and constraints, with no profiles, and reports `sketch.profile-matching-bounded`.                                                            |
 | `cadmpeg-codec-freecad`  | `src/product.rs`                                   | `MAX_LINK_ARRAY_ELEMENTS`                 | `1_000_000`                                             | 2    | Stated or inferred element count of one link array. Excess is `Malformed`. The link occurrences the arrays project are admitted against `max_entities` before any is built.                                                                                                  |
@@ -340,6 +343,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_DOCUMENT_BUFFER_OUTPUT`              | `256 * 1024 * 1024`                                     | 4    | `MeshBudget`: stored plus inflated mesh-buffer bytes across the document. At the limit the mesh fails with `document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)`, the session is not fused, and later meshes still decode.                                     |
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODIES` | `64` | 4 | History bodies per document, across all of its components. `MAX_HISTORY_BODY_WORK` bounds their total materialization. Excess reports `feature.history-body-bounded`. |
 | `cadmpeg-codec-f3d` | `src/history/history_bodies.rs` | `MAX_HISTORY_BODY_WORK` | `1 << 21` | 4 | Archive records scanned for subtype definitions and records materialized for history bodies per document. Excess reports `feature.history-body-bounded`. |
+| `cadmpeg-codec-f3d` | `src/design/decode/scopes/hole.rs` | `MAX_SELECTION_CHAIN` | `16` | 4 | Records after a Hole's direct persistent selection scanned for the records that belong to it. A chain longer than the window leaves the Hole's plane reference unread. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_PATH_ELEMENTS` | `1024` | 2 | Exclusive bound on the even scene path element count, checked before allocation. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_STRING_UNITS` | `128` | 2 | Bound on scene UTF-16 name and pointer code-unit counts. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                                  | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`                                      | 2    | Declared byte count of one paramesh stream, checked before `begin_expand`. Excess returns `NotImplemented` without fusing; the container is recorded as failed and the decode continues. The expansion also charges the session.                                             |
@@ -417,6 +421,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/swift.rs`                                     | `MAX_DEPTH`                               | `32`                                                    | 2    | SWIFT entity nesting depth. A feature walk that meets a feature only past it leaves the targets or nominal it feeds unresolved and reports `pmi.swift-feature-walk-capped`.                                                                                                  |
 | `cadmpeg-codec-sldprt` | `src/swift/presentation.rs` | `MAX_PATH_FEATURES` | `8` | 1 | Largest feature count of a SWIFT presentation feature path. A larger count does not frame a path. |
 | `cadmpeg-codec-sldprt` | `src/swift/presentation/faces.rs` | `MAX_REFERENCE_HOPS` | `64` | 1 | Largest hop count of a presentation-archive identity reference header. A larger count does not frame a header. |
+| `cadmpeg-codec-sldprt` | `src/resolved_features/sketch_lists.rs` | `MAX_SKETCH_POINTS` | `4096` | 2 | Largest point count read as an `sgSketch` header. A larger count frames no sketch list, and its markers keep native geometry. |
 | `cadmpeg-codec-sldprt`   | `src/parasolid.rs`                                 | `MAX_WRAPPED_FRAME_UNCOMPRESSED`          | `512 * 1024 * 1024`                                     | 2    | Declared size of a wrapped Parasolid frame, checked before `begin_expand`. Excess skips the frame; the block keeps its other candidates.                                                                                                                                     |
 | `cadmpeg-codec-sldprt` | `src/metadata/configuration_manager.rs` | `MAX_FILETIME` | `157_469_184_000_000_000` | 1 | Reader's window for the configuration-manager FILETIME scalar, the end of 2099 UTC. A later value does not frame the record. |
 | `cadmpeg-codec-sldprt` | `src/brep/topology.rs` | `MAX_SHORT_POINTER_INDEX` | `0x7fff` | 1 | Largest admitted short-form topology pointer; larger values require an extended reference frame. |
@@ -467,6 +472,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/surface_fit.rs` | `MAX_REFINEMENTS` | `9` | 4 | Refinements of a tensor surface grid after the initial fit. A remaining residual rejects the fit. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ALTERNATE_LINES` | `4` | 4 | Ambiguous line stations admitted to the alternate boundary search. Excess skips the search. |
 | `cadmpeg-codec-catia` | `src/families/freeform/owned_patch/trimmed_face.rs` | `MAX_ROLLING_BOUNDARY_EXCURSION` | `0.001` | N | Maximum normalized transverse excursion for a rolling-ball boundary retry. A larger excursion rejects the retry. |
+| `cadmpeg-codec-catia` | `src/families/freeform/parameter_cache.rs` | `MAX_CACHED_PARAMETERS` | `32_768` | N | Cached parameter evaluations per function. At capacity, existing entries remain available and new parameters are evaluated without caching. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_CHART_ENDPOINT_SLACK` | `0.00001` | N | Absolute parameter slack for clamping a station to the chart boundary. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_ERROR_MM` | `0.001` | N | Maximum sampled edge fit residual in mm. Larger residuals request subdivision. |
 | `cadmpeg-codec-catia` | `src/families/freeform/rolling_ball_patch.rs` | `MAX_EDGE_SPANS` | `128` | 4 | Spans in one fitted edge. Excess rejects the fit. |
@@ -562,26 +568,26 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 340.
+Production `MAX_*` constants: 346.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
-| 2    | Per-input bound            | 76    |
+| 2    | Per-input bound            | 77    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 170   |
-| N    | Not a decode bound         | 52    |
-|      | Total                      | 340   |
+| 4    | Local work cap             | 174   |
+| N    | Not a decode bound         | 53    |
+|      | Total                      | 346   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 23, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
-`cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 7,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 26,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 37,
-`cadmpeg-codec-catia` 78, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 27,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
+`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

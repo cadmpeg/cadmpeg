@@ -14,16 +14,22 @@ use crate::pmdc::{
     content_header, reference_list, state_content_header, type_id_string, Cursor, PmDcReference,
 };
 
+pub(crate) mod contour;
 pub(crate) mod corner;
 pub(crate) mod flange;
+pub(crate) mod fold;
 pub(super) mod inputs;
 pub(crate) mod operands;
 pub(crate) mod projection;
 pub(crate) mod refusal;
 pub(crate) mod style;
+pub(crate) mod unfold;
 
 const ATTACHMENT_TYPE: [u8; 16] = [
     0x92, 0x59, 0x6b, 0xa9, 0xd3, 0x11, 0xef, 0xa8, 0x60, 0x00, 0xb3, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
+];
+const CONTOUR_ATTACHMENT_TYPE: [u8; 16] = [
+    0x40, 0xb4, 0x55, 0x04, 0xd4, 0x11, 0x56, 0x12, 0x60, 0x00, 0x18, 0xaa, 0x9d, 0xcc, 0xef, 0xb0,
 ];
 const CORNER_TYPE: [u8; 16] = [
     0x83, 0xce, 0x77, 0x86, 0xa9, 0x46, 0xcd, 0xe1, 0x1e, 0xbd, 0x99, 0xb4, 0xfe, 0x02, 0xaf, 0xb2,
@@ -58,6 +64,18 @@ const CORNER_FORM_TYPE: [u8; 16] = [
 const TRANSITION_FORM_TYPE: [u8; 16] = [
     0x07, 0xa6, 0x61, 0x30, 0xd4, 0x11, 0x88, 0x95, 0x60, 0x00, 0x53, 0xaa, 0x9d, 0xcc, 0xef, 0xb0,
 ];
+/// The slot-4 reference list of an Unfold or Refold.
+pub(crate) const FOLD_LIST_TYPE: [u8; 16] = [
+    0x39, 0xaa, 0x15, 0x7e, 0x54, 0x41, 0xb3, 0xcb, 0x7c, 0xea, 0xb7, 0x87, 0x51, 0x94, 0xc3, 0x8a,
+];
+/// The slot-7 enumeration of an Unfold.
+pub(crate) const UNFOLD_MODE_TYPE: [u8; 16] = [
+    0xa3, 0xeb, 0x88, 0x46, 0x22, 0x42, 0x22, 0x5c, 0x48, 0x11, 0x51, 0xb1, 0x2e, 0xf4, 0xb0, 0x63,
+];
+/// The slot-7 enumeration of a Refold.
+pub(crate) const REFOLD_MODE_TYPE: [u8; 16] = [
+    0x6e, 0x3d, 0xb2, 0xeb, 0x41, 0x49, 0xfe, 0x4f, 0x20, 0xfb, 0x6c, 0x81, 0x1f, 0x21, 0x10, 0xb4,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "record", rename_all = "snake_case")]
@@ -85,6 +103,23 @@ pub(crate) enum SheetMetalProperty {
         second_option: PmDcReference,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         extension: Option<PmDcReference>,
+    },
+    /// The attachment control of a contour flange: the extended attachment
+    /// fields followed by one raw byte.
+    ContourAttachment {
+        control: PmDcReference,
+        thickness: PmDcReference,
+        first_mode: PmDcReference,
+        directions: [PmDcReference; 2],
+        radius: PmDcReference,
+        second_mode: PmDcReference,
+        relief_width: PmDcReference,
+        minimum_remnant: PmDcReference,
+        first_option: PmDcReference,
+        states: NativeBytes<[u8; 3]>,
+        second_option: PmDcReference,
+        extension: PmDcReference,
+        value: u8,
     },
     Corner {
         control: PmDcReference,
@@ -131,6 +166,7 @@ pub(super) fn property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
     match type_id {
         ATTACHMENT_TYPE => Some(parse_attachment),
         ATTACHMENT_STATE_TYPE => Some(parse_attachment_state),
+        CONTOUR_ATTACHMENT_TYPE => Some(parse_contour_attachment),
         CORNER_TYPE => Some(parse_corner),
         RELIEF_TYPE => Some(parse_relief),
         TRANSITION_TYPE => Some(parse_transition),
@@ -142,6 +178,8 @@ pub(super) fn property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         RELIEF_FORM_TYPE => Some(parse_relief_form),
         CORNER_FORM_TYPE => Some(parse_corner_form),
         TRANSITION_FORM_TYPE => Some(parse_transition_form),
+        UNFOLD_MODE_TYPE | REFOLD_MODE_TYPE => Some(parse_fold_mode),
+        FOLD_LIST_TYPE => Some(parse_fold_list),
         _ => None,
     }
 }
@@ -181,6 +219,44 @@ fn parse_attachment_state(
     ))
 }
 
+/// The attachment fields from `control` through `second_option`.
+struct AttachmentFields {
+    control: PmDcReference,
+    thickness: PmDcReference,
+    first_mode: PmDcReference,
+    directions: [PmDcReference; 2],
+    radius: PmDcReference,
+    second_mode: PmDcReference,
+    relief_width: PmDcReference,
+    minimum_remnant: PmDcReference,
+    first_option: PmDcReference,
+    states: NativeBytes<[u8; 3]>,
+    second_option: PmDcReference,
+}
+
+fn attachment_fields(cursor: &mut Cursor<'_>) -> Result<AttachmentFields, CodecError> {
+    Ok(AttachmentFields {
+        control: cursor.reference("attachment control")?,
+        thickness: cursor.reference("attachment thickness")?,
+        first_mode: cursor.reference("attachment first mode")?,
+        directions: [
+            cursor.reference("attachment first direction")?,
+            cursor.reference("attachment second direction")?,
+        ],
+        radius: cursor.reference("attachment radius")?,
+        second_mode: cursor.reference("attachment second mode")?,
+        relief_width: cursor.reference("attachment relief width")?,
+        minimum_remnant: cursor.reference("attachment minimum remnant")?,
+        first_option: cursor.reference("attachment first option")?,
+        states: NativeBytes::new([
+            cursor.u8("attachment first state")?,
+            cursor.u8("attachment second state")?,
+            cursor.u8("attachment third state")?,
+        ]),
+        second_option: cursor.reference("attachment second option")?,
+    })
+}
+
 fn parse_attachment(
     _: &DecodeContext<'_>,
     source: View<'_>,
@@ -188,24 +264,19 @@ fn parse_attachment(
 ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor, version)?;
-    let control = cursor.reference("attachment control")?;
-    let thickness = cursor.reference("attachment thickness")?;
-    let first_mode = cursor.reference("attachment first mode")?;
-    let directions = [
-        cursor.reference("attachment first direction")?,
-        cursor.reference("attachment second direction")?,
-    ];
-    let radius = cursor.reference("attachment radius")?;
-    let second_mode = cursor.reference("attachment second mode")?;
-    let relief_width = cursor.reference("attachment relief width")?;
-    let minimum_remnant = cursor.reference("attachment minimum remnant")?;
-    let first_option = cursor.reference("attachment first option")?;
-    let states = NativeBytes::new([
-        cursor.u8("attachment first state")?,
-        cursor.u8("attachment second state")?,
-        cursor.u8("attachment third state")?,
-    ]);
-    let second_option = cursor.reference("attachment second option")?;
+    let AttachmentFields {
+        control,
+        thickness,
+        first_mode,
+        directions,
+        radius,
+        second_mode,
+        relief_width,
+        minimum_remnant,
+        first_option,
+        states,
+        second_option,
+    } = attachment_fields(&mut cursor)?;
     let extension = if cursor.remaining() == 4 {
         Some(cursor.reference("attachment extension")?)
     } else {
@@ -229,6 +300,52 @@ fn parse_attachment(
                 states,
                 second_option,
                 extension,
+            },
+        },
+    ))
+}
+
+fn parse_contour_attachment(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    let mut cursor = Cursor::new(source);
+    let header = content_header(&mut cursor, version)?;
+    let AttachmentFields {
+        control,
+        thickness,
+        first_mode,
+        directions,
+        radius,
+        second_mode,
+        relief_width,
+        minimum_remnant,
+        first_option,
+        states,
+        second_option,
+    } = attachment_fields(&mut cursor)?;
+    let extension = cursor.reference("contour attachment extension")?;
+    let value = cursor.u8("contour attachment value")?;
+    cursor.finish("sheet-metal contour attachment")?;
+    Ok(property(
+        version,
+        header,
+        PmDcFeaturePropertyKind::SheetMetal {
+            definition: SheetMetalProperty::ContourAttachment {
+                control,
+                thickness,
+                first_mode,
+                directions,
+                radius,
+                second_mode,
+                relief_width,
+                minimum_remnant,
+                first_option,
+                states,
+                second_option,
+                extension,
+                value,
             },
         },
     ))
@@ -421,6 +538,19 @@ macro_rules! enumeration_parser {
 enumeration_parser!(parse_mode, 9);
 enumeration_parser!(parse_corner_form, 8);
 enumeration_parser!(parse_transition_form, 4);
+enumeration_parser!(parse_fold_mode, 5);
+
+fn parse_fold_list(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    super::parse_references(
+        source,
+        version,
+        PmDcFeatureReferenceFamily::SheetMetalFoldList,
+    )
+}
 
 fn parse_relief_form(
     _: &DecodeContext<'_>,
@@ -499,6 +629,33 @@ impl SheetMetalProperty {
                 refs.extend(extension);
                 refs
             }
+            Self::ContourAttachment {
+                control,
+                thickness,
+                first_mode,
+                directions,
+                radius,
+                second_mode,
+                relief_width,
+                minimum_remnant,
+                first_option,
+                second_option,
+                extension,
+                ..
+            } => vec![
+                *control,
+                *thickness,
+                *first_mode,
+                directions[0],
+                directions[1],
+                *radius,
+                *second_mode,
+                *relief_width,
+                *minimum_remnant,
+                *first_option,
+                *second_option,
+                *extension,
+            ],
             Self::Corner {
                 control,
                 gap,
@@ -573,6 +730,9 @@ pub(crate) fn valid_references<'a>(
                 &ATTACHMENT_REFERENCES
             },
         ),
+        SheetMetalProperty::ContourAttachment { .. } => {
+            (CONTOUR_ATTACHMENT_TYPE, &ATTACHMENT_EXTENDED_REFERENCES)
+        }
         SheetMetalProperty::Corner { .. } => (CORNER_TYPE, &CORNER_REFERENCES),
         SheetMetalProperty::Relief { .. } => (RELIEF_TYPE, &RELIEF_REFERENCES),
         SheetMetalProperty::Transition { .. } => (TRANSITION_TYPE, &TRANSITION_REFERENCES),
@@ -588,6 +748,8 @@ pub(crate) fn valid_references<'a>(
                 (RELIEF_FORM_TYPE, 501),
                 (CORNER_FORM_TYPE, 8),
                 (TRANSITION_FORM_TYPE, 4),
+                (UNFOLD_MODE_TYPE, 5),
+                (REFOLD_MODE_TYPE, 5),
             ]
             .iter()
             .any(|(kind, expected)| {
@@ -608,7 +770,8 @@ pub(crate) fn valid_references<'a>(
                         actual == type_id_string(*expected)
                             || (record_type == ATTACHMENT_STATE_TYPE
                                 && *expected == ATTACHMENT_TYPE
-                                && actual == type_id_string(HEM_CONTROL_TYPE))
+                                && (actual == type_id_string(HEM_CONTROL_TYPE)
+                                    || actual == type_id_string(CONTOUR_ATTACHMENT_TYPE)))
                     })
                 })
             })
@@ -744,7 +907,10 @@ pub(crate) fn native_kind_counts(
     let mut bends = 0;
     let mut corner_rounds = 0;
     for feature in &inventory.features {
-        if !native.contains(feature.id().as_str()) {
+        // A native contour-flange child has the contour-flange refusal note.
+        if !native.contains(feature.id().as_str())
+            || contour::is_child(&inventory.sheet_metal_flanges, feature)
+        {
             continue;
         }
         let Some(Some(label)) = labels.get(&(
@@ -801,6 +967,36 @@ pub(crate) fn retained_control_losses<'a>(
                 InventorLossCode::FeatureSheetMetalBendControlsRetained,
                 "plate slot-0 construction wire, plate slot-1 direction, attachment control, type-9 first and second modes, direction references, first and second options, state bytes, optional extension state, bend scalar and state, slot-10 Boolean, relief Boolean, and transition Boolean",
             ),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalContourFlange { .. }) => {
+                return vec![
+                    InventorLossCode::FeatureSheetMetalContourControlsRetained.note(format!(
+                        "Projected {} with the type-9 attachment modes, second attachment direction, attachment Booleans and state bytes, relief, transition, corner control, plate-side enumeration, and the bend and corner records retained in its native records; the neutral factor stays unresolved.",
+                        feature.id
+                    )),
+                    InventorLossCode::FeatureSheetMetalStyleFormsNative.note(format!(
+                        "Projected {} with relief and transition forms set by the document style; the form definitions remain in the native document style.",
+                        feature.id
+                    )),
+                ];
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalUnfold { .. }) => {
+                return vec![InventorLossCode::FeatureSheetMetalFoldControlsRetained.note(format!(
+                    "Projected {} with the body selection, slot-3 Boolean, slot-4 list, and type-5 enumeration retained in its native records; the stationary face and the bend faces stay native face-item references, and the all-bends flag and the neutral factor stay unresolved.",
+                    feature.id
+                ))];
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold { .. }) => {
+                return vec![
+                    InventorLossCode::FeatureSheetMetalFoldControlsRetained.note(format!(
+                        "Projected {} with the body selection, stationary face item, bend face collection, slot-3 Boolean, slot-4 list, and type-5 enumeration retained in its native records.",
+                        feature.id
+                    )),
+                    InventorLossCode::FeatureSheetMetalRefoldSourceUnresolved.note(format!(
+                        "Projected {} with no source Unfold: the Refold record stores no reference to an Unfold.",
+                        feature.id
+                    )),
+                ];
+            }
             FeatureDefinition::Operation(FeatureOperation::SheetMetalCorner { .. }) => (
                 InventorLossCode::FeatureSheetMetalCornerControlsRetained,
                 "corner gap, size, Jacobi radius, relief-form and secondary-form enumerations, type-8 corner form, control and option Booleans, raw word, feature dimensions, and profile, attachment, and result references",

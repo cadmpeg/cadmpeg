@@ -708,6 +708,164 @@ pub(super) fn arrangement_region_containing_points(
     )
 }
 
+/// A box that holds the whole of `entity`, or `None` when the curve has no
+/// bounded box this reading knows: a reference line or a bounded ellipse.
+fn arrangement_focus_bounds(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Point { position } => {
+            let point = position.get();
+            Some([point, point])
+        }
+        SketchGeometryDefinition::Line { start, end } => polyline_bounds(&[start.get(), end.get()]),
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => {
+            let (center, radius) = (center.get(), radius.get());
+            Some([
+                Point2::new(center.u - radius, center.v - radius),
+                Point2::new(center.u + radius, center.v + radius),
+            ])
+        }
+        _ => outside_curve_bounds(entity),
+    }
+}
+
+/// Whether the box `outer` holds the box `inner` within `tolerance`.
+fn box_holds(outer: [Point2; 2], inner: [Point2; 2], tolerance: f64) -> bool {
+    outer[0].u <= inner[0].u + tolerance
+        && outer[0].v <= inner[0].v + tolerance
+        && outer[1].u + tolerance >= inner[1].u
+        && outer[1].v + tolerance >= inner[1].v
+}
+
+/// The sketch and entities restricted to the units that can change the faces
+/// of the `focus` curves. A unit is a profile loop or a curve in no loop. The
+/// box that holds the focus units grows over every unit whose box meets it
+/// within `tolerance`: such a unit can cross a focus face or lie inside it.
+/// A unit whose box misses that box does neither. A loop whose box holds that
+/// box can hold the focus faces as islands and stays. Every other unit drops,
+/// so the kept faces are the faces of the whole arrangement, up to the faces
+/// that drop units would split or fill. Text stays. `None` when a curve has
+/// no box, no focus curve is in the sketch, or every unit stays.
+fn arrangement_focus(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    focus: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    tolerance: f64,
+) -> Option<(
+    cadmpeg_ir::sketches::Sketch,
+    Vec<cadmpeg_ir::sketches::SketchEntity>,
+)> {
+    use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometryDefinition};
+
+    let members = entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && !entity.construction)
+        .filter(|entity| {
+            !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Text { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut curve_box = HashMap::<&SketchEntityId, [Point2; 2]>::new();
+    for entity in &members {
+        curve_box.insert(entity.id(), arrangement_focus_bounds(entity)?);
+    }
+    let merge = |left: [Point2; 2], right: [Point2; 2]| {
+        [
+            Point2::new(left[0].u.min(right[0].u), left[0].v.min(right[0].v)),
+            Point2::new(left[1].u.max(right[1].u), left[1].v.max(right[1].v)),
+        ]
+    };
+    // Units: the profile loops, then the curves in no loop.
+    let mut units = Vec::<(Vec<&SketchEntityId>, [Point2; 2], bool)>::new();
+    let mut in_loop = HashSet::new();
+    for profile in &sketch.profiles {
+        let mut ids = Vec::new();
+        let mut hull = None;
+        for use_ in profile {
+            let (id, bounds) = curve_box.get_key_value(&use_.entity)?;
+            in_loop.insert(*id);
+            ids.push(*id);
+            hull = Some(hull.map_or(*bounds, |hull| merge(hull, *bounds)));
+        }
+        units.push((ids, hull?, true));
+    }
+    for entity in &members {
+        if !in_loop.contains(entity.id()) {
+            units.push((vec![entity.id()], curve_box[entity.id()], false));
+        }
+    }
+    let mut kept = units
+        .iter()
+        .map(|(ids, _, _)| ids.iter().any(|id| focus.contains(*id)))
+        .collect::<Vec<_>>();
+    if !kept.iter().any(|keep| *keep) {
+        return None;
+    }
+    let hull_of = |kept: &[bool]| {
+        units
+            .iter()
+            .zip(kept)
+            .filter(|(_, keep)| **keep)
+            .map(|(unit, _)| unit.1)
+            .reduce(merge)
+    };
+    loop {
+        let hull = hull_of(&kept)?;
+        let mut grew = false;
+        for (index, unit) in units.iter().enumerate() {
+            let container = unit.2 && box_holds(unit.1, hull, tolerance);
+            if !kept[index] && !container && bounds_meet(unit.1, hull, tolerance) {
+                kept[index] = true;
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    let hull = hull_of(&kept)?;
+    for (index, unit) in units.iter().enumerate() {
+        if unit.2 && box_holds(unit.1, hull, tolerance) {
+            kept[index] = true;
+        }
+    }
+    if kept.iter().all(|keep| *keep) {
+        return None;
+    }
+    let keep_ids = units
+        .iter()
+        .zip(&kept)
+        .filter(|(_, keep)| **keep)
+        .flat_map(|(unit, _)| unit.0.iter().map(|id| (*id).clone()))
+        .collect::<HashSet<_>>();
+    let filtered = entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch != sketch.id
+                || entity.construction
+                || keep_ids.contains(entity.id())
+                || matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Text { .. }
+                )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let loops = sketch
+        .profiles
+        .iter()
+        .filter(|profile| profile.iter().all(|use_| keep_ids.contains(&use_.entity)))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut restricted = sketch.clone();
+    restricted.profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(loops).ok()?;
+    Some((restricted, filtered))
+}
+
 pub(super) fn arrangement_region_matching_curve_program(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -719,6 +877,12 @@ pub(super) fn arrangement_region_matching_curve_program(
     if program.is_empty() {
         return Ok(None);
     }
+    let focus = program.iter().cloned().collect::<HashSet<_>>();
+    let focused = arrangement_focus(sketch, entities, &focus, tolerance);
+    let (sketch, entities) = match &focused {
+        Some((sketch, entities)) => (sketch, entities.as_slice()),
+        None => (sketch, entities),
+    };
     let faces = geometric!(curve_arrangement_faces(
         sketch, entities, tolerance, work, ctx, false
     )?);
@@ -786,6 +950,17 @@ pub(super) fn arrangement_regions_matching_member_rings(
     if rings.is_empty() {
         return Ok(None);
     }
+    let focus = rings
+        .iter()
+        .flatten()
+        .map(|use_| use_.entity.clone())
+        .chain(unnamed.iter().cloned())
+        .collect::<HashSet<_>>();
+    let focused = arrangement_focus(sketch, entities, &focus, tolerance);
+    let (sketch, entities) = match &focused {
+        Some((sketch, entities)) => (sketch, entities.as_slice()),
+        None => (sketch, entities),
+    };
     let faces = geometric!(curve_arrangement_faces(
         sketch, entities, tolerance, work, ctx, true
     )?);
@@ -1526,7 +1701,8 @@ fn sketch_arrangement_faces_with_nodes(
         work.arrangement_skipped.set(true);
         return Ok(None);
     }
-    if edges.len() < 3 {
+    // Two edges close a face: a circle split at two nodes, or a lens.
+    if edges.len() < 2 {
         return Ok(None);
     }
     let mut edge_pieces = Vec::new();

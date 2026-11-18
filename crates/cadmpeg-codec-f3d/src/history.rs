@@ -24,6 +24,7 @@ mod combine_selection;
 pub(crate) mod compact_lineage;
 mod delete_face;
 pub(crate) mod edge_flange;
+pub(crate) mod edge_recipe_scope;
 mod edge_samples;
 pub(crate) mod extrude_target;
 pub(crate) mod face_admission;
@@ -1057,7 +1058,8 @@ pub(crate) fn bind_feature_outputs(
     losses.append(&mut inferred_histories);
     let output_chains = features
         .iter()
-        .map(|feature| {
+        .enumerate()
+        .map(|(index, feature)| {
             let (current, previous) = feature_history_states(feature, scopes, histories)?;
             output_chain::OutputChain::resolve(
                 histories,
@@ -1067,7 +1069,8 @@ pub(crate) fn bind_feature_outputs(
                     .native_ref
                     .as_deref()
                     .and_then(|id| scope_histories.get(id))
-                    .map(String::as_str),
+                    .map(String::as_str)
+                    .or_else(|| feature_sources[index].map(|source| histories[source].id.as_str())),
             )
         })
         .collect::<Vec<_>>();
@@ -1502,6 +1505,15 @@ pub(crate) fn bind_feature_outputs(
     let mut absorbed_bodies = HashMap::<usize, BTreeSet<i64>>::new();
     for idx in ordered_indices {
         let feature = &mut features[idx];
+        if feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+            .and_then(|scope| scope.derived_base_source.as_ref())
+            .is_some_and(|source| source.snapshot.is_some())
+        {
+            continue;
+        }
         let Some((state_id, previous_state_id)) =
             feature_history_states(feature, scopes, histories)
         else {
@@ -1888,6 +1900,13 @@ pub(crate) fn bind_feature_outputs(
             )));
             continue;
         };
+        let outputs = crate::records::feature::derived_base::derived_base_output_order(
+            feature,
+            scopes,
+            history_index,
+            &state_outputs,
+            outputs,
+        );
         if stored_bodies::bound_result_bodies(feature).is_some()
             || stored_bodies::is_base_feature_copy(feature, scopes)
         {
@@ -1976,6 +1995,11 @@ fn feature_history_states(
         .native_ref
         .as_deref()
         .and_then(|id| scopes.iter().find(|scope| scope.id == id))?;
+    if let Some(group) =
+        crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
+    {
+        return crate::records::feature::derived_base::group_history_states(&group);
+    }
     let state_id = scope.history_state_id()?;
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
     Some((state_id, previous_state_id))
@@ -2110,6 +2134,7 @@ pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
     use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
@@ -2200,7 +2225,24 @@ pub(crate) fn bind_feature_body_selections(
             ) {
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells }) =
+            if let FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit { target, .. }) =
+                definition
+            {
+                if let Some(previous_state_id) =
+                    effective_scope_previous_history_state_id(scope, histories)
+                {
+                    bind_body_recipe_body_selection(
+                        target,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                break 'feature_edit;
+            }
+            if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells, .. }) =
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
@@ -2213,6 +2255,9 @@ pub(crate) fn bind_feature_body_selections(
                         body_recipe_operands,
                     );
                     for cell in cells {
+                        let BoundaryFillCell::BodyRegion(cell) = cell else {
+                            continue;
+                        };
                         bind_body_recipe_body_selection(
                             cell,
                             feature_id,
@@ -2225,6 +2270,9 @@ pub(crate) fn bind_feature_body_selections(
                 } else {
                     bind_direct_body_recipe_body_selection(tools, scope, inputs, &mut body_candidates);
                     for cell in cells {
+                        let BoundaryFillCell::BodyRegion(cell) = cell else {
+                            continue;
+                        };
                         bind_direct_body_recipe_body_selection(cell, scope, inputs, &mut body_candidates);
                     }
                 }
@@ -3614,7 +3662,9 @@ fn face_selection_state<'a>(
                 | cadmpeg_ir::features::FeatureOperation::DeleteFace { heal: true, .. }
         )
     );
-    if !spans_transitions && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
+    if !spans_transitions
+        && state.transition.as_ref()?.previous_state_id != Some(previous_state_id)
+        && !extrude_spans_state_chain(feature, histories, history, state_id, previous_state_id)
     {
         return None;
     }
@@ -3627,6 +3677,29 @@ fn face_selection_state<'a>(
         state: state_index,
         previous: previous_index,
     })
+}
+
+/// Whether an `Extrude` reaches its result state from its preceding state
+/// through one complete chain of uniquely bound transitions.
+fn extrude_spans_state_chain(
+    feature: &cadmpeg_ir::features::Feature,
+    histories: &[AsmHistory],
+    history: &AsmHistory,
+    state_id: i64,
+    previous_state_id: i64,
+) -> bool {
+    matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+        )
+    ) && output_chain::OutputChain::resolve(
+        histories,
+        state_id,
+        previous_state_id,
+        Some(&history.id),
+    )
+    .is_some()
 }
 
 fn face_selection_reads_state(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
@@ -5154,7 +5227,9 @@ pub(crate) fn bind_scope_histories(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     body_bindings: &[crate::records::bodies::DesignBodyBinding],
     body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
+    edge_recipes: edge_recipe_scope::Sources<'_>,
     histories: &[AsmHistory],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> HashMap<String, String> {
     let mut candidates = Vec::new();
     for scope in scopes {
@@ -5189,6 +5264,7 @@ pub(crate) fn bind_scope_histories(
         }
     }
     let mut resolved = HashMap::<String, String>::new();
+    let mut inferred_scopes = HashSet::<String>::new();
     for (scope, candidates) in &candidates {
         if candidates.len() == 1 {
             insert_scope_history_binding(&mut resolved, &scope.id, &candidates[0].id);
@@ -5242,6 +5318,15 @@ pub(crate) fn bind_scope_histories(
                 continue;
             }
         }
+        if let Some(history) = edge_recipe_scope::select(scope, edge_recipes, candidates) {
+            insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+            inferred_scopes.insert(scope.id.clone());
+            losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                "scope {}: its state pair occurs in several histories; it reads {}, whose BREP blob agrees with every qualified edge-recipe face candidate.",
+                scope.id, history.id
+            )));
+            continue;
+        }
         let Some(construction) = scope.base_feature_construction() else {
             continue;
         };
@@ -5268,7 +5353,7 @@ pub(crate) fn bind_scope_histories(
             insert_scope_history_binding(&mut resolved, &scope.id, history_id);
         }
     }
-    let mut groups = HashMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
+    let mut groups = BTreeMap::<(&str, i64, Option<i64>), Vec<usize>>::new();
     for (index, (scope, _)) in candidates.iter().enumerate() {
         let (Some(stream), Some(state_id)) = (
             crate::ids::native_stream(&scope.id),
@@ -5316,6 +5401,17 @@ pub(crate) fn bind_scope_histories(
                     .filter(|history| !assigned.contains(history.id.as_str()));
                 if let Some(history) = remaining.next().filter(|_| remaining.next().is_none()) {
                     insert_scope_history_binding(&mut resolved, &scope.id, &history.id);
+                    let rests_on_inference = members.iter().any(|other| {
+                        let other = &candidates[*other].0.id;
+                        other != &scope.id && inferred_scopes.contains(other)
+                    });
+                    if rests_on_inference {
+                        inferred_scopes.insert(scope.id.clone());
+                        losses.push(crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.note(format!(
+                            "scope {}: it reads {}, the only candidate history that no other scope with its state pair holds, and one of those scopes reads its history through edge-recipe face candidates.",
+                            scope.id, history.id
+                        )));
+                    }
                     progress = true;
                 }
             }
@@ -7584,6 +7680,27 @@ impl FaceBoundaryArena {
         ids
     }
 
+    /// Store the boundaries of `other` not yet present and return their
+    /// identities.
+    fn absorb(&mut self, other: Self) -> Vec<String> {
+        self.incomplete.extend(other.incomplete);
+        let mut added = Vec::new();
+        for (id, boundary) in other.records {
+            if let std::collections::btree_map::Entry::Vacant(entry) = self.records.entry(id) {
+                added.push(entry.key().clone());
+                entry.insert(boundary);
+            }
+        }
+        added
+    }
+
+    /// Remove the boundaries `ids` names.
+    fn remove(&mut self, ids: &[String]) {
+        for id in ids {
+            self.records.remove(id);
+        }
+    }
+
     /// The stored boundaries in identity order.
     pub(crate) fn into_records(
         self,
@@ -7592,6 +7709,9 @@ impl FaceBoundaryArena {
     }
 }
 
+/// [`edge_recipe_reference_context_by`] with the union of each name's
+/// Design references.
+#[cfg(test)]
 fn edge_recipe_reference_context<'a>(
     reference_ordinal: u32,
     lane: &[crate::records::dimensions::DesignRecipeReference],
@@ -7601,7 +7721,30 @@ fn edge_recipe_reference_context<'a>(
     topology_queries: &mut TopologyQueryCache<'a>,
     face_boundaries: &mut FaceBoundaryArena,
 ) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
-    let candidate_faces = recipe_index::reference_lane_faces(lane);
+    edge_recipe_reference_context_by(
+        reference_ordinal,
+        (lane, recipe_index::NameReferences::Union),
+        result,
+        preceding,
+        changed_edges,
+        topology_queries,
+        face_boundaries,
+    )
+}
+
+fn edge_recipe_reference_context_by<'a>(
+    reference_ordinal: u32,
+    (lane, names): (
+        &[crate::records::dimensions::DesignRecipeReference],
+        recipe_index::NameReferences,
+    ),
+    result: EdgeBoundaryContext<'a, '_>,
+    preceding: EdgeBoundaryContext<'a, '_>,
+    changed_edges: &HashSet<i64>,
+    topology_queries: &mut TopologyQueryCache<'a>,
+    face_boundaries: &mut FaceBoundaryArena,
+) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+    let candidate_faces = recipe_index::reference_lane_faces_by(lane, names);
     let candidate_faces = candidate_faces.faces.as_slice();
     let face_slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
         faces
@@ -7680,6 +7823,48 @@ fn edge_recipe_reference_context<'a>(
         shared_edge_slots,
         changed_shared_edge_slots,
         changed_reference_edge_slots,
+    }
+}
+
+/// The one candidate edge that every face set named by the first side of a
+/// standard edge recipe bounds, with no incidence fallback.
+fn side_one_common_edge(
+    structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
+    reference_contexts: &[crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext],
+    candidate_edges: &[i64],
+) -> Option<i64> {
+    let side = structure.and_then(|structure| structure.sides.first())?;
+    let mut ordinals = Vec::new();
+    for value in std::iter::once(side.header_value)
+        .chain(side.scalars.iter().copied())
+        .filter(|value| *value != 0)
+    {
+        ordinals.push(usize::try_from(value).ok()?.checked_sub(1)?);
+    }
+    ordinals.sort_unstable_by(Ord::cmp);
+    ordinals.dedup();
+    if ordinals.len() < 2 {
+        return None;
+    }
+    let mut candidates: Option<Vec<i64>> = None;
+    for ordinal in ordinals {
+        let context = reference_contexts.get(ordinal)?;
+        if Some(context.reference_ordinal) != u32::try_from(ordinal).ok() {
+            return None;
+        }
+        let edges = &context.shared_edge_slots;
+        match &mut candidates {
+            None => candidates = Some(edges.clone()),
+            Some(candidates) => candidates.retain(|edge| edges.contains(edge)),
+        }
+    }
+    let mut candidates = candidates?;
+    candidates.retain(|edge| candidate_edges.contains(edge));
+    candidates.sort_unstable_by(Ord::cmp);
+    candidates.dedup();
+    match candidates.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
     }
 }
 
@@ -8103,7 +8288,15 @@ fn bind_historical_edge_operand<'a>(
         .iter()
         .map(|&edge| edge_contexts.context(edge))
         .collect::<Vec<_>>();
+    // Contexts whose persistent names join their Design references as a
+    // union, and contexts whose names select the faces common to all their
+    // Design references.
+    // Each set interns its boundaries apart; a boundary that no retained
+    // context names leaves the arena.
     let mut reference_contexts = Vec::new();
+    let mut common_reference_contexts = Vec::new();
+    let mut union_boundaries = FaceBoundaryArena::default();
+    let mut common_boundaries = FaceBoundaryArena::default();
     for (ordinal, lane) in crate::records::dimensions::reference_lanes(&operand.recipe_references)
         .into_iter()
         .enumerate()
@@ -8111,26 +8304,38 @@ fn bind_historical_edge_operand<'a>(
         let Ok(reference_ordinal) = u32::try_from(ordinal) else {
             continue;
         };
-        let context = edge_recipe_reference_context(
-            reference_ordinal,
-            lane,
-            EdgeBoundaryContext {
-                state,
-                topology: result_topology,
-                boundary_edges: &operand.result_boundary_edge_slots,
-            },
-            EdgeBoundaryContext {
-                state: previous,
-                topology,
-                boundary_edges: &operand.preceding_boundary_edge_slots,
-            },
-            &changed_edges,
-            topology_queries,
-            face_boundaries,
-        );
-
-        reference_contexts.push(context);
+        for (names, contexts, boundaries) in [
+            (
+                recipe_index::NameReferences::Union,
+                &mut reference_contexts,
+                &mut union_boundaries,
+            ),
+            (
+                recipe_index::NameReferences::Common,
+                &mut common_reference_contexts,
+                &mut common_boundaries,
+            ),
+        ] {
+            contexts.push(edge_recipe_reference_context_by(
+                reference_ordinal,
+                (lane, names),
+                EdgeBoundaryContext {
+                    state,
+                    topology: result_topology,
+                    boundary_edges: &operand.result_boundary_edge_slots,
+                },
+                EdgeBoundaryContext {
+                    state: previous,
+                    topology,
+                    boundary_edges: &operand.preceding_boundary_edge_slots,
+                },
+                &changed_edges,
+                topology_queries,
+                boundaries,
+            ));
+        }
     }
+    let union_only_boundaries = face_boundaries.absorb(union_boundaries);
     operand.recipe_reference_contexts = reference_contexts;
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch
         && operand.surface_patch_recipe_structure.is_some()
@@ -8226,12 +8431,37 @@ fn bind_historical_edge_operand<'a>(
         operand.recipe_structure.as_ref(),
         &changed_edge_contexts,
     );
-    operand.resolved_edge_slot = side_one_recipe_edge(
-        operand.recipe_structure.as_ref(),
-        &operand.recipe_reference_contexts,
-        &operand.recipe_selectors,
-        &operand.preceding_boundary_edge_slots,
-    );
+    // For a Fillet or Chamfer, the faces that carry every Design reference of
+    // each name take precedence when they select an edge that the treatment
+    // transition deletes; otherwise the union of the references applies.
+    operand.resolved_edge_slot = matches!(
+        crate::design::design_feature_family(&scope.kind()),
+        Some(
+            crate::design::DesignFeatureFamily::Fillet
+                | crate::design::DesignFeatureFamily::Chamfer
+        )
+    )
+    .then(|| {
+        side_one_common_edge(
+            operand.recipe_structure.as_ref(),
+            &common_reference_contexts,
+            &operand.preceding_boundary_edge_slots,
+        )
+    })
+    .flatten()
+    .filter(|edge| operand.transition_deleted_edge_slots.contains(edge));
+    if operand.resolved_edge_slot.is_some() {
+        operand.recipe_reference_contexts = common_reference_contexts;
+        face_boundaries.remove(&union_only_boundaries);
+        face_boundaries.absorb(common_boundaries);
+    } else {
+        operand.resolved_edge_slot = side_one_recipe_edge(
+            operand.recipe_structure.as_ref(),
+            &operand.recipe_reference_contexts,
+            &operand.recipe_selectors,
+            &operand.preceding_boundary_edge_slots,
+        );
+    }
     if operand.resolved_edge_slot.is_none()
         && operand.preceding_candidate_faces.is_empty()
         && matches!(

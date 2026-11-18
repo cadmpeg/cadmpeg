@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-mod family;
+pub(super) mod family;
 
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
@@ -24,6 +24,7 @@ use super::component_constructions::exact_component_insert_construction;
 use super::component_constructions::exact_copy_paste_component_operation;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::derived_instance;
+use super::direct_face::exact_axis_owner_scale;
 use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
@@ -48,6 +49,7 @@ use super::path_feature::{
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
 use super::point_data::exact_work_point_construction;
+use super::replace_face::exact_replace_face_operation;
 use super::sheet_metal::bind_hem_operation_from_parameters;
 use super::sheet_metal::exact_base_flange_operation;
 use super::sheet_metal::exact_edge_flange_operation;
@@ -57,12 +59,12 @@ use super::surfaces::exact_surface_extend_operation;
 use super::surfaces::exact_surface_offset_operation;
 use super::surfaces::exact_surface_stitch_operation;
 use super::surfaces::exact_surface_untrim_operation;
+use super::surfaces::surface_extend_loss;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
+use super::thread::thread_modeled_flag_loss;
 use super::work_geometry::exact_joint_origin_frame;
-use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
-use super::work_geometry::work_axis_loss_notes;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -78,6 +80,7 @@ use crate::layout::canvas_scope_tail_98 as canvas_tail;
 use crate::layout::canvas_scope_typed_tail as typed_canvas_tail;
 use crate::layout::named_parameter_scope_tail as named_tail;
 use crate::layout::reciprocal_hole_tail as hole_tail;
+use crate::layout::thread_hole_companion_tail as thread_companion_tail;
 use crate::layout::typed_reference_parameter_scope_tail as typed_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
@@ -103,6 +106,7 @@ pub(crate) struct ParameterScopeSources<'a> {
 
 #[derive(Debug, Default)]
 pub(crate) struct DecodedParameterScopes {
+    pub(crate) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     pub(crate) scopes: Vec<DesignParameterScope>,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) work_plane_inferred_axes: HashMap<String, (u64, [u8; 2])>,
@@ -123,6 +127,7 @@ pub(crate) fn decode_parameter_scopes(
         component_occurrences,
         recipes,
     } = sources;
+    let mut given_up = Vec::new();
     let mut out = Vec::new();
     let mut losses = Vec::new();
     let mut work_plane_inferred_axes = HashMap::new();
@@ -131,12 +136,19 @@ pub(crate) fn decode_parameter_scopes(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let stream_view = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let bytes = stream_view.window();
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
+        let axis_classes = class_types
+            .iter()
+            .map(|(code, row)| (*code, (row.type_guid.as_str(), row.version)))
+            .collect::<HashMap<_, _>>();
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
         let metadata = if body_owners
             .values()
@@ -217,6 +229,25 @@ pub(crate) fn decode_parameter_scopes(
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            if scope.kind() == scope::DesignFeatureKind::BoundaryFill {
+                let construction =
+                    super::boundary_fill::decode(ctx, stream_view, &scope, &stream_types)?;
+                if let scope::DesignScopePayloadMut::BoundaryFill(slot) = scope.payload_mut() {
+                    slot.prefix = construction;
+                }
+            }
+            if let scope::DesignScopePayload::SilhouetteSplit(_) = scope.payload() {
+                let operation = super::silhouette_split::decode(
+                    bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    &mut losses,
+                );
+                if let scope::DesignScopePayloadMut::SilhouetteSplit(slot) = scope.payload_mut() {
+                    *slot = operation;
+                }
+            }
             let face_groups = super::mesh_face_groups::decode_prefix(
                 ctx,
                 bytes,
@@ -337,11 +368,21 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(axis) = exact_work_axis_construction(bytes, &records, &scope, &stream_types)
-            {
-                losses.extend(work_axis_loss_notes(&scope, &axis));
+            if scope.kind() == scope::DesignFeatureKind::WorkAxis {
+                let evidence = super::work_axes::decode_work_axis(
+                    ctx,
+                    stream_view,
+                    &records,
+                    &scope,
+                    &entry.name,
+                    super::work_axes::WorkAxisRegistrations {
+                        entities: &stream_types,
+                        classes: &axis_classes,
+                    },
+                    &mut given_up,
+                )?;
                 if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
-                    *slot = Some(axis.construction);
+                    *slot = Some(evidence);
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
@@ -524,7 +565,17 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
-                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)?;
+                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)
+                        .or_else(|| {
+                            exact_axis_owner_scale(
+                                bytes,
+                                &records,
+                                &scope,
+                                &stream_types,
+                                parameters,
+                                parameter_owners,
+                            )
+                        });
                 if let scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -533,20 +584,15 @@ pub(crate) fn decode_parameter_scopes(
                 let construction =
                     exact_surface_extend_operation(bytes, &records, &scope, &mut losses);
                 if let Some(operation) = &construction {
-                    let distance = operation.distance.get();
-                    losses.push(
-                        if cadmpeg_ir::scalar::PositiveLength::new(distance * 10.0).is_some() {
-                            crate::loss::F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
-                                format!("SurfaceExtend scope {} projects with an unresolved extension method (DR-311).", scope.id),
-                            )
-                        } else {
-                            crate::loss::F3dLossCode::FeatureSurfaceExtendDistanceNonpositive.note(
-                                format!("SurfaceExtend scope {} stores extension distance {distance} cm and stays native (DR-312).", scope.id),
-                            )
-                        },
-                    );
+                    losses.extend(surface_extend_loss(&scope.id, operation));
                 }
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
+                let construction = exact_replace_face_operation(ctx, bytes, &scope)?;
+                if let scope::DesignScopePayloadMut::ReplaceFace(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
@@ -668,6 +714,11 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_thread_construction(bytes, &scope, parameter_owners);
+                losses.extend(
+                    construction
+                        .as_ref()
+                        .and_then(|construction| thread_modeled_flag_loss(&scope, construction)),
+                );
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -698,6 +749,7 @@ pub(crate) fn decode_parameter_scopes(
                     &records,
                     &scope,
                     parameter_owners,
+                    &stream_types,
                 )?;
                 if let scope::DesignScopePayloadMut::RPattern(slot)
                 | scope::DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut()
@@ -864,6 +916,7 @@ pub(crate) fn decode_parameter_scopes(
         ));
     }
     Ok(DecodedParameterScopes {
+        given_up: cadmpeg_ir::unknown::part::GivenUpPart::coalesce(given_up)?,
         scopes: out,
         losses,
         work_plane_inferred_axes,
@@ -1291,6 +1344,12 @@ pub(crate) fn parameter_scope_previous_history_offset(
     rigid_group: bool,
     second_tail_reference: bool,
 ) -> Option<usize> {
+    if kind.as_ref() == "Thread"
+        && tail_length == thread_companion_tail::LEN
+        && !second_tail_reference
+    {
+        return Some(thread_companion_tail::PREVIOUS_HISTORY_STATE);
+    }
     parameter_scope_previous_history_offset_for_form(
         kind.as_ref(),
         tail_length,
@@ -1298,6 +1357,19 @@ pub(crate) fn parameter_scope_previous_history_offset(
         rigid_group,
         second_tail_reference,
     )
+}
+
+pub(crate) fn named_reciprocal_hole_previous_history_offset(
+    tail_length: usize,
+    label_units: usize,
+) -> Option<usize> {
+    let label_bytes = label_units.checked_mul(2)?;
+    let relative = match tail_length.checked_sub(label_bytes)? {
+        110 => 53,
+        120 => 63,
+        _ => return None,
+    };
+    label_bytes.checked_add(relative)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1486,7 +1558,7 @@ fn parameter_scope_previous_history_offset_for_form(
     match tail_form {
         ScopeTailForm::Named => return None,
         ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => {
-            return typed_scope_previous_history_offset(kind, tail_length)
+            return typed_scope_previous_history_offset(kind, tail_length);
         }
         ScopeTailForm::Fixed => {}
     }
@@ -1512,7 +1584,7 @@ fn parameter_scope_previous_history_offset_for_form(
 }
 
 #[cfg(test)]
-pub(in crate::design::decode) fn parse_parameter_scope(
+pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
@@ -1539,6 +1611,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let type_family = type_guid
             .and_then(family::from_type_guid)
             .or_else(|| paste_prefix.map(|(_, family)| family));
+        let registered_boundary_fill = type_family == Some(scope::DesignFeatureKind::BoundaryFill);
         let (paired_class_tag, _) =
             lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
         let mut fixed_candidate = None;
@@ -1626,15 +1699,23 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                     fixed_ambiguous = true;
                 }
             }
+            let extended_named =
+                kind == "Combine" || (registered_boundary_fill && kind == "BoundaryFill");
             let named_tail_possible = (named_tail::LEN..=590).contains(&tail_length)
                 && ((tail_length.is_multiple_of(2)
                     && (parameter_scope_tail_length_is_valid(kind, tail_length)
                         || tail_length == 78))
-                    || kind == "Combine");
+                    || extended_named);
             let named_tail = if named_tail_possible {
                 named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                     .unwrap_or_default()
-                    || (kind == "Combine"
+                    || (kind == "Hole"
+                        && named_reciprocal_hole_history(
+                            bytes.get(kind_end..paired_at)?,
+                            record_index,
+                        )
+                        .is_some())
+                    || (extended_named
                         && named_parameter_scope_references(bytes, kind_end, paired_at)
                             .is_some_and(|references| {
                                 references.extra_bytes().is_some_and(|extra| extra > 0)
@@ -1815,17 +1896,27 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         }
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
-        let previous_history_state_id_offset =
-            match parameter_scope_previous_history_offset_for_form(
-                kind.as_str(),
-                tail_length,
-                tail_form,
-                kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
-                bytes.get(kind_end.checked_add(FIXED_TAIL_SECOND_REFERENCE)?) == Some(&1),
-            ) {
-                Some(offset) => Some(kind_end.checked_add(offset)?),
-                None => None,
-            };
+        let tail = bytes.get(kind_end..paired_at)?;
+        let companion_history = match (&kind, tail_form) {
+            (scope::DesignFeatureKind::Hole, ScopeTailForm::Named) => {
+                named_reciprocal_hole_history(tail, record_index)
+            }
+            (scope::DesignFeatureKind::Thread, ScopeTailForm::Fixed) => {
+                super::thread::hole_companion_history(tail, record_index)
+            }
+            _ => None,
+        };
+        let previous_history_state_id_offset = companion_history
+            .or_else(|| {
+                parameter_scope_previous_history_offset_for_form(
+                    kind.as_str(),
+                    tail_length,
+                    tail_form,
+                    kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
+                    tail.get(FIXED_TAIL_SECOND_REFERENCE) == Some(&1),
+                )
+            })
+            .and_then(|offset| kind_end.checked_add(offset));
         let previous_history_state_id = previous_history_state_id_offset.and_then(|offset| {
             match View::u32_le_at(bytes, offset)? {
                 u32::MAX => None,
@@ -2026,6 +2117,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                             }),
                     },
                 ),
+                scope::DesignFeatureKind::BoundaryFill => scope::DesignScopePayload::BoundaryFill(
+                    crate::records::feature::boundary_fill::DesignBoundaryFillScope {
+                        prefix: None,
+                        named_tail: (registered_boundary_fill && tail_form == ScopeTailForm::Named)
+                            .then(|| named_parameter_scope_references(bytes, kind_end, paired_at))
+                            .flatten()
+                            .filter(|references| {
+                                references.extra_bytes().is_some_and(|extra| extra > 0)
+                            }),
+                    },
+                ),
                 kind => kind.try_into().ok()?,
             },
             unclosed_construction_operand_groups: Vec::new(),
@@ -2097,6 +2199,33 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
 /// The preceding-history offset of a Hole tail that lists the Hole, and the
 /// Thread that owns it when one does, before its companion chain.
 fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
+    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
+        || tail.get(hole_tail::ZERO_PREFIX..hole_tail::MEMBER_COUNT)? != [0; 8]
+    {
+        return None;
+    }
+    reciprocal_hole_members(tail, hole, hole_tail::MEMBER_COUNT, 1)
+}
+
+fn named_reciprocal_hole_history(tail: &[u8], hole: u32) -> Option<usize> {
+    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
+        || tail.get(named_tail::ZERO_WORD..named_tail::LABEL_LENGTH)? != [0; 4]
+    {
+        return None;
+    }
+    let (label, count_at) = lp_utf16_bounded(tail, named_tail::LABEL_LENGTH, 1..=256)?;
+    if label.chars().any(char::is_control) || View::u32_le_at(tail, count_at)? != 2 {
+        return None;
+    }
+    reciprocal_hole_members(tail, hole, count_at, 2)
+}
+
+fn reciprocal_hole_members(
+    tail: &[u8],
+    hole: u32,
+    count_at: usize,
+    suppression_padding: usize,
+) -> Option<usize> {
     /// Length of one marked record reference.
     const REFERENCE: usize = 11;
     /// The zero byte, suppression flag, and zero byte after the members.
@@ -2105,18 +2234,14 @@ fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
     const HISTORY_RUN: usize = 20;
     let reference = |at| super::shared_frames::marked_record_reference(tail, at);
     let flag = |at| tail.get(at).is_some_and(|byte| *byte <= 1);
-    let thread = match View::u32_le_at(tail, hole_tail::MEMBER_COUNT)? {
+    let self_at = count_at.checked_add(hole_tail::SELF_REFERENCE - hole_tail::MEMBER_COUNT)?;
+    let thread = match View::u32_le_at(tail, count_at)? {
         1 => None,
-        2 => Some(
-            reference(hole_tail::SELF_REFERENCE + REFERENCE)
-                .filter(|thread| *thread > 3 && *thread != hole)?,
-        ),
+        2 => Some(reference(self_at + REFERENCE).filter(|thread| *thread > 3 && *thread != hole)?),
         _ => return None,
     };
-    let members_end = hole_tail::SELF_REFERENCE + REFERENCE * (1 + usize::from(thread.is_some()));
-    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
-        || tail.get(hole_tail::ZERO_PREFIX..hole_tail::MEMBER_COUNT)? != [0; 8]
-        || reference(hole_tail::SELF_REFERENCE)? != hole
+    let members_end = self_at + REFERENCE * (1 + usize::from(thread.is_some()));
+    if reference(self_at)? != hole
         || tail.get(members_end) != Some(&0)
         || !flag(members_end + 1)
         || tail.get(members_end + 2) != Some(&0)
@@ -2139,13 +2264,16 @@ fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
     let duration = View::f64_le_at(tail, history_at + 8)?;
     let second_at = history_at + HISTORY_RUN;
     let flag_at = second_at + REFERENCE;
-    let third_at = flag_at + 2;
+    let third_at = flag_at + 1 + suppression_padding;
     let closing_at = third_at + REFERENCE;
     (duration.is_finite()
         && duration >= 0.0
         && reference(second_at)? == first.checked_sub(1)?
         && flag(flag_at)
-        && tail.get(flag_at + 1) == Some(&0)
+        && tail
+            .get(flag_at + 1..third_at)?
+            .iter()
+            .all(|byte| *byte == 0)
         && reference(third_at)? == first.checked_sub(2)?
         && reference(closing_at)? == hole
         && tail.get(closing_at + REFERENCE) == Some(&0)
@@ -2387,7 +2515,10 @@ fn scope_feature_kind(
     let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
     Some(match (literal, type_family) {
         (_, Some(family)) => family.clone(),
-        (scope::DesignFeatureKind::PathPattern, None) => scope::DesignFeatureKind::native(stored),
+        (
+            scope::DesignFeatureKind::PathPattern | scope::DesignFeatureKind::SilhouetteSplit,
+            None,
+        ) => scope::DesignFeatureKind::native(stored),
         (literal, None) => literal,
     })
 }

@@ -68,12 +68,19 @@
           "bodies": [],
           "bom_properties": {},
           "id": "step:product:product#1",
+          "instance_bodies": [],
           "kind": "part",
           "label": "Part",
           "native_ref": "#1",
+          "occurrences": [],
           "part_number": "P1",
+          "representations": [],
           "sketches": [],
-          "source_name": "Part"
+          "source_name": "Part",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

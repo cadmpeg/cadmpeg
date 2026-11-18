@@ -5,11 +5,14 @@
 
 use std::f64::consts::{FRAC_1_SQRT_2, PI};
 
+use cadmpeg_ir::geometry::nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes};
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::ids::{EdgeId, SurfaceId, VertexId};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::CadIr;
 
-use crate::reason::CaveatCode;
+use crate::reason::{CaveatCode, UnavailableReason};
 use crate::report::{FaceMeasures, MeasureReport, RegionRule, WitnessKind};
 use crate::select::Selection;
 use crate::test_support::builders::{
@@ -185,4 +188,154 @@ fn a_rational_quarter_cylinder_inverts_its_edges() {
         panic!("a measured box");
     };
     assert_eq!(bbox.value().kind, BoxKind::Conservative);
+}
+
+/// The triangle `(0,0,0)`, `(1,0,0)`, `(0,1,0)` as a bilinear patch whose
+/// `v = 1` side collapses to the origin, bounded by its three straight sides
+/// from each corner in turn: the patch is the whole face, of area 1/2. At
+/// the collapsed side `u` is free, so each side meets it at the `u` of its
+/// own trace.
+#[test]
+fn a_patch_with_a_collapsed_side_measures_its_whole_area() {
+    let (apex, first_corner, second_corner) = ([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    for start in 0..3 {
+        let mut builder = Builder::new();
+        let surface = builder.nurbs(
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            (1, vec![0.0, 0.0, 1.0, 1.0]),
+            &[
+                vec![(first_corner, 1.0), (apex, 1.0)],
+                vec![(second_corner, 1.0), (apex, 1.0)],
+            ],
+        );
+        let vertices: Vec<_> = [first_corner, second_corner, apex]
+            .iter()
+            .map(|corner| builder.vertex(*corner))
+            .collect();
+        let ring: Vec<_> = (0..3)
+            .map(|step| {
+                let from = (start + step) % 3;
+                (
+                    builder.line(&vertices[from], &vertices[(from + 1) % 3]),
+                    Sense::Forward,
+                )
+            })
+            .collect();
+        builder.face(&surface, Sense::Forward, &[ring], true);
+        let ir = builder.finish(BodyKind::Sheet);
+        let report = measure(&ir, &faces());
+        assert_measured(&report.faces[0].measures.area, 0.5, 1.0);
+    }
+}
+
+/// The strip `0 ≤ x ≤ 1`, `0 ≤ y ≤ 0.005` as a bilinear patch whose `v`
+/// sides are 0.005 long: shorter than the coincidence allowance and longer
+/// than the model tolerance, so `u` is defined along them. The patch is the
+/// whole face, of area 0.005.
+#[test]
+fn a_strip_narrower_than_the_allowance_measures_its_whole_area() {
+    let width = 0.005;
+    assert!(width < cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
+    let corners = [
+        [0.0, 0.0, 0.0],
+        [0.0, width, 0.0],
+        [1.0, width, 0.0],
+        [1.0, 0.0, 0.0],
+    ];
+    let mut builder = Builder::new();
+    let surface = builder.nurbs(
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        &[
+            vec![(corners[0], 1.0), (corners[3], 1.0)],
+            vec![(corners[1], 1.0), (corners[2], 1.0)],
+        ],
+    );
+    let vertices: Vec<_> = corners
+        .iter()
+        .map(|corner| builder.vertex(*corner))
+        .collect();
+    let ring: Vec<_> = (0..4)
+        .map(|from| {
+            (
+                builder.line(&vertices[from], &vertices[(from + 1) % 4]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    builder.face(&surface, Sense::Forward, &[ring], true);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    assert_measured(&report.faces[0].measures.area, width, 1.0);
+}
+
+/// The disk `r ≤ 50` at `z = 0` as a `u`-periodic rational quadratic by
+/// linear patch whose `v = 1` side collapses to the centre, bounded by a
+/// triangle whose first side runs along `y = 0.005` from `x = -24` to
+/// `x = 26`. That side passes within the allowance of the centre between
+/// two samples at every sample count up to the cap, where its parameter
+/// image turns by about half a period. The side splits at the centre, and
+/// the loop reaches the region rule for a periodic NURBS domain.
+#[test]
+fn a_side_grazing_a_collapsed_nurbs_side_between_samples_splits_there() {
+    let radius = 50.0;
+    let circle = [
+        (1.0, 0.0, 1.0),
+        (1.0, 1.0, FRAC_1_SQRT_2),
+        (0.0, 1.0, 1.0),
+        (-1.0, 1.0, FRAC_1_SQRT_2),
+        (-1.0, 0.0, 1.0),
+        (-1.0, -1.0, FRAC_1_SQRT_2),
+        (0.0, -1.0, 1.0),
+        (1.0, -1.0, FRAC_1_SQRT_2),
+        (1.0, 0.0, 1.0),
+    ];
+    let grid = circle
+        .iter()
+        .map(|(x, y, _)| {
+            vec![
+                Point3::new(radius * x, radius * y, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ]
+        })
+        .collect();
+    let weights = circle
+        .iter()
+        .map(|(_, _, weight)| vec![*weight, *weight])
+        .collect();
+    let mut builder = Builder::new();
+    let surface = builder.surface(SolvedSurfaceGeometry::Nurbs(
+        NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 4.0],
+                true,
+            ),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(grid, Some(weights)),
+            false,
+        )
+        .expect("disk"),
+    ));
+    let corners: Vec<VertexId> = [[-24.0, 0.005, 0.0], [26.0, 0.005, 0.0], [0.0, 20.0, 0.0]]
+        .iter()
+        .map(|corner| builder.vertex(*corner))
+        .collect();
+    let ring: Vec<_> = (0..3)
+        .map(|from| {
+            (
+                builder.line(&corners[from], &corners[(from + 1) % 3]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    builder.face(&surface, Sense::Forward, &[ring], true);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let area = only_face(&report)
+        .measures()
+        .area()
+        .unavailable()
+        .expect("unavailable area");
+    assert_eq!(area.reason(), UnavailableReason::RegionDomainUnsupported);
 }

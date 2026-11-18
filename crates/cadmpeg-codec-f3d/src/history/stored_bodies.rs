@@ -94,13 +94,6 @@ impl<'a> ActiveBodies<'a> {
     }
 }
 
-fn is_derived_base(scope: &DesignParameterScope) -> bool {
-    matches!(
-        scope.kind_name(),
-        "Derived Base Feature" | "DerivedBaseFeature"
-    )
-}
-
 pub(super) fn bound_result_bodies(
     feature: &Feature,
 ) -> Option<&cadmpeg_ir::features::DistinctMembers<BodyId>> {
@@ -132,7 +125,9 @@ pub(super) fn bind_history_outputs(
     source: Option<&str>,
     active: &ActiveBodies<'_>,
 ) -> bool {
-    if scope.kind() != DesignFeatureKind::BaseFeature && !is_derived_base(scope) {
+    if scope.kind() != DesignFeatureKind::BaseFeature
+        && !crate::records::feature::derived_base::is_derived_base(scope)
+    {
         return false;
     }
     let native = match feature.evaluation.definition() {
@@ -206,7 +201,10 @@ pub(crate) fn losses(
     for scope in scopes {
         let feature = features
             .iter()
-            .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()));
+            .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+            .or_else(|| {
+                crate::records::feature::derived_base::group_feature(features, scopes, scope)
+            });
         match scope.kind_name() {
             "Base Feature" => {
                 let selection = match feature.map(|feature| feature.evaluation.definition()) {
@@ -242,6 +240,18 @@ pub(crate) fn losses(
                 }
             }
             "Derived Base Feature" | "DerivedBaseFeature" => {
+                if scope
+                    .derived_base_source
+                    .as_ref()
+                    .is_some_and(|source| source.snapshot.is_some())
+                    && feature.is_some()
+                {
+                    losses.push(F3dLossCode::FeatureStoredBodiesRecipeAbsent.note(format!(
+                        "{} supplies the captured derived result body.",
+                        scope.id
+                    )));
+                    continue;
+                }
                 let stored = feature.and_then(|feature| match feature.evaluation.definition() {
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved { bodies, .. },
