@@ -96,16 +96,17 @@ fn copy() -> DesignComponentOccurrence {
 }
 
 fn product_occurrence(carrier: &DesignComponentOccurrence) -> Occurrence {
-    serde_json::from_value(serde_json::json!({
-        "id": crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
-        "native_ref": carrier.id.clone(),
-        "prototype": {"kind": "local", "definition": crate::ids::neutral_component_id(&carrier.component_guid)},
-        "parent": {"kind": "root"},
-        "ordinal": 0,
-        "transform": [[1.0, 0.0, 0.0, 60.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
-        "scale": [1.0, 1.0, 1.0],
-    }))
-    .unwrap()
+    let mut occurrence = Occurrence::new(
+        crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
+        crate::ids::neutral_component_id(&carrier.component_guid),
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 60.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]),
+    );
+    occurrence.native_ref = Some(carrier.id.clone());
+    occurrence
 }
 
 fn native() -> FeatureDefinition {
@@ -132,9 +133,8 @@ fn project(
         let (Some(occurrence), None) = (matching.next(), matching.next()) else {
             continue;
         };
-        if let cadmpeg_ir::products::PrototypeReference::Local { definition } =
-            &occurrence.prototype
         {
+            let definition = &occurrence.prototype;
             if !definitions
                 .iter()
                 .any(|candidate: &super::super::ProductDefinition| {
@@ -276,9 +276,7 @@ fn a_copy_transfer_uses_the_stream_qualified_projected_occurrence_id() {
     let allocated_definition =
         cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product-definition#allocated")
             .unwrap();
-    projected_primary.prototype = cadmpeg_ir::products::PrototypeReference::Local {
-        definition: allocated_definition.clone(),
-    };
+    projected_primary.prototype = allocated_definition.clone();
     let mut projected_other = product_occurrence(&other_stream);
     projected_other.id = crate::ids::stream_component_occurrence_id(
         "f3d:Other/BulkStream.dat",

@@ -43,3 +43,42 @@ Removed bodies.
   8 faces; Mirror1 of the body across the YZ origin plane, 2 bodies,
   1987.43363 mm³, 16 faces; RemoveBody of the original body, 1 body,
   993.716815 mm³, 8 faces.
+
+# Fusion API fixtures: rectangular patterns
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2704.1.53 from a new design, for rectangular-pattern decoding. The API reported
+the volume, body count and face count after each timeline item; those values are
+below.
+
+Rectangular-pattern Compute option. One cut that ends on a slanted body edge,
+patterned five times at 2 mm. The API added a second direction of count 3 and
+zero distance.
+
+- `compute_adjust.f3d`: Compute Adjust.
+- `compute_optimized.f3d`: Compute Optimized; removes 0.1414 mm³ more than Adjust.
+- `compute_identical.f3d`: Compute Identical; Fusion reports the pattern feature
+  failed.
+
+Symmetric patterns. Quantity 4 at 5 mm with Symmetric on; direction two has
+quantity 1 and keeps its 5 mm distance. Fusion places the copies at
+x = −5, 0, +5 and +10 mm.
+
+- `symmetric_pattern.f3d`: a cut seed. Extrude2 2394 mm³, 11 faces; the pattern
+  2376 mm³, 26 faces.
+- `symmetric_pattern_body.f3d`: a body seed (a 1 × 6 × 1 mm block), Compute
+  Adjust. Extrude2 2406 mm³ in 2 bodies, 12 faces; the pattern 2424 mm³ in 5
+  bodies, 30 faces.
+
+Compute option and target bodies. Written in Autodesk Fusion 2706.1.17. A
+40 × 40 × 5 mm plate with a 4 mm hole cut at (10, 20) mm, patterned along X
+with Compute Optimized unless stated.
+
+- `optimized_extent_pattern.f3d`: quantity 3, Extent 20 mm. The copies are at
+  0, 10 and 20 mm. 7811.50 mm³, 9 faces.
+- `optimized_symmetric_pattern.f3d`: quantity 3 at 10 mm, Symmetric. The copies
+  are at −10, 0 and +10 mm; the −10 mm copy cuts the plate edge. 7842.92 mm³,
+  10 faces.
+- `two_target_pattern.f3d`: two plates at x 0–40 and 41–81 mm and one 21 × 4 mm
+  slot cut through both, patterned along Y with quantity 3 at 10 mm, Compute
+  Adjust. 2 bodies, 14800 mm³, 36 faces.
