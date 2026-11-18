@@ -1505,6 +1505,15 @@ pub(crate) fn bind_feature_outputs(
     let mut absorbed_bodies = HashMap::<usize, BTreeSet<i64>>::new();
     for idx in ordered_indices {
         let feature = &mut features[idx];
+        if feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+            .and_then(|scope| scope.derived_base_source.as_ref())
+            .is_some_and(|source| source.snapshot.is_some())
+        {
+            continue;
+        }
         let Some((state_id, previous_state_id)) =
             feature_history_states(feature, scopes, histories)
         else {

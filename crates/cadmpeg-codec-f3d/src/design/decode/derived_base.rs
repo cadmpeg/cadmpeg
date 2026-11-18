@@ -8,7 +8,7 @@ use crate::layout::{
 };
 use crate::records::entity_header::DESIGN_MODULE_FUSION;
 use crate::records::feature::derived_base::{
-    is_derived_base, DesignDerivedBaseOwner, REPEAT_FROM_END,
+    is_derived_base, DesignDerivedBaseOwner, DesignDerivedBaseSource, REPEAT_FROM_END,
 };
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
@@ -56,6 +56,9 @@ pub(crate) fn mark_derived_base_owners(
             scope.derived_base_owner = view
                 .child(start, end)
                 .and_then(|frame| derived_base_owner(frame.window(), start));
+            scope.derived_base_source = view
+                .child(start, end)
+                .and_then(|frame| derived_base_source(frame.window(), start));
         }
         let Some(view) = stream_view else {
             continue;
@@ -87,6 +90,49 @@ pub(crate) fn mark_derived_base_owners(
         }
     }
     Ok(())
+}
+
+pub(crate) fn derived_base_source(frame: &[u8], start: usize) -> Option<DesignDerivedBaseSource> {
+    use crate::layout::derived_base_source_pair_prefix as prefix;
+    let frame = frame.get(..prefix::LEN)?;
+    if frame.get(crate::layout::indexed_design_record_header::LEN..prefix::BODY_MARKER)? != [0; 8]
+        || frame.get(prefix::BODY_MARKER) != Some(&prefix::BODY_MARKER_VALUE)
+        || View::u32_le_at(frame, prefix::BODY_REFERENCE_COUNT)?
+            != prefix::BODY_REFERENCE_COUNT_VALUE
+        || frame.get(prefix::COPY_MARKER) != Some(&prefix::COPY_MARKER_VALUE)
+        || View::u32_le_at(frame, prefix::COPY_ZERO)? != prefix::COPY_ZERO_VALUE
+        || View::u32_le_at(frame, prefix::SOURCE_PAIR_COUNT)? != prefix::SOURCE_PAIR_COUNT_VALUE
+        || frame.get(prefix::TERMINATOR) != Some(&prefix::TERMINATOR_VALUE)
+    {
+        return None;
+    }
+    let read = |at: usize, trailing: usize| {
+        if frame.get(at.checked_sub(1)?) != Some(&1)
+            || frame
+                .get(at.checked_add(8)?..at.checked_add(8 + trailing)?)?
+                .iter()
+                .any(|byte| *byte != 0)
+        {
+            return None;
+        }
+        Some(Located {
+            value: View::u64_le_at(frame, at)?,
+            offset: u64_from_index(start.checked_add(at)?),
+        })
+    };
+    let result_body = read(prefix::RESULT_BODY_RECORD, 6)?;
+    let repeat = read(prefix::REPEAT_RECORD, 2)?;
+    if result_body.value != repeat.value {
+        return None;
+    }
+    Some(DesignDerivedBaseSource {
+        parameter_body: read(prefix::PARAMETER_BODY_RECORD, 6)?,
+        result_body,
+        owner_record: read(prefix::OWNER_RECORD, 2)?,
+        source_body: read(prefix::SOURCE_RECORD, 2)?,
+        result_repeat_offset: repeat.offset,
+        snapshot: None,
+    })
 }
 
 fn registered_as(frame: &DesignPrimaryFrame<'_>, guid: &str, version: u32) -> bool {

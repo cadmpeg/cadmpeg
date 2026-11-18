@@ -10705,3 +10705,49 @@ pub(crate) mod work_axis_endpoint_carrier {
     /// Offset of `position` (`f64[3]`, little-endian). Spec §3.1.
     pub(crate) const POSITION: usize = 42;
 }
+
+/// Byte offsets for the `derived_base_source_pair_prefix` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header of a one-body source-pair derived base scope.
+/// ```
+pub(crate) mod derived_base_source_pair_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 97;
+    /// Offset of `body_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_MARKER: usize = 19;
+    /// Stated value of `body_marker` (`u8`). Spec §3.1.
+    pub(crate) const BODY_MARKER_VALUE: u8 = 1;
+    /// Offset of `body_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT: usize = 20;
+    /// Stated value of `body_reference_count` (`u32`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `parameter_body_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const PARAMETER_BODY_RECORD: usize = 25;
+    /// Offset of `result_body_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_BODY_RECORD: usize = 40;
+    /// Offset of `copy_marker` (`u8`). Spec §3.1.
+    pub(crate) const COPY_MARKER: usize = 54;
+    /// Stated value of `copy_marker` (`u8`). Spec §3.1.
+    pub(crate) const COPY_MARKER_VALUE: u8 = 1;
+    /// Offset of `copy_zero` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COPY_ZERO: usize = 55;
+    /// Stated value of `copy_zero` (`u32`). Spec §3.1.
+    pub(crate) const COPY_ZERO_VALUE: u32 = 0x0000_0000;
+    /// Offset of `owner_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const OWNER_RECORD: usize = 60;
+    /// Offset of `source_pair_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_PAIR_COUNT: usize = 70;
+    /// Stated value of `source_pair_count` (`u32`). Spec §3.1.
+    pub(crate) const SOURCE_PAIR_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `source_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const SOURCE_RECORD: usize = 75;
+    /// Offset of `repeat_record` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const REPEAT_RECORD: usize = 86;
+    /// Offset of `terminator` (`u8`). Spec §3.1.
+    pub(crate) const TERMINATOR: usize = 96;
+    /// Stated value of `terminator` (`u8`). Spec §3.1.
+    pub(crate) const TERMINATOR_VALUE: u8 = 0;
+}
