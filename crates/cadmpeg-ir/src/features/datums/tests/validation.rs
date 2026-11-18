@@ -163,6 +163,7 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
                     bom_properties: std::collections::BTreeMap::new(),
                     bodies: Vec::new(),
                     sketches: Vec::default(),
+                    tessellations: Vec::default(),
                     native_ref: None,
                 });
         }
