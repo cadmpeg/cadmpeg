@@ -2,9 +2,11 @@
 //! NX expressions as the part's user parameters.
 //!
 //! An NX expression declares its unit in its header and stores its formula
-//! text. A formula becomes a neutral tree where every construct translates
-//! under NX's semantics and the tree has the declared quantity; every other
-//! formula keeps its text, with each name it resolves as a reference.
+//! text. A formula that is one number is a literal in the declared unit. A
+//! formula of references becomes a neutral tree where every construct
+//! translates under NX's semantics and the tree has the declared quantity;
+//! every other formula keeps its text, with each name it resolves as a
+//! reference.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
@@ -41,7 +43,7 @@ pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
         };
         let declared = declared(parameter);
         let names = &tables[&parameter.owner.as_ref()];
-        let definition_expression = expression(&parameter.expression, &declared.kind, names);
+        let definition_expression = expression(&parameter.expression, &declared, names);
         let value = literal_value(&parameter.expression, &declared);
         parameters.push(DesignParameter {
             id: parameter.id.clone(),
@@ -159,20 +161,45 @@ fn unit_of(symbol: UnitSymbol) -> Option<Unit> {
     NonZeroI8::new(1).map(|power| Unit(vec![UnitFactor { symbol, power }]))
 }
 
-/// The stored value of a formula that is one number in the declared unit:
-/// the literal is its own value. The decoder states no value it evaluates
-/// from other expressions.
-fn literal_value(text: &str, declared: &Declared) -> Option<ParameterValue> {
+/// A formula that is one number: whether it is negated, and its magnitude.
+fn literal(text: &str) -> Option<(bool, f64)> {
     let text = text.trim();
-    let (sign, digits) = match text.strip_prefix('-') {
-        Some(digits) => (-1.0, digits.trim_start()),
-        None => (1.0, text),
+    let (negated, digits) = match text.strip_prefix('-') {
+        Some(digits) => (true, digits.trim_start()),
+        None => (false, text),
     };
     if !digits.starts_with(|c: char| c.is_ascii_digit() || c == '.') {
         return None;
     }
-    let (value, _) = canonical(digits.parse::<f64>().ok()?, declared.unit.as_ref()?)?;
-    FiniteReal::new(sign * value).map(ParameterValue::Number)
+    Some((negated, digits.parse::<f64>().ok()?))
+}
+
+/// The stored value of a formula that is one number in the declared unit:
+/// the literal is its own value. The decoder states no value it evaluates
+/// from other expressions.
+fn literal_value(text: &str, declared: &Declared) -> Option<ParameterValue> {
+    let (negated, magnitude) = literal(text)?;
+    let (value, _) = canonical(magnitude, declared.unit.as_ref()?)?;
+    FiniteReal::new(if negated { -value } else { value }).map(ParameterValue::Number)
+}
+
+/// A formula that is one number, in the unit the expression declares (§5.13:
+/// a literal that is the whole expression of a parameter whose unit the
+/// source declares is in that unit by the source's own statement).
+fn literal_tree(text: &str, declared: &Declared) -> Option<Node<ParameterRef>> {
+    let (negated, magnitude) = literal(text)?;
+    let number = Node::Number {
+        value: NonNegativeReal::new(magnitude)?,
+        unit: declared.unit.clone()?,
+    };
+    Some(if negated {
+        Node::Unary {
+            op: UnaryOp::Negate,
+            operand: Box::new(number),
+        }
+    } else {
+        number
+    })
 }
 
 /// One lexical token of NX formula text.
@@ -237,14 +264,16 @@ fn tokens(text: &str) -> Option<Vec<(usize, Token<'_>)>> {
 /// the source text with each resolved name as a reference.
 fn expression(
     text: &str,
-    kind: &ValueKind,
+    declared: &Declared,
     names: &BTreeMap<&str, Vec<&LegacyParameter>>,
 ) -> Expression {
     let resolve = |name: &str| match names.get(name).map(Vec::as_slice) {
         Some([target]) => Some(*target),
         _ => None,
     };
-    if let Some(neutral) = neutral(text, kind, &resolve) {
+    if let Some(neutral) =
+        literal_tree(text, declared).or_else(|| neutral(text, &declared.kind, &resolve))
+    {
         return Expression::Neutral(Neutral(neutral));
     }
     let mut tokens_out = Vec::new();
@@ -281,9 +310,10 @@ enum Group {
     Degrees,
 }
 
-/// The neutral tree of a formula that translates exactly and has the
-/// declared quantity. A bare literal is dimensionless; a literal that takes a
-/// unit from the part's authoring unit system (§5.13) does not type-check.
+/// The neutral tree of a formula with no number that translates exactly and
+/// has the declared quantity. A formula that holds a number among other
+/// terms is read under Rule H1, and NX stores no value to test it against
+/// (§5.13), so it keeps its source text.
 fn neutral<'a>(
     text: &str,
     kind: &ValueKind,
@@ -305,7 +335,7 @@ fn neutral<'a>(
     while let Some(token) = tokens.next() {
         match token {
             Token::Space(_) => {}
-            Token::Number(number) => canonical.push_str(&canonical_number(number)?),
+            Token::Number(_) => return None,
             Token::Name(name) if tokens.peek() == Some(&Token::Mark('(')) => {
                 tokens.next();
                 match name {
@@ -364,27 +394,6 @@ fn neutral<'a>(
     (typed(&mut tree, &lookup)? == *expected).then_some(tree)
 }
 
-/// A number token in canonical form: a digit on each side of the point.
-fn canonical_number(number: &str) -> Option<String> {
-    let (mantissa, exponent) = match number.find(['e', 'E']) {
-        Some(at) => number.split_at(at),
-        None => (number, ""),
-    };
-    if mantissa.matches('.').count() > 1 || mantissa == "." {
-        return None;
-    }
-    let mut out = String::with_capacity(number.len() + 2);
-    if mantissa.starts_with('.') {
-        out.push('0');
-    }
-    out.push_str(mantissa);
-    if mantissa.ends_with('.') {
-        out.push('0');
-    }
-    out.push_str(exponent);
-    Some(out)
-}
-
 fn quantity_of(kind: &ValueKind) -> Option<Quantity> {
     match kind {
         ValueKind::Quantity(quantity) => Some(*quantity),
@@ -416,10 +425,6 @@ fn typed(
                 BinaryOp::Divide => combine(a, b, i8::checked_sub),
                 BinaryOp::Power if a == Quantity::REAL && b == Quantity::REAL => {
                     Some(Quantity::REAL)
-                }
-                BinaryOp::Power if b == Quantity::REAL => {
-                    let exponent = literal_number(right)?;
-                    scale(a, exponent)
                 }
                 _ => None,
             }
@@ -486,17 +491,6 @@ fn scale(quantity: Quantity, exponent: f64) -> Option<Quantity> {
         angle: power(quantity.angle)?,
         time: power(quantity.time)?,
     })
-}
-
-fn literal_number(tree: &Node<ParameterRef>) -> Option<f64> {
-    match tree {
-        Node::Number { value, unit } if unit.0.is_empty() => Some(value.get()),
-        Node::Unary {
-            op: UnaryOp::Negate,
-            operand,
-        } => literal_number(operand).map(|value| -value),
-        _ => None,
-    }
 }
 
 fn reference(id: &ParameterId) -> ParameterRef {

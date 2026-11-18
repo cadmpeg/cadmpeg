@@ -44,17 +44,11 @@
             "definition": {
               "kind": "expression",
               "value": {
-                "kind": "source",
+                "kind": "neutral",
                 "value": {
-                  "dialect": {
-                    "kind": "nx"
-                  },
-                  "tokens": [
-                    {
-                      "kind": "text",
-                      "value": "25"
-                    }
-                  ]
+                  "measures": [],
+                  "refs": [],
+                  "text": "25[mm]"
                 }
               }
             },

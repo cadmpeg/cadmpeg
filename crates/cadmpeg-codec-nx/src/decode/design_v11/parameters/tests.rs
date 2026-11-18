@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::features::DistinctMembers;
-use cadmpeg_ir::scalar::Length;
 use serde_json::json;
 
 use super::*;
@@ -60,7 +59,7 @@ fn source(tokens: &serde_json::Value) -> serde_json::Value {
 }
 
 #[test]
-fn a_literal_keeps_its_text_and_states_its_value() {
+fn a_literal_is_in_the_declared_unit_and_states_its_value() {
     let projected = projected(vec![
         parameter("1", "p1", "millimeter", "10"),
         parameter("2", "p2", "degree", "-30"),
@@ -74,10 +73,9 @@ fn a_literal_keeps_its_text_and_states_its_value() {
     );
     assert_eq!(projected[0].kind, ValueKind::Quantity(Quantity::LENGTH));
     assert_eq!(projected[0].unit, unit_of(UnitSymbol::Mm));
-    assert_eq!(
-        definition_json(&projected[0]),
-        source(&json!([{"kind": "text", "value": "10"}]))
-    );
+    assert_eq!(definition_json(&projected[0]), neutral("10[mm]", &[]));
+    assert_eq!(definition_json(&projected[1]), neutral("-30[deg]", &[]));
+    assert_eq!(definition_json(&projected[2]), neutral("2.5[in]", &[]));
     assert_eq!(
         projected[0].value,
         Some(ParameterValue::Number(FiniteReal::new(10.0).unwrap()))
@@ -142,33 +140,38 @@ fn a_unit_of_unit_symbols_declares_its_quantity() {
 
 #[test]
 fn a_formula_over_references_is_a_neutral_tree() {
-    let mut evaluated = parameter("2", "p2", "millimeter", "p1*2 + p3 / .5");
-    evaluated.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-        Length::new(24.0).unwrap(),
-    ));
     let projected = projected(vec![
         parameter("1", "p1", "millimeter", "10"),
-        evaluated,
+        parameter("2", "p2", "millimeter", "p1 + p3"),
         parameter("3", "p3", "inch", "1"),
+        parameter("4", "p4", "millimeter", "p1*2 + p3 / .5"),
     ]);
     assert_eq!(
         definition_json(&projected[1]),
-        neutral("$0 * 2 + $1 / 0.5", &["1", "3"])
+        neutral("$0 + $1", &["1", "3"])
     );
     assert_eq!(projected[1].value, None);
+    assert!(matches!(
+        projected[3].definition,
+        ParameterDefinition::Expression(Expression::Source { .. })
+    ));
 }
 
 #[test]
 fn nx_trigonometry_reads_degrees() {
     let projected = projected(vec![
         parameter("1", "p1", "millimeter", "10"),
-        parameter("2", "p2", "millimeter", "sin(30) * p1 * deg(1)"),
+        parameter("2", "p2", "millimeter", "sin(p1 / p5) * p1 * deg(p1 / p5)"),
         parameter("3", "p3", "degree", "45"),
         parameter("4", "p4", "millimeter", "cos(p3) * p1 + pi() * p1"),
+        parameter("5", "p5", "millimeter", "4"),
     ]);
     assert_eq!(
         definition_json(&projected[1]),
-        neutral("sin(30 * 1[deg]) * $0 * (1 * 1[rad] / 1[deg])", &["1"])
+        neutral(
+            "sin($0 / $1 * 1[deg]) * $0 * ($0 / $1 * 1[rad] / 1[deg])",
+            &["1", "5"]
+        )
     );
     assert_eq!(
         definition_json(&projected[3]),
@@ -177,7 +180,7 @@ fn nx_trigonometry_reads_degrees() {
 }
 
 #[test]
-fn a_literal_that_needs_the_authoring_unit_keeps_the_source_text() {
+fn a_formula_with_a_literal_among_its_terms_keeps_the_source_text() {
     let projected = projected(vec![
         parameter("1", "p1", "millimeter", "10"),
         parameter("2", "p2", "millimeter", "p1 + 5"),
