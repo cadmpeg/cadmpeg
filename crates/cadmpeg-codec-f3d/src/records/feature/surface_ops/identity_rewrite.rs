@@ -21,6 +21,7 @@ rewrite_native_record!(DesignSurfaceUntrimOperation, []; {loops, loops_offset, e
 rewrite_native_enum!(DesignSurfaceOffsetSupport, []; {
     BoundaryCarrier {boundary_record_index, boundary_reference_record_index, boundary_reference_offset, edge_record_indices, tolerance, tolerance_offset},
     FaceGroups {group_record_indices},
+    BodyCarrier {boundary_record_index, boundary_reference_record_index, boundary_reference_offset, body_record_index, tolerance, tolerance_offset},
 });
 rewrite_native_record!(DesignSurfacePatchBoundary, []; {scope_reference_ordinal, record_index, is_seed_selection, continuity, flip, scale, model_reference});
 rewrite_native_record!(DesignSurfaceStitchOperation, []; {gap_tolerance, gap_tolerance_offset, tolerance_record_index, settings_record_index});

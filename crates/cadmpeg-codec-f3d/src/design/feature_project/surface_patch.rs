@@ -476,11 +476,17 @@ fn surface_patch_sketch_profiles(
     {
         return false;
     }
-    let Some(tool_body) = references.values().last() else {
+    let (first_group_ordinal, tool_body) =
+        match groups.first().map(|group| group.scope_reference_ordinal) {
+            Some(0) => (0, references.values().last()),
+            Some(1) => (1, references.values().next()),
+            _ => return false,
+        };
+    let Some(tool_body) = tool_body else {
         return false;
     };
     groups.iter().enumerate().all(|(index, group)| {
-        let ordinal = index * 2;
+        let ordinal = first_group_ordinal + index * 2;
         usize::try_from(group.scope_reference_ordinal).ok() == Some(ordinal)
             && group.role() == DesignOperandRole::PROFILE
             && group.record_index != *tool_body
