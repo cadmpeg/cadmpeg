@@ -1434,6 +1434,32 @@ Parsed by:
 | 32 | 4 | `asset_presence` | `u32` | little | spec | `u32 1` at offset `32` · value `1` |
 | 36 | 4 | `asset_uuid_code_unit_count` | `u32` | little | spec | the asset UUID code-unit count at offset `36` |
 
+## `design_hole_reconstructed_plane_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 126 B
+
+Offsets are relative to the reconstructed plane record indexed header; the record continues after the extent maxima.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Relative to that header, it stores |
+| 15 | 4 | `name_length` | `u32` | little | spec | a zero u32 name length at offset `15` · value `0` |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | a leading-block presence byte at offset `19` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | a property-block presence byte at offset `20` |
+| 21 | 16 | `extent_minimum` | `f64[2]` | little | spec | two f64 minimum extents at offset `21` |
+| 37 | 1 | `zero_byte` | `u8` | little | spec | a zero byte at offset `37` · value `0` |
+| 38 | 24 | `origin` | `f64[3]` | little | spec | the plane origin at offset `38` |
+| 62 | 24 | `u_axis` | `f64[3]` | little | spec | the unit in-plane u axis at offset `62` |
+| 86 | 24 | `v_axis` | `f64[3]` | little | spec | the unit in-plane v axis at offset `86` |
+| 110 | 16 | `extent_maximum` | `f64[2]` | little | spec | two f64 maximum extents at offset `110` |
+
+Unstated regions:
+
+- `11..15` (4 B): The specification states no field in this range.
+
 ## `scale_modern_operation_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 79 B
@@ -6534,7 +6560,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Relative to its primary indexed header |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Relative to that header |
 | 20 | 1 | `prologue_marker` | `u8` | little | spec | `01 00 00 00 00` at offsets 20 through 24 |
 | 21 | 4 | `prologue_value` | `u32` | little | spec | `01 00 00 00 00` at offsets 20 through 24 |
 | 25 | 8 | `occurrence_identity` | `u64` | little | spec | an occurrence identity u64 at offset 25 |
