@@ -785,7 +785,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder places a Canvas with a zero byte in a non-legacy layout by its boundary segments and payload frame, keeps the byte in the native `second_boundary_flag` field, and reports `appearance.reference-image-flag-assumed`.
 
-### DR-812. Empty-label named tails and 78-byte fixed tails
+### DR-879. Empty-label named tails and 78-byte fixed tails
 
 **Question.** How does a reader tell an empty-label named parameter-scope tail from a 78-byte fixed tail?
 
