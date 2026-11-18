@@ -3396,7 +3396,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** How do anchor kinds `2` and `3`, their mode word, the auxiliary scalars, and the boundary flag define fixed and moving parting-line Drafts?
 
-**Known.** These prefixes name the angle owners, drafted-face group, pull group, tool group, and an optional fixed-edge group. The public Draft tool reference defines fixed and moving parting lines, fixed-line side modes, moving-line angle directions, and fixed edges. Both stored angle lanes can be equal while the mode word differs.
+**Known.** These prefixes name the angle owners, drafted-face group, pull group, tool group, and an optional fixed-edge group. The public Draft tool reference defines fixed and moving parting lines, fixed-line side modes, moving-line angle directions, and fixed edges. Both stored angle lanes can be equal while the mode word differs. The file-backed legacy layout has anchor kind `2`, mode `1`, a zero second angle, and an absent fixed-edge reference. The reading for other parting controls follows the group roles and target types. Synthetic cases exercise mode `2`, including kind `3` with a nonzero second angle and a present fixed-edge reference.
 
 **Need.** Controlled changes of each parting-line option with independently identified signed angles, tool curves, and fixed edges.
 

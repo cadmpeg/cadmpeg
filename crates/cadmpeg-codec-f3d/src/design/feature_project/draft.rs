@@ -41,7 +41,7 @@ pub(super) fn project(
                 ) {
                     if let Some(definition) = exact(scope, inputs)? {
                         losses.push(F3dLossCode::DraftPartingControlsPartial.note(format!(
-                            "Draft scope {} transfers the work-plane pull and face tool from its two anchor groups and retains the remaining parting controls in its native construction (DR-812).", scope.id
+                            "Draft scope {} uses the group roles and target types to read its two anchor groups as the legacy work-plane pull and face tool. The native construction retains the remaining parting controls (DR-812).", scope.id
                         )));
                         return Ok(definition);
                     }
