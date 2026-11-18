@@ -710,9 +710,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
             targets: cadmpeg_ir::features::FaceSelection::Native(targets),
-            tool: cadmpeg_ir::features::SplitFaceTool::Path(
-                cadmpeg_ir::features::PathRef::Native(tool),
-            ),
+            tool: cadmpeg_ir::features::SplitFaceTool::Native(tool),
+            ..
         }) if targets.ends_with("#400") && tool.ends_with("#100")
     ));
 
