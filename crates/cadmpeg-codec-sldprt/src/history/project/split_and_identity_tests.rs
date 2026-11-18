@@ -71,6 +71,7 @@ fn split_face_path_uses_the_prebound_source_sketch() {
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
             targets: FaceSelection::Unresolved,
             tool: SplitFaceTool::Path(PathRef::Native(sketch.id.clone())),
+            method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
         })
     );
     assert_eq!(
@@ -84,6 +85,7 @@ fn split_face_path_binds_to_projected_sketch_geometry() {
     let mut definition = FeatureDefinition::Operation(FeatureOperation::SplitFace {
         targets: FaceSelection::Unresolved,
         tool: SplitFaceTool::Path(PathRef::Native("sketch-native".into())),
+        method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
     });
     let feature_id = FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar");
     let sketch_id =
