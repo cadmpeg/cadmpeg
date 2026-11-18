@@ -490,7 +490,8 @@
           "kind": "group",
           "native_ref": "/Arm",
           "sketches": [],
-          "source_name": "Arm"
+          "source_name": "Arm",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -499,7 +500,8 @@
           "kind": "group",
           "native_ref": "/Arm/Base",
           "sketches": [],
-          "source_name": "Base"
+          "source_name": "Base",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -510,7 +512,8 @@
           "kind": "object",
           "native_ref": "/Arm/Base/Geom",
           "sketches": [],
-          "source_name": "Geom"
+          "source_name": "Geom",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -519,7 +522,8 @@
           "kind": "group",
           "native_ref": "/Arm/Finger",
           "sketches": [],
-          "source_name": "Finger"
+          "source_name": "Finger",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -528,7 +532,8 @@
           "kind": "group",
           "native_ref": "/Arm/Link",
           "sketches": [],
-          "source_name": "Link"
+          "source_name": "Link",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [

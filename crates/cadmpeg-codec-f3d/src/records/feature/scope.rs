@@ -52,9 +52,8 @@ use super::surface_ops::{
     DesignSurfaceUntrimOperation,
 };
 use super::thread::DesignThreadConstruction;
-use super::work_geometry::{
-    DesignWorkAxisConstruction, DesignWorkPlaneConstruction, DesignWorkPointConstruction,
-};
+use super::work_axes::DesignWorkAxisConstruction;
+use super::work_geometry::{DesignWorkPlaneConstruction, DesignWorkPointConstruction};
 use crate::layout::named_parameter_scope_tail as named_scope_tail;
 use crate::records::identity::{deserialize_absent_u64_offset, DesignEntityId, ReferenceRun};
 use crate::records::recipes::ConstructionRecipeKind;
@@ -309,6 +308,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_path_pattern_settings,
     crate::records::feature::patterns::DesignPathPatternSettings,
     "path_pattern_settings"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_silhouette_split_operation,
+    super::silhouette_split::DesignSilhouetteSplit,
+    "silhouette_split_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_scale_operation,
@@ -708,6 +712,7 @@ macro_rules! design_feature_kinds {
         impl DesignScopePayload {
             /// The source envelope is decoded, but its optional family-specific data is not.
             pub(crate) fn is_uninterpreted(&self) -> bool {
+                if let Self::WorkAxis(value) = self {return value.as_ref().is_none_or(|axis| axis.candidates.iter().all(|candidate| candidate.source.is_none() && candidate.origin.iter().chain(&candidate.displacement).all(|field| field.value().is_none())));}
                 if matches!(self, Self::Emboss(_)) {
                     return true;
                 }
@@ -808,6 +813,7 @@ design_feature_kinds! {
         SurfaceUntrim => "SurfaceUntrim": Option<DesignSurfaceUntrimOperation>,
         Hole => "Hole": crate::records::feature::hole::DesignHoleScope,
         Scale => "Scale": Option<DesignScaleOperation>,
+        SilhouetteSplit => "SilhouetteSplit": Option<super::silhouette_split::DesignSilhouetteSplit>,
         Thread => "Thread": Option<DesignThreadConstruction>,
         Emboss => "Emboss": Option<DesignEmbossConstruction>,
         EdgeFlange => "EdgeFlange": DesignEdgeFlangeScope,
@@ -1143,6 +1149,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_scale_operation"
     )]
     scale_operation: Option<DesignScaleOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_silhouette_split_operation"
+    )]
+    silhouette_split_operation: Option<super::silhouette_split::DesignSilhouetteSplit>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1514,18 +1526,22 @@ where
         _ => {
             return Err(serde::de::Error::custom(
                 "work_plane_reference and work_plane_reference_offset must occur together",
-            ))
+            ));
         }
     };
     match (wire.transform, wire.transform_offset) {
         (None, None) if reference.is_none() && wire.construction.is_none() => Ok(None),
-        (Some(work_plane_transform), Some(work_plane_transform_offset)) => Ok(Some(DesignWorkPlaneTransform {
-            work_plane_transform,
-            work_plane_transform_offset,
-            reference,
-            work_plane_construction: wire.construction,
-        })),
-        _ => Err(serde::de::Error::custom("work_plane_transform and work_plane_transform_offset are required for work_plane frame data")),
+        (Some(work_plane_transform), Some(work_plane_transform_offset)) => {
+            Ok(Some(DesignWorkPlaneTransform {
+                work_plane_transform,
+                work_plane_transform_offset,
+                reference,
+                work_plane_construction: wire.construction,
+            }))
+        }
+        _ => Err(serde::de::Error::custom(
+            "work_plane_transform and work_plane_transform_offset are required for work_plane frame data",
+        )),
     }
 }
 
@@ -1577,17 +1593,21 @@ where
         _ => {
             return Err(serde::de::Error::custom(
                 "joint_origin_reference and joint_origin_reference_offset must occur together",
-            ))
+            ));
         }
     };
     match (wire.transform, wire.transform_offset) {
         (None, None) if reference.is_none() => Ok(None),
-        (Some(joint_origin_transform), Some(joint_origin_transform_offset)) => Ok(Some(DesignJointOriginTransform {
-            joint_origin_transform,
-            joint_origin_transform_offset,
-            reference,
-        })),
-        _ => Err(serde::de::Error::custom("joint_origin_transform and joint_origin_transform_offset are required for joint_origin frame data")),
+        (Some(joint_origin_transform), Some(joint_origin_transform_offset)) => {
+            Ok(Some(DesignJointOriginTransform {
+                joint_origin_transform,
+                joint_origin_transform_offset,
+                reference,
+            }))
+        }
+        _ => Err(serde::de::Error::custom(
+            "joint_origin_transform and joint_origin_transform_offset are required for joint_origin frame data",
+        )),
     }
 }
 
@@ -1988,6 +2008,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
+        if wire.silhouette_split_operation.is_some() {
+            present.push("silhouette_split_operation");
+        }
         if wire.reverse_normal_operation.is_some() {
             present.push("reverse_normal_operation");
         }
@@ -2156,7 +2179,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     Some(_) => {
                         return Err(DesignParameterScopePayloadError(
                             "direct_face_operation.operation does not match OffsetFaces".into(),
-                        ))
+                        ));
                     }
                 })
             }
@@ -2172,7 +2195,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                         return Err(DesignParameterScopePayloadError(
                             "path_feature_construction or sweep_profile does not match Revolve"
                                 .into(),
-                        ))
+                        ));
                     }
                 })
             }
@@ -2183,7 +2206,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     Some(_) => {
                         return Err(DesignParameterScopePayloadError(
                             "direct_face_operation.operation does not match Shell".into(),
-                        ))
+                        ));
                     }
                 })
             }
@@ -2194,7 +2217,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     Some(_) => {
                         return Err(DesignParameterScopePayloadError(
                             "direct_face_operation.operation does not match Thicken".into(),
-                        ))
+                        ));
                     }
                 })
             }
@@ -2211,7 +2234,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 Some(_) => {
                     return Err(DesignParameterScopePayloadError(
                         "path_feature_construction or sweep_profile does not match Loft".into(),
-                    ))
+                    ));
                 }
             }),
             DesignFeatureKind::Sweep => DesignScopePayload::Sweep(match wire.path_feature.take() {
@@ -2226,7 +2249,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                         Some(_) => {
                             return Err(DesignParameterScopePayloadError(
                                 "path_feature_construction.kind does not match Sweep".into(),
-                            ))
+                            ));
                         }
                     };
                     Some(DesignSweepScope {
@@ -2244,7 +2267,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 Some(_) => {
                     return Err(DesignParameterScopePayloadError(
                         "path_feature_construction or sweep_profile does not match Pipe".into(),
-                    ))
+                    ));
                 }
             }),
             DesignFeatureKind::SurfacePatch => {
@@ -2280,6 +2303,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 extend_tool: wire.split_tool_extension.take(),
             }),
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
+            DesignFeatureKind::SilhouetteSplit => {
+                DesignScopePayload::SilhouetteSplit(wire.silhouette_split_operation.take())
+            }
             DesignFeatureKind::ReverseNormal => {
                 DesignScopePayload::ReverseNormal(wire.reverse_normal_operation.take())
             }
@@ -2374,7 +2400,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     Some(_) => {
                         return Err(DesignParameterScopePayloadError(
                             "solid_primitive.primitive does not match SpherePrimitive".into(),
-                        ))
+                        ));
                     }
                 })
             }
@@ -2385,7 +2411,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     Some(_) => {
                         return Err(DesignParameterScopePayloadError(
                             "solid_primitive.primitive does not match TorusPrimitive".into(),
-                        ))
+                        ));
                     }
                 })
             }
@@ -2396,7 +2422,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     Some(_) => {
                         return Err(DesignParameterScopePayloadError(
                             "solid_primitive.primitive does not match BoxPrimitive".into(),
-                        ))
+                        ));
                     }
                 })
             }
@@ -2407,7 +2433,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     Some(_) => {
                         return Err(DesignParameterScopePayloadError(
                             "solid_primitive.primitive does not match CylinderPrimitive".into(),
-                        ))
+                        ));
                     }
                 })
             }
@@ -2426,6 +2452,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.move_operation.is_some()
             || wire.modify_operation.is_some()
             || wire.scale_operation.is_some()
+            || wire.silhouette_split_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
             || wire.contour_flange_operation.is_some()
@@ -2617,6 +2644,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             move_operation: None,
             modify_operation: None,
             scale_operation: None,
+            silhouette_split_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
             contour_flange_operation: None,
@@ -2734,6 +2762,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Modify(value) => wire.modify_operation = value,
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
+            }
+            DesignScopePayload::SilhouetteSplit(value) => {
+                wire.silhouette_split_operation = value;
             }
             DesignScopePayload::ReverseNormal(value) => {
                 wire.reverse_normal_operation = value;
@@ -2961,6 +2992,13 @@ impl DesignParameterScope {
                 && tail == crate::layout::typed_reference_parameter_scope_tail::LEN);
         let typed_canvas =
             typed && kind == "Canvas" && tail == crate::layout::canvas_scope_typed_tail::LEN;
+        if matches!(draft.payload, DesignScopePayload::SilhouetteSplit(Some(_)))
+            && (typed
+                || draft.reference_members.len() != 4
+                || draft.reference_members.values().any(|&index| index == 0))
+        {
+            return Err(fail("silhouette_split_operation/reference_members"));
+        }
         if typed && named_tail.is_some() {
             return Err(fail("combine_named_tail/reference_members"));
         }
@@ -3012,13 +3050,15 @@ impl DesignParameterScope {
                 }) || (draft.history_state_id.is_some()
                     && draft.previous_history_state_id.is_none())
                 {
-                    return Err(fail("previous_history_state_id_offset/history_state_id/previous_history_state_id"));
+                    return Err(fail(
+                        "previous_history_state_id_offset/history_state_id/previous_history_state_id",
+                    ));
                 }
             }
             None => {
                 return Err(fail(
                     "previous_history_state_id_offset/previous_history_state_id",
-                ))
+                ));
             }
         }
         let empty_table_at = (kind == "As-built")

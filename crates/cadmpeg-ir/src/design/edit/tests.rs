@@ -241,6 +241,7 @@ fn product_definition(bodies: &[u32]) -> crate::products::ProductDefinition {
         "bom_properties": {},
         "bodies": bodies.iter().map(|key| format!("test:edit:body#{key}")).collect::<Vec<_>>(),
         "sketches": [],
+        "tessellations": [],
     }))
     .unwrap()
 }

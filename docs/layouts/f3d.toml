@@ -24,7 +24,7 @@ Primary indexed-header prefixes use header-relative offsets.
 Shared record notes:
 Records `design_decal_scope_prefix`, `design_decal_scope_extended_prefix`, `design_decal_scope_typed_prefix`, `design_decal_scope_typed_extended_prefix`: Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
 Records `chamfer_set_equal`, `chamfer_set_two_distances`, `chamfer_set_distance_angle`, `chamfer_set_compact_equal`: Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
-Records `fillet_set_constant`, `fillet_set_chordal`, `fillet_set_compact_constant`: Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+Records `fillet_set_constant`, `fillet_set_chordal`, `fillet_set_compact_constant`, `fillet_set_asymmetric`, `fillet_set_variable`: Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
 Records `design_draft_scope_class318_shifted`, `design_draft_scope_class372`, `design_draft_scope_class448`: Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
 Records `paramesh_flagged_mesh_body_join_prefix`, `paramesh_mesh_body_join_prefix`: Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
 Records `paramesh_mesh_collection_prefix`, `paramesh_flagged_mesh_collection_prefix`: Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix.
@@ -2756,6 +2756,233 @@ source = "spec"
 anchor = "`+89: four bytes`"
 
 [[record]]
+name = "fillet_set_asymmetric"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+31: EdgeOffset1 owner reference`"
+size = 97
+note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A fillet set is one indexed record"
+
+[[record.field]]
+name = "zero_run_10_at_11"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "form_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`+21: u8 1`"
+value = 1
+
+[[record.field]]
+name = "zero_run_5_at_22"
+offset = 22
+type = "bytes[5]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "compatibility_word"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "`+27: u32 1`"
+value = 1
+
+[[record.field]]
+name = "offset_one_owner_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "`+31: EdgeOffset1 owner reference`"
+
+[[record.field]]
+name = "offset_two_owner_reference"
+offset = 42
+type = "bytes[11]"
+source = "spec"
+anchor = "`+42: EdgeOffset2 owner reference`"
+
+[[record.field]]
+name = "zero_run_19_at_53"
+offset = 53
+type = "bytes[19]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 72
+type = "bytes[11]"
+source = "spec"
+anchor = "`+72: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_1_at_83"
+offset = 83
+type = "bytes[1]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "first_control_word"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "`+84: u32 2`"
+value = 2
+
+[[record.field]]
+name = "zero_run_5_at_88"
+offset = 88
+type = "bytes[5]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "second_control_word"
+offset = 93
+type = "u32"
+source = "spec"
+anchor = "`+93: u32 3`"
+value = 3
+
+[[record]]
+name = "fillet_set_variable"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs"
+kind = "byte"
+section = "3.1"
+anchor = "`+81: StartRadius owner reference`"
+size = 153
+note = "Offsets are relative to the set record indexed header; the frame ends at the next indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A fillet set is one indexed record"
+
+[[record.field]]
+name = "zero_run_18_at_11"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 29
+type = "bytes[11]"
+source = "spec"
+anchor = "`+29: edge-group reference`"
+
+[[record.field]]
+name = "zero_run_7_at_40"
+offset = 40
+type = "bytes[7]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "midpoint_parameter_count"
+offset = 47
+type = "u32"
+source = "spec"
+anchor = "`+47: u32 2`"
+value = 2
+
+[[record.field]]
+name = "midpoint_parameter_one_owner_reference"
+offset = 51
+type = "bytes[11]"
+source = "spec"
+anchor = "`+51: first MidParams owner reference`"
+
+[[record.field]]
+name = "midpoint_parameter_two_owner_reference"
+offset = 62
+type = "bytes[11]"
+source = "spec"
+anchor = "`+62: second MidParams owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_73"
+offset = 73
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "radius_count"
+offset = 77
+type = "u32"
+source = "spec"
+anchor = "`+77: u32 4`"
+value = 4
+
+[[record.field]]
+name = "start_radius_owner_reference"
+offset = 81
+type = "bytes[11]"
+source = "spec"
+anchor = "`+81: StartRadius owner reference`"
+
+[[record.field]]
+name = "end_radius_owner_reference"
+offset = 92
+type = "bytes[11]"
+source = "spec"
+anchor = "`+92: EndRadius owner reference`"
+
+[[record.field]]
+name = "middle_radius_one_owner_reference"
+offset = 103
+type = "bytes[11]"
+source = "spec"
+anchor = "`+103: first MidRadius owner reference`"
+
+[[record.field]]
+name = "middle_radius_two_owner_reference"
+offset = 114
+type = "bytes[11]"
+source = "spec"
+anchor = "`+114: second MidRadius owner reference`"
+
+[[record.field]]
+name = "zero_run_13_at_125"
+offset = 125
+type = "bytes[13]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record.field]]
+name = "tangency_weight_owner_reference"
+offset = 138
+type = "bytes[11]"
+source = "spec"
+anchor = "`+138: TangencyWeight owner reference`"
+
+[[record.field]]
+name = "zero_run_4_at_149"
+offset = 149
+type = "bytes[4]"
+source = "spec"
+anchor = "Every byte that the form does not name is zero"
+
+[[record]]
 name = "thicken_scope_prologue"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thicken_shell.rs"
 kind = "byte"
@@ -4178,6 +4405,78 @@ offset = 117
 type = "u32"
 source = "spec"
 anchor = "the counted input-reference count at offset `117`"
+
+[[record]]
+name = "silhouette_split_scope_header"
+kind = "byte"
+section = "3.1"
+anchor = "The Silhouette Split scope starts with the indexed header and nine zero bytes through offset `19`."
+size = 21
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/silhouette_split.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The Silhouette Split scope starts with the indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes through offset `19`"
+
+[[record.field]]
+name = "property_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "A property flag at offset `20`"
+
+[[record]]
+name = "silhouette_split_selection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Eight zero bytes follow the property block."
+size = 31
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/silhouette_split.rs"
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "Eight zero bytes follow the property block."
+
+[[record.field]]
+name = "carrier"
+offset = 8
+type = "bytes[11]"
+source = "spec"
+anchor = "The next plain local reference repeats the carrier"
+
+[[record.field]]
+name = "result_mode"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "followed by the u32 result mode"
+
+[[record.field]]
+name = "zero_word"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "a zero u32 and a u32 browser-reference count"
+
+[[record.field]]
+name = "browser_count"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "a u32 browser-reference count"
 
 [[record]]
 name = "design_hole_point_data_v4_prefix"
@@ -14954,10 +15253,12 @@ offset = 0
 size = 11
 note = "The indexed carrier header occupies the first eleven bytes."
 
-[[record.gap]]
+[[record.field]]
+name = "zero_run"
 offset = 11
-size = 10
-note = "Bytes 11 through 20 are zero."
+type = "bytes[10]"
+source = "spec"
+anchor = "Both carriers store ten zero bytes at offsets 11 through 20"
 
 [[record.field]]
 name = "value_count"
@@ -15005,10 +15306,12 @@ offset = 0
 size = 11
 note = "The indexed carrier header occupies the first eleven bytes."
 
-[[record.gap]]
+[[record.field]]
+name = "zero_run"
 offset = 11
-size = 10
-note = "Bytes 11 through 20 are zero."
+type = "bytes[10]"
+source = "spec"
+anchor = "Both carriers store ten zero bytes at offsets 11 through 20"
 
 [[record.field]]
 name = "value_count"
@@ -15042,6 +15345,51 @@ anchor = "u32 value 1 at offset 93"
 offset = 97
 size = 98
 note = "The generation-specific construction/reference tail ends at the paired header."
+
+[[record]]
+name = "work_axis_direct_scope_long"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs"
+kind = "byte"
+section = "3.1"
+anchor = "| 302 | 262 | 268 |"
+size = 268
+
+[[record.field]]
+name = "frame"
+offset = 0
+type = "bytes[268]"
+source = "spec"
+anchor = "| 302 | 262 | 268 |"
+
+[[record]]
+name = "work_axis_direct_scope_short"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs"
+kind = "byte"
+section = "3.1"
+anchor = "| 361 | 258 | 254 |"
+size = 254
+
+[[record.field]]
+name = "frame"
+offset = 0
+type = "bytes[254]"
+source = "spec"
+anchor = "| 361 | 258 | 254 |"
+
+[[record]]
+name = "work_axis_direct_support"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs"
+kind = "byte"
+section = "3.1"
+anchor = "and is 293 bytes"
+size = 293
+
+[[record.field]]
+name = "frame"
+offset = 0
+type = "bytes[293]"
+source = "spec"
+anchor = "and is 293 bytes"
 
 [[record]]
 name = "coil_compact_placement_matrix_frame"
@@ -20856,9 +21204,9 @@ name = "component_insert_identity_scope_shifted_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "Class `414` paired with class `264` also has 257- and 267-byte shifted identity frames"
+anchor = "Shifted identity insertion scopes have a 122-byte prefix"
 size = 122
-note = "Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122."
+note = "Offsets are relative to the primary indexed header. The 256-, 257- and 267-byte identity forms share this prefix. The generation-specific scope tail begins at offset 122."
 
 [[record.field]]
 name = "indexed_header"
@@ -26154,6 +26502,35 @@ type = "bytes[42]"
 source = "spec"
 anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
 
+
+[[record]]
+name = "sheet_metal_rule_v0_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A version-0 sheet-metal rule stores a"
+size = 25
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "settings_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "[u32 settings-reference count](../layouts/f3d.md) at offset 21"
 
 [[record]]
 name = "sheet_metal_rule_prefix"
@@ -39576,3 +39953,84 @@ offset = 26
 type = "u32"
 source = "spec"
 anchor = "The ReplaceFace prologue"
+
+[[record]]
+name = "work_axis_two_point_carrier"
+kind = "byte"
+section = "3.1"
+anchor = "Reference zero is a 232-byte solved-axis carrier"
+size = 232
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed record header precedes the fixed payload."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After its indexed header it stores ten zero bytes"
+
+[[record.field]]
+name = "value_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "u32 value count 8"
+
+[[record.field]]
+name = "axis_values"
+offset = 25
+type = "f64[8]"
+source = "spec"
+anchor = "eight f64 values at offset 25"
+
+[[record.gap]]
+offset = 89
+size = 29
+note = "The fixed payload separates its values and reference count."
+
+[[record.field]]
+name = "reference_count"
+offset = 118
+type = "u32"
+source = "spec"
+anchor = "A u32 reference count of two at offset 118"
+
+[[record.gap]]
+offset = 122
+size = 110
+note = "The two marked references and generation tail end at the paired header."
+
+[[record]]
+name = "work_axis_endpoint_carrier"
+kind = "byte"
+section = "3.1"
+anchor = "Those records are 197-byte point carriers"
+size = 197
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed record header precedes the fixed point payload."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[31]"
+source = "spec"
+anchor = "each stores 31 zero bytes after its indexed header"
+
+[[record.field]]
+name = "position"
+offset = 42
+type = "f64[3]"
+source = "spec"
+anchor = "a three-coordinate point at offset 42"
+
+[[record.gap]]
+offset = 66
+size = 131
+note = "The generation tail ends at the paired indexed header."

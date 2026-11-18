@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity rewrite implementations for feature records.
 
-use super::surfaces::UntrimLoops;
+use super::surfaces::{SilhouetteSplitMode, UntrimLoops};
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
@@ -225,7 +225,7 @@ rewrite_enum!(FeatureOperation, []; {
     DatumPlane { frame },
     DatumThreePointPlane { frame, points },
     DatumOffsetPlane { reference, distance },
-    DatumAxis { origin, direction },
+    DatumAxis { axis },
     DatumPoint { position, construction },
     PointGeometry { position },
     LineSegment { segment },
@@ -301,6 +301,7 @@ Thicken { faces, thickness, side, result, tangent_chain },
     TrimBodiesAtPlane { targets, plane, keep },
     SplitBody { targets, tool, extend_tool },
     SplitFace { targets, tool },
+    SilhouetteSplit { target, direction, mode },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
     ReplaceFace { operands },
@@ -541,6 +542,8 @@ rewrite_record!(SketchProfileRegions, []; (field0));
 
 rewrite_record!(SplitFacePlanes, []; (field0));
 
+rewrite_enum!(SilhouetteSplitMode, []; { Unresolved, FacesOnly, ShelledBody, SolidBody });
+
 rewrite_enum!(SplitBodyTool, []; {
     Faces(field0),
     Plane { plane },
@@ -613,7 +616,6 @@ rewrite_enum!(VertexSelection, []; {
 rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
 rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
-rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });

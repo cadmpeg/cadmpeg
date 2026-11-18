@@ -110,7 +110,8 @@
           "kind": "group",
           "native_ref": "/Future",
           "sketches": [],
-          "source_name": "Future"
+          "source_name": "Future",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

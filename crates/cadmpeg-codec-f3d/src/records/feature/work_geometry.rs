@@ -40,52 +40,6 @@ cadmpeg_core::named_optional_field!(
     i64,
     "resolved_vertex_slot"
 );
-cadmpeg_core::named_optional_field!(deserialize_source, DesignWorkAxisSource, "source");
-/// Source form for an exact solved `WorkAxis` construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) enum DesignWorkAxisSource {
-    /// The axis carrier and two endpoint point carriers are cross-checked.
-    TwoPoint {
-        /// Ordered endpoint carrier record indices.
-        point_record_indices: [u32; 2],
-        /// Byte offsets of the first coordinate in each endpoint carrier.
-        point_offsets: [u64; 2],
-    },
-    /// A generation-specific carrier stores the axis directly and has one
-    /// additional construction-support record in the enclosing scope.
-    DirectCarrier {
-        /// Indexed record carrying the origin and displacement values.
-        carrier_record_index: u32,
-        /// Enclosing scope's second ordered construction record.
-        support_record_index: u32,
-    },
-    PointDirection {
-        carrier_record_index: u32,
-        reference_type: u32,
-        input_record_indices: Vec<u32>,
-    },
-}
-
-/// Exact solved construction carried by a `WorkAxis` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct DesignWorkAxisConstruction {
-    /// First construction point in model centimetres.
-    pub(crate) origin: [FiniteReal; 3],
-    /// Displacement from the first construction point to the second, in centimetres.
-    pub(crate) displacement: [FiniteReal; 3],
-    /// Byte offset of the first origin coordinate.
-    pub(crate) origin_offset: u64,
-    /// Byte offset of the first displacement component.
-    pub(crate) displacement_offset: u64,
-    /// Native record form that supplied or corroborated the axis geometry.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_source"
-    )]
-    pub(crate) source: Option<DesignWorkAxisSource>,
-}
-
 /// One source-record reference used by a `WorkPoint` construction rule.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "DesignWorkPointInputWire")]
@@ -522,7 +476,7 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
             _ => {
                 return Err(
                     "recipe_state_id and resolved_vertex_slot must be present together".into(),
-                )
+                );
             }
         };
         Self::try_new(DesignVertexRecipeDraft {
