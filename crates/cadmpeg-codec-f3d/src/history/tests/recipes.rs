@@ -14,7 +14,8 @@
 use crate::history_records::AsmHistory;
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::{bind_body_recipe_operand_history_candidates, BindingHistories};
+use crate::history::body_recipe_operands::bind_body_recipe_operand_history_candidates;
+use crate::history::BindingHistories;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
 };

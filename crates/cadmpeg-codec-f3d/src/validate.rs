@@ -6616,7 +6616,7 @@ fn validate_body_recipe_operands<'a>(
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
     );
-    history::bind_body_recipe_operand_history_candidates(
+    history::body_recipe_operands::bind_body_recipe_operand_history_candidates(
         &mut expected_operands,
         &native.construction_recipes,
         &native.design_parameter_scopes,
