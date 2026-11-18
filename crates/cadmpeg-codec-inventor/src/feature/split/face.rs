@@ -129,6 +129,7 @@ pub(super) fn definition<'a>(
         tool: SplitFaceTool::Plane {
             plane: plane(work_plane.record_ordinal()?)?,
         },
+        method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
     }))
 }
 

@@ -54,7 +54,7 @@ pub(crate) fn prefix_len(version: u8) -> Option<usize> {
     match version {
         19 => Some(v19::THICKNESS),
         20 | 23 => Some(legacy::THICKNESS),
-        29 | 31 => Some(wide::THICKNESS),
+        29..=31 => Some(wide::THICKNESS),
         _ => None,
     }
 }
