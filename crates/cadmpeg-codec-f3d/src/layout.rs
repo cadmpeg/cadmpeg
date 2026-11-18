@@ -2321,6 +2321,8 @@ pub(crate) mod assembly_variable_reference_operand_path_locator {
 /// Offsets are relative to the count. The run starts at scope offset 47 in the 378- and 399-byte As-built forms, offset 69 in the 422-byte As-built form, offset 80 in the 444-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, offset 358 in the 633-, 732-, and 744-byte forms, offset 537 in the 945-byte form, offset 530 in the 806- and 861-byte forms, and offset 552 in the 850-byte form.
 /// ```
 pub(crate) mod assembly_operand_path_locator_reference_run {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 26;
     /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 4;
 }
@@ -8365,10 +8367,14 @@ pub(crate) mod sketch_folder_prefix {
 /// Offsets are relative to the primary indexed header. K = 0.
 /// ```
 pub(crate) mod assembly_as_built_scope_378 {
+    /// Offset of `locator_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const LOCATOR_COUNT: usize = 47;
     /// Offset of `first_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const FIRST_LOCATOR_REFERENCE: usize = 51;
     /// Offset of `second_locator_reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const SECOND_LOCATOR_REFERENCE: usize = 62;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT: usize = 163;
 }
 
 /// Byte offsets for the `assembly_as_built_scope_422` record.
@@ -10971,4 +10977,24 @@ pub(crate) mod derived_base_source_pair_prefix {
     pub(crate) const TERMINATOR: usize = 96;
     /// Stated value of `terminator` (`u8`). Spec §3.1.
     pub(crate) const TERMINATOR_VALUE: u8 = 0;
+}
+
+/// Byte offsets for the `assembly_motion_parent_run` record.
+///
+/// Spec §Assembly operands.
+pub(crate) mod assembly_motion_parent_run {
+    /// Offset of `count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COUNT: usize = 20;
+    /// Offset of `first_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_REFERENCE: usize = 24;
+}
+
+/// Byte offsets for the `assembly_motion_parent_entry` record.
+///
+/// Spec §Assembly operands. Record length 15 B.
+pub(crate) mod assembly_motion_parent_entry {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE: usize = 0;
 }

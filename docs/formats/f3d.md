@@ -2574,6 +2574,18 @@ the operand construction references and transforms. The 378-, 422-, and
 444-byte forms' locators are wide operand-path locators: each operand frame is its wide locator's nonzero
 reference and transform, or the identity when the locator's identity flag is 1.
 
+An `As-built` scope of type `AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0` version 1
+with no additional owners can use two compact version-3 locators with null
+construction references. The owner count at offset 43 is zero and the
+locator count at offset 47 is two. The two locator references are followed
+by a marked reference to the version-5 joint at the scope index minus one.
+The reference-table count at offset 163 is seven or nine. The four alignment
+owners occur once and contiguously in the reference table, in local order
+`OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ`. The scope tail from the feature
+ordinal occupies 87 bytes. With the eight-code-unit name the scope spans
+355 or 377 bytes. Each compact locator supplies one frame and its wrapper
+names the typed occurrence paths in operand order.
+
 The wide locator identity frame is 97 bytes. Its zero separator is at offset
 68, scope backlink at 69, wrapper reference at 80, discriminator at 91, and
 two zero tail bytes at 95. The wide locator matrix frame is 225 bytes. Its
@@ -2766,6 +2778,13 @@ The direct-path subform of the class-283/264 and class-347/260 generations uses 
 The class-307 JointOrigin scope is 366 bytes and has a paired class-264 header. It is a pathless operand qualifier for the current document root. Marked references occur at +21 and +33. One 36-code-unit identity GUID starts at +44. A three-byte separator starts at +120. A u32 reference count 12 at +123 introduces twelve marked references starting at +127. Four FF bytes follow the reference table. The 11-code-unit `JointOrigin` kind starts at +263, and the feature ordinal is at +289. An operand frame that references this scope uses the scope's solved transform and projects an operand with no occurrence or external-document qualifier. A variable-reference `Assemble` can pair this qualifier with a class-363 occurrence-path qualifier; operand-frame order fixes operand order.
 
 An assembly joint has a joint record and, when the joint has relative motion, a motion record. An adjacent-joint `Assemble` scope references the joint record whose index is one less than its scope's; the motion record stores a marked same-segment reference to the joint record at offset 24. In the earlier generation, which has no `Assemble` scope, the motion record's index is one more than its joint record's, and the motion record references the joint record. A motion record stores one freedom entry for each degree of freedom: byte `1`, f64 `0`, f64 π, a u32 word, and the u32 freedom code. The word is `3` or `1`, and an entry whose word is `1` stores an f64 after its code. A word-`1` entry can store f64 `0` in place of π; a motion record whose entries store π stores no such entry. A joint whose motion record has no freedom entry is rigid. Freedom code `1` is a rotation about the joint's local y axis, code `2` a rotation about its local z axis, and code `8` a translation along its local z axis. Eleven bytes after its marked self-reference, the joint record stores two limit flag bytes, each `0` or `1`. Twenty-three bytes after the self-reference it stores the finite f64 maximum followed by the finite f64 minimum. A rotation's limits are in radians and a translation's are in centimetres. A joint without limits stores flags `0 0` and zero values. Thirteen bytes after the self-reference, after the two limit flags, the joint record stores the rest flag byte, `0` or `1`. Thirty-nine bytes after the self-reference, after the minimum, the joint record stores the finite f64 rest value in the same unit. The rest value can be nonzero while the rest flag is `0`.
+
+A version-3 motion record of type `8C188F11-5D1B-4E1C-8E87-AF7214CA3C83`
+stores its parent count at offset 20 and its first parent reference at
+offset 24. Each 15-byte parent entry stores an eleven-byte marked reference
+followed by a u32. In the As-built form with a version-5 joint, the final
+parent reference names the joint. The preceding entries, when present,
+name occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
 
 The class-363 carrier subform uses the operand-frame reference as its locator.
 The class-363 frame is 389 bytes and has a paired class-264 header. Its rigid
