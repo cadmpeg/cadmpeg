@@ -6735,6 +6735,14 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
     if projection_was_finalized(histories.get()) {
         return Ok(());
     }
+    let mut recipes_by_id =
+        HashMap::<_, Option<&crate::records::recipes::ConstructionRecipe>>::new();
+    for recipe in recipes {
+        recipes_by_id
+            .entry(recipe.id.as_str())
+            .and_modify(|recipe| *recipe = None)
+            .or_insert(Some(recipe));
+    }
     let mut jobs = Vec::new();
     for (position, operand) in operands.iter_mut().enumerate() {
         for reference in operand.reference_bindings_mut() {
@@ -6813,6 +6821,20 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     }
                 }
                 resolve_body_recipe_operand_preceding_body(operand);
+                // When every face clause reaches a body of this state, the
+                // body whose last persistent design link is the recipe's
+                // design pair is the selected body.
+                let clauses_reach_state = !operand.references().is_empty()
+                    && operand
+                        .references()
+                        .iter()
+                        .all(|reference| !reference.preceding_body_slots.is_empty());
+                if let Some(body) = clauses_reach_state
+                    .then(|| design_linked_body_slot(operand, &recipes_by_id, topology))
+                    .flatten()
+                {
+                    operand.resolved_body_slot = Some(body);
+                }
                 // A body operand of this B-rep selects the only body of a state
                 // that holds one body.
                 if operand.resolved_body_slot.is_none() {
@@ -6841,14 +6863,6 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             }
         },
     );
-    let mut recipes_by_id =
-        HashMap::<_, Option<&crate::records::recipes::ConstructionRecipe>>::new();
-    for recipe in recipes {
-        recipes_by_id
-            .entry(recipe.id.as_str())
-            .and_modify(|recipe| *recipe = None)
-            .or_insert(Some(recipe));
-    }
     let identity = |operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand| -> Result<Option<_>, cadmpeg_core::CodecError> {
         let Some(stream) = crate::ids::native_stream(&operand.id) else { return Ok(None) };
         let Some(recipe) = recipes_by_id
@@ -6925,6 +6939,31 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         },
     );
     Ok(())
+}
+
+/// The one body of `topology` whose last persistent design link equals the
+/// design id and selector of the operand's body recipe.
+fn design_linked_body_slot(
+    operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
+    recipes_by_id: &HashMap<&str, Option<&crate::records::recipes::ConstructionRecipe>>,
+    topology: &AsmHistoricalTopology,
+) -> Option<i64> {
+    let recipe = recipes_by_id
+        .get(operand.recipe_id.as_str())
+        .copied()
+        .flatten()?;
+    if recipe.kind != crate::records::recipes::ConstructionRecipeKind::Body {
+        return None;
+    }
+    let design = recipe.design.as_ref()?;
+    let selector = i64::from(design.selector?.value);
+    let mut carriers = topology.body_design_links.iter().filter(|link| {
+        link.design_id == design.id.value
+            && link.design_reference == selector
+            && topology.bodies.contains(&link.body)
+    });
+    let body = carriers.next()?.body;
+    carriers.next().is_none().then_some(body)
 }
 
 /// Bind each reference's candidate faces present in the previous-state
@@ -9789,6 +9828,7 @@ fn historical_topology(
             })
             .collect::<Option<Vec<_>>>()),
         edge_samples: edge_samples::historical_edge_samples(brep)?,
+        body_design_links: last_body_design_links(&body_design_links(brep)?),
     };
     // Transitions diff each family in key order. The decoder appends the
     // containers it builds for saved free edges after the containers it walks,
@@ -9848,6 +9888,48 @@ pub(crate) fn historical_topology_with_tags(
         .persistent_subentity_tags
         .sort_by_key(|tag| tag.entity_ref);
     Ok(Some(topology))
+}
+
+/// The persistent design links attached to the bodies of `brep`.
+fn body_design_links(
+    brep: &cadmpeg_asm::brep::AsmBrep,
+) -> Result<Vec<crate::records::sketch_links::PersistentDesignLink>, cadmpeg_core::CodecError> {
+    let mut links = Vec::new();
+    for attribute in &brep.attributes {
+        links.extend(crate::brep::persistent_design_links(attribute)?);
+    }
+    Ok(links)
+}
+
+/// The highest-ordinal persistent design link of each body, in body order.
+fn last_body_design_links(
+    links: &[crate::records::sketch_links::PersistentDesignLink],
+) -> Vec<crate::history_records::AsmHistoricalBodyDesignLink> {
+    let mut last = BTreeMap::<i64, &crate::records::sketch_links::PersistentDesignLink>::new();
+    for link in links {
+        let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
+            continue;
+        };
+        let Some(body) = stable_ref(body.as_str()) else {
+            continue;
+        };
+        last.entry(body)
+            .and_modify(|previous| {
+                if link.ordinal > previous.ordinal {
+                    *previous = link;
+                }
+            })
+            .or_insert(link);
+    }
+    last.into_iter()
+        .map(
+            |(body, link)| crate::history_records::AsmHistoricalBodyDesignLink {
+                body,
+                design_id: link.design_id.as_str().to_owned(),
+                design_reference: link.design_reference,
+            },
+        )
+        .collect()
 }
 
 #[cfg(test)]

@@ -1555,6 +1555,123 @@ fn a_body_operand_keeps_an_open_slot_in_a_state_of_two_bodies_or_of_another_brep
     );
 }
 
+/// The fixture operand bound against a preceding state of bodies 7 and 8,
+/// whose last persistent design links are `links`. Each face clause names
+/// face 70 of body 7 and face 80 of body 8, or face 99 outside the state
+/// when `in_state` is false. The operand's body recipe stores design id
+/// `design_id` and `selector`.
+fn design_linked_case(
+    design_id: &str,
+    selector: u32,
+    links: &[(i64, i64)],
+    in_state: bool,
+) -> Option<i64> {
+    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+        owner_ref,
+        member_refs,
+    };
+    let (scope, _, mut operands, _) = body_recipe_history_fixture();
+    let faces: &[&str] = if in_state {
+        &["f3d:brep:entity#70", "f3d:brep:entity#80"]
+    } else {
+        &["f3d:brep:entity#99"]
+    };
+    for reference in operands[0].reference_bindings_mut() {
+        *reference.candidate_faces = faces
+            .iter()
+            .map(|face| cadmpeg_ir::ids::FaceId::mint(*face).expect("identity grammar"))
+            .collect();
+    }
+    let topology = AsmHistoricalTopology {
+        bodies: vec![7, 8],
+        regions: vec![71, 81],
+        shells: vec![72, 82],
+        faces: vec![70, 80],
+        surfaces: vec![170, 180],
+        body_regions: vec![relation(7, vec![71]), relation(8, vec![81])],
+        region_shells: vec![relation(71, vec![72]), relation(81, vec![82])],
+        shell_faces: vec![relation(72, vec![70]), relation(82, vec![80])],
+        shell_wire_edges: vec![relation(72, Vec::new()), relation(82, Vec::new())],
+        shell_free_vertices: vec![relation(72, Vec::new()), relation(82, Vec::new())],
+        face_loops: vec![relation(70, Vec::new()), relation(80, Vec::new())],
+        face_surfaces: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 70,
+                carrier: 170,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 80,
+                carrier: 180,
+            },
+        ],
+        body_design_links: links
+            .iter()
+            .map(
+                |&(body, design_reference)| crate::history_records::AsmHistoricalBodyDesignLink {
+                    body,
+                    design_id: "308".into(),
+                    design_reference,
+                },
+            )
+            .collect(),
+        ..AsmHistoricalTopology::default()
+    };
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![
+            recipe_state(2, topology.clone(), Some(1)),
+            recipe_state(1, topology, None),
+        ],
+    );
+    let recipe = crate::records::recipes::ConstructionRecipe {
+        id: operands[0].recipe_id.clone(),
+        byte_offset: 0,
+        kind: crate::records::recipes::ConstructionRecipeKind::Body,
+        design: Some(crate::records::recipes::ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
+                value: design_id.into(),
+                offset: 0,
+            },
+            selector: Some(crate::records::recipes::ConstructionRecipeSelector {
+                value: selector,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: None,
+    };
+    bind_body_recipe_operand_history_candidates(
+        &mut operands,
+        std::slice::from_ref(&recipe),
+        std::slice::from_ref(&scope),
+        BindingHistories::Shared(std::slice::from_ref(&history)),
+    )
+    .unwrap();
+    operands[0].resolved_body_slot
+}
+
+#[test]
+fn a_body_recipe_selects_the_input_body_whose_last_design_link_it_stores() {
+    let links = [(7, 5), (8, 6)];
+    assert_eq!(design_linked_case("308", 6, &links, true), Some(8));
+    assert_eq!(design_linked_case("308", 5, &links, true), Some(7));
+}
+
+#[test]
+fn a_body_recipe_design_link_shared_by_two_bodies_or_by_none_selects_no_body() {
+    assert_eq!(design_linked_case("308", 6, &[(7, 6), (8, 6)], true), None);
+    assert_eq!(design_linked_case("308", 7, &[(7, 5), (8, 6)], true), None);
+    assert_eq!(design_linked_case("301", 6, &[(7, 5), (8, 6)], true), None);
+}
+
+#[test]
+fn a_body_recipe_whose_face_clauses_miss_the_state_ignores_its_design_link() {
+    assert_eq!(design_linked_case("308", 6, &[(7, 5), (8, 6)], false), None);
+}
+
 /// A `RemoveBody` in the coil fixture's scope whose operand resolved body
 /// slot `slot` through its recipe identity. Its face match selects the
 /// displayed fixture body, slot 1.
