@@ -243,8 +243,8 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
             .unwrap()
             .carrier = Some(DesignJointOriginCarrierEvidence {
             frame_length: 369,
-            prefix,
-            scope_backlink: scope_backlink.try_into().unwrap(),
+            prefix: prefix.into(),
+            scope_backlink: scope_backlink.as_slice().try_into().unwrap(),
         });
         let encoded = serde_json::to_value(&native.design_parameter_scopes[1]).unwrap();
         native.design_parameter_scopes[1] = serde_json::from_value(encoded).unwrap();
