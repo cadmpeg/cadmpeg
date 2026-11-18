@@ -7,7 +7,7 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 
 use crate::F3dCodec;
 
-/// The Combine operands of a corpus file and its decode loss codes.
+/// The Combine operands, decode loss codes and neutral bodies of a corpus file.
 fn combine_operands(bytes: &[u8]) -> (serde_json::Value, Vec<String>, serde_json::Value) {
     let result = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
