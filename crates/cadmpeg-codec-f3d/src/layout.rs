@@ -4330,14 +4330,10 @@ pub(crate) mod work_plane_direct_374_matrix_frame {
 pub(crate) mod work_axis_direct_carrier_class_297 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 215;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
     /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const VALUE_COUNT: usize = 21;
-    /// Offset of `axis_values` (`f64[8]`, little-endian). Spec §3.1.
-    pub(crate) const AXIS_VALUES: usize = 25;
-    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT: usize = 89;
-    /// Offset of `reference_preamble` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_PREAMBLE: usize = 93;
 }
 
 /// Byte offsets for the `work_axis_direct_carrier_class_335` record.
@@ -4350,14 +4346,30 @@ pub(crate) mod work_axis_direct_carrier_class_297 {
 pub(crate) mod work_axis_direct_carrier_class_335 {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 195;
-    /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const VALUE_COUNT: usize = 21;
-    /// Offset of `axis_values` (`f64[8]`, little-endian). Spec §3.1.
-    pub(crate) const AXIS_VALUES: usize = 25;
-    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_COUNT: usize = 89;
-    /// Offset of `reference_preamble` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REFERENCE_PREAMBLE: usize = 93;
+}
+
+/// Byte offsets for the `work_axis_direct_scope_long` record.
+///
+/// Spec §3.1. Record length 268 B.
+pub(crate) mod work_axis_direct_scope_long {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 268;
+}
+
+/// Byte offsets for the `work_axis_direct_scope_short` record.
+///
+/// Spec §3.1. Record length 254 B.
+pub(crate) mod work_axis_direct_scope_short {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 254;
+}
+
+/// Byte offsets for the `work_axis_direct_support` record.
+///
+/// Spec §3.1. Record length 293 B.
+pub(crate) mod work_axis_direct_support {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 293;
 }
 
 /// Byte offsets for the `coil_compact_placement_matrix_frame` record.
@@ -10486,4 +10498,30 @@ pub(crate) mod replace_face_flagged_prefix {
     pub(crate) const TANGENT_CHAIN: usize = 25;
     #[doc = "Offset of `replacement_group_count` (`u32`, little-endian). Spec §3.1."]
     pub(crate) const REPLACEMENT_GROUP_COUNT: usize = 26;
+}
+
+/// Byte offsets for the `work_axis_two_point_carrier` record.
+///
+/// Spec §3.1. Record length 232 B.
+pub(crate) mod work_axis_two_point_carrier {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 232;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `value_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const VALUE_COUNT: usize = 21;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 118;
+}
+
+/// Byte offsets for the `work_axis_endpoint_carrier` record.
+///
+/// Spec §3.1. Record length 197 B.
+pub(crate) mod work_axis_endpoint_carrier {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 197;
+    /// Offset of `zero_run` (`bytes[31]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `position` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const POSITION: usize = 42;
 }

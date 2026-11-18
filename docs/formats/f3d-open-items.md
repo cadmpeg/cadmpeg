@@ -80,15 +80,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-319. WorkAxis point-and-direction construction rules
 
-**Question.** What do the position, direction, construction rules, and input roles encode for the other `refType` values of a WorkAxis point-and-direction carrier?
+**Question.** How do nonzero point parameters, `refType` values, and carrier inputs determine the authored axis construction? How do the marked references of a legacy two-point carrier relate to the scope members? Which payload follows a nonzero carrier leading-block byte, and which registered type identities select the legacy fixed carrier and support layouts?
 
-**Known.** `f3d.md` §3.1 "A `WorkAxis` scope can reference a point-and-direction carrier" describes the carrier and the two-point rule.
+**Known.** `f3d.md` §3.1 describes the legacy and version 1 and 4 carrier layouts. In the corroborated legacy pattern, the marked carrier references name the scope members at indices 2 and 4 in that order. The corroborated `refType` 12 pattern has zero point parameters and two inputs that resolve to point-data records in endpoint order. In both patterns, the first endpoint agrees with the stored origin and the second agrees with the origin plus the displacement. Readable stored line components project independently into a checked datum axis. Counted property and reference runs retain their readable prefixes and declared arity. Unknown input roles remain absent. Literal parameter expressions and source options remain source facts. Detached parameter owners retain their source definitions without a canonical scope binding.
 
-**Need.** Controlled designs that vary one axis construction rule and its inputs at a time.
+**Need.** Controlled designs that vary each construction rule, nonzero point parameter, operand path, property lane and leading-block payload independently, with independently measured solved axes. Registered legacy carrier and support type identities for each fixed layout.
 
-**Conflict.** None.
+**Conflict.** In a two-point reading, carrier inputs can fail to resolve as points, and resolved points can disagree with the separately stored line. In either case, readable points retain unknown roles and a named assumption identifies use of the stored line. Independently eligible legacy and registered sibling carriers remain separate readings. Competition leaves the neutral construction unresolved.
 
-**Note.** The decoder takes position and direction as the solved axis for other values and reports `feature.work-axis-rule-unassigned`; the construction inputs remain native.
+**Note.** Nonzero point parameters retain a named stored-line assumption and unknown rules retain `feature.work-axis-rule-unassigned`. Their authored construction semantics remain unassigned. `feature.work-axis-leading-block-layout-assumed` retains the prior bounded one-byte leading-block reading. `feature.work-axis-unsupported-version-legacy-layout-assumed` distinguishes an unsupported modern revision from an unregistered legacy carrier. `feature.work-axis-legacy-layout-assumed` identifies fixed-layout admission independently of dynamic class spellings. Partial carriers retain actual unreadable-part records and source images; endpoint tolerance is an explicitly reported hypothesis.
 
 ### DR-284. Compact sketch-profile tail flags
 
