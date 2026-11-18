@@ -54,13 +54,19 @@ pub(super) fn resolve(
     else {
         return Ok(None);
     };
+    let crossing_runs_assumed = selected.crossing_runs_assumed();
     if !allow_assumptions
-        && ((selected.coincident && !selected.identity_unique) || selected.island_absence)
+        && ((selected.coincident && !selected.identity_unique)
+            || selected.island_absence
+            || crossing_runs_assumed)
     {
         return Ok(None);
     }
     let profile = PlanarProfileRef::sketch_regions(sketch.id.clone(), selected.regions).ok();
     if profile.is_some() {
+        if crossing_runs_assumed {
+            resolution.profile_work.note_crossing_runs_assumed();
+        }
         if selected.coincident && (allow_assumptions || !selected.identity_unique) {
             resolution.profile_work.note_coincident_direction_assumed();
         }

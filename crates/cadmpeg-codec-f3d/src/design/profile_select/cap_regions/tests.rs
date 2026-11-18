@@ -1426,3 +1426,43 @@ fn a_selected_region_keeps_a_selected_nested_region_as_a_hole() {
     assert_eq!(square_and_nested_circle_holes(&[0]), [1]);
     assert_eq!(square_and_nested_circle_holes(&[1]), [0]);
 }
+
+#[test]
+fn a_narrow_region_with_a_clear_interior_point_keeps_its_certified_outline() {
+    let width = 12.0 * TOLERANCE;
+    let corners = [(0.0, 0.0), (1.0, 0.0), (1.0, width), (0.0, width)];
+    let entities = polygon("narrow-cap", &corners);
+    let mut atomic = region(&entities, &[[0.0, 1.0]; 4]);
+    atomic.polyline = corners.iter().map(|&(u, v)| Point2::new(u, v)).collect();
+    let regions = [atomic];
+    let samples =
+        sample_regions(&regions, TOLERANCE).expect("an interior point clear of the boundary");
+    let point = samples[0].point;
+    assert!(point.u > TOLERANCE && point.u < 1.0 - TOLERANCE);
+    assert!(point.v > TOLERANCE && point.v < width - TOLERANCE);
+    let mut topology = loop_topology(&corners, &[(0, 1), (1, 2), (2, 3), (3, 0)]);
+    straight_carriers(&mut topology);
+    let cap = face_cap(&xy_frame(), &topology, CAP, TOLERANCE).unwrap();
+    let agreement = crate::test_support::with_decode_context(|ctx| {
+        outlines_agree(&cap, &samples, &[0], &entities, TOLERANCE, ctx)
+    })
+    .unwrap();
+    assert!(matches!(agreement, Agreement::Exact));
+}
+
+#[test]
+fn a_region_without_a_point_clear_of_the_tolerance_stays_unsampled() {
+    let width = 1.5 * TOLERANCE;
+    let atomic = AtomicSketchRegion {
+        boundary: Vec::new(),
+        polyline: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, width),
+            Point2::new(0.0, width),
+        ],
+        encloses_island: false,
+        island_absence_assumed: false,
+    };
+    assert!(sample_regions(&[atomic], TOLERANCE).is_none());
+}

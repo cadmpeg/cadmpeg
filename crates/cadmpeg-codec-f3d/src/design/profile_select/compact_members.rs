@@ -84,7 +84,8 @@ pub(super) fn resolve(
     else {
         return Ok(None);
     };
-    if initial.coincident
+    if initial.crossing_runs_assumed()
+        || initial.coincident
         || initial.island_absence
         || initial.regions.len() != 1
         || work.assumed_flags().into_iter().any(|assumed| assumed)

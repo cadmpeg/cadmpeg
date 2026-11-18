@@ -48,6 +48,7 @@ use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 const ARC_SEGMENTS: u32 = 64;
 /// Grid lines per axis searched for a point well inside a region.
 const SAMPLE_GRID: u32 = 24;
+const SAMPLE_SEARCH_CLEARANCE_FACTOR: f64 = 10.0;
 /// Relative difference allowed between the cap area and the selected area.
 /// Both sides are polylines of the same circles and arcs.
 pub(super) const AREA_AGREEMENT: f64 = 1e-3;
@@ -1509,13 +1510,13 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
                 );
             }
         }
-        if best.is_none_or(|(_, room)| room <= 10.0 * tolerance) {
+        if best.is_none_or(|(_, room)| room <= SAMPLE_SEARCH_CLEARANCE_FACTOR * tolerance) {
             for point in scanline_midpoints(&rings) {
                 consider(&mut best, point);
             }
         }
         let (point, room) = best?;
-        if room <= 10.0 * tolerance || area <= tolerance * tolerance {
+        if room <= tolerance || area <= tolerance * tolerance {
             return None;
         }
         out.push(Sampled {
