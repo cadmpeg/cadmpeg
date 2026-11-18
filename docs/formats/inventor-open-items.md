@@ -334,6 +334,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Thickness-side mappings for other plate-side values and attachment-mode pairs.
 
+### DE-19. Unfold and Refold controls
+
+**Question.** Which Unfold and Refold operands state the all-bends selection, the neutral factor, and the source Unfold of a Refold, and what do slot 3, slot 4, and the slot-7 enumeration select?
+
+**Known.** Section 13.5 defines the eight-property Unfold and Refold form. In the known records, slot 3 is Boolean true, the fold list is empty, the fold enumeration is `(5, 1)`, and the bend face collection selects every bend of the body. The Refold record and its operands contain no reference to an Unfold. The reader states no Refold source and reports `feature.sheet-metal-refold-source-unresolved`. The face selectors of the stationary and bend face items store selector state 3. The face-revision join of section 13 admits states 0 and 2, so the reader keeps both face operands as native face-item references.
+
+**Need.** Unfold and Refold records with slot 3 false, a nonempty fold list, another fold enumeration value, and a partial bend selection. A record or join that names the Unfold whose bends a Refold restores, including for several open Unfolds on one body. The face-revision join of state-3 face selectors.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

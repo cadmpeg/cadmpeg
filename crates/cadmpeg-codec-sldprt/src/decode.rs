@@ -25,6 +25,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
@@ -1282,6 +1283,7 @@ pub(crate) fn append_design_losses(
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}
         | AngularTermination::ToLast {}
+        | AngularTermination::ToPlane { .. }
         | AngularTermination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
@@ -1922,8 +1924,15 @@ pub(crate) fn append_design_losses(
                             cadmpeg_ir::features::CombineDestination::NewComponent
                         )
                 }
-                FeatureOperation::BoundaryFill { tools, cells } => {
-                    incomplete_body_selection(tools) || cells.iter().any(incomplete_body_selection)
+                FeatureOperation::BoundaryFill { tools, cells, plane_tools, .. } => {
+                    incomplete_body_selection(tools)
+                        || !plane_tools.is_empty()
+                        || cells.iter().any(|cell| match cell {
+                            BoundaryFillCell::BodyRegion(body) => {
+                                incomplete_body_selection(body)
+                            }
+                            BoundaryFillCell::Recorded { .. } => true,
+                        })
                 }
                 FeatureOperation::CutWithSurface { targets, tools, .. } => {
                     incomplete_body_selection(targets) || incomplete_face_selection(tools)
@@ -1938,6 +1947,11 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::TrimBodiesAtPlane { targets, keep, .. } => {
                     incomplete_body_selection(targets)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+                }
+                FeatureOperation::SilhouetteSplit { target, direction, mode } => {
+                    incomplete_body_selection(target)
+                        || direction.is_none()
+                        || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
                 }
                 FeatureOperation::SplitBody { targets, tool } => {
                     incomplete_body_selection(targets)
@@ -3491,11 +3505,13 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -3567,6 +3583,11 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut sketch_entities,
+        held_handles,
+        &mut pmi_losses,
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut sketch_constraints,
@@ -4737,11 +4758,13 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -4897,6 +4920,11 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
         &histories,
         lanes,
+    );
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut ir.model.sketch_entities,
+        held_handles,
+        &mut pmi_losses,
     );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,

@@ -187,6 +187,8 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),
@@ -291,6 +293,8 @@ fn writer_reports_root_occurrence_scale() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Scaled part".into()),
@@ -456,6 +460,8 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Child part".into()),

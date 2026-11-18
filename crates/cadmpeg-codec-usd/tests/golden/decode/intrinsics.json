@@ -3129,7 +3129,8 @@
           "kind": "group",
           "native_ref": "/World",
           "sketches": [],
-          "source_name": "World"
+          "source_name": "World",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3140,7 +3141,8 @@
           "kind": "group",
           "native_ref": "/World/Ball",
           "sketches": [],
-          "source_name": "Ball"
+          "source_name": "Ball",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3151,7 +3153,8 @@
           "kind": "group",
           "native_ref": "/World/Box",
           "sketches": [],
-          "source_name": "Box"
+          "source_name": "Box",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3162,7 +3165,8 @@
           "kind": "group",
           "native_ref": "/World/Can",
           "sketches": [],
-          "source_name": "Can"
+          "source_name": "Can",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3173,7 +3177,8 @@
           "kind": "group",
           "native_ref": "/World/Frustum",
           "sketches": [],
-          "source_name": "Frustum"
+          "source_name": "Frustum",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3184,7 +3189,8 @@
           "kind": "group",
           "native_ref": "/World/Funnel",
           "sketches": [],
-          "source_name": "Funnel"
+          "source_name": "Funnel",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3195,7 +3201,8 @@
           "kind": "group",
           "native_ref": "/World/Pill",
           "sketches": [],
-          "source_name": "Pill"
+          "source_name": "Pill",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3206,7 +3213,8 @@
           "kind": "group",
           "native_ref": "/World/Sheet",
           "sketches": [],
-          "source_name": "Sheet"
+          "source_name": "Sheet",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

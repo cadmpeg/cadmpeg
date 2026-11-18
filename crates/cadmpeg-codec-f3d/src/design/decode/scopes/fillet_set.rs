@@ -3,16 +3,19 @@
 
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
 use crate::layout::fillet_scope_prologue as prologue;
+use crate::layout::fillet_set_asymmetric as asymmetric;
 use crate::layout::fillet_set_chordal as chordal;
 use crate::layout::fillet_set_compact_constant as compact;
 use crate::layout::fillet_set_constant as constant;
+use crate::layout::fillet_set_variable as variable;
 use crate::records::feature::fillet_set::{
-    DesignFilletSet, DesignFilletSetLaw, DesignFilletSetList, DesignFilletSetListForm,
+    DesignFilletMidpointOwners, DesignFilletSet, DesignFilletSetLaw, DesignFilletSetList,
+    DesignFilletSetListForm,
 };
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
@@ -56,7 +59,8 @@ pub(super) fn fillet_set_list(
     let count = View::u32_le_at(frame, cursor)?;
     cursor += 4;
     let set_references = references(frame, &mut cursor, count)?;
-    if View::u32_le_at(frame, cursor)? != 0 {
+    let compatibility = View::u32_le_at(frame, cursor)?;
+    if compatibility > 1 || (compatibility == 1 && count != 1) {
         return None;
     }
     cursor += 4;
@@ -107,7 +111,9 @@ pub(super) fn fillet_set_list(
             parameters,
             parameter_owners,
         )?;
-        if set.group_record_index != group_record_index {
+        if set.group_record_index != group_record_index
+            || (compatibility == 1) != matches!(set.law, DesignFilletSetLaw::Asymmetric { .. })
+        {
             return None;
         }
         padding_holds_bytes |= set_padding_holds_bytes(bytes, &set);
@@ -285,7 +291,7 @@ fn fillet_set(
         return None;
     };
     let start = *start;
-    let mut matches = SET_FORMS.iter().filter_map(|form| {
+    let simple = SET_FORMS.iter().filter_map(|form| {
         let end = start.checked_add(form.len)?;
         let frame = bytes.get(start..end)?;
         lp_ascii_filtered_view(bytes, end, 3..=3, u8::is_ascii_digit)?;
@@ -321,15 +327,154 @@ fn fillet_set(
                 frame_length: u64::try_from(form.len).ok()?,
                 group_record_index: marked_record_reference(frame, form.group)?,
                 law,
-                tangency_weight_owner_record_index: owner(form.tangency_weight, "TangencyWeight")?,
-                tangent_chain: frame.get(form.tangent_chain) == Some(&1),
+                tangency_weight_owner_record_index: Some(owner(
+                    form.tangency_weight,
+                    "TangencyWeight",
+                )?),
+                tangent_chain: Some(frame.get(form.tangent_chain) == Some(&1)),
                 curvature_continuity: form.curvature.map(|at| frame.get(at) == Some(&1)),
             },
             ordinal,
         ))
     });
+    let extended = (count == 1)
+        .then(|| {
+            extended_set(
+                bytes,
+                start,
+                record_index,
+                scope,
+                parameters,
+                parameter_owners,
+            )
+        })
+        .flatten()
+        .map(|set| (set, 0));
+    let mut matches = simple.chain(extended);
     let set = matches.next()?;
     matches.next().is_none().then_some(set)
+}
+
+fn extended_set(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+    scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+) -> Option<DesignFilletSet> {
+    let window_end = start
+        .checked_add(variable::LEN + INDEXED_HEADER_LEN)?
+        .min(bytes.len());
+    let window = bytes.get(start..window_end)?;
+    let len = next_indexed_record_offset(window, INDEXED_HEADER_LEN)?;
+    let frame = window.get(..len)?;
+    let (group_record_index, law, weight) = match frame.len() {
+        asymmetric::LEN => asymmetric_set(frame)?,
+        variable::LEN => variable_set(frame)?,
+        _ => return None,
+    };
+    let mut named = std::collections::HashSet::new();
+    if !law
+        .owner_roles()
+        .chain(weight.map(|owner| (owner, "TangencyWeight")))
+        .all(|(owner, kind)| {
+            named.insert(owner) && owned_source_kind(scope, owner, parameters, owners) == Some(kind)
+        })
+    {
+        return None;
+    }
+    Some(DesignFilletSet {
+        record_index,
+        byte_offset: u64::try_from(start).ok()?,
+        frame_length: u64::try_from(frame.len()).ok()?,
+        group_record_index,
+        law,
+        tangency_weight_owner_record_index: weight,
+        tangent_chain: None,
+        curvature_continuity: None,
+    })
+}
+
+fn asymmetric_set(frame: &[u8]) -> Option<(u32, DesignFilletSetLaw, Option<u32>)> {
+    use asymmetric as layout;
+    let zero_runs = [
+        (layout::ZERO_RUN_10_AT_11, layout::FORM_MARKER),
+        (layout::ZERO_RUN_5_AT_22, layout::COMPATIBILITY_WORD),
+        (layout::ZERO_RUN_19_AT_53, layout::EDGE_GROUP_REFERENCE),
+        (layout::ZERO_RUN_1_AT_83, layout::FIRST_CONTROL_WORD),
+        (layout::ZERO_RUN_5_AT_88, layout::SECOND_CONTROL_WORD),
+    ];
+    if frame.get(layout::FORM_MARKER) != Some(&layout::FORM_MARKER_VALUE)
+        || View::u32_le_at(frame, layout::COMPATIBILITY_WORD)? != layout::COMPATIBILITY_WORD_VALUE
+        || View::u32_le_at(frame, layout::FIRST_CONTROL_WORD)? != layout::FIRST_CONTROL_WORD_VALUE
+        || View::u32_le_at(frame, layout::SECOND_CONTROL_WORD)? != layout::SECOND_CONTROL_WORD_VALUE
+        || !zero_runs
+            .iter()
+            .all(|&(start, end)| frame[start..end].iter().all(|&byte| byte == 0))
+    {
+        return None;
+    }
+    Some((
+        marked_record_reference(frame, layout::EDGE_GROUP_REFERENCE)?,
+        DesignFilletSetLaw::Asymmetric {
+            offset_one_owner_record_index: marked_record_reference(
+                frame,
+                layout::OFFSET_ONE_OWNER_REFERENCE,
+            )?,
+            offset_two_owner_record_index: marked_record_reference(
+                frame,
+                layout::OFFSET_TWO_OWNER_REFERENCE,
+            )?,
+        },
+        None,
+    ))
+}
+
+fn variable_set(frame: &[u8]) -> Option<(u32, DesignFilletSetLaw, Option<u32>)> {
+    use variable as layout;
+    let zero_runs = [
+        (layout::ZERO_RUN_18_AT_11, layout::EDGE_GROUP_REFERENCE),
+        (layout::ZERO_RUN_7_AT_40, layout::MIDPOINT_PARAMETER_COUNT),
+        (layout::ZERO_RUN_4_AT_73, layout::RADIUS_COUNT),
+        (
+            layout::ZERO_RUN_13_AT_125,
+            layout::TANGENCY_WEIGHT_OWNER_REFERENCE,
+        ),
+        (layout::ZERO_RUN_4_AT_149, layout::LEN),
+    ];
+    if View::u32_le_at(frame, layout::MIDPOINT_PARAMETER_COUNT)?
+        != layout::MIDPOINT_PARAMETER_COUNT_VALUE
+        || View::u32_le_at(frame, layout::RADIUS_COUNT)? != layout::RADIUS_COUNT_VALUE
+        || !zero_runs
+            .iter()
+            .all(|&(start, end)| frame[start..end].iter().all(|&byte| byte == 0))
+    {
+        return None;
+    }
+    let owner = |at| marked_record_reference(frame, at);
+    Some((
+        marked_record_reference(frame, layout::EDGE_GROUP_REFERENCE)?,
+        DesignFilletSetLaw::Variable {
+            start_radius_owner_record_index: owner(layout::START_RADIUS_OWNER_REFERENCE)?,
+            end_radius_owner_record_index: owner(layout::END_RADIUS_OWNER_REFERENCE)?,
+            middle: [
+                DesignFilletMidpointOwners {
+                    radius_owner_record_index: owner(layout::MIDDLE_RADIUS_ONE_OWNER_REFERENCE)?,
+                    position_owner_record_index: owner(
+                        layout::MIDPOINT_PARAMETER_ONE_OWNER_REFERENCE,
+                    )?,
+                },
+                DesignFilletMidpointOwners {
+                    radius_owner_record_index: owner(layout::MIDDLE_RADIUS_TWO_OWNER_REFERENCE)?,
+                    position_owner_record_index: owner(
+                        layout::MIDPOINT_PARAMETER_TWO_OWNER_REFERENCE,
+                    )?,
+                },
+            ],
+        },
+        Some(owner(layout::TANGENCY_WEIGHT_OWNER_REFERENCE)?),
+    ))
 }
 
 /// Source kind of the one Design parameter that owner `owner_record_index`
@@ -386,11 +531,52 @@ pub(crate) fn fillet_set_matches_radius_group(
             owned_parameter(chord_length_owner_record_index)
                 == Some(*chord_length_parameter_record_index)
         }
+        (
+            DesignFilletSetLaw::Asymmetric {
+                offset_one_owner_record_index,
+                offset_two_owner_record_index,
+            },
+            DesignFilletRadiusLaw::Asymmetric {
+                offset_one_parameter_record_index,
+                offset_two_parameter_record_index,
+            },
+        ) => {
+            owned_parameter(offset_one_owner_record_index)
+                == Some(*offset_one_parameter_record_index)
+                && owned_parameter(offset_two_owner_record_index)
+                    == Some(*offset_two_parameter_record_index)
+        }
+        (
+            DesignFilletSetLaw::Variable {
+                start_radius_owner_record_index,
+                end_radius_owner_record_index,
+                middle,
+            },
+            DesignFilletRadiusLaw::Variable {
+                start_radius_parameter_record_index,
+                end_radius_parameter_record_index,
+                middle: assigned_middle,
+            },
+        ) => {
+            owned_parameter(start_radius_owner_record_index)
+                == Some(*start_radius_parameter_record_index)
+                && owned_parameter(end_radius_owner_record_index)
+                    == Some(*end_radius_parameter_record_index)
+                && middle.len() == assigned_middle.len()
+                && middle.iter().zip(assigned_middle).all(|(owners, row)| {
+                    owned_parameter(owners.radius_owner_record_index)
+                        == Some(row.radius_parameter_record_index)
+                        && owned_parameter(owners.position_owner_record_index)
+                            == Some(row.parameter_record_index)
+                })
+        }
         _ => false,
     };
-    law && group.tangency_weight_parameter_record_index.is_some()
-        && owned_parameter(set.tangency_weight_owner_record_index)
-            == group.tangency_weight_parameter_record_index
+    law && match set.tangency_weight_owner_record_index {
+        Some(owner) => owned_parameter(owner)
+            .is_some_and(|record| group.tangency_weight_parameter_record_index == Some(record)),
+        None => group.tangency_weight_parameter_record_index.is_none(),
+    }
 }
 
 /// Construction-operand groups decoded for each scope, keyed by stream, scope
@@ -458,7 +644,7 @@ pub(crate) fn retain_consistent_fillet_sets(
                 })
                 .all(|group| fillet_set_matches_radius_group(set, group, owned_parameter))
         });
-        if grouped && agreeing {
+        if agreeing && (grouped || sets.supports_set_law_projection()) {
             continue;
         }
         if grouped {

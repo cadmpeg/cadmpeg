@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-mod family;
+pub(super) mod family;
 
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
@@ -48,6 +48,7 @@ use super::path_feature::{
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
 use super::point_data::exact_work_point_construction;
+use super::replace_face::exact_replace_face_operation;
 use super::sheet_metal::bind_hem_operation_from_parameters;
 use super::sheet_metal::exact_base_flange_operation;
 use super::sheet_metal::exact_edge_flange_operation;
@@ -59,10 +60,9 @@ use super::surfaces::exact_surface_stitch_operation;
 use super::surfaces::exact_surface_untrim_operation;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
+use super::thread::thread_modeled_flag_loss;
 use super::work_geometry::exact_joint_origin_frame;
-use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
-use super::work_geometry::work_axis_loss_notes;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -103,6 +103,7 @@ pub(crate) struct ParameterScopeSources<'a> {
 
 #[derive(Debug, Default)]
 pub(crate) struct DecodedParameterScopes {
+    pub(crate) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     pub(crate) scopes: Vec<DesignParameterScope>,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) work_plane_inferred_axes: HashMap<String, (u64, [u8; 2])>,
@@ -123,6 +124,7 @@ pub(crate) fn decode_parameter_scopes(
         component_occurrences,
         recipes,
     } = sources;
+    let mut given_up = Vec::new();
     let mut out = Vec::new();
     let mut losses = Vec::new();
     let mut work_plane_inferred_axes = HashMap::new();
@@ -131,12 +133,19 @@ pub(crate) fn decode_parameter_scopes(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let stream_view = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let bytes = stream_view.window();
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
+        let axis_classes = class_types
+            .iter()
+            .map(|(code, row)| (*code, (row.type_guid.as_str(), row.version)))
+            .collect::<HashMap<_, _>>();
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
         let metadata = if body_owners
             .values()
@@ -217,6 +226,25 @@ pub(crate) fn decode_parameter_scopes(
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            if scope.kind() == scope::DesignFeatureKind::BoundaryFill {
+                let construction =
+                    super::boundary_fill::decode(ctx, stream_view, &scope, &stream_types)?;
+                if let scope::DesignScopePayloadMut::BoundaryFill(slot) = scope.payload_mut() {
+                    slot.prefix = construction;
+                }
+            }
+            if let scope::DesignScopePayload::SilhouetteSplit(_) = scope.payload() {
+                let operation = super::silhouette_split::decode(
+                    bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    &mut losses,
+                );
+                if let scope::DesignScopePayloadMut::SilhouetteSplit(slot) = scope.payload_mut() {
+                    *slot = operation;
+                }
+            }
             let face_groups = super::mesh_face_groups::decode_prefix(
                 ctx,
                 bytes,
@@ -337,11 +365,21 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(axis) = exact_work_axis_construction(bytes, &records, &scope, &stream_types)
-            {
-                losses.extend(work_axis_loss_notes(&scope, &axis));
+            if scope.kind() == scope::DesignFeatureKind::WorkAxis {
+                let evidence = super::work_axes::decode_work_axis(
+                    ctx,
+                    stream_view,
+                    &records,
+                    &scope,
+                    &entry.name,
+                    super::work_axes::WorkAxisRegistrations {
+                        entities: &stream_types,
+                        classes: &axis_classes,
+                    },
+                    &mut given_up,
+                )?;
                 if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
-                    *slot = Some(axis.construction);
+                    *slot = Some(evidence);
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
@@ -551,6 +589,12 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
+                let construction = exact_replace_face_operation(ctx, bytes, &scope)?;
+                if let scope::DesignScopePayloadMut::ReplaceFace(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
                 let construction =
                     exact_surface_untrim_operation(ctx, bytes, &records, &scope, &mut losses)?;
                 if let scope::DesignScopePayloadMut::SurfaceUntrim(slot) = scope.payload_mut() {
@@ -668,6 +712,11 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_thread_construction(bytes, &scope, parameter_owners);
+                losses.extend(
+                    construction
+                        .as_ref()
+                        .and_then(|construction| thread_modeled_flag_loss(&scope, construction)),
+                );
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -864,6 +913,7 @@ pub(crate) fn decode_parameter_scopes(
         ));
     }
     Ok(DecodedParameterScopes {
+        given_up: cadmpeg_ir::unknown::part::GivenUpPart::coalesce(given_up)?,
         scopes: out,
         losses,
         work_plane_inferred_axes,
@@ -1486,7 +1536,7 @@ fn parameter_scope_previous_history_offset_for_form(
     match tail_form {
         ScopeTailForm::Named => return None,
         ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => {
-            return typed_scope_previous_history_offset(kind, tail_length)
+            return typed_scope_previous_history_offset(kind, tail_length);
         }
         ScopeTailForm::Fixed => {}
     }
@@ -1512,7 +1562,7 @@ fn parameter_scope_previous_history_offset_for_form(
 }
 
 #[cfg(test)]
-pub(in crate::design::decode) fn parse_parameter_scope(
+pub(crate) fn parse_parameter_scope(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
@@ -1539,6 +1589,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let type_family = type_guid
             .and_then(family::from_type_guid)
             .or_else(|| paste_prefix.map(|(_, family)| family));
+        let registered_boundary_fill = type_family == Some(scope::DesignFeatureKind::BoundaryFill);
         let (paired_class_tag, _) =
             lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
         let mut fixed_candidate = None;
@@ -1626,15 +1677,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                     fixed_ambiguous = true;
                 }
             }
+            let extended_named =
+                kind == "Combine" || (registered_boundary_fill && kind == "BoundaryFill");
             let named_tail_possible = (named_tail::LEN..=590).contains(&tail_length)
                 && ((tail_length.is_multiple_of(2)
                     && (parameter_scope_tail_length_is_valid(kind, tail_length)
                         || tail_length == 78))
-                    || kind == "Combine");
+                    || extended_named);
             let named_tail = if named_tail_possible {
                 named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                     .unwrap_or_default()
-                    || (kind == "Combine"
+                    || (extended_named
                         && named_parameter_scope_references(bytes, kind_end, paired_at)
                             .is_some_and(|references| {
                                 references.extra_bytes().is_some_and(|extra| extra > 0)
@@ -2026,6 +2079,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                             }),
                     },
                 ),
+                scope::DesignFeatureKind::BoundaryFill => scope::DesignScopePayload::BoundaryFill(
+                    crate::records::feature::boundary_fill::DesignBoundaryFillScope {
+                        prefix: None,
+                        named_tail: (registered_boundary_fill && tail_form == ScopeTailForm::Named)
+                            .then(|| named_parameter_scope_references(bytes, kind_end, paired_at))
+                            .flatten()
+                            .filter(|references| {
+                                references.extra_bytes().is_some_and(|extra| extra > 0)
+                            }),
+                    },
+                ),
                 kind => kind.try_into().ok()?,
             },
             unclosed_construction_operand_groups: Vec::new(),
@@ -2387,7 +2451,10 @@ fn scope_feature_kind(
     let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
     Some(match (literal, type_family) {
         (_, Some(family)) => family.clone(),
-        (scope::DesignFeatureKind::PathPattern, None) => scope::DesignFeatureKind::native(stored),
+        (
+            scope::DesignFeatureKind::PathPattern | scope::DesignFeatureKind::SilhouetteSplit,
+            None,
+        ) => scope::DesignFeatureKind::native(stored),
         (literal, None) => literal,
     })
 }

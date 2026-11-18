@@ -23,6 +23,8 @@ use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::feature::scope::DesignParameterScope;
 
+mod fillet;
+
 fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();

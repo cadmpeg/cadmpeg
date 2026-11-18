@@ -34,7 +34,7 @@ fn reports(ir: &CadIr) {
 
 fn missing_body(ir: &mut CadIr) {
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id": "test:model:product#definition", "kind": "part", "bodies": ["test:model:body#missing"], "bom_properties": {}, "sketches": []
+        "id": "test:model:product#definition", "kind": "part", "bodies": ["test:model:body#missing"], "bom_properties": {}, "sketches": [], "tessellations": []
     })).unwrap());
 }
 
@@ -227,7 +227,7 @@ fn product_sketch_references_exist_and_have_one_definition() {
     );
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#one", "kind": "part", "sketches": [sketch], "bom_properties": {}, "bodies": []
+            "id": "test:model:product#one", "kind": "part", "sketches": [sketch], "tessellations": [], "bom_properties": {}, "bodies": []
         }))
         .unwrap(),
     );
@@ -237,7 +237,7 @@ fn product_sketch_references_exist_and_have_one_definition() {
     assert!(findings.is_empty());
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#two", "kind": "part", "sketches": [sketch], "bom_properties": {}, "bodies": []
+            "id": "test:model:product#two", "kind": "part", "sketches": [sketch], "tessellations": [], "bom_properties": {}, "bodies": []
         }))
         .unwrap(),
     );
@@ -266,7 +266,7 @@ fn product_sketch_reference_cannot_repeat_in_one_definition() {
     );
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#one", "kind": "part", "sketches": [sketch, sketch, sketch], "bom_properties": {}, "bodies": []
+            "id": "test:model:product#one", "kind": "part", "sketches": [sketch, sketch, sketch], "tessellations": [], "bom_properties": {}, "bodies": []
         }))
         .unwrap(),
     );
@@ -280,4 +280,76 @@ fn product_sketch_reference_cannot_repeat_in_one_definition() {
         Some("test:model:product#one")
     );
     assert_eq!(findings[0].severity, crate::report::Severity::Error);
+}
+
+/// A triangle mesh with the identity `id` that represents `body`.
+fn mesh(id: &str, body: Option<crate::ids::BodyId>) -> crate::tessellation::Tessellation {
+    use crate::math::Point3;
+    use crate::tessellation::{Tessellation, TessellationMesh};
+
+    Tessellation::new(
+        id.try_into().expect("valid identity"),
+        TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .expect("a valid mesh")
+    .with_body(body)
+}
+
+/// A part definition `id` that owns the meshes `tessellations`.
+fn mesh_part(id: &str, tessellations: &[&str]) -> crate::products::ProductDefinition {
+    serde_json::from_value(serde_json::json!({
+        "id": id, "kind": "part", "bom_properties": {}, "bodies": [], "sketches": [],
+        "tessellations": tessellations
+    }))
+    .unwrap()
+}
+
+#[test]
+fn product_tessellations_exist_represent_no_body_and_have_one_definition() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let messages = |ir: &CadIr| {
+        let mut findings = Vec::new();
+        super::super::check_products(&ctx, ir, &mut findings).unwrap();
+        findings
+            .into_iter()
+            .map(|finding| finding.message)
+            .collect::<Vec<_>>()
+    };
+    let shared = "test:model:tessellation#shared";
+    let mut ir = CadIr::empty();
+    ir.model.tessellations.push(mesh(shared, None));
+    ir.model
+        .product_definitions
+        .push(mesh_part("test:model:product#one", &[shared]));
+    assert!(messages(&ir).is_empty());
+
+    ir.model
+        .product_definitions
+        .push(mesh_part("test:model:product#two", &[shared]));
+    assert!(messages(&ir).contains(&"tessellation has multiple product definitions".to_owned()));
+    ir.model.product_definitions.pop();
+
+    ir.model.product_definitions[0] = mesh_part("test:model:product#one", &[shared, shared]);
+    assert!(messages(&ir).contains(&"duplicate product tessellation reference".to_owned()));
+
+    ir.model.product_definitions[0] = mesh_part(
+        "test:model:product#one",
+        &["test:model:tessellation#missing"],
+    );
+    assert!(messages(&ir).contains(&"invalid product tessellation reference".to_owned()));
+
+    ir.model.tessellations[0] = mesh(
+        shared,
+        Some("test:model:body#solid".try_into().expect("valid identity")),
+    );
+    ir.model.product_definitions[0] = mesh_part("test:model:product#one", &[shared]);
+    assert!(messages(&ir).contains(&"product tessellation represents a body".to_owned()));
 }

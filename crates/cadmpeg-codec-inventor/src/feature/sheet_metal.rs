@@ -17,6 +17,7 @@ use crate::pmdc::{
 pub(crate) mod contour;
 pub(crate) mod corner;
 pub(crate) mod flange;
+pub(crate) mod fold;
 pub(super) mod inputs;
 pub(crate) mod operands;
 pub(crate) mod projection;
@@ -62,6 +63,18 @@ const CORNER_FORM_TYPE: [u8; 16] = [
 ];
 const TRANSITION_FORM_TYPE: [u8; 16] = [
     0x07, 0xa6, 0x61, 0x30, 0xd4, 0x11, 0x88, 0x95, 0x60, 0x00, 0x53, 0xaa, 0x9d, 0xcc, 0xef, 0xb0,
+];
+/// The slot-4 reference list of an Unfold or Refold.
+pub(crate) const FOLD_LIST_TYPE: [u8; 16] = [
+    0x39, 0xaa, 0x15, 0x7e, 0x54, 0x41, 0xb3, 0xcb, 0x7c, 0xea, 0xb7, 0x87, 0x51, 0x94, 0xc3, 0x8a,
+];
+/// The slot-7 enumeration of an Unfold.
+pub(crate) const UNFOLD_MODE_TYPE: [u8; 16] = [
+    0xa3, 0xeb, 0x88, 0x46, 0x22, 0x42, 0x22, 0x5c, 0x48, 0x11, 0x51, 0xb1, 0x2e, 0xf4, 0xb0, 0x63,
+];
+/// The slot-7 enumeration of a Refold.
+pub(crate) const REFOLD_MODE_TYPE: [u8; 16] = [
+    0x6e, 0x3d, 0xb2, 0xeb, 0x41, 0x49, 0xfe, 0x4f, 0x20, 0xfb, 0x6c, 0x81, 0x1f, 0x21, 0x10, 0xb4,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +178,8 @@ pub(super) fn property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
         RELIEF_FORM_TYPE => Some(parse_relief_form),
         CORNER_FORM_TYPE => Some(parse_corner_form),
         TRANSITION_FORM_TYPE => Some(parse_transition_form),
+        UNFOLD_MODE_TYPE | REFOLD_MODE_TYPE => Some(parse_fold_mode),
+        FOLD_LIST_TYPE => Some(parse_fold_list),
         _ => None,
     }
 }
@@ -523,6 +538,19 @@ macro_rules! enumeration_parser {
 enumeration_parser!(parse_mode, 9);
 enumeration_parser!(parse_corner_form, 8);
 enumeration_parser!(parse_transition_form, 4);
+enumeration_parser!(parse_fold_mode, 5);
+
+fn parse_fold_list(
+    _: &DecodeContext<'_>,
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
+    super::parse_references(
+        source,
+        version,
+        PmDcFeatureReferenceFamily::SheetMetalFoldList,
+    )
+}
 
 fn parse_relief_form(
     _: &DecodeContext<'_>,
@@ -720,6 +748,8 @@ pub(crate) fn valid_references<'a>(
                 (RELIEF_FORM_TYPE, 501),
                 (CORNER_FORM_TYPE, 8),
                 (TRANSITION_FORM_TYPE, 4),
+                (UNFOLD_MODE_TYPE, 5),
+                (REFOLD_MODE_TYPE, 5),
             ]
             .iter()
             .any(|(kind, expected)| {
@@ -945,6 +975,24 @@ pub(crate) fn retained_control_losses<'a>(
                     )),
                     InventorLossCode::FeatureSheetMetalStyleFormsNative.note(format!(
                         "Projected {} with relief and transition forms set by the document style; the form definitions remain in the native document style.",
+                        feature.id
+                    )),
+                ];
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalUnfold { .. }) => {
+                return vec![InventorLossCode::FeatureSheetMetalFoldControlsRetained.note(format!(
+                    "Projected {} with the body selection, slot-3 Boolean, slot-4 list, and type-5 enumeration retained in its native records; the stationary face and the bend faces stay native face-item references, and the all-bends flag and the neutral factor stay unresolved.",
+                    feature.id
+                ))];
+            }
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalRefold { .. }) => {
+                return vec![
+                    InventorLossCode::FeatureSheetMetalFoldControlsRetained.note(format!(
+                        "Projected {} with the body selection, stationary face item, bend face collection, slot-3 Boolean, slot-4 list, and type-5 enumeration retained in its native records.",
+                        feature.id
+                    )),
+                    InventorLossCode::FeatureSheetMetalRefoldSourceUnresolved.note(format!(
+                        "Projected {} with no source Unfold: the Refold record stores no reference to an Unfold.",
                         feature.id
                     )),
                 ];

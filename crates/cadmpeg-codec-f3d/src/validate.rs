@@ -778,6 +778,16 @@ fn valid_axial_assembly_targets(
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+/// The edge-recipe evidence that scope history binding reads from the
+/// native namespace.
+fn native_edge_recipe_faces(native: &native::F3dNative) -> history::edge_recipe_scope::Sources<'_> {
+    history::edge_recipe_scope::Sources {
+        operands: &native.design_edge_operands,
+        recipes: &native.construction_recipes,
+        tags: &native.persistent_subentity_tags,
+    }
+}
+
 fn reload_native_arena<T: serde::de::DeserializeOwned>(
     decode: &DecodeContext<'_>,
     ir: &CadIr,
@@ -1060,7 +1070,9 @@ fn validate_loaded(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.asm_histories,
+        &mut Vec::new(),
     );
     // discarded-value: the decoder reported these losses when it bound the operands.
     let _ = history::bind_face_operand_history_candidates(
@@ -1119,9 +1131,9 @@ fn validate_loaded(
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);
     extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);
-    validate_fillet_sets(&ctx, &mut findings);
+    let mut fillet_radius_group_records = validate_fillet_sets(&ctx, &mut findings);
     chamfer_sets::validate(&ctx, &mut findings);
-    let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
+    fillet_radius_group_records.extend(validate_fillet_radius_groups(&ctx, &mut findings));
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records);
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
     let edge_identity_records =
@@ -1611,6 +1623,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
@@ -3092,7 +3105,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         scope.canonical_name_frame_length(),
                         placement.matrix.as_ref(),
                     ) {
-                        (Some(272 | 276), None) => true,
+                        (Some(256 | 257 | 261 | 267 | 272 | 276), None) => true,
+                        (Some(385), Some(matrix)) => {
+                            scope.byte_offset().checked_add(u64_from_index(
+                                crate::layout::component_insert_scope_283_262_385::TRANSFORM,
+                            )) == Some(matrix.offset)
+                        }
+                        (Some(389 | 399), Some(matrix)) => scope
+                            .byte_offset()
+                            .checked_add(u64_from_index(
+                            crate::layout::component_insert_matrix_scope_414_264_prefix::TRANSFORM,
+                        )) == Some(matrix.offset),
                         (Some(frame @ (400 | 404)), Some(matrix)) => scope
                             .byte_offset()
                             .checked_add(
@@ -3119,6 +3142,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     (261, "266", None) if scope.class_tag.as_str() == "434" => true,
                     (257 | 261 | 267, "264", None) if scope.class_tag.as_str() == "414" => true,
                     (257, "262", None) if scope.class_tag.as_str() == "283" => true,
+                    (261, _, None)
+                        if crate::records::feature::assembly_features::legacy_identity_insert_class(
+                            scope.class_tag.as_str(),
+                        ) =>
+                    {
+                        true
+                    }
                     (385, "262", Some(matrix)) if scope.class_tag.as_str() == "283" => {
                         scope
                             .byte_offset()
@@ -3141,6 +3171,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             (381, _) => Some(49),
                             (395, _) => Some(46),
                             (389, "264") if scope.class_tag.as_str() == "414" => Some(50),
+                            (
+                                crate::records::feature::assembly_features::TYPED_COMPONENT_INSERT_FRAME_LENGTH,
+                                _,
+                            ) => Some(u64_from_index(
+                                crate::layout::component_insert_typed_matrix_scope_584_prefix::TRANSFORM,
+                            )),
                             _ => None,
                         };
                         scope_delta.is_some_and(|delta| {
@@ -5227,7 +5263,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::ReplaceFace) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10
+                        DesignOperandRole::ROLE_0X9
+                            | DesignOperandRole::ROLE_0X10
+                            | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Revolve) => {
@@ -5351,7 +5389,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::SurfaceTrim) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X21
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::ROLE_0X9
+                            | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Split) => {
@@ -5405,6 +5445,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             || (group.record_index == construction.face_group.value
                                 && group.role() == DesignOperandRole::ROLE_0X10)
                     }) && group.extrude_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SilhouetteSplit) => {
+                    group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
                 Some(_) => false,
                 None if matches!(
@@ -5840,6 +5883,17 @@ fn validate_fillet_radius_groups<'a>(
                     };
                     let start = radius(*start_radius_parameter_record_index, "StartRadius");
                     let end = radius(*end_radius_parameter_record_index, "EndRadius");
+                    let explicit_pair_order = scope
+                        .and_then(|scope| scope.fillet_sets())
+                        .is_some_and(|list| {
+                            list.sets.iter().any(|set| {
+                                set.group_record_index == assignment.group_record_index
+                                    && matches!(
+                                        set.law,
+                                        records::feature::fillet_set::DesignFilletSetLaw::Variable { .. }
+                                    )
+                            })
+                        });
                     let mut middle_positive = false;
                     let mut previous_position = None;
                     let mut middle_valid = true;
@@ -5861,7 +5915,9 @@ fn validate_fillet_radius_groups<'a>(
                             middle_valid = false;
                             break;
                         };
-                        if previous_position.is_some_and(|previous| previous >= position) {
+                        if previous_position.is_some_and(|previous| {
+                            previous == position || (!explicit_pair_order && previous > position)
+                        }) {
                             middle_valid = false;
                             break;
                         }
@@ -5916,11 +5972,12 @@ fn validate_fillet_radius_groups<'a>(
     fillet_radius_group_records
 }
 
-/// Every fillet set names a reference-table member of its scope as its edge
-/// group, and owners of its scope whose parameters have the source kinds of
-/// its law and of `TangencyWeight`.
-fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
-    use records::feature::fillet_set::DesignFilletSetLaw;
+/// Validate set links and return groups with an explicit radius law.
+fn validate_fillet_sets<'a>(
+    ctx: &Ctx<'a, '_>,
+    findings: &mut Vec<Finding>,
+) -> HashSet<(&'a str, u32)> {
+    let mut assigned_groups = HashSet::new();
     for scope in &ctx.native.design_parameter_scopes {
         let Some(list) = scope.fillet_sets() else {
             continue;
@@ -5955,15 +6012,18 @@ fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 .all(|set| set.curvature_continuity.is_some() == constant_frame(set));
         let valid = flags_admitted
             && list.sets.iter().all(|set| {
-                let law = match set.law {
-                    DesignFilletSetLaw::Constant {
-                        radius_owner_record_index,
-                    } => owned_kind(radius_owner_record_index, "Radius"),
-                    DesignFilletSetLaw::Chordal {
-                        chord_length_owner_record_index,
-                    } => owned_kind(chord_length_owner_record_index, "ChordLen"),
-                };
-                law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
+                let options_valid = set.options_match_law()
+                    && (!set.law.has_implicit_ordinal() || list.sets.len() == 1);
+                let mut owners = HashSet::new();
+                options_valid
+                    && set
+                        .law
+                        .owner_roles()
+                        .chain(
+                            set.tangency_weight_owner_record_index
+                                .map(|owner| (owner, "TangencyWeight")),
+                        )
+                        .all(|(owner, kind)| owners.insert(owner) && owned_kind(owner, kind))
                     && scope
                         .reference_members()
                         .values()
@@ -5978,8 +6038,15 @@ fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 "Fusion Design Fillet set names a record outside its scope or an owner of another parameter kind",
                 Some(scope.id.clone()),
             );
+        } else if list.supports_set_law_projection() {
+            assigned_groups.extend(
+                list.sets
+                    .iter()
+                    .map(|set| (native_stream, set.group_record_index)),
+            );
         }
     }
+    assigned_groups
 }
 
 /// Whether a Mirror scope owns an operand group of this role: faces or
@@ -6471,7 +6538,9 @@ fn validate_edge_identity_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.asm_histories,
+        &mut Vec::new(),
     );
     history::selection::bind_edge_identity_history(
         &mut expected_edge_identity_operands,
@@ -7152,7 +7221,9 @@ fn validate_edge_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.asm_histories,
+        &mut Vec::new(),
     );
     let expected_face_boundaries = history::bind_edge_operand_history_candidates(
         &mut expected_edge_operands,
@@ -7425,7 +7496,9 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.asm_histories,
+        &mut Vec::new(),
     );
     history::bind_edge_treatment_vertex_history(
         &mut expected,
@@ -7792,9 +7865,15 @@ fn validate_face_operands<'a>(
                             ) => true,
                             Some(design::DesignFeatureFamily::ReplaceFace) => {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::ROLE_0X10
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::BoundedFace
+                                    matches!(
+                                        group.role(),
+                                        DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10
+                                    )
+                                }) && matches!(
+                                    operand.recipe_kind,
+                                    records::recipes::ConstructionRecipeKind::Face
+                                        | records::recipes::ConstructionRecipeKind::BoundedFace
+                                )
                             }
                             Some(design::DesignFeatureFamily::Loft) => {
                                 group.is_some_and(|group| {
@@ -7818,6 +7897,12 @@ fn validate_face_operands<'a>(
                                     .is_some_and(|group| group.role() == DesignOperandRole::PROFILE)
                                     && operand.recipe_kind
                                         == records::recipes::ConstructionRecipeKind::BoundedFace
+                            }
+                            Some(design::DesignFeatureFamily::SurfaceTrim) => {
+                                group.is_some_and(|group| {
+                                    group.role() == DesignOperandRole::ROLE_0X9
+                                        && group.members().len() == 1
+                                }) && operand.is_terminal_face_recipe()
                             }
                             Some(design::DesignFeatureFamily::Draft) => {
                                 group.is_some_and(|group| match group.role() {

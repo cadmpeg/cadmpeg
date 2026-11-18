@@ -93,7 +93,7 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
 }
 
 pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
-    use crate::feature::sheet_metal::{contour, flange::FlangeKind, operands, projection};
+    use crate::feature::sheet_metal::{contour, flange::FlangeKind, fold, operands, projection};
     use cadmpeg_ir::features::{
         EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue, PlanarProfileRef,
     };
@@ -342,8 +342,29 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
         .ok()?;
         (values.construction(profile.clone())? == *construction).then_some(())
     };
+    let fold_valid = |feature: &cadmpeg_ir::features::Feature| {
+        let source = source_of(feature)?;
+        let token = source.identity.segment_token.as_str();
+        let mut labels = data.pm_dc_feature_labels.iter().filter(|label| {
+            label.identity.segment_token.as_str() == token
+                && label.header.owner.record_ordinal() == Some(source.identity.record_ordinal)
+        });
+        let label = labels.next()?;
+        if labels.next().is_some() {
+            return None;
+        }
+        let kind = fold::FoldKind::of(label.class_id())?;
+        let operands = fold::operands(source, kind, |r| property(token, r)).ok()?;
+        let FeatureDefinition::Operation(actual) = feature.evaluation.definition() else {
+            return None;
+        };
+        (*actual == fold::operation(kind, &operands)).then_some(())
+    };
     for feature in &ir.model.features {
         let valid = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(
+                FeatureOperation::SheetMetalUnfold { .. } | FeatureOperation::SheetMetalRefold { .. },
+            ) => fold_valid(feature).is_some(),
             FeatureDefinition::Operation(FeatureOperation::SheetMetalContourFlange {
                 construction,
             }) => contour_valid(feature, construction).is_some(),

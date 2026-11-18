@@ -1612,8 +1612,7 @@ fn decode_variable_scalar(
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     let variable_dict = match prefix {
-        0x51 => Some([0x3f, 0xc6]),
-        0x53..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
+        0x51 | 0x53..=0xa3 => scalar::positive_dict_head(prefix).map(u16::to_be_bytes),
         0xad => Some([0x3f, 0xd9]),
         0xa7..=0xac | 0xae => Some((0xbf2c_u16 + u16::from(prefix)).to_be_bytes()),
         0xb3 => Some([0xbf, 0xe0]),
@@ -1629,7 +1628,11 @@ fn decode_variable_scalar(
         0xdd => Some([0xc0, 0x0c]),
         _ => None,
     };
-    if let (Some(head), Some(tail)) = (variable_dict, payload.get(offset + 1..offset + 7)) {
+    if let (Some(head), Some(tail), true) = (
+        variable_dict,
+        payload.get(offset + 1..offset + 7),
+        offset + 7 <= end,
+    ) {
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&head);
         raw[2..].copy_from_slice(tail);

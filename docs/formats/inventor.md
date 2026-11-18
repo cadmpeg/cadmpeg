@@ -1334,6 +1334,23 @@ entries (name utf16, rule u32)[entry_count]
 
 The plate scalar control contains `value:u32` after its versioned content header and stamps. The base bend scalar control contains `value:u32` after that header and stamps. The extended bend scalar control contains `value:u32` and `state:u8`. Each record ends after its last stated field.
 
+Feature-label classes `1a4066115a4744b315a62ab003a988a7` and `e9a3cc35a84fd15b179fa499ab579fa5` identify an Unfold and a Refold. An Unfold flattens bends of a sheet-metal body, and a Refold restores flattened bends. Each is a separate labeled generic feature with eight properties:
+
+| Slot | Operand |
+| ---: | --- |
+| 0 | Body selection `83aadad54f4375dacd1003b260a8a422` of the sheet-metal body |
+| 1 | Face item of the stationary face |
+| 2 | Face collection of the bend faces |
+| 3 | Boolean |
+| 4 | Fold list `39aa157e5441b3cb7ceab7875194c38a` |
+| 5 | Null |
+| 6 | Null |
+| 7 | Fold enumeration: type `a3eb88462242225c481151b12ef4b063` in an Unfold, type `6e3db2eb4149fe4f20fb6c811f2110b4` in a Refold |
+
+The body selection names one body. The stationary face item selects one face. The bend face collection contains one face item for each selected bend face. A bend that a cut divides contributes the faces of each remaining part. The fold list contains the versioned content header and stamps, followed by a type-2 reference list, then ends. Each fold enumeration contains the versioned content header and stamps, followed by `type_value:i16` and `value:u16`, then ends; the type value is 5. The Refold record and its operands contain no reference to an Unfold.
+
+In the projected form, slot 3 is Boolean true, the fold list is empty, and the fold enumeration is `(5, 1)`. The Unfold keeps the slot-1 face item as its stationary face and the slot-2 face collection as its bend faces. The Refold has no source Unfold.
+
 ### 13.6 Rectangular patterns
 
 Feature-label class `dac27a76d2110d2e60002aab01f31bb0` identifies a rectangular pattern. In feature mode, the participant list of the pattern record gives the seed feature records in seed order. Each seed is a distinct feature or pattern-feature record in the same segment and precedes the pattern in the same model history.

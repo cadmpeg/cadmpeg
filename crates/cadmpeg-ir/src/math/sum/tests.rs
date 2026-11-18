@@ -302,7 +302,7 @@ proptest! {
             magnitude[bit / 64] &= !(1_u64 << (bit % 64));
         }
         let highest = highest_bit(&magnitude);
-        let sum = ExactSignedSum {
+        let mut sum = ExactSignedSum {
             positive: magnitude,
             negative: [0; EXACT_SUM_WORDS],
             window: tight_window(&magnitude),
@@ -469,8 +469,11 @@ fn finished(
 ) -> [(ScaledParts, Option<u64>); 2] {
     [
         (
-            scaled_parts(windowed.finish()),
-            windowed.finite_sum().map(|value| value.get().to_bits()),
+            scaled_parts(windowed.clone().finish()),
+            windowed
+                .clone()
+                .finite_sum()
+                .map(|value| value.get().to_bits()),
         ),
         (
             scaled_parts(scanned.finish()),
@@ -521,6 +524,24 @@ fn a_carry_out_of_a_full_word_rounds_as_the_full_scan_rounds() {
 }
 
 proptest! {
+    #[test]
+    fn a_plain_ratio_product_states_the_extended_range_bits(
+        operands in [any_factor(), any_factor(), any_factor(), any_factor()],
+    ) {
+        let Some([value, denominator, first, second]) = FiniteReal::array(operands) else {
+            return Ok(());
+        };
+        let bits = |products: Option<[FiniteReal; 2]>| {
+            products.map(|products| products.map(|product| product.get().to_bits()))
+        };
+        if let Some(plain) = super::normal_ratio_products(value, denominator, [first, second]) {
+            prop_assert_eq!(
+                bits(Some(plain)),
+                bits(super::extended_ratio_products(value, denominator, [first, second]))
+            );
+        }
+    }
+
     #[test]
     fn windowed_sums_round_as_the_full_scan_rounds(
         terms in proptest::collection::vec(any_paired_term(), 0..12),
