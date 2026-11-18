@@ -8196,6 +8196,19 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
 
+## `sheet_metal_rule_v0_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the indexed header and ten zero bytes |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | the indexed header and ten zero bytes |
+| 21 | 4 | `settings_count` | `u32` | little | spec | [u32 settings-reference count](../layouts/f3d.md) at offset 21 |
+
 ## `sheet_metal_rule_prefix`
 
 Spec §3.1 · layout: byte offsets · size: not stated

@@ -317,7 +317,7 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit side or result choice. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
 
-**Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Complete carrier, settings, and profile programs must be compared, with exact result topology confirming each intended change. Until the selected region, thickness, material side, and result choice are independently resolved, retain the operation as native sheet-metal Base Face data.
+**Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Compare the carrier, settings, and profile programs and confirm each change against exact result topology. Resolve the ordered region identities to the corresponding sketch regions, including secondary loops.
 
 ### DR-74. Lost-edge runs shorter than the operand list
 

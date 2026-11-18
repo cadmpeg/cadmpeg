@@ -1072,8 +1072,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             faces, distance, ..
         }) => !face_selection_is_resolved(faces) || distance.is_none(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
-            profile, ..
-        }) => !planar_profile_ref_is_resolved(profile),
+            profile, thickness, side
+        }) => !planar_profile_ref_is_resolved(profile) || thickness.is_none() || side.is_none(),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange(construction)) => {
             !construction.has_all_inputs()
                 || construction.edges.as_ref().is_none_or(|edges| !edge_selection_is_resolved(edges))
