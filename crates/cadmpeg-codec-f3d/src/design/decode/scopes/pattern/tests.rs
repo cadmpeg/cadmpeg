@@ -1735,6 +1735,7 @@ fn rectangular_pattern_spacing_direction_validates_shifted_fields() {
 mod body_references;
 mod compact_extent;
 mod compact_spacing;
+mod direction_records;
 
 fn spacing_payload() -> Vec<u8> {
     let mut bytes = Vec::new();
