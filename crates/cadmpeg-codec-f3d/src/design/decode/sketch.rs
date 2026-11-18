@@ -19,6 +19,7 @@ use crate::design::decode::text::design_record_id;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
+use crate::layout::sketch_null_explicit_member_head as null_head;
 use crate::loss::F3dLossCode;
 use crate::records::{
     decal::DesignRecordHeader,
@@ -790,11 +791,6 @@ fn member_run_sketch_scope<'a>(
     }
 }
 
-/// Parse a member-run head placement: the paired same-index record after the
-/// sketch's entity header opens with a marked
-/// reference naming a head record. A 34-byte head denotes the identity
-/// placement. A 162-byte head stores eleven zero bytes and the row-major 4×4
-/// local-to-model transform at offset 22.
 fn parse_member_run_head_placement(
     bytes: &[u8],
     entity_byte_offset: u64,
@@ -857,24 +853,39 @@ fn parse_member_run_head_placement(
                     paired_byte_offset: u64_from_index(paired_at),
                 }
             }
-            MEMBER_RUN_HEAD_FRAME | TYPED_MEMBER_RUN_HEAD_FRAME
-                if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..])
-                    && (frame_length == MEMBER_RUN_HEAD_FRAME
-                        || crate::bytes::typed_local_reference_target(bytes, head_at + 151)
-                            .is_some()) =>
+            null_head::LEN | MEMBER_RUN_HEAD_FRAME | TYPED_MEMBER_RUN_HEAD_FRAME
+                if bytes.get(head_at + null_head::ZERO_RUN..head_at + null_head::TRANSFORM)
+                    == Some(&null_head::ZERO_RUN_VALUE[..])
+                    && (frame_length != TYPED_MEMBER_RUN_HEAD_FRAME
+                        || crate::bytes::typed_local_reference_target(
+                            bytes,
+                            head_at + null_head::CLOSING_REFERENCE,
+                        )
+                        .is_some()) =>
             {
-                let values = f64s_at::<16>(bytes, head_at + 22)?;
+                let values = f64s_at::<16>(bytes, head_at + null_head::TRANSFORM)?;
                 let mut transform = [[0.0; 4]; 4];
                 for (ordinal, value) in values.iter().copied().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                if bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..]) {
+                if bytes.get(head_at + null_head::PADDING) != Some(&null_head::PADDING_VALUE)
+                    || bytes.get(head_at + null_head::CLOSING_REFERENCE)
+                        != Some(&u8::from(frame_length != null_head::LEN))
+                {
                     return None;
                 }
-                DesignSketchFrameForm::MemberExplicit {
-                    paired_byte_offset: u64_from_index(paired_at),
-                    transform: SketchPlacementMatrix::try_from(transform).ok()?,
-                    typed_reference: frame_length == TYPED_MEMBER_RUN_HEAD_FRAME,
+                let transform = SketchPlacementMatrix::try_from(transform).ok()?;
+                if frame_length == null_head::LEN {
+                    DesignSketchFrameForm::MemberNullExplicit {
+                        paired_byte_offset: u64_from_index(paired_at),
+                        transform,
+                    }
+                } else {
+                    DesignSketchFrameForm::MemberExplicit {
+                        paired_byte_offset: u64_from_index(paired_at),
+                        transform,
+                        typed_reference: frame_length == TYPED_MEMBER_RUN_HEAD_FRAME,
+                    }
                 }
             }
             _ => return None,

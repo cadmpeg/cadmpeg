@@ -343,6 +343,20 @@ fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
 }
 
 #[test]
+fn sketch_scope_reference_offsets_admit_typed_container_references() {
+    let mut frame = vec![0; 3];
+    frame.push(1);
+    frame.extend_from_slice(&4137u64.to_le_bytes());
+    frame.extend_from_slice(&36u32.to_le_bytes());
+    frame.extend_from_slice(b"44A64366-4BD3-4B24-881A-F94C206E8F2D");
+    frame.extend_from_slice(&[0, 0]);
+    assert_eq!(first_marked_reference_offsets(&frame).get(&4137), Some(&3));
+    assert!(first_marked_reference_offsets(&frame[..frame.len() - 1]).is_empty());
+    frame[16] = b'X';
+    assert!(first_marked_reference_offsets(&frame).is_empty());
+}
+
+#[test]
 fn canvas_scope_admits_its_complete_98_byte_tail_and_rejects_broken_links() {
     use super::parse_parameter_scope;
     use crate::design::test_support::indexed_record_offsets_for_test;

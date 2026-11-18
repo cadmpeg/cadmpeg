@@ -9892,6 +9892,26 @@ Parsed by:
 | 281 | 4 | `repeated_owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
 | 285 | 8 | `repeated_owner_padding` | `bytes[8]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 
+## `sketch_null_explicit_member_head`
+
+Spec §3.1 · layout: byte offsets · size: 152 B
+
+Offsets are relative to the indexed head-placement header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 11 | `zero_run` | `bytes[11]` | little | spec | Its indexed header is followed by eleven zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 22 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 transform values |
+| 150 | 1 | `padding` | `u8` | little | spec | one zero byte, and a one-byte null closing reference · value `0` |
+| 151 | 1 | `closing_reference` | `u8` | little | spec | one-byte null closing reference · value `0` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the placement fields.
+
 ## `sketch_typed_compact_member_head`
 
 Spec §3.1 · layout: byte offsets · size: 74 B

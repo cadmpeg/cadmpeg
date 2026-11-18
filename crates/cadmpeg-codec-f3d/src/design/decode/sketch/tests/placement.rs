@@ -1494,6 +1494,72 @@ fn member_run_sketch_scope_prefers_the_scope_bound_to_the_entity() {
 }
 
 #[test]
+fn null_reference_sketch_head_preserves_its_solved_plane() {
+    const EPS_PROFILE_SEARCH: f64 = 1.0e-6;
+    let header = |bytes: &mut Vec<u8>, class: &[u8; 3], record: u32| {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class);
+        bytes.extend_from_slice(&record.to_le_bytes());
+    };
+    let transform = [
+        [1.0f64, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 2.0],
+        [0.0, -1.0, 0.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut bytes = Vec::new();
+    header(&mut bytes, b"280", 100);
+    bytes.resize(40, 0);
+    let paired = bytes.len();
+    header(&mut bytes, b"281", 100);
+    bytes.extend_from_slice(&[0; 8]);
+    typed_sketch_reference(&mut bytes, 200);
+    let head = bytes.len();
+    header(&mut bytes, b"282", 200);
+    bytes.extend_from_slice(&[0; 11]);
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 0]);
+    header(&mut bytes, b"283", 201);
+    let entity = "Sketch_100".to_owned().try_into().unwrap();
+    let parse = |bytes: &[u8]| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        crate::design::decode::sketch::parse_member_run_head_placement(bytes, 0, &entity, &records)
+    };
+    let mut placement = parse(&bytes).expect("null-reference explicit head");
+    assert_eq!(placement.frame_length(), 152);
+    assert_eq!(placement.paired_byte_offset(), u64_from_index(paired));
+    assert_eq!(
+        placement.transform_offset(),
+        Some(u64_from_index(head + 22))
+    );
+    assert_eq!(*placement.transform(), transform);
+    placement.id = "f3d:Design/BulkStream.dat:design-sketch-placement#110".into();
+    let (sketches, _) = crate::test_support::with_decode_context(|ctx| {
+        project_sketch_design(
+            ctx,
+            &SketchProjectInputs::new(&[placement], &[], &[], &[], &[]),
+            EPS_PROFILE_SEARCH,
+        )
+    })
+    .unwrap()
+    .into_tuple();
+    assert_eq!(sketches.len(), 1);
+    let (origin, normal, _) = sketches[0].resolved_placement().expect("resolved plane");
+    assert_eq!(origin.get(), Point3::new(10.0, 20.0, 30.0));
+    assert_eq!(normal.get(), Vector3::new(0.0, 1.0, 0.0));
+    for at in [head + 150, head + 151] {
+        let mut invalid = bytes.clone();
+        invalid[at] = 1;
+        assert!(parse(&invalid).is_none());
+    }
+    let mut invalid = bytes.clone();
+    invalid.insert(head + 152, 0);
+    assert!(parse(&invalid).is_none());
+}
+
+#[test]
 fn typed_profile_compact_sketch_head_supplies_identity_placement() {
     let header = |bytes: &mut Vec<u8>, class: &[u8; 3], record: u32| {
         bytes.extend_from_slice(&3u32.to_le_bytes());

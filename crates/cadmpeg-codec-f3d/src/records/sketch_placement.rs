@@ -3,6 +3,7 @@
 
 use super::identity::{DesignAffineTransform, DesignEntityId, IDENTITY_MATRIX};
 use super::references::DesignClassTag;
+use crate::layout::sketch_null_explicit_member_head as null_head;
 use crate::layout::sketch_typed_compact_member_head as typed_compact;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
@@ -248,6 +249,10 @@ pub(crate) enum DesignSketchFrameForm {
     MemberTypedCompact {
         paired_byte_offset: u64,
     },
+    MemberNullExplicit {
+        paired_byte_offset: u64,
+        transform: SketchPlacementMatrix,
+    },
     MemberExplicit {
         paired_byte_offset: u64,
         transform: SketchPlacementMatrix,
@@ -287,6 +292,9 @@ impl DesignSketchFrame {
             DesignSketchFrameForm::MemberTypedCompact { .. } => {
                 cadmpeg_core::decode::u64_from_index(typed_compact::LEN)
             }
+            DesignSketchFrameForm::MemberNullExplicit { .. } => {
+                cadmpeg_core::decode::u64_from_index(null_head::LEN)
+            }
             DesignSketchFrameForm::MemberExplicit {
                 typed_reference, ..
             } => {
@@ -308,6 +316,9 @@ impl DesignSketchFrame {
             | DesignSketchFrameForm::ScopeLegacy325(matrix)
             | DesignSketchFrameForm::ScopeExplicit(matrix)
             | DesignSketchFrameForm::ScopeGenesisExplicit(matrix)
+            | DesignSketchFrameForm::MemberNullExplicit {
+                transform: matrix, ..
+            }
             | DesignSketchFrameForm::MemberExplicit {
                 transform: matrix, ..
             } => &matrix.0,
@@ -324,7 +335,10 @@ impl DesignSketchFrame {
             }
             DesignSketchFrameForm::ScopeExplicit(_) => 55,
             DesignSketchFrameForm::ScopeGenesisExplicit(_) => 66,
-            DesignSketchFrameForm::MemberExplicit { .. } => 22,
+            DesignSketchFrameForm::MemberNullExplicit { .. }
+            | DesignSketchFrameForm::MemberExplicit { .. } => {
+                cadmpeg_core::decode::u64_from_index(null_head::TRANSFORM)
+            }
         };
         Some(self.byte_offset + relative)
     }
@@ -332,6 +346,9 @@ impl DesignSketchFrame {
         match self.form {
             DesignSketchFrameForm::MemberCompact { paired_byte_offset }
             | DesignSketchFrameForm::MemberTypedCompact { paired_byte_offset }
+            | DesignSketchFrameForm::MemberNullExplicit {
+                paired_byte_offset, ..
+            }
             | DesignSketchFrameForm::MemberExplicit {
                 paired_byte_offset, ..
             } => paired_byte_offset,
@@ -361,6 +378,7 @@ impl DesignSketchPlacement {
             self.frame.form,
             DesignSketchFrameForm::MemberCompact { .. }
                 | DesignSketchFrameForm::MemberTypedCompact { .. }
+                | DesignSketchFrameForm::MemberNullExplicit { .. }
                 | DesignSketchFrameForm::MemberExplicit { .. }
         )
     }
@@ -499,6 +517,12 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             {
                 Form::MemberTypedCompact {
                     paired_byte_offset: wire.paired_byte_offset,
+                }
+            }
+            (true, length) if length == cadmpeg_core::decode::u64_from_index(null_head::LEN) => {
+                Form::MemberNullExplicit {
+                    paired_byte_offset: wire.paired_byte_offset,
+                    transform: wire.transform.try_into()?,
                 }
             }
             (true, length @ (162 | 202)) => Form::MemberExplicit {

@@ -305,9 +305,6 @@ pub(crate) fn decode_parameter_scopes(
                 let mut unique_match = None;
                 let mut multiple_matches = false;
                 if let Some(frame) = frame {
-                    // One pass over the frame: the first offset of every
-                    // marked reference (a one byte, a u32 suffix, six zero
-                    // bytes), then each eligible entity looks its suffix up.
                     let first_at = first_marked_reference_offsets(frame);
                     for entity in entities {
                         if native_stream(&entity.id) != Some(stream.as_str())
@@ -914,10 +911,10 @@ pub(crate) fn decode_parameter_scopes(
 fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {
     let mut first_at = HashMap::new();
     for at in memchr::memchr_iter(1, frame) {
-        if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
-            if let Some(suffix) = View::u32_le_at(frame, at + 1) {
-                first_at.entry(suffix).or_insert(at);
-            }
+        if let Some(suffix) = crate::bytes::local_reference_target(frame, at, false)
+            .or_else(|| crate::bytes::typed_local_reference_target(frame, at))
+        {
+            first_at.entry(suffix).or_insert(at);
         }
     }
     first_at
