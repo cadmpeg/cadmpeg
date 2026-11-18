@@ -3292,6 +3292,33 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     && records_by_index.contains_key(&(native_stream, operation.angle_record_index))
                     && records_by_index
                         .contains_key(&(native_stream, operation.opposite_angle_record_index))
+                    && operation
+                        .flags
+                        .and_then(|flags| flags.parting)
+                        .is_none_or(|parting| {
+                            [
+                                Some(parting.pull),
+                                Some(parting.tool),
+                                Some(parting.faces),
+                                parting.fixed_edges,
+                            ]
+                            .into_iter()
+                            .flatten()
+                            .all(|reference| {
+                                reference.value != 0
+                                    && reference.offset >= scope.byte_offset()
+                                    && reference
+                                        .offset
+                                        .checked_add(11)
+                                        .is_some_and(|end| end <= scope.reference_count_offset())
+                                    && scope
+                                        .reference_members()
+                                        .values()
+                                        .any(|value| *value == reference.value)
+                                    && records_by_index
+                                        .contains_key(&(native_stream, reference.value))
+                            })
+                        })
             }
         };
         let combine_link = match scope.combine_operation() {
@@ -5255,10 +5282,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Draft) => {
-                    matches!(
-                        group.role(),
-                        DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
-                    ) && group.extrude_role().is_none()
+                    (matches!(group.role(), DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21)
+                        || (group.role() == DesignOperandRole::BODIES_B
+                            && scope.draft_operation().and_then(|operation| operation.flags)
+                                .and_then(|flags| flags.parting).is_some_and(|parting| {
+                                    parting.tool.value == group.record_index
+                                        || parting.fixed_edges.is_some_and(|fixed| fixed.value == group.record_index)
+                                }))) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::ReplaceFace) => {
                     matches!(

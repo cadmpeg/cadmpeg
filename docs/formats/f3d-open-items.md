@@ -3418,6 +3418,26 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** `f3d.md` §3.1 "A local occurrence is a child of each occurrence" excludes saved free-edge bodies from component body coverage. A saved free-edge body without a product-definition owner is reported as `assembly.saved-free-edge-body-unowned`.
 
+### DR-812. Draft parting controls
+
+**Question.** How do anchor kinds `2` and `3`, their mode word, the auxiliary scalars, and the boundary flag define fixed and moving parting-line Drafts?
+
+**Known.** These prefixes name the angle owners, drafted-face group, pull group, tool group, and an optional fixed-edge group. The public Draft tool reference defines fixed and moving parting lines, fixed-line side modes, moving-line angle directions, and fixed edges. Both stored angle lanes can be equal while the mode word differs. The file-backed legacy layout has anchor kind `2`, mode `1`, a zero second angle, and an absent fixed-edge reference. The reading for other parting controls follows the group roles and target types. Synthetic cases exercise mode `2`, including kind `3` with a nonzero second angle and a present fixed-edge reference.
+
+**Need.** Controlled changes of each parting-line option with independently identified signed angles, tool curves, and fixed edges.
+
+**Note.** The decoder reads these anchor kinds as parting-line Drafts and reports `feature.draft-parting-controls-partial`. It transfers the first angle, drafted-face selection, native tool selection, and resolved pull. The native construction retains both angles, all control values, and the fixed-edge reference.
+
+### DR-811. Partial Draft anchor construction
+
+**Question.** Which anchor selection applies when a Draft's pull construction, scalar lanes, or referenced groups are incomplete or ambiguous?
+
+**Known.** The owning scope and complete same-stream groups retain native selector identities. A unique referenced owner at local ordinal zero retains the signed first angle in radians.
+
+**Need.** Complete anchor definitions and unique selector bindings for these forms.
+
+**Note.** The decoder retains a partial neutral-plane Draft with native anchor and face selectors and any recovered angle, and reports `feature.draft-neutral-anchor-assumed`. A finite angle outside the neutral slope domain remains native and reports `feature.draft-slope-out-of-range`.
+
 ### DR-792. Pose of an unresolved legacy insertion
 
 **Question.** Which current occurrence pose accompanies a legacy insertion whose source carrier or operation table remains unresolved?
