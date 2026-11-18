@@ -587,6 +587,12 @@ impl From<DesignFaceOperand> for DesignFaceOperandWire {
 }
 
 impl DesignFaceOperand {
+    pub(crate) fn is_terminal_face_recipe(&self) -> bool {
+        self.recipe_kind == ConstructionRecipeKind::Face
+            && self.recipe_program.as_slice() == [0, -1]
+            && self.recipe_nodes.is_empty()
+    }
+
     pub(crate) fn group_record_index(&self) -> Option<u32> {
         self.group.map(|group| group.group_record_index)
     }

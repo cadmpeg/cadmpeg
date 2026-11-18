@@ -1779,6 +1779,27 @@ the selected profile interval. Each `SEAM_EDGE` selects its corresponding pcurve
 face is a closed two-dimensional manifold with singular surface parameters
 at its poles.
 
+CADIR decision: a face on a `TOROIDAL_SURFACE` with `0 < R < |r|` (a spindle
+torus) lies on one sheet. In the surface frame, a point at distance `ρ ≥ 0`
+from the axis and height `z` lies on the outer sheet when
+`(ρ − R)² + z² = r²` and on the inner sheet when `(ρ + R)² + z² = r²`. The
+poles lie on both sheets. The decoder samples each face on the surface at its
+boundary vertices and at the parameters 1/4, 1/2 and 3/4 of each bounding
+edge's range on the edge carrier. The tolerance of a sample is the largest of
+the representation linear uncertainty and the tolerances that the face, the
+edge and the vertex carry. A sample within its tolerance of both sheets is a
+pole. A sample within its tolerance of one sheet selects that sheet. A
+sample outside its tolerance of both sheets selects the nearer sheet when its
+distance from the other sheet is at least ten times larger. When
+every face on the surface selects the same sheet, the decoder attaches a
+degenerate-torus record with that `select_outer` value to the surface. When a
+sample lies outside its tolerance of both sheets at comparable distances from
+them, when the samples of one face
+select both sheets, when a face has only pole samples, or when two faces select
+different sheets, the surface carries no selection and the decoder reports
+`geometry.torus-sheet-unresolved` once for the surface. A surface that already
+carries a degenerate-torus record keeps it.
+
 Section §5.5.17 defines the inherited `FACE_BOUND` attributes `bound` and
 `orientation`. Section §5.5.18 declares `FACE_OUTER_BOUND` as a subtype with
 no additional explicit attributes. Therefore, in a complex instance, the
@@ -2382,7 +2403,13 @@ whose name begins with `DIMENSIONAL_SIZE_`, `DIMENSIONAL_LOCATION_`,
 `relating_shape_aspect` to its `related_shape_aspect`; its CADIR dimension kind
 is `other` with the name `directed_dimensional_location`.
 A complex dimension uses its dimensional partial for its kind and all inherited
-partials for its name, targets, and characteristic value.
+partials for its name, targets, and characteristic value. Dimensions of CADIR kind size,
+location, diameter, radius, spherical diameter, and spherical radius carry
+length measures, and dimensions of CADIR kind angular carry plane-angle
+measures. When the nominal or limits of a dimension disagree with its kind or
+with each other, CADIR keeps the first of these readings that is valid: the
+kind `other`, named by the dimensional entity in lower case, with the limits;
+the dimension's kind without the limits; the kind `other` without the limits.
 ISO 10303-47 defines `DIMENSIONAL_CHARACTERISTIC_REPRESENTATION` as the
 association of a dimension with its explicit representation. Its
 `SHAPE_DIMENSION_REPRESENTATION.items` attribute is a `SET[1:?]` of
