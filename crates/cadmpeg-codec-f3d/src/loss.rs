@@ -402,6 +402,8 @@ pub(crate) enum F3dLossCode {
     /// A Mirror plane is read from the `WorkPlane` scope after its plane
     /// selection identity.
     FeatureMirrorPlaneWorkPlaneAssumed,
+    /// A Revolve plane target is read from the `WorkPlane` scope at the record after its selection identity.
+    FeatureRevolvePlaneWorkPlaneAssumed,
     /// A circular pattern's symmetric distribution has no circular pattern field.
     FeatureCircularPatternPlacementNotTransferred,
     /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
@@ -724,6 +726,10 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
+    FeatureSilhouetteSplitPrefixUnparsed,
+    FeatureSilhouetteSplitModeUnresolved,
+    FeatureSilhouetteSplitDirectionUnresolved,
+    FeatureSilhouetteSplitTargetUnresolved,
     FeatureFaceGroupsTypeUnverified,
     FeatureFaceGroupsPrefixUnparsed,
     FeatureFaceGroupsSourceAssumed,
@@ -877,6 +883,16 @@ pub(crate) enum F3dLossCode {
     FeatureTrimCellTableNative,
     /// `SurfaceTrim` group members without a decoded operand record project by group role.
     FeatureTrimMemberTypeAssumed,
+    /// Selected Boundary Fill cells retain their source records.
+    FeatureBoundaryFillCellsNative,
+    /// Boundary Fill has no admitted cell selection.
+    FeatureBoundaryFillCellsUnresolved,
+    /// Boundary Fill stores an unassigned operation word.
+    FeatureBoundaryFillOperationUnresolved,
+    /// Boundary Fill tool identity is unresolved.
+    FeatureBoundaryFillToolsUnresolved,
+    /// Boundary Fill Boolean target bodies are unresolved.
+    FeatureBoundaryFillTargetsUnresolved,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
     FeatureFaceOperandFallbackContradicted,
     /// An Extrude to-face termination keeps its native group: its recipe face and
@@ -1345,6 +1361,7 @@ impl F3dLossCode {
         Self::FeatureTimelineOwnerUnpaired,
         Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureMirrorPlaneWorkPlaneAssumed,
+        Self::FeatureRevolvePlaneWorkPlaneAssumed,
         Self::FeatureCircularPatternPlacementNotTransferred,
         Self::FeatureCircularPatternDistributionAssumed,
         Self::FeatureOutputStateChainUnbound,
@@ -1544,6 +1561,10 @@ impl F3dLossCode {
         Self::FeatureWorkAxisCandidatesUnresolved,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
+        Self::FeatureSilhouetteSplitPrefixUnparsed,
+        Self::FeatureSilhouetteSplitModeUnresolved,
+        Self::FeatureSilhouetteSplitDirectionUnresolved,
+        Self::FeatureSilhouetteSplitTargetUnresolved,
         Self::FeatureFaceGroupsTypeUnverified,
         Self::FeatureFaceGroupsPrefixUnparsed,
         Self::FeatureFaceGroupsSourceAssumed,
@@ -1658,6 +1679,11 @@ impl F3dLossCode {
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
+        Self::FeatureBoundaryFillCellsNative,
+        Self::FeatureBoundaryFillCellsUnresolved,
+        Self::FeatureBoundaryFillOperationUnresolved,
+        Self::FeatureBoundaryFillToolsUnresolved,
+        Self::FeatureBoundaryFillTargetsUnresolved,
         Self::FeatureFaceOperandFallbackContradicted,
         Self::FeatureExtrudeTargetDisputed,
         Self::FeatureEdgeSelectionNative,
@@ -2033,6 +2059,7 @@ impl F3dLossCode {
             Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
             Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureMirrorPlaneWorkPlaneAssumed => "feature.mirror-plane-work-plane-assumed",
+            Self::FeatureRevolvePlaneWorkPlaneAssumed => "feature.revolve-plane-work-plane-assumed",
             Self::FeatureCircularPatternPlacementNotTransferred => {
                 "feature.circular-pattern-placement-not-transferred"
             }
@@ -2452,6 +2479,18 @@ impl F3dLossCode {
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
+            Self::FeatureSilhouetteSplitPrefixUnparsed => {
+                "feature.silhouette-split-prefix-unparsed"
+            }
+            Self::FeatureSilhouetteSplitModeUnresolved => {
+                "feature.silhouette-split-mode-unresolved"
+            }
+            Self::FeatureSilhouetteSplitDirectionUnresolved => {
+                "feature.silhouette-split-direction-unresolved"
+            }
+            Self::FeatureSilhouetteSplitTargetUnresolved => {
+                "feature.silhouette-split-target-unresolved"
+            }
             Self::FeatureFaceGroupsTypeUnverified => "feature.mesh-face-groups-type-unverified",
             Self::FeatureFaceGroupsPrefixUnparsed => "feature.mesh-face-groups-prefix-unparsed",
             Self::FeatureFaceGroupsSourceAssumed => "feature.mesh-face-groups-source-assumed",
@@ -2632,6 +2671,15 @@ impl F3dLossCode {
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
+            Self::FeatureBoundaryFillCellsNative => "feature.boundary-fill-cells-native",
+            Self::FeatureBoundaryFillCellsUnresolved => "feature.boundary-fill-cells-unresolved",
+            Self::FeatureBoundaryFillOperationUnresolved => {
+                "feature.boundary-fill-operation-unresolved"
+            }
+            Self::FeatureBoundaryFillToolsUnresolved => "feature.boundary-fill-tools-unresolved",
+            Self::FeatureBoundaryFillTargetsUnresolved => {
+                "feature.boundary-fill-targets-unresolved"
+            }
             Self::FeatureExtrudeTargetDisputed => "feature.extrude-target-disputed",
             Self::FeatureFaceOperandFallbackContradicted => {
                 "feature.face-operand-fallback-contradicted"
@@ -2976,6 +3024,7 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeatureDerivedBaseUnresolved
@@ -3241,6 +3290,10 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::FeatureSilhouetteSplitPrefixUnparsed
+            | Self::FeatureSilhouetteSplitModeUnresolved
+            | Self::FeatureSilhouetteSplitDirectionUnresolved
+            | Self::FeatureSilhouetteSplitTargetUnresolved
             | Self::FeatureFaceGroupsTypeUnverified
             | Self::FeatureFaceGroupsPrefixUnparsed
             | Self::FeatureFaceGroupsSourceAssumed
@@ -3355,6 +3408,11 @@ impl F3dLossCode {
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
+            | Self::FeatureBoundaryFillCellsNative
+            | Self::FeatureBoundaryFillCellsUnresolved
+            | Self::FeatureBoundaryFillOperationUnresolved
+            | Self::FeatureBoundaryFillToolsUnresolved
+            | Self::FeatureBoundaryFillTargetsUnresolved
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureExtrudeTargetDisputed
             | Self::FeatureEdgeSelectionNative
@@ -3599,6 +3657,7 @@ impl F3dLossCode {
             | Self::FeatureTimelineOwnerUnpaired
             | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
+            | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeatureDerivedBaseUnresolved
@@ -3870,6 +3929,10 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
+            | Self::FeatureSilhouetteSplitPrefixUnparsed
+            | Self::FeatureSilhouetteSplitModeUnresolved
+            | Self::FeatureSilhouetteSplitDirectionUnresolved
+            | Self::FeatureSilhouetteSplitTargetUnresolved
             | Self::FeatureFaceGroupsTypeUnverified
             | Self::FeatureFaceGroupsPrefixUnparsed
             | Self::FeatureFaceGroupsSourceAssumed
@@ -3984,6 +4047,11 @@ impl F3dLossCode {
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
+            | Self::FeatureBoundaryFillCellsNative
+            | Self::FeatureBoundaryFillCellsUnresolved
+            | Self::FeatureBoundaryFillOperationUnresolved
+            | Self::FeatureBoundaryFillToolsUnresolved
+            | Self::FeatureBoundaryFillTargetsUnresolved
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureExtrudeTargetDisputed
             | Self::FeatureEdgeSelectionNative
@@ -4419,6 +4487,7 @@ mod tests {
                 "feature.timeline-owner-unpaired",
                 "feature.paste-copy-placement-assumed",
                 "feature.mirror-plane-work-plane-assumed",
+                "feature.revolve-plane-work-plane-assumed",
                 "feature.circular-pattern-placement-not-transferred",
                 "feature.circular-pattern-distribution-assumed",
                 "feature.output-state-chain-unbound",
@@ -4618,6 +4687,10 @@ mod tests {
                 "feature.work-axis-candidates-unresolved",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
+                "feature.silhouette-split-prefix-unparsed",
+                "feature.silhouette-split-mode-unresolved",
+                "feature.silhouette-split-direction-unresolved",
+                "feature.silhouette-split-target-unresolved",
                 "feature.mesh-face-groups-type-unverified",
                 "feature.mesh-face-groups-prefix-unparsed",
                 "feature.mesh-face-groups-source-assumed",
@@ -4732,6 +4805,11 @@ mod tests {
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",
+                "feature.boundary-fill-cells-native",
+                "feature.boundary-fill-cells-unresolved",
+                "feature.boundary-fill-operation-unresolved",
+                "feature.boundary-fill-tools-unresolved",
+                "feature.boundary-fill-targets-unresolved",
                 "feature.face-operand-fallback-contradicted",
                 "feature.extrude-target-disputed",
                 "feature.edge-selection-native",
