@@ -230,10 +230,10 @@ pub(super) fn exact_extrude_prologue(
     .or_else(|| exact_slotted_extrude_prologue(bytes, start, reference_count_at, reference_members))
 }
 
-pub(crate) fn extrude_seventh_slot_record_index(
+pub(crate) fn extrude_marked_reference_slots(
     bytes: &[u8],
     prologue: DesignExtrudePrologue,
-) -> Option<u32> {
+) -> Option<[Option<u32>; 7]> {
     let (operation_offset, first_side_extent_offset) = match prologue {
         DesignExtrudePrologue::ReferenceAware {
             operation_offset,
@@ -258,25 +258,18 @@ pub(crate) fn extrude_seventh_slot_record_index(
     let mut cursor = operation_offset
         .checked_add(extrude_fields::PROFILE_NORMAL)?
         .checked_add(24)?;
-    let mut seventh = None;
-    for ordinal in 0..7 {
+    let mut slots = [None; 7];
+    for slot in &mut slots {
         match bytes.get(cursor)? {
             0 => cursor = cursor.checked_add(1)?,
             1 => {
-                let record_index = marked_record_reference(bytes, cursor)?;
-                if ordinal == 6 {
-                    seventh = Some(record_index);
-                }
+                *slot = Some(marked_record_reference(bytes, cursor)?);
                 cursor = cursor.checked_add(11)?;
             }
             _ => return None,
         }
     }
-    if cursor == first_side_extent_offset {
-        seventh
-    } else {
-        None
-    }
+    (cursor == first_side_extent_offset).then_some(slots)
 }
 
 pub(crate) fn is_class_296_one_sided_to_face_layout(

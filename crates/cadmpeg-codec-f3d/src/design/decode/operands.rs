@@ -19,7 +19,9 @@ use crate::design::decode::dimension_frames::{
     bind_recipe_reference_candidates, contiguous_i32_program, decode_recipe_references,
     recipe_record_prefix,
 };
-use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
+use crate::design::decode::scopes::extrude::{
+    extrude_marked_reference_slots, is_class_296_two_sided_to_faces_scope,
+};
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
@@ -60,7 +62,9 @@ use crate::records::{
     decal::DesignRecordHeader,
     entity_header::{DesignEntityHeader, SegmentType},
     feature::{
-        extrude::{DesignExtrudeExtent, DesignExtrudePrologue, DesignExtrudeStart},
+        extrude::{
+            DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+        },
         hole::DesignHoleConstruction,
         scope::DesignParameterScope,
         surface_ops::DesignSurfaceOffsetSupport,
@@ -2044,16 +2048,12 @@ pub(crate) fn decode_construction_operand_groups(
         }
         scope.unclosed_construction_operand_groups = unclosed;
         if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude) {
-            let seventh_slot_record_index = scope.extrude_prologue().and_then(|prologue| {
-                crate::design::decode::scopes::extrude::extrude_seventh_slot_record_index(
-                    bytes, prologue,
-                )
-            });
-            assign_extrude_face_roles(
-                scope,
-                &mut out[scope_group_start..],
-                seventh_slot_record_index,
-            );
+            let slots = scope
+                .extrude_prologue()
+                .and_then(|prologue| extrude_marked_reference_slots(bytes, prologue));
+            let groups = &mut out[scope_group_start..];
+            assign_extrude_face_roles(scope, groups, slots.and_then(|slots| slots[6]));
+            assign_slotted_extrude_face_targets(scope, groups, slots);
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -2321,6 +2321,54 @@ pub(in crate::design) fn assign_extrude_face_roles(
             encoding,
             usage: DesignExtrudeFaceRole::Termination,
         };
+    }
+}
+
+pub(crate) fn allows_slotted_extrude_face_targets(scope: &DesignParameterScope) -> bool {
+    matches!(
+        scope.extrude_prologue(),
+        Some(DesignExtrudePrologue::ReferenceAware {
+            extent: DesignExtrudeExtent::TwoSidedToTargetsOptionZero,
+            operation: DesignExtrudeOperation::NewBody,
+            start: DesignExtrudeStart::ProfilePlane,
+            solid_operation: true,
+            first_side_target_ordinal: None,
+            ..
+        })
+    )
+}
+
+pub(in crate::design) fn assign_slotted_extrude_face_targets(
+    scope: &DesignParameterScope,
+    groups: &mut [DesignConstructionOperandGroup],
+    slots: Option<[Option<u32>; 7]>,
+) {
+    let Some([None, None, None, Some(_), Some(second), Some(_), Some(first)]) = slots else {
+        return;
+    };
+    if first == second || !allows_slotted_extrude_face_targets(scope) {
+        return;
+    }
+    let mut targets = groups
+        .iter_mut()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X5);
+    let (Some(first_group), Some(second_group), None) =
+        (targets.next(), targets.next(), targets.next())
+    else {
+        return;
+    };
+    if first_group.record_index == first
+        && second_group.record_index == second
+        && first_group.scope_reference_ordinal < second_group.scope_reference_ordinal
+        && first_group.members().len() == 1
+        && second_group.members().len() == 1
+    {
+        for group in [first_group, second_group] {
+            group.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+                encoding: DesignExtrudeFaceEncoding::SelectedStart,
+                usage: DesignExtrudeFaceRole::Termination,
+            };
+        }
     }
 }
 

@@ -608,3 +608,131 @@ fn selected_face_start_without_a_start_group_reads_the_offset_plane() {
         LinearTermination::ToFace { offset: None, .. }
     ));
 }
+
+#[test]
+fn blind_new_body_retains_the_offset_of_an_unresolved_start_face() {
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeStart, FaceSelection, LinearTermination};
+
+    let scope = scope_with_start(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::FromFace,
+    );
+    let length = |kind, value| {
+        parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "value",
+            kind,
+            Some("mm"),
+            "d1",
+            value,
+        ))
+        .unwrap()
+    };
+    let along = length("AlongDistance", 0.55);
+    let offset = length("ProfileOffset", -0.5);
+    let project = |parameters: &[(u32, &crate::records::parameters::DesignParameter)]| {
+        crate::test_support::with_decode_context(|ctx| {
+            project_extrude(
+                ctx,
+                &scope,
+                parameters,
+                &[profile_group(100, 0)],
+                &[],
+                &[],
+                &[],
+            )
+        })
+        .unwrap()
+    };
+    assert!(project(&[(0, &along)]).is_none());
+    let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+        start:
+            ExtrudeStart::FromFace {
+                face: FaceSelection::Unresolved,
+                offset: Some(start_offset),
+            },
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    })) = project(&[(0, &along), (1, &offset)])
+    else {
+        panic!("blind Extrude with an unresolved start face");
+    };
+    assert_eq!(start_offset.get(), -5.0);
+    assert!(matches!(
+        side.termination,
+        LinearTermination::Blind { length } if length.get() == 5.5
+    ));
+}
+
+#[test]
+fn slotted_extrude_targets_keep_their_signed_side_offsets() {
+    use crate::design::decode::operands::assign_slotted_extrude_face_targets;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, LinearTermination};
+
+    let mut draft =
+        scope_with_extent(DesignExtrudeExtent::TwoSidedToTargetsOptionZero).into_draft();
+    draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+        vec![100, 101, 102],
+        vec![185, 196, 207],
+        "reference_members",
+    )
+    .unwrap();
+    let scope = DesignParameterScope::try_new(draft.with_fixture_layout()).unwrap();
+    let target = |index, ordinal| {
+        let mut group = profile_group(index, ordinal);
+        group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+        group
+    };
+    let mut groups = [profile_group(100, 0), target(101, 1), target(102, 2)];
+    let offset = |kind, value| {
+        parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "value",
+            kind,
+            Some("mm"),
+            "d1",
+            value,
+        ))
+        .unwrap()
+    };
+    let first_offset = offset("Side1Offset", -0.3);
+    let second_offset = offset("Side2Offset", 0.125);
+    let project = |groups: &[DesignConstructionOperandGroup]| {
+        crate::test_support::with_decode_context(|ctx| {
+            project_extrude(
+                ctx,
+                &scope,
+                &[(0, &first_offset), (1, &second_offset)],
+                groups,
+                &[],
+                &[],
+                &[],
+            )
+        })
+        .unwrap()
+    };
+    let mut slots = [None, None, None, Some(110), Some(101), Some(111), Some(102)];
+    assign_slotted_extrude_face_targets(&scope, &mut groups, Some(slots));
+    assert!(project(&groups).is_none());
+
+    slots.swap(4, 6);
+    assign_slotted_extrude_face_targets(&scope, &mut groups, Some(slots));
+    let Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::TwoSided { first, second },
+        ..
+    })) = project(&groups)
+    else {
+        panic!("two-sided face-target Extrude");
+    };
+    assert!(matches!(
+        first.termination,
+        LinearTermination::ToFace { face: FaceSelection::Native(group), offset: Some(offset) }
+            if group == groups[1].id && offset.get() == -3.0
+    ));
+    assert!(matches!(
+        second.termination,
+        LinearTermination::ToFace { face: FaceSelection::Native(group), offset: Some(offset) }
+            if group == groups[2].id && offset.get() == 1.25
+    ));
+}

@@ -1105,7 +1105,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which reference assignments and orientation fields define a first-side face termination with a second-side distance, and what do target options zero and two select?
 
-**Known.** The current seven-slot prologue can carry direction two, first-side extent two, and a payload second-side extent one. Target option zero also occurs with a payload second-side extent one or two. Target option two occurs with a payload second-side extent two. The final zero word before the scope reference count does not identify the second-side termination. The decoder reads target options zero and two with the side terminations of target option one and reports `feature.extrude-target-option-assumed`.
+**Known.** The current seven-slot prologue can carry direction two, first-side extent two, and a payload second-side extent one. Target option zero also occurs with a payload second-side extent one or two. Target option two occurs with a payload second-side extent two. The final zero word before the scope reference count does not identify the second-side termination. A solid new-body form with profile-plane start, target option zero, and extent pair `[2, 2]` can name the first and second role-`0x0000000500000000` groups in zero-based slots six and four. The groups each have one member and occur in side order in the scope table. The offset references in the payload name `Side1Offset` and `Side2Offset` owners. The decoder reads target options zero and two with the side terminations of target option one and reports `feature.extrude-target-option-assumed`.
 
 **Need.** Controlled face-then-distance changes with both direction states and independent side tapers.
 
@@ -2647,7 +2647,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** None.
+**Note.** A one-sided distance New Body scope with a `ProfileOffset` and no face or shape target group projects with an unresolved start face. The neutral feature retains the signed start offset and blind distance.
 
 ### DR-326. Extrude start face on another component's body
 
