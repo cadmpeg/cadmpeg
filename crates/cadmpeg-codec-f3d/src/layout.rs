@@ -9161,6 +9161,42 @@ pub(crate) mod derived_base_owner_reference {
     pub(crate) const ZERO_RUN_2: usize = 68;
 }
 
+/// Byte offsets for the `derived_base_mirror_scope` record.
+///
+/// Spec §3.1. Record length 664 B.
+pub(crate) mod derived_base_mirror_scope {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 664;
+    /// Offset of `body_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT: usize = 20;
+    /// Stated value of `body_reference_count` (`u32`). Spec §3.1.
+    pub(crate) const BODY_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `first_body_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_BODY_REFERENCE: usize = 24;
+    /// Offset of `result_body_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RESULT_BODY_REFERENCE: usize = 41;
+    /// Offset of `companion_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const COMPANION_REFERENCE: usize = 621;
+    /// Offset of `closing_zeroes` (`bytes[2]`). Spec §3.1.
+    pub(crate) const CLOSING_ZEROES: usize = 632;
+    /// Offset of `paired_header` (`bytes[30]`). Spec §3.1.
+    pub(crate) const PAIRED_HEADER: usize = 634;
+}
+
+/// Byte offsets for the `derived_base_mirror_companion` record.
+///
+/// Spec §3.1. Record length 115 B.
+pub(crate) mod derived_base_mirror_companion {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 115;
+    /// Offset of `owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 31;
+    /// Offset of `scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCOPE_REFERENCE: usize = 69;
+    /// Offset of `repeated_scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const REPEATED_SCOPE_REFERENCE: usize = 88;
+}
+
 /// Byte offsets for the `local_component_occurrence_empty_attributes_prefix` record.
 ///
 /// Spec §3.1. Record length 213 B.
