@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    DistinctMembers, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
+    BodySelection, DistinctMembers, FeatureDefinition, FeatureOperation, SketchFeatureBinding,
 };
 use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
@@ -337,6 +337,12 @@ fn follow_consumed_inputs(
             let row = &model.features[input];
             if row.product_definition.as_ref() == Some(&owner)
                 || !row.evaluation.outputs().is_empty()
+                || matches!(
+                    row.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                        bodies: BodySelection::Historical { .. }
+                    })
+                )
             {
                 continue;
             }

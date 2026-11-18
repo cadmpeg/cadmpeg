@@ -19,7 +19,7 @@ mod contour;
 mod copy_paste_bodies;
 mod derived_instance;
 pub(crate) mod direct_face;
-mod draft;
+pub(in crate::design) mod draft;
 mod edge_flange;
 mod emboss;
 pub(crate) mod extrude;

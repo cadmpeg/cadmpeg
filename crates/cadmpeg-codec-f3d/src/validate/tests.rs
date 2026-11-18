@@ -1532,6 +1532,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
                         distance_tail: None,
+                        opaque_distance_word: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
                         direction_face_extend_offsets: [132, 136],
                         direction_reversed: false,

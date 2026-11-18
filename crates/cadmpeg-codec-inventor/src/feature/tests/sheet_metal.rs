@@ -305,3 +305,39 @@ fn bend_result_slot_follows_the_bend_property_count() {
     assert_eq!(family.output_slot(&test_feature(200, 9, &[])), 5);
     assert_eq!(family.output_slot(&test_feature(200, 11, &[])), 9);
 }
+
+#[test]
+fn an_unrecognized_label_class_charges_one_note_per_class() {
+    use cadmpeg_ir::features::{FeatureEvaluation, NativeFeatureKind};
+    let native = |id: &str, kind: &str| -> Feature {
+        let mut feature: Feature = serde_json::from_value(serde_json::json!({
+            "id": id, "ordinal": 1,
+            "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "Plate", "parameters": {}}}},
+            "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
+        .expect("synthetic feature");
+        feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Native {
+                kind: NativeFeatureKind::Other(kind.to_owned()),
+                parameters: BTreeMap::new(),
+            },
+        ));
+        feature
+    };
+    let unknown = "InventorClass:00112233445566778899aabbccddeeff";
+    let derived = format!("InventorClass:{}", crate::feature::derived::CLASS_ID);
+    let features = [
+        native("test:model:feature#a", unknown),
+        native("test:model:feature#b", unknown),
+        native("test:model:feature#c", "Plate"),
+        native("test:model:feature#d", &derived),
+    ];
+    let losses = crate::feature::unrecognized_class_losses(&features);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.native-class-unrecognized"
+    );
+    assert!(losses[0].message.contains(
+        "2 feature(s) of unrecognized feature-label class 00112233445566778899aabbccddeeff"
+    ));
+}
