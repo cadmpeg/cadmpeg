@@ -585,6 +585,9 @@ fn surface_trim_scope(references: Vec<u32>) -> DesignParameterScope {
 
 #[test]
 fn surface_trim_projects_the_owned_face_recipe_as_its_tool() {
+    use super::super::{project_parameter_design_with_edge_identities, ProjectInputs};
+    use crate::design::test_support::synthetic_feature_timelines;
+
     let (scope, target_group, _, body, curves) = surface_trim_fixture();
     let tool_group = group(1200, 2, 1203, 1204, DesignOperandRole::ROLE_0X9);
     let tool_id = tool_group.id.clone();
@@ -598,25 +601,46 @@ fn surface_trim_projects_the_owned_face_recipe_as_its_tool() {
     face.recipe_record_index = 1207;
     face.next_record_index = 1209;
     let face = DesignFaceOperand::try_new(face).unwrap();
-    let mut losses = Vec::new();
-    let definition = project_surface_trim(
-        &scope,
-        &groups,
-        std::slice::from_ref(&body),
-        &[],
-        std::slice::from_ref(&face),
-        &mut losses,
-    )
-    .expect("SurfaceTrim with a face tool");
+    let scopes = std::slice::from_ref(&scope);
+    let timelines = synthetic_feature_timelines(scopes);
+    let projection = crate::test_support::with_decode_context(|ctx| {
+        project_parameter_design_with_edge_identities(
+            ctx,
+            &ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                construction_groups: &groups,
+                body_recipe_operands: std::slice::from_ref(&body),
+                face_operands: std::slice::from_ref(&face),
+                ..Default::default()
+            },
+        )
+    })
+    .unwrap();
+    let [feature] = projection.features.as_slice() else {
+        panic!("expected one SurfaceTrim feature");
+    };
     assert!(matches!(
-        definition,
+        feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-            faces: FaceSelection::Historical { ref faces, .. },
-            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            faces: FaceSelection::Historical { faces, .. },
+            tool: cadmpeg_ir::features::PathRef::Native(tool),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
         }) if faces.len() == 1 && tool == &tool_id
     ));
+    assert!(projection.projection_losses.is_empty());
+    assert_eq!(feature.source_properties.len(), 4);
+    for (ordinal, record_index) in ["1201", "1202", "1203", "1204"].into_iter().enumerate() {
+        assert_eq!(
+            feature
+                .source_properties
+                .get(format!("reference:{ordinal}").as_str())
+                .map(String::as_str),
+            Some(record_index)
+        );
+    }
 
+    let mut losses = Vec::new();
     let mut misplaced = face.clone();
     misplaced.scope_reference_ordinal = 1;
     let mut bounded = face.clone();

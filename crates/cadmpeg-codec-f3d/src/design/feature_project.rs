@@ -1648,6 +1648,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     scope.record_index, origin.joint_origin_transform_offset,
                 )).is_some_and(|transform| *transform == origin.joint_origin_transform)
             });
+            let retain_face_trim_references = matches!(
+                &definition,
+                FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                    tool: cadmpeg_ir::features::PathRef::Native(tool),
+                    ..
+                }) if construction_groups.iter().any(|group| {
+                    group.id == *tool && group.role() == DesignOperandRole::ROLE_0X9
+                })
+            );
             let outputs = inserted_bodies;
             Ok(Feature {
                 product_definition: None,
@@ -1678,6 +1687,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     || retain_chamfer_records
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
+                    || retain_face_trim_references
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
                     if let Some((sets, expressions)) = promoted_fillet_sets {
