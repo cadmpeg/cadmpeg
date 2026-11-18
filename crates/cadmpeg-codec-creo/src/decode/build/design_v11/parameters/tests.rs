@@ -26,12 +26,12 @@ fn parameter(
     }
 }
 
-fn length(value: f64) -> Option<LegacyValue> {
-    Some(LegacyValue::Length(Length::new(value).expect("length")))
+fn length(value: f64) -> LegacyValue {
+    LegacyValue::Length(Length::new(value).expect("length"))
 }
 
-fn angle(value: f64) -> Option<LegacyValue> {
-    Some(LegacyValue::Angle(Angle::new(value).expect("angle")))
+fn angle(value: f64) -> LegacyValue {
+    LegacyValue::Angle(Angle::new(value).expect("angle"))
 }
 
 fn with_property(mut parameter: LegacyParameter, key: &str, value: &str) -> LegacyParameter {
@@ -76,7 +76,7 @@ fn source_tokens(parameter: &DesignParameter) -> &[ExpressionToken<ParameterRef>
 #[test]
 fn a_section_dimension_is_a_literal_in_the_authoring_unit() {
     let projected = project_one(
-        &parameter("1", "d1", "1", length(25.4)),
+        &parameter("1", "d1", "1", Some(length(25.4))),
         Some(UnitSymbol::In),
     );
     assert_eq!(neutral_text(&projected), "1[in]");
@@ -99,17 +99,17 @@ fn a_section_dimension_is_a_literal_in_the_authoring_unit() {
 #[test]
 fn a_literal_falls_back_to_the_stored_unit_only_where_the_value_agrees() {
     let projected = project_one(
-        &parameter("1", "d1", "-2.5", length(-2.5)),
+        &parameter("1", "d1", "-2.5", Some(length(-2.5))),
         Some(UnitSymbol::In),
     );
     assert_eq!(neutral_text(&projected), "-2.5[mm]");
-    let projected = project_one(&parameter("2", "d2", "1.5", angle(1.5)), None);
+    let projected = project_one(&parameter("2", "d2", "1.5", Some(angle(1.5))), None);
     assert_eq!(neutral_text(&projected), "1.5[rad]");
     let degrees = 30f64.to_radians();
-    let projected = project_one(&parameter("3", "d3", "30", angle(degrees)), None);
+    let projected = project_one(&parameter("3", "d3", "30", Some(angle(degrees))), None);
     assert_eq!(neutral_text(&projected), "30[deg]");
     let projected = project_one(
-        &parameter("4", "d4", "3", length(5.0)),
+        &parameter("4", "d4", "3", Some(length(5.0))),
         Some(UnitSymbol::In),
     );
     assert_eq!(
@@ -121,12 +121,12 @@ fn a_literal_falls_back_to_the_stored_unit_only_where_the_value_agrees() {
 #[test]
 fn a_bracketed_unit_and_a_declared_unit_name_the_literal_unit() {
     let projected = project_one(
-        &parameter("1", "copy", "25.4[mm]", length(25.4)),
+        &parameter("1", "copy", "25.4[mm]", Some(length(25.4))),
         Some(UnitSymbol::In),
     );
     assert_eq!(neutral_text(&projected), "25.4[mm]");
     let declared = with_property(
-        parameter("2", "span", "2", length(50.8)),
+        parameter("2", "span", "2", Some(length(50.8))),
         "declared_unit",
         "inch",
     );
@@ -144,8 +144,8 @@ fn an_unread_value_keeps_its_empty_text_and_states_no_cache() {
 
 #[test]
 fn resolved_dependencies_are_references_matched_without_case() {
-    let target = parameter("1", "span", "2", length(2.0));
-    let mut relation = parameter("2", "copy", "SPAN+d3:1+1[span]", length(3.0));
+    let target = parameter("1", "span", "2", Some(length(2.0)));
+    let mut relation = parameter("2", "copy", "SPAN+d3:1+1[span]", Some(length(3.0)));
     relation.dependencies = DistinctMembers::try_from(vec![target.id.clone()]).expect("deps");
     let names = BTreeMap::from([
         (target.id.clone(), target.name.as_str()),

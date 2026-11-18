@@ -142,6 +142,7 @@ fn project_timeline(
         features.push(project_feature(feature, sketches)?);
     }
     ctx.charge_entities(1, "project Creo v11 timeline")?;
+    ctx.charge_entities(1, "project Creo v11 scope")?;
     let current = CurrentState {
         at,
         bodies: definition_bodies(ir, definition),
@@ -214,6 +215,7 @@ fn project_stored_bodies(
         });
     }
     ctx.charge_entities(1, "project Creo v11 group")?;
+    ctx.charge_entities(1, "project Creo v11 scope")?;
     ir.design.containers.push(Container::Unordered {
         id: group.clone(),
         kind: UnorderedKind::Group,

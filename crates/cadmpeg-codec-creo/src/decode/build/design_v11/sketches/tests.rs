@@ -5,7 +5,7 @@ use super::*;
 
 const SKETCH: &str = "creo:model:sketch#917";
 
-fn entity(key: &str, geometry: serde_json::Value, endpoints: &[u32]) -> LegacyEntity {
+fn entity(key: &str, geometry: &serde_json::Value, endpoints: &[u32]) -> LegacyEntity {
     serde_json::from_value(json!({
         "id": format!("creo:model:sketch_entity#917:{key}"),
         "sketch": SKETCH,
@@ -37,12 +37,12 @@ fn section() -> Vec<LegacyEntity> {
     vec![
         entity(
             "line",
-            json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 10.0, "v": 0.0}}),
+            &json!({"kind": "line", "start": {"u": 0.0, "v": 0.0}, "end": {"u": 10.0, "v": 0.0}}),
             &[1, 2],
         ),
         entity(
             "arc",
-            json!({
+            &json!({
                 "kind": "arc",
                 "center": {"u": 10.0, "v": 5.0},
                 "radius": 5.0,
@@ -53,7 +53,7 @@ fn section() -> Vec<LegacyEntity> {
         ),
         entity(
             "joint",
-            json!({"kind": "point", "position": {"u": 10.0, "v": 0.0}}),
+            &json!({"kind": "point", "position": {"u": 10.0, "v": 0.0}}),
             &[2],
         ),
     ]
@@ -307,7 +307,7 @@ fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_none() {
 fn the_ends_and_centre_of_an_unread_curve_are_points_with_no_position() {
     let unread = [entity(
         "native_arc",
-        json!({"kind": "native", "native_kind": "arc"}),
+        &json!({"kind": "native", "native_kind": "arc"}),
         &[4, 5],
     )];
     let mut points = Points::new(&sketch(), unread.iter()).expect("points");
@@ -343,12 +343,12 @@ fn a_saved_entity_names_the_record_of_its_sketch() {
     assert_eq!(
         record(
             &sketch(),
-            &Some("creo:featdefs:sketch#917:saved_entity#2".to_owned())
+            Some(&"creo:featdefs:sketch#917:saved_entity#2".to_owned())
         ),
         Some("creo:featdefs:sketch#917".to_owned())
     );
     assert_eq!(
-        record(&sketch(), &Some("creo:featdefs:sketch#9170".to_owned())),
+        record(&sketch(), Some(&"creo:featdefs:sketch#9170".to_owned())),
         Some("creo:featdefs:sketch#9170".to_owned())
     );
 }

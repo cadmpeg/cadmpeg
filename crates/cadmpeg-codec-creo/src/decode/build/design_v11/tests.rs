@@ -131,7 +131,7 @@ fn a_model_with_no_feature_list_states_one_stored_feature_per_body() {
     assert_eq!(members.len(), 2);
     assert_eq!(scope.current.len(), 2);
     for (current, body) in scope.current.iter().zip(&ir.geometry.bodies) {
-        assert_eq!(current.bodies, [body.id.clone()]);
+        assert_eq!(current.bodies, std::slice::from_ref(&body.id));
         let Position::After(Member::Feature(stored)) = &current.at else {
             panic!("a body's current state is after its stored feature");
         };

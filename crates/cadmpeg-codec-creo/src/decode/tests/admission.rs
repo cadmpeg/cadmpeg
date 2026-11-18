@@ -42,7 +42,13 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
             .len(),
         1
     );
-    assert_eq!(decoded.ir().entity_count(), 2);
+    let design = &decoded.ir().design;
+    let design_records = design.scopes.len()
+        + design.containers.len()
+        + design.features.len()
+        + design.parameters.len();
+    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
+    assert_eq!(decoded.ir().entity_count() - design_records, 3);
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = 2;
@@ -60,6 +66,32 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
     );
 
     options.policy.limits.max_entities = 3;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect_err("the root definition the header names no model for takes a slot");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "admit Creo model product_definitions"
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 4;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect_err("the design records take entity slots of their own");
+    assert!(
+        matches!(
+            &error,
+            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation.starts_with("project Creo v11")
+        ),
+        "{error:?}"
+    );
+
+    options.policy.limits.max_entities = 4 + u64::try_from(design_records).unwrap();
     CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");
@@ -82,13 +114,25 @@ fn part_product_definition_refuses_before_model_insertion() {
                 && limit.operation == "admit Creo model product_definitions"
     ));
 
-    // §8.1: the part is the root definition, which no occurrence places.
+    // §8.1: the part is the root definition, which no occurrence places. Its
+    // design scope and the scope's root group take two more slots.
     options.policy.limits.max_entities = 1;
+    let error = CreoCodec
+        .decode(&mut Cursor::new(data), &options)
+        .expect_err("the design scope requires two more entity slots");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::Entities
+                && limit.operation == "project Creo v11 group"
+    ));
+    options.policy.limits.max_entities = 3;
     let decoded = CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect("the exact model entity limit admits the part product");
+        .expect("the exact model entity limit admits the part product and its scope");
     assert_eq!(decoded.ir().model.product_definitions.len(), 1);
     assert!(decoded.ir().model.occurrences.is_empty());
+    assert_eq!(decoded.ir().design.scopes.len(), 1);
 }
 
 fn sketch_admission_prt() -> Vec<u8> {

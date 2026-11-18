@@ -400,7 +400,7 @@ fn tokens(
     names: &BTreeMap<ParameterId, &str>,
 ) -> Vec<ExpressionToken<ParameterRef>> {
     let mut targets = BTreeMap::<String, Option<&ParameterId>>::new();
-    for dependency in parameter.dependencies.iter() {
+    for dependency in &parameter.dependencies {
         if let Some(name) = names.get(dependency) {
             targets
                 .entry(name.to_ascii_lowercase())

@@ -75,7 +75,7 @@ pub(super) fn project(
         };
         ctx.charge_entities(1, "project Creo v11 sketch")?;
         sketches.push(project_sketch(sketch, owner));
-        let record = |native_ref: &Option<String>| record(sketch, native_ref);
+        let record = |native_ref: &Option<String>| record(sketch, native_ref.as_ref());
         let mut points = Points::new(
             sketch,
             ir.model
@@ -153,8 +153,8 @@ pub(super) fn sketch_of(operation: &LegacyOperation) -> Option<&SketchId> {
 
 /// The native record a sketch record names: a saved entity is a part of its
 /// sketch's record, which is the record a v11 record names.
-fn record(sketch: &LegacySketch, native_ref: &Option<String>) -> Option<String> {
-    let native_ref = native_ref.as_ref()?;
+fn record(sketch: &LegacySketch, native_ref: Option<&String>) -> Option<String> {
+    let native_ref = native_ref?;
     match &sketch.native_ref {
         Some(parent)
             if native_ref
@@ -378,7 +378,7 @@ struct Points {
     unread_point: NonBlankString,
     curves: BTreeMap<SketchEntityId, Option<PlanarCurve>>,
     unread: BTreeMap<SketchEntityId, String>,
-    points: BTreeSet<SketchEntityId>,
+    point_entities: BTreeSet<SketchEntityId>,
     ends: BTreeMap<(SketchEntityId, usize), SketchEntityId>,
     centers: BTreeMap<SketchEntityId, SketchEntityId>,
     minted: BTreeMap<SketchEntityId, SketchEntity<Planar>>,
@@ -397,7 +397,7 @@ impl Points {
                 .ok_or_else(|| CodecError::malformed("Creo v11 point kind is blank"))?,
             curves: BTreeMap::new(),
             unread: BTreeMap::new(),
-            points: BTreeSet::new(),
+            point_entities: BTreeSet::new(),
             ends: BTreeMap::new(),
             centers: BTreeMap::new(),
             minted: BTreeMap::new(),
@@ -410,7 +410,7 @@ impl Points {
                 (&geometry, entity.endpoint_refs.as_slice())
             {
                 records.insert(record.clone(), (entity.id().clone(), Some(*position)));
-                points.points.insert(entity.id().clone());
+                points.point_entities.insert(entity.id().clone());
             }
             if let Geometry::Native { native_kind } = entity.geometry.definition() {
                 points
@@ -477,7 +477,7 @@ impl Points {
                 solved: None,
             },
         };
-        self.points.insert(id.clone());
+        self.point_entities.insert(id.clone());
         self.minted.insert(
             id.clone(),
             SketchEntity {
@@ -535,7 +535,9 @@ impl Points {
     /// The point entity a locus names.
     fn point(&mut self, locus: &SketchLocus) -> Option<SketchEntityId> {
         match locus {
-            SketchLocus::Entity(entity) => self.points.contains(entity).then(|| entity.clone()),
+            SketchLocus::Entity(entity) => {
+                self.point_entities.contains(entity).then(|| entity.clone())
+            }
             SketchLocus::Start(entity) => self.ends.get(&(entity.clone(), 0)).cloned(),
             SketchLocus::End(entity) => self.ends.get(&(entity.clone(), 1)).cloned(),
             SketchLocus::Center(entity) => self.center(entity),
