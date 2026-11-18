@@ -19,6 +19,8 @@ use cadmpeg_ir::features::{
     EdgeSelection, FeatureOperation,
 };
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::FiniteReal;
+use std::collections::HashMap;
 
 pub(super) fn project(
     scope: &DesignParameterScope,
@@ -51,25 +53,7 @@ pub(super) fn project(
     }) {
         return Ok(None);
     }
-    if sets.sets.iter().any(DesignFilletSet::is_short_constant)
-        && inputs.owners.iter().any(|owner| {
-            native_stream(owner.id()) == Some(stream)
-                && scope.names_owner(owner)
-                && parameters.iter().any(|(_, parameter)| {
-                    parameter.record_index == owner.parameter_record_index()
-                        && parameter.source_kind_str() == "TangencyWeight"
-                })
-                && sets
-                    .sets
-                    .iter()
-                    .all(|set| set.tangency_weight_owner_record_index != Some(owner.record_index()))
-        })
-    {
-        losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
-            "{}: Short Fillet sets leave a scope-owned tangency weight unassigned.",
-            scope.id
-        )));
-    }
+    let scope_weights = pair_scope_weights(scope, stream, &sets.sets, parameters, losses);
     let parameter = |owner, kind| {
         unique_feature_match(parameters.iter().filter_map(|(_, parameter)| {
             (parameter.owner_record_index() == Some(owner)
@@ -101,7 +85,7 @@ pub(super) fn project(
             }
         };
 
-        let mut tangency_weight = None;
+        let mut tangency_weight = scope_weights.get(&set.group_record_index).copied();
         if let Some(owner) = set.tangency_weight_owner_record_index {
             tangency_weight = parameter(owner, "TangencyWeight")
                 .filter(|parameter| parameter.unit().is_none())
@@ -151,6 +135,70 @@ pub(super) fn project(
         .try_into()
         .ok()
         .map(|groups| FeatureOperation::Fillet { groups }))
+}
+
+fn pair_scope_weights(
+    scope: &DesignParameterScope,
+    stream: &str,
+    sets: &[DesignFilletSet],
+    parameters: &[(u32, &DesignParameter)],
+    losses: &mut Vec<LossNote>,
+) -> HashMap<u32, FiniteReal> {
+    let mut weights = parameters
+        .iter()
+        .copied()
+        .filter(|(_, parameter)| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.source_kind_str() == "TangencyWeight"
+                && !sets.iter().any(|set| {
+                    set.tangency_weight_owner_record_index
+                        .is_some_and(|owner| parameter.owner_record_index() == Some(owner))
+                })
+        })
+        .collect::<Vec<_>>();
+    if weights.is_empty() {
+        return HashMap::new();
+    }
+    weights.sort_unstable_by_key(|(ordinal, _)| *ordinal);
+    let group_order = scope
+        .reference_members()
+        .values()
+        .copied()
+        .filter(|record| sets.iter().any(|set| set.group_record_index == *record))
+        .collect::<Vec<_>>();
+    if weights.len() == sets.len()
+        && weights
+            .iter()
+            .all(|(_, parameter)| parameter.unit().is_none())
+        && weights.windows(2).all(|pair| pair[0].0 != pair[1].0)
+        && group_order.len() == sets.len()
+        && sets.iter().all(|set| {
+            set.is_short_constant()
+                && group_order
+                    .iter()
+                    .filter(|record| **record == set.group_record_index)
+                    .count()
+                    == 1
+        })
+    {
+        losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
+            "{}: Short Fillet sets assign tangency weights by owner-local and group reference order.",
+            scope.id
+        )));
+        return group_order
+            .into_iter()
+            .zip(
+                weights
+                    .into_iter()
+                    .map(|(_, weight)| weight.evaluated_value()),
+            )
+            .collect();
+    }
+    losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
+        "{}: Fillet sets leave scope-owned tangency weights unassigned.",
+        scope.id
+    )));
+    HashMap::new()
 }
 
 fn radius_law<'a>(
