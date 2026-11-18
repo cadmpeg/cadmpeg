@@ -319,8 +319,8 @@ fn design_completeness_audits_typed_construction_families() {
         }),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-            side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
+            side: Some(cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric),
         }),
         FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: None,

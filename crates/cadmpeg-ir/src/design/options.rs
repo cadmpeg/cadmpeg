@@ -17,6 +17,19 @@ use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 /// Source options that Rule N leaves native, by key. A key is `codec:name`.
 pub type NativeOptions = BTreeMap<NonBlankString, NativeOption>;
 
+pub(crate) fn rewrite_options<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    options: NativeOptions,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+) -> Result<NativeOptions, cadmpeg_core::CodecError> {
+    use crate::schema::rewrite::typed::RewriteIdentities;
+    let _depth = ctx.enter_nested("native option values")?;
+    options
+        .into_iter()
+        .map(|(key, value)| Ok((key, value.rewrite_identities(ctx, map)?)))
+        .collect()
+}
+
 /// The value of a native option or a source setting. A value that a
 /// parameter can drive keeps its binding.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
