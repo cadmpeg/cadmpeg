@@ -12,6 +12,7 @@ mod evaluations;
 #[cfg(test)]
 mod fixture;
 mod linkage;
+mod ops;
 mod parameters;
 mod records;
 mod resolved;
@@ -29,7 +30,7 @@ use records::DesignRecords;
 
 /// Check the design layer of `ir` against part 10's scope-and-linkage,
 /// container, position, evaluation, current-geometry, and configuration
-/// rules.
+/// rules, and the rules of the feature vocabulary.
 pub(super) fn check_design(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -47,6 +48,7 @@ pub(super) fn check_design(
     evaluations::check_current_geometry(&records, findings);
     resolved::check_resolved_states(ctx, &records, ids, findings)?;
     configurations::check_configurations(&records, findings);
+    ops::check_operations(&records, findings);
     Ok(())
 }
 

@@ -1,0 +1,1219 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The feature-vocabulary rules on variations of the design fixture: the
+//! fixture's extrude takes each operation in turn.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use cadmpeg_core::text::NonBlankString;
+
+use super::super::fixture::{self, assert_finding, assert_no_design_finding, design_findings, id};
+use crate::design::construction::{Construction, FrameAxis};
+use crate::design::dimension::Dimension;
+use crate::design::evaluation::EvaluationStatus;
+use crate::design::feature::{Driver, FeatureOperation};
+use crate::design::names::{InstanceIndex, NameKind, TopoName};
+use crate::design::ops::assembly::{
+    ComponentInstance, ComponentPattern, MirrorComponents, MirrorResult, Place, PlaceSet,
+};
+use crate::design::ops::body::{
+    Combine, InstanceChange, InstanceOverride, NewComponent, Pattern, PatternInstances,
+    PatternSeeds, TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep,
+    Transformation,
+};
+use crate::design::ops::dressup::{
+    BlendControls, Bore, Draft, DraftAngle, DraftSet, Fillet, FilletSection, FilletSet, FilletSize,
+    Hole, HoleHead, HolePositions, HoleShape, ThreadSpec, Transition, TransitionKind,
+};
+use crate::design::ops::shared::{
+    AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, JointOffset, Limit,
+    LinearRun, PatternLayout, PatternRun, RunSides, Spacing, Span,
+};
+use crate::design::ops::sheet_metal::{
+    BendAllowance, BendSpec, Flange, FlangeWidth, KFactorRow, KFactorTable, SheetMetal,
+    SheetMetalKind, SheetMetalRule,
+};
+use crate::design::ops::sketch::{
+    DefiningRole, EntityDefinition, EntityRole, Operand, Planar, PlanarCurve, Sketch,
+    SketchConstraint, SketchEntity, SketchPlane, SketchRelation, SketchSolve,
+};
+use crate::design::ops::surface::{Knit, MeshFeature, MeshKind};
+use crate::design::ops::swept::{
+    Extrude, ExtrudeDraft, HoleDraft, Loft, Primitive, PrimitiveShape,
+};
+use crate::design::options::{
+    BodyForm, Boolean, BooleanOp, NativeOption, SheetOutput, SolidOutput, Targets,
+};
+use crate::design::parameter::DesignParameter;
+use crate::design::selection::{
+    Anchor, MemberOrder, Members, PickContext, PickTarget, Picked, Picks, Selection,
+};
+use crate::design::units::ValueKind;
+use crate::document::CadIr;
+use crate::features::{FeatureId, ParameterId};
+use crate::math::Point2;
+use crate::products::Occurrence;
+use crate::report::Severity;
+use crate::scalar::{Angle, Length, PositiveLength};
+use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
+use crate::transform::Transform;
+use crate::units::FinitePoint2;
+
+fn feature(key: &str) -> FeatureId {
+    fixture::feature(key)
+}
+
+fn pick(target: PickTarget) -> Picked {
+    Picked {
+        target,
+        context: None,
+        native: None,
+        domain: None,
+        witness: None,
+        resolved: None,
+    }
+}
+
+fn named<O: MemberOrder>(picks: Vec<Picked>) -> Selection<O> {
+    Selection {
+        at: Anchor::Input,
+        picks: Picks::Named(Members::new(picks).unwrap()),
+        native: None,
+    }
+}
+
+fn unread<O: MemberOrder>() -> Selection<O> {
+    Selection {
+        at: Anchor::Input,
+        picks: Picks::Unread,
+        native: None,
+    }
+}
+
+fn entity(kind: NameKind, index: u32) -> Picked {
+    pick(PickTarget::Entity(TopoName::Generated {
+        kind,
+        feature: feature("extrude"),
+        role: None,
+        generator: None,
+        index: Some(index),
+    }))
+}
+
+fn sketch_id(key: &str) -> SketchId {
+    id("sketch", key)
+}
+
+fn sketch_pick() -> Picked {
+    pick(PickTarget::Sketch(sketch_id("profile")))
+}
+
+fn length(value: f64) -> Length {
+    Length::new(value).unwrap()
+}
+
+fn positive(value: f64) -> PositiveLength {
+    PositiveLength::new(value).unwrap()
+}
+
+fn solid() -> SolidOutput {
+    SolidOutput {
+        body: None,
+        boolean: None,
+    }
+}
+
+fn with(operation: FeatureOperation) -> CadIr {
+    let mut ir = fixture::document();
+    ir.design.features[0].definition.operation = operation;
+    ir
+}
+
+fn extrude() -> Extrude {
+    Extrude {
+        profile: named(vec![sketch_pick()]),
+        loops: None,
+        direction: None,
+        origin: None,
+        span: None,
+        draft: None,
+        fit: None,
+        outside: None,
+        sheet_cut: None,
+        output: solid(),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }
+}
+
+fn extruding(change: impl FnOnce(&mut Extrude)) -> CadIr {
+    let mut operation = extrude();
+    change(&mut operation);
+    with(FeatureOperation::Extrude(Box::new(operation)))
+}
+
+#[track_caller]
+fn assert_warning(ir: &CadIr, fragment: &str) {
+    let findings = design_findings(ir);
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.severity == Severity::Warning && f.message.contains(fragment)),
+        "no design warning containing {fragment:?} in {findings:#?}"
+    );
+}
+
+#[test]
+fn a_typed_extrude_breaks_no_rule() {
+    assert_no_design_finding(&extruding(|_| {}));
+}
+
+#[test]
+fn an_unread_profile_and_an_unresolved_operation_are_not_checked() {
+    assert_no_design_finding(&extruding(|e| e.profile = unread()));
+    assert_no_design_finding(&fixture::document());
+}
+
+// ----------------------------------------------------------------- shared option types
+
+#[test]
+fn native_keys_have_the_codec_form_and_one_map() {
+    let key = NonBlankString::new("thickness").unwrap();
+    let option = NativeOption::Bool(Dimension::Literal(true));
+    assert_finding(
+        &extruding(|e| {
+            e.native_options.insert(key.clone(), option.clone());
+        }),
+        "does not have the form codec:name",
+    );
+    let key = NonBlankString::new("sldprt:flag").unwrap();
+    assert_finding(
+        &extruding(|e| {
+            e.native_options.insert(key.clone(), option.clone());
+            e.source_settings.insert(key.clone(), option.clone());
+        }),
+        "in both native_options and source_settings",
+    );
+}
+
+#[test]
+fn a_profile_holds_a_pick_of_what_profiles_are_made_of() {
+    assert_finding(
+        &extruding(|e| e.profile = named(Vec::new())),
+        "holds no pick",
+    );
+    assert_finding(
+        &extruding(|e| e.profile = named(vec![entity(NameKind::Vertex, 1)])),
+        "which no profile is made of",
+    );
+    assert_no_design_finding(&extruding(|e| {
+        e.profile = named(vec![entity(NameKind::Face, 1), entity(NameKind::Edge, 2)]);
+    }));
+}
+
+#[test]
+fn booleans_fit_their_outputs() {
+    let apply = |op| Boolean::Apply { op, targets: None };
+    assert_finding(
+        &extruding(|e| e.output.boolean = Some(apply(BooleanOp::Assemble))),
+        "occurs only as a Combine's op",
+    );
+    assert_finding(
+        &extruding(|e| {
+            e.output.body = Some(BodyForm::Solid);
+            e.output.boolean = Some(apply(BooleanOp::Sew));
+        }),
+        "Sew occurs only in an output whose result is a sheet",
+    );
+    assert_no_design_finding(&extruding(|e| {
+        e.output.body = Some(BodyForm::Sheet);
+        e.output.boolean = Some(apply(BooleanOp::Sew));
+    }));
+    assert_finding(
+        &extruding(|e| {
+            e.output.boolean = Some(Boolean::Apply {
+                op: BooleanOp::Join,
+                targets: Some(Targets::Selected(named(vec![entity(NameKind::Face, 1)]))),
+            });
+        }),
+        "its picks resolve to bodies",
+    );
+}
+
+#[test]
+fn spans_have_distinct_ends_and_nonzero_amounts() {
+    assert_finding(
+        &extruding(|e| {
+            e.span = Some(Span::Between {
+                start: Box::new(Limit::AtOrigin),
+                end: Box::new(Limit::AtOrigin),
+            });
+        }),
+        "AtOrigin at both start and end",
+    );
+    assert_finding(
+        &extruding(|e| {
+            e.span = Some(Span::Symmetric {
+                amount: Dimension::Literal(length(0.0)),
+                measure: None,
+            });
+        }),
+        "symmetric span of zero",
+    );
+}
+
+// ----------------------------------------------------------------- swept solids and the loft
+
+#[test]
+fn an_extrude_draft_states_an_angle_where_its_span_allows() {
+    let draft = |start| ExtrudeDraft {
+        end: None,
+        start,
+        neutral: None,
+        holes: None,
+    };
+    assert_finding(
+        &extruding(|e| e.draft = Some(draft(None))),
+        "states neither end nor start",
+    );
+    let angle = || Dimension::Literal(Angle::new(0.1).unwrap());
+    assert_finding(
+        &extruding(|e| {
+            e.span = Some(Span::Symmetric {
+                amount: Dimension::Literal(length(2.0)),
+                measure: None,
+            });
+            e.draft = Some(draft(Some(angle())));
+        }),
+        "under a symmetric span states start",
+    );
+    assert_finding(
+        &extruding(|e| {
+            e.draft = Some(ExtrudeDraft {
+                end: Some(angle()),
+                holes: Some(HoleDraft::Angles {
+                    end: angle(),
+                    start: Some(angle()),
+                }),
+                ..draft(None)
+            });
+        }),
+        "HoleDraft::Angles states start",
+    );
+}
+
+#[test]
+fn primitives_have_their_own_placement_and_admitted_literals() {
+    let primitive = |shape| {
+        FeatureOperation::Primitive(Box::new(Primitive {
+            shape,
+            placement: None,
+            output: solid(),
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let prism = |sides| PrimitiveShape::Prism {
+        sides: Dimension::Literal(sides),
+        circumradius: Dimension::Literal(positive(1.0)),
+        height: Dimension::Literal(positive(1.0)),
+    };
+    assert_no_design_finding(&with(primitive(prism(3))));
+    assert_finding(&with(primitive(prism(2))), "a literal count is at least 3");
+    let mut placed = with(primitive(prism(4)));
+    placed.design.features[0].placement = Some(Box::new(Construction::default()));
+    assert_finding(&placed, "states a Feature.placement");
+    let literal = |value| Dimension::Literal(length(value));
+    let wedge = PrimitiveShape::Wedge {
+        y: [literal(0.0), literal(1.0)],
+        base: [literal(0.0), literal(0.0), literal(0.0), literal(1.0)],
+        top: [literal(0.0), literal(0.0), literal(0.0), literal(1.0)],
+    };
+    assert_finding(&with(primitive(wedge)), "degenerate in one axis");
+}
+
+#[test]
+fn a_loft_has_two_stations_and_no_lone_cross_section() {
+    let loft = Loft {
+        start: None,
+        sections: Vec::new(),
+        end: None,
+        cross: Vec::new(),
+        spine: None,
+        guides: Vec::new(),
+        correspondence: None,
+        shape: crate::design::ops::swept::LoftShape {
+            style: None,
+            max_degree: None,
+            rebuild: None,
+            ruled: None,
+            closed: None,
+            relimit: None,
+            merge_tangent_faces: None,
+            smoothing: None,
+            section_law: None,
+        },
+        output: solid(),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    };
+    assert_finding(
+        &with(FeatureOperation::Loft(Box::new(loft))),
+        "it needs at least 2",
+    );
+}
+
+// ----------------------------------------------------------------- dress-up and holes
+
+fn fillet(sets: Vec<FilletSet>, transitions: Vec<Transition>) -> FeatureOperation {
+    FeatureOperation::Fillet(Box::new(Fillet {
+        sets,
+        controls: BlendControls {
+            corner_style: None,
+            corners: Vec::new(),
+            limits: Vec::new(),
+            keep: None,
+            transitions,
+            overflow: None,
+            keep_features: None,
+            round_corners: None,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+fn edge_set(size: Option<FilletSize>) -> FilletSet {
+    FilletSet::Edges {
+        edges: named(vec![entity(NameKind::Edge, 1)]),
+        section: FilletSection {
+            size,
+            profile: None,
+            weight: None,
+        },
+        spine: None,
+        hold: [None, None],
+    }
+}
+
+#[test]
+fn a_fillet_has_sets_and_transitions_that_fit_them() {
+    let radius = Some(FilletSize::Radius(Dimension::Literal(positive(1.0))));
+    assert_no_design_finding(&with(fillet(vec![edge_set(radius.clone())], Vec::new())));
+    assert_finding(
+        &with(fillet(Vec::new(), Vec::new())),
+        "Fillet.sets is empty",
+    );
+    assert_finding(
+        &with(fillet(vec![edge_set(Some(FilletSize::Held))], Vec::new())),
+        "Held occurs in a set with no hold",
+    );
+    let blend = Transition {
+        between: BTreeSet::from([0]),
+        at: None,
+        kind: Some(TransitionKind::Blend),
+        native_options: BTreeMap::new(),
+    };
+    assert_finding(
+        &with(fillet(vec![edge_set(radius.clone())], vec![blend])),
+        "transition 0 has 1 members",
+    );
+    let sphere = Transition {
+        between: BTreeSet::from([0, 1]),
+        at: None,
+        kind: Some(TransitionKind::CornerSphere {
+            radius: None,
+            lengths: vec![Dimension::Literal(
+                crate::scalar::NonNegativeLength::new(1.0).unwrap(),
+            )],
+        }),
+        native_options: BTreeMap::new(),
+    };
+    assert_finding(
+        &with(fillet(
+            vec![edge_set(radius.clone()), edge_set(radius)],
+            vec![sphere],
+        )),
+        "CornerSphere with 1 lengths",
+    );
+}
+
+#[test]
+fn a_draft_anchors_its_two_sided_angles() {
+    let slope = || Dimension::Literal(crate::scalar::SlopeAngle::new(0.1).unwrap());
+    let draft = |angle, steps| {
+        FeatureOperation::Draft(Box::new(Draft {
+            sets: vec![DraftSet {
+                faces: Some(named(vec![entity(NameKind::Face, 1)])),
+                fixed: None,
+                angle: Some(angle),
+            }],
+            pull: None,
+            neutral: None,
+            parting: None,
+            steps,
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let two = DraftAngle::Two {
+        first: slope(),
+        second: slope(),
+    };
+    assert_finding(&with(draft(two, None)), "needs neutral or parting");
+    let steps = Some(crate::design::ops::dressup::StepFaces::Tapered);
+    assert_finding(
+        &with(draft(DraftAngle::One(slope()), steps)),
+        "Draft.steps occurs only with parting",
+    );
+    assert_warning(
+        &with(draft(DraftAngle::One(slope()), None)),
+        "states none of neutral",
+    );
+}
+
+fn hole(head: Option<HoleHead>, series: bool) -> FeatureOperation {
+    FeatureOperation::Hole(Box::new(Hole {
+        positions: HolePositions::Points {
+            points: named(vec![entity(NameKind::Vertex, 1)]),
+            centers: None,
+        },
+        start: None,
+        direction: None,
+        shape: HoleShape::Bore(Bore {
+            diameter: Some(Dimension::Literal(positive(5.0))),
+            head,
+            taper: None,
+            bottom: None,
+            near_chamfer: None,
+            neck_chamfer: None,
+            far_chamfer: None,
+        }),
+        extent: None,
+        standard: None,
+        thread: Some(ThreadSpec {
+            standard: None,
+            major_diameter: Some(Dimension::Literal(positive(6.0))),
+            minor_diameter: Some(Dimension::Literal(positive(5.5))),
+            pitch_diameter: None,
+            pitch: None,
+            hand: None,
+            length: None,
+            modeled: None,
+        }),
+        targets: None,
+        series: if series {
+            vec![crate::design::ops::dressup::SeriesStage {
+                parts: named(Vec::new()),
+                hole: crate::design::ops::dressup::StageHole::PartFeature(feature("fillet")),
+            }]
+        } else {
+            Vec::new()
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+#[test]
+fn a_hole_has_a_wider_head_and_a_series_only_in_an_assembly_feature() {
+    assert_no_design_finding(&with(hole(None, false)));
+    let narrow = HoleHead::Counterbore {
+        diameter: Some(Dimension::Literal(positive(4.0))),
+        depth: None,
+    };
+    assert_finding(
+        &with(hole(Some(narrow), false)),
+        "does not exceed the bore diameter",
+    );
+    assert_finding(
+        &with(hole(None, true)),
+        "not the operation of an AssemblyFeature",
+    );
+    assert_finding(&with(hole(None, true)), "which is no Hole feature");
+}
+
+// ----------------------------------------------------------------- patterns and body operations
+
+fn linear(sides: Option<RunSides<Length>>, count: u32) -> PatternLayout {
+    PatternLayout::Linear {
+        first: LinearRun {
+            direction: Construction::default(),
+            run: PatternRun {
+                spacing: Spacing::Pitch {
+                    count: Dimension::Literal(count),
+                    pitch: Dimension::Literal(length(1.0)),
+                },
+                sides,
+                seed: None,
+                increments: Vec::new(),
+            },
+        },
+        second: None,
+        seed_only: None,
+    }
+}
+
+fn pattern(layout: PatternLayout, overrides: Vec<InstanceOverride>) -> FeatureOperation {
+    FeatureOperation::Pattern(Box::new(Pattern {
+        seeds: PatternSeeds::Features {
+            features: named(vec![pick(PickTarget::FeatureResult(feature("fillet")))]),
+            method: None,
+        },
+        layout,
+        instances: PatternInstances::Implicit(overrides),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+fn skipped(index: Vec<i32>) -> InstanceOverride {
+    InstanceOverride {
+        index: InstanceIndex(index),
+        change: InstanceChange::Skipped,
+    }
+}
+
+#[test]
+fn a_pattern_layout_and_its_indices_fit_its_runs() {
+    assert_no_design_finding(&with(pattern(linear(None, 3), vec![skipped(vec![1])])));
+    assert_finding(
+        &with(pattern(linear(None, 0), Vec::new())),
+        "a count is at least 1",
+    );
+    assert_finding(
+        &with(pattern(linear(Some(RunSides::Against), 3), Vec::new())),
+        "RunSides::Against occurs in a linear run",
+    );
+    assert_finding(
+        &with(pattern(linear(None, 3), vec![skipped(vec![0])])),
+        "is all zeros",
+    );
+    assert_finding(
+        &with(pattern(linear(None, 3), vec![skipped(vec![1, 1])])),
+        "other than one coordinate per run",
+    );
+    assert_finding(
+        &with(pattern(
+            PatternLayout::Composite(vec![linear(None, 2)]),
+            Vec::new(),
+        )),
+        "fewer than two stages",
+    );
+    let follow = PatternLayout::Follow(named(vec![pick(PickTarget::Feature(feature("extrude")))]));
+    assert_finding(
+        &with(pattern(follow, Vec::new())),
+        "reaches the pattern itself",
+    );
+}
+
+fn combine(
+    target: Option<Selection<crate::design::selection::Unordered>>,
+    op: BooleanOp,
+) -> Combine {
+    Combine {
+        target,
+        tools: named(vec![entity(NameKind::Body, 2)]),
+        op: Some(op),
+        tools_after: None,
+        new_component: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }
+}
+
+#[test]
+fn a_combine_has_tools_apart_from_its_target() {
+    let target = || Some(named(vec![entity(NameKind::Body, 1)]));
+    let op = |combine| FeatureOperation::Combine(Box::new(combine));
+    assert_no_design_finding(&with(op(combine(target(), BooleanOp::Cut))));
+    assert_finding(
+        &with(op(combine(None, BooleanOp::Cut))),
+        "Combine.target is None",
+    );
+    assert_finding(
+        &with(op(combine(target(), BooleanOp::Sew))),
+        "Combine.op is Sew",
+    );
+    assert_finding(
+        &with(op(combine(target(), BooleanOp::Compound))),
+        "a Compound combine states a target",
+    );
+    let shared = Some(named(vec![entity(NameKind::Body, 2)]));
+    assert_finding(
+        &with(op(combine(shared, BooleanOp::Cut))),
+        "in both Combine.target and Combine.tools",
+    );
+}
+
+#[test]
+fn a_transformation_has_steps_and_counts_of_one_or_more() {
+    let transform = |steps, mode| {
+        FeatureOperation::TransformBodies(Box::new(TransformBodies {
+            bodies: named(vec![entity(NameKind::Body, 1)]),
+            transformation: Transformation {
+                steps,
+                resolved: None,
+            },
+            mode,
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    assert_finding(
+        &with(transform(Vec::new(), None)),
+        "Transformation.steps is empty",
+    );
+    let step = TransformStep::Fixed(Transform::identity());
+    let copy = TransformMode::Copy {
+        count: Dimension::Literal(0),
+        divisions: None,
+    };
+    assert_finding(&with(transform(vec![step], Some(copy))), "it is at least 1");
+}
+
+#[test]
+fn a_template_input_pick_names_an_input_of_its_instance() {
+    let instance = TemplateInstance {
+        template: crate::design::ops::body::Template {
+            name: None,
+            library: None,
+            variant: None,
+        },
+        inputs: vec![TemplateInput {
+            role: None,
+            reference: named(vec![entity(NameKind::Face, 1)]),
+        }],
+        parameters: Vec::new(),
+        members: vec![feature("fillet")],
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    };
+    let mut ir = with(FeatureOperation::TemplateInstance(Box::new(instance)));
+    let input = |input| {
+        let mut picking = extrude();
+        picking.profile = named(vec![pick(PickTarget::TemplateInput {
+            instance: feature("extrude"),
+            input,
+        })]);
+        FeatureOperation::Extrude(Box::new(picking))
+    };
+    ir.design.features[1].definition.operation = input(0);
+    assert!(!design_findings(&ir)
+        .iter()
+        .any(|f| f.message.contains("TemplateInput")));
+    ir.design.features[1].definition.operation = input(1);
+    assert_finding(&ir, "TemplateInput picks input 1");
+}
+
+// ----------------------------------------------------------------- surfacing, sheet metal, meshes
+
+#[test]
+fn a_knit_joins_two_elements_and_heals_with_a_tolerance() {
+    let knit = |elements, healing| {
+        FeatureOperation::Knit(Box::new(Knit {
+            elements,
+            tolerance: None,
+            simplify: None,
+            healing,
+            federation: None,
+            output: SheetOutput {
+                solid: None,
+                boolean: None,
+            },
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    assert_finding(
+        &with(knit(named(vec![entity(NameKind::Face, 1)]), None)),
+        "fewer than two picks",
+    );
+    let healing = crate::design::ops::surface::Healing {
+        objective: None,
+        tangency: None,
+        tangency_objective: None,
+        frozen: None,
+    };
+    assert_finding(&with(knit(unread(), Some(healing))), "without a tolerance");
+}
+
+#[test]
+fn a_mesh_combine_and_section_name_what_they_use() {
+    let mesh = |kind| {
+        FeatureOperation::Mesh(Box::new(MeshFeature {
+            source: named(vec![entity(NameKind::Body, 1)]),
+            kind,
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    assert_finding(
+        &with(mesh(MeshKind::Combine {
+            tools: named(Vec::new()),
+            op: Some(BooleanOp::Assemble),
+        })),
+        "other than Join, Cut, or Intersect",
+    );
+    assert_finding(
+        &with(mesh(MeshKind::Section {
+            sketch: sketch_id("absent"),
+        })),
+        "which is no sketch record",
+    );
+}
+
+fn bend() -> BendSpec {
+    BendSpec {
+        radius: None,
+        radius_side: None,
+        relief: None,
+    }
+}
+
+fn sheet(kind: SheetMetalKind) -> FeatureOperation {
+    FeatureOperation::SheetMetal(Box::new(SheetMetal {
+        kind,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+fn rule(key: &str, ratios: &[f64]) -> SheetMetalRule {
+    SheetMetalRule {
+        id: id("sheet-metal-rule", key),
+        scope: id("definition", "part"),
+        name: None,
+        thickness: None,
+        bend: bend(),
+        allowance: Some(BendAllowance::KFactorTable(KFactorTable {
+            rows: ratios
+                .iter()
+                .map(|&ratio| KFactorRow {
+                    ratio: crate::scalar::NonNegativeReal::new(ratio).unwrap(),
+                    k_factor: Dimension::Literal(crate::scalar::FiniteReal::new(0.4).unwrap()),
+                })
+                .collect(),
+            lookup: None,
+        })),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+
+#[test]
+fn sheet_metal_rules_are_unique_ordered_and_in_scope() {
+    let apply = |key| {
+        sheet(SheetMetalKind::ApplyRule {
+            rule: id("sheet-metal-rule", key),
+            bodies: None,
+        })
+    };
+    let mut ir = with(apply("gauge"));
+    ir.design.sheet_metal_rules.push(rule("gauge", &[0.5, 1.0]));
+    assert_no_design_finding(&ir);
+    ir.design.sheet_metal_rules.push(rule("gauge", &[1.0, 0.5]));
+    assert_finding(&ir, "sheet-metal rule id repeats");
+    assert_finding(&ir, "do not increase strictly");
+    let ir = with(apply("absent"));
+    assert_finding(&ir, "is no rule of the feature's scope");
+}
+
+#[test]
+fn a_flange_states_one_width_per_edge() {
+    let flange = Flange {
+        edges: named(vec![entity(NameKind::Edge, 1), entity(NameKind::Edge, 2)]),
+        height: None,
+        angle: None,
+        width: Some(FlangeWidth::CenteredPerEdge(vec![Dimension::Literal(
+            positive(1.0),
+        )])),
+        bend: bend(),
+        rule: None,
+        height_datum: None,
+        position: None,
+        outline: None,
+    };
+    assert_finding(
+        &with(sheet(SheetMetalKind::Flange(flange))),
+        "has 1 widths for 2 edges",
+    );
+}
+
+// ----------------------------------------------------------------- assembly operations
+
+fn occurrence(key: &str) -> Occurrence {
+    serde_json::from_value(serde_json::json!({
+        "id": format!("test:design:occurrence#{key}"),
+        "prototype": {"kind": "local", "definition": "test:design:definition#part"},
+        "parent": {"kind": "root"},
+        "ordinal": 0,
+        "transform": serde_json::to_value(Transform::identity()).unwrap(),
+        "scale": [1.0, 1.0, 1.0]
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_place_set_lists_two_distinct_occurrences() {
+    let set = |keys: &[&str]| {
+        FeatureOperation::PlaceSet(Box::new(PlaceSet {
+            occurrences: keys.iter().map(|key| id("occurrence", key)).collect(),
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let mut ir = with(set(&["a", "a"]));
+    ir.model.occurrences.push(occurrence("a"));
+    assert_finding(&ir, "lists an occurrence twice, or fewer than 2");
+    assert_finding(
+        &with(set(&["absent", "b"])),
+        "which is no occurrence of the model",
+    );
+}
+
+#[test]
+fn a_place_states_its_base_with_its_placement() {
+    let place = Place {
+        occurrence: id("occurrence", "a"),
+        placement: Some(Construction::default()),
+        base: None,
+        constraints: Vec::new(),
+        packaged: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    };
+    let mut ir = with(FeatureOperation::Place(Box::new(place)));
+    ir.model.occurrences.push(occurrence("a"));
+    assert_finding(&ir, "Place.base is present where placement is not");
+}
+
+fn joint(kind: JointKind) -> FeatureOperation {
+    let frame = || JointConnector::Frame(Construction::default());
+    FeatureOperation::Joint(Box::new(Joint {
+        connectors: [frame(), frame()],
+        kind,
+        alignment: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+fn motion(motion: JointMotion, limits: Vec<AxisLimits>) -> JointKind {
+    JointKind::Motion {
+        motion,
+        axes: None,
+        offset: JointOffset {
+            x: None,
+            y: None,
+            z: None,
+            angle: None,
+        },
+        limits,
+        drives: Vec::new(),
+    }
+}
+
+#[test]
+fn a_motion_joint_limits_the_freedoms_it_leaves() {
+    let pin_slot = JointMotion::PinSlot {
+        axis: FrameAxis::Z,
+        slide: FrameAxis::Z,
+    };
+    assert_finding(
+        &with(joint(motion(pin_slot, Vec::new()))),
+        "a PinSlot's slide is its axis",
+    );
+    let slide = |axis| AxisLimits::Translation {
+        axis,
+        limits: Some(Bounds {
+            min: Some(Dimension::Literal(length(2.0))),
+            max: Some(Dimension::Literal(length(1.0))),
+        }),
+        rest: None,
+    };
+    let revolute = JointMotion::Revolute { axis: FrameAxis::Z };
+    let ir = with(joint(motion(revolute, vec![slide(FrameAxis::Z)])));
+    assert_finding(&ir, "a degree of freedom the motion does not leave");
+    assert_finding(&ir, "Bounds has min above max");
+    assert_finding(&ir, "a connector with no inputs has no resolved value");
+    assert_finding(
+        &with(joint(JointKind::Slot {
+            position: None,
+            lock_rotation: None,
+        })),
+        "of a variant its kind does not take",
+    );
+}
+
+#[test]
+fn component_instances_hold_one_occurrence_per_seed() {
+    let component = || {
+        let mut component = pick(PickTarget::Component);
+        component.context = Some(PickContext::Occurrence(
+            crate::design::selection::OccurrencePath(Vec::new()),
+        ));
+        component
+    };
+    let pattern = ComponentPattern {
+        seeds: named(vec![component()]),
+        layout: linear(None, 3),
+        instances: vec![ComponentInstance {
+            index: InstanceIndex(vec![1]),
+            occurrences: vec![id("occurrence", "a"), id("occurrence", "b")],
+        }],
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    };
+    let mut ir = with(FeatureOperation::ComponentPattern(Box::new(pattern)));
+    ir.model
+        .occurrences
+        .extend([occurrence("a"), occurrence("b")]);
+    assert_finding(&ir, "lists 2 occurrences for 1 seeds");
+    let mirror = MirrorComponents {
+        seeds: named(vec![entity(NameKind::Body, 1)]),
+        plane: Construction::default(),
+        results: Vec::new(),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    };
+    let ir = with(FeatureOperation::MirrorComponents(Box::new(mirror)));
+    assert_finding(&ir, "it picks only Component targets");
+    assert_finding(&ir, "other than one result per seed");
+}
+
+#[test]
+fn a_new_component_is_created_once() {
+    let mut creating = combine(
+        Some(named(vec![entity(NameKind::Body, 1)])),
+        BooleanOp::Join,
+    );
+    creating.new_component = Some(NewComponent {
+        occurrence: id("occurrence", "a"),
+    });
+    let mut ir = with(FeatureOperation::Combine(Box::new(creating)));
+    let mirror = MirrorComponents {
+        seeds: named(Vec::new()),
+        plane: Construction::default(),
+        results: vec![MirrorResult {
+            occurrence: id("occurrence", "a"),
+            orientation: None,
+        }],
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    };
+    ir.design.features[1].definition.operation =
+        FeatureOperation::MirrorComponents(Box::new(mirror));
+    ir.model.occurrences.push(occurrence("a"));
+    assert_finding(&ir, "which this combine's new_component creates");
+}
+
+#[test]
+fn a_component_and_a_driver_name_other_scopes() {
+    let mut ir = extruding(|_| {});
+    ir.design.features[0].component = Some(id("definition", "part"));
+    assert_finding(&ir, "no definition its scope spans beside its own");
+    let mut ir = extruding(|_| {});
+    ir.design.features[0].driven_by = Some(Driver::Feature(feature("fillet")));
+    assert_finding(&ir, "a feature of its own scope");
+}
+
+// ----------------------------------------------------------------- sketches
+
+fn point(x: f64, y: f64) -> FinitePoint2 {
+    FinitePoint2::new(Point2::new(x, y)).unwrap()
+}
+
+fn sketch_entity(
+    key: &str,
+    curve: PlanarCurve,
+    roles: Vec<EntityRole<Planar>>,
+) -> SketchEntity<Planar> {
+    SketchEntity {
+        id: id::<SketchEntityId>("sketch-entity", key),
+        sketch: sketch_id("profile"),
+        definition: EntityDefinition::Free(curve),
+        roles,
+        construction: None,
+        centerline: None,
+        native: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+
+fn role(of: &str, role: DefiningRole) -> EntityRole<Planar> {
+    EntityRole {
+        of: id("sketch-entity", of),
+        role,
+    }
+}
+
+fn constraint(key: &str, relation: SketchRelation<Planar>) -> SketchConstraint<Planar> {
+    SketchConstraint {
+        id: id::<SketchConstraintId>("sketch-constraint", key),
+        sketch: sketch_id("profile"),
+        relation,
+        name: None,
+        active: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+
+fn operand(key: &str) -> Operand<Planar> {
+    Operand::Entity(id("sketch-entity", key))
+}
+
+/// The fixture with its extrude a sketch feature that owns a sketch of a
+/// line and its two end points.
+fn sketched() -> CadIr {
+    let mut ir = with(FeatureOperation::Sketch(sketch_id("profile")));
+    ir.design.sketches.push(Sketch {
+        id: sketch_id("profile"),
+        owner: feature("extrude"),
+        name: None,
+        plane: SketchPlane::Block,
+        solve: SketchSolve {
+            state: None,
+            status: EvaluationStatus::Current,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    });
+    let line = PlanarCurve::Line {
+        start: point(0.0, 0.0),
+        end: point(1.0, 0.0),
+    };
+    ir.design.sketch_entities.extend([
+        sketch_entity("line", line, Vec::new()),
+        sketch_entity(
+            "start",
+            PlanarCurve::Point(point(0.0, 0.0)),
+            vec![role("line", DefiningRole::Start)],
+        ),
+        sketch_entity(
+            "end",
+            PlanarCurve::Point(point(1.0, 0.0)),
+            vec![role("line", DefiningRole::End)],
+        ),
+    ]);
+    ir.design.sketch_constraints.push(constraint(
+        "horizontal",
+        SketchRelation::Horizontal {
+            a: operand("line"),
+            b: None,
+        },
+    ));
+    ir
+}
+
+fn sketch_findings(ir: &CadIr) -> Vec<String> {
+    design_findings(ir)
+        .into_iter()
+        .filter(|f| f.entity.as_deref().is_some_and(|e| e.contains("sketch")))
+        .map(|f| f.message)
+        .collect()
+}
+
+#[test]
+fn a_sketch_of_a_line_and_its_ends_breaks_no_sketch_rule() {
+    let findings = sketch_findings(&sketched());
+    assert!(findings.is_empty(), "{findings:#?}");
+}
+
+#[test]
+fn a_sketch_is_owned_by_the_feature_that_holds_it() {
+    let mut ir = sketched();
+    ir.design.sketches[0].owner = feature("absent");
+    assert_finding(&ir, "is no feature of the design");
+    let mut ir = sketched();
+    ir.design.sketches[0].owner = feature("fillet");
+    assert_finding(&ir, "neither holds it as its operation nor names it");
+    assert_finding(&ir, "which is no sketch it owns");
+}
+
+#[test]
+fn roles_fit_their_holders_and_targets() {
+    let mut ir = sketched();
+    ir.design.sketch_entities[1].roles = vec![role("end", DefiningRole::Center)];
+    assert_finding(&ir, "which is no circle, arc, ellipse, or hyperbola");
+    let mut ir = sketched();
+    ir.design.sketch_entities[0].roles = vec![role("end", DefiningRole::Start)];
+    assert_finding(&ir, "holds the point role");
+    let mut ir = sketched();
+    ir.design.sketch_entities[2].roles = vec![role("line", DefiningRole::Start)];
+    assert_finding(&ir, "entities hold one role");
+}
+
+#[test]
+fn relations_take_operands_of_their_sketch_and_kind() {
+    let mut ir = sketched();
+    ir.design.sketch_constraints.push(constraint(
+        "equal",
+        SketchRelation::Equal {
+            members: vec![operand("line"), operand("start")],
+        },
+    ));
+    assert_finding(&ir, "Equal takes at least two members of one kind class");
+    let mut ir = sketched();
+    ir.design.sketch_constraints.push(constraint(
+        "vertical",
+        SketchRelation::Vertical {
+            a: operand("start"),
+            b: Some(operand("absent")),
+        },
+    ));
+    assert_finding(&ir, "which is no entity of its sketch");
+    let mut ir = sketched();
+    ir.design.sketch_constraints[0].sketch = sketch_id("absent");
+    assert_finding(&ir, "which is no planar sketch");
+}
+
+#[test]
+fn a_bound_sketch_dimension_is_named_by_its_parameter_of_the_owner_scope() {
+    let mut ir = sketched();
+    let parameter: ParameterId = id("parameter", "width");
+    let mut record: DesignParameter = fixture::parameter(
+        "width",
+        ValueKind::Quantity(crate::design::units::Quantity::LENGTH),
+    );
+    record.scope = id("definition", "other");
+    ir.design.parameters.push(record);
+    let mut distance = constraint(
+        "distance",
+        SketchRelation::Distance {
+            a: operand("start"),
+            b: operand("end"),
+            along: None,
+            doubled: None,
+            value: Dimension::Parameter(parameter),
+        },
+    );
+    distance.name = Some("width".to_owned());
+    ir.design.sketch_constraints.push(distance);
+    assert_finding(&ir, "binds a parameter states a name");
+    assert_finding(&ir, "a parameter of another scope than the sketch owner's");
+}
+
+#[test]
+fn a_profile_region_has_an_outer_boundary_of_curves() {
+    let mut ir = sketched();
+    let region = crate::design::selection::SketchRegion {
+        outer: vec![crate::design::selection::BoundaryUse {
+            entity: id("sketch-entity", "start"),
+            fragment: None,
+        }],
+        holes: Vec::new(),
+    };
+    let mut picking = extrude();
+    picking.profile = named(vec![pick(PickTarget::SketchRegion {
+        sketch: sketch_id("profile"),
+        region,
+    })]);
+    ir.design.features[1].definition.operation = FeatureOperation::Extrude(Box::new(picking));
+    assert_finding(&ir, "which is no non-construction curve of the sketch");
+}
