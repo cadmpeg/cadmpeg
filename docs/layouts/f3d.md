@@ -4804,6 +4804,7 @@ Offsets are relative to the class-297 primary indexed axis carrier paired with c
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | Both carriers store ten zero bytes at offsets 11 through 20 |
 | 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 at offset 21 |
 | 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
 | 89 | 4 | `reference_count` | `u32` | little | spec | u32 reference count 6 at offset 89 |
@@ -4812,7 +4813,6 @@ Offsets are relative to the class-297 primary indexed axis carrier paired with c
 Unstated regions:
 
 - `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
-- `11..21` (10 B): Bytes 11 through 20 are zero.
 - `97..215` (118 B): The generation-specific construction/reference tail ends at the paired header.
 
 ## `work_axis_direct_carrier_class_335`
@@ -4823,6 +4823,7 @@ Offsets are relative to the class-335 primary indexed axis carrier paired with c
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | Both carriers store ten zero bytes at offsets 11 through 20 |
 | 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 at offset 21 |
 | 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
 | 89 | 4 | `reference_count` | `u32` | little | spec | u32 reference count 6 at offset 89 |
@@ -4831,8 +4832,40 @@ Offsets are relative to the class-335 primary indexed axis carrier paired with c
 Unstated regions:
 
 - `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
-- `11..21` (10 B): Bytes 11 through 20 are zero.
 - `97..195` (98 B): The generation-specific construction/reference tail ends at the paired header.
+
+## `work_axis_direct_scope_long`
+
+Spec §3.1 · layout: byte offsets · size: 268 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 268 | `frame` | `bytes[268]` | little | spec | \| 302 \| 262 \| 268 \| |
+
+## `work_axis_direct_scope_short`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 254 | `frame` | `bytes[254]` | little | spec | \| 361 \| 258 \| 254 \| |
+
+## `work_axis_direct_support`
+
+Spec §3.1 · layout: byte offsets · size: 293 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 293 | `frame` | `bytes[293]` | little | spec | and is 293 bytes |
 
 ## `coil_compact_placement_matrix_frame`
 
@@ -6534,7 +6567,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 122 B
 
-Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122.
+Offsets are relative to the primary indexed header. The 256-, 257- and 267-byte identity forms share this prefix. The generation-specific scope tail begins at offset 122.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -8202,6 +8235,19 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
+
+## `sheet_metal_rule_v0_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the indexed header and ten zero bytes |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | the indexed header and ten zero bytes |
+| 21 | 4 | `settings_count` | `u32` | little | spec | [u32 settings-reference count](../layouts/f3d.md) at offset 21 |
 
 ## `sheet_metal_rule_prefix`
 
@@ -12029,6 +12075,37 @@ Parsed by:
 | 21 | 4 | `word` | `u32` | little | spec | The ReplaceFace prologue |
 | 25 | 1 | `tangent_chain` | `u8` | little | spec | The ReplaceFace prologue |
 | 26 | 4 | `replacement_group_count` | `u32` | little | spec | The ReplaceFace prologue |
+
+## `work_axis_two_point_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 232 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | After its indexed header it stores ten zero bytes |
+| 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 |
+| 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
+| 118 | 4 | `reference_count` | `u32` | little | spec | A u32 reference count of two at offset 118 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed record header precedes the fixed payload.
+- `89..118` (29 B): The fixed payload separates its values and reference count.
+- `122..232` (110 B): The two marked references and generation tail end at the paired header.
+
+## `work_axis_endpoint_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 197 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 31 | `zero_run` | `bytes[31]` | little | spec | each stores 31 zero bytes after its indexed header |
+| 42 | 24 | `position` | `f64[3]` | little | spec | a three-coordinate point at offset 42 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed record header precedes the fixed point payload.
+- `66..197` (131 B): The generation tail ends at the paired indexed header.
 
 ## Not tabulated
 

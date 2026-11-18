@@ -15335,10 +15335,12 @@ offset = 0
 size = 11
 note = "The indexed carrier header occupies the first eleven bytes."
 
-[[record.gap]]
+[[record.field]]
+name = "zero_run"
 offset = 11
-size = 10
-note = "Bytes 11 through 20 are zero."
+type = "bytes[10]"
+source = "spec"
+anchor = "Both carriers store ten zero bytes at offsets 11 through 20"
 
 [[record.field]]
 name = "value_count"
@@ -15386,10 +15388,12 @@ offset = 0
 size = 11
 note = "The indexed carrier header occupies the first eleven bytes."
 
-[[record.gap]]
+[[record.field]]
+name = "zero_run"
 offset = 11
-size = 10
-note = "Bytes 11 through 20 are zero."
+type = "bytes[10]"
+source = "spec"
+anchor = "Both carriers store ten zero bytes at offsets 11 through 20"
 
 [[record.field]]
 name = "value_count"
@@ -15423,6 +15427,51 @@ anchor = "u32 value 1 at offset 93"
 offset = 97
 size = 98
 note = "The generation-specific construction/reference tail ends at the paired header."
+
+[[record]]
+name = "work_axis_direct_scope_long"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs"
+kind = "byte"
+section = "3.1"
+anchor = "| 302 | 262 | 268 |"
+size = 268
+
+[[record.field]]
+name = "frame"
+offset = 0
+type = "bytes[268]"
+source = "spec"
+anchor = "| 302 | 262 | 268 |"
+
+[[record]]
+name = "work_axis_direct_scope_short"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs"
+kind = "byte"
+section = "3.1"
+anchor = "| 361 | 258 | 254 |"
+size = 254
+
+[[record.field]]
+name = "frame"
+offset = 0
+type = "bytes[254]"
+source = "spec"
+anchor = "| 361 | 258 | 254 |"
+
+[[record]]
+name = "work_axis_direct_support"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs"
+kind = "byte"
+section = "3.1"
+anchor = "and is 293 bytes"
+size = 293
+
+[[record.field]]
+name = "frame"
+offset = 0
+type = "bytes[293]"
+source = "spec"
+anchor = "and is 293 bytes"
 
 [[record]]
 name = "coil_compact_placement_matrix_frame"
@@ -21237,9 +21286,9 @@ name = "component_insert_identity_scope_shifted_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "Class `414` paired with class `264` also has 257- and 267-byte shifted identity frames"
+anchor = "Shifted identity insertion scopes have a 122-byte prefix"
 size = 122
-note = "Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122."
+note = "Offsets are relative to the primary indexed header. The 256-, 257- and 267-byte identity forms share this prefix. The generation-specific scope tail begins at offset 122."
 
 [[record.field]]
 name = "indexed_header"
@@ -26535,6 +26584,35 @@ type = "bytes[42]"
 source = "spec"
 anchor = "The typed-reference zero-body form stores the same prefix with a 51-byte typed shared-metadata reference at offset 32"
 
+
+[[record]]
+name = "sheet_metal_rule_v0_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A version-0 sheet-metal rule stores a"
+size = 25
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "the indexed header and ten zero bytes"
+
+[[record.field]]
+name = "settings_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "[u32 settings-reference count](../layouts/f3d.md) at offset 21"
 
 [[record]]
 name = "sheet_metal_rule_prefix"
@@ -39902,3 +39980,84 @@ offset = 26
 type = "u32"
 source = "spec"
 anchor = "The ReplaceFace prologue"
+
+[[record]]
+name = "work_axis_two_point_carrier"
+kind = "byte"
+section = "3.1"
+anchor = "Reference zero is a 232-byte solved-axis carrier"
+size = 232
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed record header precedes the fixed payload."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After its indexed header it stores ten zero bytes"
+
+[[record.field]]
+name = "value_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "u32 value count 8"
+
+[[record.field]]
+name = "axis_values"
+offset = 25
+type = "f64[8]"
+source = "spec"
+anchor = "eight f64 values at offset 25"
+
+[[record.gap]]
+offset = 89
+size = 29
+note = "The fixed payload separates its values and reference count."
+
+[[record.field]]
+name = "reference_count"
+offset = 118
+type = "u32"
+source = "spec"
+anchor = "A u32 reference count of two at offset 118"
+
+[[record.gap]]
+offset = 122
+size = 110
+note = "The two marked references and generation tail end at the paired header."
+
+[[record]]
+name = "work_axis_endpoint_carrier"
+kind = "byte"
+section = "3.1"
+anchor = "Those records are 197-byte point carriers"
+size = 197
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed record header precedes the fixed point payload."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[31]"
+source = "spec"
+anchor = "each stores 31 zero bytes after its indexed header"
+
+[[record.field]]
+name = "position"
+offset = 42
+type = "f64[3]"
+source = "spec"
+anchor = "a three-coordinate point at offset 42"
+
+[[record.gap]]
+offset = 66
+size = 131
+note = "The generation tail ends at the paired indexed header."
