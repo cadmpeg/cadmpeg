@@ -6251,12 +6251,24 @@ pub(crate) mod surface_patch_v7_normal_flip_prefix {
     pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0004;
 }
 
+/// Byte offsets for the `surface_patch_v5_compact_selection_frame` record.
+///
+/// Spec §3.1. Record length 39 B.
+///
+/// ```text
+/// The compact version-5 form has the same selection, interior-list and tool-reference prefixes as the regular version-5 form.
+/// ```
+pub(crate) mod surface_patch_v5_compact_selection_frame {
+    /// Offset of `selection_prefix` (`bytes[12]`). Spec §3.1.
+    pub(crate) const SELECTION_PREFIX: usize = 27;
+}
+
 /// Byte offsets for the `surface_patch_v5_selection_frame` record.
 ///
 /// Spec §3.1. Record length 43 B.
 ///
 /// ```text
-/// Type versions 5 and 6 start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
+/// Regular version-5 and version-6 forms start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
 /// ```
 pub(crate) mod surface_patch_v5_selection_frame {
     /// Offset of `selection_prefix` (`bytes[12]`). Spec §3.1.

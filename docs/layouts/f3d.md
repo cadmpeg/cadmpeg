@@ -7067,16 +7067,27 @@ Only type version 7 assigns normal reversal to primary-scope offset 31.
 | 31 | 1 | `normal_flip` | `u8` | little | spec | the byte at primary-scope offset `P + 31` reverses the whole created surface normal |
 | 32 | 4 | `following_word` | `u32` | little | spec | The following `u32le` at `P + 32` is `4` · value `4` |
 
+## `surface_patch_v5_compact_selection_frame`
+
+Spec §3.1 · layout: byte offsets · size: 39 B
+
+The compact version-5 form has the same selection, interior-list and tool-reference prefixes as the regular version-5 form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 27 | `scope_prefix` | `bytes[27]` | little | spec | A `SurfacePatch` scope of type version 5, 6, or 7 |
+| 27 | 12 | `selection_prefix` | `bytes[12]` | little | spec | `Q` is 27 in the compact version-5 form |
+
 ## `surface_patch_v5_selection_frame`
 
 Spec §3.1 · layout: byte offsets · size: 43 B
 
-Type versions 5 and 6 start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
+Regular version-5 and version-6 forms start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 31 | `scope_prefix` | `bytes[31]` | little | spec | A `SurfacePatch` scope of type version 5, 6, or 7 |
-| 31 | 12 | `selection_prefix` | `bytes[12]` | little | spec | `Q` is 31 in versions 5 and 6 |
+| 31 | 12 | `selection_prefix` | `bytes[12]` | little | spec | 31 in the regular version-5 and version-6 forms |
 
 ## `surface_patch_selection_prefix`
 

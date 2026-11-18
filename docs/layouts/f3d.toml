@@ -22908,12 +22908,34 @@ source = "spec"
 anchor = "The following `u32le` at `P + 32` is `4`"
 
 [[record]]
+name = "surface_patch_v5_compact_selection_frame"
+kind = "byte"
+section = "3.1"
+anchor = "A `SurfacePatch` scope of type version 5, 6, or 7"
+size = 39
+note = "The compact version-5 form has the same selection, interior-list and tool-reference prefixes as the regular version-5 form."
+
+[[record.field]]
+name = "scope_prefix"
+offset = 0
+type = "bytes[27]"
+source = "spec"
+anchor = "A `SurfacePatch` scope of type version 5, 6, or 7"
+
+[[record.field]]
+name = "selection_prefix"
+offset = 27
+type = "bytes[12]"
+source = "spec"
+anchor = "`Q` is 27 in the compact version-5 form"
+
+[[record]]
 name = "surface_patch_v5_selection_frame"
 kind = "byte"
 section = "3.1"
 anchor = "A `SurfacePatch` scope of type version 5, 6, or 7"
 size = 43
-note = "Type versions 5 and 6 start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix."
+note = "Regular version-5 and version-6 forms start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix."
 
 [[record.field]]
 name = "scope_prefix"
@@ -22927,7 +22949,7 @@ name = "selection_prefix"
 offset = 31
 type = "bytes[12]"
 source = "spec"
-anchor = "`Q` is 31 in versions 5 and 6"
+anchor = "31 in the regular version-5 and version-6 forms"
 
 [[record]]
 name = "surface_patch_selection_prefix"
