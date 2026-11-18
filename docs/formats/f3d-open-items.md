@@ -499,7 +499,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does the flag byte after the `variant` byte of a parameter owner store?
 
-**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero. The owner of a driven dimension stores variant zero and flag zero, and its frame equals the frame of the same owner while the dimension drives.
+**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero. The owner of a driven dimension stores variant zero and flag zero. One save pair stores the same dimension driving and driven. The 104-byte owner frames of the pair differ in one byte, the last digit of the class tag: `361` in the driving save and `363` in the driven save. Each tag is `256` plus the type-table index of type `D91D429C-1BB5-4640-B49F-69AF14F463E9` in its save, and all four parameter owners of each save carry the tag of that save.
 
 **Need.** The flag can mark a suppressed parameter. A design that suppresses the feature of one scalar owner, saved in each state, and a save that creates a scalar owner with `variant` one.
 
