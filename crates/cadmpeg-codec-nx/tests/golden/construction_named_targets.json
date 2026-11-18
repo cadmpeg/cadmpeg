@@ -239,8 +239,15 @@
             "bodies": [],
             "bom_properties": {},
             "id": "nx:document:product-definition#root",
+            "instance_bodies": [],
             "kind": "part",
+            "occurrences": [],
+            "representations": [],
             "sketches": [],
+            "storage": {
+              "document": {},
+              "kind": "file"
+            },
             "tessellations": []
           }
         ],

@@ -27,12 +27,10 @@ use cadmpeg_ir::features::{
     FeatureTreeNodeRole, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
-use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 
 mod parameters;
 
-/// The root definition of an NX assembly, as the placement attachment states it.
-const ASSEMBLY_ROOT: &str = "nx:assembly:product-definition#root";
 /// The root definition of an NX part that states no assembly root.
 const PART_ROOT: &str = "nx:document:product-definition#root";
 const TIMELINE: &str = "nx:feature-history:timeline#root";
@@ -107,9 +105,9 @@ pub(super) fn project(
     Ok(minted)
 }
 
-/// The root definition of the document: the assembly root where the
-/// placement attachment states one, else a part root that owns every
-/// current body, which this pushes to `minted`.
+/// The root definition of the document: the one the placement attachment
+/// states for an assembly, else a part definition stored in the root file
+/// that owns every current body, which this pushes to `minted`.
 pub(super) fn root_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -119,32 +117,22 @@ pub(super) fn root_definition(
         .model
         .product_definitions
         .iter()
-        .find(|definition| definition.id.as_str() == ASSEMBLY_ROOT)
+        .find(|definition| definition.is_root())
     {
         return Ok(root.id.clone());
     }
     ctx.charge_entities(1, "project NX v11 root definition")?;
     let id = ProductDefinitionId::mint(PART_ROOT).map_err(CodecError::malformed)?;
-    let mut bodies = ir
+    let mut root = ProductDefinition::root(id.clone(), ExternalDocument::default());
+    root.kind = Some(ProductDefinitionKind::Part);
+    root.bodies = ir
         .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
-        .collect::<Vec<_>>();
-    bodies.sort();
-    ir.model.product_definitions.push(ProductDefinition {
-        id: id.clone(),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
-        bodies,
-        sketches: Vec::new(),
-        tessellations: Vec::new(),
-        native_ref: None,
-    });
+        .collect();
+    root.bodies.sort();
+    ir.model.product_definitions.push(root);
     ir.model.product_definitions.sort_by(|a, b| a.id.cmp(&b.id));
     minted.push(id.as_str().to_owned());
     Ok(id)

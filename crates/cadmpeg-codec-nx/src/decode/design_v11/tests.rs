@@ -152,6 +152,8 @@ fn history_is_one_timeline_in_construction_order() {
     let [definition] = ir.model.product_definitions.as_slice() else {
         panic!("one root definition");
     };
+    assert!(definition.is_root());
+    assert_eq!(definition.kind, Some(ProductDefinitionKind::Part));
     assert_eq!(definition.bodies, [body("1").id, body("2").id]);
     assert_eq!(minted, [PART_ROOT, TIMELINE]);
     assert_eq!(design_findings(&ir), Vec::<String>::new());
@@ -202,19 +204,20 @@ fn an_empty_part_has_an_empty_group() {
 
 #[test]
 fn an_assembly_root_is_the_scope_definition() {
+    const ASSEMBLY_ROOT: &str = "nx:assembly:product-definition#root";
     let mut ir = CadIr::empty();
-    ir.model.product_definitions.push(
-        serde_json::from_value(serde_json::json!({
-            "id": ASSEMBLY_ROOT, "kind": "group", "bom_properties": {}, "bodies": [],
-            "sketches": [], "tessellations": []
-        }))
-        .expect("definition"),
+    let mut root = ProductDefinition::root(
+        ProductDefinitionId::mint(ASSEMBLY_ROOT).unwrap(),
+        ExternalDocument::default(),
     );
+    root.kind = Some(ProductDefinitionKind::Assembly);
+    ir.model.product_definitions.push(root);
     ir.model.features = vec![feature("a", 0, sketch())];
     let minted = project_ir(&mut ir);
     assert_eq!(ir.model.product_definitions.len(), 1);
     assert_eq!(ir.design.scopes[0].definition.as_str(), ASSEMBLY_ROOT);
     assert_eq!(minted, [TIMELINE]);
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
 #[test]
