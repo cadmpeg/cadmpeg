@@ -2225,6 +2225,24 @@ Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662
 
 #### Assembly operands
 
+A 297-byte `MotionLink` scope of type `29098FE8-08FC-4FD8-9D31-42CF164F73EB`
+version 3 stores a marked relation reference at scope offset 43. In the
+166-byte two-revolute form, that reference names the preceding indexed
+record. The relation index is the scope index minus one. The relation type
+is `3A218162-55F3-492E-93A4-390F8A56FBEA` version 2.
+
+The 166-byte two-revolute relation stores u32 parent count 2 at offset 20
+and two 15-byte parent entries at offsets 24 and 39. Each parent entry is
+an eleven-byte marked reference and a u32. The reference names a version-5
+Joint record. Marked references at offsets 63 and 74 repeat the two joint
+identities in parent order. The u32 freedom codes at offsets 85 and 89
+are both 2 for rotation about connector Z. The zero-phase, same-direction
+form stores f64 zero at offset 93 and six zero bytes at offset 101.
+Evaluated f64 angles at offsets 107 and 115 are in radians and correspond
+to the two repeated references in order. The second angle divided by the
+first gives the second joint's angular change per unit of first-joint
+angular change.
+
 The four direct-construction 421-byte `As-built` generations use one exact class and offset map:
 
 | Scope primary / paired class | Scalar owner primary / paired class | Operand-carrier classes in reference order | Solved frame primary / paired class | Frame span; marker, matrix, and paired-header offsets | Limit source order and domain |

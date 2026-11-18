@@ -24,7 +24,7 @@ pub(crate) const TYPE_GUID: &str = "8DFDD543-F823-43AA-BDAF-C638E023F0A0";
 /// UTF-16 code units of the English family name that the span formula counts.
 const ASSEMBLE_NAME_UNITS: usize = 8;
 /// Type GUID of the referenced joint record.
-const JOINT_TYPE_GUID: &str = "7F5A0426-1D2A-4DC4-9F06-58631F69D2F5";
+pub(super) const JOINT_TYPE_GUID: &str = "7F5A0426-1D2A-4DC4-9F06-58631F69D2F5";
 const ADDITIONAL_TAIL_TYPE_GUID: &str = "074F9459-89C2-4B7D-8AB4-DCE67AE944FE";
 
 pub(crate) fn registered(scope: &DesignParameterScope, types: &StreamTypes<'_>) -> bool {

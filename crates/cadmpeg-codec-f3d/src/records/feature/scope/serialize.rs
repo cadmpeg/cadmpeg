@@ -181,6 +181,9 @@ impl Serialize for DesignParameterScope {
             DesignScopePayload::Thicken(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Thicken(value));
             }
+            DesignScopePayload::MotionLink(Some(value)) => {
+                emit!("linked_rotations", value);
+            }
             DesignScopePayload::SilhouetteSplit(Some(value)) => {
                 emit!("silhouette_split_operation", value);
             }

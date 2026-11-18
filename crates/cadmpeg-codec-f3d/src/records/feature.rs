@@ -19,6 +19,7 @@ pub(crate) mod hole;
 pub(crate) mod joint_motion;
 pub(crate) mod mesh_face_groups;
 pub(crate) mod mirror;
+pub(crate) mod motion_link;
 pub(crate) mod occurrence_transfer;
 pub(crate) mod path_features;
 pub(crate) mod patterns;

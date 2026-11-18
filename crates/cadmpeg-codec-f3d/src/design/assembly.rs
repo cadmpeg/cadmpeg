@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod motion_link;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
@@ -1056,6 +1058,13 @@ pub(crate) fn project_assembly_joints_with_paths(
             "{unprojected_members} rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects."
         )));
     }
+    let (linked, unbound_links) = motion_link::project(scopes, motions, &mut joints);
+    if unbound_links != 0 {
+        losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+            "{unbound_links} MotionLink scope(s) retain their source relation because both revolute joints could not be bound."
+        )));
+    }
+    assumed_active += linked;
     if assumed_active != 0 {
         losses.push(F3dLossCode::AssemblyJointActivationAssumed.note(format!(
             "{assumed_active} projected Design assembly joint(s) are assumed active: the activation meaning of their scope-tail booleans is unknown."

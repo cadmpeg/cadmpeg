@@ -589,7 +589,6 @@ fn omit_unbound_member_joints(
     unplaced_members: &std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::products::{OccurrenceParent, OperandContainer};
     if unplaced_members.is_empty() {
         return;
@@ -645,7 +644,17 @@ fn omit_unbound_member_joints(
         }
         !unresolved
     });
-    for feature in &mut model.features {
+    omit_unbound_motion_links(&mut model.assembly_joints, &mut omitted, losses);
+    restore_native_joint_features(&mut model.features, &omitted);
+}
+
+fn restore_native_joint_features(
+    features: &mut [cadmpeg_ir::features::Feature],
+    omitted: &std::collections::BTreeSet<cadmpeg_ir::products::JointId>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    for feature in features {
         if matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { joint }) if omitted.contains(joint))
         {
             feature
@@ -998,7 +1007,36 @@ fn rebind_joints(
         }
     }
     model.joints.retain(|joint| !refused.contains(&joint.id));
+    omit_unbound_motion_links(model.joints, &mut refused, losses);
+    restore_native_joint_features(model.features, &refused);
     bind_retained_joint_features(model.features, model.joints, complete_scopes);
+}
+
+fn omit_unbound_motion_links(
+    joints: &mut Vec<cadmpeg_ir::products::AssemblyJoint>,
+    omitted: &mut std::collections::BTreeSet<cadmpeg_ir::products::JointId>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    use cadmpeg_ir::products::{JointOperands, PairedJointKind};
+
+    if omitted.is_empty() {
+        return;
+    }
+    joints.retain(|joint| {
+        if matches!(
+            joint.operands(),
+            JointOperands::Pair { kind: PairedJointKind::Gears { coupled_joints, .. }, .. }
+                if coupled_joints.iter().any(|target| omitted.contains(target))
+        ) {
+            omitted.insert(joint.id.clone());
+            losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+                "MotionLink joint {} stays native because a coupled joint was omitted",
+                joint.id
+            )));
+            return false;
+        }
+        true
+    });
 }
 
 fn bind_retained_joint_features(

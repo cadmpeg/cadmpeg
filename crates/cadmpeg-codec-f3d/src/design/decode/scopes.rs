@@ -31,6 +31,7 @@ pub(crate) mod legacy_class_415;
 mod legacy_operand_paths;
 mod mesh_face_groups;
 pub(crate) mod mirror;
+mod motion_link;
 mod occurrence_transfer;
 pub(crate) mod parameter_scope;
 mod path_feature;
