@@ -207,6 +207,7 @@ fn override_definition(ir: &mut CadIr, key: &str) {
         bom_properties: BTreeMap::new(),
         bodies: Vec::new(),
         sketches: Vec::new(),
+        tessellations: Vec::new(),
         native_ref: None,
     });
     ir.design.configurations[0].overrides.definitions.insert(

@@ -145,7 +145,13 @@ fn zstd_member_past_the_window_allowance_is_an_unreadable_entry_without_a_refusa
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
     let scan = super::scan(&ctx, root).expect("one unreadable member does not refuse the archive");
     assert!(scan.losses.is_empty(), "{:?}", scan.losses);
-    let [given_up] = scan.given_up.as_slice() else {
+    let given_up = scan
+        .unreadable
+        .into_iter()
+        .map(|entry| entry.give_up(&ctx, None))
+        .collect::<Result<Vec<_>, _>>()
+        .expect("the entry is given up");
+    let [given_up] = given_up.as_slice() else {
         panic!("one given-up entry");
     };
     let loss = given_up.loss();
@@ -686,12 +692,11 @@ fn producer_version_metadata_does_not_refuse_the_document() {
                 .and_then(|persistence| persistence.document.program_version.as_deref()),
             expected
         );
-        let summary = crate::container::summarize(&scan);
+        let summary = crate::container::summarize(&ctx, scan).expect("summary");
         assert!(summary.losses.iter().any(|loss| loss.code
             == crate::loss::FreecadLossCode::ProgramVersionNoncanonical
                 .note("")
                 .code));
-        drop(scan);
         let decoded = FcstdCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
