@@ -29,6 +29,7 @@ pub(crate) mod primitives;
 pub(crate) mod scope;
 pub(crate) mod sheet_metal;
 pub(crate) mod silhouette_split;
+pub(crate) mod split_face;
 pub(crate) mod surface_ops;
 #[cfg(test)]
 mod test_support;

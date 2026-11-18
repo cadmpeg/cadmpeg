@@ -45,6 +45,7 @@ use super::sheet_metal::edge::{DesignEdgeFlangeScope, DesignReferenceEdgeFlange}
 use super::sheet_metal::{
     DesignBaseFlangeOperation, DesignEdgeFlangeOperation, DesignHemOperation,
 };
+use super::split_face::DesignSplitFaceOperation;
 use super::surface_ops::{
     DesignReplaceFaceOperation, DesignRuledSurfaceOperation, DesignSurfaceExtendOperation,
     DesignSurfaceOffsetOperation, DesignSurfacePatchBoundary, DesignSurfacePatchNormalState,
@@ -160,6 +161,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_named_scope_closing,
     crate::records::identity::Located<u32>,
     "closing"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_split_face_operation,
+    DesignSplitFaceOperation,
+    "split_face_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_component_insert_construction,
@@ -820,6 +826,7 @@ design_feature_kinds! {
         Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
         Combine => "Combine": DesignCombineScope,
         Split => "Split": DesignSplitScope,
+        SplitFace => "SplitFace": Option<DesignSplitFaceOperation>,
         BoundaryFill => "BoundaryFill": super::boundary_fill::DesignBoundaryFillScope,
         Draft => "Draft": Option<DesignDraftOperation>,
         ReplaceFace => "ReplaceFace": Option<DesignReplaceFaceOperation>,
@@ -884,7 +891,6 @@ design_feature_kinds! {
         BaseMeshFeature => "Base Mesh Feature",
         CustomFeature => "CustomFeature",
         Form => "Form",
-        SplitFace => "SplitFace",
         DeleteFace => "DeleteFace",
         SurfaceDeleteFace => "SurfaceDeleteFace",
         UnStitch => "UnStitch",
@@ -1363,6 +1369,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_combine_named_tail"
     )]
     combine_named_tail: Option<DesignNamedScopeReferences>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_split_face_operation"
+    )]
+    split_face_operation: Option<DesignSplitFaceOperation>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -2138,6 +2150,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.combine_operation.is_some() || wire.combine_named_tail.is_some() {
             present.push("combine_operation");
         }
+        if wire.split_face_operation.is_some() {
+            present.push("split_face_operation");
+        }
         if wire.boundary_fill.is_some() || wire.boundary_fill_named_tail.is_some() {
             present.push("boundary_fill");
         }
@@ -2223,6 +2238,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 operation: wire.combine_operation.take(),
                 named_tail: wire.combine_named_tail.take(),
             }),
+            DesignFeatureKind::SplitFace => {
+                DesignScopePayload::SplitFace(wire.split_face_operation.take())
+            }
             DesignFeatureKind::Draft => DesignScopePayload::Draft(wire.draft_operation.take()),
             DesignFeatureKind::ReplaceFace => {
                 DesignScopePayload::ReplaceFace(wire.replace_face_operation.take())
@@ -2457,7 +2475,6 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::CopyPasteBodies => {
                 DesignScopePayload::CopyPasteBodies(wire.copy_paste_bodies_operation.take())
             }
-            DesignFeatureKind::SplitFace => DesignScopePayload::SplitFace,
             DesignFeatureKind::PathPattern => {
                 DesignScopePayload::PathPattern(wire.path_pattern_settings.take())
             }
@@ -2556,6 +2573,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.chamfer_sets.is_some()
             || wire.combine_operation.is_some()
             || wire.combine_named_tail.is_some()
+            || wire.split_face_operation.is_some()
             || wire.boundary_fill.is_some()
             || wire.boundary_fill_named_tail.is_some()
             || wire.emboss_construction.is_some()
@@ -2771,6 +2789,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             path_feature: None,
             combine_operation: None,
             combine_named_tail: None,
+            split_face_operation: None,
             boundary_fill: None,
             boundary_fill_named_tail: None,
             thread_construction: None,
@@ -2910,6 +2929,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.combine_operation = value.operation;
                 wire.combine_named_tail = value.named_tail;
             }
+            DesignScopePayload::SplitFace(value) => {
+                wire.split_face_operation = value;
+            }
             DesignScopePayload::BoundaryFill(value) => {
                 wire.boundary_fill = value.prefix;
                 wire.boundary_fill_named_tail = value.named_tail;
@@ -2952,7 +2974,6 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::BaseMeshFeature
             | DesignScopePayload::CustomFeature
             | DesignScopePayload::Form
-            | DesignScopePayload::SplitFace
             | DesignScopePayload::DeleteFace
             | DesignScopePayload::SurfaceDeleteFace
             | DesignScopePayload::UnStitch
@@ -3253,6 +3274,13 @@ impl DesignParameterScope {
         if let DesignScopePayload::Pipe(Some(pipe)) = &draft.payload {
             if !pipe.scope_offsets_are_valid(draft.byte_offset, draft.reference_count_offset) {
                 return Err(fail("Pipe prefix offsets"));
+            }
+        }
+        if let DesignScopePayload::SplitFace(value) = &draft.payload {
+            if value.as_ref().is_some_and(|operation| {
+                !operation.scope_offsets_valid(draft.byte_offset, draft.reference_count_offset)
+            }) {
+                return Err(fail("split_face_operation"));
             }
         }
         let scope = Self {
@@ -3674,6 +3702,13 @@ impl DesignParameterScope {
     pub(crate) fn combine_operation(&self) -> Option<&DesignCombineOperation> {
         match &self.payload {
             DesignScopePayload::Combine(value) => value.operation.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn split_face_operation(&self) -> Option<&DesignSplitFaceOperation> {
+        match &self.payload {
+            DesignScopePayload::SplitFace(value) => value.as_ref(),
             _ => None,
         }
     }

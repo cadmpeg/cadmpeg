@@ -14,6 +14,8 @@ use crate::records::references::DesignClassTag;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
+pub(crate) const POINT_DIRECTION_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
+
 #[cfg(test)]
 std::thread_local! {
     pub(crate) static WORK_GEOMETRY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
