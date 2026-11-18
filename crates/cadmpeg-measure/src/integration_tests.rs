@@ -23,6 +23,7 @@ mod pole_crossings;
 mod pole_witness;
 mod serialization;
 mod spheres;
+mod spindle_tori;
 mod surfaces;
 mod tori;
 mod volume;
