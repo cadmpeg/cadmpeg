@@ -354,7 +354,7 @@ fn fillet_set(
         })
         .flatten()
         .map(|set| (set, 0));
-    let short = compact_ordinal.and_then(|ordinal| {
+    let short = compact_ordinal.into_iter().filter_map(|ordinal| {
         short_constant_set(
             bytes,
             start,
