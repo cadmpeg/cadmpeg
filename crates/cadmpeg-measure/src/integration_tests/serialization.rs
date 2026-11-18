@@ -155,6 +155,8 @@ fn quantities_that_do_not_apply_are_absent() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: definition.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: None,

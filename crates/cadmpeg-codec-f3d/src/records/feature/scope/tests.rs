@@ -693,8 +693,8 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
                 law: DesignFilletSetLaw::Constant {
                     radius_owner_record_index: 4,
                 },
-                tangency_weight_owner_record_index: 5,
-                tangent_chain: false,
+                tangency_weight_owner_record_index: Some(5),
+                tangent_chain: Some(false),
                 curvature_continuity: None,
             }],
         });

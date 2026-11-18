@@ -355,7 +355,8 @@
           "kind": "part",
           "native_ref": "/Assembly",
           "sketches": [],
-          "source_name": "Assembly"
+          "source_name": "Assembly",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -364,7 +365,8 @@
           "kind": "group",
           "native_ref": "/Assembly/Plate",
           "sketches": [],
-          "source_name": "Plate"
+          "source_name": "Plate",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -375,7 +377,8 @@
           "kind": "object",
           "native_ref": "/Assembly/Plate/Large",
           "sketches": [],
-          "source_name": "Large"
+          "source_name": "Large",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -384,7 +387,8 @@
           "kind": "group",
           "native_ref": "/Assembly/BoltA",
           "sketches": [],
-          "source_name": "Bolt"
+          "source_name": "Bolt",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -395,7 +399,8 @@
           "kind": "object",
           "native_ref": "/Assembly/BoltA/Shank",
           "sketches": [],
-          "source_name": "Shank"
+          "source_name": "Shank",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
