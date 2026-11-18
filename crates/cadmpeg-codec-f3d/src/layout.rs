@@ -11110,3 +11110,46 @@ pub(crate) mod assembly_motion_parent_entry {
     /// Offset of `reference` (`bytes[11]`). Spec §Assembly operands.
     pub(crate) const REFERENCE: usize = 0;
 }
+
+/// Byte offsets for the `motion_link_rotation_scope` record.
+///
+/// Spec §Assembly operands. Record length 297 B.
+pub(crate) mod motion_link_rotation_scope {
+    /// Record length in bytes. Spec §Assembly operands.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 297;
+    /// Offset of `relation` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const RELATION: usize = 43;
+}
+
+/// Byte offsets for the `motion_link_rotation_relation` record.
+///
+/// Spec §Assembly operands. Record length 166 B.
+pub(crate) mod motion_link_rotation_relation {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 166;
+    /// Offset of `parent_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const PARENT_COUNT: usize = 20;
+    /// Offset of `first_parent` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_PARENT: usize = 24;
+    /// Offset of `second_parent` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_PARENT: usize = 39;
+    /// Offset of `first_joint` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_JOINT: usize = 63;
+    /// Offset of `second_joint` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_JOINT: usize = 74;
+    /// Offset of `first_axis` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIRST_AXIS: usize = 85;
+    /// Offset of `second_axis` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const SECOND_AXIS: usize = 89;
+    /// Offset of `phase` (`f64`, little-endian). Spec §Assembly operands.
+    pub(crate) const PHASE: usize = 93;
+    /// Offset of `flags` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const FLAGS: usize = 101;
+    /// Stated value of `flags` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const FLAGS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `first_angle` (`f64`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIRST_ANGLE: usize = 107;
+    /// Offset of `second_angle` (`f64`, little-endian). Spec §Assembly operands.
+    pub(crate) const SECOND_ANGLE: usize = 115;
+}
