@@ -50,6 +50,8 @@ pub(crate) enum InventorLossCode {
     SketchRecordMalformed,
     /// Typed feature records could not be parsed exactly.
     FeatureRecordMalformed,
+    /// A decoded operation has operands outside the v11 operation contract.
+    FeatureDesignOperationNative,
     /// An optional feature label is empty and has no neutral display name.
     FeatureLabelUnusable,
     /// Sketch curves carry entity flags whose construction meaning is
@@ -359,6 +361,7 @@ impl InventorLossCode {
         Self::DesignRecordMalformed,
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
+        Self::FeatureDesignOperationNative,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
@@ -517,6 +520,7 @@ impl InventorLossCode {
             Self::PresentationRecordMalformed => "presentation.record-malformed",
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
+            Self::FeatureDesignOperationNative => "feature.design-operation-native",
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
@@ -758,6 +762,7 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
+            | Self::FeatureDesignOperationNative
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
@@ -911,6 +916,7 @@ mod tests {
                 "design.record-malformed",
                 "sketch.record-malformed",
                 "feature.record-malformed",
+                "feature.design-operation-native",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
