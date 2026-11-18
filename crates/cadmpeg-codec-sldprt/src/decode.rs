@@ -1966,11 +1966,25 @@ pub(crate) fn append_design_losses(
                             SplitBodyTool::Plane { .. } => false,
                         }
                 }
-                FeatureOperation::SplitFace { targets, tool } => {
+                FeatureOperation::SplitFace {
+                    targets,
+                    tool,
+                    method,
+                } => {
                     incomplete_face_selection(targets)
                         || match tool {
                             SplitFaceTool::Path(path) => incomplete_path(path),
+                            SplitFaceTool::Faces(faces) => incomplete_face_selection(faces),
+                            SplitFaceTool::Native(_) => true,
                             SplitFaceTool::Plane { .. } | SplitFaceTool::Planes { .. } => false,
+                        }
+                        || match method {
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::Unresolved {} => true,
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::SurfaceIntersection {
+                                ..
+                            }
+                            | cadmpeg_ir::features::surfaces::SplitFaceMethod::ClosestPoint {} => false,
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::AlongVector { .. } => true,
                         }
                 }
                 FeatureOperation::SewBodies {
