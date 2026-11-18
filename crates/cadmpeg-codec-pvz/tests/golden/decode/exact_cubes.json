@@ -3513,7 +3513,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3530,7 +3531,8 @@
           "source_name": "CUBE64.PRT",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3547,7 +3549,8 @@
           "source_name": "CUBE32.PRT",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -3564,7 +3567,8 @@
           "source_name": "PLATE.PRT",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

@@ -187,6 +187,8 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: "test:model:product#group"
                 .try_into()
                 .expect("valid identity"),

@@ -79,7 +79,8 @@
           "source_name": "Part",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

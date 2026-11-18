@@ -255,7 +255,8 @@
           "source_name": "Assembly",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -272,7 +273,8 @@
           "source_name": "Plate",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -289,7 +291,8 @@
           "source_name": "Large",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -306,7 +309,8 @@
           "source_name": "Bolt",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -323,7 +327,8 @@
           "source_name": "Shank",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -338,7 +343,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

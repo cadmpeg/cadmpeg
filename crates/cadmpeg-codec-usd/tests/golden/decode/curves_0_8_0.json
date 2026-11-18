@@ -1039,7 +1039,8 @@
           "source_name": "Curves",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1056,7 +1057,8 @@
           "source_name": "Arc",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1073,7 +1075,8 @@
           "source_name": "Bezier",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1090,7 +1093,8 @@
           "source_name": "CatmullRom",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1107,7 +1111,8 @@
           "source_name": "Loop",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1124,7 +1129,8 @@
           "source_name": "Polyline",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1141,7 +1147,8 @@
           "source_name": "Splines",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -1156,7 +1163,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

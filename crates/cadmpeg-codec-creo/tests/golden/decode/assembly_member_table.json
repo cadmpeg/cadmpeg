@@ -158,7 +158,8 @@
           "storage": {
             "kind": "external",
             "path": "SUBASM.asm"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -172,7 +173,8 @@
           "storage": {
             "kind": "external",
             "path": "BRACKET.prt"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -193,7 +195,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

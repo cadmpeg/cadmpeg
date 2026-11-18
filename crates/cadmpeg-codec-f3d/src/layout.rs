@@ -964,6 +964,96 @@ pub(crate) mod fillet_set_compact_constant {
     pub(crate) const TANGENCY_WEIGHT_OWNER_PADDING: usize = 89;
 }
 
+/// Byte offsets for the `fillet_set_asymmetric` record.
+///
+/// Spec §3.1. Record length 97 B.
+///
+/// ```text
+/// Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+/// ```
+pub(crate) mod fillet_set_asymmetric {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 97;
+    /// Offset of `zero_run_10_at_11` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10_AT_11: usize = 11;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 21;
+    /// Stated value of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run_5_at_22` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5_AT_22: usize = 22;
+    /// Offset of `compatibility_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMPATIBILITY_WORD: usize = 27;
+    /// Stated value of `compatibility_word` (`u32`). Spec §3.1.
+    pub(crate) const COMPATIBILITY_WORD_VALUE: u32 = 0x0000_0001;
+    /// Offset of `offset_one_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OFFSET_ONE_OWNER_REFERENCE: usize = 31;
+    /// Offset of `offset_two_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OFFSET_TWO_OWNER_REFERENCE: usize = 42;
+    /// Offset of `zero_run_19_at_53` (`bytes[19]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_19_AT_53: usize = 53;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 72;
+    /// Offset of `zero_run_1_at_83` (`bytes[1]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_1_AT_83: usize = 83;
+    /// Offset of `first_control_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_CONTROL_WORD: usize = 84;
+    /// Stated value of `first_control_word` (`u32`). Spec §3.1.
+    pub(crate) const FIRST_CONTROL_WORD_VALUE: u32 = 0x0000_0002;
+    /// Offset of `zero_run_5_at_88` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5_AT_88: usize = 88;
+    /// Offset of `second_control_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_CONTROL_WORD: usize = 93;
+    /// Stated value of `second_control_word` (`u32`). Spec §3.1.
+    pub(crate) const SECOND_CONTROL_WORD_VALUE: u32 = 0x0000_0003;
+}
+
+/// Byte offsets for the `fillet_set_variable` record.
+///
+/// Spec §3.1. Record length 153 B.
+///
+/// ```text
+/// Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+/// ```
+pub(crate) mod fillet_set_variable {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 153;
+    /// Offset of `zero_run_18_at_11` (`bytes[18]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_18_AT_11: usize = 11;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 29;
+    /// Offset of `zero_run_7_at_40` (`bytes[7]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_7_AT_40: usize = 40;
+    /// Offset of `midpoint_parameter_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MIDPOINT_PARAMETER_COUNT: usize = 47;
+    /// Stated value of `midpoint_parameter_count` (`u32`). Spec §3.1.
+    pub(crate) const MIDPOINT_PARAMETER_COUNT_VALUE: u32 = 0x0000_0002;
+    /// Offset of `midpoint_parameter_one_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MIDPOINT_PARAMETER_ONE_OWNER_REFERENCE: usize = 51;
+    /// Offset of `midpoint_parameter_two_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MIDPOINT_PARAMETER_TWO_OWNER_REFERENCE: usize = 62;
+    /// Offset of `zero_run_4_at_73` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4_AT_73: usize = 73;
+    /// Offset of `radius_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RADIUS_COUNT: usize = 77;
+    /// Stated value of `radius_count` (`u32`). Spec §3.1.
+    pub(crate) const RADIUS_COUNT_VALUE: u32 = 0x0000_0004;
+    /// Offset of `start_radius_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const START_RADIUS_OWNER_REFERENCE: usize = 81;
+    /// Offset of `end_radius_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const END_RADIUS_OWNER_REFERENCE: usize = 92;
+    /// Offset of `middle_radius_one_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MIDDLE_RADIUS_ONE_OWNER_REFERENCE: usize = 103;
+    /// Offset of `middle_radius_two_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const MIDDLE_RADIUS_TWO_OWNER_REFERENCE: usize = 114;
+    /// Offset of `zero_run_13_at_125` (`bytes[13]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_13_AT_125: usize = 125;
+    /// Offset of `tangency_weight_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TANGENCY_WEIGHT_OWNER_REFERENCE: usize = 138;
+    /// Offset of `zero_run_4_at_149` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4_AT_149: usize = 149;
+}
+
 /// Byte offsets for the `thicken_scope_prologue` record.
 ///
 /// Spec §3.1. Record length 21 B.
@@ -10364,4 +10454,38 @@ pub(crate) mod mesh_plane_cut_scope_prefix {
     pub(crate) const MATRIX: usize = 29;
     /// Offset of `fill_selector` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FILL_SELECTOR: usize = 157;
+}
+
+#[doc = "Byte offsets for the `replace_face_fixed_prefix` record."]
+#[doc = ""]
+#[doc = "Spec §3.1. Record length 26 B."]
+#[doc = ""]
+#[doc = "```text"]
+#[doc = "Flag-00 fixed prefix. Flag 01 inserts a u32 word before the Boolean control; its fixed prefix is 30 bytes. Counted group references and the identifier follow."]
+#[doc = "```"]
+pub(crate) mod replace_face_fixed_prefix {
+    #[doc = "Offset of `zero_run` (`bytes[9]`). Spec §3.1."]
+    pub(crate) const ZERO_RUN: usize = 11;
+    #[doc = "Offset of `prefix_flag` (`u8`). Spec §3.1."]
+    pub(crate) const PREFIX_FLAG: usize = 20;
+    #[doc = "Offset of `tangent_chain` (`u8`). Spec §3.1."]
+    pub(crate) const TANGENT_CHAIN: usize = 21;
+    #[doc = "Offset of `replacement_group_count` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const REPLACEMENT_GROUP_COUNT: usize = 22;
+}
+
+#[doc = "Byte offsets for the `replace_face_flagged_prefix` record."]
+#[doc = ""]
+#[doc = "Spec §3.1. Record length 30 B."]
+#[doc = ""]
+#[doc = "```text"]
+#[doc = "Flag-01 fixed prefix. Flag 00 omits the u32 word and has a 26-byte fixed prefix. Counted group references and the identifier follow."]
+#[doc = "```"]
+pub(crate) mod replace_face_flagged_prefix {
+    #[doc = "Offset of `word` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const WORD: usize = 21;
+    #[doc = "Offset of `tangent_chain` (`u8`). Spec §3.1."]
+    pub(crate) const TANGENT_CHAIN: usize = 25;
+    #[doc = "Offset of `replacement_group_count` (`u32`, little-endian). Spec §3.1."]
+    pub(crate) const REPLACEMENT_GROUP_COUNT: usize = 26;
 }

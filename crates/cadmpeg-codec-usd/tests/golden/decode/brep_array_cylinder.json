@@ -3832,7 +3832,8 @@
           "source_name": "Occurrence",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -3847,7 +3848,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

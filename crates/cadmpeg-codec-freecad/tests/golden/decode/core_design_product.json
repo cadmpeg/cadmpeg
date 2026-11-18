@@ -7988,7 +7988,8 @@
           "source_name": "Box",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -8008,7 +8009,8 @@
           "source_name": "Cut",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -8028,7 +8030,8 @@
           "source_name": "Cylinder",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -8048,7 +8051,8 @@
           "source_name": "DesignedFeature",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -8072,7 +8076,8 @@
           "source_name": "Product",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -8092,7 +8097,8 @@
           "source_name": "Profile",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -8108,7 +8114,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

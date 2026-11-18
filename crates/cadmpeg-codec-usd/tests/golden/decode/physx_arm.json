@@ -441,7 +441,8 @@
           "source_name": "Arm",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -458,7 +459,8 @@
           "source_name": "Base",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -475,7 +477,8 @@
           "source_name": "Geom",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -490,7 +493,8 @@
           "source_name": "Finger",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -505,7 +509,8 @@
           "source_name": "Link",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -520,7 +525,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [

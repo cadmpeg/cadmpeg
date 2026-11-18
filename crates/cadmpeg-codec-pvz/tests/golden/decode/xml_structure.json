@@ -156,7 +156,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -173,7 +174,8 @@
           "source_name": "BRACKET.PRT",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

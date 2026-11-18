@@ -16,6 +16,8 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let target = crate::ids::BodyId::mint("test:model:body#missing").expect("valid identity");
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
+
+        tessellations: Vec::new(),
         id: owner.clone(),
         kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
@@ -331,6 +333,8 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     use cadmpeg_core::CodecError;
     let entity = ProductDefinition {
         sketches: Vec::default(),
+
+        tessellations: Vec::new(),
         id: "test:model:product#owner".try_into().unwrap(),
         kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),

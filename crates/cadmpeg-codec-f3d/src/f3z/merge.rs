@@ -2517,6 +2517,7 @@ mod tests {
                 bom_properties: std::collections::BTreeMap::new(),
                 bodies: vec![body.clone()],
                 sketches: Vec::new(),
+                tessellations: Vec::new(),
                 native_ref: None,
                 generated_from: None,
                 storage: cadmpeg_ir::products::Storage::Embedded,

@@ -1125,9 +1125,9 @@ fn validate_loaded(
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);
     extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);
-    validate_fillet_sets(&ctx, &mut findings);
+    let mut fillet_radius_group_records = validate_fillet_sets(&ctx, &mut findings);
     chamfer_sets::validate(&ctx, &mut findings);
-    let fillet_radius_group_records = validate_fillet_radius_groups(&ctx, &mut findings);
+    fillet_radius_group_records.extend(validate_fillet_radius_groups(&ctx, &mut findings));
     validate_fillet_operand_groups(&ctx, &mut findings, &fillet_radius_group_records);
     let operand_identity_groups = validate_construction_operand_identities(&ctx, &mut findings);
     let edge_identity_records =
@@ -5246,7 +5246,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::ReplaceFace) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10
+                        DesignOperandRole::ROLE_0X9
+                            | DesignOperandRole::ROLE_0X10
+                            | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Revolve) => {
@@ -5859,6 +5861,17 @@ fn validate_fillet_radius_groups<'a>(
                     };
                     let start = radius(*start_radius_parameter_record_index, "StartRadius");
                     let end = radius(*end_radius_parameter_record_index, "EndRadius");
+                    let explicit_pair_order = scope
+                        .and_then(|scope| scope.fillet_sets())
+                        .is_some_and(|list| {
+                            list.sets.iter().any(|set| {
+                                set.group_record_index == assignment.group_record_index
+                                    && matches!(
+                                        set.law,
+                                        records::feature::fillet_set::DesignFilletSetLaw::Variable { .. }
+                                    )
+                            })
+                        });
                     let mut middle_positive = false;
                     let mut previous_position = None;
                     let mut middle_valid = true;
@@ -5880,7 +5893,9 @@ fn validate_fillet_radius_groups<'a>(
                             middle_valid = false;
                             break;
                         };
-                        if previous_position.is_some_and(|previous| previous >= position) {
+                        if previous_position.is_some_and(|previous| {
+                            previous == position || (!explicit_pair_order && previous > position)
+                        }) {
                             middle_valid = false;
                             break;
                         }
@@ -5935,11 +5950,12 @@ fn validate_fillet_radius_groups<'a>(
     fillet_radius_group_records
 }
 
-/// Every fillet set names a reference-table member of its scope as its edge
-/// group, and owners of its scope whose parameters have the source kinds of
-/// its law and of `TangencyWeight`.
-fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
-    use records::feature::fillet_set::DesignFilletSetLaw;
+/// Validate set links and return groups with an explicit radius law.
+fn validate_fillet_sets<'a>(
+    ctx: &Ctx<'a, '_>,
+    findings: &mut Vec<Finding>,
+) -> HashSet<(&'a str, u32)> {
+    let mut assigned_groups = HashSet::new();
     for scope in &ctx.native.design_parameter_scopes {
         let Some(list) = scope.fillet_sets() else {
             continue;
@@ -5974,15 +5990,18 @@ fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 .all(|set| set.curvature_continuity.is_some() == constant_frame(set));
         let valid = flags_admitted
             && list.sets.iter().all(|set| {
-                let law = match set.law {
-                    DesignFilletSetLaw::Constant {
-                        radius_owner_record_index,
-                    } => owned_kind(radius_owner_record_index, "Radius"),
-                    DesignFilletSetLaw::Chordal {
-                        chord_length_owner_record_index,
-                    } => owned_kind(chord_length_owner_record_index, "ChordLen"),
-                };
-                law && owned_kind(set.tangency_weight_owner_record_index, "TangencyWeight")
+                let options_valid = set.options_match_law()
+                    && (!set.law.has_implicit_ordinal() || list.sets.len() == 1);
+                let mut owners = HashSet::new();
+                options_valid
+                    && set
+                        .law
+                        .owner_roles()
+                        .chain(
+                            set.tangency_weight_owner_record_index
+                                .map(|owner| (owner, "TangencyWeight")),
+                        )
+                        .all(|(owner, kind)| owners.insert(owner) && owned_kind(owner, kind))
                     && scope
                         .reference_members()
                         .values()
@@ -5997,8 +6016,15 @@ fn validate_fillet_sets(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 "Fusion Design Fillet set names a record outside its scope or an owner of another parameter kind",
                 Some(scope.id.clone()),
             );
+        } else if list.supports_set_law_projection() {
+            assigned_groups.extend(
+                list.sets
+                    .iter()
+                    .map(|set| (native_stream, set.group_record_index)),
+            );
         }
     }
+    assigned_groups
 }
 
 /// Whether a Mirror scope owns an operand group of this role: faces or
@@ -7829,9 +7855,15 @@ fn validate_face_operands<'a>(
                             ) => true,
                             Some(design::DesignFeatureFamily::ReplaceFace) => {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::ROLE_0X10
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::BoundedFace
+                                    matches!(
+                                        group.role(),
+                                        DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10
+                                    )
+                                }) && matches!(
+                                    operand.recipe_kind,
+                                    records::recipes::ConstructionRecipeKind::Face
+                                        | records::recipes::ConstructionRecipeKind::BoundedFace
+                                )
                             }
                             Some(design::DesignFeatureFamily::Loft) => {
                                 group.is_some_and(|group| {

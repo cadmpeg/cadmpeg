@@ -17,6 +17,7 @@ use crate::document::SourceMeta;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::sketches::SketchId;
+use crate::tessellation::TessellationId;
 use crate::transform::Transform;
 
 crate::ids::id_type!(
@@ -109,6 +110,9 @@ pub struct ProductDefinition {
     pub storage: Storage,
     /// The bodies of `CadIr.geometry` the definition owns.
     pub bodies: Vec<BodyId>,
+    /// The tessellations of `CadIr.model` the definition owns that represent
+    /// no body: the meshes of a part that the source states as triangles.
+    pub tessellations: Vec<TessellationId>,
     /// The occurrences the definition owns, in source order.
     pub occurrences: Vec<OccurrenceId>,
     /// Bodies an instance below the definition shows in place of its
@@ -166,6 +170,7 @@ impl ProductDefinition {
             generated_from: None,
             storage,
             bodies: Vec::new(),
+            tessellations: Vec::new(),
             occurrences: Vec::new(),
             instance_bodies: Vec::new(),
             representations: Vec::new(),

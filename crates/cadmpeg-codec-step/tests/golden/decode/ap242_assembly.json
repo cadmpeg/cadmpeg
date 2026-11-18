@@ -110,7 +110,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -127,7 +128,8 @@
           "source_name": "Child part",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

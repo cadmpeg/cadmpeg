@@ -1790,7 +1790,8 @@
           "storage": {
             "document": {},
             "kind": "file"
-          }
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -1807,7 +1808,8 @@
           "source_name": "PART.PRT",
           "storage": {
             "kind": "embedded"
-          }
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
