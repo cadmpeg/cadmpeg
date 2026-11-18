@@ -2391,16 +2391,17 @@ fn project_solid_primitive(
         )) => FeatureDefinition::Operation(FeatureOperation::Primitive {
             solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
                 radius: Length::new(diameter.get() * 5.0)?,
-                height: Length::new(height.get() * 10.0)?,
+                height: Length::new(height.get().abs() * 10.0)?,
                 angle: Angle::FULL_TURN,
             })
             .ok()?,
             placement: match transform {
                 Some(frame) => {
                     let rows = frame.value.rows();
+                    let direction = height.get().signum();
                     let row = |index: usize| {
                         let [x, y, z, translation] = rows[index];
-                        [x, y, z, translation * 10.0]
+                        [x, y * direction, z * direction, translation * 10.0]
                     };
                     Some(cadmpeg_ir::features::FeatureRigidPlacement::new(
                         cadmpeg_ir::transform::Transform::affine([row(0), row(1), row(2)])?,
