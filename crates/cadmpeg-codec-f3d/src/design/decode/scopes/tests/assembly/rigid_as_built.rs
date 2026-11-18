@@ -5,15 +5,24 @@
 use super::compact_wide::{push_header, push_lp_utf16, push_marked, push_wide_operand_path};
 
 #[test]
-fn compact_placement_as_built_resolves_two_typed_locator_paths() {
-    use crate::design::assembly::AS_BUILT_SCOPE_TYPE_GUID;
+fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
+    use crate::design::assembly::{project_assembly_joints, AS_BUILT_SCOPE_TYPE_GUID};
+    use crate::design::components::ComponentInserts;
     use crate::design::decode::joint_motion::JOINT_TYPE_GUID;
     use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
     use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::layout::assembly_wide_operand_path_identity_locator as wide;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrence, DesignComponentOccurrenceDraft,
+        DesignComponentOccurrencePlacement,
+    };
+    use crate::records::feature::joint_motion::{DesignJointLimitLanes, DesignJointMotion};
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    use crate::records::identity::Located;
     use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
+    use cadmpeg_ir::products::{JointOperands, OperandContainer, PairedJointKind};
 
     let mut bytes = Vec::new();
     push_header(&mut bytes, b"405", 10);
@@ -72,7 +81,7 @@ fn compact_placement_as_built_resolves_two_typed_locator_paths() {
         u64::try_from(scope_length).unwrap()
     );
 
-    let owners: Vec<_> = [(50, 1.0), (53, 2.0), (56, 3.0), (59, 0.25)]
+    let owners: Vec<_> = [(50, 1.0), (53, 2.0), (56, 3.0), (59, 0.0)]
         .into_iter()
         .zip(0_u32..)
         .map(|((index, value), ordinal)| {
@@ -111,7 +120,7 @@ fn compact_placement_as_built_resolves_two_typed_locator_paths() {
         })
     };
     let alignment = read(&types).expect("compact placement alignment");
-    assert!((alignment.angle() - 0.25).abs() < f64::EPSILON);
+    assert!(alignment.angle().abs() < f64::EPSILON);
     assert!(alignment
         .offset()
         .into_iter()
@@ -129,6 +138,84 @@ fn compact_placement_as_built_resolves_two_typed_locator_paths() {
 
     types.remove(&9);
     assert!(read(&types).is_none());
+
+    let occurrences = [(100, paths[0]), (101, paths[1])].map(|(index, path)| {
+        DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
+            id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{index}"),
+            class_tag: "271".to_owned().try_into().unwrap(),
+            record_index: index,
+            byte_offset: 3000 + u64::from(index) * 300,
+            component_record_index: u64::from(index) + 3,
+            component_guid: path.identity_guids()[0].value.clone(),
+            occurrence_guid: path.occurrence_guids()[0].value.clone(),
+            placement: DesignComponentOccurrencePlacement::Base,
+            owner_entity: 1,
+        })
+        .unwrap()
+    });
+    let DesignScopePayloadMut::AsBuilt(slot) = scope.payload_mut() else {
+        panic!("As-built alignment slot");
+    };
+    *slot = Some(alignment);
+    let motion = DesignJointMotion {
+        id: "f3d:Design/BulkStream.dat:design-joint-motion#4000".into(),
+        joint_record_index: 9,
+        joint_byte_offset: 2900,
+        motion_record_index: 200,
+        motion_byte_offset: 4000,
+        freedoms: vec![Located {
+            value: 8,
+            offset: 4092,
+        }],
+        entry_words: Vec::new(),
+        limits: Some(DesignJointLimitLanes {
+            flags_offset: 2931,
+            first_flag: 0,
+            second_flag: 0,
+            maximum: 0.0,
+            minimum: 0.0,
+            values_offset: 2943,
+            rest: None,
+            rest_malformed: false,
+        }),
+    };
+    let project = |motions: &[DesignJointMotion]| {
+        project_assembly_joints(
+            std::slice::from_ref(&scope),
+            &occurrences,
+            &ComponentInserts::default(),
+            motions,
+        )
+    };
+    let projected = project(&[motion]);
+    let [joint] = projected.joints.as_slice() else {
+        panic!("one As-built joint");
+    };
+    let JointOperands::Pair {
+        kind:
+            PairedJointKind::Slider {
+                translation_offset: Some(offset),
+                ..
+            },
+        connectors,
+        ..
+    } = joint.operands()
+    else {
+        panic!("qualified slider");
+    };
+    assert!(offset
+        .iter()
+        .zip([10.0, 20.0, 30.0])
+        .all(|(actual, expected)| (actual.get() - expected).abs() < f64::EPSILON));
+    assert!(connectors.iter().zip(&occurrences).all(|(connector, expected)| {
+        matches!(&connector.operand.container, OperandContainer::Occurrence { occurrence, .. }
+            if occurrence == &crate::ids::neutral_component_occurrence_id(&expected.occurrence_guid))
+    }));
+    assert_eq!(
+        crate::test_support::loss_codes(&projected.losses),
+        [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()],
+    );
+    assert!(project(&[]).joints.is_empty());
 }
 
 fn push_ordinary_tail(bytes: &mut Vec<u8>, additional_reference: bool, wide_field: bool) {
