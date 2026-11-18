@@ -422,6 +422,9 @@ pub(crate) enum StepLossCode {
     CsgProfileGapClosed,
     /// CSG items belong to no product definition, so no design scope files them.
     CsgDesignUnscoped,
+    /// The faces on a spindle `TOROIDAL_SURFACE` do not select one sheet, so
+    /// the surface carries no sheet selection.
+    TorusSheetUnresolved,
 }
 
 impl StepLossCode {
@@ -614,6 +617,7 @@ impl StepLossCode {
         Self::CsgBooleanUnevaluated,
         Self::CsgProfileGapClosed,
         Self::CsgDesignUnscoped,
+        Self::TorusSheetUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -828,6 +832,7 @@ impl StepLossCode {
             Self::CsgBooleanUnevaluated => "csg.boolean-unevaluated",
             Self::CsgProfileGapClosed => "csg.profile-gap-closed",
             Self::CsgDesignUnscoped => "csg.design-unscoped",
+            Self::TorusSheetUnresolved => "geometry.torus-sheet-unresolved",
         }
     }
 
@@ -1040,7 +1045,8 @@ impl StepLossCode {
             Self::CsgProfileGapClosed
             | Self::AngleUnitFactorCorrected
             | Self::LengthUnitContradicted
-            | Self::OccurrencePlacementInferred => LossTaxonomy::DecodeDiagnostic,
+            | Self::OccurrencePlacementInferred
+            | Self::TorusSheetUnresolved => LossTaxonomy::DecodeDiagnostic,
             Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
@@ -1307,6 +1313,7 @@ mod tests {
                 "csg.boolean-unevaluated",
                 "csg.profile-gap-closed",
                 "csg.design-unscoped",
+                "geometry.torus-sheet-unresolved",
             ]
         );
     }
