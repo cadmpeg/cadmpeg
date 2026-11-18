@@ -1986,10 +1986,13 @@ A fillet set is one indexed record. Its frame ends at the next indexed header an
 | constant | 97 | `+23: u8 1`; `+25: u8 curvature continuity`; `+26: u8 tangent chain`; `+29: edge-group reference`; `+63: Radius owner reference`; `+78: u32 set ordinal`; `+82: TangencyWeight owner reference` |
 | chordal | 97 | `+22: u8 1`; `+26: u8 flag`; `+28: ChordLen owner reference`; `+39: edge-group reference`; `+78: u32 set ordinal`; `+82: TangencyWeight owner reference` |
 | compact constant | 93 | `+22: u8 1`; `+24: u8 flag`; `+27: edge-group reference`; `+59: Radius owner reference`; `+70: four bytes`; `+74: u32 set ordinal`; `+78: TangencyWeight owner reference`; `+89: four bytes` |
+| short constant | 80 | `+22: u8 1`, `+26: edge-group reference`, `+57: Radius owner reference` |
 | asymmetric without weight | 97 | `+21: u8 1`; `+27: u32 1`; `+31: EdgeOffset1 owner reference`; `+42: EdgeOffset2 owner reference`; `+72: edge-group reference`; `+84: u32 2`; `+93: u32 3` |
 | variable with two midpoint controls | 153 | `+29: edge-group reference`; `+47: u32 2`; `+51: first MidParams owner reference`; `+62: second MidParams owner reference`; `+77: u32 4`; `+81: StartRadius owner reference`; `+92: EndRadius owner reference`; `+103: first MidRadius owner reference`; `+114: second MidRadius owner reference`; `+138: TangencyWeight owner reference` |
 
 The asymmetric and variable forms above each occupy a singleton set list with implicit ordinal zero. The asymmetric form stores two offsets and omits a tangency weight. In the variable form, midpoint radii and positions pair by their index in their respective lists. The two endpoint radii precede the midpoint radii.
+
+The short constant form uses its position in the compact set list as its ordinal. Its referenced edge group starts at the next indexed header. The set applies its Radius parameter to that group. In a list of short constant sets, one unclaimed dimensionless `TangencyWeight` parameter per edge group pairs by increasing owner-local ordinal and scope-reference group order. Each weight ordinal and group reference occurs once.
 
 For forms with a stored ordinal, the set ordinals of a prefix's `N` sets are the integers `0` through `N - 1`, each used once. List order and ordinal order can differ. The edge-group reference equals the prefix's edge-group reference at the set's list position. Each owner reference names an indexed parameter owner of the scope. That owner references exactly one Design parameter, and the parameter references the owner back. The parameter's source kind is the kind the form names. The set's radius-law and `TangencyWeight` parameters apply to its edge group. In the constant form, the tangent-chain byte is `1` when the set extends its edges along tangent edges and `0` otherwise, and the curvature-continuity byte is `1` when the set has curvature (G2) continuity and `0` for tangent continuity. The flag byte of the chordal and compact forms is `0` or `1`.
 
@@ -2579,15 +2582,17 @@ the operand construction references and transforms. The 378-, 422-, and
 reference and transform, or the identity when the locator's identity flag is 1.
 
 An `As-built` scope of type `AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0` version 1
-with no additional owners can use two compact version-3 locators with null
-construction references. The owner count at offset 43 is zero and the
+with no additional owners can use two version-3 locators. Each locator has
+either the compact null-construction layout or the ordinary construction
+layout. The owner count at offset 43 is zero and the
 locator count at offset 47 is two. The two locator references are followed
-by a marked reference to the version-5 joint at the scope index minus one.
+by a marked reference to the version-4 or version-5 joint at the scope index
+minus one.
 The reference-table count at offset 163 is seven or nine. The four alignment
 owners occur once and contiguously in the reference table, in local order
 `OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ`. The scope tail from the feature
 ordinal occupies 87 bytes. With the eight-code-unit name the scope spans
-355 or 377 bytes. Each compact locator supplies one frame and its wrapper
+355 or 377 bytes. Each locator supplies one frame and its wrapper
 names the typed occurrence paths in operand order.
 
 The wide locator identity frame is 97 bytes. Its zero separator is at offset
@@ -2786,9 +2791,11 @@ An assembly joint has a joint record and, when the joint has relative motion, a 
 A version-3 motion record of type `8C188F11-5D1B-4E1C-8E87-AF7214CA3C83`
 stores its parent count at offset 20 and its first parent reference at
 offset 24. Each 15-byte parent entry stores an eleven-byte marked reference
-followed by a u32. In the As-built form with a version-5 joint, the final
-parent reference names the joint. The preceding entries, when present,
-name occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
+followed by a u32. Version 2 uses the same parent run. In the compact
+As-built form, the final parent reference
+names the joint. Version-2 motion names a version-4 joint. Version-3 motion
+names a version-5 joint. The preceding entries, when present, name
+occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
 
 The class-363 carrier subform uses the operand-frame reference as its locator.
 The class-363 frame is 389 bytes and has a paired class-264 header. Its rigid

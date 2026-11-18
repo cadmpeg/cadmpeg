@@ -198,7 +198,7 @@ fn legacy_assembly_alignment(
                 || !stream_types
                     .get(&u64::from(joint))
                     .is_some_and(|(guid, version)| {
-                        *version == 5
+                        matches!(*version, 4 | 5)
                             && guid.eq_ignore_ascii_case(
                                 crate::design::decode::joint_motion::JOINT_TYPE_GUID,
                             )

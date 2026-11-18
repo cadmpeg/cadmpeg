@@ -996,6 +996,30 @@ pub(crate) mod fillet_set_compact_constant {
     pub(crate) const TANGENCY_WEIGHT_OWNER_PADDING: usize = 89;
 }
 
+/// Byte offsets for the `fillet_set_short_constant` record.
+///
+/// Spec §3.1. Record length 80 B.
+pub(crate) mod fillet_set_short_constant {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 80;
+    /// Offset of `zero_run_at_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AT_11: usize = 11;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 22;
+    /// Stated value of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run_at_23` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AT_23: usize = 23;
+    /// Offset of `edge_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EDGE_GROUP_REFERENCE: usize = 26;
+    /// Offset of `zero_run_at_37` (`bytes[20]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AT_37: usize = 37;
+    /// Offset of `radius_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RADIUS_OWNER_REFERENCE: usize = 57;
+    /// Offset of `zero_run_at_68` (`bytes[12]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AT_68: usize = 68;
+}
+
 /// Byte offsets for the `fillet_set_asymmetric` record.
 ///
 /// Spec §3.1. Record length 97 B.
