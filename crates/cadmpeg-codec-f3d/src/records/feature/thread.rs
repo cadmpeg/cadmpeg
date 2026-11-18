@@ -69,11 +69,18 @@ pub(crate) enum DesignThreadForm {
     StandardExtended,
     CompactOwnersLeading,
     CompactOwnersTrailing,
-    /// Extended compact prefix with two owners before its face-selection pairs.
+    /// Compact Hole companion with two owners before its face-selection pairs.
     CompactExtended(Located<NonZeroU32>),
 }
 
 impl DesignThreadForm {
+    pub(crate) const fn hole_reference(self) -> Option<Located<NonZeroU32>> {
+        match self {
+            Self::Compact(Some(reference)) | Self::CompactExtended(reference) => Some(reference),
+            _ => None,
+        }
+    }
+
     pub(crate) fn class_pair_holds(self, class: &str, paired: &str) -> bool {
         match self {
             Self::StandardLegacy => class == "334" && paired == "262",
@@ -97,6 +104,11 @@ impl DesignThreadForm {
         };
         match self {
             Self::CompactOwnersLeading | Self::CompactOwnersTrailing => delta == compact_owned::LEN,
+            Self::CompactExtended(_)
+                if [direct_prefix::LEN, owner_prefix::LEN].contains(&delta) =>
+            {
+                true
+            }
             Self::StandardExtended | Self::CompactExtended(_) => {
                 delta >= extended_prefix::LEN + SHORTEST_EXTENDED_CLASS_AND_COPY
             }
@@ -168,7 +180,7 @@ impl DesignThreadForm {
             (Some(offset), Some(length)) => {
                 let offset_value = offset.evaluated_value().get();
                 offset.local_ordinal() == 0
-                    && if matches!(self, Self::StandardExtended) {
+                    && if matches!(self, Self::StandardExtended | Self::CompactExtended(_)) {
                         offset_value >= 0.0
                     } else {
                         offset_value == 0.0
