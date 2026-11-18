@@ -7,8 +7,10 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, UnorderedKind};
 use cadmpeg_ir::design::feature::FeatureOperation;
-use cadmpeg_ir::design::options::NativeOption;
-use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::names::NativeNameValue;
+use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
+use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
+use cadmpeg_ir::design::selection::{Anchor, PickTarget, Picks};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::report::Severity;
@@ -255,13 +257,17 @@ fn history_records_are_native_members_of_one_group_holding_their_descendants() {
 }
 
 fn record(record: u8, descendants: &[u8]) -> HistoryRecord {
+    record_with_antecedents(record, descendants, &[])
+}
+
+fn record_with_antecedents(record: u8, descendants: &[u8], antecedents: &[u8]) -> HistoryRecord {
     HistoryRecord {
         source_range: usize::from(record)..usize::from(record) + 1,
         id: id(record),
         version: 1,
         command_id: id(0x20),
         descendants: descendants.iter().copied().map(id).collect(),
-        antecedents: Vec::new(),
+        antecedents: antecedents.iter().copied().map(id).collect(),
         values: vec![
             HistoryValue {
                 id: 3,
@@ -309,6 +315,98 @@ fn an_object_two_records_list_is_in_neither_current_state() {
         .collect::<Vec<_>>();
     assert_eq!(bodies, [vec![body(0x41)], Vec::new()]);
     assert_eq!(ir.model.product_definitions.len(), 1);
+}
+
+fn selection(
+    options: &NativeOptions,
+    key: &str,
+) -> (Anchor, Vec<(String, Option<Vec<EntityRef>>)>) {
+    let Some((_, NativeOption::Selection(selection))) =
+        options.iter().find(|(name, _)| name.as_str() == key)
+    else {
+        panic!("selection {key}");
+    };
+    let Picks::Named(picks) = &selection.picks else {
+        panic!("named picks");
+    };
+    let picks = picks
+        .as_slice()
+        .iter()
+        .map(|pick| {
+            assert_eq!(pick.target, PickTarget::Native { within: None });
+            let native = pick.native.as_ref().expect("native name");
+            assert_eq!(native.codec.as_str(), "rhino");
+            let NativeNameValue::Text(text) = &native.value else {
+                panic!("text name");
+            };
+            (text.as_str().to_owned(), pick.resolved.clone())
+        })
+        .collect();
+    (selection.at.clone(), picks)
+}
+
+#[test]
+fn antecedents_are_picks_anchored_after_their_producer_or_current() {
+    let objects: ObjectBodies = HashMap::from([
+        (id(0x40), vec![body(0x40)]),
+        (id(0x41), vec![body(0x41)]),
+        (id(0x50), vec![body(0x50)]),
+    ]);
+    let records = [
+        record(1, &[0x40]),
+        record_with_antecedents(2, &[0x41], &[0x40, 0x50, 0x41, 0x40]),
+    ];
+    let mut ir = CadIr::empty();
+    project(
+        &cadmpeg_test_support::service_decode_context(),
+        &records,
+        &objects,
+        None,
+        &mut ir,
+    )
+    .expect("projection");
+    let producer = ir.design.features[0].id.clone();
+    let FeatureOperation::Native { native_options, .. } =
+        &ir.design.features[1].definition.operation
+    else {
+        panic!("a native operation");
+    };
+    let keys = native_options
+        .keys()
+        .map(|key| key.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        keys,
+        [
+            "antecedents".to_owned(),
+            format!("antecedents.{}", id(1)),
+            "value_3.0".to_owned(),
+            "value_4".to_owned(),
+        ]
+    );
+    assert_eq!(
+        selection(native_options, &format!("antecedents.{}", id(1))),
+        (
+            Anchor::Pinned(Position::After(Member::Feature(producer))),
+            vec![(
+                id(0x40).to_string(),
+                Some(vec![EntityRef::Body(body(0x40))])
+            )],
+        )
+    );
+    let (at, mut picks) = selection(native_options, "antecedents");
+    picks.sort();
+    assert_eq!(at, Anchor::Current);
+    assert_eq!(
+        picks,
+        [
+            (
+                id(0x41).to_string(),
+                Some(vec![EntityRef::Body(body(0x41))])
+            ),
+            (id(0x50).to_string(), None),
+        ]
+    );
 }
 
 #[test]
