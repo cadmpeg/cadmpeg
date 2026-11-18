@@ -624,7 +624,7 @@ fn unresolved_and_reversing_operands_take_the_native_gate() {
 fn split_face_and_surface_trim_keep_every_selection() {
     let FeatureOperation::Split(value) = project_value(
         "split_face",
-        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}}}),
+        json!({"targets":native_selection(),"tool":{"kind":"plane","value":{"plane":"inventor:design:feature#plane"}},"method":serde_json::to_value(cadmpeg_ir::features::surfaces::SplitFaceMethod::default()).expect("method")}),
     ) else {
         panic!("split face");
     };
@@ -1055,6 +1055,7 @@ fn split_face_path_keeps_native_projection_controls() {
     let operation = LegacyOperation::SplitFace {
         targets: old::FaceSelection::Native("inventor:pmdc:selection#synthetic".into()),
         tool: old::SplitFaceTool::Path(old::PathRef::Native("inventor:pmdc:path#synthetic".into())),
+        method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
     };
     let mut ir = part(operation);
     let losses = project_part(&mut ir);

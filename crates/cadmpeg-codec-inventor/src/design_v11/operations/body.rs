@@ -82,7 +82,15 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                     form: Some(new::PieceForm::Bodies),
                 }),
             ),
-            LegacyOperation::SplitFace { targets, tool } => {
+            LegacyOperation::SplitFace { method, .. }
+                if !matches!(
+                    method,
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::Unresolved {}
+                ) =>
+            {
+                return Err("the split face states a splitting method")
+            }
+            LegacyOperation::SplitFace { targets, tool, .. } => {
                 let tool = match tool {
                     old::SplitFaceTool::Plane { plane } => {
                         new::SplitTool::Plane(Box::new(swept::datum_plane(plane)?))
@@ -93,6 +101,10 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                     old::SplitFaceTool::Planes { .. } => {
                         return Err("the split face has multiple plane tools")
                     }
+                    old::SplitFaceTool::Faces(faces) => {
+                        new::SplitTool::Geometry(selections::face(faces)?)
+                    }
+                    old::SplitFaceTool::Native(_) => return Err("the split-face tool is native"),
                 };
                 split(
                     selections::face(targets)?,
