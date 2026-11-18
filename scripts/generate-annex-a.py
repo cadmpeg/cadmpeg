@@ -61,6 +61,17 @@ PROSE = {
     "Unordered": "§5.6",
 }
 
+# Types the specification names that the reference implementation does not yet
+# define as types of their own: the analytic leaf carriers that §5.6's
+# `InlineCurve` and `InlineSurface` hold, whose fields `SolvedCurveGeometry` and
+# `SolvedSurfaceGeometry` state inline today. The annex states them once the
+# schema defines them; a name here that the schema defines is an error, so the
+# unit that adds one removes it here and regenerates.
+AWAITING = {
+    "CircleCurve", "ConeSurface", "CylinderSurface", "EllipseCurve", "HyperbolaCurve", "LineCurve",
+    "ParabolaCurve", "PlaneSurface", "PolylineCurve", "SphereSurface", "TorusSurface",
+}
+
 # Rust's own types and the traits a sketch bounds a parameter by.
 RUST = {
     "Box", "BTreeMap", "BTreeSet", "NonZeroI8", "NonZeroU32", "Option", "String", "Vec",
@@ -124,7 +135,11 @@ def references(schema) -> set[str]:
 def annex_types(spec: str, defs: dict) -> list[str]:
     """Every named type that is not stated, and the unstated types their schemas reach."""
     stated, named = stated_and_named(spec)
-    outside = lambda name: name not in stated and name not in PROSE and not is_id_type(name)
+    defined = sorted(name for name in AWAITING if name in defs)
+    if defined:
+        raise ShapeError("the schema now defines " + ", ".join(defined) + "; remove them from AWAITING")
+    outside = lambda name: (name not in stated and name not in PROSE and name not in AWAITING
+                            and not is_id_type(name))
     missing = sorted(name for name in named if outside(name) and name not in defs)
     if missing:
         raise ShapeError("the specification names types that it does not state and the schema does not define: "
@@ -151,7 +166,7 @@ def split_annex(spec: str) -> tuple[str, str]:
     """The specification up to and including the annex's opening paragraph, and the rest."""
     start = spec.find(f"\n{HEADING}\n")
     if start < 0 or spec.count(f"\n{HEADING}\n") != 1:
-        raise ShapeError(f"`{HEADING}` is not one heading of {SPEC.relative_to(ROOT)}")
+        raise ShapeError(f"`{HEADING}` is not one heading of the specification")
     after_heading = start + len(HEADING) + 2
     paragraph = re.compile(r"\n*[^\n]+\n").match(spec, after_heading)
     if not paragraph:
