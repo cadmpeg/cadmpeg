@@ -122,6 +122,14 @@ fn as_built_motion_binds_the_registered_joint_after_occurrence_parents() {
     assert!((limits.minimum + 1.0).abs() < f64::EPSILON);
     assert!((limits.maximum - 2.0).abs() < f64::EPSILON);
 
+    as_built.types.insert(20, (MOTION_TYPE_GUID, 2));
+    assert!(read(&as_built).is_empty());
+
+    as_built.types.insert(10, (JOINT_TYPE_GUID, 4));
+    let [motion]: [_; 1] = read(&as_built).try_into().unwrap();
+    assert_eq!(motion.joint_record_index, 10);
+    assert_eq!(motion.freedoms[0].value, 8);
+
     as_built.types.insert(13, (JOINT_TYPE_GUID, 5));
     assert!(read(&as_built).is_empty());
 }

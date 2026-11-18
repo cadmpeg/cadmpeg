@@ -522,8 +522,7 @@ impl RigidGroupLocatorLayout {
         registered: Option<(&str, u32)>,
         length: usize,
     ) -> Option<Self> {
-        Self::admit(registered, length)
-            .filter(|layout| !layout.typed && !layout.wide && layout.null_construction)
+        Self::admit(registered, length).filter(|layout| !layout.typed && !layout.wide)
     }
 
     pub(crate) fn admit_assemble(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
