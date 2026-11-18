@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::operand_brep_history_state_pair;
+use super::{inferred_history_losses, operand_brep_history_state_pair};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+use crate::loss::F3dLossCode;
+use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::body_recipe::{
     DesignBodyRecipeOperand, DesignBodyRecipeOperandDraft, DesignBodyRecipeReference,
     DesignOperandOwner,
@@ -117,4 +119,39 @@ fn a_shared_state_pair_binds_to_the_history_whose_brep_holds_the_operand_faces()
     );
     assert_eq!(select(&["f3d:brep:entity#1"]), None);
     assert_eq!(select(&[]), None);
+}
+
+fn scope() -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#100"),
+        DesignFeatureKind::ReverseNormal,
+        100,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(9);
+            draft.previous_history_state_id = Some(2);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn an_operand_charges_the_inferred_history_only_when_several_histories_hold_its_pair() {
+    let operands = [operand(&["f3d:brep/second.smbh/brep:entity#1"])];
+    let scopes = [scope()];
+    let shared = [history("first"), history("second")];
+    let losses = inferred_history_losses(&operands, &scopes, &shared);
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::HistoricalBodyRecipeHistoryInferred.kind()
+    );
+    assert!(loss.message.contains(&shared[1].id), "{}", loss.message);
+    assert!(inferred_history_losses(&operands, &scopes, &shared[1..]).is_empty());
+    let unmatched = [operand(&["f3d:brep/third.smbh/brep:entity#1"])];
+    assert!(inferred_history_losses(&unmatched, &scopes, &shared).is_empty());
 }

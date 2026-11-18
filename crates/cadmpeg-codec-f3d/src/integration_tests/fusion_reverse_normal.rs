@@ -7,6 +7,7 @@ use std::io::Cursor;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use serde_json::{json, Value};
 
+use crate::loss::F3dLossCode;
 use crate::F3dCodec;
 
 /// The decoded IR of a corpus file as JSON, after checking that the neutral
@@ -20,7 +21,7 @@ fn decoded(bytes: &[u8]) -> Value {
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(
         !result.report().losses.iter().any(|loss| loss.code
-            == crate::loss::F3dLossCode::FeatureReverseNormalBodyProducerUnresolved.kind()),
+            == F3dLossCode::FeatureReverseNormalBodyProducerUnresolved.kind()),
         "{:#?}",
         result.report().losses
     );
@@ -80,6 +81,27 @@ fn a_reverse_normal_of_two_revolved_bodies_selects_both_bodies() {
     assert_reverse_selects_revolve_bodies(&ir, 2);
 }
 
+/// The IR of a corpus file as JSON, and whether the report charges
+/// `history.body-recipe-history-inferred`, after checking that the neutral
+/// model validates.
+fn decoded_with_inferred_history(bytes: &[u8]) -> (Value, bool) {
+    let result = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the corpus file");
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).unwrap();
+    assert!(validation.is_ok(), "{validation:#?}");
+    let inferred = result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::HistoricalBodyRecipeHistoryInferred.kind());
+    (
+        serde_json::to_value(result.ir()).expect("serialize the IR"),
+        inferred,
+    )
+}
+
 /// The features named `Reverse Normal 1`, in timeline order.
 fn reverse_normals(ir: &Value) -> Vec<&Value> {
     let mut features = ir["model"]["features"]
@@ -108,7 +130,7 @@ fn reversed_bodies(feature: &Value) -> Vec<&str> {
 
 #[test]
 fn a_reverse_normal_of_one_component_reverses_both_of_its_bodies() {
-    let ir = decoded(include_bytes!(
+    let (ir, inferred) = decoded_with_inferred_history(include_bytes!(
         "../../../../corpus/f3d/reverse_normal_two_bodies.f3d"
     ));
     let operations = ir["native"]["f3d"]["design_parameter_scopes"]
@@ -118,6 +140,7 @@ fn a_reverse_normal_of_one_component_reverses_both_of_its_bodies() {
         .map(|scope| &scope["reverse_normal_operation"])
         .filter(|operation| !operation.is_null())
         .collect::<Vec<_>>();
+    assert!(!inferred);
     assert_eq!(operations.len(), 1);
     assert!(operations[0]["link"].is_null(), "{}", operations[0]);
     let features = reverse_normals(&ir);
@@ -127,9 +150,10 @@ fn a_reverse_normal_of_one_component_reverses_both_of_its_bodies() {
 
 #[test]
 fn each_linked_scope_of_a_two_component_reverse_normal_reverses_its_own_body() {
-    let ir = decoded(include_bytes!(
+    let (ir, inferred) = decoded_with_inferred_history(include_bytes!(
         "../../../../corpus/f3d/reverse_normal_two_components.f3d"
     ));
+    assert!(inferred);
     let linked = ir["native"]["f3d"]["design_parameter_scopes"]
         .as_array()
         .expect("scopes")
@@ -185,7 +209,7 @@ fn each_component_of_a_linked_reverse_normal_reverses_its_own_bodies() {
             &[1, 1, 1],
         ),
     ] {
-        let ir = decoded(bytes);
+        let (ir, _) = decoded_with_inferred_history(bytes);
         let linked = ir["native"]["f3d"]["design_parameter_scopes"]
             .as_array()
             .expect("scopes")
@@ -220,4 +244,12 @@ fn each_component_of_a_linked_reverse_normal_reverses_its_own_bodies() {
             );
         }
     }
+}
+
+#[test]
+fn the_linked_scopes_of_a_two_plus_one_reverse_normal_charge_the_inferred_history() {
+    let (_, inferred) = decoded_with_inferred_history(include_bytes!(
+        "../../../../corpus/f3d/reverse_normal_two_plus_one.f3d"
+    ));
+    assert!(inferred);
 }

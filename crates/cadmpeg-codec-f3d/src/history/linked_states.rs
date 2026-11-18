@@ -2,11 +2,15 @@
 //! History lookup for the linked scopes of one timeline item.
 
 use crate::history_records::{AsmDeltaState, AsmHistory};
+use crate::loss::F3dLossCode;
+use crate::records::feature::scope::DesignParameterScope;
+use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
+use cadmpeg_ir::report::loss::LossNote;
 
 /// The state pair of the one history whose BREP holds every candidate face of
 /// `operand`, when several histories store the pair.
 pub(super) fn operand_brep_history_state_pair<'a>(
-    operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
+    operand: &DesignBodyRecipeOperand,
     histories: &'a [AsmHistory],
     state_id: i64,
     previous_state_id: i64,
@@ -39,6 +43,30 @@ pub(super) fn operand_brep_history_state_pair<'a>(
         }
     }
     None
+}
+
+/// One loss for each body-recipe operand whose history the BREP of its
+/// candidate faces selects.
+pub(crate) fn inferred_history_losses(
+    operands: &[DesignBodyRecipeOperand],
+    scopes: &[DesignParameterScope],
+    histories: &[AsmHistory],
+) -> Vec<LossNote> {
+    operands
+        .iter()
+        .filter_map(|operand| {
+            let ((history, state, previous), inferred) =
+                super::body_recipe_operands::body_recipe_operand_history_pair(
+                    operand, scopes, histories,
+                )?;
+            inferred.then(|| {
+                F3dLossCode::HistoricalBodyRecipeHistoryInferred.note(format!(
+                    "body-recipe operand {}: its state pair {} -> {} occurs in several histories; it reads {}, whose BREP holds every candidate face of the operand.",
+                    operand.id, previous.state_id, state.state_id, history.id
+                ))
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
