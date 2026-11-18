@@ -2881,7 +2881,6 @@
           "bodies": [
             "fcstd:model:body#Body:Shape:Body.Shape.brp:13%40location1",
             "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:3%40location1",
-            "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:9",
             "fcstd:model:body#Pad:Shape:Pad.Shape.brp:9%40location1"
           ],
           "bom_properties": {},

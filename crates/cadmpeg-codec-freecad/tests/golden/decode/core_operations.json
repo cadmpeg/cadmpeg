@@ -45398,10 +45398,8 @@
             "fcstd:model:body#HoleBody:Shape:HoleBody.Shape.brp:53%40location1",
             "fcstd:model:body#HoleBase:Shape:HoleBase.Shape.brp:34%40location1",
             "fcstd:model:body#HoleProfile:Shape:HoleProfile.Shape.brp:3%40location1",
-            "fcstd:model:body#Hole:AddSubShape:Hole.AddSubShape.brp:22",
             "fcstd:model:body#Hole:Shape:Hole.Shape.brp:53%40location1",
             "fcstd:model:body#PatternBody:Shape:PatternBody.Shape.brp:34%40location1",
-            "fcstd:model:body#PatternBase:AddSubShape:PatternBase.AddSubShape.brp:34",
             "fcstd:model:body#PatternBase:Shape:PatternBase.Shape.brp:34%40location1",
             "fcstd:model:body#LinearPattern:Shape:LinearPattern.Shape.brp:35%40location1"
           ],

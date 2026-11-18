@@ -2497,7 +2497,6 @@
             "fcstd:model:body#Body:Shape:Body.Shape.brp:13%40location1",
             "fcstd:model:body#DatumPlane:Shape:DatumPlane.Shape.brp:1%40location1",
             "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:2%40location1",
-            "fcstd:model:body#AdditiveCylinder:AddSubShape:AdditiveCylinder.AddSubShape.brp:9",
             "fcstd:model:body#AdditiveCylinder:Shape:AdditiveCylinder.Shape.brp:9%40location1"
           ],
           "bom_properties": {},

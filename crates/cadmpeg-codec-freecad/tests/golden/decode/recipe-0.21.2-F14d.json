@@ -2626,7 +2626,6 @@
           "bodies": [
             "fcstd:model:body#Body:Shape:PartShape.brp:13%40location1",
             "fcstd:model:body#DatumPlane:Shape:PartShape1.brp:1%40location1",
-            "fcstd:model:body#AdditiveCylinder:AddSubShape:PartShape3.brp:9",
             "fcstd:model:body#AdditiveCylinder:Shape:PartShape4.brp:9%40location1",
             "fcstd:model:body#SketchDatumPoint:Shape:PartShape5.brp:1%40location1"
           ],

@@ -5144,7 +5144,6 @@
         {
           "bodies": [
             "fcstd:model:body#Body:Shape:PartShape.brp:34%40location1",
-            "fcstd:model:body#AdditiveBox:AddSubShape:PartShape1.brp:34",
             "fcstd:model:body#AdditiveBox:Shape:PartShape2.brp:34%40location1"
           ],
           "bom_properties": {},

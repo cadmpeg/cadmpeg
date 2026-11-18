@@ -5269,7 +5269,6 @@
         {
           "bodies": [
             "fcstd:model:body#Body:Shape:Body.Shape.brp:34%40location1",
-            "fcstd:model:body#AdditiveBox:AddSubShape:AdditiveBox.AddSubShape.brp:34",
             "fcstd:model:body#AdditiveBox:Shape:AdditiveBox.Shape.brp:34%40location1",
             "fcstd:model:body#Sketch:Shape:Sketch.Shape.brp:2%40location1"
           ],
