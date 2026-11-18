@@ -526,7 +526,6 @@ impl<'a> DecodeContext<'a> {
         self.session.unknowns().len()
     }
 
-    /// Appends a later geometry-phase link to an object record.
     /// The bodies each object committed, for the objects whose UUID no other
     /// object holds.
     fn object_bodies(&self) -> crate::history::v11::ObjectBodies {
@@ -565,6 +564,7 @@ impl<'a> DecodeContext<'a> {
             .map(|definition| definition.id.clone())
     }
 
+    /// Appends a later geometry-phase link to an object record.
     fn append_link(
         &mut self,
         source_order: usize,
