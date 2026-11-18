@@ -4790,6 +4790,115 @@ source = "spec"
 anchor = "store cached line selections"
 
 [[record]]
+name = "pm_dc_pattern_cached_line_entry"
+kind = "byte"
+section = "13.6"
+anchor = "four 54-byte line entries"
+size = 54
+note = "One line entry of the selection-form-4 body."
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "Each entry contains `zero:u16 = 0`"
+value = 0
+
+[[record.field]]
+name = "curve_form"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "`curve_form:u32 = 23`"
+value = 23
+
+[[record.field]]
+name = "origin"
+offset = 6
+type = "f64[3]"
+source = "spec"
+anchor = "`origin:f64[3]`"
+
+[[record.field]]
+name = "span"
+offset = 30
+type = "f64[3]"
+source = "spec"
+anchor = "`span:f64[3]`"
+
+[[record]]
+name = "pm_dc_pattern_cached_four_line_body"
+kind = "byte"
+section = "13.6"
+anchor = "has a 261-byte body after the content header"
+size = 261
+note = "Selection form 4 of type aa7b97a57045795897b51396ffc5d631 in segment major versions 19 and 23. Offsets start after the content header."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "The body starts with `state:i32 = -1`"
+value = -1
+
+[[record.field]]
+name = "reference"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "a record reference, a work-point reference"
+
+[[record.field]]
+name = "work_point_reference"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "a record reference, a work-point reference"
+
+[[record.field]]
+name = "selection_form"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "`selection_form:u32 = 4`"
+value = 4
+
+[[record.field]]
+name = "lines"
+offset = 16
+type = "bytes[216]"
+source = "derived"
+anchor = "four 54-byte line entries"
+note = "Four entries of 54 bytes occupy 216 bytes."
+
+[[record.field]]
+name = "selection_point"
+offset = 232
+type = "f64[3]"
+source = "derived"
+anchor = "A shared `selection_point:f64[3]`"
+note = "The 16-byte prefix and four 54-byte entries precede the point."
+
+[[record.field]]
+name = "line_state"
+offset = 256
+type = "u8"
+source = "derived"
+anchor = "`line_state:u8 = 1`"
+note = "The shared 24-byte point follows the prefix and line entries."
+value = 1
+
+[[record.field]]
+name = "source_reference"
+offset = 257
+type = "u32"
+source = "derived"
+anchor = "one source reference end the body"
+note = "The source reference follows the one-byte line state."
+
+[[record]]
 name = "pm_dc_pattern_suppression_prefix"
 kind = "byte"
 section = "13.6"

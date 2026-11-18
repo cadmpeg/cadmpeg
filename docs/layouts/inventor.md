@@ -1642,6 +1642,36 @@ Parsed by:
 | 94 | 1 | `line_state` | `u8` | little | spec | store cached line selections · value `1` |
 | 95 | 4 | `source_references` | `u32[1]` | little | spec | store cached line selections |
 
+## `pm_dc_pattern_cached_line_entry`
+
+Spec §13.6 · layout: byte offsets · size: 54 B
+
+One line entry of the selection-form-4 body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `zero` | `u16` | little | spec | Each entry contains `zero:u16 = 0` · value `0` |
+| 2 | 4 | `curve_form` | `u32` | little | spec | `curve_form:u32 = 23` · value `23` |
+| 6 | 24 | `origin` | `f64[3]` | little | spec | `origin:f64[3]` |
+| 30 | 24 | `span` | `f64[3]` | little | spec | `span:f64[3]` |
+
+## `pm_dc_pattern_cached_four_line_body`
+
+Spec §13.6 · layout: byte offsets · size: 261 B
+
+Selection form 4 of type aa7b97a57045795897b51396ffc5d631 in segment major versions 19 and 23. Offsets start after the content header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `state` | `i32` | little | spec | The body starts with `state:i32 = -1` · value `-1` |
+| 4 | 4 | `reference` | `u32` | little | spec | a record reference, a work-point reference |
+| 8 | 4 | `work_point_reference` | `u32` | little | spec | a record reference, a work-point reference |
+| 12 | 4 | `selection_form` | `u32` | little | spec | `selection_form:u32 = 4` · value `4` |
+| 16 | 216 | `lines` | `bytes[216]` | little | derived | Four entries of 54 bytes occupy 216 bytes. |
+| 232 | 24 | `selection_point` | `f64[3]` | little | derived | The 16-byte prefix and four 54-byte entries precede the point. |
+| 256 | 1 | `line_state` | `u8` | little | derived | The shared 24-byte point follows the prefix and line entries. · value `1` |
+| 257 | 4 | `source_reference` | `u32` | little | derived | The source reference follows the one-byte line state. |
+
 ## `pm_dc_pattern_suppression_prefix`
 
 Spec §13.6 · layout: byte offsets · size: 8 B
