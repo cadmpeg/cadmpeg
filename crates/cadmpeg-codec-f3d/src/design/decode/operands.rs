@@ -986,6 +986,10 @@ pub(crate) fn decode_face_operands(
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
             && group.role() == DesignOperandRole::PROFILE;
+        let is_surface_trim_tool = design_feature_family(&scope.kind())
+            == Some(DesignFeatureFamily::SurfaceTrim)
+            && group.role() == DesignOperandRole::ROLE_0X9
+            && group.members().len() == 1;
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
             && !is_split_face_operand
         {
@@ -1016,6 +1020,7 @@ pub(crate) fn decode_face_operands(
             && !is_draft_operand
             && !is_replace_face_operand
             && !is_surface_offset_operand
+            && !is_surface_trim_tool
         {
             continue;
         }
@@ -1099,8 +1104,9 @@ pub(crate) fn decode_face_operands(
                 recipes,
             ) {
                 let operand = operand?;
-                if !is_pattern_face_seed
-                    || operand.recipe_kind == ConstructionRecipeKind::BoundedFace
+                if (!is_pattern_face_seed
+                    || operand.recipe_kind == ConstructionRecipeKind::BoundedFace)
+                    && (!is_surface_trim_tool || operand.is_terminal_face_recipe())
                 {
                     out.push(operand);
                 }
