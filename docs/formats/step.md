@@ -1760,7 +1760,21 @@ members. A solid-root transaction rejects the root. CADIR has no tolerant-point
 or partial-solid carrier and does not infer coordinates. A geometric set with
 surface members forms a sheet carrier. Each surface member is a face in its own
 shell of the one sheet region. Curve-only and point-only sets remain
-standalone geometry.
+standalone geometry. The writer states a region of a body that is not a
+solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
+`GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the
+region is a forward face with no loops whose surface either carries no
+procedural construction and has a solved NURBS geometry, or is a rectangular
+parameter subset (written as a `RECTANGULAR_TRIMMED_SURFACE`). Other
+procedural surfaces, among them an exact NURBS whose retained ranges can make
+the written spline wider than the face and a sub-surface, which the writer
+states by its solved carrier rather than a trim to its ranges, take the
+`OPEN_SHELL` path. For an unplaced body a `SHAPE_REPRESENTATION_RELATIONSHIP`
+links the bounded-surface representation to the product's shape
+representation. For a placed body the bounded-surface representation is the
+mapped representation of the body's `REPRESENTATION_MAP`, so no empty
+body-local representation is written, and the body's `MAPPED_ITEM` is an item
+of the product's shape representation.
 
 CADIR decision: a `CURVE_BOUNDED_SURFACE` member has one ring loop for each
 boundary composite curve and one edge for each composite segment. A trimmed

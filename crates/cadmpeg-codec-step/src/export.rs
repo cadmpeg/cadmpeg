@@ -396,6 +396,8 @@ pub(crate) struct Builder<'a> {
     body_shape_refs: HashMap<String, Ref>,
     pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
     advanced_brep_items: std::collections::HashSet<Ref>,
+    /// Geometric sets of bounded surfaces that stand for sheet bodies.
+    surface_set_items: std::collections::HashSet<Ref>,
     body_step_item_refs: HashMap<String, Vec<Ref>>,
     product_step_refs: HashMap<String, Ref>,
     occurrence_step_refs: HashMap<String, Ref>,
@@ -638,6 +640,7 @@ impl<'a> Builder<'a> {
             body_shape_refs: HashMap::new(),
             body_item_refs: HashMap::new(),
             advanced_brep_items: std::collections::HashSet::new(),
+            surface_set_items: std::collections::HashSet::new(),
             body_step_item_refs: HashMap::new(),
             product_step_refs: HashMap::new(),
             occurrence_step_refs: HashMap::new(),
@@ -1922,6 +1925,29 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
+            if let Some(item) = (!closed && !mixed_wire)
+                .then(|| self.emit_surface_set_region(region))
+                .flatten()
+            {
+                self.surface_set_items.insert(item);
+                let shape_item = self.place_body_item(&region.body, item, context);
+                items.push(shape_item);
+                self.body_shape_refs
+                    .entry(region.body.as_str().to_owned())
+                    .or_insert(shape_item);
+                self.body_step_refs
+                    .entry(region.body.as_str().to_owned())
+                    .or_insert(item);
+                self.body_item_refs
+                    .entry(region.body.as_str().to_owned())
+                    .or_default()
+                    .push(shape_item);
+                self.body_step_item_refs
+                    .entry(region.body.as_str().to_owned())
+                    .or_default()
+                    .push(item);
+                continue;
+            }
             let Some((outer_id, void_ids)) = region.shells.split_first() else {
                 self.empty_regions.insert(region.id.as_str().to_owned());
                 continue;
@@ -2200,6 +2226,49 @@ impl<'a> Builder<'a> {
             .push(item);
     }
 
+    /// A `GEOMETRIC_SET` of the surfaces of a region whose faces are whole
+    /// bounded surfaces: forward faces with no loops on a surface with no
+    /// procedural construction whose solved geometry is NURBS, or on a
+    /// rectangular parameter subset. An exact NURBS can be written wider than
+    /// its face, and a sub-surface is written by its solved carrier, not a
+    /// trim to its ranges, so neither qualifies.
+    fn emit_surface_set_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
+        let children = &self.children;
+        let faces = region
+            .shells
+            .iter()
+            .flat_map(|shell| children.shell_faces(shell).iter().copied())
+            .collect::<Vec<_>>();
+        let whole_bounded = |face: &&Face| {
+            face.loops.is_empty()
+                && face.sense == Sense::Forward
+                && match self.procedural_surfaces.get(face.surface.as_str()) {
+                    Some(procedural) => matches!(
+                        procedural.definition(),
+                        ProceduralSurfaceDefinition::Subset(_)
+                    ),
+                    None => self
+                        .surfaces
+                        .get(face.surface.as_str())
+                        .and_then(|surface| surface.geometry.solved())
+                        .is_some_and(|geometry| {
+                            matches!(geometry, SolvedSurfaceGeometry::Nurbs(_))
+                        }),
+                }
+        };
+        if faces.is_empty() || !faces.iter().all(whole_bounded) {
+            return None;
+        }
+        let members = faces
+            .iter()
+            .map(|face| self.emit_surface(face.surface.as_str()))
+            .collect::<Option<Vec<_>>>()?;
+        Some(
+            self.emitter
+                .emit("GEOMETRIC_SET", &format!("'',{}", refs(&members))),
+        )
+    }
+
     fn place_body_item(
         &mut self,
         body_id: &cadmpeg_ir::ids::BodyId,
@@ -2245,6 +2314,8 @@ impl<'a> Builder<'a> {
         if self.advanced_brep_items.contains(&item) {
             self.advanced_brep_items.insert(mapped);
         }
+        // A placed set's mapped item stays in the product's plain shape
+        // representation: its map already names the bounded-surface one.
         mapped
     }
 
