@@ -24,6 +24,7 @@ use super::component_constructions::exact_component_insert_construction;
 use super::component_constructions::exact_copy_paste_component_operation;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::derived_instance;
+use super::direct_face::exact_axis_owner_scale;
 use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
@@ -79,6 +80,7 @@ use crate::layout::canvas_scope_tail_98 as canvas_tail;
 use crate::layout::canvas_scope_typed_tail as typed_canvas_tail;
 use crate::layout::named_parameter_scope_tail as named_tail;
 use crate::layout::reciprocal_hole_tail as hole_tail;
+use crate::layout::thread_hole_companion_tail as thread_companion_tail;
 use crate::layout::typed_reference_parameter_scope_tail as typed_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
@@ -294,6 +296,7 @@ pub(crate) fn decode_parameter_scopes(
             if let Some(loss) = extrude_extent_native_loss(&scope) {
                 losses.push(loss);
             }
+            super::split::decode_split_tool_extension(bytes, &mut scope, &mut losses);
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -563,7 +566,17 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
-                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)?;
+                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)
+                        .or_else(|| {
+                            exact_axis_owner_scale(
+                                bytes,
+                                &records,
+                                &scope,
+                                &stream_types,
+                                parameters,
+                                parameter_owners,
+                            )
+                        });
                 if let scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -855,9 +868,17 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let owned = body_owners.get(&scope.record_index).and_then(|owners| {
-                    timeline_owned_base_feature(bytes, &scope, owners, &browser_nodes, &mut losses)
-                });
+                let owned = match body_owners.get(&scope.record_index) {
+                    Some(owners) => timeline_owned_base_feature(
+                        ctx,
+                        stream_view,
+                        &scope,
+                        owners,
+                        &browser_nodes,
+                        &mut losses,
+                    )?,
+                    None => None,
+                };
                 let construction = match owned {
                     Some(owned) => Some(owned),
                     None => exact_base_feature_construction(bytes, &scope)?,
@@ -1332,6 +1353,12 @@ pub(crate) fn parameter_scope_previous_history_offset(
     rigid_group: bool,
     second_tail_reference: bool,
 ) -> Option<usize> {
+    if kind.as_ref() == "Thread"
+        && tail_length == thread_companion_tail::LEN
+        && !second_tail_reference
+    {
+        return Some(thread_companion_tail::PREVIOUS_HISTORY_STATE);
+    }
     parameter_scope_previous_history_offset_for_form(
         kind.as_ref(),
         tail_length,
@@ -1339,6 +1366,19 @@ pub(crate) fn parameter_scope_previous_history_offset(
         rigid_group,
         second_tail_reference,
     )
+}
+
+pub(crate) fn named_reciprocal_hole_previous_history_offset(
+    tail_length: usize,
+    label_units: usize,
+) -> Option<usize> {
+    let label_bytes = label_units.checked_mul(2)?;
+    let relative = match tail_length.checked_sub(label_bytes)? {
+        110 => 53,
+        120 => 63,
+        _ => return None,
+    };
+    label_bytes.checked_add(relative)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1678,6 +1718,12 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             let named_tail = if named_tail_possible {
                 named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                     .unwrap_or_default()
+                    || (kind == "Hole"
+                        && named_reciprocal_hole_history(
+                            bytes.get(kind_end..paired_at)?,
+                            record_index,
+                        )
+                        .is_some())
                     || (extended_named
                         && named_parameter_scope_references(bytes, kind_end, paired_at)
                             .is_some_and(|references| {
@@ -1859,17 +1905,27 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         }
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
-        let previous_history_state_id_offset =
-            match parameter_scope_previous_history_offset_for_form(
-                kind.as_str(),
-                tail_length,
-                tail_form,
-                kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
-                bytes.get(kind_end.checked_add(FIXED_TAIL_SECOND_REFERENCE)?) == Some(&1),
-            ) {
-                Some(offset) => Some(kind_end.checked_add(offset)?),
-                None => None,
-            };
+        let tail = bytes.get(kind_end..paired_at)?;
+        let companion_history = match (&kind, tail_form) {
+            (scope::DesignFeatureKind::Hole, ScopeTailForm::Named) => {
+                named_reciprocal_hole_history(tail, record_index)
+            }
+            (scope::DesignFeatureKind::Thread, ScopeTailForm::Fixed) => {
+                super::thread::hole_companion_history(tail, record_index)
+            }
+            _ => None,
+        };
+        let previous_history_state_id_offset = companion_history
+            .or_else(|| {
+                parameter_scope_previous_history_offset_for_form(
+                    kind.as_str(),
+                    tail_length,
+                    tail_form,
+                    kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
+                    tail.get(FIXED_TAIL_SECOND_REFERENCE) == Some(&1),
+                )
+            })
+            .and_then(|offset| kind_end.checked_add(offset));
         let previous_history_state_id = previous_history_state_id_offset.and_then(|offset| {
             match View::u32_le_at(bytes, offset)? {
                 u32::MAX => None,
@@ -2152,6 +2208,33 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
 /// The preceding-history offset of a Hole tail that lists the Hole, and the
 /// Thread that owns it when one does, before its companion chain.
 fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
+    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
+        || tail.get(hole_tail::ZERO_PREFIX..hole_tail::MEMBER_COUNT)? != [0; 8]
+    {
+        return None;
+    }
+    reciprocal_hole_members(tail, hole, hole_tail::MEMBER_COUNT, 1)
+}
+
+fn named_reciprocal_hole_history(tail: &[u8], hole: u32) -> Option<usize> {
+    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
+        || tail.get(named_tail::ZERO_WORD..named_tail::LABEL_LENGTH)? != [0; 4]
+    {
+        return None;
+    }
+    let (label, count_at) = lp_utf16_bounded(tail, named_tail::LABEL_LENGTH, 1..=256)?;
+    if label.chars().any(char::is_control) || View::u32_le_at(tail, count_at)? != 2 {
+        return None;
+    }
+    reciprocal_hole_members(tail, hole, count_at, 2)
+}
+
+fn reciprocal_hole_members(
+    tail: &[u8],
+    hole: u32,
+    count_at: usize,
+    suppression_padding: usize,
+) -> Option<usize> {
     /// Length of one marked record reference.
     const REFERENCE: usize = 11;
     /// The zero byte, suppression flag, and zero byte after the members.
@@ -2160,18 +2243,14 @@ fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
     const HISTORY_RUN: usize = 20;
     let reference = |at| super::shared_frames::marked_record_reference(tail, at);
     let flag = |at| tail.get(at).is_some_and(|byte| *byte <= 1);
-    let thread = match View::u32_le_at(tail, hole_tail::MEMBER_COUNT)? {
+    let self_at = count_at.checked_add(hole_tail::SELF_REFERENCE - hole_tail::MEMBER_COUNT)?;
+    let thread = match View::u32_le_at(tail, count_at)? {
         1 => None,
-        2 => Some(
-            reference(hole_tail::SELF_REFERENCE + REFERENCE)
-                .filter(|thread| *thread > 3 && *thread != hole)?,
-        ),
+        2 => Some(reference(self_at + REFERENCE).filter(|thread| *thread > 3 && *thread != hole)?),
         _ => return None,
     };
-    let members_end = hole_tail::SELF_REFERENCE + REFERENCE * (1 + usize::from(thread.is_some()));
-    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
-        || tail.get(hole_tail::ZERO_PREFIX..hole_tail::MEMBER_COUNT)? != [0; 8]
-        || reference(hole_tail::SELF_REFERENCE)? != hole
+    let members_end = self_at + REFERENCE * (1 + usize::from(thread.is_some()));
+    if reference(self_at)? != hole
         || tail.get(members_end) != Some(&0)
         || !flag(members_end + 1)
         || tail.get(members_end + 2) != Some(&0)
@@ -2194,13 +2273,16 @@ fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
     let duration = View::f64_le_at(tail, history_at + 8)?;
     let second_at = history_at + HISTORY_RUN;
     let flag_at = second_at + REFERENCE;
-    let third_at = flag_at + 2;
+    let third_at = flag_at + 1 + suppression_padding;
     let closing_at = third_at + REFERENCE;
     (duration.is_finite()
         && duration >= 0.0
         && reference(second_at)? == first.checked_sub(1)?
         && flag(flag_at)
-        && tail.get(flag_at + 1) == Some(&0)
+        && tail
+            .get(flag_at + 1..third_at)?
+            .iter()
+            .all(|byte| *byte == 0)
         && reference(third_at)? == first.checked_sub(2)?
         && reference(closing_at)? == hole
         && tail.get(closing_at + REFERENCE) == Some(&0)
