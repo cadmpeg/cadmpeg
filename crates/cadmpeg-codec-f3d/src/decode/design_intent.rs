@@ -1954,7 +1954,7 @@ fn extend_related_design_records(
         geometry.persistent_subentity_tags,
         &design.design_parameter_scopes,
     );
-    crate::history::bind_body_recipe_operand_history_candidates(
+    crate::history::body_recipe_operands::bind_body_recipe_operand_history_candidates(
         &mut design.design_body_recipe_operands,
         &prereqs.construction_recipes,
         &design.design_parameter_scopes,

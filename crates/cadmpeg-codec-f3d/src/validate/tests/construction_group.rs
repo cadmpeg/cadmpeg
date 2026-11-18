@@ -1,5 +1,82 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#[test]
+fn draft_edge_groups_require_an_explicit_parting_tool_or_fixed_edge_reference() {
+    use crate::records::{
+        feature::{
+            direct_face::{DesignDraftFlags, DesignDraftOperation, DesignDraftParting},
+            scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut},
+        },
+        identity::{Located, ReferenceRun},
+        topology::{
+            construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+        },
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        for (tool, fixed, expected) in [
+            (999, None, false),
+            (100, None, true),
+            (999, Some(100), true),
+        ] {
+            let mut data = native(true, false);
+            let mut scope = DesignParameterScope::empty(
+                &data.design_parameter_scopes[0].id,
+                DesignFeatureKind::Draft,
+                10,
+            );
+            scope
+                .try_edit(|draft| {
+                    draft.reference_members = ReferenceRun::unlocated(vec![100, 101]);
+                    draft.layout_fixture_references();
+                    draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                    draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                    draft.layout_fixture_tail();
+                })
+                .unwrap();
+            if let DesignScopePayloadMut::Draft(operation) = scope.payload_mut() {
+                *operation = Some(DesignDraftOperation {
+                    angle: cadmpeg_ir::scalar::Angle::ZERO,
+                    angle_record_index: 90,
+                    angle_offset: 500,
+                    opposite_angle_record_index: 91,
+                    opposite_angle_offset: 600,
+                    opposite_angle: Some(cadmpeg_ir::scalar::Angle::ZERO),
+                    flags: Some(DesignDraftFlags {
+                        parting: Some(DesignDraftParting {
+                            form: 3,
+                            mode: 1,
+                            prefix_scalars: [cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(); 2],
+                            boundary_flag: false,
+                            fixed_edges: fixed.map(|value| Located { value, offset: 74 }),
+                            pull: Located {
+                                value: 120,
+                                offset: if fixed.is_some() { 85 } else { 75 },
+                            },
+                            tool: Located {
+                                value: tool,
+                                offset: if fixed.is_some() { 96 } else { 86 },
+                            },
+                            faces: Located {
+                                value: 130,
+                                offset: if fixed.is_some() { 111 } else { 101 },
+                            },
+                        }),
+                        ..Default::default()
+                    }),
+                });
+            }
+            data.design_parameter_scopes[0] = scope;
+            data.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_B);
+            let ctx = super::super::Ctx::new(&ir, &data, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(findings.is_empty(), expected, "tool={tool} fixed={fixed:?}");
+        }
+    });
+}
+
 pub(super) fn native(valid: bool, duplicate: bool) -> crate::native::F3dNative {
     use crate::records::{
         decal::DesignRecordHeader,
