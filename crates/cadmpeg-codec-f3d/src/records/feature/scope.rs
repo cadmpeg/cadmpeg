@@ -310,6 +310,11 @@ cadmpeg_core::named_optional_field!(
     "path_pattern_settings"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_silhouette_split_operation,
+    super::silhouette_split::DesignSilhouetteSplit,
+    "silhouette_split_operation"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_scale_operation,
     DesignScaleOperation,
     "scale_operation"
@@ -788,6 +793,7 @@ design_feature_kinds! {
         SurfaceUntrim => "SurfaceUntrim": Option<DesignSurfaceUntrimOperation>,
         Hole => "Hole": crate::records::feature::hole::DesignHoleScope,
         Scale => "Scale": Option<DesignScaleOperation>,
+        SilhouetteSplit => "SilhouetteSplit": Option<super::silhouette_split::DesignSilhouetteSplit>,
         Thread => "Thread": Option<DesignThreadConstruction>,
         Emboss => "Emboss": Option<DesignEmbossConstruction>,
         EdgeFlange => "EdgeFlange": DesignEdgeFlangeScope,
@@ -1124,6 +1130,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_scale_operation"
     )]
     scale_operation: Option<DesignScaleOperation>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_silhouette_split_operation"
+    )]
+    silhouette_split_operation: Option<super::silhouette_split::DesignSilhouetteSplit>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1971,6 +1983,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
+        if wire.silhouette_split_operation.is_some() {
+            present.push("silhouette_split_operation");
+        }
         if wire.reverse_normal_operation.is_some() {
             present.push("reverse_normal_operation");
         }
@@ -2258,6 +2273,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
             DesignFeatureKind::Split => DesignScopePayload::Split,
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
+            DesignFeatureKind::SilhouetteSplit => {
+                DesignScopePayload::SilhouetteSplit(wire.silhouette_split_operation.take())
+            }
             DesignFeatureKind::ReverseNormal => {
                 DesignScopePayload::ReverseNormal(wire.reverse_normal_operation.take())
             }
@@ -2404,6 +2422,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.move_operation.is_some()
             || wire.modify_operation.is_some()
             || wire.scale_operation.is_some()
+            || wire.silhouette_split_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
             || wire.contour_flange_operation.is_some()
@@ -2594,6 +2613,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             move_operation: None,
             modify_operation: None,
             scale_operation: None,
+            silhouette_split_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
             contour_flange_operation: None,
@@ -2710,6 +2730,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Modify(value) => wire.modify_operation = value,
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
+            }
+            DesignScopePayload::SilhouetteSplit(value) => {
+                wire.silhouette_split_operation = value;
             }
             DesignScopePayload::ReverseNormal(value) => {
                 wire.reverse_normal_operation = value;
@@ -2920,6 +2943,13 @@ impl DesignParameterScope {
                 && tail == crate::layout::typed_reference_parameter_scope_tail::LEN);
         let typed_canvas =
             typed && kind == "Canvas" && tail == crate::layout::canvas_scope_typed_tail::LEN;
+        if matches!(draft.payload, DesignScopePayload::SilhouetteSplit(Some(_)))
+            && (typed
+                || draft.reference_members.len() != 4
+                || draft.reference_members.values().any(|&index| index == 0))
+        {
+            return Err(fail("silhouette_split_operation/reference_members"));
+        }
         if typed && named_tail.is_some() {
             return Err(fail("combine_named_tail/reference_members"));
         }

@@ -5437,6 +5437,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 && group.role() == DesignOperandRole::ROLE_0X10)
                     }) && group.extrude_role().is_none()
                 }
+                Some(design::DesignFeatureFamily::SilhouetteSplit) => {
+                    group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
+                }
                 Some(_) => false,
                 None if matches!(
                     scope.kind(),

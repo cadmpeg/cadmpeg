@@ -1953,6 +1953,10 @@ pub(crate) fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::SurfaceRuled)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::BoundaryFill)
+            || matches!(
+                scope.payload(),
+                crate::records::feature::scope::DesignScopePayload::SilhouetteSplit(Some(_))
+            )
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Split)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::ReplaceFace)
@@ -1999,6 +2003,11 @@ pub(crate) fn decode_construction_operand_groups(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
+            if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SilhouetteSplit
+                && ordinal != 2
+            {
+                continue;
+            }
             if scope.emboss_operand_construction().is_some() && !matches!(ordinal, 0 | 2) {
                 continue;
             }

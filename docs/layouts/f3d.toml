@@ -4407,6 +4407,78 @@ source = "spec"
 anchor = "the counted input-reference count at offset `117`"
 
 [[record]]
+name = "silhouette_split_scope_header"
+kind = "byte"
+section = "3.1"
+anchor = "The Silhouette Split scope starts with the indexed header and nine zero bytes through offset `19`."
+size = 21
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/silhouette_split.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The Silhouette Split scope starts with the indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes through offset `19`"
+
+[[record.field]]
+name = "property_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "A property flag at offset `20`"
+
+[[record]]
+name = "silhouette_split_selection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Eight zero bytes follow the property block."
+size = 31
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/silhouette_split.rs"
+
+[[record.field]]
+name = "zero_run"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "Eight zero bytes follow the property block."
+
+[[record.field]]
+name = "carrier"
+offset = 8
+type = "bytes[11]"
+source = "spec"
+anchor = "The next plain local reference repeats the carrier"
+
+[[record.field]]
+name = "result_mode"
+offset = 19
+type = "u32"
+source = "spec"
+anchor = "followed by the u32 result mode"
+
+[[record.field]]
+name = "zero_word"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "a zero u32 and a u32 browser-reference count"
+
+[[record.field]]
+name = "browser_count"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "a u32 browser-reference count"
+
+[[record]]
 name = "design_hole_point_data_v4_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
