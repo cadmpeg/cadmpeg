@@ -29079,36 +29079,42 @@ kind = "byte"
 section = "Assembly operands"
 anchor = "The payload has a distribution block after the prefix."
 size = 29
-note = "Offsets are relative to the byte after the leading zero byte or V-direction reference."
+note = "Offsets are relative to the byte after the leading zero byte or V-direction reference. Each body reference moves every field after `body_count` eleven bytes later."
+
+[[record.field]]
+name = "body_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`."
 
 [[record.field]]
 name = "zero_run"
-offset = 0
-type = "bytes[12]"
+offset = 4
+type = "bytes[8]"
 source = "spec"
-anchor = "Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow."
+anchor = "Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`."
 
 [[record.field]]
-name = "fixed_two"
+name = "compute_option"
 offset = 12
 type = "u32"
-value = 2
 source = "spec"
-anchor = "Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow."
+anchor = "Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`."
 
 [[record.field]]
-name = "word"
+name = "seed_kind"
 offset = 16
 type = "u32"
 source = "spec"
-anchor = "Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow."
+anchor = "Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`."
 
 [[record.field]]
 name = "sentinel"
 offset = 20
 type = "u32"
 source = "spec"
-anchor = "Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow."
+anchor = "Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`."
 
 [[record.field]]
 name = "distance_type"
@@ -29123,37 +29129,6 @@ offset = 25
 type = "u32"
 source = "spec"
 anchor = "A u32 entry count, that many sixteen-byte entries"
-
-[[record]]
-name = "rectangular_pattern_payload_counted_head"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
-kind = "byte"
-section = "Assembly operands"
-anchor = "In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes."
-size = 19
-note = "Offsets are relative to the byte after the leading zero byte of the distribution block."
-
-[[record.field]]
-name = "count"
-offset = 0
-type = "u32"
-value = 1
-source = "spec"
-anchor = "In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes."
-
-[[record.field]]
-name = "reference"
-offset = 4
-type = "bytes[11]"
-source = "spec"
-anchor = "In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes."
-
-[[record.field]]
-name = "zero_run"
-offset = 15
-type = "bytes[4]"
-source = "spec"
-anchor = "In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes."
 
 [[record]]
 name = "rectangular_pattern_payload_suffix"

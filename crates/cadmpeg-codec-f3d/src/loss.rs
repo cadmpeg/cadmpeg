@@ -405,6 +405,12 @@ pub(crate) enum F3dLossCode {
     FeatureCircularPatternPlacementNotTransferred,
     /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
     FeatureCircularPatternDistributionAssumed,
+    /// A rectangular-pattern payload's seed kind or body references disagree
+    /// with its seed group, whose seeds are kept.
+    FeaturePatternPayloadSeedUnconfirmed,
+    /// A rectangular-pattern direction record of distance type 10 without a
+    /// readable distribution block is read as a seed-to-final-instance extent.
+    FeatureRectangularPatternDistanceFormAssumed,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -1364,6 +1370,8 @@ impl F3dLossCode {
         Self::FeatureRevolvePlaneWorkPlaneAssumed,
         Self::FeatureCircularPatternPlacementNotTransferred,
         Self::FeatureCircularPatternDistributionAssumed,
+        Self::FeaturePatternPayloadSeedUnconfirmed,
+        Self::FeatureRectangularPatternDistanceFormAssumed,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -2064,6 +2072,12 @@ impl F3dLossCode {
             }
             Self::FeatureCircularPatternDistributionAssumed => {
                 "feature.circular-pattern-distribution-assumed"
+            }
+            Self::FeaturePatternPayloadSeedUnconfirmed => {
+                "feature.pattern-payload-seed-unconfirmed"
+            }
+            Self::FeatureRectangularPatternDistanceFormAssumed => {
+                "feature.rectangular-pattern-distance-form-assumed"
             }
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
@@ -3025,6 +3039,8 @@ impl F3dLossCode {
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeaturePatternPayloadSeedUnconfirmed
+            | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -3659,6 +3675,8 @@ impl F3dLossCode {
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeaturePatternPayloadSeedUnconfirmed
+            | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -4486,6 +4504,8 @@ mod tests {
                 "feature.revolve-plane-work-plane-assumed",
                 "feature.circular-pattern-placement-not-transferred",
                 "feature.circular-pattern-distribution-assumed",
+                "feature.pattern-payload-seed-unconfirmed",
+                "feature.rectangular-pattern-distance-form-assumed",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",

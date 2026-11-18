@@ -8915,34 +8915,20 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 29 B
 
-Offsets are relative to the byte after the leading zero byte or V-direction reference.
+Offsets are relative to the byte after the leading zero byte or V-direction reference. Each body reference moves every field after `body_count` eleven bytes later.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 12 | `zero_run` | `bytes[12]` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
-| 12 | 4 | `fixed_two` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. · value `2` |
-| 16 | 4 | `word` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
-| 20 | 4 | `sentinel` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
+| 0 | 4 | `body_count` | `u32` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
+| 4 | 8 | `zero_run` | `bytes[8]` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
+| 12 | 4 | `compute_option` | `u32` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
+| 16 | 4 | `seed_kind` | `u32` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
+| 20 | 4 | `sentinel` | `u32` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
 | 24 | 1 | `distance_type` | `u8` | little | spec | The next byte is the distance type |
 | 25 | 4 | `entry_count` | `u32` | little | spec | A u32 entry count, that many sixteen-byte entries |
-
-## `rectangular_pattern_payload_counted_head`
-
-Spec §Assembly operands · layout: byte offsets · size: 19 B
-
-Offsets are relative to the byte after the leading zero byte of the distribution block.
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `count` | `u32` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. · value `1` |
-| 4 | 11 | `reference` | `bytes[11]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
-| 15 | 4 | `zero_run` | `bytes[4]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
 
 ## `rectangular_pattern_payload_suffix`
 
