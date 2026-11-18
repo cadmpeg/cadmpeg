@@ -1495,6 +1495,11 @@ pub(super) fn scope_related_indices(
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(
+                scope.joint_origin_frame().filter(|frame| frame.carrier.is_some())
+                    .and_then(|_| scope.joint_origin_reference()),
+            )
+            .chain(scope.split_face_operation().filter(|operation| operation.carrier_frame.is_some()).and_then(|operation| operation.direction_reference.local_record_index()))
             .chain(scope.move_operation().map(|operation| operation.transform_record_index))
             .chain(scope.move_operation().and_then(|operation| operation.face_group.as_ref().map(|group| group.value)))
             .chain(
@@ -2070,15 +2075,18 @@ fn extend_related_design_records(
         timelines,
         &design.asm_histories,
     )?;
-    design.design_face_operands = crate::design::decode::operands::decode_face_operands(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &prereqs.construction_recipes,
-        &prereqs.design_types,
-    )?;
+    let (face_operands, face_operand_losses) =
+        crate::design::decode::operands::decode_face_operands(
+            ctx,
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &prereqs.construction_recipes,
+            &prereqs.design_types,
+        )?;
+    design.design_face_operands = face_operands;
+    profile_losses.extend(face_operand_losses);
     crate::design::decode::operands::bind_face_operand_candidates(
         &mut design.design_face_operands,
         &prereqs.construction_recipes,
