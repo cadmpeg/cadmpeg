@@ -90,8 +90,31 @@ enum Token {
     Separator,
 }
 
+/// The expression of a value's text: a leading `=` marks a formula and is
+/// not part of it, and a definition `name = expression` is worth its
+/// expression.
+fn expression_text(text: &str) -> &str {
+    let trimmed = text.trim_start();
+    if let Some(formula) = trimmed.strip_prefix('=') {
+        return formula;
+    }
+    if let Some((name, rhs)) = text.split_once('=') {
+        let name = name.trim();
+        let name = name.strip_prefix('#').unwrap_or(name);
+        let mut chars = name.chars();
+        let named = chars
+            .next()
+            .is_some_and(|first| first.is_alphabetic() || first == '_')
+            && chars.all(|c| c.is_alphanumeric() || c == '_');
+        if named && !rhs.trim_start().starts_with('=') {
+            return rhs;
+        }
+    }
+    text
+}
+
 fn tokens(text: &str) -> Option<Vec<Token>> {
-    let chars: Vec<char> = text.chars().collect();
+    let chars: Vec<char> = expression_text(text).chars().collect();
     let mut out = Vec::new();
     let mut depth = 0_usize;
     let mut at = 0;
@@ -138,7 +161,7 @@ fn tokens(text: &str) -> Option<Vec<Token>> {
                 '°' => Token::Name("deg".to_owned()),
                 '"' | '″' => Token::Name("in".to_owned()),
                 '\'' | '′' => Token::Name("ft".to_owned()),
-                '+' | '-' | '*' | '/' | '^' => Token::Operator(c),
+                '+' | '-' | '*' | '/' | '^' | '%' => Token::Operator(c),
                 '×' | '·' => Token::Operator('*'),
                 '÷' => Token::Operator('/'),
                 '−' => Token::Operator('-'),
@@ -221,6 +244,37 @@ impl Scope {
         }
     }
 
+    /// Whether the design has a parameter `name`.
+    pub(super) fn knows(&self, name: &str) -> bool {
+        self.parameters.contains_key(name)
+    }
+
+    /// The value of the parameter `name` in millimetres, radians, or as a
+    /// pure number, with the dimension of its unit.
+    pub(super) fn parameter_value(&self, name: &str) -> Option<(f64, Kind)> {
+        let kind = self.parameters.get(name)?.kind;
+        let value = self.parameter(name, 0)?.as_kind(kind);
+        value.is_finite().then_some((value, kind))
+    }
+
+    /// The parameters that `text` names, in the order of their first use. A
+    /// name followed by `(` is a function, not a parameter.
+    pub(super) fn references(&self, text: &str) -> Vec<String> {
+        let tokens = tokens(text).unwrap_or_default();
+        let mut names: Vec<String> = Vec::new();
+        for (at, token) in tokens.iter().enumerate() {
+            if let Token::Name(name) = token {
+                if self.parameters.contains_key(name)
+                    && tokens.get(at + 1) != Some(&Token::Open)
+                    && !names.contains(name)
+                {
+                    names.push(name.clone());
+                }
+            }
+        }
+        names
+    }
+
     fn value(&self, text: &str, references: usize) -> Option<Value> {
         let tokens = tokens(text)?;
         let mut parser = Parser {
@@ -291,9 +345,23 @@ impl Parser<'_> {
 
     fn product(&mut self, depth: usize) -> Option<Value> {
         let mut left = self.power(depth + 1)?;
-        while let Some(Token::Operator(op @ ('*' | '/'))) = self.peek().cloned() {
-            self.at += 1;
+        loop {
+            let op = match self.peek() {
+                Some(Token::Operator(op @ ('*' | '/' | '%'))) => {
+                    let op = *op;
+                    self.at += 1;
+                    op
+                }
+                // Juxtaposition multiplies: `2 width`, `3 (a + b)`.
+                Some(Token::Name(_) | Token::Number(_) | Token::Open) => '*',
+                _ => break,
+            };
             let right = self.power(depth + 1)?;
+            if op == '%' {
+                let (a, b, kind) = combine(left, right)?;
+                left = Value { v: a % b, kind };
+                continue;
+            }
             let kind = match (left.kind, right.kind, op) {
                 (kind, Kind::Unitless, _) | (Kind::Unitless, kind, '*') => kind,
                 (left_kind, right_kind, '/') if left_kind == right_kind => Kind::Unitless,
@@ -446,14 +514,18 @@ fn function(name: &str, arguments: &[Value]) -> Option<Value> {
                 ..value
             }
         }
-        "floor" | "ceil" | "round" | "trunc" | "sign" => {
+        "sign" => {
+            let value = one()?.v;
+            // The sign of zero is zero.
+            number(if value == 0.0 { 0.0 } else { value.signum() })
+        }
+        "floor" | "ceil" | "round" | "trunc" => {
             let value = one()?;
             let v = match name {
                 "floor" => value.v.floor(),
                 "ceil" => value.v.ceil(),
                 "round" => value.v.round(),
-                "trunc" => value.v.trunc(),
-                _ => value.v.signum(),
+                _ => value.v.trunc(),
             };
             Value { v, ..value }
         }
@@ -533,6 +605,11 @@ mod tests {
         assert_eq!(scope.eval("max(1; 2; 3) mm", Kind::Length), Some(3.0));
         assert_eq!(scope.eval("2 ^ 3", Kind::Length), Some(8.0));
         assert_eq!(scope.eval("1,5", Kind::Length), Some(1.5));
+        assert_eq!(scope.eval("=half", Kind::Length), Some(20.0));
+        assert_eq!(scope.eval("depth = half + 1", Kind::Length), Some(21.0));
+        assert_eq!(scope.eval("2 half", Kind::Length), Some(40.0));
+        assert_eq!(scope.eval("7 % 4", Kind::Length), Some(3.0));
+        assert_eq!(scope.eval("sign(0) mm", Kind::Length), Some(0.0));
     }
 
     #[test]
@@ -543,5 +620,19 @@ mod tests {
         assert_eq!(scope.eval("(1 + 2", Kind::Length), None);
         assert_eq!(scope.eval("5 mm + 1 deg", Kind::Length), None);
         assert_eq!(scope.eval("1 $ 2", Kind::Length), None);
+    }
+
+    #[test]
+    fn parameters_name_their_references_and_take_their_unit() {
+        let scope = scope();
+        assert_eq!(
+            scope.references("half + max(width; half) - sqrt(4) mm"),
+            ["half", "width"]
+        );
+        assert_eq!(scope.parameter_value("half"), Some((20.0, Kind::Length)));
+        assert_eq!(scope.parameter_value("inches"), Some((50.8, Kind::Length)));
+        let (turn, kind) = scope.parameter_value("turn").unwrap();
+        assert!((turn - PI / 2.0).abs() < 1e-15 && kind == Kind::Angle);
+        assert_eq!(scope.parameter_value("loop"), None);
     }
 }

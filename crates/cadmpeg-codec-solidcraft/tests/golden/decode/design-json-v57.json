@@ -103,7 +103,22 @@
       "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "dependencies": [],
+          "expression": "20 mm",
+          "id": "solidcraft:design:parameter#w",
+          "name": "w",
+          "ordinal": 0,
+          "properties": {
+            "unit": "mm"
+          },
+          "value": {
+            "kind": "length",
+            "value": 20.0
+          }
+        }
+      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -204,18 +219,6 @@
       "kind": "classified"
     },
     "losses": [
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "history.parameters-undecoded",
-            "kind": "record_not_typed",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "1 parameter records are retained without decoding",
-        "severity": "warning"
-      },
       {
         "code": {
           "kind": "namespaced",

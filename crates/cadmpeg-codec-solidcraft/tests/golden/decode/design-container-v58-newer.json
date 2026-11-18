@@ -103,7 +103,22 @@
       "history_bodies": [],
       "mass_properties": [],
       "occurrences": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "dependencies": [],
+          "expression": "20 mm",
+          "id": "solidcraft:design:parameter#w",
+          "name": "w",
+          "ordinal": 0,
+          "properties": {
+            "unit": "mm"
+          },
+          "value": {
+            "kind": "length",
+            "value": 20.0
+          }
+        }
+      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
@@ -221,18 +236,6 @@
           }
         },
         "message": "the document declares format 58, past the newest released format 57; the file was read without a declared document grammar",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "history.parameters-undecoded",
-            "kind": "record_not_typed",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "1 parameter records are retained without decoding",
         "severity": "warning"
       },
       {

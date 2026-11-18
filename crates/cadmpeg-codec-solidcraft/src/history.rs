@@ -12,6 +12,7 @@
 //! the retained document. A feature that made a body of the final cached
 //! state names that body as an output.
 
+mod constraints;
 mod expr;
 mod sketch;
 
@@ -43,6 +44,10 @@ fn id(kind: &'static str, key: &str) -> String {
     let namespace = match kind {
         "feature" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "feature"),
         "sketch" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "sketch"),
+        "parameter" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "parameter"),
+        "constraint" => {
+            cadmpeg_ir::identity_namespace!("solidcraft", "design", "sketch-constraint")
+        }
         _ => cadmpeg_ir::identity_namespace!("solidcraft", "design", "sketch-entity"),
     };
     cadmpeg_ir::features::FeatureId::compose(&namespace, IdentityKey::encode_segment(key))
@@ -60,6 +65,8 @@ struct Tally {
     unresolved: usize,
     curves: usize,
     planes: usize,
+    native_constraints: usize,
+    dropped_constraints: usize,
 }
 
 /// A sketch the later features can use: its frame, points, and record.
@@ -77,6 +84,10 @@ struct Walk<'w, 'c> {
     tally: Tally,
     sketches: BTreeMap<u64, SketchUse>,
     planes: BTreeMap<u64, Frame>,
+    /// The feature that owns each model parameter, by parameter name.
+    owners: BTreeMap<String, u64>,
+    /// The parameters of dimensions without a design parameter.
+    dimension_parameters: Vec<Value>,
 }
 
 /// Decodes the feature history of `document` into `ir`. `outputs` maps a
@@ -95,18 +106,19 @@ pub(crate) fn decode(
         cadmpeg_core::decode::u64_from_index(features.len()),
         "solidcraft feature history",
     )?;
+    let params = document
+        .get("params")
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
     let mut walk = Walk {
         ctx,
-        scope: Scope::of(
-            document
-                .get("params")
-                .and_then(Value::as_array)
-                .map_or(&[][..], Vec::as_slice),
-        ),
+        scope: Scope::of(params),
         ir,
         tally: Tally::default(),
         sketches: BTreeMap::new(),
         planes: BTreeMap::new(),
+        owners: BTreeMap::new(),
+        dimension_parameters: Vec::new(),
     };
     for (ordinal, record) in features.iter().enumerate() {
         let Some(feature_id) = record.get("id").and_then(Value::as_u64) else {
@@ -114,6 +126,7 @@ pub(crate) fn decode(
         };
         walk.feature(ordinal, feature_id, record, outputs.get(&feature_id))?;
     }
+    walk.parameters(params)?;
     let tally = walk.tally;
     if !tally.native.is_empty() {
         let total: usize = tally.native.values().sum();
@@ -144,6 +157,23 @@ pub(crate) fn decode(
                 "{} sketch curves (fit splines, conics, weighted or periodic splines) have no \
              neutral entity and stay in the retained document",
                 tally.curves
+            )));
+    }
+    if tally.native_constraints + tally.dropped_constraints > 0 {
+        outcome
+            .losses
+            .push(SolidcraftLossCode::SketchConstraintNative.note(format!(
+                "{} sketch constraints have no neutral family and are native relations{}",
+                tally.native_constraints,
+                if tally.dropped_constraints > 0 {
+                    format!(
+                        "; {} more refer to geometry without a neutral entity and stay in the \
+                         retained document",
+                        tally.dropped_constraints
+                    )
+                } else {
+                    String::new()
+                }
             )));
     }
     if tally.planes > 0 {
@@ -180,6 +210,13 @@ impl Walk<'_, '_> {
             .unwrap_or("unknown");
         let key = feature_id.to_string();
         let mut dependencies = BTreeSet::new();
+        if let Some(object) = record.as_object() {
+            for (field, value) in object {
+                if field != "sketch" {
+                    self.claim(value, feature_id);
+                }
+            }
+        }
         if kind == "construction_plane" {
             if let Some(frame) = record
                 .get("plane")
@@ -267,7 +304,12 @@ impl Walk<'_, '_> {
         .map_err(malformed)?;
         self.ir.model.sketches.push(neutral);
         let mut used = BTreeSet::new();
-        for curve in curves {
+        let mut loci = constraints::Loci::default();
+        let point_ids: Vec<Option<String>> = points
+            .iter()
+            .map(|point| point.as_ref().map(|point| point.id.clone()))
+            .collect();
+        for (index, curve) in (0_u64..).zip(curves) {
             for field in ["a", "b", "c", "m", "apex"] {
                 if let Some(index) = curve.get(field).and_then(Value::as_u64) {
                     used.insert(index);
@@ -288,24 +330,64 @@ impl Walk<'_, '_> {
                 .iter()
                 .any(|flag| curve.get(*flag).and_then(Value::as_bool) == Some(true));
             let entity_key = format!("{key}:{curve_id}");
-            if !push_entity(self.ir, &sketch_id, &entity_key, construction, &geometry) {
+            let refs = constraints::endpoint_refs(curve, &point_ids);
+            if push_entity(
+                self.ir,
+                &sketch_id,
+                &entity_key,
+                construction,
+                &refs,
+                &geometry,
+            ) {
+                loci.curve(index, &id("entity", &entity_key), curve);
+            } else {
                 self.tally.curves += 1;
             }
         }
-        for (index, point) in points.iter().enumerate() {
+        for (index, point) in (0_u64..).zip(&points) {
             let Some(point) = point else {
                 continue;
             };
-            if point.id == "origin" || used.contains(&cadmpeg_core::decode::u64_from_index(index)) {
+            if point.id == "origin" || used.contains(&index) {
                 continue;
             }
             let geometry =
                 json!({"kind": "point", "position": {"u": point.pos[0], "v": point.pos[1]}});
             let entity_key = format!("{key}:{}", point.id);
-            if !push_entity(self.ir, &sketch_id, &entity_key, false, &geometry) {
+            if push_entity(self.ir, &sketch_id, &entity_key, false, &[], &geometry) {
+                loci.point(index, &id("entity", &entity_key));
+            } else {
                 self.tally.curves += 1;
             }
         }
+        let relations = constraints::SketchScope {
+            key,
+            sketch: &sketch_id,
+            loci: &loci,
+            scope: &self.scope,
+        }
+        .relations(body);
+        if relations.origin {
+            let geometry = json!({"kind": "point", "position": {"u": 0.0, "v": 0.0}});
+            push_entity(
+                self.ir,
+                &sketch_id,
+                &format!("{key}:origin"),
+                true,
+                &[],
+                &geometry,
+            );
+        }
+        self.ir
+            .model
+            .sketch_constraints
+            .extend(relations.constraints);
+        self.dimension_parameters.extend(relations.parameters);
+        for name in relations.driven {
+            self.owners.entry(name).or_insert(feature_id);
+        }
+        self.tally.native_constraints += relations.native;
+        self.tally.dropped_constraints += relations.dropped;
         if let Some(frame) = frame {
             self.sketches.insert(
                 feature_id,
@@ -319,6 +401,112 @@ impl Walk<'_, '_> {
         Ok(Some(
             json!({"kind": "sketch", "value": {"sketch": {"kind": "planar", "sketch": sketch_id}}}),
         ))
+    }
+}
+
+impl Walk<'_, '_> {
+    /// Records `feature_id` as the owner of each model parameter that a
+    /// field of its record names as its whole expression.
+    fn claim(&mut self, value: &Value, feature_id: u64) {
+        match value {
+            Value::String(text) => {
+                if self.scope.knows(text) {
+                    self.owners.entry(text.clone()).or_insert(feature_id);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    self.claim(item, feature_id);
+                }
+            }
+            Value::Object(object) => {
+                for item in object.values() {
+                    self.claim(item, feature_id);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Adds the design parameters: the document's `params` records, then
+    /// the parameters of dimensions without one. A model parameter that a
+    /// feature names is owned by that feature.
+    fn parameters(&mut self, params: &[Value]) -> Result<(), CodecError> {
+        let mut ordinals: BTreeMap<Option<String>, u32> = BTreeMap::new();
+        let mut next = |owner: Option<String>| -> Result<u32, CodecError> {
+            let ordinal = ordinals.entry(owner).or_insert(0);
+            let current = *ordinal;
+            *ordinal = current
+                .checked_add(1)
+                .ok_or_else(|| malformed("parameter ordinal overflow"))?;
+            Ok(current)
+        };
+        let mut records = Vec::new();
+        for param in params {
+            let (Some(name), Some(expression)) = (
+                param.get("name").and_then(Value::as_str),
+                param.get("expr").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            let model = param.get("model").and_then(Value::as_bool) == Some(true);
+            let owner = model
+                .then(|| self.owners.get(name))
+                .flatten()
+                .map(|feature| id("feature", &feature.to_string()));
+            let value = self
+                .scope
+                .parameter_value(name)
+                .map(|(value, kind)| match kind {
+                    Kind::Length => json!({"kind": "length", "value": value}),
+                    Kind::Angle => json!({"kind": "angle", "value": value}),
+                    Kind::Unitless => json!({"kind": "real", "value": value}),
+                });
+            let mut properties = BTreeMap::new();
+            for field in ["unit", "comment"] {
+                if let Some(text) = param.get(field).and_then(Value::as_str) {
+                    if !text.is_empty() {
+                        properties.insert(field, text.to_owned());
+                    }
+                }
+            }
+            if model {
+                properties.insert("model", "true".to_owned());
+            }
+            records.push(json!({
+                "id": id("parameter", name),
+                "owner": owner,
+                "ordinal": next(owner.clone())?,
+                "name": name,
+                "expression": expression,
+                "value": value,
+                "dependencies": self
+                    .scope
+                    .references(expression)
+                    .iter()
+                    .filter(|reference| reference.as_str() != name)
+                    .map(|reference| id("parameter", reference))
+                    .collect::<Vec<_>>(),
+                "properties": properties,
+            }));
+        }
+        for mut record in std::mem::take(&mut self.dimension_parameters) {
+            let owner = record["owner"].as_str().map(str::to_owned);
+            record["ordinal"] = json!(next(owner)?);
+            records.push(record);
+        }
+        self.ctx.charge_entities(
+            cadmpeg_core::decode::u64_from_index(records.len()),
+            "solidcraft parameters",
+        )?;
+        for mut record in records {
+            if let Some(object) = record.as_object_mut() {
+                object.retain(|_, value| !value.is_null());
+            }
+            let parameter = serde_json::from_value(record).map_err(malformed)?;
+            self.ir.model.parameters.push(parameter);
+        }
+        Ok(())
     }
 }
 
@@ -363,13 +551,14 @@ fn push_entity(
     sketch_id: &str,
     key: &str,
     construction: bool,
+    endpoint_refs: &[String],
     geometry: &Value,
 ) -> bool {
     let entity: Result<SketchEntity, _> = serde_json::from_value(json!({
         "id": id("entity", key),
         "sketch": sketch_id,
         "construction": construction,
-        "endpoint_refs": [],
+        "endpoint_refs": endpoint_refs,
         "geometry": geometry,
     }));
     match entity {

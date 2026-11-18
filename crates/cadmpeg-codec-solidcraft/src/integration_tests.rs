@@ -281,6 +281,116 @@ fn a_sketch_and_its_extrude_resolve_through_the_parameters() {
 }
 
 #[test]
+fn sketch_constraints_and_dimensions_drive_the_design_parameters() {
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Bracket",
+        "units": "mm",
+        "params": [
+            {"name": "width", "expr": "40 mm", "unit": "mm", "model": false},
+            {"name": "d1", "expr": "=width", "unit": "mm", "model": true},
+            {"name": "d2", "expr": "2 d1 + 1", "unit": "mm", "model": true}
+        ],
+        "features": [
+            {"id": 1, "name": "Sketch1", "suppressed": false, "type": "sketch",
+             "plane": {"type": "origin", "name": "XY"},
+             "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                                   {"id": "p1", "pos": [0.0, 0.0]}, {"id": "p2", "pos": [40.0, 0.0]},
+                                   {"id": "p3", "pos": [40.0, 10.0]}, {"id": "c", "pos": [20.0, 5.0]}],
+                        "curves": [{"id": "l1", "type": "line", "a": 1, "b": 2},
+                                   {"id": "l2", "type": "line", "a": 2, "b": 3},
+                                   {"id": "c1", "type": "circle", "c": 4, "r": 2.0}],
+                        "constraints": [
+                            {"id": "k1", "type": "coincident", "p": 0, "q": 1},
+                            {"id": "k2", "type": "horizontal", "l": 0},
+                            {"id": "k3", "type": "perpendicular", "a": 0, "b": 1},
+                            {"id": "k4", "type": "length", "l": 0, "value": 40.0, "param": "d1"},
+                            {"id": "k5", "type": "radius", "c": 2, "value": 2.0, "driven": true},
+                            {"id": "k6", "type": "arc_length", "c": 2, "value": 3.0}
+                        ]}},
+            {"id": 2, "name": "Extrude1", "suppressed": false, "type": "extrude", "sketch": 1,
+             "profiles": {"type": "all"},
+             "extent": {"distance": "d2", "direction": "positive"},
+             "operation": "new_body"}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let model = serde_json::to_value(&result.ir().model).unwrap();
+    let parameter = |name: &str| {
+        model["parameters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|parameter| parameter["name"] == name)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        parameter("d1")["value"],
+        json!({"kind": "length", "value": 40.0})
+    );
+    assert_eq!(parameter("d1")["owner"], "solidcraft:design:feature#1");
+    assert_eq!(
+        parameter("d1")["dependencies"],
+        json!(["solidcraft:design:parameter#width"])
+    );
+    assert_eq!(
+        parameter("d2")["value"],
+        json!({"kind": "length", "value": 81.0})
+    );
+    assert_eq!(parameter("d2")["owner"], "solidcraft:design:feature#2");
+    assert!(parameter("width").get("owner").is_none());
+    assert_eq!(
+        parameter("k5")["value"],
+        json!({"kind": "length", "value": 2.0})
+    );
+    let constraint = |name: &str| {
+        model["sketch_constraints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|constraint| {
+                constraint["id"]
+                    == format!(
+                        "solidcraft:design:sketch-constraint#1%3A{}",
+                        name.replace(':', "%3A")
+                    )
+            })
+            .unwrap()
+            .clone()
+    };
+    let entity = |name: &str| format!("solidcraft:design:sketch-entity#1%3A{name}");
+    // The lines share p2.
+    assert_eq!(
+        constraint("shared:p2")["definition"]["loci"],
+        json!([{"kind": "end", "value": entity("l1")}, {"kind": "start", "value": entity("l2")}])
+    );
+    assert_eq!(
+        constraint("k1")["definition"]["loci"],
+        json!([{"kind": "entity", "value": entity("origin")}, {"kind": "start", "value": entity("l1")}])
+    );
+    assert_eq!(constraint("origin")["definition"]["kind"], "fixed");
+    assert_eq!(constraint("k3")["definition"]["kind"], "perpendicular");
+    assert_eq!(
+        constraint("k4")["definition"],
+        json!({"kind": "distance", "entities": [entity("l1")], "parameter": "solidcraft:design:parameter#d1"})
+    );
+    assert_eq!(constraint("k4")["driving"], true);
+    assert_eq!(constraint("k5")["driving"], false);
+    assert_eq!(constraint("k6")["definition"]["kind"], "native");
+    assert_eq!(
+        constraint("k6")["definition"]["native_kind"],
+        "solidcraft:arc_length"
+    );
+    let codes = loss_codes(&bytes);
+    assert!(codes.contains(&"solidcraft/history.sketch-constraint-native".to_owned()));
+    assert!(!codes.contains(&"solidcraft/history.parameters-undecoded".to_owned()));
+}
+
+#[test]
 fn body_and_face_looks_colour_the_cached_body() {
     let bytes = crate::test_support::cached_design_editing(|document| {
         document["appearances"] = json!({

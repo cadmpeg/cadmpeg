@@ -159,7 +159,11 @@ and `rad`; `°`, `"`, and `'` are degrees, inches, and feet. A unitless operand
 of `+` or `-` takes the other operand's unit, and a unitless result takes
 the expected unit: millimetres for a length, degrees for an angle. Function
 arguments are separated by `;`, and a comma outside a call is a decimal
-separator. A parameter's value is its `expr` in its `unit`.
+separator. `%` is the remainder, and two operands side by side multiply
+(`2 width`). A leading `=` marks a formula and is not part of it, and a
+definition `name = expression` is worth its expression. A parameter's value
+is its `expr` in its `unit`; a `model` parameter was made by a dimension or a
+feature.
 
 ### 3.4 Sketches
 
@@ -203,7 +207,22 @@ stand on `base` along `axis` with a `radius` (and a `top_radius`) and a
 `center`, a `major`, and a `minor` radius about +Z. The `operation` of each
 is `new_body`, `join`, `cut`, or `intersect`.
 
-### 3.6 Appearances
+### 3.6 Sketch constraints
+
+The `constraints` of a sketch record refer to points by index (`p`, `q`)
+and to curves by index (`l`, `c`, `a`, `b`). Geometric constraints are
+`coincident`, `point_on_curve`, `horizontal`, `vertical`,
+`horizontal_points`, `vertical_points`, `parallel`, `perpendicular`,
+`collinear`, `tangent`, `equal`, `concentric`, `midpoint`, `symmetric`,
+`fix`, and `smooth` (curvature continuity). A dimension has a `value` in
+millimetres or radians and, when it drives one, the `param` that holds it:
+`distance`, `distance_x`, `distance_y`, `point_line_distance`, `length`,
+`line_angle` (from sketch +X), `angle` (counterclockwise from `a` to `b`,
+plus a half turn when `flip`), `radius`, `diameter`, and the circle,
+slot, arc, and offset dimensions. A `driven` dimension measures and does
+not constrain. Two curves that index one point share it.
+
+### 3.7 Appearances
 
 `appearances.bodies` maps a body name to a look: `name`, `color` as
 eight-bit RGB, `opacity`, and optional physically based parameters.

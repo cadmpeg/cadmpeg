@@ -46,6 +46,16 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let mut losses = source.opening_losses();
     losses.extend(classification.loss());
     losses.extend(audit.losses);
+    // An earlier format reads its records through the migrations to the
+    // current one, which this decoder does not apply: its history stays
+    // retained.
+    let current = source.header().is_some_and(|header| {
+        header
+            .tag
+            .version()
+            .is_some_and(|version| version >= crate::dialect::CURRENT_FORMAT)
+    });
+    let decodes_history = current && ctx.depth() >= DecodeDepth::Design;
     let mut attributes = BTreeMap::new();
     if let Some(header) = source.header() {
         if let Some(name) = &header.name {
@@ -68,7 +78,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             cadmpeg_core::nonblank_const!(ATTRIBUTE_PARAMS),
             header.params.to_string(),
         );
-        losses.extend(document_losses(header));
+        losses.extend(document_losses(header, decodes_history));
     }
     match &source.package {
         Some(package) => losses.extend(package_losses(package, source.header().is_some())),
@@ -105,14 +115,6 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         }
     }
     if let Some(document) = &source.document {
-        // An earlier format reads its records through the migrations to the
-        // current one, which this decoder does not apply: its history stays
-        // retained.
-        let current = document
-            .header
-            .tag
-            .version()
-            .is_some_and(|version| version >= crate::dialect::CURRENT_FORMAT);
         if !current && document.header.features > 0 {
             losses.push(SolidcraftLossCode::HistoryUndecoded.note(format!(
                 "{} feature records of an earlier document format are retained without \
@@ -120,7 +122,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                  apply",
                 document.header.features
             )));
-        } else if ctx.depth() >= DecodeDepth::Design {
+        } else if decodes_history {
             let outcome = crate::history::decode(ctx, &document.object, &outputs, &mut ir)?;
             losses.extend(outcome.losses);
         }
@@ -143,10 +145,10 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
 }
 
 /// The losses for the document content that this decoder retains without
-/// decoding.
-fn document_losses(header: &Header) -> Vec<LossNote> {
+/// decoding. The parameters decode with the history.
+fn document_losses(header: &Header, decodes_history: bool) -> Vec<LossNote> {
     let mut losses = Vec::new();
-    if header.params > 0 {
+    if header.params > 0 && !decodes_history {
         losses.push(SolidcraftLossCode::ParametersUndecoded.note(format!(
             "{} parameter records are retained without decoding",
             header.params

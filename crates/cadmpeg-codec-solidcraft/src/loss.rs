@@ -72,6 +72,8 @@ pub(crate) enum SolidcraftLossCode {
     SketchCurveUntyped,
     /// A sketch plane depends on the model and is unresolved.
     SketchPlaneUnresolved,
+    /// A sketch constraint has no neutral family.
+    SketchConstraintNative,
 }
 
 impl SolidcraftLossCode {
@@ -103,6 +105,7 @@ impl SolidcraftLossCode {
         Self::FaceShared,
         Self::SketchCurveUntyped,
         Self::SketchPlaneUnresolved,
+        Self::SketchConstraintNative,
     ];
 
     #[must_use]
@@ -134,6 +137,7 @@ impl SolidcraftLossCode {
             Self::FaceShared => "topology.face-shared",
             Self::SketchCurveUntyped => "history.sketch-curve-untyped",
             Self::SketchPlaneUnresolved => "history.sketch-plane-unresolved",
+            Self::SketchConstraintNative => "history.sketch-constraint-native",
         }
     }
 
@@ -164,7 +168,8 @@ impl SolidcraftLossCode {
             | Self::SurfaceUntyped
             | Self::FaceShared
             | Self::SketchCurveUntyped
-            | Self::SketchPlaneUnresolved => Severity::Warning,
+            | Self::SketchPlaneUnresolved
+            | Self::SketchConstraintNative => Severity::Warning,
             Self::DocumentUnreadable => Severity::Error,
         }
     }
@@ -179,9 +184,10 @@ impl SolidcraftLossCode {
             Self::BlobMissing | Self::BlobUnreferenced | Self::PayloadUndecoded => {
                 LossTaxonomy::AssetNotTransferred
             }
-            Self::HistoryUndecoded | Self::SketchCurveUntyped | Self::SketchPlaneUnresolved => {
-                LossTaxonomy::FeatureHistoryRetained
-            }
+            Self::HistoryUndecoded
+            | Self::SketchCurveUntyped
+            | Self::SketchPlaneUnresolved
+            | Self::SketchConstraintNative => LossTaxonomy::FeatureHistoryRetained,
             Self::ParametersUndecoded
             | Self::DocumentSectionUndecoded
             | Self::EntryRetained
@@ -253,6 +259,7 @@ mod tests {
                 "topology.face-shared",
                 "history.sketch-curve-untyped",
                 "history.sketch-plane-unresolved",
+                "history.sketch-constraint-native",
             ]
         );
     }
