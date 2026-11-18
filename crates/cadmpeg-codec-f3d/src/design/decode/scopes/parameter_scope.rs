@@ -63,8 +63,9 @@ use super::surfaces::surface_extend_loss;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::thread::thread_modeled_flag_loss;
-use super::work_geometry::exact_joint_origin_frame;
-use super::work_geometry::exact_work_plane_frame;
+use super::work_geometry::{
+    direct_joint_origin_frame, exact_joint_origin_frame, exact_work_plane_frame,
+};
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -90,7 +91,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Design records that parameter-scope decoding reads.
 #[derive(Debug, Clone, Copy, Default)]
@@ -180,6 +181,7 @@ pub(crate) fn decode_parameter_scopes(
             })
             .unwrap_or_default();
         let stream_scope_start = out.len();
+        let mut direct_joint_origin_offsets = HashSet::new();
         let mut mesh_scope_ranges = HashMap::new();
         if class_types.values().any(|info| {
             !info.entities.is_empty()
@@ -401,11 +403,21 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
-                if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
+                let framed =
+                    match direct_joint_origin_frame(bytes, &records, &scope, &stream_types) {
+                        Some((frame, carrier)) => {
+                            direct_joint_origin_offsets.insert(scope.byte_offset());
+                            Some((frame, Some(carrier)))
+                        }
+                        None => exact_joint_origin_frame(bytes, &records, &scope)
+                            .map(|frame| (frame, None)),
+                    };
+                if let Some((frame, carrier)) = framed {
                     if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignJointOriginTransform {
                             joint_origin_transform: frame.transform,
                             joint_origin_transform_offset: frame.transform_offset,
+                            carrier,
                             reference: frame.reference.map(|(record_index, offset)| {
                                 scope::DesignJointOriginReference {
                                     joint_origin_reference: record_index,
@@ -948,7 +960,12 @@ pub(crate) fn decode_parameter_scopes(
             &stream_types,
             &mut out[stream_scope_start..],
         )?;
-        bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
+        bind_joint_origin_frames_from_assemblies(
+            bytes,
+            &mut out[stream_scope_start..],
+            &direct_joint_origin_offsets,
+            &mut losses,
+        );
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
