@@ -217,7 +217,7 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
             id: "cadir:model:product#group"
                 .try_into()
                 .expect("valid identity"),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Group,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Group),
             source_name: Some("Group".into()),
             label: None,
             description: None,
@@ -225,6 +225,14 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
             bom_properties: std::collections::BTreeMap::new(),
             bodies: Vec::new(),
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
     let mut conversion = prepared(
         ir,
