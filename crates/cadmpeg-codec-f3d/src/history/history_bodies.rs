@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Base Feature bodies at their producing state.
+//! Stored feature results and bodies consumed by initial cuts.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::document::{CadIr, Model, Topology};
 use cadmpeg_ir::features::{
-    BodySelection, DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureOperation,
+    BodySelection, BooleanOp, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
+    FeatureEvaluation, FeatureOperation,
 };
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -21,6 +21,7 @@ use cadmpeg_ir::schema::EntitySchema;
 use crate::container::{self, ContainerScan};
 use crate::history_records::AsmHistory;
 use crate::loss::F3dLossCode;
+use crate::native::F3dNative;
 use crate::records::feature::scope::DesignParameterScope;
 
 const MAX_HISTORY_BODIES: usize = 64;
@@ -31,6 +32,7 @@ struct Want<'a> {
     state: i64,
     slot: i64,
     capture_current: bool,
+    consumed: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -146,6 +148,7 @@ pub(crate) fn derived_base_snapshots(
                 state: current,
                 slot,
                 capture_current: true,
+                consumed: false,
             }],
             &mut bodies,
             &work,
@@ -164,13 +167,19 @@ pub(crate) fn derived_base_snapshots(
     Ok(bodies)
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct ConsumerContext {
+    pub(crate) bindings: HashMap<String, String>,
+    pub(crate) remaining_work: usize,
+}
+
 pub(crate) fn fill(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     inputs: Inputs<'_>,
     mut bodies_out: Vec<HistoryBody>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<HistoryBody>, CodecError> {
+) -> Result<(Vec<HistoryBody>, usize), CodecError> {
     let Inputs {
         features,
         scopes,
@@ -228,12 +237,60 @@ pub(crate) fn fill(
                     state: current,
                     slot,
                     capture_current: false,
+                    consumed: false,
                 });
             }
         }
     }
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
-    for (index, wants) in wants {
+    fill_requests(ctx, scan, histories, &wants, &mut bodies_out, &work, losses)?;
+    Ok((bodies_out, work.remaining()))
+}
+
+pub(crate) fn fill_consumed(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    model: &mut Model,
+    native: &F3dNative,
+    primary_brep: Option<&str>,
+    context: &ConsumerContext,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let inputs = Inputs {
+        features: &model.features,
+        scopes: &native.design_parameter_scopes,
+        histories: &native.asm_histories,
+        bindings: &context.bindings,
+        primary_brep,
+    };
+    let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
+    for feature in &model.features {
+        if let Some((history, want)) = initial_cut_body(feature, inputs) {
+            wants.entry(history).or_default().push(want);
+        }
+    }
+    let work = WorkBudget::new(context.remaining_work);
+    fill_requests(
+        ctx,
+        scan,
+        inputs.histories,
+        &wants,
+        &mut model.history_bodies,
+        &work,
+        losses,
+    )
+}
+
+fn fill_requests(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    histories: &[AsmHistory],
+    requests: &BTreeMap<usize, Vec<Want<'_>>>,
+    bodies_out: &mut Vec<HistoryBody>,
+    work: &WorkBudget,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    for (&index, wants) in requests {
         let history = &histories[index];
         let Some(facts) = container::history_breps(scan).find(|facts| {
             history
@@ -243,10 +300,63 @@ pub(crate) fn fill(
             continue;
         };
         let bytes = scan.entry_bytes(&facts.name)?;
-        fill_history(ctx, bytes, history, &wants, &mut bodies_out, &work, losses)?;
+        fill_history(ctx, bytes, history, wants, bodies_out, work, losses)?;
     }
     bodies_out.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(bodies_out)
+    Ok(())
+}
+
+fn initial_cut_body<'a>(feature: &'a Feature, inputs: Inputs<'a>) -> Option<(usize, Want<'a>)> {
+    if feature.suppressed == Some(true)
+        || !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                op: BooleanOp::Cut,
+                solid: Some(true),
+                ..
+            })
+        )
+    {
+        return None;
+    }
+    let product = feature.product_definition.as_ref()?;
+    if inputs.features.iter().any(|earlier| {
+        earlier.product_definition.as_ref() == Some(product)
+            && earlier.ordinal < feature.ordinal
+            && earlier.suppressed != Some(true)
+            && !earlier.evaluation.outputs().is_empty()
+    }) {
+        return None;
+    }
+    let selected =
+        super::face_selection_state(feature, inputs.scopes, inputs.bindings, inputs.histories)?;
+    let history = &inputs.histories[selected.history];
+    let previous = &history.states()[selected.previous];
+    let [slot] = history.topology(previous)?.bodies.as_slice() else {
+        return None;
+    };
+    let [output] = feature.evaluation.outputs().as_slice() else {
+        return None;
+    };
+    if super::stable_ref(output.as_str()) != Some(*slot)
+        || output_history(
+            std::iter::once(output.as_str()),
+            inputs.histories,
+            inputs.primary_brep,
+        ) != Some(history.id.as_str())
+    {
+        return None;
+    }
+    Some((
+        selected.history,
+        Want {
+            feature,
+            state: previous.state_id,
+            slot: *slot,
+            consumed: true,
+            capture_current: false,
+        },
+    ))
 }
 
 fn output_history<'a>(
@@ -320,6 +430,7 @@ fn fill_history(
             for want in wants.iter().filter(|want| want.state == state_id) {
                 let revision = versions.get(&want.slot).copied();
                 if !want.capture_current
+                    && !want.consumed
                     && !newer
                         .get(&want.slot)
                         .is_some_and(|seen| seen.iter().any(|new| *new != revision))
@@ -462,8 +573,8 @@ fn build(
         HistoryBody {
             id: HistoryBodyId::mint(format!("f3d:history-body:nest#h{nest_index:04}"))
                 .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
-            produced_by: Some(want.feature.id.clone()),
-            consumed_by: None,
+            produced_by: (!want.consumed).then(|| want.feature.id.clone()),
+            consumed_by: want.consumed.then(|| want.feature.id.clone()),
             state: HistoryStateRef {
                 ordinal: u32::try_from(ordinal)
                     .map_err(|_| CodecError::malformed("history ordinal"))?,

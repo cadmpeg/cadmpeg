@@ -57,6 +57,7 @@ Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `
 
 | Type | Bytes | Endianness | Meaning |
 | ---- | ----: | ---------- | ------- |
+| `base_feature_inline_typed_body_reference` | 51 | little | Marker, u64 record index, LP-ASCII Body type GUID of 36 bytes, and two zero bytes. |
 | `component_body_membership_count` | 4 | little | The u32 count precedes the terminal Body-reference list. |
 | `component_body_membership_reference` | 51 | little | A present same-segment reference with a nonzero u64 target, a 36-byte ASCII type GUID, and two trailing zero bytes. |
 | `component_body_membership_local_reference` | 11 | little | A present untyped same-segment reference with a nonzero u64 target and two zero bytes. |
