@@ -98,3 +98,213 @@ fn a_directed_location_with_a_ratio_nominal_keeps_its_named_kind() {
     assert_eq!(dimensions.len(), 1);
     assert_eq!(dimensions[0].1.kind(), &directed_location());
 }
+
+fn ratio_nominal_dimension(dimension: &str) -> cadmpeg_ir::codec::DecodeResult {
+    decode_inline(&format!(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('from','',#5,.T.);
+#10={dimension};
+#11=MEASURE_REPRESENTATION_ITEM('nominal value',POSITIVE_RATIO_MEASURE(7.5),#1);
+#12=SHAPE_DIMENSION_REPRESENTATION('w value',(#11),#2);
+#13=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#12);
+#99=UNRESOLVED_PRODUCT();"
+    ))
+}
+
+#[test]
+fn a_size_dimension_with_a_ratio_nominal_keeps_its_entity_kind() {
+    for dimension in [
+        "(BOX_SIZE() DIMENSIONAL_SIZE(#6,'w'))",
+        "DIMENSIONAL_SIZE(#6,'w')",
+    ] {
+        let result = ratio_nominal_dimension(dimension);
+        let dimensions = dimensions(result.ir());
+        assert_eq!(dimensions.len(), 1, "{dimension}");
+        assert_eq!(
+            dimensions[0].1.kind(),
+            &DimensionKind::Other("dimensional_size".to_owned()),
+            "{dimension}"
+        );
+        assert!(dimensions[0]
+            .1
+            .nominal()
+            .is_some_and(|value| (value.value.get() - 7.5).abs() < 1.0e-12));
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::StepLossCode::PmiDimensionKindQuantityMismatch.kind()
+                && loss.message.contains("in place of Size")
+        }));
+    }
+}
+
+type MeasureItems<'a> = &'a [(&'a str, &'a str)];
+
+fn measured_dimension(dimension: &str, items: MeasureItems<'_>) -> cadmpeg_ir::codec::DecodeResult {
+    let mut records = vec![
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));".to_owned(),
+        "#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));".to_owned(),
+        "#3=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));".to_owned(),
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);".to_owned(),
+        "#6=SHAPE_ASPECT('from','',#5,.T.);".to_owned(),
+        "#99=UNRESOLVED_PRODUCT();".to_owned(),
+        format!("#10={dimension};"),
+    ];
+    let mut ids = Vec::new();
+    for (index, (name, measure)) in items.iter().enumerate() {
+        let id = 20 + index;
+        let unit = if measure.starts_with("PLANE_ANGLE") {
+            3
+        } else {
+            1
+        };
+        records.push(format!(
+            "#{id}=MEASURE_REPRESENTATION_ITEM('{name}',{measure},#{unit});"
+        ));
+        ids.push(format!("#{id}"));
+    }
+    records.push(format!(
+        "#12=SHAPE_DIMENSION_REPRESENTATION('w',({}),#2);",
+        ids.join(",")
+    ));
+    records.push("#13=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#12);".to_owned());
+    decode_inline(&records.join(
+        "
+",
+    ))
+}
+
+fn has_loss(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    code: crate::loss::StepLossCode,
+    text: &str,
+) -> bool {
+    result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == code.kind() && loss.message.contains(text))
+}
+
+#[test]
+fn a_mismatched_subtype_or_angular_dimension_keeps_its_own_entity_name() {
+    for (dimension, nominal, kind, replaced) in [
+        (
+            "DIMENSIONAL_SIZE_WITH_PATH(#6,'w',#6)",
+            "POSITIVE_RATIO_MEASURE(7.5)",
+            "dimensional_size_with_path",
+            "in place of Size",
+        ),
+        (
+            "ANGULAR_SIZE(#6,'w',.EQUAL.)",
+            "LENGTH_MEASURE(7.5)",
+            "angular_size",
+            "in place of Angular",
+        ),
+    ] {
+        let result = measured_dimension(dimension, &[("nominal value", nominal)]);
+        let dimensions = dimensions(result.ir());
+        assert_eq!(dimensions.len(), 1, "{dimension}");
+        assert_eq!(
+            dimensions[0].1.kind(),
+            &DimensionKind::Other(kind.to_owned()),
+            "{dimension}"
+        );
+        assert!(
+            has_loss(
+                &result,
+                crate::loss::StepLossCode::PmiDimensionKindQuantityMismatch,
+                replaced
+            ),
+            "{dimension}"
+        );
+    }
+}
+
+#[test]
+fn limits_that_no_kind_accepts_are_omitted_from_the_dimension() {
+    let cases: [(MeasureItems<'_>, DimensionKind, bool); 3] = [
+        (
+            &[
+                ("nominal value", "LENGTH_MEASURE(7.5)"),
+                ("lower limit", "PLANE_ANGLE_MEASURE(1.0)"),
+                ("upper limit", "PLANE_ANGLE_MEASURE(2.0)"),
+            ],
+            DimensionKind::Size,
+            false,
+        ),
+        (
+            &[
+                ("nominal value", "LENGTH_MEASURE(7.5)"),
+                ("lower limit", "LENGTH_MEASURE(8.0)"),
+                ("upper limit", "LENGTH_MEASURE(7.0)"),
+            ],
+            DimensionKind::Size,
+            false,
+        ),
+        (
+            &[
+                ("nominal value", "POSITIVE_RATIO_MEASURE(7.5)"),
+                ("lower limit", "LENGTH_MEASURE(7.0)"),
+                ("upper limit", "LENGTH_MEASURE(8.0)"),
+            ],
+            DimensionKind::Other("dimensional_size".to_owned()),
+            true,
+        ),
+    ];
+    for (items, kind, replaced) in cases {
+        let result = measured_dimension("DIMENSIONAL_SIZE(#6,'w')", items);
+        let dimensions = dimensions(result.ir());
+        assert_eq!(dimensions.len(), 1, "{items:?}");
+        assert_eq!(dimensions[0].1.kind(), &kind, "{items:?}");
+        assert!(dimensions[0].1.tolerance().is_none(), "{items:?}");
+        assert!(dimensions[0]
+            .1
+            .nominal()
+            .is_some_and(|value| (value.value.get() - 7.5).abs() < 1.0e-12));
+        assert!(
+            has_loss(
+                &result,
+                crate::loss::StepLossCode::DimensionalLimitsOmitted,
+                "keeps no limits"
+            ),
+            "{items:?}"
+        );
+        assert_eq!(
+            has_loss(
+                &result,
+                crate::loss::StepLossCode::PmiDimensionKindQuantityMismatch,
+                "in place of Size"
+            ),
+            replaced,
+            "{items:?}"
+        );
+    }
+}
+
+#[test]
+fn a_size_dimension_with_angle_limits_keeps_its_entity_kind() {
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#3=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('from','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'w');
+#11=MEASURE_REPRESENTATION_ITEM('lower limit',PLANE_ANGLE_MEASURE(1.0),#3);
+#12=MEASURE_REPRESENTATION_ITEM('upper limit',PLANE_ANGLE_MEASURE(2.0),#3);
+#13=SHAPE_DIMENSION_REPRESENTATION('w',(#11,#12),#2);
+#14=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#13);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let dimensions = dimensions(result.ir());
+    assert_eq!(dimensions.len(), 1);
+    assert_eq!(
+        dimensions[0].1.kind(),
+        &DimensionKind::Other("dimensional_size".to_owned())
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::PmiDimensionKindQuantityMismatch.kind()
+            && loss.message.contains("in place of Size")
+    }));
+}

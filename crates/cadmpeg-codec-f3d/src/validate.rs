@@ -778,6 +778,16 @@ fn valid_axial_assembly_targets(
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+/// The edge-recipe evidence that scope history binding reads from the
+/// native namespace.
+fn native_edge_recipe_faces(native: &native::F3dNative) -> history::edge_recipe_scope::Sources<'_> {
+    history::edge_recipe_scope::Sources {
+        operands: &native.design_edge_operands,
+        recipes: &native.construction_recipes,
+        tags: &native.persistent_subentity_tags,
+    }
+}
+
 fn reload_native_arena<T: serde::de::DeserializeOwned>(
     decode: &DecodeContext<'_>,
     ir: &CadIr,
@@ -1060,11 +1070,7 @@ fn validate_loaded(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
-        crate::history::edge_recipe_scope::Sources {
-            operands: &native.design_edge_operands,
-            recipes: &native.construction_recipes,
-            tags: &native.persistent_subentity_tags,
-        },
+        native_edge_recipe_faces(native),
         &native.asm_histories,
         &mut Vec::new(),
     );
@@ -1617,6 +1623,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        native_edge_recipe_faces(native),
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
@@ -5382,7 +5389,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::SurfaceTrim) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X21
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::ROLE_0X9
+                            | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Split) => {
@@ -6529,11 +6538,7 @@ fn validate_edge_identity_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
-        crate::history::edge_recipe_scope::Sources {
-            operands: &native.design_edge_operands,
-            recipes: &native.construction_recipes,
-            tags: &native.persistent_subentity_tags,
-        },
+        native_edge_recipe_faces(native),
         &native.asm_histories,
         &mut Vec::new(),
     );
@@ -7216,11 +7221,7 @@ fn validate_edge_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
-        crate::history::edge_recipe_scope::Sources {
-            operands: &native.design_edge_operands,
-            recipes: &native.construction_recipes,
-            tags: &native.persistent_subentity_tags,
-        },
+        native_edge_recipe_faces(native),
         &native.asm_histories,
         &mut Vec::new(),
     );
@@ -7495,11 +7496,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
-        crate::history::edge_recipe_scope::Sources {
-            operands: &native.design_edge_operands,
-            recipes: &native.construction_recipes,
-            tags: &native.persistent_subentity_tags,
-        },
+        native_edge_recipe_faces(native),
         &native.asm_histories,
         &mut Vec::new(),
     );
@@ -7900,6 +7897,12 @@ fn validate_face_operands<'a>(
                                     .is_some_and(|group| group.role() == DesignOperandRole::PROFILE)
                                     && operand.recipe_kind
                                         == records::recipes::ConstructionRecipeKind::BoundedFace
+                            }
+                            Some(design::DesignFeatureFamily::SurfaceTrim) => {
+                                group.is_some_and(|group| {
+                                    group.role() == DesignOperandRole::ROLE_0X9
+                                        && group.members().len() == 1
+                                }) && operand.is_terminal_face_recipe()
                             }
                             Some(design::DesignFeatureFamily::Draft) => {
                                 group.is_some_and(|group| match group.role() {

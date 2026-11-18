@@ -133,10 +133,10 @@ pub(crate) fn decode_parameter_scopes(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let source = scan
+        let stream_view = scan
             .entry_view(&entry.name)
-            .ok_or_else(|| CodecError::malformed("WorkAxis source stream is unavailable"))?;
-        let bytes = source.window();
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
+        let bytes = stream_view.window();
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
@@ -226,6 +226,13 @@ pub(crate) fn decode_parameter_scopes(
             scope.id =
                 design_record_id(&entry.name, ":design-parameter-scope#", scope.byte_offset());
             let type_info = stream_types.get(&u64::from(scope.record_index)).copied();
+            if scope.kind() == scope::DesignFeatureKind::BoundaryFill {
+                let construction =
+                    super::boundary_fill::decode(ctx, stream_view, &scope, &stream_types)?;
+                if let scope::DesignScopePayloadMut::BoundaryFill(slot) = scope.payload_mut() {
+                    slot.prefix = construction;
+                }
+            }
             if let scope::DesignScopePayload::SilhouetteSplit(_) = scope.payload() {
                 let operation = super::silhouette_split::decode(
                     bytes,
@@ -361,7 +368,7 @@ pub(crate) fn decode_parameter_scopes(
             if scope.kind() == scope::DesignFeatureKind::WorkAxis {
                 let evidence = super::work_axes::decode_work_axis(
                     ctx,
-                    source,
+                    stream_view,
                     &records,
                     &scope,
                     &entry.name,
@@ -870,7 +877,7 @@ pub(crate) fn decode_parameter_scopes(
             }
 
             if scope.kind() == scope::DesignFeatureKind::MotionLink {
-                let link = super::motion_link::read(source, &records, &scope, &stream_types);
+                let link = super::motion_link::read(stream_view, &records, &scope, &stream_types);
                 if let scope::DesignScopePayloadMut::MotionLink(slot) = scope.payload_mut() {
                     *slot = link;
                 }
@@ -1588,6 +1595,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         let type_family = type_guid
             .and_then(family::from_type_guid)
             .or_else(|| paste_prefix.map(|(_, family)| family));
+        let registered_boundary_fill = type_family == Some(scope::DesignFeatureKind::BoundaryFill);
         let (paired_class_tag, _) =
             lp_ascii_filtered_view(bytes, paired_at, 3..=3, u8::is_ascii_digit)?;
         let mut fixed_candidate = None;
@@ -1675,15 +1683,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                     fixed_ambiguous = true;
                 }
             }
+            let extended_named =
+                kind == "Combine" || (registered_boundary_fill && kind == "BoundaryFill");
             let named_tail_possible = (named_tail::LEN..=590).contains(&tail_length)
                 && ((tail_length.is_multiple_of(2)
                     && (parameter_scope_tail_length_is_valid(kind, tail_length)
                         || tail_length == 78))
-                    || kind == "Combine");
+                    || extended_named);
             let named_tail = if named_tail_possible {
                 named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                     .unwrap_or_default()
-                    || (kind == "Combine"
+                    || (extended_named
                         && named_parameter_scope_references(bytes, kind_end, paired_at)
                             .is_some_and(|references| {
                                 references.extra_bytes().is_some_and(|extra| extra > 0)
@@ -2068,6 +2078,17 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                     crate::records::feature::combine::DesignCombineScope {
                         operation: None,
                         named_tail: (tail_form == ScopeTailForm::Named)
+                            .then(|| named_parameter_scope_references(bytes, kind_end, paired_at))
+                            .flatten()
+                            .filter(|references| {
+                                references.extra_bytes().is_some_and(|extra| extra > 0)
+                            }),
+                    },
+                ),
+                scope::DesignFeatureKind::BoundaryFill => scope::DesignScopePayload::BoundaryFill(
+                    crate::records::feature::boundary_fill::DesignBoundaryFillScope {
+                        prefix: None,
+                        named_tail: (registered_boundary_fill && tail_form == ScopeTailForm::Named)
                             .then(|| named_parameter_scope_references(bytes, kind_end, paired_at))
                             .flatten()
                             .filter(|references| {

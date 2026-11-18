@@ -598,6 +598,7 @@ fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTe
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
         AngularTermination::Angle { .. }
+        | AngularTermination::ToPlane { .. }
         | AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}
@@ -1318,6 +1319,11 @@ fn design_projection_gaps(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: &native.design_edge_operands,
+            recipes: &native.construction_recipes,
+            tags: &native.persistent_subentity_tags,
+        },
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
