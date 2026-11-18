@@ -322,6 +322,12 @@ impl Sampler<'_, '_> {
                 )));
             }
         }
+        if params.len() == 2 && !matches!(geometry.map(basis), Some(SolvedCurveGeometry::Line(_))) {
+            // A curved edge has at least one interior sample.
+            let middle = low + span / 2.0;
+            params.insert(1, middle);
+            points.insert(1, point(middle)?);
+        }
         Ok(EdgeSamples {
             params,
             points,
