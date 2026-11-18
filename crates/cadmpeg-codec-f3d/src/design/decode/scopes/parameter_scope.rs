@@ -296,6 +296,7 @@ pub(crate) fn decode_parameter_scopes(
             if let Some(loss) = extrude_extent_native_loss(&scope) {
                 losses.push(loss);
             }
+            super::split::decode_split_tool_extension(bytes, &mut scope, &mut losses);
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -867,9 +868,17 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let owned = body_owners.get(&scope.record_index).and_then(|owners| {
-                    timeline_owned_base_feature(bytes, &scope, owners, &browser_nodes, &mut losses)
-                });
+                let owned = match body_owners.get(&scope.record_index) {
+                    Some(owners) => timeline_owned_base_feature(
+                        ctx,
+                        stream_view,
+                        &scope,
+                        owners,
+                        &browser_nodes,
+                        &mut losses,
+                    )?,
+                    None => None,
+                };
                 let construction = match owned {
                     Some(owned) => Some(owned),
                     None => exact_base_feature_construction(bytes, &scope)?,

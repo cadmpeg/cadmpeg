@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable type identities of parameter-scope families.
 
+use crate::design::assembly::AS_BUILT_SCOPE_TYPE_GUID;
 use crate::records::feature::scope::DesignFeatureKind;
 
 const FAMILIES: &[(&str, DesignFeatureKind)] = &[
@@ -20,10 +21,7 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         "359F7902-43B0-445C-8F4B-FED1D15B2680",
         DesignFeatureKind::Align,
     ),
-    (
-        "AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0",
-        DesignFeatureKind::AsBuilt,
-    ),
+    (AS_BUILT_SCOPE_TYPE_GUID, DesignFeatureKind::AsBuilt),
     (
         "8DFDD543-F823-43AA-BDAF-C638E023F0A0",
         DesignFeatureKind::Assemble,

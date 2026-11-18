@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::PositiveReal;
 
-use super::assembly_v3::JOINT_TYPE_GUID;
 use super::shared_frames::marked_record_reference;
+use crate::design::decode::joint_motion::JOINT_TYPE_GUID;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::{
     motion_link_rotation_relation as relation, motion_link_rotation_scope as envelope,

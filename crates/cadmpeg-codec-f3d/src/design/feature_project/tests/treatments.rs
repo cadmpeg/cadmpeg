@@ -215,8 +215,11 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     let native = |features: &[cadmpeg_ir::features::Feature]| {
         matches!(
             features[0].evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+            FeatureDefinition::Operation(FeatureOperation::Draft {
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: FaceSelection::Native(_),
+                    pull: None
+                },
                 ..
             })
         )
@@ -276,8 +279,12 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         project(&selection);
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+        FeatureDefinition::Operation(FeatureOperation::Draft {
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native(_),
+                pull: None
+            },
+            angle: Some(_),
             ..
         })
     ));
