@@ -310,3 +310,26 @@ fn a_size_dimension_with_angle_limits_keeps_its_entity_kind() {
             && loss.message.contains("in place of Size")
     }));
 }
+
+#[test]
+fn incomplete_dimensional_limits_record_a_loss() {
+    let result = decode_inline(
+        &crate::test_support::pmi_limits::LIMIT_DIMENSION.replace("(#12,#11,#13)", "(#12,#11)"),
+    );
+    let limits = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::StepLossCode::DimensionalLimitsOmitted.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(limits.len(), 1, "{:#?}", result.report().losses);
+    assert!(limits[0]
+        .message
+        .contains("#15 has 0 lower and 1 upper limit measures"));
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::Dimension(relation)
+            if relation.tolerance.as_ref().is_none()
+                && relation.literal_nominal().is_some_and(|value| (value.value.get() - 35.0).abs() < 1.0e-12)
+    )));
+}

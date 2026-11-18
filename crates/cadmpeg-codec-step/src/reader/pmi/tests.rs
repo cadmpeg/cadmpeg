@@ -1659,29 +1659,6 @@ fn conflicting_dimension_representations_omit_the_ambiguous_nominal() {
 }
 
 #[test]
-fn incomplete_dimensional_limits_record_a_loss() {
-    use cadmpeg_ir::pmi::PmiDefinition;
-
-    let result = decode_inline(&LIMIT_DIMENSION.replace("(#12,#11,#13)", "(#12,#11)"));
-    let limits = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == StepLossCode::DimensionalLimitsOmitted.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(limits.len(), 1, "{:#?}", result.report().losses);
-    assert!(limits[0]
-        .message
-        .contains("#15 has 0 lower and 1 upper limit measures"));
-    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
-        &annotation.definition,
-        PmiDefinition::Dimension(relation)
-            if relation.tolerance.as_ref().is_none()
-                && relation.literal_nominal().is_some_and(|value| (value.value.get() - 35.0).abs() < EPS_PMI_NUMERIC)
-    )));
-}
-
-#[test]
 fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     use cadmpeg_ir::pmi::{
         DatumTargetForm, PmiDefinition, PmiDimensionKind as DimensionKind, PmiTarget,
