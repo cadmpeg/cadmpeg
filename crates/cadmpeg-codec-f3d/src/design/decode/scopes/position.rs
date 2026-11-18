@@ -2,7 +2,7 @@ use super::assembly_operand_paths::{exact_position_operand_path, StreamTypes};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::{
     captured_position_matrix as matrix, captured_position_prefix as prefix,
-    captured_position_row as row, captured_position_suffix as suffix,
+    captured_position_row as row, captured_position_suffix as suffix, captured_position_v4 as v4,
 };
 use crate::records::feature::position::{DesignCapturedPosition, DesignCapturedPositions};
 use crate::records::feature::scope::DesignParameterScope;
@@ -13,10 +13,34 @@ use cadmpeg_ir::scalar::FiniteReal;
 
 pub(crate) const TYPE_GUID: &str = "8EE00B00-76BB-49AB-8C25-E837FEC5BDA5";
 
-pub(super) fn registered(scope: &DesignParameterScope, types: &StreamTypes<'_>) -> bool {
-    types
-        .get(&u64::from(scope.record_index))
-        .is_some_and(|(guid, version)| *version == 6 && guid.eq_ignore_ascii_case(TYPE_GUID))
+#[derive(Clone, Copy)]
+pub(super) enum PositionLayout {
+    V4,
+    V6,
+}
+
+impl PositionLayout {
+    pub(super) fn locator_version(self) -> u32 {
+        match self {
+            Self::V4 => 3,
+            Self::V6 => 5,
+        }
+    }
+}
+
+pub(super) fn registered(
+    scope: &DesignParameterScope,
+    types: &StreamTypes<'_>,
+) -> Option<PositionLayout> {
+    let (guid, version) = types.get(&u64::from(scope.record_index))?;
+    if !guid.eq_ignore_ascii_case(TYPE_GUID) {
+        return None;
+    }
+    match version {
+        4 => Some(PositionLayout::V4),
+        6 => Some(PositionLayout::V6),
+        _ => None,
+    }
 }
 
 pub(in crate::design) fn decode(
@@ -26,10 +50,10 @@ pub(in crate::design) fn decode(
     scope: &DesignParameterScope,
     types: &StreamTypes<'_>,
 ) -> Result<Option<DesignCapturedPositions>, CodecError> {
-    if !registered(scope, types) {
+    let Some(layout) = registered(scope, types) else {
         return Ok(None);
-    }
-    let Some((mut view, count)) = frame(bytes, scope) else {
+    };
+    let Some((mut view, count)) = frame(bytes, scope, layout) else {
         return Ok(None);
     };
     let empty = DesignCapturedPosition {
@@ -79,21 +103,43 @@ pub(in crate::design) fn decode(
     Ok((view.is_empty() && positions.valid_for_scope(scope)).then_some(positions))
 }
 
-fn frame<'a>(bytes: &'a [u8], scope: &DesignParameterScope) -> Option<(View<'a>, usize)> {
+fn frame<'a>(
+    bytes: &'a [u8],
+    scope: &DesignParameterScope,
+    layout: PositionLayout,
+) -> Option<(View<'a>, usize)> {
     let start = usize::try_from(scope.byte_offset()).ok()?;
     let end = usize::try_from(scope.reference_count_offset()).ok()?;
-    let rows_end = end.checked_sub(suffix::LEN)?;
-    let mut head = View::over_retained(bytes).child(start, rows_end)?;
-    head.seek(start.checked_add(prefix::ZERO_RUN)?)?;
-    if head.take(prefix::ZERO_RUN_VALUE.len())? != prefix::ZERO_RUN_VALUE {
-        return None;
-    }
-    let count = head.u32_le()?;
-    let rows = head.child(head.position(), rows_end)?;
+    let view = View::over_retained(bytes).child(start, end)?;
+    let (rows, count, mut tail) = match layout {
+        PositionLayout::V4 => {
+            if view.remaining() != v4::LEN
+                || View::u32_le_at(view.window(), v4::ROW_COUNT) != Some(v4::ROW_COUNT_VALUE)
+            {
+                return None;
+            }
+            let rows_end = start.checked_add(v4::IDENTITY_LENGTH)?;
+            let rows = view.child(start.checked_add(v4::ROW)?, rows_end)?;
+            (rows, v4::ROW_COUNT_VALUE, view.child(rows_end, end)?)
+        }
+        PositionLayout::V6 => {
+            let rows_end = end.checked_sub(suffix::LEN)?;
+            let mut head = view.child(start, rows_end)?;
+            head.seek(start.checked_add(prefix::ZERO_RUN)?)?;
+            if head.take(prefix::ZERO_RUN_VALUE.len())? != prefix::ZERO_RUN_VALUE {
+                return None;
+            }
+            let count = head.u32_le()?;
+            let rows = head.child(head.position(), rows_end)?;
+            let mut tail = view.child(rows_end, end)?;
+            if tail.u32_le()? != suffix::ZERO_WORD_VALUE {
+                return None;
+            }
+            (rows, count, tail)
+        }
+    };
     let count = rows.counted(u64::from(count), row::LEN)?.get();
-    let mut tail = View::over_retained(bytes).child(rows_end, end)?;
-    if tail.u32_le()? != suffix::ZERO_WORD_VALUE || tail.u32_le()? != suffix::IDENTITY_LENGTH_VALUE
-    {
+    if tail.u32_le()? != suffix::IDENTITY_LENGTH_VALUE {
         return None;
     }
     for expected in "00000000-0000-0000-0000-000000000000".encode_utf16() {

@@ -470,6 +470,7 @@ fn exact_coil_face_selection(
             bytes,
             records,
             crate::design::decode::operands::FaceOperandFrame {
+                registered_frame: None,
                 scope,
                 scope_reference_ordinal: 0,
                 group_ownership: None,
