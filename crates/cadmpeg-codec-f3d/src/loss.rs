@@ -379,6 +379,8 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesRecipeAbsent,
     FeatureHistoryBodyBounded,
     FeatureHistoryBodyUndecoded,
+    FeatureHistoryBodyConsumedWithheld,
+    FeatureOwnedBodyPairingAssumed,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
     FeatureDerivedInstanceComponentInsertAssumed,
@@ -1366,6 +1368,8 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureHistoryBodyBounded,
         Self::FeatureHistoryBodyUndecoded,
+        Self::FeatureHistoryBodyConsumedWithheld,
+        Self::FeatureOwnedBodyPairingAssumed,
         Self::FeatureStoredBodiesUnbound,
         Self::FeatureDerivedInstanceComponentInsertAssumed,
         Self::FeatureComponentInsertMembershipAssumed,
@@ -2049,6 +2053,8 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
             Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
+            Self::FeatureHistoryBodyConsumedWithheld => "feature.history-body-consumed-withheld",
+            Self::FeatureOwnedBodyPairingAssumed => "feature.owned-body-pairing-assumed",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
             Self::FeatureDerivedInstanceComponentInsertAssumed => {
@@ -3059,6 +3065,8 @@ impl F3dLossCode {
             | Self::FeatureStoredBodiesRecipeAbsent
             | Self::FeatureHistoryBodyBounded
             | Self::FeatureHistoryBodyUndecoded
+            | Self::FeatureHistoryBodyConsumedWithheld
+            | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
@@ -3704,6 +3712,8 @@ impl F3dLossCode {
             | Self::FeatureStoredBodiesRecipeAbsent
             | Self::FeatureHistoryBodyBounded
             | Self::FeatureHistoryBodyUndecoded
+            | Self::FeatureHistoryBodyConsumedWithheld
+            | Self::FeatureOwnedBodyPairingAssumed
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
@@ -4548,6 +4558,8 @@ mod tests {
                 "feature.stored-bodies-recipe-absent",
                 "feature.history-body-bounded",
                 "feature.history-body-undecoded",
+                "feature.history-body-consumed-withheld",
+                "feature.owned-body-pairing-assumed",
                 "feature.stored-bodies-unbound",
                 "feature.derived-instance-component-insert-assumed",
                 "feature.component-insert-membership-assumed",

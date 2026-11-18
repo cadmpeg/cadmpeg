@@ -247,6 +247,17 @@ pub(crate) fn fill(
     Ok((bodies_out, work.remaining()))
 }
 
+#[cfg(test)]
+thread_local! {
+    static INJECTED_CONSUMED_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn inject_consumed_failure(failure: fn() -> CodecError) {
+    INJECTED_CONSUMED_FAILURE.with(|slot| slot.set(Some(failure)));
+}
+
 pub(crate) fn fill_consumed(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -265,12 +276,16 @@ pub(crate) fn fill_consumed(
     };
     let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
     for feature in &model.features {
-        if let Some((history, want)) = initial_cut_body(feature, inputs) {
+        if let Some((history, want)) = initial_cut_body(feature, inputs, losses) {
             wants.entry(history).or_default().push(want);
         }
     }
+    #[cfg(test)]
+    if let Some(failure) = INJECTED_CONSUMED_FAILURE.with(std::cell::Cell::take) {
+        return contain_consumed_failure(ctx, Err(failure()), losses);
+    }
     let work = WorkBudget::new(context.remaining_work);
-    fill_requests(
+    let result = fill_requests(
         ctx,
         scan,
         inputs.histories,
@@ -278,7 +293,29 @@ pub(crate) fn fill_consumed(
         &mut model.history_bodies,
         &work,
         losses,
-    )
+    );
+    contain_consumed_failure(ctx, result, losses)
+}
+
+fn contain_consumed_failure(
+    ctx: &DecodeContext<'_>,
+    result: Result<(), CodecError>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    match result {
+        Err(error) if matches!(error, CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => match ctx.resource_refusal() {
+            Some(limit) => Err(CodecError::ResourceLimit(limit)),
+            None => {
+                losses.push(
+                    F3dLossCode::FeatureHistoryBodyUndecoded
+                        .note(format!("Consumed history body decoding failed: {error}")),
+                );
+                Ok(())
+            }
+        },
+        Ok(()) => Ok(()),
+    }
 }
 
 fn fill_requests(
@@ -306,7 +343,11 @@ fn fill_requests(
     Ok(())
 }
 
-fn initial_cut_body<'a>(feature: &'a Feature, inputs: Inputs<'a>) -> Option<(usize, Want<'a>)> {
+fn initial_cut_body<'a>(
+    feature: &'a Feature,
+    inputs: Inputs<'a>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<(usize, Want<'a>)> {
     if feature.suppressed == Some(true)
         || !matches!(
             feature.evaluation.definition(),
@@ -320,14 +361,6 @@ fn initial_cut_body<'a>(feature: &'a Feature, inputs: Inputs<'a>) -> Option<(usi
         return None;
     }
     let product = feature.product_definition.as_ref()?;
-    if inputs.features.iter().any(|earlier| {
-        earlier.product_definition.as_ref() == Some(product)
-            && earlier.ordinal < feature.ordinal
-            && earlier.suppressed != Some(true)
-            && !earlier.evaluation.outputs().is_empty()
-    }) {
-        return None;
-    }
     let selected =
         super::face_selection_state(feature, inputs.scopes, inputs.bindings, inputs.histories)?;
     let history = &inputs.histories[selected.history];
@@ -335,7 +368,29 @@ fn initial_cut_body<'a>(feature: &'a Feature, inputs: Inputs<'a>) -> Option<(usi
     let [slot] = history.topology(previous)?.bodies.as_slice() else {
         return None;
     };
+    if inputs.features.iter().any(|earlier| {
+        earlier.product_definition.as_ref() == Some(product)
+            && earlier.ordinal < feature.ordinal
+            && earlier.suppressed != Some(true)
+            && !earlier.evaluation.outputs().is_empty()
+    }) {
+        losses.push(
+            F3dLossCode::FeatureHistoryBodyConsumedWithheld.note(format!(
+                "{} previous state {} has an earlier unsuppressed feature with bound outputs",
+                feature.id, previous.state_id
+            )),
+        );
+        return None;
+    }
     let [output] = feature.evaluation.outputs().as_slice() else {
+        losses.push(
+            F3dLossCode::FeatureHistoryBodyConsumedWithheld.note(format!(
+                "{} previous state {} has {} output bodies",
+                feature.id,
+                previous.state_id,
+                feature.evaluation.outputs().len()
+            )),
+        );
         return None;
     };
     if super::stable_ref(output.as_str()) != Some(*slot)
@@ -448,6 +503,12 @@ fn fill_history(
                     }
                 }
                 let Some(archive) = archive.as_ref() else {
+                    if want.consumed {
+                        losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
+                            "{} body slot {} state {state_id} has an incomplete record archive",
+                            want.feature.id, want.slot
+                        )));
+                    }
                     continue;
                 };
                 if bodies.len() >= MAX_HISTORY_BODIES

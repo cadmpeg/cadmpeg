@@ -1024,6 +1024,9 @@ pub(super) fn timeline_owned_base_feature(
         {
             copy_sources.clear();
         }
+        if !owner.pastes {
+            losses.extend(source_loss);
+        }
     } else {
         losses.extend(source_loss);
     }
@@ -1058,11 +1061,17 @@ pub(super) fn exact_timeline_owned_base_feature(
         parameter_bodies,
         bodies,
         end,
+        typed,
     }) = owned_body_runs::decode(ctx, stream, scope, owner)?
     else {
         return Ok(None);
     };
-    let mut source_loss = None;
+    let mut source_loss = typed.then(|| {
+        F3dLossCode::FeatureOwnedBodyPairingAssumed.note(format!(
+            "{} pairs its typed parameter-body and result-body runs by position",
+            scope.id
+        ))
+    });
     let copy_sources = if owner.keeps_sources {
         let pairs = usize::try_from(scope.reference_count_offset())
             .ok()

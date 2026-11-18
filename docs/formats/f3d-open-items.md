@@ -3555,3 +3555,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Paired saves that vary this word and identify the Extrude setting or record that supplies it.
 
 **Note.** The decoder retains the word and its offset. Neutral projection uses the stored blind distance and reports `feature.extrude-opaque-distance-word-assumed`.
+
+### DR-880. Typed timeline-owned Base Feature body pairing
+
+**Question.** How do the typed body records' passive-reference properties bind the parameter-body and result-body runs when their targets differ from the run positions?
+
+**Known.** A one-body typed frame has a `BASEFEAT_PM_BODY_REF` property on the first body record that names the second body record and a `BASEFEAT_DM_BODY_REF` property on the second record that names the first. The reader pairs the two counted runs by position and uses the first entry's width for both runs.
+
+**Need.** Paired saves with different property targets or entry widths, and the corresponding final body geometry.
+
+**Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.

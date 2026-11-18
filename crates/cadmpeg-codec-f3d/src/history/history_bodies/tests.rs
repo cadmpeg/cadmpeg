@@ -642,6 +642,51 @@ fn a_consumed_snapshot_keeps_the_input_geometry_and_consumer() {
     }
 }
 
+fn consumed_fixture(
+    bytes: &[u8],
+    features: Vec<Feature>,
+    scope: &DesignParameterScope,
+    history: &AsmHistory,
+) -> (Model, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    use std::io::{Cursor, Write};
+    let name = "FusionAssetName[Active]/Breps.BlobParts/BREP.a.smbh";
+    let mut blob = bytes.to_vec();
+    blob[39..47].copy_from_slice(&1_u64.to_le_bytes());
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, options);
+    zip.start_file(name, options).unwrap();
+    zip.write_all(&blob).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let mut history = history.clone();
+    history.id = format!("f3d:{name}:asm-history#0");
+    let native = F3dNative {
+        asm_histories: vec![history],
+        design_parameter_scopes: vec![scope.clone()],
+        ..F3dNative::default()
+    };
+    let mut model = Model::default();
+    model.features = features;
+    let mut losses = Vec::new();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        assert_eq!(container::history_breps(scan).count(), 1);
+        fill_consumed(
+            &cadmpeg_test_support::service_decode_context(),
+            scan,
+            &mut model,
+            &native,
+            Some(name),
+            &ConsumerContext {
+                remaining_work: MAX_HISTORY_BODY_WORK,
+                ..ConsumerContext::default()
+            },
+            &mut losses,
+        )
+        .unwrap();
+    });
+    (model, losses)
+}
+
 #[test]
 fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
     use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
@@ -657,7 +702,7 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
     let history = super::super::decode(
         &ctx,
         &bytes,
-        "Breps.BlobParts/BREP.a",
+        "Breps.BlobParts/BREP.a.smbh",
         RefWidth::Eight,
         &mut allowance,
         &WorkBudget::new(1 << 20),
@@ -681,7 +726,7 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
     cut.product_definition =
         Some(cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:component#target").unwrap());
     cut.ordinal = 1;
-    let output = cadmpeg_ir::ids::BodyId::mint("f3d:brep/a/brep:entity#1").unwrap();
+    let output = cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#1").unwrap();
     cut.evaluation = FeatureEvaluation::new(
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Native("native:profile".into())),
@@ -734,8 +779,36 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
             bindings: &bindings,
             primary_brep: None,
         };
-        let wanted = initial_cut_body(&features[1], inputs);
+        let mut losses = Vec::new();
+        let wanted = initial_cut_body(&features[1], inputs, &mut losses);
+        assert_eq!(losses.len(), usize::from(!expected));
+        if !expected {
+            assert_eq!(
+                losses[0].code,
+                F3dLossCode::FeatureHistoryBodyConsumedWithheld.kind()
+            );
+            assert!(losses[0].message.contains(cut.id.as_str()));
+            assert!(losses[0].message.contains("previous state 12"));
+        }
         assert_eq!(wanted.is_some(), expected);
+        let (model, filled_losses) =
+            consumed_fixture(&bytes, features.to_vec(), &scopes[0], &histories[0]);
+        assert_eq!(filled_losses, losses);
+        assert_eq!(model.history_bodies.len(), usize::from(expected));
+        if expected {
+            let body = &model.history_bodies[0];
+            assert_eq!(body.consumed_by.as_ref(), Some(&cut.id));
+            assert_eq!(body.state.identifier, 12);
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+                &body.topology.surfaces[0].geometry
+            else {
+                panic!("sphere")
+            };
+            assert_eq!(
+                sphere.center().get(),
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+            );
+        }
         if let Some((index, want)) = wanted {
             assert_eq!(
                 (index, want.state, want.slot, want.consumed),
@@ -743,6 +816,87 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
             );
         }
     }
+    for (outputs, withheld) in [
+        (
+            vec![
+                output.clone(),
+                cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#10").unwrap(),
+            ],
+            true,
+        ),
+        (
+            vec![cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#10").unwrap()],
+            false,
+        ),
+        (
+            vec![cadmpeg_ir::ids::BodyId::mint("f3d:brep/b/brep:entity#1").unwrap()],
+            false,
+        ),
+    ] {
+        let mut candidate = cut.clone();
+        candidate
+            .evaluation
+            .set_outputs(DistinctMembers::try_from(outputs).unwrap());
+        let inputs = Inputs {
+            features: std::slice::from_ref(&candidate),
+            scopes: &scopes,
+            histories: &histories,
+            bindings: &bindings,
+            primary_brep: None,
+        };
+        let mut losses = Vec::new();
+        assert!(initial_cut_body(&candidate, inputs, &mut losses).is_none());
+        assert_eq!(losses.len(), usize::from(withheld));
+        let (model, filled_losses) =
+            consumed_fixture(&bytes, vec![candidate], &scopes[0], &histories[0]);
+        assert!(model.history_bodies.is_empty());
+        assert_eq!(filled_losses, losses);
+        if withheld {
+            assert_eq!(
+                losses[0].code,
+                F3dLossCode::FeatureHistoryBodyConsumedWithheld.kind()
+            );
+            assert!(losses[0].message.contains(cut.id.as_str()));
+            assert!(losses[0].message.contains("previous state 12"));
+        }
+    }
+    let mut join = earlier.clone();
+    join.product_definition = cut.product_definition.clone();
+    join.suppressed = Some(false);
+    let mut definition = cut.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = &mut definition else {
+        panic!("Extrude")
+    };
+    *op = BooleanOp::Join;
+    join.evaluation = FeatureEvaluation::new(
+        definition,
+        DistinctMembers::try_from(vec![output.clone()]).unwrap(),
+    );
+    let (model, losses) =
+        consumed_fixture(&bytes, vec![join, cut.clone()], &scopes[0], &histories[0]);
+    assert!(model.history_bodies.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureHistoryBodyConsumedWithheld.kind()
+    );
+    let record = histories[0]
+        .states()
+        .iter()
+        .flat_map(|state| &state.records)
+        .find(|record| record.revision_id.is_some())
+        .unwrap();
+    let mut malformed = bytes.clone();
+    malformed[usize::try_from(record.byte_offset).unwrap()] ^= 1;
+    let (model, losses) =
+        consumed_fixture(&malformed, vec![cut.clone()], &scopes[0], &histories[0]);
+    assert!(model.history_bodies.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureHistoryBodyUndecoded.kind()
+    );
+    assert!(losses[0].message.contains("incomplete record archive"));
     let mut unowned = cut.clone();
     unowned.product_definition = None;
     let inputs = Inputs {
@@ -752,7 +906,7 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
         bindings: &bindings,
         primary_brep: None,
     };
-    assert!(initial_cut_body(&unowned, inputs).is_none());
+    assert!(initial_cut_body(&unowned, inputs, &mut Vec::new()).is_none());
     let previous = histories[0]
         .states()
         .iter()
@@ -778,7 +932,7 @@ fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
         bindings: &bindings,
         primary_brep: None,
     };
-    assert!(initial_cut_body(&cut, inputs).is_none());
+    assert!(initial_cut_body(&cut, inputs, &mut Vec::new()).is_none());
 }
 
 #[test]
