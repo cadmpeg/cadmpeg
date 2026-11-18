@@ -79,12 +79,17 @@ pub(crate) fn bind(
             cylinder.transform = transform;
         }
         if let Some(construction) = construction {
-            if transform.is_some() && construction.local_frame.is_some() {
+            if transform.is_some() {
+                let frame_reading = if construction.local_frame.is_some() {
+                    "composes its scope-local matrix after the referenced support"
+                } else {
+                    "uses the referenced support frame as its base frame"
+                };
                 losses.push(F3dLossCode::CylinderLocalFrameAssumed.note(format!(
-                    "CylinderPrimitive {} composes its scope-local matrix after the referenced support (DR-813).",
+                    "CylinderPrimitive {} {frame_reading} (DR-813).",
                     scope.id
                 )));
-            } else if transform.is_none() {
+            } else {
                 losses.push(F3dLossCode::CylinderPlacementUnbound.note(format!(
                     "CylinderPrimitive {} retains its native placement because support record {} has no unique checked solved frame.",
                     scope.id, construction.placement_record_index

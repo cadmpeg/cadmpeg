@@ -186,6 +186,37 @@ fn named_cylinder_version_eight_reflection_keeps_dimensions_unplaced() {
 }
 
 #[test]
+fn compact_extended_cylinder_reports_the_support_frame_assumption() {
+    let support = placement();
+    let expected = support.fields.matrix;
+    let mut scope = scope();
+    let DesignScopePayloadMut::CylinderPrimitive(Some(cylinder)) = scope.payload_mut() else {
+        panic!("expected cylinder");
+    };
+    cylinder.construction = Some(
+        crate::records::feature::primitives::DesignCylinderConstruction {
+            placement_record_index: u32::try_from(support.record_index).unwrap(),
+            reference: crate::records::identity::Located {
+                value: 40,
+                offset: 80,
+            },
+            local_frame: None,
+        },
+    );
+
+    let losses = super::bind(std::slice::from_mut(&mut scope), &[support]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::CylinderLocalFrameAssumed.note("").code
+    );
+    let DesignScopePayloadMut::CylinderPrimitive(Some(cylinder)) = scope.payload_mut() else {
+        panic!("expected cylinder");
+    };
+    assert_eq!(cylinder.transform, expected);
+}
+
+#[test]
 fn extended_cylinder_composes_the_explicit_same_stream_support_on_the_left() {
     let mut support = placement();
     support.type_version = 6;

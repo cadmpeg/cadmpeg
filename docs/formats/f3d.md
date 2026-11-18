@@ -1184,9 +1184,17 @@ The diameter owner has local ordinal zero and retains its evaluated diameter in 
 
 The extended `CylinderPrimitive` forms use the same four ordered prefix references as the shifted form. The fourth reference names the support placement. The [prefixed Cylinder header](../layouts/f3d.md#prefixed_cylinder_header) has nine zero bytes at offsets 11 through 19, u32 `1` at offset 20, zero at offset 24, and `0x01` at offset 25. It shifts the result operation and each subsequent prefix field by four bytes.
 
-The 356-byte compact form has the prefixed header and the shifted compact tail. The expanded forms store a row-major rigid matrix followed by the [counted Cylinder reference](../layouts/f3d.md#counted_cylinder_reference). The count is u32 `1`, followed by one marked reference. An eight-byte zero run follows the reference in the unprefixed forms and precedes the count in the prefixed form. A 36-code-unit LP-UTF16 GUID and three zero bytes precede the ordered scope reference table. The compact form has five references. The expanded unprefixed forms have five or seven references; the expanded prefixed form has seven.
+The [counted Cylinder reference](../layouts/f3d.md#counted_cylinder_reference) stores u32 `1` followed by one marked reference. A 36-code-unit LP-UTF16 GUID and three zero bytes precede the ordered scope reference table. The frame layouts give the following offsets relative to the primary indexed header.
 
-The 507-byte form has the unprefixed operation and matrix, twelve zero bytes after the matrix, the counted reference, and the ordered reference count at offset 306. It has seven ordered references.
+| Frame length | Ordered references | Operation | Matrix | Counted reference | GUID | Ordered reference count |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 356 | 5 | 26 | | 76 | 99 | 178 |
+| 479 | 5 | 22 | 72 | 200 | 223 | 302 |
+| 501 or 502 | 7 | 22 | 72 | 200 | 223 | 302 |
+| 506 | 7 | 26 | 76 | 212 | 227 | 306 |
+| 507 | 7 | 22 | 72 | 212 | 227 | 306 |
+
+The 356-byte form stores the compact tail marker `0x01` at offset 75. The 479-, 501-, and 502-byte forms in the table store twelve zero bytes between the counted reference and the GUID. In the 506-byte form, eight zero bytes follow the matrix. In the 507-byte form, twelve zero bytes follow it. At offset 200, the counted 502-byte form stores u32 `1` and the shifted 502-byte form stores eight zero bytes.
 
 The [typed Cylinder prefix](../layouts/f3d.md#typed_cylinder_prefix) has a byte `0x01` after the shifted operation. Four 51-byte typed references follow in reverse order of the last four ordered references. A zero byte precedes the rigid matrix. The matrix is followed by u32 `1`, a typed reference, eight zero bytes, a 36-code-unit LP-UTF16 GUID, and three zero bytes. The ordered reference count is `5`. The first ordered reference has type GUID `5A1BF548-241F-46FD-9FB5-E4B05126EB9D`. The remaining types are `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`, two `D91D429C-1BB5-4640-B49F-69AF14F463E9` entries, and `92112554-B316-46D1-8AFD-C49D91252558`. The reference after the matrix has type GUID `D26351F0-5940-4D23-AA20-2C35475A6D9E`.
 
