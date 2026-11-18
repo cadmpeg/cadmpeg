@@ -11,6 +11,7 @@ use crate::records::feature::hole;
 use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::hole::DesignHoleFaceSelection;
 use crate::records::feature::hole::DesignHoleLocation;
+use crate::records::feature::hole::DesignHolePlane;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkPointRuleForm;
@@ -20,6 +21,16 @@ use std::collections::HashMap;
 
 /// Type GUID of the direct persistent face selection carried by a `Hole`.
 const HOLE_FACE_SELECTION_TYPE_GUID: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
+
+/// Type GUID of the reconstructed construction plane record that a direct
+/// persistent selection owns. Its type version is `0`.
+const RECONSTRUCTED_PLANE_TYPE_GUID: &str = "8D424E29-DE23-4B1F-A3AD-84C52A497D1A";
+
+/// Point-data `refType` of a point on a face or reconstructed plane.
+const POINT_DATA_HOST_POINT: u32 = 17;
+
+/// Records after a direct persistent selection that can belong to it.
+const MAX_SELECTION_CHAIN: u32 = 16;
 
 /// Accepted norm error for a serialized Hole drilling direction.
 const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
@@ -125,6 +136,12 @@ fn hole_locations(
         .map(|record_index| {
             let point =
                 exact_point_data_construction(bytes, records, [record_index], stream_types)?;
+            let plane = match point.rule.inputs() {
+                [input] if point.rule.reference_type() == POINT_DATA_HOST_POINT => {
+                    reconstructed_plane(bytes, records, stream_types, input.record_index())
+                }
+                _ => None,
+            };
             Some(DesignHoleLocation {
                 record_index: point.point_record_index,
                 position: point.position,
@@ -134,10 +151,86 @@ fn hole_locations(
                     DesignWorkPointRuleForm::Vertex { input } => Some(input.clone()),
                     _ => None,
                 },
+                plane,
             })
         })
         .collect::<Option<Vec<_>>>()
         .unwrap_or_default()
+}
+
+/// Read the reconstructed construction plane that the direct persistent
+/// selection at `selection` owns.
+///
+/// The plane record is the only record of type `8D424E29-...` and version `0`
+/// between the selection and the next direct persistent selection. Its payload
+/// stores two f64 minimum extents, a zero byte, the origin, the u axis, the v
+/// axis, and two f64 maximum extents.
+fn reconstructed_plane(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    stream_types: &HashMap<u64, (&str, u32)>,
+    selection: u32,
+) -> Option<DesignHolePlane> {
+    if stream_types.get(&u64::from(selection)) != Some(&(HOLE_FACE_SELECTION_TYPE_GUID, 1)) {
+        return None;
+    }
+    let mut found = None;
+    for record_index in selection.checked_add(1)?..=selection.checked_add(MAX_SELECTION_CHAIN)? {
+        match stream_types.get(&u64::from(record_index)) {
+            Some((HOLE_FACE_SELECTION_TYPE_GUID, _)) => break,
+            Some((RECONSTRUCTED_PLANE_TYPE_GUID, 0)) => {
+                // The record has one indexed header and no paired header.
+                if let &[start] = records.offsets(record_index) {
+                    if let Some(plane) =
+                        reconstructed_plane_at(bytes, start, selection, record_index)
+                    {
+                        if found.replace(plane).is_some() {
+                            return None;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+fn reconstructed_plane_at(
+    bytes: &[u8],
+    start: usize,
+    selection: u32,
+    record_index: u32,
+) -> Option<DesignHolePlane> {
+    let (_, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    if View::u32_le_at(bytes, after_tag) != Some(record_index) {
+        return None;
+    }
+    // The record name is empty.
+    let name_at = after_tag.checked_add(8)?;
+    if View::u32_le_at(bytes, name_at)? != 0 {
+        return None;
+    }
+    let payload_at =
+        super::parameter_scope::payload_prologue(bytes, name_at.checked_add(4)?, bytes.len())?;
+    let frame_at = payload_at.checked_add(17)?;
+    let end = frame_at.checked_add(72 + 16)?;
+    if end > bytes.len() || *bytes.get(payload_at.checked_add(16)?)? != 0 {
+        return None;
+    }
+    let [origin, u_axis, v_axis] = [0, 24, 48].map(|delta| {
+        frame_at
+            .checked_add(delta)
+            .and_then(|at| crate::bytes::finite_reals_at::<3>(bytes, at))
+    });
+    Some(DesignHolePlane {
+        selection_record_index: selection,
+        record_index,
+        origin: origin?,
+        origin_offset: u64::try_from(frame_at).ok()?,
+        u_axis: u_axis?,
+        v_axis: v_axis?,
+    })
 }
 
 /// Read the Hole extent controls of `scope`. `type_version` is the Hole type
