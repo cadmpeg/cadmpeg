@@ -222,10 +222,7 @@ fn mesh_only_carriers() -> crate::decode::DesignCarriers {
 }
 
 fn has_code(report: &cadmpeg_ir::codec::DecodeBody, code: F3dLossCode) -> bool {
-    report
-        .losses
-        .iter()
-        .any(|loss| loss.code == code.kind())
+    report.losses.iter().any(|loss| loss.code == code.kind())
 }
 
 fn mesh_only_loss_names(report: &cadmpeg_ir::codec::DecodeBody, containers: &str) -> bool {
@@ -236,7 +233,10 @@ fn mesh_only_loss_names(report: &cadmpeg_ir::codec::DecodeBody, containers: &str
     })
 }
 
-fn classify(carriers: &crate::decode::DesignCarriers, assembly: bool) -> cadmpeg_ir::codec::DecodeBody {
+fn classify(
+    carriers: &crate::decode::DesignCarriers,
+    assembly: bool,
+) -> cadmpeg_ir::codec::DecodeBody {
     let mut report = brep_less_geometry_report();
     crate::decode::apply_carrier_classification(&mut report, carriers, assembly);
     report
@@ -259,7 +259,10 @@ fn an_undecoded_mesh_only_design_with_a_sketch_names_its_mesh_containers() {
     assert!(!has_code(&report, F3dLossCode::BodylessDesignCarrier));
     assert!(has_code(&report, F3dLossCode::MeshContainerUndecoded));
     assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
-    assert!(mesh_only_loss_names(&report, "1 of its mesh geometry container(s)"));
+    assert!(mesh_only_loss_names(
+        &report,
+        "1 of its mesh geometry container(s)"
+    ));
     assert_eq!(report.losses.len(), 5);
 }
 
@@ -274,7 +277,10 @@ fn an_undecoded_mesh_only_design_reports_every_mesh_container() {
     );
     assert!(!report.transfer.geometry_transferred());
     assert_eq!(report.losses.len(), 4);
-    assert!(mesh_only_loss_names(&report, "2 of its mesh geometry container(s)"));
+    assert!(mesh_only_loss_names(
+        &report,
+        "2 of its mesh geometry container(s)"
+    ));
 }
 
 /// A decoded container that no Design mesh body joins holds no current mesh
@@ -300,7 +306,10 @@ fn unjoined_mesh_containers_keep_the_sketch_only_classification() {
         },
         false,
     );
-    assert!(mesh_only_loss_names(&report, "1 of its mesh geometry container(s)"));
+    assert!(mesh_only_loss_names(
+        &report,
+        "1 of its mesh geometry container(s)"
+    ));
 }
 
 #[test]
