@@ -448,13 +448,38 @@ impl NurbsChart<'_> {
         self.surface.v_knots().as_slice().to_vec()
     }
 
+    /// The width of the knot domain of `axis`. An integral along an
+    /// isoline of the other parameter is a density per unit of `axis`, so
+    /// its error goal is an area goal over this width.
+    pub(crate) fn width(&self, axis: usize) -> f64 {
+        self.domain[axis][1] - self.domain[axis][0]
+    }
+
     /// The knots of the `u` direction.
     pub(crate) fn u_breaks(&self) -> Vec<f64> {
         self.surface.u_knots().as_slice().to_vec()
     }
 }
 
+/// The number of distinct values in a sorted knot vector.
+fn distinct_knots(knots: &[f64]) -> usize {
+    knots.windows(2).filter(|pair| pair[0] != pair[1]).count() + usize::from(!knots.is_empty())
+}
+
 impl Chart<'_> {
+    /// Whether the inner integrals of a region run along `u`: on a NURBS
+    /// chart with no periodic axis whose `u` knots bound fewer spans than
+    /// its `v` knots.
+    pub(crate) fn inner_along_u(&self) -> bool {
+        match self {
+            Self::Nurbs(nurbs) => {
+                nurbs.periods == [None, None]
+                    && distinct_knots(&nurbs.u_breaks()) < distinct_knots(&nurbs.v_breaks())
+            }
+            _ => false,
+        }
+    }
+
     /// The periods of `u` and `v`.
     pub(crate) fn periods(&self) -> [Option<f64>; 2] {
         let tau = Some(std::f64::consts::TAU);

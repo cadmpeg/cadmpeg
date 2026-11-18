@@ -68,7 +68,8 @@ pub(crate) enum StepLossCode {
     PlacementReferenceInferred,
     /// Geometry records belong to representations with conflicting units.
     ConflictingRepresentationUnits,
-    /// `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` has an ambiguous length measure.
+    /// Representation contexts state different length uncertainties, and a
+    /// value reaches no topology or a measure does not resolve.
     UncertaintyLengthAmbiguous,
     /// `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` has no resolvable length measure.
     UncertaintyLengthUnresolved,
@@ -137,6 +138,8 @@ pub(crate) enum StepLossCode {
     SurfaceSideInvalid,
     /// A surface rendering has multiple transparency properties.
     SurfaceTransparencyConflict,
+    /// A surface side style lists a transparency outside a rendering.
+    SurfaceTransparencyMisplaced,
     /// A context-dependent style has no matching neutral presentation context.
     ContextDependentStyleUnresolved,
     /// A drawing record has too few parameters and was retained opaque.
@@ -488,6 +491,7 @@ impl StepLossCode {
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
         Self::SurfaceTransparencyConflict,
+        Self::SurfaceTransparencyMisplaced,
         Self::ContextDependentStyleUnresolved,
         Self::DrawingRecordTooFewParameters,
         Self::DrawingOrderUnstatable,
@@ -690,6 +694,7 @@ impl StepLossCode {
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
             Self::SurfaceTransparencyConflict => "presentation.surface-transparency-conflict",
+            Self::SurfaceTransparencyMisplaced => "presentation.surface-transparency-misplaced",
             Self::ContextDependentStyleUnresolved => {
                 "presentation.context-dependent-style-unresolved"
             }
@@ -940,6 +945,7 @@ impl StepLossCode {
             | Self::ConflictingScalarColors
             | Self::SurfaceSideInvalid
             | Self::SurfaceTransparencyConflict
+            | Self::SurfaceTransparencyMisplaced
             | Self::ContextDependentStyleUnresolved
             | Self::DrawingRelationshipUntypedTarget
             | Self::DraughtingSemanticDefinitionUntyped
@@ -1187,6 +1193,7 @@ mod tests {
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
                 "presentation.surface-transparency-conflict",
+                "presentation.surface-transparency-misplaced",
                 "presentation.context-dependent-style-unresolved",
                 "drawing.record-too-few-parameters",
                 "drawing.order-unstatable",

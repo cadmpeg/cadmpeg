@@ -365,7 +365,12 @@ impl FaceAdmission<'_, '_> {
             | FeatureOperation::Decal { faces, .. } => admit(faces, false)?,
             FeatureOperation::FilledSurface { support_faces, .. }
             | FeatureOperation::RuledSurface { support_faces, .. } => admit(support_faces, false)?,
-            FeatureOperation::SplitFace { targets, .. } => admit(targets, false)?,
+            FeatureOperation::SplitFace { targets, tool, .. } => {
+                admit(targets, false)?;
+                if let cadmpeg_ir::features::SplitFaceTool::Faces(faces) = tool {
+                    admit(faces, true)?;
+                }
+            }
             FeatureOperation::SplitBody {
                 tool: cadmpeg_ir::features::SplitBodyTool::Faces(tools),
                 ..
@@ -390,6 +395,37 @@ impl FaceAdmission<'_, '_> {
                 admit(anchor, false)?;
             }
             _ => {}
+        }
+        if let FeatureOperation::SplitFace { targets, tool, .. } = operation {
+            use cadmpeg_ir::features::{PathRef, SplitFaceTool};
+            let unresolved_faces = |selection: &FaceSelection| {
+                matches!(
+                    selection,
+                    FaceSelection::Native(_)
+                        | FaceSelection::Unresolved
+                        | FaceSelection::HistoricalPartial { .. }
+                )
+            };
+            if unresolved_faces(targets) {
+                losses.push(
+                    crate::loss::F3dLossCode::FeatureSplitFaceSelectionUnresolved.note(format!(
+                        "{id}: target face selection remains unresolved (DR-573)."
+                    )),
+                );
+            }
+            let unresolved_tool = match tool {
+                SplitFaceTool::Native(_)
+                | SplitFaceTool::Path(PathRef::Native(_) | PathRef::Unresolved(_)) => true,
+                SplitFaceTool::Faces(faces) => unresolved_faces(faces),
+                _ => false,
+            };
+            if unresolved_tool {
+                losses.push(
+                    crate::loss::F3dLossCode::FeatureSplitFaceSelectionUnresolved.note(format!(
+                        "{id}: splitting-tool selection remains unresolved (DR-573)."
+                    )),
+                );
+            }
         }
         Ok(())
     }
