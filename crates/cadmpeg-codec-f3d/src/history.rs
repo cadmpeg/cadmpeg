@@ -3349,7 +3349,7 @@ pub(crate) fn bind_feature_face_selections(
                         ..
                     },
                 ) => {
-                    shell_walls::bind_shell_removed_faces(
+                    losses.extend(shell_walls::bind_shell_removed_faces(
                         removed_faces,
                         feature_id,
                         scope,
@@ -3362,7 +3362,7 @@ pub(crate) fn bind_feature_face_selections(
                             input: history.topology(selection_previous_row),
                             output: history.topology(selection_state_row),
                         },
-                    );
+                    ));
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
