@@ -4,6 +4,7 @@
 use cadmpeg_ir::report::check::{Check, Finding};
 
 use super::{finding, unique, NativeData};
+use crate::feature::sheet_metal::unfold;
 
 pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
     let raw = cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
@@ -26,6 +27,20 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|r| (r.identity.segment_token.as_str(), r.identity.record_ordinal)),
         "Inventor sheet-metal flange",
     );
+    unique(
+        findings,
+        data.pm_app_sheet_metal_unfold_rules
+            .iter()
+            .map(|r| (r.identity.segment_token.as_str(), r.identity.record_ordinal)),
+        "Inventor unfold rule",
+    );
+    unique(
+        findings,
+        data.pm_app_sheet_metal_unfold_selections
+            .iter()
+            .map(|r| (r.identity.segment_token.as_str(), r.identity.record_ordinal)),
+        "Inventor unfold-rule selection",
+    );
     for style in &data.pm_dc_sheet_metal_styles {
         if !crate::feature::sheet_metal::style::valid(style, |ordinal| {
             raw.get(&(style.identity.segment_token.as_str(), ordinal))
@@ -36,6 +51,29 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Inventor sheet-metal style has an invalid prefix or operand type".into(),
                 Some(style.id()),
+            ));
+        }
+    }
+    let unfold_records = data
+        .pm_app_sheet_metal_unfold_rules
+        .iter()
+        .map(|rule| (&rule.identity, rule.id(), unfold::RULE_TYPE))
+        .chain(
+            data.pm_app_sheet_metal_unfold_selections
+                .iter()
+                .map(|selection| (&selection.identity, selection.id(), unfold::SELECTION_TYPE)),
+        );
+    for (identity, id, expected) in unfold_records {
+        let expected = crate::pmdc::type_id_string(expected);
+        let raw_type = raw
+            .get(&(identity.segment_token.as_str(), identity.record_ordinal))
+            .copied()
+            .flatten();
+        if identity.type_id.as_str() != expected || raw_type != Some(expected.as_str()) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor unfold-rule record has an invalid type".into(),
+                Some(id),
             ));
         }
     }
