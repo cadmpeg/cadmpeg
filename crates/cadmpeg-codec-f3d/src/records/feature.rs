@@ -21,6 +21,7 @@ pub(crate) mod hole;
 pub(crate) mod joint_motion;
 pub(crate) mod mesh_face_groups;
 pub(crate) mod mirror;
+pub(crate) mod motion_link;
 pub(crate) mod occurrence_transfer;
 pub(crate) mod path_features;
 pub(crate) mod patterns;
@@ -29,6 +30,7 @@ pub(crate) mod primitives;
 pub(crate) mod scope;
 pub(crate) mod sheet_metal;
 pub(crate) mod silhouette_split;
+pub(crate) mod split_face;
 pub(crate) mod surface_ops;
 #[cfg(test)]
 mod test_support;

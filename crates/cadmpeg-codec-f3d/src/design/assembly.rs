@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod motion_link;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
@@ -154,6 +156,16 @@ impl AssemblyScopeGeneration {
                 locator_offsets: Some([
                     layout.first_reference,
                     layout.first_reference + layout.stride,
+                ]),
+            }
+        } else if compact_placement_as_built_scope(scope) {
+            use crate::layout::assembly_as_built_scope_378 as layout;
+            Self {
+                operand_frame: None,
+                alignment: AssemblyAlignmentLanes::Fixed(Some((4, 0, 4))),
+                locator_offsets: Some([
+                    layout::FIRST_LOCATOR_REFERENCE,
+                    layout::SECOND_LOCATOR_REFERENCE,
                 ]),
             }
         } else {
@@ -506,6 +518,13 @@ impl RigidGroupLocatorLayout {
         Self::admit_form(registered, length, false)
     }
 
+    pub(crate) fn admit_compact_as_built(
+        registered: Option<(&str, u32)>,
+        length: usize,
+    ) -> Option<Self> {
+        Self::admit(registered, length).filter(|layout| !layout.typed && !layout.wide)
+    }
+
     pub(crate) fn admit_assemble(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
         Self::admit_form(registered, length, true)
     }
@@ -696,11 +715,36 @@ pub(crate) fn rigid_as_built_scope(scope: &DesignParameterScope) -> bool {
 pub(crate) fn placement_ordered_as_built_scope(scope: &DesignParameterScope) -> bool {
     !rigid_as_built_scope(scope)
         && scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-        && as_built_additional_owner_count(scope.frame_length()).is_some()
+        && (compact_placement_as_built_scope(scope)
+            || wide_as_built_additional_owner_count(scope.frame_length()).is_some())
 }
 
-/// The additional-owner count selected by the scope frame length.
-pub(crate) fn as_built_additional_owner_count(frame_length: u64) -> Option<usize> {
+pub(crate) fn compact_placement_as_built_scope(scope: &DesignParameterScope) -> bool {
+    use crate::layout::assembly_as_built_scope_378 as layout;
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && matches!(
+            (
+                scope.canonical_name_frame_length(),
+                scope.reference_members().len()
+            ),
+            (Some(355), 7) | (Some(377), 9)
+        )
+        && scope
+            .reference_count_offset()
+            .checked_sub(scope.byte_offset())
+            == Some(u64_from_index(layout::REFERENCE_COUNT))
+}
+
+pub(crate) const AS_BUILT_SCOPE_TYPE_GUID: &str = "AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0";
+
+pub(crate) fn as_built_additional_owner_count(scope: &DesignParameterScope) -> Option<usize> {
+    if compact_placement_as_built_scope(scope) {
+        return Some(0);
+    }
+    wide_as_built_additional_owner_count(scope.frame_length())
+}
+
+fn wide_as_built_additional_owner_count(frame_length: u64) -> Option<usize> {
     match frame_length {
         378 => Some(0),
         422 => Some(2),
@@ -710,7 +754,8 @@ pub(crate) fn as_built_additional_owner_count(frame_length: u64) -> Option<usize
 }
 
 pub(crate) fn wide_as_built_scope(scope: &DesignParameterScope) -> bool {
-    rigid_as_built_scope(scope) || placement_ordered_as_built_scope(scope)
+    rigid_as_built_scope(scope)
+        || (placement_ordered_as_built_scope(scope) && !compact_placement_as_built_scope(scope))
 }
 
 /// Admit the legacy 383/258 assembly scope only as its exact generation.
@@ -965,7 +1010,9 @@ pub(crate) fn project_assembly_joints_with_paths(
                 joints.entry(joint.id.as_str().to_owned()).or_insert(joint);
                 let members =
                     rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts, paths);
-                if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble {
+                if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+                    || compact_placement_as_built_scope(scope)
+                {
                     assumed_active += 1 + members.joints.len();
                 }
                 paired_joints += members.paired;
@@ -1054,6 +1101,13 @@ pub(crate) fn project_assembly_joints_with_paths(
             "{unprojected_members} rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects."
         )));
     }
+    let (linked, unbound_links) = motion_link::project(scopes, motions, paths, &mut joints);
+    if unbound_links != 0 {
+        losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+            "{unbound_links} MotionLink scope(s) retain their source relation because both revolute joints could not be bound."
+        )));
+    }
+    assumed_active += linked;
     if assumed_active != 0 {
         losses.push(F3dLossCode::AssemblyJointActivationAssumed.note(format!(
             "{assumed_active} projected Design assembly joint(s) are assumed active: the activation meaning of their scope-tail booleans is unknown."
@@ -1185,6 +1239,12 @@ fn project_assembly_joint(
             Ok(None)
         };
     };
+    let compact_as_built = compact_placement_as_built_scope(scope);
+    if compact_as_built && motion.is_none_or(|motion| motion.limits.is_none()) {
+        return Err(CodecError::NotImplemented(
+            "As-built joint motion is unresolved".into(),
+        ));
+    }
     // A rigid group's joint record has a motion record with no freedom entry.
     if rigid_as_built_scope(scope) && motion.is_some_and(|motion| !motion.freedoms.is_empty()) {
         return Err(CodecError::NotImplemented(
@@ -1282,6 +1342,15 @@ fn project_assembly_joint(
         }
         None => (None, None),
     };
+    if compact_as_built
+        && operands
+            .iter()
+            .any(|operand| !paths.has_projected_joint_operand(&operand.container))
+    {
+        return Err(CodecError::NotImplemented(
+            "As-built joint operand has no projected occurrence".into(),
+        ));
+    }
     let [first_operand, second_operand] = operands;
     let angle = cadmpeg_ir::scalar::FiniteReal::new(alignment.angle())
         .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
@@ -1338,6 +1407,9 @@ fn project_assembly_joint(
             }
         }
     };
+    if let (true, Some(reason)) = (compact_as_built, undecoded.as_ref()) {
+        return Err(CodecError::NotImplemented(reason.clone()));
+    }
     let frame = |rows: [[f64; 4]; 4]| {
         super::components::neutral_transform(if turn_y_to_z {
             turn_frame_y_to_z(rows)
@@ -1517,6 +1589,26 @@ fn projected_frame_sense(scope: &DesignParameterScope) -> Option<cadmpeg_ir::pro
                 cadmpeg_ir::products::PlaneSense::Opposed
             }
         })
+}
+
+pub(super) fn compact_as_built_relation_only(
+    scope: &DesignParameterScope,
+    alignment: &crate::records::feature::assembly::DesignAssemblyAlignment,
+    stream_types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> bool {
+    let older_joint = scope
+        .record_index
+        .checked_sub(1)
+        .and_then(|index| stream_types.get(&u64::from(index)))
+        .is_some_and(|(guid, version)| {
+            *version == 4 && guid.eq_ignore_ascii_case(super::decode::joint_motion::JOINT_TYPE_GUID)
+        });
+    older_joint
+        || matches!(
+            &alignment.form,
+            Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(operands))
+                if operands.iter().any(|operand| !null_construction_operand(operand))
+        )
 }
 
 fn null_construction_operand(

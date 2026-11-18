@@ -1366,6 +1366,7 @@ fn sketch_region_companion_closes_before_a_later_face_recipe() {
                 scope_reference_ordinal: 0,
                 group_ownership: None,
                 next_byte_offset: None,
+                registered_frame: None,
                 header: &header,
             },
             &[recipe],

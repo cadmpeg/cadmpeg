@@ -85,18 +85,22 @@ pub(crate) fn project_local_components_with_types(
     for scope in sources.scopes {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
         let relation_only = scope.assembly_alignment().is_some_and(|alignment| {
-            alignment.frame_sense.is_some()
-                && super::decode::scopes::assembly_v3::relation_only(
-                    scope,
-                    alignment,
-                    types_by_stream.entry(stream).or_insert_with(|| {
-                        stream
-                            .strip_prefix("f3d:")
-                            .and_then(crate::ids::decode_identity_key_component)
-                            .map(|entry| super::decode::meta::stream_types_by_entity(types, &entry))
-                            .unwrap_or_default()
-                    }),
-                )
+            let compact_as_built = super::assembly::compact_placement_as_built_scope(scope);
+            if !compact_as_built && alignment.frame_sense.is_none() {
+                return false;
+            }
+            let stream_types = types_by_stream.entry(stream).or_insert_with(|| {
+                stream
+                    .strip_prefix("f3d:")
+                    .and_then(crate::ids::decode_identity_key_component)
+                    .map(|entry| super::decode::meta::stream_types_by_entity(types, &entry))
+                    .unwrap_or_default()
+            });
+            if compact_as_built {
+                super::assembly::compact_as_built_relation_only(scope, alignment, stream_types)
+            } else {
+                super::decode::scopes::assembly_v3::relation_only(scope, alignment, stream_types)
+            }
         });
         if let Some(qualifiers) = scope
             .assembly_alignment()
@@ -2297,7 +2301,7 @@ impl ComponentInserts {
                 inserts.assumed_containers += 1;
                 if matches!(
                     scope.canonical_name_frame_length(),
-                    Some(256 | 257 | 261 | 267 | 385 | 389 | 399)
+                    Some(256 | 257 | 261 | 267 | 271 | 275 | 385 | 389 | 399)
                 ) {
                     inserts.frame_assumptions.push(F3dLossCode::ComponentInsertLegacyFrameAssumed.note(format!(
                         "{} uses its legacy scope-local insertion frame as its unresolved occurrence frame, with the current pose assumed equal to the insertion frame (DR-792).", scope.id
