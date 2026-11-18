@@ -3128,7 +3128,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         scope.canonical_name_frame_length(),
                         placement.matrix.as_ref(),
                     ) {
-                        (Some(256 | 257 | 261 | 267 | 272 | 276), None) => true,
+                        (Some(256 | 257 | 261 | 267 | 271 | 272 | 275 | 276), None) => true,
                         (Some(385), Some(matrix)) => {
                             scope.byte_offset().checked_add(u64_from_index(
                                 crate::layout::component_insert_scope_283_262_385::TRANSFORM,
@@ -3158,7 +3158,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     scope.paired_class_tag.as_str(),
                     construction.placement.as_ref(),
                 ) {
-                    (272 | 276, _, None) => true,
+                    (271 | 272 | 275 | 276, _, None) => true,
                     (261, "263", None) if scope.class_tag.as_str() == "296" => true,
                     (261, "261", None) if scope.class_tag.as_str() == "410" => true,
                     (261, "258", None) if scope.class_tag.as_str() == "426" => true,
