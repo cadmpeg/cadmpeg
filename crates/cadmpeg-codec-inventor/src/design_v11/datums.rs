@@ -176,7 +176,11 @@ fn datum(operation: &LegacyOperation) -> Option<Datum> {
             value.inputs.push(offset);
             DatumElement::Plane(value)
         }
-        LegacyOperation::DatumAxis { origin, direction } => {
+        LegacyOperation::DatumAxis { axis } => {
+            if axis.has_controls() {
+                return None;
+            }
+            let (origin, direction) = axis.geometry()?;
             DatumElement::Axis(construction(Some(AxisValue {
                 origin: *origin,
                 direction: UnitVector3::normalized_nonzero((*direction).into())?,

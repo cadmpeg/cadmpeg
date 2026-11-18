@@ -285,6 +285,7 @@ fn operation(operation: &LegacyOperation) -> Result<FeatureOperation, CodecError
         LegacyOperation::TrimBodies { .. } => OperationFamily::Split,
         LegacyOperation::TrimBodiesAtPlane { .. } => OperationFamily::Split,
         LegacyOperation::SplitBody { .. } => OperationFamily::Split,
+        LegacyOperation::SilhouetteSplit { .. } => OperationFamily::Split,
         LegacyOperation::SplitFace { .. } => OperationFamily::Split,
         LegacyOperation::DeleteBody { .. } => OperationFamily::DeleteBodies,
         LegacyOperation::DeleteFace { .. } => OperationFamily::DeleteFaces,

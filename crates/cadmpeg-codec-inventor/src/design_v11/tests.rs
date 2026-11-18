@@ -37,7 +37,7 @@ fn property(feature: &mut LegacyFeature, key: &str, value: &str) {
 fn part(features: Vec<LegacyFeature>) -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
     })).expect("part"));
     ir.model.features = features;
     ir

@@ -24,7 +24,7 @@ fn parameter(name: &str, text: &str, number: Option<f64>) -> LegacyParameter {
 fn project_parameters(parameters: Vec<LegacyParameter>) -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
     })).expect("part"));
     let original = parameters.clone();
     ir.model.parameters = parameters;

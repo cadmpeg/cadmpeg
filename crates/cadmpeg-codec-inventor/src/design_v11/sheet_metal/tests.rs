@@ -39,7 +39,7 @@ fn projected_with_style_factor(
 ) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
     })).expect("part"));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
@@ -207,7 +207,7 @@ fn projected_document(
 
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
     })).expect("part"));
     let null = PmDcReference::from_packed(0);
     let mut parameters: Vec<PmDcParameter> = Vec::new();
@@ -369,7 +369,7 @@ fn sheet_metal_projection_joins_parameter_literals_and_retains_unread_fields() {
 
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
     })).expect("part"));
     let null = PmDcReference::from_packed(0);
     let raw: PmDcParameter = Located::new(
@@ -448,7 +448,7 @@ fn sheet_metal_binds_projected_length_parameters() {
 
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
     })).expect("part"));
     let (raw, legacy) = crate::feature::fillet::tests::parameter(
         0,

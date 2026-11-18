@@ -15,7 +15,7 @@ use cadmpeg_ir::scalar::Length;
 fn project_operation(operation: LegacyOperation) -> FeatureOperation {
     let mut ir = CadIr::empty();
     ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[]
+        "id":"inventor:document:product#root", "kind":"part", "bom_properties":{}, "bodies":[], "sketches":[], "tessellations":[]
     })).expect("part"));
     ir.model.features.push(Feature {
         product_definition: None,
@@ -262,7 +262,7 @@ fn axis_keeps_its_origin_and_normalized_direction() {
     let origin = FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("point");
     let direction = cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 5.0, 0.0))
         .expect("direction");
-    let DatumElement::Axis(value) = projected(LegacyOperation::DatumAxis { origin, direction })
+    let DatumElement::Axis(value) = projected(LegacyOperation::datum_axis(origin, direction))
     else {
         panic!("axis")
     };
