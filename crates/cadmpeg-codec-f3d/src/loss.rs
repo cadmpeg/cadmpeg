@@ -239,7 +239,7 @@ pub(crate) enum F3dLossCode {
     AssemblyJointUnprojected,
     /// Partial assembly alignments with unresolved motion binding or operand paths.
     AssemblyAlignmentPartial,
-    /// A carrier supplies the solved JointOrigin frame and its Assemble copy differs.
+    /// An `Assemble` copy differs from the solved `JointOrigin` carrier matrix.
     AssemblyJointOriginEnvelopeMatrixDiscarded,
     /// An ordinary rigid-group frame has no admitted grammar.
     AssemblyRigidGroupFrameUnparsed,

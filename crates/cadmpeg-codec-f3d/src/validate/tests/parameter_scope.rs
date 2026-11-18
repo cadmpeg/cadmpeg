@@ -47,6 +47,15 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
     use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
     use crate::records::sketch_placement::SketchPlacementMatrix;
 
+    fn carrier_evidence(scope: &mut DesignParameterScope) -> &mut DesignJointOriginCarrierEvidence {
+        scope
+            .joint_origin_frame_mut()
+            .unwrap()
+            .carrier
+            .as_mut()
+            .unwrap()
+    }
+
     let stream = "f3d:Design/BulkStream.dat";
     let mut assembly = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#3"),
@@ -249,16 +258,6 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
                     && finding.entity.as_deref() == Some(assembly_id.as_str())
             }));
         };
-        fn carrier_evidence(
-            scope: &mut DesignParameterScope,
-        ) -> &mut DesignJointOriginCarrierEvidence {
-            scope
-                .joint_origin_frame_mut()
-                .unwrap()
-                .carrier
-                .as_mut()
-                .unwrap()
-        }
         for prefix_index in [0, 34, 35, 47] {
             let mut invalid = native.clone();
             carrier_evidence(&mut invalid.design_parameter_scopes[1]).prefix[prefix_index] ^= 1;
