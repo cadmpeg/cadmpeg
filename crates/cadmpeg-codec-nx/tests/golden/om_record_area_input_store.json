@@ -716,11 +716,6 @@
             "fields": {},
             "kind": "entity"
           },
-          "nx:feature-history:timeline#root": {
-            "entity": "derived",
-            "fields": {},
-            "kind": "entity"
-          },
           "nx:om-entry-0:feature#equations-372": {
             "entity": "derived",
             "fields": {

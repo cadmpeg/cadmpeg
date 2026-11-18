@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::features::{
     DesignConfiguration as LegacyConfiguration, DistinctMembers, FeatureContent,
-    FeatureDefinition as LegacyDefinition, FeatureEvaluation, SketchFeatureBinding, TreeChildren,
+    FeatureDefinition as LegacyDefinition, FeatureEvaluation, FeatureId, SketchFeatureBinding,
+    TreeChildren,
 };
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::topology::{Body, BodyKind};
@@ -71,13 +71,10 @@ fn configuration(ordinal: u32, name: &str, active: bool) -> LegacyConfiguration 
     }
 }
 
-fn project_ir(ir: &mut CadIr) -> Vec<String> {
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    let mut minted = Vec::new();
-    let definition = root_definition(&ctx, ir, &mut minted).expect("root definition");
-    minted.extend(project(&ctx, ir, definition).expect("projection"));
+/// Projects `ir` and returns whether the root definition was stated.
+fn project_ir(ir: &mut CadIr) -> bool {
+    let (definition, minted) = root_definition(ir).expect("root definition");
+    project(ir, definition).expect("projection");
     minted
 }
 
@@ -155,50 +152,66 @@ fn history_is_one_timeline_in_construction_order() {
     assert!(definition.is_root());
     assert_eq!(definition.kind, Some(ProductDefinitionKind::Part));
     assert_eq!(definition.bodies, [body("1").id, body("2").id]);
-    assert_eq!(minted, [PART_ROOT, TIMELINE]);
+    assert!(minted);
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
 #[test]
-fn a_part_with_no_history_is_one_group_of_stored_bodies() {
+fn a_part_with_no_history_states_no_design_records() {
     let mut ir = CadIr::empty();
     ir.geometry.bodies = vec![body("1"), body("2")];
-    ir.model.features = vec![feature("equations", 0, equations())];
-    project_ir(&mut ir);
-
-    let [Container::Unordered {
-        members,
-        kind: UnorderedKind::Group,
-        ..
-    }] = ir.design.containers.as_slice()
-    else {
-        panic!("one group");
-    };
-    assert_eq!(members.len(), 2);
-    let stored = FeatureId::mint("nx:document:feature#stored/nx:s0:body/1").unwrap();
-    assert!(members.contains(&Member::Feature(stored.clone())));
-    let current = &ir.design.scopes[0].current;
-    assert_eq!(current.len(), 2);
-    assert_eq!(current[0].at, Position::After(Member::Feature(stored)));
-    assert_eq!(current[0].bodies, [body("1").id]);
-    assert!(matches!(
-        &ir.design.features[0].definition.operation,
-        FeatureOperation::Stored {
-            bodies: Some(bodies),
-            origin: StoredOrigin::Base {},
-            ..
-        } if bodies == &[body("1").id]
-    ));
-    assert_eq!(design_findings(&ir), Vec::<String>::new());
+    ir.model.features = vec![
+        feature("equations", 0, equations()),
+        feature(
+            "initial-bodies",
+            1,
+            LegacyOperation::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: DistinctMembers::try_from(vec![body("1").id]).unwrap(),
+                    native: "nx:segment-body-bindings".to_owned(),
+                },
+            },
+        ),
+    ];
+    ir.model.configurations = vec![configuration(0, "Default", true)];
+    let minted = project_ir(&mut ir);
+    assert_eq!(
+        serde_json::to_value(&ir.design).unwrap(),
+        serde_json::to_value(&CadIr::empty().design).unwrap()
+    );
+    assert!(minted);
+    assert_eq!(
+        ir.model.product_definitions[0].bodies,
+        [body("1").id, body("2").id]
+    );
 }
 
 #[test]
-fn an_empty_part_has_an_empty_group() {
+fn the_retained_history_input_is_no_member() {
     let mut ir = CadIr::empty();
+    ir.geometry.bodies = vec![body("1")];
+    ir.model.features = vec![
+        feature(
+            "initial-bodies",
+            0,
+            LegacyOperation::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: DistinctMembers::try_from(vec![body("1").id]).unwrap(),
+                    native: "nx:segment-body-bindings".to_owned(),
+                },
+            },
+        ),
+        feature("a", 1, sketch()),
+    ];
     project_ir(&mut ir);
-    assert_eq!(ir.design.scopes.len(), 1);
-    assert!(ir.design.scopes[0].current.is_empty());
-    assert!(ir.design.features.is_empty());
+    let ids = ir
+        .design
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, ["nx:feature-history:feature#a"]);
+    assert_eq!(ir.design.scopes[0].current[0].bodies, [body("1").id]);
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
@@ -216,7 +229,7 @@ fn an_assembly_root_is_the_scope_definition() {
     let minted = project_ir(&mut ir);
     assert_eq!(ir.model.product_definitions.len(), 1);
     assert_eq!(ir.design.scopes[0].definition.as_str(), ASSEMBLY_ROOT);
-    assert_eq!(minted, [TIMELINE]);
+    assert!(!minted);
     assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
@@ -227,6 +240,7 @@ fn arrangements_are_positional_and_the_active_one_is_in_force() {
         configuration(0, "Default", false),
         configuration(1, "Open", true),
     ];
+    ir.model.features = vec![feature("a", 0, sketch())];
     project_ir(&mut ir);
     let names = ir
         .design

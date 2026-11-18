@@ -4,71 +4,14 @@
       "design": {
         "arrangements": [],
         "configurations": [],
-        "containers": [
-          {
-            "kind": "unordered",
-            "value": {
-              "id": "nx:document:group#root",
-              "kind": "group",
-              "members": [
-                {
-                  "kind": "feature",
-                  "value": "nx:document:feature#stored/nx:derived:point-body/0"
-                }
-              ]
-            }
-          }
-        ],
+        "containers": [],
         "evaluations": [],
-        "features": [
-          {
-            "definition": {
-              "operation": {
-                "kind": "stored",
-                "value": {
-                  "bodies": [
-                    "nx:derived:point-body#0"
-                  ],
-                  "origin": {
-                    "kind": "base"
-                  },
-                  "tessellations": []
-                }
-              }
-            },
-            "id": "nx:document:feature#stored/nx:derived:point-body/0"
-          }
-        ],
+        "features": [],
         "names": [],
         "parameters": [],
         "programs": [],
         "publications": [],
-        "scopes": [
-          {
-            "active_arrangements": [],
-            "current": [
-              {
-                "at": {
-                  "kind": "after",
-                  "value": {
-                    "kind": "feature",
-                    "value": "nx:document:feature#stored/nx:derived:point-body/0"
-                  }
-                },
-                "bodies": [
-                  "nx:derived:point-body#0"
-                ],
-                "poses": [],
-                "status": "current"
-              }
-            ],
-            "definition": "nx:document:product-definition#root",
-            "occurrences": {},
-            "roots": [
-              "nx:document:group#root"
-            ]
-          }
-        ],
+        "scopes": [],
         "sheet_metal_rules": [],
         "sketch_constraints": [],
         "sketch_entities": [],
@@ -476,16 +419,6 @@
           },
           "nx:derived:point-vertex#0": {
             "entity": "inferred",
-            "fields": {},
-            "kind": "entity"
-          },
-          "nx:document:feature#stored/nx:derived:point-body/0": {
-            "entity": "derived",
-            "fields": {},
-            "kind": "entity"
-          },
-          "nx:document:group#root": {
-            "entity": "derived",
             "fields": {},
             "kind": "entity"
           },

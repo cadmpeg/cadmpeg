@@ -4,71 +4,14 @@
       "design": {
         "arrangements": [],
         "configurations": [],
-        "containers": [
-          {
-            "kind": "unordered",
-            "value": {
-              "id": "nx:document:group#root",
-              "kind": "group",
-              "members": [
-                {
-                  "kind": "feature",
-                  "value": "nx:document:feature#stored/nx:s0:body/2"
-                }
-              ]
-            }
-          }
-        ],
+        "containers": [],
         "evaluations": [],
-        "features": [
-          {
-            "definition": {
-              "operation": {
-                "kind": "stored",
-                "value": {
-                  "bodies": [
-                    "nx:s0:body#2"
-                  ],
-                  "origin": {
-                    "kind": "base"
-                  },
-                  "tessellations": []
-                }
-              }
-            },
-            "id": "nx:document:feature#stored/nx:s0:body/2"
-          }
-        ],
+        "features": [],
         "names": [],
         "parameters": [],
         "programs": [],
         "publications": [],
-        "scopes": [
-          {
-            "active_arrangements": [],
-            "current": [
-              {
-                "at": {
-                  "kind": "after",
-                  "value": {
-                    "kind": "feature",
-                    "value": "nx:document:feature#stored/nx:s0:body/2"
-                  }
-                },
-                "bodies": [
-                  "nx:s0:body#2"
-                ],
-                "poses": [],
-                "status": "current"
-              }
-            ],
-            "definition": "nx:document:product-definition#root",
-            "occurrences": {},
-            "roots": [
-              "nx:document:group#root"
-            ]
-          }
-        ],
+        "scopes": [],
         "sheet_metal_rules": [],
         "sketch_constraints": [],
         "sketch_entities": [],
@@ -435,16 +378,6 @@
             "fields": {
               "links": "derived"
             },
-            "kind": "entity"
-          },
-          "nx:document:feature#stored/nx:s0:body/2": {
-            "entity": "derived",
-            "fields": {},
-            "kind": "entity"
-          },
-          "nx:document:group#root": {
-            "entity": "derived",
-            "fields": {},
             "kind": "entity"
           },
           "nx:document:product-definition#root": {

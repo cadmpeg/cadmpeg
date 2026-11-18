@@ -195,25 +195,24 @@ fn decoded(
     unknowns: Vec<UnknownRecord>,
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
-    ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
-        admitted_entities,
-        "admit NX entities",
-    )?;
     let annotations = if ctx.depth() >= DecodeDepth::Geometry {
-        let mut minted = Vec::new();
-        let definition = design_v11::root_definition(ctx, &mut ir, &mut minted)?;
+        let (definition, minted) = design_v11::root_definition(&mut ir)?;
         if ctx.depth() >= DecodeDepth::Design {
-            minted.extend(design_v11::project(ctx, &mut ir, definition)?);
+            design_v11::project(&mut ir, definition.clone())?;
         }
         let mut builder = AnnotationBuilder::resume(annotations);
-        for id in minted {
-            builder.exactness_owned(id, Exactness::Derived);
+        if minted {
+            builder.exactness(definition, Exactness::Derived);
         }
         builder.build()
     } else {
         annotations
     };
+    ctx.admit_entities(
+        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
+        admitted_entities,
+        "admit NX entities",
+    )?;
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;

@@ -1363,11 +1363,6 @@
             "entity": "derived",
             "fields": {},
             "kind": "entity"
-          },
-          "nx:feature-history:timeline#root": {
-            "entity": "derived",
-            "fields": {},
-            "kind": "entity"
           }
         },
         "provenance": {

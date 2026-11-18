@@ -3,16 +3,14 @@
 //!
 //! The scope is the design of the part's root definition. The part navigator
 //! history is one ordered timeline of the decoded features in construction
-//! order; a part with no decoded history is one unordered group whose members
-//! are one stored-geometry feature per current body.
+//! order. A part with no decoded history states no design records.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::configuration::{Arrangement, ArrangementKind, Overrides};
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{
@@ -23,7 +21,7 @@ use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, Feature as LegacyFeature, FeatureId, FeatureOperation as LegacyOperation,
+    BodySelection, Feature as LegacyFeature, FeatureOperation as LegacyOperation,
     FeatureTreeNodeRole, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
@@ -34,23 +32,19 @@ mod parameters;
 /// The root definition of an NX part that states no assembly root.
 const PART_ROOT: &str = "nx:document:product-definition#root";
 const TIMELINE: &str = "nx:feature-history:timeline#root";
-const GROUP: &str = "nx:document:group#root";
 
 /// Project the decoded NX history into `ir.design` as the design of
-/// `definition`. Returns the identities the projection mints, which no source
-/// record supplies.
-pub(super) fn project(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    definition: ProductDefinitionId,
-) -> Result<Vec<String>, CodecError> {
-    let mut minted = Vec::new();
+/// `definition`.
+pub(super) fn project(ir: &mut CadIr, definition: ProductDefinitionId) -> Result<(), CodecError> {
     let mut history = ir
         .model
         .features
         .iter()
         .filter(|feature| is_history(feature))
         .collect::<Vec<_>>();
+    if history.is_empty() {
+        return Ok(());
+    }
     history.sort_by(|a, b| (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id)));
     let bodies = ir
         .geometry
@@ -60,7 +54,6 @@ pub(super) fn project(
         .collect::<Vec<_>>();
     let mut features = Vec::with_capacity(history.len());
     for feature in &history {
-        ctx.charge_entities(1, "project NX v11 feature")?;
         features.push(Feature {
             id: feature.id.clone(),
             name: None,
@@ -76,14 +69,9 @@ pub(super) fn project(
             native_ref: feature.native_ref.clone(),
         });
     }
-    let (container, current) = if features.is_empty() {
-        no_timeline(ctx, &bodies, &mut features, &mut minted)?
-    } else {
-        timeline(ctx, &features, bodies, &mut minted)?
-    };
-    let (arrangements, active_arrangements) = arrangements(ctx, ir, &definition, &mut minted)?;
-    parameters::project(ctx, ir, &definition)?;
-    ctx.charge_entities(1, "project NX v11 scope")?;
+    let (container, current) = timeline(&features, bodies)?;
+    let (arrangements, active_arrangements) = arrangements(ir, &definition)?;
+    parameters::project(ir, &definition);
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
         definition,
@@ -102,26 +90,21 @@ pub(super) fn project(
     design.containers.sort_by(|a, b| a.id().cmp(b.id()));
     design.features.sort_by(|a, b| a.id.cmp(&b.id));
     design.arrangements.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(minted)
+    Ok(())
 }
 
 /// The root definition of the document: the one the placement attachment
 /// states for an assembly, else a part definition stored in the root file
-/// that owns every current body, which this pushes to `minted`.
-pub(super) fn root_definition(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    minted: &mut Vec<String>,
-) -> Result<ProductDefinitionId, CodecError> {
+/// that owns every current body. The flag is true where this states it.
+pub(super) fn root_definition(ir: &mut CadIr) -> Result<(ProductDefinitionId, bool), CodecError> {
     if let Some(root) = ir
         .model
         .product_definitions
         .iter()
         .find(|definition| definition.is_root())
     {
-        return Ok(root.id.clone());
+        return Ok((root.id.clone(), false));
     }
-    ctx.charge_entities(1, "project NX v11 root definition")?;
     let id = ProductDefinitionId::mint(PART_ROOT).map_err(CodecError::malformed)?;
     let mut root = ProductDefinition::root(id.clone(), ExternalDocument::default());
     root.kind = Some(ProductDefinitionKind::Part);
@@ -134,33 +117,31 @@ pub(super) fn root_definition(
     root.bodies.sort();
     ir.model.product_definitions.push(root);
     ir.model.product_definitions.sort_by(|a, b| a.id.cmp(&b.id));
-    minted.push(id.as_str().to_owned());
-    Ok(id)
+    Ok((id, true))
 }
 
 /// Whether a decoded feature is a member of the part navigator history. An
 /// expression table is listed as a tree node of its own and is no feature.
+/// The retained-history input holds the bodies present when the retained
+/// history begins, which no source record lists as a feature.
 fn is_history(feature: &LegacyFeature) -> bool {
-    !matches!(
-        feature.evaluation.definition().operation(),
+    match feature.evaluation.definition().operation() {
         LegacyOperation::TreeNode {
             role: FeatureTreeNodeRole::Equations,
             ..
-        }
-    )
+        } => false,
+        LegacyOperation::BaseFeature { .. } => feature.native_ref.is_some(),
+        _ => true,
+    }
 }
 
 /// One ordered timeline of the history in construction order, with its one
 /// current state at the end, which holds every current body.
 fn timeline(
-    ctx: &DecodeContext<'_>,
     features: &[Feature],
     bodies: Vec<BodyId>,
-    minted: &mut Vec<String>,
 ) -> Result<(Container, Vec<CurrentState>), CodecError> {
-    ctx.charge_entities(1, "project NX v11 timeline")?;
     let id = ContainerId::mint(TIMELINE).map_err(CodecError::malformed)?;
-    minted.push(id.as_str().to_owned());
     let members = features
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
@@ -187,76 +168,11 @@ fn timeline(
     Ok((container, current))
 }
 
-/// The no-timeline rule: one root unordered group whose members are one
-/// stored-geometry feature per current body, each body the current state of
-/// its feature.
-fn no_timeline(
-    ctx: &DecodeContext<'_>,
-    bodies: &[BodyId],
-    features: &mut Vec<Feature>,
-    minted: &mut Vec<String>,
-) -> Result<(Container, Vec<CurrentState>), CodecError> {
-    ctx.charge_entities(1, "project NX v11 group")?;
-    let id = ContainerId::mint(GROUP).map_err(CodecError::malformed)?;
-    minted.push(id.as_str().to_owned());
-    let mut members = BTreeSet::new();
-    let mut current = Vec::with_capacity(bodies.len());
-    for body in bodies {
-        ctx.charge_entities(1, "project NX v11 stored body")?;
-        let feature = stored_body_feature(body)?;
-        minted.push(feature.as_str().to_owned());
-        members.insert(Member::Feature(feature.clone()));
-        current.push(CurrentState {
-            at: Position::After(Member::Feature(feature.clone())),
-            bodies: vec![body.clone()],
-            poses: BTreeMap::default(),
-            status: EvaluationStatus::Current,
-            native_ref: None,
-        });
-        features.push(Feature {
-            id: feature,
-            name: None,
-            suppressed: None,
-            definition: FeatureDefinition {
-                operation: FeatureOperation::Stored {
-                    bodies: Some(vec![body.clone()]),
-                    tessellations: Vec::new(),
-                    origin: StoredOrigin::Base {},
-                },
-                refine: None,
-                fuzzy_tolerance: None,
-            },
-            placement: None,
-            component: None,
-            driven_by: None,
-            native_ref: None,
-        });
-    }
-    let container = Container::Unordered {
-        id,
-        kind: UnorderedKind::Group,
-        members,
-    };
-    Ok((container, current))
-}
-
-/// The stored-geometry feature of one body under the no-timeline rule, keyed
-/// by the body's identity.
-fn stored_body_feature(body: &BodyId) -> Result<FeatureId, CodecError> {
-    FeatureId::mint(format!(
-        "nx:document:feature#stored/{}",
-        body.as_str().replace('#', "/")
-    ))
-    .map_err(CodecError::malformed)
-}
-
 /// The NX arrangements, each a positional arrangement that states no
 /// overrides, and the one the part names as in use.
 fn arrangements(
-    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     scope: &ProductDefinitionId,
-    minted: &mut Vec<String>,
 ) -> Result<(Vec<Arrangement>, BTreeSet<ArrangementId>), CodecError> {
     let mut arrangements = Vec::with_capacity(ir.model.configurations.len());
     let mut active = BTreeSet::new();
@@ -264,7 +180,6 @@ fn arrangements(
         let Some(name) = configuration.name.clone().and_then(NonBlankString::new) else {
             continue;
         };
-        ctx.charge_entities(1, "project NX v11 arrangement")?;
         let id = ArrangementId::mint(
             configuration
                 .id
@@ -272,7 +187,6 @@ fn arrangements(
                 .replace(":configuration#", ":arrangement#"),
         )
         .map_err(CodecError::malformed)?;
-        minted.push(id.as_str().to_owned());
         if configuration.active {
             active.insert(id.clone());
         }

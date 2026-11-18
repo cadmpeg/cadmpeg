@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
 use cadmpeg_ir::features::DistinctMembers;
 use cadmpeg_ir::scalar::Length;
 use serde_json::json;
@@ -33,11 +32,8 @@ fn parameter(key: &str, name: &str, unit: &str, expression: &str) -> LegacyParam
 fn projected(parameters: Vec<LegacyParameter>) -> Vec<DesignParameter> {
     let mut ir = CadIr::empty();
     ir.model.parameters = parameters;
-    let arena = DecodeArena::new();
-    let policy = DecodePolicy::service();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     let definition = ProductDefinitionId::mint("nx:document:product-definition#root").unwrap();
-    project(&ctx, &mut ir, &definition).expect("projection");
+    project(&mut ir, &definition);
     ir.design.parameters
 }
 

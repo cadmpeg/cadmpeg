@@ -9,9 +9,7 @@
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
 
-use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::edit::Value;
 use cadmpeg_ir::design::expr::{
@@ -26,11 +24,7 @@ use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 /// The parameters of the scope of `definition`, one per decoded expression.
-pub(super) fn project(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    definition: &ProductDefinitionId,
-) -> Result<(), CodecError> {
+pub(super) fn project(ir: &mut CadIr, definition: &ProductDefinitionId) {
     let mut tables = BTreeMap::<Option<&FeatureId>, BTreeMap<&str, Vec<&LegacyParameter>>>::new();
     for parameter in &ir.model.parameters {
         tables
@@ -42,7 +36,6 @@ pub(super) fn project(
     }
     let mut parameters = Vec::with_capacity(ir.model.parameters.len());
     for parameter in &ir.model.parameters {
-        ctx.charge_entities(1, "project NX v11 parameter")?;
         let Some(name) = NonBlankString::new(parameter.name.clone()) else {
             continue;
         };
@@ -70,7 +63,6 @@ pub(super) fn project(
     }
     ir.design.parameters.extend(parameters);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(())
 }
 
 /// A parameter's declared quantity and unit, from its expression header.
