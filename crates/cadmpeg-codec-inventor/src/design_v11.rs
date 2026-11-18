@@ -64,6 +64,12 @@ pub(crate) fn project(
     operations::project(ctx, ir, losses)
 }
 
+pub(crate) fn validate_operations(
+    ir: &CadIr,
+) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    operations::validate(ir)
+}
+
 fn project_history(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,

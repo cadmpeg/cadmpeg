@@ -45,16 +45,25 @@ pub(super) fn selection<O: MemberOrder>(items: Vec<Picked>) -> Projected<Selecti
 }
 
 pub(super) fn native<O: MemberOrder>(text: &str) -> Projected<Selection<O>> {
-    selection(vec![named(text, None)?])
+    Ok(Selection {
+        at: Anchor::Input,
+        picks: Picks::Unread,
+        native: Some(
+            vec![text.to_owned()]
+                .try_into()
+                .map_err(|_| "a native selection is blank")?,
+        ),
+    })
 }
 
 pub(super) fn set(selection: OrderedSelection) -> Projected<SetSelection> {
-    let Picks::Named(members) = selection.picks else {
-        return Err("the selection has a rule");
-    };
     Ok(Selection {
         at: selection.at,
-        picks: Picks::Named(Members::new(members.into_vec())?),
+        picks: match selection.picks {
+            Picks::Named(members) => Picks::Named(Members::new(members.into_vec())?),
+            Picks::Unread => Picks::Unread,
+            Picks::Rule { .. } => return Err("the selection has a rule"),
+        },
         native: selection.native,
     })
 }
@@ -174,22 +183,14 @@ pub(super) fn planar(value: &PlanarProfileRef, sketches: &[Sketch]) -> Projected
     match value {
         PlanarProfileRef::Native(text) => native(text),
         PlanarProfileRef::Sketch(id) => selection(vec![picked(PickTarget::Sketch(id.clone()))]),
-        PlanarProfileRef::SketchProfiles { sketch, profiles } => {
-            let source = sketches.iter().find(|item| &item.id == sketch).ok_or("the profile sketch is absent")?;
-            let mut items = Vec::new();
-            for index in profiles {
-                let ring = source.profiles.get(usize::try_from(*index).map_err(|_| "profile index overflow")?).ok_or("profile index is outside its sketch")?;
-                items.extend(ring.iter().map(|usage| picked(PickTarget::SketchEntity(usage.entity.clone()))));
-            }
-            selection(items)
-        },
+        PlanarProfileRef::SketchProfiles { .. } => Err("the selected loops have no explicit region nesting"),
         PlanarProfileRef::SketchRegions { sketch, regions } => selection(regions.iter().map(|region| match region {
             old::SketchProfileRegion::Loops { loops } => loop_region(sketch, loops.outer(), loops.holes()),
             old::SketchProfileRegion::Trimmed { .. } => Err("a trimmed profile stores parameter intervals outside the v11 boundary contract"),
         }).collect::<Projected<_>>()?),
         PlanarProfileRef::SketchEntities { entities, .. } => selection(entities.iter().map(|id| picked(PickTarget::SketchEntity(id.clone()))).collect()),
         PlanarProfileRef::SketchSelection { sketch, selections } => selection(selections.iter().map(|text| named(text, Some(NativeOwner::Sketch(sketch.clone())))).collect::<Projected<_>>()?),
-        PlanarProfileRef::HistoricalFaces { native: names, .. } => selection(names.iter().map(|text| named(text, None)).collect::<Projected<_>>()?),
+        PlanarProfileRef::HistoricalFaces { native: names, .. } => Ok(Selection { at: Anchor::Input, picks: Picks::Unread, native: Some(names.clone()) }),
         PlanarProfileRef::Feature(id) => selection(vec![picked(PickTarget::FeatureResult(id.clone()))]),
         PlanarProfileRef::Generated { native: text, .. } => native(text.as_str()),
         _ => Err("the profile selection has unresolved members"),

@@ -216,6 +216,7 @@ pub(crate) fn validate_native(
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
     validate_features(ctx, ir, &data, &mut findings)?;
+    findings.extend(crate::design_v11::validate_operations(ir)?);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),

@@ -47,12 +47,12 @@ fn positive(value: f64) -> PositiveLength {
 fn extrude() -> LegacyOperation {
     legacy(
         "extrude",
-        json!({"profile":{"kind":"planar","value":profile()},"direction":{"kind":"explicit","vector":[0.0,0.0,-2.0],"source":{"kind":"custom"}},"start":{"kind":"profile_plane"},"extent":{"kind":"two_sided","first":{"termination":{"kind":"blind","length":8.0},"draft":0.2},"second":{"termination":{"kind":"blind","length":3.0},"draft":-0.1}},"op":"cut","solid":true}),
+        json!({"profile":{"kind":"planar","value":profile()},"direction":{"kind":"explicit","vector":[0.0,0.0,-2.0],"source":{"kind":"custom"}},"start":{"kind":"profile_plane"},"extent":{"kind":"two_sided","first":{"termination":{"kind":"blind","length":8.0}},"second":{"termination":{"kind":"blind","length":3.0}}},"op":"cut","solid":true}),
     )
 }
 
 #[test]
-fn extrude_keeps_direction_sides_drafts_and_output() {
+fn extrude_keeps_direction_sides_and_output() {
     let FeatureOperation::Extrude(value) = typed(&extrude(), &[]).expect("extrude") else {
         panic!("extrude");
     };
@@ -69,19 +69,7 @@ fn extrude_keeps_direction_sides_drafts_and_output() {
     };
     assert_eq!(*start, Limit::Amount(Dimension::Literal(length(-3.0))));
     assert_eq!(*end, Limit::Amount(Dimension::Literal(length(8.0))));
-    let draft = value.draft.expect("draft");
-    assert_eq!(
-        draft.end,
-        Some(Dimension::Literal(
-            cadmpeg_ir::scalar::Angle::new(0.2).expect("angle")
-        ))
-    );
-    assert_eq!(
-        draft.start,
-        Some(Dimension::Literal(
-            cadmpeg_ir::scalar::Angle::new(-0.1).expect("angle")
-        ))
-    );
+    assert!(value.draft.is_none());
     let Some(cadmpeg_ir::design::ops::swept::ExtrudeDirection::Along { direction, .. }) =
         value.direction
     else {
@@ -179,8 +167,7 @@ fn fillet_keeps_every_group_and_size() {
 fn chamfer_keeps_size_and_flip() {
     for spec in [
         json!({"kind":"distance","distance":2.0}),
-        json!({"kind":"two_distances","first":2.0,"second":4.0}),
-        json!({"kind":"distance_angle","distance":2.0,"angle":0.7}),
+        json!({"kind":"two_distances","first":2.0,"second":2.0}),
     ] {
         let FeatureOperation::Chamfer(value) = project_value(
             "chamfer",
@@ -328,21 +315,22 @@ fn rectangular_pattern_keeps_grid_counts_spacing_and_omissions() {
 }
 
 #[test]
-fn mirror_keeps_body_seed_and_plane() {
-    let FeatureOperation::Pattern(value) = project_value(
+fn mirror_keeps_unresolved_disposition_native() {
+    let operation = legacy(
         "mirror_shape",
         json!({"source":native_selection(),"plane_origin":[1.0,2.0,3.0],"plane_normal":[0.0,1.0,0.0]}),
-    ) else {
-        panic!("pattern");
-    };
-    let PatternLayout::Mirror { plane, .. } = &value.layout else {
-        panic!("mirror");
-    };
-    assert_eq!(
-        plane.resolved.as_ref().expect("plane").normal.as_raw().y,
-        1.0
     );
-    assert!(matches!(value.seeds, body_ops::PatternSeeds::Bodies { .. }));
+    let mut ir = part(operation.clone());
+    let losses = project_part(&mut ir);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        InventorLossCode::FeatureDesignOperationNative.kind()
+    );
+    assert_eq!(
+        ir.design.features[0].definition.operation,
+        retained(&operation).expect("native")
+    );
 }
 
 #[test]
@@ -402,8 +390,7 @@ fn sheet_metal_face_keeps_profile_thickness_and_side() {
 }
 
 fn part(operation: LegacyOperation) -> CadIr {
-    let mut ir = CadIr::empty();
-    ir.model.product_definitions.push(serde_json::from_value(json!({"id":"inventor:document:product#root","kind":"part","bom_properties":{},"bodies":[],"sketches":[],"tessellations":[]})).expect("part"));
+    let mut ir = crate::test_support::root_part_ir();
     ir.model.features.push(old::Feature {
         product_definition: None,
         id: FeatureId::mint("inventor:design:feature#synthetic").expect("id"),
@@ -1077,3 +1064,5 @@ fn split_face_path_keeps_native_projection_controls() {
         InventorLossCode::FeatureDesignOperationNative.kind()
     );
 }
+
+mod review;

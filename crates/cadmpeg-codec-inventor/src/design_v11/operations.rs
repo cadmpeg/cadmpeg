@@ -3,11 +3,11 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::{FeatureOperation, StoredOrigin};
+use cadmpeg_ir::design::feature::{FeatureDefinition, FeatureOperation, StoredOrigin};
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::report::loss::LossNote;
@@ -30,23 +30,7 @@ pub(super) fn project(
         return Ok(());
     }
     for source in &ir.model.features {
-        let operation = source.evaluation.definition().operation();
-        if matches!(
-            operation,
-            LegacyOperation::Native { .. }
-                | LegacyOperation::Unresolved { .. }
-                | LegacyOperation::TreeNode { .. }
-                | LegacyOperation::Sketch { .. }
-                | LegacyOperation::SpatialSketch { .. }
-                | LegacyOperation::SketchBlockDefinition { .. }
-                | LegacyOperation::DatumPrincipalPlane { .. }
-                | LegacyOperation::DatumPlane { .. }
-                | LegacyOperation::DatumThreePointPlane { .. }
-                | LegacyOperation::DatumOffsetPlane { .. }
-                | LegacyOperation::DatumAxis { .. }
-                | LegacyOperation::DatumPoint { .. }
-                | LegacyOperation::DatumCoordinateSystem { .. }
-        ) {
+        if !projects(source.evaluation.definition().operation()) {
             continue;
         }
         let index = ir
@@ -58,44 +42,104 @@ pub(super) fn project(
             })?;
         let target = &mut ir.design.features[index];
         ctx.charge_entities(1, "project Inventor v11 operation")?;
-        target.definition.operation = match typed(operation, ir.model.sketches.as_slice()) {
-            Ok(value) => value,
-            Err(reason) => {
-                losses.push(InventorLossCode::FeatureDesignOperationNative.note(format!(
-                    "Feature {} keeps its operation native: {reason}.",
-                    source.id
-                )));
-                retained(operation)?
-            }
-        };
-        if matches!(operation, LegacyOperation::StoredGeometry {}) {
-            target.definition.operation = FeatureOperation::Stored {
-                bodies: (!source.evaluation.outputs().is_empty())
-                    .then(|| source.evaluation.outputs().clone()),
-                tessellations: Vec::new(),
-                origin: StoredOrigin::Base {},
-            };
-        }
-        if let cadmpeg_ir::features::FeatureDefinition::PostProcess {
-            refine,
-            fuzzy_tolerance,
-            ..
-        } = source.evaluation.definition()
-        {
-            use cadmpeg_ir::design::feature::FuzzyTolerance;
-            target.definition.refine = Some(*refine);
-            target.definition.fuzzy_tolerance = Some(match fuzzy_tolerance {
-                cadmpeg_ir::features::FuzzyTolerance::KernelDefault => {
-                    FuzzyTolerance::KernelDefault
-                }
-                cadmpeg_ir::features::FuzzyTolerance::Automatic => FuzzyTolerance::Automatic,
-                cadmpeg_ir::features::FuzzyTolerance::Explicit(value) => {
-                    FuzzyTolerance::Explicit(Dimension::Literal(*value))
-                }
-            });
+        let (definition, reason) = definition(source, ir.model.sketches.as_slice())?;
+        target.definition = definition;
+        if let Some(reason) = reason {
+            losses.push(InventorLossCode::FeatureDesignOperationNative.note(format!(
+                "Feature {} keeps its operation native: {reason}.",
+                source.id
+            )));
         }
     }
     Ok(())
+}
+
+fn projects(operation: &LegacyOperation) -> bool {
+    !matches!(
+        operation,
+        LegacyOperation::Native { .. }
+            | LegacyOperation::Unresolved { .. }
+            | LegacyOperation::TreeNode { .. }
+            | LegacyOperation::Sketch { .. }
+            | LegacyOperation::SpatialSketch { .. }
+            | LegacyOperation::SketchBlockDefinition { .. }
+            | LegacyOperation::DatumPrincipalPlane { .. }
+            | LegacyOperation::DatumPlane { .. }
+            | LegacyOperation::DatumThreePointPlane { .. }
+            | LegacyOperation::DatumOffsetPlane { .. }
+            | LegacyOperation::DatumAxis { .. }
+            | LegacyOperation::DatumPoint { .. }
+            | LegacyOperation::DatumCoordinateSystem { .. }
+    )
+}
+
+fn definition(
+    source: &cadmpeg_ir::features::Feature,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+) -> Result<(FeatureDefinition, Option<&'static str>), CodecError> {
+    let operation = source.evaluation.definition().operation();
+    let (mut operation, reason) = match typed(operation, sketches) {
+        Ok(value) => (value, None),
+        Err(reason) => (retained(operation)?, Some(reason)),
+    };
+    if let FeatureOperation::Stored { bodies, .. } = &mut operation {
+        *bodies =
+            (!source.evaluation.outputs().is_empty()).then(|| source.evaluation.outputs().clone());
+    }
+    let mut result = FeatureDefinition {
+        operation,
+        refine: None,
+        fuzzy_tolerance: None,
+    };
+    if let cadmpeg_ir::features::FeatureDefinition::PostProcess {
+        refine,
+        fuzzy_tolerance,
+        ..
+    } = source.evaluation.definition()
+    {
+        use cadmpeg_ir::design::feature::FuzzyTolerance;
+        result.refine = Some(*refine);
+        result.fuzzy_tolerance = Some(match fuzzy_tolerance {
+            cadmpeg_ir::features::FuzzyTolerance::KernelDefault => FuzzyTolerance::KernelDefault,
+            cadmpeg_ir::features::FuzzyTolerance::Automatic => FuzzyTolerance::Automatic,
+            cadmpeg_ir::features::FuzzyTolerance::Explicit(value) => {
+                FuzzyTolerance::Explicit(Dimension::Literal(*value))
+            }
+        });
+    }
+    Ok((result, reason))
+}
+
+pub(super) fn validate(ir: &CadIr) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    use cadmpeg_ir::report::{
+        check::{Check, Finding},
+        Severity,
+    };
+    let mut findings = Vec::new();
+    if ir.model.product_definitions.is_empty() {
+        return Ok(findings);
+    }
+    let targets = unique_index(ir.design.features.iter().map(|target| (&target.id, target)));
+    for source in &ir.model.features {
+        if !projects(source.evaluation.definition().operation()) {
+            continue;
+        }
+        let (expected, _) = definition(source, &ir.model.sketches)?;
+        let target = targets.get(&source.id).and_then(|target| *target);
+        if target.is_none_or(|target| target.definition != expected) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: format!(
+                    "Inventor v11 operation {} differs from its admitted source operands",
+                    source.id
+                ),
+                entity: Some(source.id.to_string()),
+                related: Vec::new(),
+            });
+        }
+    }
+    Ok(findings)
 }
 
 type Projected<T> = Result<T, &'static str>;

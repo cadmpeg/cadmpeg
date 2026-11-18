@@ -79,7 +79,9 @@ fn plane(
     source: Option<old::PlaneTargetSource>,
 ) -> Projected<Construction<kinds::Plane>> {
     Ok(Construction {
-        inputs: vec![reference(selections::native(native)?)],
+        inputs: vec![reference(selections::selection(vec![selections::named(
+            native, None,
+        )?])?)],
         mode: source.map(|source| {
             source_mode(match source {
                 old::PlaneTargetSource::WorkPlane => cadmpeg_core::nonblank_literal!("work_plane"),
@@ -316,10 +318,7 @@ pub(super) fn operation(
                                 axis.mode =
                                     Some(source_mode(cadmpeg_core::nonblank_literal!("edge")));
                             }
-                            Some(old::ExtrusionDirectionSource::Custom {}) => {
-                                axis.mode =
-                                    Some(source_mode(cadmpeg_core::nonblank_literal!("custom")));
-                            }
+                            Some(old::ExtrusionDirectionSource::Custom {}) => {}
                             Some(old::ExtrusionDirectionSource::ProfileNormal {}) => {
                                 axis.mode = Some(source_mode(cadmpeg_core::nonblank_literal!(
                                     "profile_normal"
@@ -333,7 +332,9 @@ pub(super) fn operation(
                                 .map(Dimension::Literal),
                         })
                     }
-                    old::ExtrudeDirection::Unresolved {} => None,
+                    old::ExtrudeDirection::Unresolved {} => {
+                        return Err("the extrusion travel sense is unresolved")
+                    }
                 };
                 if !matches!(travel, Some(new::ExtrudeDirection::Along { .. }))
                     && length_along_profile_normal.is_some()
@@ -367,43 +368,22 @@ pub(super) fn operation(
                             "the start-face offset direction exceeds the v11 origin contract",
                         )
                     }
-                    old::ExtrudeStart::Unresolved {} => None,
+                    old::ExtrudeStart::Unresolved {} => {
+                        return Err("the extrusion span origin is unresolved")
+                    }
                 };
-                let (end, start) = match span {
+                let has_draft = match span {
                     old::ExtrudeExtent::OneSided { side }
-                    | old::ExtrudeExtent::Symmetric { side } => (side.draft, None),
-                    old::ExtrudeExtent::TwoSided { first, second } => (first.draft, second.draft),
+                    | old::ExtrudeExtent::Symmetric { side } => side.draft.is_some(),
+                    old::ExtrudeExtent::TwoSided { first, second } => {
+                        first.draft.is_some() || second.draft.is_some()
+                    }
                 };
-                if matches!(span, old::ExtrudeExtent::Symmetric { side } if matches!(side.termination, old::LinearTermination::ThroughAll {}))
-                    && (end.is_some() || inner_wire_taper.is_some())
-                {
-                    return Err("the symmetric through-all draft has no symmetric v11 span");
+                if has_draft || inner_wire_taper.is_some() {
+                    return Err(
+                        "the extrusion draft sign and neutral plane require a source reading",
+                    );
                 }
-                let draft = if end.is_some() || start.is_some() || inner_wire_taper.is_some() {
-                    Some(new::ExtrudeDraft {
-                        end: end
-                            .map(|value| {
-                                Angle::new(value.get())
-                                    .map(Dimension::Literal)
-                                    .ok_or("the draft angle is invalid")
-                            })
-                            .transpose()?,
-                        start: start
-                            .map(|value| {
-                                Angle::new(value.get())
-                                    .map(Dimension::Literal)
-                                    .ok_or("the draft angle is invalid")
-                            })
-                            .transpose()?,
-                        neutral: Some(new::DraftNeutral::Origin),
-                        holes: inner_wire_taper.map(|value| match value {
-                            old::InnerWireTaper::Inverted => new::HoleDraft::WithRegion,
-                            old::InnerWireTaper::SameAsOuter => new::HoleDraft::WithOuter,
-                        }),
-                    })
-                } else {
-                    None
-                };
                 let mut settings = BTreeMap::default();
                 setting(
                     &mut settings,
@@ -416,7 +396,7 @@ pub(super) fn operation(
                     direction: travel,
                     origin,
                     span: Some(extent(span)?),
-                    draft,
+                    draft: None,
                     fit: None,
                     outside: None,
                     sheet_cut: None,
@@ -477,7 +457,7 @@ pub(super) fn operation(
                 scale,
                 allow_multi_profile_faces,
             } => {
-                if *path_tangent || transformation.is_some() || scale.is_some() {
+                if *path_tangent || *linearize || transformation.is_some() || scale.is_some() {
                     return Err("the sweep controls require additional v11 laws");
                 }
                 let (section, output) = match shape {
@@ -519,11 +499,6 @@ pub(super) fn operation(
                     against: Some(Dimension::Literal(value.against_fraction)),
                 };
                 let mut settings = BTreeMap::default();
-                setting(
-                    &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:linearize"),
-                    Some(*linearize),
-                );
                 setting(
                     &mut settings,
                     cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
@@ -576,6 +551,11 @@ pub(super) fn operation(
                 max_degree,
                 allow_multi_profile_faces,
             } => {
+                if *closed || *ruled || *linearize {
+                    return Err(
+                        "the loft closure, approximation, and ruled controls require a source reading",
+                    );
+                }
                 let mut profiles = Vec::new();
                 for section in sections {
                     let old::LoftSection::Profile(profile) = section else {
@@ -616,11 +596,6 @@ pub(super) fn operation(
                 let mut settings = BTreeMap::default();
                 setting(
                     &mut settings,
-                    cadmpeg_core::nonblank_literal!("inventor:linearize"),
-                    Some(*linearize),
-                );
-                setting(
-                    &mut settings,
                     cadmpeg_core::nonblank_literal!("inventor:allow_multi_profile_faces"),
                     *allow_multi_profile_faces,
                 );
@@ -636,8 +611,8 @@ pub(super) fn operation(
                         style: None,
                         max_degree: max_degree.map(Dimension::Literal),
                         rebuild: None,
-                        ruled: Some(Dimension::Literal(*ruled)),
-                        closed: Some(Dimension::Literal(*closed)),
+                        ruled: None,
+                        closed: None,
                         relimit: None,
                         merge_tangent_faces: None,
                         smoothing: None,

@@ -194,17 +194,15 @@ pub(super) fn operation(
                                 old::edge_treatments::ChamferSpec::TwoDistances {
                                     first,
                                     second,
-                                } => new::ChamferSize::Distances {
-                                    first: Dimension::Literal(first),
-                                    second: Dimension::Literal(second),
-                                },
-                                old::edge_treatments::ChamferSpec::DistanceAngle {
-                                    distance,
-                                    angle,
-                                } => new::ChamferSize::DistanceAngle {
-                                    distance: Dimension::Literal(distance),
-                                    angle: Dimension::Literal(angle),
-                                },
+                                } if first == second => {
+                                    new::ChamferSize::Distance(Dimension::Literal(first))
+                                }
+                                old::edge_treatments::ChamferSpec::TwoDistances { .. }
+                                | old::edge_treatments::ChamferSpec::DistanceAngle { .. } => {
+                                    return Err(
+                                        "the chamfer support side has no v11 reference selection",
+                                    )
+                                }
                                 old::edge_treatments::ChamferSpec::Unresolved { .. } => {
                                     return Err("the chamfer size is unresolved")
                                 }

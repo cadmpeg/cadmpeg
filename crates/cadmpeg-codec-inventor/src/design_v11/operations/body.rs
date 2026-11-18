@@ -5,10 +5,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
-use cadmpeg_ir::design::ops::{
-    body as new,
-    shared::{PatternLayout, ToolDisposition},
-};
+use cadmpeg_ir::design::ops::{body as new, shared::ToolDisposition};
 use cadmpeg_ir::features::{self as old, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::scalar::Length;
 
@@ -218,35 +215,8 @@ pub(super) fn operation(value: &LegacyOperation) -> Option<Projected<FeatureOper
                     source_settings: BTreeMap::default(),
                 }))
             }
-            LegacyOperation::MirrorShape {
-                source,
-                plane_origin,
-                plane_normal,
-                plane_reference,
-            } => {
-                let mut plane = patterns::plane(*plane_origin, (*plane_normal).into())?;
-                if let Some(faces) = plane_reference {
-                    let faces = selections::face(faces)?;
-                    let cadmpeg_ir::design::selection::Picks::Named(members) = faces.picks else {
-                        return Err("the mirror plane has a rule");
-                    };
-                    plane
-                        .inputs
-                        .push(swept::reference(selections::selection(members.into_vec())?));
-                }
-                FeatureOperation::Pattern(Box::new(new::Pattern {
-                    seeds: new::PatternSeeds::Bodies {
-                        bodies: selections::set(selections::bodies(source)?)?,
-                        join: None,
-                    },
-                    layout: PatternLayout::Mirror {
-                        plane,
-                        stitch_tolerance: None,
-                    },
-                    instances: new::PatternInstances::Implicit(Vec::new()),
-                    native_options: BTreeMap::default(),
-                    source_settings: BTreeMap::default(),
-                }))
+            LegacyOperation::MirrorShape { .. } => {
+                return Err("the mirror source has no v11 copy or replacement disposition")
             }
             LegacyOperation::Pattern { seeds, pattern } => {
                 FeatureOperation::Pattern(Box::new(patterns::project(seeds, pattern)?))
