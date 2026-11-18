@@ -101,7 +101,9 @@ fn standalone_joint_origin_requires_the_typed_placement_and_scope_backlink() {
             }
             let records = indexed_record_offsets_for_test(&bytes);
             assert!(direct_joint_origin_frame(&bytes, &records, &scope, &HashMap::new()).is_none());
-            let frame = direct_joint_origin_frame(&bytes, &records, &scope, &types).unwrap();
+            let (frame, carrier) =
+                direct_joint_origin_frame(&bytes, &records, &scope, &types).unwrap();
+            assert_eq!(carrier.frame_length, u64_from_index(carrier_length));
             assert_eq!(
                 frame.transform_offset,
                 u64_from_index(start + matrix_offset)

@@ -1099,7 +1099,9 @@ fn run_pattern_constructions_fixture() {
     }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
     let bind_legacy_origins = |bytes: &[u8], scopes: &mut [DesignParameterScope]| {
-        bind_joint_origin_frames_from_assemblies(bytes, scopes, &HashSet::new());
+        let mut losses = Vec::new();
+        bind_joint_origin_frames_from_assemblies(bytes, scopes, &HashSet::default(), &mut losses);
+        assert!(losses.is_empty());
     };
     bind_legacy_origins(&axial_assembly_bytes, &mut linked_scopes);
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));

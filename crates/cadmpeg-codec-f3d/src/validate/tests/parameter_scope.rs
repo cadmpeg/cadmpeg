@@ -43,6 +43,7 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     use crate::records::feature::assembly::{DesignAssemblyAlignment, DesignAssemblyAlignmentForm};
     use crate::records::feature::scope::{DesignJointOriginReference, DesignScopePayload};
+    use crate::records::feature::work_geometry::joint_origin::DesignJointOriginCarrierEvidence;
     use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
     use crate::records::sketch_placement::SketchPlacementMatrix;
 
@@ -156,7 +157,7 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
             origin.byte_offset(),
             origin.class_tag.clone(),
         ),
-        (construction, 1600, "301".to_owned().try_into().unwrap()),
+        (construction, 1800, "301".to_owned().try_into().unwrap()),
     ]
     .into_iter()
     .chain(owners.iter().map(|owner| {
@@ -223,15 +224,62 @@ fn assembly_datum_envelope_accepts_a_registered_joint_origin_carrier() {
         set_frame(&mut native, 36, 25);
         assert!(findings(&native).is_empty());
         set_frame(&mut native, carrier_start + 60, carrier_start + 46);
+        let mut prefix = vec![0; 34];
+        crate::test_support::push_marked_reference(&mut prefix, construction);
+        prefix.extend_from_slice(&[0; 4]);
+        let mut scope_backlink = Vec::new();
+        crate::test_support::push_marked_reference(&mut scope_backlink, 91);
+        native.design_parameter_scopes[1]
+            .joint_origin_frame_mut()
+            .unwrap()
+            .carrier = Some(DesignJointOriginCarrierEvidence {
+            frame_length: 369,
+            prefix,
+            scope_backlink: scope_backlink.try_into().unwrap(),
+        });
+        let encoded = serde_json::to_value(&native.design_parameter_scopes[1]).unwrap();
+        native.design_parameter_scopes[1] = serde_json::from_value(encoded).unwrap();
         let valid = findings(&native);
         assert!(valid.is_empty(), "{valid:?}");
 
+        let assert_invalid = |native: &F3dNative| {
+            let invalid = findings(native);
+            assert!(invalid.iter().any(|finding| {
+                finding.check == cadmpeg_ir::report::check::Check::NativeLinks
+                    && finding.entity.as_deref() == Some(assembly_id.as_str())
+            }));
+        };
+        fn carrier_evidence(
+            scope: &mut DesignParameterScope,
+        ) -> &mut DesignJointOriginCarrierEvidence {
+            scope
+                .joint_origin_frame_mut()
+                .unwrap()
+                .carrier
+                .as_mut()
+                .unwrap()
+        }
+        for prefix_index in [0, 34, 35, 47] {
+            let mut invalid = native.clone();
+            carrier_evidence(&mut invalid.design_parameter_scopes[1]).prefix[prefix_index] ^= 1;
+            assert_invalid(&invalid);
+        }
+        let mut invalid = native.clone();
+        carrier_evidence(&mut invalid.design_parameter_scopes[1]).scope_backlink[1] ^= 1;
+        assert_invalid(&invalid);
+        let mut invalid = native.clone();
+        carrier_evidence(&mut invalid.design_parameter_scopes[1]).frame_length += 1;
+        assert_invalid(&invalid);
+        let mut invalid = native.clone();
+        set_frame(&mut invalid, 36, 25);
+        assert_invalid(&invalid);
+        let mut invalid = native.clone();
+        invalid
+            .design_record_headers
+            .retain(|header| header.record_index != construction);
+        assert_invalid(&invalid);
         native.design_record_headers.last_mut().unwrap().byte_offset += 1;
-        let invalid = findings(&native);
-        assert!(invalid.iter().any(|finding| {
-            finding.check == cadmpeg_ir::report::check::Check::NativeLinks
-                && finding.entity.as_deref() == Some(assembly_id.as_str())
-        }));
+        assert_invalid(&native);
     });
 }
 

@@ -2629,12 +2629,27 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         };
         let direct_joint_origin_carrier_link =
             |target: &DesignParameterScope, origin: &DesignJointOriginTransform| {
+                let Some(evidence) = &origin.carrier else {
+                    return false;
+                };
                 DirectJointOriginCarrier::for_scope(target)
                     .into_iter()
                     .flatten()
                     .any(|carrier| {
-                        carrier.matches_offsets(origin)
+                        evidence.frame_length == u64_from_index(carrier.length)
+                            && carrier.matches_offsets(origin)
                             && carrier.has_registered_types(target, stream_types)
+                            && carrier
+                                .construction_index(
+                                    &evidence.prefix,
+                                    &evidence.scope_backlink,
+                                    target.record_index,
+                                )
+                                .is_some_and(|index| {
+                                    origin.reference.as_ref().is_some_and(|reference| {
+                                        reference.joint_origin_reference == index
+                                    }) && records_by_index.contains_key(&(native_stream, index))
+                                })
                             && records_by_index
                                 .get(&(native_stream, carrier.record_index))
                                 .is_some_and(|header| header.byte_offset == carrier.start)
@@ -2953,11 +2968,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     && target.kind()
                                         == crate::records::feature::scope::DesignFeatureKind::JointOrigin
                                     && target.record_index == record_index
-                                    && (scope.byte_offset().checked_add(36).is_some_and(|offset| {
-                                        target.joint_origin_transform_offset() == Some(offset)
-                                    }) || target.joint_origin_frame().is_some_and(|origin| {
-                                        direct_joint_origin_carrier_link(target, origin)
-                                    }))
+                                    && target.joint_origin_frame().is_some_and(|origin| {
+                                        if origin.carrier.is_some() {
+                                            direct_joint_origin_carrier_link(target, origin)
+                                        } else {
+                                            scope.byte_offset().checked_add(36)
+                                                == Some(origin.joint_origin_transform_offset)
+                                        }
+                                    })
                             })
                     });
                 let alignment_scalars_link = if let Some(generation) = as_built_421_generation {
@@ -3546,6 +3564,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let joint_origin_link = scope.joint_origin_frame().is_none_or(|origin| {
+            if origin.carrier.is_some() {
+                return direct_joint_origin_carrier_link(scope, origin);
+            }
             let transform = origin.joint_origin_transform;
             let transform_offset = origin.joint_origin_transform_offset;
             let inline = match (scope.frame_length(), &origin.reference) {
@@ -3593,10 +3614,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             == assembly.byte_offset().checked_add(25)
                 })
             });
-            inline
-                || assembly_operand
-                || single_operand_assembly
-                || direct_joint_origin_carrier_link(scope, origin)
+            inline || assembly_operand || single_operand_assembly
         });
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream)?;
         let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);

@@ -239,6 +239,8 @@ pub(crate) enum F3dLossCode {
     AssemblyJointUnprojected,
     /// Partial assembly alignments with unresolved motion binding or operand paths.
     AssemblyAlignmentPartial,
+    /// A carrier supplies the solved JointOrigin frame and its Assemble copy differs.
+    AssemblyJointOriginEnvelopeMatrixDiscarded,
     /// An ordinary rigid-group frame has no admitted grammar.
     AssemblyRigidGroupFrameUnparsed,
     /// Design assembly joints projected as fixed because their freedom codes or
@@ -1254,6 +1256,7 @@ impl F3dLossCode {
         Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
         Self::AssemblyAlignmentPartial,
+        Self::AssemblyJointOriginEnvelopeMatrixDiscarded,
         Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
@@ -2002,6 +2005,9 @@ impl F3dLossCode {
                 "assembly.local-occurrence-first-matrix-refused"
             }
             Self::AssemblyAlignmentPartial => "assembly.alignment-partial",
+            Self::AssemblyJointOriginEnvelopeMatrixDiscarded => {
+                "assembly.joint-origin-envelope-matrix-discarded"
+            }
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyRigidGroupFrameUnparsed => "assembly.rigid-group-frame-unparsed",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
@@ -3013,6 +3019,7 @@ impl F3dLossCode {
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound
             | Self::AssemblyAlignmentPartial
+            | Self::AssemblyJointOriginEnvelopeMatrixDiscarded
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -4115,6 +4122,7 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyAlignmentPartial
+            | Self::AssemblyJointOriginEnvelopeMatrixDiscarded
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -4418,6 +4426,7 @@ mod tests {
                 "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
                 "assembly.alignment-partial",
+                "assembly.joint-origin-envelope-matrix-discarded",
                 "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",

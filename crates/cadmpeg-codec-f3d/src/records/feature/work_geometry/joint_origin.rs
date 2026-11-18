@@ -3,7 +3,10 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_ir::native::bytes::NativeBytes;
+use serde::{Deserialize, Serialize};
 
+use crate::bytes::local_reference_target;
 use crate::layout::{
     joint_origin_direct_carrier_369 as short, joint_origin_direct_carrier_391 as long,
     joint_origin_direct_carrier_412 as extended, joint_origin_scope_carrier_separation,
@@ -14,6 +17,13 @@ use crate::records::feature::scope::{
 
 const SCOPE_TYPE_GUID: &str = "02E8AA49-08B8-439C-A8C7-221BE20143D8";
 const PLACEMENT_TYPE_GUID: &str = "7B6C3C2D-4096-4E6D-B225-699E8C2D9355";
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignJointOriginCarrierEvidence {
+    pub(crate) frame_length: u64,
+    pub(crate) prefix: NativeBytes,
+    pub(crate) scope_backlink: NativeBytes<[u8; 11]>,
+}
 
 pub(crate) struct DirectJointOriginCarrier {
     pub(crate) record_index: u32,
@@ -81,6 +91,26 @@ impl DirectJointOriginCarrier {
         };
         matches(scope.record_index, SCOPE_TYPE_GUID, 2)
             && matches(self.record_index, PLACEMENT_TYPE_GUID, self.version)
+    }
+
+    pub(crate) fn construction_index(
+        &self,
+        prefix: &[u8],
+        scope_backlink: &[u8; 11],
+        scope_record_index: u32,
+    ) -> Option<u32> {
+        let reference_offset = self.construction_reference - short::ZERO_PREFIX;
+        let suffix_offset = reference_offset + scope_backlink.len();
+        if prefix
+            .get(..reference_offset)?
+            .iter()
+            .any(|byte| *byte != 0)
+            || prefix.get(suffix_offset..)? != self.reference_suffix
+            || local_reference_target(scope_backlink, 0, false) != Some(scope_record_index)
+        {
+            return None;
+        }
+        local_reference_target(prefix, reference_offset, false).filter(|index| *index != 0)
     }
 
     pub(crate) fn matches_offsets(&self, frame: &DesignJointOriginTransform) -> bool {

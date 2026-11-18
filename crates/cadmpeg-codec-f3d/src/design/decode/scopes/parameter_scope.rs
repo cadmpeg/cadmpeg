@@ -388,18 +388,21 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
-                let direct_frame =
-                    direct_joint_origin_frame(bytes, &records, &scope, &stream_types);
-                if direct_frame.is_some() {
-                    direct_joint_origin_offsets.insert(scope.byte_offset());
-                }
-                if let Some(frame) =
-                    direct_frame.or_else(|| exact_joint_origin_frame(bytes, &records, &scope))
-                {
+                let framed =
+                    match direct_joint_origin_frame(bytes, &records, &scope, &stream_types) {
+                        Some((frame, carrier)) => {
+                            direct_joint_origin_offsets.insert(scope.byte_offset());
+                            Some((frame, Some(carrier)))
+                        }
+                        None => exact_joint_origin_frame(bytes, &records, &scope)
+                            .map(|frame| (frame, None)),
+                    };
+                if let Some((frame, carrier)) = framed {
                     if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignJointOriginTransform {
                             joint_origin_transform: frame.transform,
                             joint_origin_transform_offset: frame.transform_offset,
+                            carrier,
                             reference: frame.reference.map(|(record_index, offset)| {
                                 scope::DesignJointOriginReference {
                                     joint_origin_reference: record_index,
@@ -923,6 +926,7 @@ pub(crate) fn decode_parameter_scopes(
             bytes,
             &mut out[stream_scope_start..],
             &direct_joint_origin_offsets,
+            &mut losses,
         );
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }

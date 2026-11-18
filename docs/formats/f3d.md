@@ -2148,7 +2148,7 @@ A version-2 `JointOrigin` scope can store its solved frame in a separate placeme
 
 The 369- and 391-byte carriers store 34 zero bytes after the indexed header, a marked construction-record reference at offset 45, and four zero bytes after that reference. The 412-byte carrier stores 35 zero bytes after the indexed header, a marked construction-record reference at offset 46, and the bytes `00 00 01 00` after that reference. The matrix columns give the axes and the origin in centimetres.
 
-For a carrier-backed `JointOrigin`, the carrier supplies the frame. The marked scope reference in an `Assemble` datum envelope identifies its `JointOrigin`.
+The marked scope reference in an `Assemble` datum envelope identifies its `JointOrigin`. For a carrier-backed `JointOrigin`, the carrier matrix is the solved frame even when the datum envelope stores a different matrix at offset 36.
 
 A direct `WorkPoint` scope references a point-data construction record. The primary record is paired by its record index. Its class level is:
 

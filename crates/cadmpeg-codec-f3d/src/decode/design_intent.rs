@@ -1495,6 +1495,10 @@ pub(super) fn scope_related_indices(
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(
+                scope.joint_origin_frame().filter(|frame| frame.carrier.is_some())
+                    .and_then(|_| scope.joint_origin_reference()),
+            )
             .chain(scope.move_operation().map(|operation| operation.transform_record_index))
             .chain(scope.move_operation().and_then(|operation| operation.face_group.as_ref().map(|group| group.value)))
             .chain(
