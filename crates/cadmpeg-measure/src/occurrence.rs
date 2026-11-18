@@ -2,22 +2,27 @@
 //! The instance space of one occurrence: its chain from the root, the
 //! composed placement of the chain, and the bodies of its subtree.
 //!
-//! The chain composes as the assembly graph does: each occurrence's
-//! effective transform applies inside its parent's, so the placement is
-//! `E(root) ∘ … ∘ E(occurrence)`. The subtree composes the same way
-//! downward: a child `C` of `O` is placed by `placement(O) ∘ E(C)`. A body
-//! that the prototype of a subtree member lists is placed by its own
-//! transform first, then by that member's placement.
+//! The chain climbs from the occurrence to the definition that owns it, then
+//! to the one occurrence that places that definition, until it reaches the
+//! root definition. Each occurrence's transform applies inside the one above
+//! it, so the placement is `T(top) ∘ … ∘ T(occurrence)`. The subtree composes
+//! the same way downward: an occurrence `C` that the prototype of `O` owns is
+//! placed by `placement(O) ∘ T(C)`. `T` of an instance below the chain's
+//! top-level occurrence is the transform an override of that occurrence
+//! states for its path, where one does (§8.1). A body that the prototype of a
+//! subtree member lists is placed by its own transform first, then by that
+//! member's placement.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference};
+use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use crate::reason::UnavailableReason;
 use crate::report::{DescendantMeasures, OccurrenceMeasures};
+use crate::tolerance::COMPARE_OCCURRENCE_SCALE_DEVIATION;
 use crate::value::Unavailable;
 
 /// The instance space of an occurrence.
@@ -43,40 +48,76 @@ impl Space<'_> {
     }
 }
 
-/// The occurrences from the root to `occurrence`, or `None` when a parent
-/// is missing or the chain repeats.
-fn chain<'ir>(
-    by_id: &HashMap<&str, &'ir Occurrence>,
-    occurrence: &'ir Occurrence,
-) -> Option<Vec<&'ir Occurrence>> {
+/// The occurrences from the root to `occurrence`, or `None` when an owning
+/// definition on the way is placed by no occurrence or by several, or the
+/// chain repeats.
+fn chain<'ir>(ir: &'ir CadIr, occurrence: &'ir Occurrence) -> Option<Vec<&'ir Occurrence>> {
+    let model = &ir.model;
     let mut chain = vec![occurrence];
     let mut current = occurrence;
-    while let OccurrenceParent::Occurrence { occurrence: parent } = &current.parent {
-        if chain.len() > by_id.len() {
+    loop {
+        let owner = cadmpeg_ir::products::owner(&model.product_definitions, &current.id)?;
+        if owner.is_root() {
+            break;
+        }
+        if chain.len() > model.occurrences.len() {
             return None;
         }
-        current = by_id.get(parent.as_str())?;
+        current = cadmpeg_ir::products::sole_placement(&model.occurrences, &owner.id)?;
         chain.push(current);
     }
     chain.reverse();
     Some(chain)
 }
 
-/// The local product definition an occurrence places.
+/// The product definition an occurrence places, where the document holds it.
 fn definition<'ir>(
     definitions: &'ir [ProductDefinition],
     occurrence: &Occurrence,
 ) -> Option<&'ir ProductDefinition> {
-    match &occurrence.prototype {
-        PrototypeReference::Local { definition } => definitions
-            .iter()
-            .find(|candidate| candidate.id == *definition),
-        PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
-    }
+    definitions.iter().find(|candidate| {
+        candidate.id == occurrence.prototype && !matches!(candidate.storage, Storage::External(_))
+    })
 }
 
-fn scaled(occurrence: &Occurrence) -> bool {
-    occurrence.scale.iter().any(|factor| factor.get() != 1.0)
+/// The transform of an occurrence; one that states none places it as is.
+fn transform(occurrence: &Occurrence) -> Transform {
+    occurrence.transform.unwrap_or_default()
+}
+
+/// The base transform of the instance of `occurrence` at `path` below the
+/// top-level occurrence `top`, or the one an override of `top` states for
+/// that path (§8.1).
+fn instance_transform(
+    top: Option<&Occurrence>,
+    path: &[&str],
+    occurrence: &Occurrence,
+) -> Transform {
+    use cadmpeg_ir::design::selection::StepRef;
+    top.filter(|_| !path.is_empty())
+        .and_then(|top| {
+            top.overrides.iter().find(|entry| {
+                entry.path.0.len() == path.len()
+                    && entry.path.0.iter().zip(path).all(|(step, id)| {
+                        matches!(&step.occurrence, StepRef::Occurrence(step) if step.as_str() == *id)
+                    })
+            })
+        })
+        .and_then(|entry| entry.transform)
+        .unwrap_or_else(|| transform(occurrence))
+}
+
+/// Whether a transform scales an axis.
+fn scaled(transform: Transform) -> bool {
+    let rows = transform.affine_rows();
+    (0..3).any(|column| {
+        let length = rows
+            .iter()
+            .map(|row| row[column] * row[column])
+            .sum::<f64>()
+            .sqrt();
+        (length - 1.0).abs() > COMPARE_OCCURRENCE_SCALE_DEVIATION
+    })
 }
 
 /// The first reason a space has no rows; later failures keep it.
@@ -108,38 +149,63 @@ pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>
         .iter()
         .map(|occurrence| (occurrence.id.as_str(), occurrence))
         .collect();
-    let mut children: HashMap<&str, Vec<&'ir Occurrence>> = HashMap::new();
-    for occurrence in &model.occurrences {
-        if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
-            children
-                .entry(parent.as_str())
-                .or_default()
-                .push(occurrence);
-        }
-    }
-    for siblings in children.values_mut() {
-        siblings.sort_by(|left, right| {
-            (left.ordinal, left.id.as_str()).cmp(&(right.ordinal, right.id.as_str()))
-        });
-    }
+    // The occurrences each definition owns, in its order.
+    let owned: HashMap<&str, Vec<&'ir Occurrence>> = definitions
+        .iter()
+        .map(|definition| {
+            (
+                definition.id.as_str(),
+                definition
+                    .occurrences
+                    .iter()
+                    .filter_map(|child| by_id.get(child.as_str()).copied())
+                    .collect(),
+            )
+        })
+        .collect();
     let occurrence = *by_id.get(id.as_str())?;
     let name = occurrence.id.as_str();
     let prototype = definition(definitions, occurrence);
-    let chain = chain(&by_id, occurrence);
+    let chain = chain(ir, occurrence);
     let mut failure = FirstFailure::default();
     let mut world = None;
+    let top = chain.as_ref().and_then(|chain| chain.first().copied());
+    let below_top = chain
+        .as_ref()
+        .map(|chain| {
+            chain
+                .iter()
+                .skip(1)
+                .map(|member| member.id.as_str())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let chain_transforms = chain
+        .as_ref()
+        .map(|chain| {
+            chain
+                .iter()
+                .enumerate()
+                .map(|(at, member)| instance_transform(top, &below_top[..at], member))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     match &chain {
         None => failure.note(
             UnavailableReason::PlacementOccurrenceChainBroken,
             name,
-            "the occurrence's parent chain does not reach a root occurrence",
+            "the occurrence's chain does not reach the root definition",
         ),
         Some(chain) => {
-            if let Some(scaled) = chain.iter().find(|member| scaled(member)) {
+            if let Some((scaled, _)) = chain
+                .iter()
+                .zip(&chain_transforms)
+                .find(|(_, transform)| scaled(**transform))
+            {
                 failure.note(
                     UnavailableReason::PlacementOccurrenceScale,
                     scaled.id.as_str(),
-                    "an occurrence of the chain has a scale other than (1, 1, 1)",
+                    "an occurrence of the chain has a transform that scales",
                 );
             } else if prototype.is_none() {
                 failure.note(
@@ -148,12 +214,10 @@ pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>
                     "the occurrence's prototype is external or does not resolve",
                 );
             }
-            let composed = chain
+            let composed = chain_transforms
                 .iter()
                 .try_fold(Transform::identity(), |placed, member| {
-                    member
-                        .effective_transform()
-                        .and_then(|local| placed.compose(local))
+                    placed.compose(*member)
                 });
             match composed {
                 Ok(composed) => world = Some(composed),
@@ -189,15 +253,32 @@ pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>
     };
     place(prototype, world, &mut failure);
     let mut members: Vec<Member<'ir>> = Vec::new();
-    let mut pending: VecDeque<(&'ir str, Option<Transform>)> = VecDeque::from([(name, world)]);
-    while let Some((parent, placement)) = pending.pop_front() {
-        for child in children.get(parent).into_iter().flatten() {
+    let mut pending: VecDeque<(&'ir Occurrence, Option<Transform>, usize, Vec<&'ir str>)> =
+        VecDeque::from([(occurrence, world, 0, below_top)]);
+    while let Some((parent_occurrence, placement, depth, path)) = pending.pop_front() {
+        let parent = parent_occurrence.id.as_str();
+        let children = owned
+            .get(parent_occurrence.prototype.as_str())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if depth > model.occurrences.len() && !children.is_empty() {
+            failure.note(
+                UnavailableReason::PlacementOccurrenceChainBroken,
+                parent,
+                "the subtree's definitions place one another",
+            );
+            break;
+        }
+        for &child in children {
             let child_name = child.id.as_str();
-            if scaled(child) {
+            let mut child_path = path.clone();
+            child_path.push(child_name);
+            let child_transform = instance_transform(top, &child_path, child);
+            if scaled(child_transform) {
                 failure.note(
                     UnavailableReason::PlacementOccurrenceScale,
                     child_name,
-                    "an occurrence of the subtree has a scale other than (1, 1, 1)",
+                    "an occurrence of the subtree has a transform that scales",
                 );
             }
             let child_prototype = definition(definitions, child);
@@ -209,9 +290,8 @@ pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>
                 );
             }
             let child_placement = placement.and_then(|placement| {
-                child
-                    .effective_transform()
-                    .and_then(|local| placement.compose(local))
+                placement
+                    .compose(child_transform)
                     .map_err(|_| {
                         failure.note(
                             UnavailableReason::PlacementNonFinite,
@@ -227,7 +307,7 @@ pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>
                 parent,
                 placement: child_placement,
             });
-            pending.push_back((child_name, child_placement));
+            pending.push_back((child, child_placement, depth + 1, child_path));
         }
     }
     if bodies.is_empty() {

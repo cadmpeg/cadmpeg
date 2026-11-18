@@ -969,7 +969,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 u64::from(operation.boundary_record_index)
                             )),
                             distance: Some(distance),
-                            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+                            method: operation.extension(),
                         })
                     } else {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -1700,7 +1700,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
-                    FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::Form(_) | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
+                    FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::Form(_) | FeatureOperation::FilledSurface { .. } | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
@@ -1805,6 +1805,24 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         else {
             continue;
         };
+        if let Some(results) =
+            crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
+                .and_then(|group| {
+                    group
+                        .into_iter()
+                        .map(|scope| Some(u64::from(scope.derived_base_owner?.result_body?.value)))
+                        .collect::<Option<Vec<_>>>()
+                })
+        {
+            let bodies = design_body_selection(scope, results.into_iter(), body_bindings);
+            if matches!(bodies, cadmpeg_ir::features::BodySelection::Resolved { .. }) {
+                feature
+                    .evaluation
+                    .set_definition(FeatureDefinition::Operation(
+                        FeatureOperation::BaseFeature { bodies },
+                    ));
+            }
+        }
         let ScopeHistoryPredecessor::Scope(predecessor_scope) =
             scope_history.predecessor(scope, |candidate| {
                 let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -7760,6 +7778,39 @@ fn project_rectangular_pattern_scalars(
     let mut active = Vec::new();
     let mut dropped = Vec::new();
     let distribution = construction.distribution();
+    let component_seed = construction
+        .instances()
+        .and_then(|instances| match instances {
+            crate::records::feature::patterns::DesignRectangularPatternInstances::Bodies(_) => None,
+            crate::records::feature::patterns::DesignRectangularPatternInstances::Components {
+                seed,
+                ..
+            } => Some(PatternSeed::Occurrences(
+                (vec![crate::ids::neutral_component_occurrence_id(
+                    &seed.occurrence_guid,
+                )])
+                .try_into()
+                .ok()?,
+            )),
+        });
+    let group_seed = pattern_seed_group(scope, groups).map(|group| {
+        pattern_group_seeds(
+            scope,
+            group,
+            face_operands,
+            entity_selection_operands,
+            scopes,
+        )
+    });
+    let seeds = component_seed
+        .map(|seed| vec![seed])
+        .or(group_seed)
+        .unwrap_or_default();
+    if let Some(note) = distribution.and_then(|distribution| {
+        pattern_seeds::distribution_seed_conflict(scope, distribution, &seeds)
+    }) {
+        losses.push(note);
+    }
     let adjacent = distribution.map_or_else(
         || {
             construction
@@ -7829,34 +7880,6 @@ fn project_rectangular_pattern_scalars(
         );
         cadmpeg_ir::units::UnitVector3::normalized_by_reciprocal(delta)
     });
-    let component_seed = construction
-        .instances()
-        .and_then(|instances| match instances {
-            crate::records::feature::patterns::DesignRectangularPatternInstances::Bodies(_) => None,
-            crate::records::feature::patterns::DesignRectangularPatternInstances::Components {
-                seed,
-                ..
-            } => Some(PatternSeed::Occurrences(
-                (vec![crate::ids::neutral_component_occurrence_id(
-                    &seed.occurrence_guid,
-                )])
-                .try_into()
-                .ok()?,
-            )),
-        });
-    let group_seed = pattern_seed_group(scope, groups).map(|group| {
-        pattern_group_seeds(
-            scope,
-            group,
-            face_operands,
-            entity_selection_operands,
-            scopes,
-        )
-    });
-    let seeds = component_seed
-        .map(|seed| vec![seed])
-        .or(group_seed)
-        .unwrap_or_default();
     let (count, spacing, direction, second) = match active.as_slice() {
         // The instance run is the established direction of a single-direction
         // pattern; a direction record only fills it in when the run is absent
@@ -7895,6 +7918,16 @@ fn project_rectangular_pattern_scalars(
         symmetric,
     })
     .ok()?;
+    if let Some(record) = construction
+        .directions()
+        .first()
+        .filter(|record| distribution.is_none() && record.distance_type == 10)
+    {
+        losses.push(crate::loss::F3dLossCode::FeatureRectangularPatternDistanceFormAssumed.note(format!(
+            "RectangularPattern scope {} reads its distances as seed-to-final-instance extents: direction record {} stores distance type 10 without a readable distribution block.",
+            scope.id, record.record_index
+        )));
+    }
     if !dropped.is_empty() {
         losses.push(
             crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.note(

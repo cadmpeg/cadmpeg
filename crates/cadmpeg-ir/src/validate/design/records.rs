@@ -16,7 +16,7 @@ use crate::design::refs::{Evaluated, Member, Position};
 use crate::design::scope::DesignScope;
 use crate::document::CadIr;
 use crate::features::ConfigurationId;
-use crate::products::{Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference};
+use crate::products::{Occurrence, ProductDefinition, Storage};
 
 /// A member of a container, by identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -266,13 +266,11 @@ impl<'a> DesignRecords<'a> {
         chain
     }
 
-    /// The definition an occurrence places, where it is a definition of this
-    /// document.
+    /// The definition an occurrence places.
     pub(super) fn prototype(&self, occurrence: &str) -> Option<&'a str> {
-        match &self.occurrences.get(occurrence)?.prototype {
-            PrototypeReference::Local { definition } => Some(definition.as_str()),
-            PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
-        }
+        self.occurrences
+            .get(occurrence)
+            .map(|occurrence| occurrence.prototype.as_str())
     }
 
     /// Whether the scope has configurations.
@@ -345,12 +343,8 @@ impl<'a> DesignRecords<'a> {
     /// features of several definitions, every definition placed below it
     /// that has no scope of its own.
     ///
-    /// An occurrence is placed in the definition that owns it (§5.5, §8.1).
-    /// A child occurrence is owned by its parent occurrence's prototype. A
-    /// root occurrence is listed by no definition, so it belongs to the
-    /// scope's definition where that definition is the document's top, which
-    /// no occurrence places; where an occurrence places the scope's
-    /// definition, the root occurrences sit beside it, not below it.
+    /// A definition places the prototypes of the occurrences it owns (§5.5,
+    /// §8.1). An `External` definition is never spanned: it has no design.
     pub(super) fn spanned_definitions(&self, scope: &str) -> BTreeSet<&'a str> {
         let Some((&scope, _)) = self.definitions.get_key_value(scope) else {
             return BTreeSet::new();
@@ -359,30 +353,23 @@ impl<'a> DesignRecords<'a> {
         if !self.holds_several_definitions(scope) {
             return spanned;
         }
-        let occurrences = &self.ir.model.occurrences;
-        let local = |occurrence: &'a Occurrence| match &occurrence.prototype {
-            PrototypeReference::Local { definition } => Some(definition.as_str()),
-            PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
-        };
-        let top = !occurrences
-            .iter()
-            .any(|occurrence| local(occurrence) == Some(scope));
-        let mut owned: BTreeMap<&str, Vec<&'a str>> = BTreeMap::new();
-        for occurrence in occurrences {
-            let owner = match &occurrence.parent {
-                OccurrenceParent::Occurrence { occurrence: parent } => {
-                    self.prototype(parent.as_str())
-                }
-                OccurrenceParent::Root {} => top.then_some(scope),
-            };
-            if let (Some(owner), Some(prototype)) = (owner, local(occurrence)) {
-                owned.entry(owner).or_default().push(prototype);
-            }
-        }
         let mut pending = vec![scope];
         while let Some(definition) = pending.pop() {
-            for &prototype in owned.get(definition).into_iter().flatten() {
-                if !self.scopes.contains_key(prototype) && spanned.insert(prototype) {
+            let owned = self
+                .definitions
+                .get(definition)
+                .map_or(&[][..], |definition| &definition.occurrences[..]);
+            for occurrence in owned {
+                let Some((&prototype, placed)) = self
+                    .prototype(occurrence.as_str())
+                    .and_then(|prototype| self.definitions.get_key_value(prototype))
+                else {
+                    continue;
+                };
+                if !matches!(placed.storage, Storage::External(_))
+                    && !self.scopes.contains_key(prototype)
+                    && spanned.insert(prototype)
+                {
                     pending.push(prototype);
                 }
             }
