@@ -7,9 +7,12 @@ use cadmpeg_core::{
     decode::{unique_index, DecodeContext},
     CodecError,
 };
-use cadmpeg_ir::features::{
-    DistinctMembers, EdgeSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureId, FeatureOperation, FeatureResultTopology,
+use cadmpeg_ir::{
+    features::{
+        DistinctMembers, EdgeSelection, Feature, FeatureContent, FeatureDefinition,
+        FeatureEvaluation, FeatureId, FeatureOperation, FeatureResultTopology,
+    },
+    ids::HistoricalEdgeId,
 };
 
 use super::{
@@ -19,9 +22,9 @@ use super::{
     style::Style,
 };
 use crate::feature::{
-    body_result, feature_result, length_reference, resolve_property, FeatureInventory, HistoryItem,
-    PmDcFeature, PmDcFeatureLabel, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily,
-    ProjectionIndex,
+    body_result, edge_selection::historical, feature_result, length_reference, resolve_property,
+    FeatureInventory, HistoryItem, PmDcFeature, PmDcFeatureLabel, PmDcFeatureProperty,
+    PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, ProjectionIndex,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,10 +124,11 @@ pub(crate) fn style<'a>(styles: &'a [Style], token: &str) -> Option<&'a Style> {
     candidates.next().is_none().then_some(first)
 }
 
-fn attachment(
+/// The edge collections of the slot-12 attachment selection list.
+fn attachment_collections<'a>(
     source: &PmDcFeature,
-    index: &ProjectionIndex<'_>,
-) -> Result<EdgeSelection, PlateRefusal> {
+    index: &'a ProjectionIndex<'a>,
+) -> Result<(&'a PmDcFeatureProperty, Vec<&'a PmDcFeatureProperty>), PlateRefusal> {
     let token = source.identity.segment_token.as_str();
     let selection =
         crate::feature::slot_property(source, 12, index).refuse(PlateRefusal::SelectionList)?;
@@ -135,7 +139,7 @@ fn attachment(
     else {
         return Err(PlateRefusal::SelectionList);
     };
-    let mut edges = Vec::new();
+    let mut collections = Vec::new();
     for reference in items.references() {
         let wrapper = resolve_property(token, reference.index(), index)
             .refuse(PlateRefusal::SelectionList)?;
@@ -155,20 +159,109 @@ fn attachment(
         ) {
             return Err(PlateRefusal::SelectionList);
         }
+        collections.push(collection);
+    }
+    Ok((selection, collections))
+}
+
+/// The selected edges as generated edge names, when every edge item names
+/// one distinct generated edge.
+fn generated_attachment(
+    collections: &[&PmDcFeatureProperty],
+    index: &ProjectionIndex<'_>,
+) -> Option<Vec<cadmpeg_ir::features::GeneratedEdgeRef>> {
+    let mut edges = Vec::new();
+    for collection in collections {
         let EdgeSelection::Generated {
             edges: resolved, ..
         } = crate::feature::edge_selection::resolve(collection, index)
         else {
-            return Err(PlateRefusal::EdgeName);
+            return None;
         };
         for edge in resolved {
             if edges.contains(&edge) {
-                return Err(PlateRefusal::EdgeName);
+                return None;
             }
             edges.push(edge);
         }
     }
-    EdgeSelection::generated(edges, selection.id()).map_err(|_| PlateRefusal::EdgeName)
+    Some(edges)
+}
+
+/// The selected edges as stored input revisions: each edge item names a
+/// direct selector whose matching attribute selects one edge geometry, and
+/// no two selectors select the same owner.
+fn historical_attachment(
+    source: &PmDcFeature,
+    collections: &[&PmDcFeatureProperty],
+    index: &ProjectionIndex<'_>,
+    inventory: &FeatureInventory,
+) -> Result<Option<Vec<HistoricalEdgeId>>, CodecError> {
+    let token = source.identity.segment_token.as_str();
+    let mut owners = HashSet::new();
+    let mut edges = Vec::new();
+    for collection in collections {
+        let Some(selected) = historical::selection_sources(collection, |reference| {
+            resolve_property(token, reference.index(), index)
+        }) else {
+            return Ok(None);
+        };
+        for (item, selected) in selected {
+            let key = (token.to_owned(), selected);
+            let Some(edge) = inventory.edge_inputs.historical.get(&key) else {
+                return Ok(None);
+            };
+            if edge.item != item
+                || !owners.insert(edge.owner)
+                || !inventory
+                    .edge_inputs
+                    .historical_generators
+                    .contains_key(&key)
+            {
+                return Ok(None);
+            }
+            edges.push(historical::edge_id(token, selected)?);
+        }
+    }
+    Ok(Some(edges))
+}
+
+/// The attachment edges of a plate. A generated edge name proves the edge
+/// and its producer; otherwise every edge needs a stored input revision.
+fn attachment(
+    source: &PmDcFeature,
+    index: &ProjectionIndex<'_>,
+    inventory: &FeatureInventory,
+) -> Result<EdgeSelection, PlateError> {
+    let (selection, collections) = attachment_collections(source, index)?;
+    if let Some(edges) = generated_attachment(&collections, index) {
+        return Ok(
+            EdgeSelection::generated(edges, selection.id()).map_err(|_| PlateRefusal::EdgeName)?
+        );
+    }
+    let edges = historical_attachment(source, &collections, index, inventory)?
+        .refuse(PlateRefusal::EdgeName)?;
+    Ok(
+        EdgeSelection::historical(historical::state_id(source)?, edges, selection.id())
+            .map_err(|_| PlateRefusal::EdgeName)?,
+    )
+}
+
+/// Whether every selected attachment edge has stored input geometry.
+fn attachment_geometry(
+    attachment: &EdgeSelection,
+    token: &str,
+    inputs: &[u32],
+    inventory: &FeatureInventory,
+) -> bool {
+    inputs.iter().all(|source| {
+        let key = (token.to_owned(), *source);
+        match attachment {
+            EdgeSelection::Generated { .. } => inventory.edge_inputs.geometry.contains_key(&key),
+            EdgeSelection::Historical { .. } => inventory.edge_inputs.historical.contains_key(&key),
+            _ => false,
+        }
+    })
 }
 
 pub(in crate::feature) fn project_plate(
@@ -179,18 +272,13 @@ pub(in crate::feature) fn project_plate(
     inventory: &FeatureInventory,
 ) -> Result<(Feature, FeatureResultTopology), PlateError> {
     let token = source.identity.segment_token.as_str();
-    let attachment = attachment(source, index)?;
+    let attachment = attachment(source, index, inventory)?;
     let inputs = operands::selection_sources(source, |reference| {
         resolve_property(token, reference.index(), index)
     })
     .refuse(PlateRefusal::SelectionList)?;
     require(
-        inputs.iter().all(|source| {
-            inventory
-                .edge_inputs
-                .geometry
-                .contains_key(&(token.to_owned(), *source))
-        }),
+        attachment_geometry(&attachment, token, &inputs, inventory),
         PlateRefusal::InputGeometry,
     )?;
     let sketch_ordinal = *index
@@ -350,7 +438,19 @@ pub(in crate::feature) fn reject_unresolved_inputs(
         else {
             continue;
         };
-        let complete = matches!(attachment,EdgeSelection::Generated { edges,.. } if edges.iter().all(|edge| producers.get(edge.feature.as_str()).is_some_and(|ordinal| *ordinal<item.feature.ordinal)));
+        let earlier = |feature: &str| {
+            producers
+                .get(feature)
+                .is_some_and(|ordinal| *ordinal < item.feature.ordinal)
+        };
+        let complete = match attachment {
+            EdgeSelection::Generated { edges, .. } => {
+                edges.iter().all(|edge| earlier(edge.feature.as_str()))
+            }
+            EdgeSelection::Historical { .. } => historical_producers(&item.feature, inventory)?
+                .is_some_and(|features| features.iter().all(|feature| earlier(feature.as_str()))),
+            _ => false,
+        };
         if complete {
             continue;
         }
@@ -361,12 +461,63 @@ pub(in crate::feature) fn reject_unresolved_inputs(
     Ok(rejected)
 }
 
+/// The features that generate the historical attachment edges of a plate:
+/// the generator array of each edge's direct selector, as feature records of
+/// the plate's segment.
+fn historical_producers(
+    plate: &Feature,
+    inventory: &FeatureInventory,
+) -> Result<Option<Vec<FeatureId>>, CodecError> {
+    let Some(source) = inventory
+        .features
+        .iter()
+        .find(|source| Some(source.id().as_str()) == plate.native_ref.as_deref())
+    else {
+        return Ok(None);
+    };
+    let token = source.identity.segment_token.as_str();
+    let Some(selected) = operands::selection_sources(source, |reference| {
+        inventory.properties.iter().find(|property| {
+            property.identity.segment_token.as_str() == token
+                && Some(property.identity.record_ordinal) == reference.record_ordinal()
+        })
+    }) else {
+        return Ok(None);
+    };
+    let mut features = Vec::new();
+    for selected in selected {
+        let Some(generators) = inventory
+            .edge_inputs
+            .historical_generators
+            .get(&(token.to_owned(), selected))
+        else {
+            return Ok(None);
+        };
+        for generator in generators {
+            let mut records = inventory.features.iter().filter(|record| {
+                record.identity.segment_token.as_str() == token
+                    && record.header.source_index == *generator
+            });
+            let (Some(record), None) = (records.next(), records.next()) else {
+                return Ok(None);
+            };
+            features.push(crate::feature::history_feature_id(&record.identity)?);
+        }
+    }
+    Ok(Some(features))
+}
+
 /// The first refused check of each attached plate that stays native, by
 /// source record id.
 #[derive(Debug, Default)]
 pub(in crate::feature) struct Refusals(BTreeMap<String, PlateRefusal>);
 
 impl Refusals {
+    /// Whether the plate record `source` has a refusal.
+    pub(in crate::feature) fn contains(&self, source: &str) -> bool {
+        self.0.contains_key(source)
+    }
+
     /// Keep the first refusal of a plate record.
     pub(in crate::feature) fn insert(&mut self, source: String, refusal: PlateRefusal) {
         self.0.entry(source).or_insert(refusal);
