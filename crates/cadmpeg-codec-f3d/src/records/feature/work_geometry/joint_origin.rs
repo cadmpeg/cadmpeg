@@ -27,43 +27,44 @@ pub(crate) struct DirectJointOriginCarrier {
 }
 
 impl DirectJointOriginCarrier {
-    pub(crate) fn for_scope(scope: &DesignParameterScope) -> Option<Self> {
+    pub(crate) fn for_scope(scope: &DesignParameterScope) -> Option<[Self; 3]> {
         if scope.kind() != DesignFeatureKind::JointOrigin {
             return None;
         }
-        let (length, matrix, scope_backlink, version) = match scope.frame_length() {
-            315 => (short::LEN, short::MATRIX, short::SCOPE_BACKLINK, 6),
-            398 => (long::LEN, long::MATRIX, long::SCOPE_BACKLINK, 6),
-            403 => (extended::LEN, extended::MATRIX, extended::SCOPE_BACKLINK, 8),
-            _ => return None,
-        };
         let record_index = scope.record_index.checked_add(1)?;
         if scope.reference_members().values().next() != Some(&record_index) {
             return None;
         }
-        let (construction_reference, reference_suffix) = if version == 8 {
-            (
-                extended::CONSTRUCTION_REFERENCE,
-                extended::REFERENCE_SUFFIX_VALUE,
-            )
-        } else {
-            (
-                short::CONSTRUCTION_REFERENCE,
-                short::ZERO_AFTER_REFERENCE_VALUE,
-            )
-        };
-        Some(Self {
+        let start = scope
+            .paired_byte_offset()
+            .checked_add(u64_from_index(joint_origin_scope_carrier_separation::LEN))?;
+        let short = Self {
             record_index,
-            start: scope
-                .paired_byte_offset()
-                .checked_add(u64_from_index(joint_origin_scope_carrier_separation::LEN))?,
-            length,
-            matrix,
-            scope_backlink,
-            construction_reference,
-            reference_suffix,
-            version,
-        })
+            start,
+            length: short::LEN,
+            matrix: short::MATRIX,
+            scope_backlink: short::SCOPE_BACKLINK,
+            construction_reference: short::CONSTRUCTION_REFERENCE,
+            reference_suffix: short::ZERO_AFTER_REFERENCE_VALUE,
+            version: 6,
+        };
+        let long = Self {
+            length: long::LEN,
+            matrix: long::MATRIX,
+            scope_backlink: long::SCOPE_BACKLINK,
+            ..short
+        };
+        let extended = Self {
+            record_index,
+            start,
+            length: extended::LEN,
+            matrix: extended::MATRIX,
+            scope_backlink: extended::SCOPE_BACKLINK,
+            construction_reference: extended::CONSTRUCTION_REFERENCE,
+            reference_suffix: extended::REFERENCE_SUFFIX_VALUE,
+            version: 8,
+        };
+        Some([short, long, extended])
     }
 
     pub(crate) fn has_registered_types(

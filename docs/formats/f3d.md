@@ -2067,11 +2067,11 @@ A `JointOrigin` scope owns one coordinate frame. The 336- and 347-byte forms sto
 
 A version-2 `JointOrigin` scope can store its solved frame in a separate placement carrier of type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`. The first scope reference names the carrier. Its index is the scope index plus one. Its indexed header starts 30 bytes after the paired scope header. The final eleven bytes of the carrier are a marked scope backlink. The paired carrier header follows it.
 
-| Scope length | Carrier version | Carrier length | Matrix offset | Scope backlink offset |
-| ---: | ---: | ---: | ---: | ---: |
-| 315 | 6 | 369 | 60 | 358 |
-| 398 | 6 | 391 | 60 | 380 |
-| 403 | 8 | 412 | 61 | 401 |
+| Carrier version | Carrier length | Matrix offset | Scope backlink offset |
+| ---: | ---: | ---: | ---: |
+| 6 | 369 | 60 | 358 |
+| 6 | 391 | 60 | 380 |
+| 8 | 412 | 61 | 401 |
 
 The 369- and 391-byte carriers store 34 zero bytes after the indexed header, a marked construction-record reference at offset 45, and four zero bytes after that reference. The 412-byte carrier stores 35 zero bytes after the indexed header, a marked construction-record reference at offset 46, and the bytes `00 00 01 00` after that reference. The matrix columns give the axes and the origin in centimetres.
 

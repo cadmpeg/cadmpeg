@@ -3533,7 +3533,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 records::feature::work_geometry::joint_origin::DirectJointOriginCarrier::for_scope(
                     scope,
                 )
-                .is_some_and(|carrier| {
+                .into_iter()
+                .flatten()
+                .any(|carrier| {
                     carrier.matches_offsets(origin)
                         && carrier.has_registered_types(scope, stream_types)
                         && records_by_index

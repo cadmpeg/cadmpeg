@@ -639,18 +639,17 @@ pub(super) fn direct_joint_origin_frame(
 ) -> Option<ScopePlacementFrame> {
     use crate::layout::joint_origin_direct_carrier_369 as common;
 
-    let carrier = DirectJointOriginCarrier::for_scope(scope)?;
-    if !carrier.has_registered_types(scope, types) {
-        return None;
-    }
-    let start = usize::try_from(carrier.start).ok()?;
-    let end = start.checked_add(carrier.length)?;
-    if !records
-        .frames(carrier.record_index)
-        .any(|pair| pair == (start, end))
-    {
-        return None;
-    }
+    let (carrier, start) = DirectJointOriginCarrier::for_scope(scope)?
+        .into_iter()
+        .filter(|carrier| carrier.has_registered_types(scope, types))
+        .find_map(|carrier| {
+            let start = usize::try_from(carrier.start).ok()?;
+            let end = start.checked_add(carrier.length)?;
+            records
+                .frames(carrier.record_index)
+                .any(|pair| pair == (start, end))
+                .then_some((carrier, start))
+        })?;
     let mut view = View::over_retained(bytes);
     view.seek(start)?;
     let frame = view.take(carrier.length)?;
