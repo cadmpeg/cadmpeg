@@ -495,7 +495,7 @@ pub(crate) enum F3dLossCode {
     FeatureFilletPaddingAssumed,
     /// Stored variable Fillet midpoint pairs are read in increasing edge position.
     FeatureFilletMidpointOrderAssumed,
-    /// An explicit Fillet set retains a saved law input outside the neutral dimension domain.
+    /// A Fillet set uses an inferred input assignment or retains an unresolved input.
     FeatureFilletSetInputUnresolved,
     /// An explicit Fillet set references an unresolved edge operand group.
     FeatureFilletSetGroupUnresolved,
