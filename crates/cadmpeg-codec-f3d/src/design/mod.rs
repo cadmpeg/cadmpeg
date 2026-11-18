@@ -142,6 +142,7 @@ pub(crate) fn design_feature_family(
         | Kind::ComponentInsert
         | Kind::CopyPaste
         | Kind::JointOrigin
+        | Kind::MotionLink
         | Kind::BaseFlange
         | Kind::SplitFace
         | Kind::PathPattern

@@ -873,6 +873,7 @@ The feature-family name is display text that varies with the application languag
 | `F84CD988-9696-458D-8AF3-795D12E6B9EF` | `MeshSmooth` |
 | `D1728651-3640-4CCF-8083-AF7703013978` | `Mirror` |
 | `DDB7BC00-2E41-4BC1-8DA1-A0F104A67E71` | `Modify` |
+| `29098FE8-08FC-4FD8-9D31-42CF164F73EB` | `MotionLink` |
 | `64E40C8E-E564-469C-8690-5C4E77C1B02C` | `Move` |
 | `21B67709-045F-4903-B3FA-FD82E3DC3ADA` | `MoveFace` |
 | `D087EFE5-2D28-42E6-BB45-61739E7D0204` | `OffsetFaces` |
@@ -2290,6 +2291,24 @@ The version-4 prefix before the ordered-reference count spans 319 bytes. A u32 r
 Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`. Version 4 uses locator version 3. Its 62-byte identity locator stores u32 discriminator one at offset 56. Version 6 uses locator version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
 
 #### Assembly operands
+
+A 297-byte `MotionLink` scope of type `29098FE8-08FC-4FD8-9D31-42CF164F73EB`
+version 3 stores a marked relation reference at scope offset 43. In the
+166-byte two-revolute form, that reference names the preceding indexed
+record. The relation index is the scope index minus one. The relation type
+is `3A218162-55F3-492E-93A4-390F8A56FBEA` version 2.
+
+The 166-byte two-revolute relation stores u32 parent count 2 at offset 20
+and two 15-byte parent entries at offsets 24 and 39. Each parent entry is
+an eleven-byte marked reference and a u32. The reference names a version-5
+Joint record. Marked references at offsets 63 and 74 repeat the two joint
+identities in parent order. The u32 freedom codes at offsets 85 and 89
+are both 2 for rotation about connector Z. The zero-phase, same-direction
+form stores f64 zero at offset 93 and six zero bytes at offset 101.
+Evaluated f64 angles at offsets 107 and 115 are in radians and correspond
+to the two repeated references in order. The second angle divided by the
+first gives the second joint's angular change per unit of first-joint
+angular change.
 
 The four direct-construction 421-byte `As-built` generations use one exact class and offset map:
 

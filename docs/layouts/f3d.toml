@@ -41374,3 +41374,134 @@ offset = 11
 type = "u32"
 source = "spec"
 anchor = "followed by a u32"
+
+[[record]]
+name = "motion_link_rotation_scope"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A 297-byte `MotionLink` scope"
+size = 297
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/motion_link.rs"
+
+[[record.gap]]
+offset = 0
+size = 43
+note = "Scope prefix before the relation reference."
+
+[[record.field]]
+name = "relation"
+offset = 43
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked relation reference at scope offset 43"
+
+[[record.gap]]
+offset = 54
+size = 243
+note = "Scope operands, ordered reference table, stored kind, and tail."
+
+[[record]]
+name = "motion_link_rotation_relation"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 166-byte two-revolute relation"
+size = 166
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/motion_link.rs"
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "Indexed relation header and prefix."
+
+[[record.field]]
+name = "parent_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 parent count 2 at offset 20"
+
+[[record.field]]
+name = "first_parent"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "two 15-byte parent entries at offsets 24 and 39"
+
+[[record.gap]]
+offset = 35
+size = 4
+note = "First parent word."
+
+[[record.field]]
+name = "second_parent"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "two 15-byte parent entries at offsets 24 and 39"
+
+[[record.gap]]
+offset = 50
+size = 13
+note = "Second parent word and prefix of the repeated pair."
+
+[[record.field]]
+name = "first_joint"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 63 and 74"
+
+[[record.field]]
+name = "second_joint"
+offset = 74
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 63 and 74"
+
+[[record.field]]
+name = "first_axis"
+offset = 85
+type = "u32"
+source = "spec"
+anchor = "u32 freedom codes at offsets 85 and 89"
+
+[[record.field]]
+name = "second_axis"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "u32 freedom codes at offsets 85 and 89"
+
+[[record.field]]
+name = "phase"
+offset = 93
+type = "f64"
+source = "spec"
+anchor = "stores f64 zero at offset 93"
+
+[[record.field]]
+name = "flags"
+offset = 101
+type = "bytes[6]"
+value = [0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "six zero bytes at offset 101"
+
+[[record.field]]
+name = "first_angle"
+offset = 107
+type = "f64"
+source = "spec"
+anchor = "Evaluated f64 angles at offsets 107 and 115"
+
+[[record.field]]
+name = "second_angle"
+offset = 115
+type = "f64"
+source = "spec"
+anchor = "Evaluated f64 angles at offsets 107 and 115"
+
+[[record.gap]]
+offset = 123
+size = 43
+note = "Relation tail before the scope header."

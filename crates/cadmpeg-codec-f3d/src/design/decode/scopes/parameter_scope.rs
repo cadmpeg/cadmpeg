@@ -919,6 +919,12 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
 
+            if scope.kind() == scope::DesignFeatureKind::MotionLink {
+                let link = super::motion_link::read(stream_view, &records, &scope, &stream_types);
+                if let scope::DesignScopePayloadMut::MotionLink(slot) = scope.payload_mut() {
+                    *slot = link;
+                }
+            }
             out.push(scope);
         }
         super::edge_flange::bind(
