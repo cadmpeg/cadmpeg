@@ -518,11 +518,14 @@ fn picks_no_datum_point(index: &DesignRecords<'_>, target: &PickTarget) -> bool 
     else {
         return false;
     };
-    match (part, &datum.element) {
+    !matches!(
+        (part, &datum.element),
         (None | Some(DatumPart::Point(_)), DatumElement::Points(_))
-        | (Some(DatumPart::Principal(PrincipalEntity::Origin)), DatumElement::Frame(_)) => false,
-        _ => true,
-    }
+            | (
+                Some(DatumPart::Principal(PrincipalEntity::Origin)),
+                DatumElement::Frame(_)
+            )
+    )
 }
 
 fn check_series(
