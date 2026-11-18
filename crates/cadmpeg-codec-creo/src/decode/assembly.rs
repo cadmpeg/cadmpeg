@@ -2,15 +2,14 @@
 //! Component occurrences from the `NeuAsmSld` component table
 //! ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#9-assembly-component-table)).
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -22,12 +21,12 @@ use super::native::annotate;
 use super::source_carriers::SourceUnitCarriers;
 
 /// Whether the `#UGC:2` header line declares an assembly model.
-fn declares_assembly(version_line: &str) -> bool {
+pub(super) fn declares_assembly(version_line: &str) -> bool {
     version_line.split_ascii_whitespace().nth(1) == Some("ASSEMBLY")
 }
 
-/// Place every admitted component row as an occurrence of its child model
-/// file. Rows go under the root occurrence when `root` names one.
+/// Place every admitted component row in the root definition as an
+/// occurrence of its child model file, a document the decode does not read.
 pub(super) fn transfer_assembly_members(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -35,7 +34,6 @@ pub(super) fn transfer_assembly_members(
     annotations: &mut AnnotationBuilder,
     transfer_losses: &mut Vec<LossNote>,
     source_carriers: &SourceUnitCarriers,
-    root: Option<&OccurrenceId>,
 ) -> Result<(), CodecError> {
     let Some(table) = scan.assembly.as_ref() else {
         if declares_assembly(&scan.framing.version_line) {
@@ -47,12 +45,25 @@ pub(super) fn transfer_assembly_members(
         return Ok(());
     };
     record_table_stop(table, transfer_losses);
-    let parent = root.map_or(OccurrenceParent::Root {}, |occurrence| {
-        OccurrenceParent::Occurrence {
-            occurrence: occurrence.clone(),
-        }
-    });
-    let mut external_documents = BTreeSet::new();
+    let root = crate::identity::compose_checked::<ProductDefinitionId>(
+        &crate::identity::MODEL_PRODUCT_DEFINITION,
+        "root",
+    )?;
+    if !ir
+        .model
+        .product_definitions
+        .iter()
+        .any(|row| row.id == root)
+    {
+        ctx.charge_entities(1, "admit Creo model product_definitions")?;
+        ir.model.product_definitions.push(ProductDefinition::root(
+            root.clone(),
+            ExternalDocument::default(),
+        ));
+    }
+    let mut external_documents = BTreeMap::<String, ProductDefinitionId>::new();
+    let mut definitions = Vec::new();
+    let mut owned = Vec::new();
     let mut external_occurrences = 0_usize;
     let mut unresolved_placements = 0_usize;
     let mut unresolved_references = 0_usize;
@@ -62,20 +73,39 @@ pub(super) fn transfer_assembly_members(
             unresolved_placements += 1;
             continue;
         };
-        let prototype = match member_document(member) {
-            Some(path) => {
-                external_documents.insert(path.clone());
-                external_occurrences += 1;
-                PrototypeReference::External {
-                    document: ExternalDocument::path(path),
-                    object: None,
-                }
-            }
+        let document = member_document(member);
+        let prototype = match document
+            .as_ref()
+            .and_then(|path| external_documents.get(path))
+        {
+            Some(definition) => definition.clone(),
             None => {
-                unresolved_references += 1;
-                PrototypeReference::Unresolved {}
+                let definition = crate::identity::compose_checked::<ProductDefinitionId>(
+                    &crate::identity::MODEL_PRODUCT_DEFINITION,
+                    format_args!("member-{row}"),
+                )?;
+                ctx.charge_entities(1, "admit Creo assembly member definitions")?;
+                let mut external = ProductDefinition::new(
+                    definition.clone(),
+                    Storage::External(
+                        document
+                            .as_ref()
+                            .map_or_else(ExternalDocument::default, ExternalDocument::path),
+                    ),
+                );
+                external.source_name = Some(member.name.clone());
+                definitions.push(external);
+                if let Some(path) = &document {
+                    external_documents.insert(path.clone(), definition.clone());
+                }
+                definition
             }
         };
+        if document.is_some() {
+            external_occurrences += 1;
+        } else {
+            unresolved_references += 1;
+        }
         let id = crate::identity::compose_checked::<OccurrenceId>(
             &crate::identity::MODEL_OCCURRENCE,
             format_args!("member-{row}"),
@@ -89,24 +119,21 @@ pub(super) fn transfer_assembly_members(
             Exactness::Derived,
         )?;
         ctx.charge_entities(1, "admit Creo assembly member occurrences")?;
-        source_carriers.admit_occurrence(
-            ir,
-            Occurrence {
-                id,
-                prototype,
-                parent: parent.clone(),
-                ordinal: u32::try_from(row)
-                    .map_err(|_| CodecError::malformed("Creo component row index exceeds u32"))?,
-                transform,
-                linked_prototype: None,
-                scale: [FiniteReal::ONE; 3],
-                name: Some(member.name.clone()),
-                visible: None,
-                link: None,
-                native_ref: Some(format!("NeuAsmSld:members:{}", member.id)),
-            },
-        )?;
+        let mut occurrence = Occurrence::new(id.clone(), prototype, Some(transform));
+        occurrence.name = Some(member.name.clone());
+        occurrence.native_ref = Some(format!("NeuAsmSld:members:{}", member.id));
+        source_carriers.admit_occurrence(ir, occurrence)?;
+        owned.push(id);
         transferred += 1;
+    }
+    ir.model.product_definitions.extend(definitions);
+    if let Some(root) = ir
+        .model
+        .product_definitions
+        .iter_mut()
+        .find(|row| row.id == root)
+    {
+        root.occurrences.extend(owned);
     }
     if external_occurrences > 0 {
         transfer_losses.push(CreoLossCode::AssemblyComponentsExternal.note(format!(

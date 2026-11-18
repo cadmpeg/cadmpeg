@@ -12,7 +12,7 @@ use cadmpeg_ir::features::FeatureOperation;
 
 const EPS_SURFACE_DISTANCE_MM: f64 = 1.0e-12;
 
-fn surface_extend_features(distance: f64) -> Vec<Feature> {
+fn surface_extend_features(distance: f64, method_code: Option<u32>) -> Vec<Feature> {
     let mut scope = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#surface-extend",
         crate::records::feature::scope::DesignFeatureKind::SurfaceExtend,
@@ -32,6 +32,8 @@ fn surface_extend_features(distance: f64) -> Vec<Feature> {
             tolerance: cadmpeg_ir::scalar::PositiveReal::new(f64::EPSILON)
                 .expect("checked fixture value"),
             tolerance_offset: 139,
+            method_code,
+            method_code_offset: method_code.map(|_| 29),
         });
     }
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
@@ -53,7 +55,7 @@ fn surface_extend_features(distance: f64) -> Vec<Feature> {
 
 #[test]
 fn dispatcher_projects_surface_extend_with_an_unresolved_method() {
-    let features = surface_extend_features(0.04);
+    let features = surface_extend_features(0.04, None);
     let [Feature { evaluation, .. }] = features.as_slice() else {
         panic!("SurfaceExtend did not project as one feature");
     };
@@ -70,8 +72,30 @@ fn dispatcher_projects_surface_extend_with_an_unresolved_method() {
 }
 
 #[test]
+fn dispatcher_projects_each_surface_extend_method_code() {
+    use cadmpeg_ir::features::SurfaceExtension;
+    for (code, expected) in [
+        (0, SurfaceExtension::Perpendicular),
+        (1, SurfaceExtension::Natural),
+        (2, SurfaceExtension::Linear),
+        (3, SurfaceExtension::Unresolved),
+    ] {
+        let features = surface_extend_features(0.04, Some(code));
+        let [Feature { evaluation, .. }] = features.as_slice() else {
+            panic!("SurfaceExtend did not project as one feature");
+        };
+        let FeatureDefinition::Operation(FeatureOperation::ExtendSurface { method, .. }) =
+            evaluation.definition()
+        else {
+            panic!("SurfaceExtend did not project as a typed feature");
+        };
+        assert_eq!(*method, expected);
+    }
+}
+
+#[test]
 fn dispatcher_keeps_a_negative_surface_extend_native() {
-    let features = surface_extend_features(-0.02);
+    let features = surface_extend_features(-0.02, Some(1));
     let [Feature { evaluation, .. }] = features.as_slice() else {
         panic!("SurfaceExtend did not project as one feature");
     };

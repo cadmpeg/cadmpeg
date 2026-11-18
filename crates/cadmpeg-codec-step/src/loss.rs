@@ -173,10 +173,6 @@ pub(crate) enum StepLossCode {
     NoExportableSolids,
     /// A layer item has no writable STEP carrier.
     LayerItemWithoutCarrier,
-    /// The assembly occurrence graph is invalid.
-    AssemblyGraphInvalid,
-    /// A root occurrence placement or scale is not representable.
-    RootOccurrencePlacementNotRepresentable,
     /// An occurrence has an unresolved parent.
     OccurrenceUnresolvedParent,
     /// An occurrence has no local product definition.
@@ -502,8 +498,6 @@ impl StepLossCode {
         Self::ValidationItemUnsupported,
         Self::NoExportableSolids,
         Self::LayerItemWithoutCarrier,
-        Self::AssemblyGraphInvalid,
-        Self::RootOccurrencePlacementNotRepresentable,
         Self::OccurrenceUnresolvedParent,
         Self::OccurrenceNoLocalProduct,
         Self::OccurrencePlacementNotRigid,
@@ -707,10 +701,6 @@ impl StepLossCode {
             Self::ValidationItemUnsupported => "validation.item-unsupported",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::LayerItemWithoutCarrier => "layer.item-without-carrier",
-            Self::AssemblyGraphInvalid => "assembly.graph-invalid",
-            Self::RootOccurrencePlacementNotRepresentable => {
-                "occurrence.root-placement-not-representable"
-            }
             Self::OccurrenceUnresolvedParent => "occurrence.unresolved-parent",
             Self::OccurrenceNoLocalProduct => "occurrence.no-local-product",
             Self::OccurrencePlacementNotRigid => "occurrence.placement-not-rigid",
@@ -976,7 +966,6 @@ impl StepLossCode {
             | Self::ProceduralDefinitionNotWritten => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
-            | Self::AssemblyGraphInvalid
             | Self::OccurrenceUnresolvedParent
             | Self::OccurrenceNoLocalProduct
             | Self::WireShellFreeVertices
@@ -1058,9 +1047,9 @@ impl StepLossCode {
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
                 LossTaxonomy::GeometryAgreementSampled
             }
-            Self::RootOccurrencePlacementNotRepresentable
-            | Self::OccurrencePlacementNotRigid
-            | Self::BodyNonRigidTransform => LossTaxonomy::BodyTransformNotApplied,
+            Self::OccurrencePlacementNotRigid | Self::BodyNonRigidTransform => {
+                LossTaxonomy::BodyTransformNotApplied
+            }
             Self::TessellationRequiresAp242
             | Self::TessellationInvalidCardinality
             | Self::TessellationInvalidPayload => LossTaxonomy::TessellationOmitted,
@@ -1198,8 +1187,6 @@ mod tests {
                 "validation.item-unsupported",
                 "export.no-exportable-solids",
                 "layer.item-without-carrier",
-                "assembly.graph-invalid",
-                "occurrence.root-placement-not-representable",
                 "occurrence.unresolved-parent",
                 "occurrence.no-local-product",
                 "occurrence.placement-not-rigid",
