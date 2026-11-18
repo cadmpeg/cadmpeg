@@ -97,10 +97,9 @@ pub enum Check {
     /// ordinal, configuration source index, or feature ordinal, a design states
     /// more than one active configuration, a feature states more than one input
     /// or result topology state, a sketch constraint states the wrong number of
-    /// members, a native record census disagrees with the source container, a
-    /// document states more than one root definition, or a complete decoded
-    /// document states none or a second top of its product tree: a definition
-    /// that no occurrence places and that holds content.
+    /// members, a native record census disagrees with the source container, or
+    /// a document states more than one root definition, or a complete decoded
+    /// document none.
     Counts,
     /// A face's edge loop does not list its coedges in traversal order: its
     /// coedges form one closed traversal by vertex identity in another order,

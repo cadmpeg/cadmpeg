@@ -42,13 +42,13 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
             .len(),
         1
     );
-    assert_eq!(decoded.ir().entity_count(), 2);
+    assert_eq!(decoded.ir().entity_count(), 3);
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_entities = 2;
     let error = CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
-        .expect_err("one section plus two model entities require an entity limit of three");
+        .expect_err("one section plus three model entities require an entity limit of four");
     assert!(
         matches!(
             error,
@@ -59,7 +59,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
         "{error:?}"
     );
 
-    options.policy.limits.max_entities = 3;
+    options.policy.limits.max_entities = 4;
     CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");

@@ -315,6 +315,14 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
     }
 }
 
+/// The root definition of a part file: the part it holds at its top.
+pub(crate) fn root_definition_id() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    )
+}
+
 fn decode_result(
     ctx: &DecodeContext<'_>,
     decode_digest: Sha256Digest,
@@ -338,10 +346,7 @@ fn decode_result(
     retention.apply(&mut source_fidelity)?;
     ir.state_root_definition(
         ctx,
-        ProductDefinitionId::compose(
-            &cadmpeg_ir::identity_namespace!("sldprt", "model", "product-definition"),
-            cadmpeg_ir::identity_key!("root"),
-        ),
+        root_definition_id(),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
     stamp_local_digests(ctx, &mut ir)?;

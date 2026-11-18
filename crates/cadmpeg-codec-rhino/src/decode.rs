@@ -2630,7 +2630,13 @@ impl<'a> DecodeContext<'a> {
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.session.document_mut()?.finalize();
+        let document = self.session.document_mut()?;
+        document.state_root_definition(
+            ctx,
+            crate::product::root_definition_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
         let decoded = outcomes

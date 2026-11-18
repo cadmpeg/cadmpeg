@@ -30,10 +30,7 @@ fn root_findings(ir: &CadIr) -> Vec<Finding> {
     super::super::check_products(&ctx, ir, &mut findings).unwrap();
     findings
         .into_iter()
-        .filter(|finding| {
-            finding.message.contains("root definition")
-                || finding.message.contains("no occurrence places")
-        })
+        .filter(|finding| finding.message.contains("root definition"))
         .collect()
 }
 
@@ -81,38 +78,6 @@ fn a_decoded_document_states_exactly_one_root_definition() {
 }
 
 #[test]
-fn a_component_file_is_not_a_root() {
-    let mut ir = decoded();
-    let mut component = ProductDefinition::new(
-        "test:model:product-definition#pin".try_into().unwrap(),
-        Storage::File {
-            document: ExternalDocument::path("pin.f3d"),
-            source: Some(source()),
-        },
-    );
-    component
-        .bodies
-        .push("test:model:body#pin".try_into().unwrap());
-    ir.model.product_definitions.push(component);
-    assert_eq!(
-        summary(&ir),
-        [
-            (
-                Check::Counts,
-                None,
-                "document states no root definition".to_owned()
-            ),
-            (
-                Check::Counts,
-                Some("test:model:product-definition#pin".to_owned()),
-                "a definition no occurrence places holds content but is not the root definition"
-                    .to_owned()
-            ),
-        ]
-    );
-}
-
-#[test]
 fn no_occurrence_places_the_root_definition() {
     let mut ir = CadIr::empty();
     let mut top = root("test:model:product-definition#root");
@@ -136,58 +101,9 @@ fn no_occurrence_places_the_root_definition() {
 }
 
 #[test]
-fn only_the_root_heads_a_product_tree() {
-    let mut ir = decoded();
-    ir.model
-        .product_definitions
-        .push(root("test:model:product-definition#root"));
-    let mut part = ProductDefinition::new(
-        "test:model:product-definition#part".try_into().unwrap(),
-        Storage::Embedded,
-    );
-    part.bodies.push("test:model:body#part".try_into().unwrap());
-    ir.model.product_definitions.push(part);
-    // A definition that holds nothing, and a document that was not read,
-    // head no tree.
-    ir.model.product_definitions.push(ProductDefinition::new(
-        "test:model:product-definition#link".try_into().unwrap(),
-        Storage::Embedded,
-    ));
-    ir.model.product_definitions.push(ProductDefinition::new(
-        "test:model:product-definition#external".try_into().unwrap(),
-        Storage::External(ExternalDocument::path("other.f3d")),
-    ));
-    assert_eq!(
-        summary(&ir),
-        [(
-            Check::Counts,
-            Some("test:model:product-definition#part".to_owned()),
-            "a definition no occurrence places holds content but is not the root definition"
-                .to_owned()
-        )]
-    );
-
-    ir.model.product_definitions[0]
-        .occurrences
-        .push("test:model:occurrence#part".try_into().unwrap());
-    ir.model.occurrences.push(Occurrence::new(
-        "test:model:occurrence#part".try_into().unwrap(),
-        "test:model:product-definition#part".try_into().unwrap(),
-        Some(Transform::identity()),
-    ));
-    assert!(summary(&ir).is_empty());
-}
-
-#[test]
-fn a_fragment_may_hold_no_root_and_unplaced_tops() {
+fn a_fragment_may_hold_no_root_but_never_two() {
     let mut ir = decoded();
     ir.fragment = true;
-    let mut part = ProductDefinition::new(
-        "test:model:product-definition#part".try_into().unwrap(),
-        Storage::Embedded,
-    );
-    part.bodies.push("test:model:body#part".try_into().unwrap());
-    ir.model.product_definitions.push(part);
     assert!(summary(&ir).is_empty());
 
     ir.model
@@ -197,6 +113,33 @@ fn a_fragment_may_hold_no_root_and_unplaced_tops() {
         .product_definitions
         .push(root("test:model:product-definition#two"));
     assert_eq!(root_findings(&ir).len(), 1);
+}
+
+#[test]
+fn a_component_file_or_an_embedded_top_is_no_root() {
+    for storage in [
+        Storage::Embedded,
+        Storage::File {
+            document: ExternalDocument::path("pin.f3d"),
+            source: Some(source()),
+        },
+    ] {
+        let mut ir = decoded();
+        let mut top = ProductDefinition::new(
+            "test:model:product-definition#top".try_into().unwrap(),
+            storage,
+        );
+        top.bodies.push("test:model:body#top".try_into().unwrap());
+        ir.model.product_definitions.push(top);
+        assert_eq!(
+            summary(&ir),
+            [(
+                Check::Counts,
+                None,
+                "document states no root definition".to_owned()
+            )]
+        );
+    }
 }
 
 #[test]

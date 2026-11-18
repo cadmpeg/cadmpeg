@@ -278,73 +278,54 @@ pub(super) fn check_products(
 }
 
 /// Part 10: exactly one definition is `File` with `source: None`, the root
-/// definition, and no occurrence places it (§8.1). A definition that no
-/// occurrence places and that holds bodies, tessellations, or occurrences is
-/// the top of a product tree, which only the root is. The root is what the
+/// definition, and no occurrence places it (§8.1). The root is what the
 /// decode's root file holds at its top, so only a decoded document, one with
-/// a `source`, that holds the model class must state it and no other top; a
-/// fragment's root and the placements of its tops can lie outside it. The
-/// counts are not in the decoder admission sets, which judge candidate parts
-/// of a document.
+/// a `source`, that holds the model class must state it; a fragment's root
+/// can lie outside it. The counts are not in the decoder admission sets,
+/// which judge candidate parts of a document.
 fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let definitions = &ir.model.product_definitions;
-    let whole = ir.source.is_some()
-        && !ir.fragment
-        && ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model);
-    let mut roots = definitions.iter().filter(|definition| definition.is_root());
-    let first = roots.next();
-    if first.is_none() && whole {
-        record_finding(
-            findings,
-            Check::Counts,
-            crate::report::Severity::Error,
-            None,
-            format_args!("document states no root definition"),
-        );
-    }
-    if let Some(first) = first {
-        for extra in roots {
-            super::record_related_finding(
-                findings,
-                Check::Counts,
-                crate::report::Severity::Error,
-                extra.id.as_str(),
-                &[first.id.as_str()],
-                format_args!("document states more than one root definition"),
-            );
-        }
-    }
-    let placed = BorrowedIdentities::build(|add| {
-        for occurrence in &ir.model.occurrences {
-            add(occurrence.prototype.as_str(), occurrence.id.as_str());
-        }
-    });
-    for definition in definitions {
-        let placement = placed.get(definition.id.as_str());
-        if definition.is_root() {
-            if let Some(&occurrence) = placement {
-                super::record_related_finding(
-                    findings,
-                    Check::ReferentialIntegrity,
-                    crate::report::Severity::Error,
-                    definition.id.as_str(),
-                    &[occurrence],
-                    format_args!("an occurrence places the root definition"),
-                );
-            }
-        } else if placement.is_none()
-            && whole
-            && !matches!(definition.storage, crate::products::Storage::External(_))
-            && !(definition.bodies.is_empty()
-                && definition.tessellations.is_empty()
-                && definition.occurrences.is_empty())
+    let roots = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .collect::<Vec<_>>();
+    match roots.split_first() {
+        None if ir.source.is_some()
+            && !ir.fragment
+            && ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model) =>
         {
             record_finding(
                 findings,
                 Check::Counts,
                 crate::report::Severity::Error,
-                Some(definition.id.as_str()),
-                format_args!("a definition no occurrence places holds content but is not the root definition"),
+                None,
+                format_args!("document states no root definition"),
+            );
+        }
+        None => {}
+        Some((first, extras)) => {
+            for extra in extras {
+                super::record_related_finding(
+                    findings,
+                    Check::Counts,
+                    crate::report::Severity::Error,
+                    extra.id.as_str(),
+                    &[first.id.as_str()],
+                    format_args!("document states more than one root definition"),
+                );
+            }
+        }
+    }
+    for occurrence in &ir.model.occurrences {
+        if let Some(root) = roots.iter().find(|root| root.id == occurrence.prototype) {
+            super::record_related_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                crate::report::Severity::Error,
+                root.id.as_str(),
+                &[occurrence.id.as_str()],
+                format_args!("an occurrence places the root definition"),
             );
         }
     }

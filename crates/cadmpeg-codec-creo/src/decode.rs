@@ -86,6 +86,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ctx.container_only(),
     )?;
     body.losses.extend(transfer_losses);
+    if !ctx.container_only()
+        && !ir
+            .model
+            .product_definitions
+            .iter()
+            .any(cadmpeg_ir::products::ProductDefinition::is_root)
+    {
+        ctx.charge_entities(1, "admit Creo model product_definitions")?;
+    }
     if let Some(definition) = ir.state_root_definition(
         ctx,
         crate::identity::compose_checked::<cadmpeg_ir::ids::ProductDefinitionId>(

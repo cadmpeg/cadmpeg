@@ -172,7 +172,11 @@ fn part_without_length_expressions_withholds_its_placements() {
     let result = decode(two_placement_file(None, 2));
 
     assert!(result.ir().model.occurrences.is_empty());
-    assert!(result.ir().model.product_definitions.is_empty());
+    assert!(
+        cadmpeg_ir::products::stated_definitions(&result.ir().model.product_definitions)
+            .next()
+            .is_none()
+    );
     assert_eq!(native_counts(&result), (2, 2));
     assert!(has_loss(
         &result,

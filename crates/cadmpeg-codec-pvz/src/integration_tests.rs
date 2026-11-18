@@ -132,7 +132,11 @@ fn decode_classifies_the_package_and_reports_an_undecodable_structure() {
             ),
         "{message}"
     );
-    assert!(result.ir().model.product_definitions.is_empty());
+    assert!(
+        cadmpeg_ir::products::stated_definitions(&result.ir().model.product_definitions)
+            .next()
+            .is_none()
+    );
     assert!(result.ir().model.tessellations.is_empty());
 
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
