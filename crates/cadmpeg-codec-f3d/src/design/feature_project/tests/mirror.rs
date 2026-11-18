@@ -316,3 +316,104 @@ fn an_assumed_mirror_plane_scope_needs_a_framed_work_plane_and_records_its_loss(
         }
     }
 }
+
+#[test]
+fn mirror_compact_seed_fallback_keeps_work_plane_and_records_loss() {
+    use super::pattern::seed_scope;
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignScopePayloadMut, DesignWorkPlaneTransform,
+    };
+    use crate::records::identity::Located;
+
+    let mut scope = mirror_scope(20);
+    if let DesignScopePayloadMut::Mirror(Some(construction)) = scope.payload_mut() {
+        construction.seed_feature_scope_record_index = Some(Located {
+            value: 5,
+            offset: 0,
+        });
+        construction.plane = None;
+        construction.plane_scope_record_index = Some(Located {
+            value: 6,
+            offset: 0,
+        });
+    }
+    let mut plane = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#6",
+        DesignFeatureKind::WorkPlane,
+        6,
+    );
+    if let DesignScopePayloadMut::WorkPlane(slot) = plane.payload_mut() {
+        *slot = Some(DesignWorkPlaneTransform {
+            work_plane_transform: [
+                [0.0, 0.0, 1.0, 5.0],
+                [1.0, 0.0, 0.0, 2.0],
+                [0.0, 1.0, 0.0, 3.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+            .try_into()
+            .unwrap(),
+            work_plane_transform_offset: 0,
+            reference: None,
+            work_plane_construction: None,
+        });
+    }
+    let feature = seed_scope(5, Some(2));
+    for (timeline, duplicate, substituted) in [
+        (listed(&[]), false, true),
+        (listed(&[5]), true, true),
+        (listed(&[5]), false, false),
+    ] {
+        let mut scopes = vec![scope.clone(), plane.clone(), feature.clone()];
+        if duplicate {
+            scopes.push(feature.clone());
+        }
+        let groups = [
+            group(10, 20, DesignOperandRole::BODIES_B),
+            group(10, 30, DesignOperandRole::ROLE_0X5),
+        ];
+        let mut losses = Vec::new();
+        let definition = project_mirror(&scope, &groups, &[], &[], &scopes, &timeline, &mut losses)
+            .expect("mirror with resolved WorkPlane");
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
+        else {
+            panic!("mirror pattern");
+        };
+        let PatternTransform::Mirror {
+            plane_origin,
+            plane_normal,
+        } = pattern.definition()
+        else {
+            panic!("mirror plane transform");
+        };
+        assert_eq!(
+            serde_json::to_value(plane_origin).unwrap(),
+            serde_json::json!({"x": 50.0, "y": 20.0, "z": 30.0})
+        );
+        assert_eq!(
+            serde_json::to_value(plane_normal).unwrap(),
+            serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0})
+        );
+        if substituted {
+            assert_eq!(
+                seeds,
+                vec![PatternSeed::Bodies(BodySelection::Native(
+                    groups[0].id.clone()
+                ))]
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::FeaturePatternFeatureSeedSubstituted.kind()
+            );
+            assert!(losses[0].message.contains(&groups[0].id));
+        } else {
+            assert_eq!(
+                seeds,
+                vec![PatternSeed::Feature(crate::ids::neutral_feature_id(
+                    &feature
+                ))]
+            );
+            assert!(losses.is_empty());
+        }
+    }
+}

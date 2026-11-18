@@ -1014,6 +1014,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             entity_selection_operands,
                             scopes,
                             &source_ordinals,
+                            &mut projection_losses,
                         ),
                         pattern: PatternKind::UNRESOLVED_CIRCULAR,
                     })
@@ -1037,6 +1038,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 entity_selection_operands,
                                 scopes,
                                 &source_ordinals,
+                                &mut projection_losses,
                             ),
                             pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
@@ -1060,6 +1062,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             entity_selection_operands,
                             scopes,
                             &source_ordinals,
+                            &mut projection_losses,
                         ),
                         pattern: PatternKind::UNRESOLVED_MIRROR,
                     })
@@ -7678,6 +7681,7 @@ fn project_circular_pattern(
         entity_selection_operands,
         scopes,
         authored_ordinals,
+        losses,
     );
     let axis_origin = cadmpeg_ir::features::FinitePoint3::new(axis_origin)?;
     let axis_dir = cadmpeg_ir::features::FeatureDirection3::new(axis_dir)?;
@@ -7858,19 +7862,21 @@ fn project_rectangular_pattern_scalars(
                 .ok()?,
             )),
         });
-    let group_seed = pattern_seed_group(scope, groups).map(|group| {
-        pattern_group_seeds(
-            scope,
-            group,
-            face_operands,
-            entity_selection_operands,
-            scopes,
-            authored_ordinals,
-        )
-    });
     let seeds = component_seed
         .map(|seed| vec![seed])
-        .or(group_seed)
+        .or_else(|| {
+            pattern_seed_group(scope, groups).map(|group| {
+                pattern_group_seeds(
+                    scope,
+                    group,
+                    face_operands,
+                    entity_selection_operands,
+                    scopes,
+                    authored_ordinals,
+                    losses,
+                )
+            })
+        })
         .unwrap_or_default();
     let (count, spacing, direction, second) = match active.as_slice() {
         // The instance run is the established direction of a single-direction

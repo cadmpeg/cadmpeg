@@ -53,6 +53,7 @@ pub(super) fn unprojected_pattern_seeds(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
     authored_ordinals: &HashMap<(&str, u32), u64>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Vec<cadmpeg_ir::features::patterns::PatternSeed> {
     pattern_seed_group(scope, groups)
         .map(|group| {
@@ -63,6 +64,7 @@ pub(super) fn unprojected_pattern_seeds(
                 entity_selection_operands,
                 scopes,
                 authored_ordinals,
+                losses,
             )
         })
         .filter(|seeds| {
@@ -123,6 +125,7 @@ pub(super) fn pattern_group_seeds(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
     authored_ordinals: &HashMap<(&str, u32), u64>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Vec<cadmpeg_ir::features::patterns::PatternSeed> {
     use cadmpeg_ir::features::patterns::PatternSeed;
 
@@ -174,6 +177,7 @@ pub(super) fn pattern_group_seeds(
         entity_selection_operands,
         scopes,
         authored_ordinals,
+        losses,
     )
     .unwrap_or_else(|| {
         vec![PatternSeed::Faces(
@@ -194,6 +198,7 @@ pub(super) fn entity_selection_feature_seeds(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
     authored_ordinals: &HashMap<(&str, u32), u64>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<Vec<cadmpeg_ir::features::patterns::PatternSeed>> {
     let stream = native_stream(&scope.id)?;
     if group.members().is_empty() {
@@ -214,16 +219,36 @@ pub(super) fn entity_selection_feature_seeds(
                         && operand.record_index() == member.value
                 }))?;
             let record_index = u32::try_from(selection.compact_identity()?).ok()?;
-            let seed_scope = unique_feature_match(scopes.iter().filter(|candidate| {
-                native_stream(&candidate.id) == Some(stream)
-                    && candidate.record_index == record_index
-                    && candidate.record_index != scope.record_index
-                    && candidate.history_state_id().is_some()
-                    && authored_ordinals.contains_key(&(stream, candidate.record_index))
-            }))?;
+            let mut matching_scopes = scopes
+                .iter()
+                .filter(|candidate| {
+                    native_stream(&candidate.id) == Some(stream)
+                        && candidate.record_index == record_index
+                        && candidate.record_index != scope.record_index
+                        && candidate.history_state_id().is_some()
+                })
+                .peekable();
+            matching_scopes.peek()?;
+            let seed_scope = unique_feature_match(matching_scopes);
+            let Some(seed_scope) = seed_scope.filter(|candidate| {
+                authored_ordinals.contains_key(&(stream, candidate.record_index))
+            }) else {
+                losses.push(pattern_feature_seed_substituted_loss(scope, group));
+                return None;
+            };
             Some(cadmpeg_ir::features::patterns::PatternSeed::Feature(
                 crate::ids::neutral_feature_id(seed_scope),
             ))
         })
         .collect()
+}
+
+pub(super) fn pattern_feature_seed_substituted_loss(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::FeaturePatternFeatureSeedSubstituted.note(format!(
+        "Pattern scope {} uses seed group {} as the fallback selection because its compact feature seed does not resolve to a unique listed scope.",
+        scope.id, group.id,
+    ))
 }

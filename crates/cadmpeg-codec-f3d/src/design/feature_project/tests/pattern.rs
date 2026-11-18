@@ -669,17 +669,55 @@ fn compact_entity_selection_seed_naming_an_unlisted_scope_stays_native() {
         (listed(&[]), native.clone()),
         (listed(&[10]), native),
     ] {
-        let definition = project_rectangular_pattern_scalars(
-            &rectangular_scope(),
-            &[group(10, 30, DesignOperandRole::BODIES_A)],
-            &[],
-            &[compact_entity_selection(30, 31, 5)],
-            &[rectangular_scope(), feature.clone()],
-            &timeline,
-            &mut Vec::new(),
-        )
-        .expect("rectangular pattern");
-        assert_linear_seed(definition, expected);
+        for circular in [false, true] {
+            let mut losses = Vec::new();
+            let scope = if circular {
+                circular_scope()
+            } else {
+                rectangular_scope()
+            };
+            let project = if circular {
+                project_circular_pattern
+            } else {
+                project_rectangular_pattern_scalars
+            };
+            let definition = project(
+                &scope,
+                &[group(10, 30, DesignOperandRole::BODIES_A)],
+                &[],
+                &[compact_entity_selection(30, 31, 5)],
+                &[scope.clone(), feature.clone()],
+                &timeline,
+                &mut losses,
+            )
+            .expect("pattern with compact seed");
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+                definition
+            else {
+                panic!("pattern definition");
+            };
+            assert_eq!(seeds, vec![expected.clone()]);
+            if circular {
+                assert!(matches!(
+                    pattern.definition(),
+                    PatternTransform::Circular { .. }
+                ));
+            } else {
+                assert!(matches!(
+                    pattern.definition(),
+                    PatternTransform::Linear { .. }
+                ));
+            }
+            if timeline.contains_key(&("f3d:Design/BulkStream.dat", 5)) {
+                assert!(losses.is_empty());
+            } else {
+                assert_eq!(losses.len(), 1);
+                assert_eq!(
+                    losses[0].code,
+                    crate::loss::F3dLossCode::FeaturePatternFeatureSeedSubstituted.kind()
+                );
+            }
+        }
     }
 }
 
@@ -693,6 +731,7 @@ fn compact_entity_selection_seed_without_a_feature_scope_stays_native() {
         (6, vec![seed_scope(5, Some(2))]),
         (10, vec![rectangular_scope()]),
     ] {
+        let mut losses = Vec::new();
         let definition = project_rectangular_pattern_scalars(
             &rectangular_scope(),
             &[group(10, 30, DesignOperandRole::BODIES_A)],
@@ -700,10 +739,11 @@ fn compact_entity_selection_seed_without_a_feature_scope_stays_native() {
             &[compact_entity_selection(30, 31, identity)],
             &scopes,
             &listed(&[5]),
-            &mut Vec::new(),
+            &mut losses,
         )
         .expect("rectangular pattern");
         assert_linear_seed(definition, native.clone());
+        assert!(losses.is_empty());
     }
 }
 
@@ -870,6 +910,7 @@ fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
             &[],
             &[],
             &listed(&[5]),
+            &mut Vec::new(),
         )
     };
     let face_group = || group(10, 30, DesignOperandRole::ROLE_0X10);
@@ -929,6 +970,7 @@ fn an_unprojected_pattern_keeps_its_seeds() {
             &[compact_entity_selection(30, 31, 5)],
             &[scope.clone(), feature.clone()],
             &listed(&[5]),
+            &mut Vec::new(),
         )
     };
     assert_eq!(
@@ -947,6 +989,7 @@ fn an_unprojected_pattern_keeps_its_seeds() {
             &[],
             &[],
             &listed(&[5]),
+            &mut Vec::new(),
         ),
         vec![PatternSeed::Faces(FaceSelection::Native(
             "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
