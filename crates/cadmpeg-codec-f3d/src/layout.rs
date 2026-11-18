@@ -3441,6 +3441,18 @@ pub(crate) mod timeline_body_owner_marked_prefix {
     pub(crate) const BODY_COUNT: usize = 25;
 }
 
+/// Byte offsets for the `timeline_owned_base_feature_typed_body_entry` record.
+///
+/// Spec §3.1. Record length 55 B.
+pub(crate) mod timeline_owned_base_feature_typed_body_entry {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 55;
+    /// Offset of `reference_value` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_VALUE: usize = 1;
+    /// Offset of `reference_field` (`bytes[6]`). Spec §3.1.
+    pub(crate) const REFERENCE_FIELD: usize = 49;
+}
+
 /// Byte offsets for the `timeline_owned_paste_source_pairs` record.
 ///
 /// Spec §3.1. Record length 9 B.
@@ -9424,10 +9436,10 @@ pub(crate) mod derived_base_mirror_scope {
     pub(crate) const BODY_REFERENCE_COUNT: usize = 20;
     /// Stated value of `body_reference_count` (`u32`). Spec §3.1.
     pub(crate) const BODY_REFERENCE_COUNT_VALUE: u32 = 0x0000_0002;
-    /// Offset of `first_body_reference` (`bytes[11]`). Spec §3.1.
+    /// Offset of `first_body_reference` (`bytes[15]`). Spec §3.1.
     pub(crate) const FIRST_BODY_REFERENCE: usize = 24;
-    /// Offset of `result_body_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const RESULT_BODY_REFERENCE: usize = 41;
+    /// Offset of `result_body_reference` (`bytes[15]`). Spec §3.1.
+    pub(crate) const RESULT_BODY_REFERENCE: usize = 39;
     /// Offset of `companion_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const COMPANION_REFERENCE: usize = 621;
     /// Offset of `closing_zeroes` (`bytes[2]`). Spec §3.1.
@@ -10801,6 +10813,42 @@ pub(crate) mod sheet_metal_contour_vector_owner {
 pub(crate) mod sheet_metal_contour_compact_carrier {
     /// Offset of `carrier_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const CARRIER_REFERENCE: usize = 5;
+}
+
+/// Byte offsets for the `split_body_scope_prefix` record.
+///
+/// Spec §3.1. Record length 20 B.
+///
+/// ```text
+/// The common parameter-scope prologue begins at the leading-block presence byte.
+/// ```
+pub(crate) mod split_body_scope_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `leading_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_BLOCK_PRESENCE: usize = 19;
+    /// Stated value of `leading_block_presence` (`u8`). Spec §3.1.
+    pub(crate) const LEADING_BLOCK_PRESENCE_VALUE: u8 = 0;
+}
+
+/// Byte offsets for the `split_body_extension` record.
+///
+/// Spec §3.1. Record length 5 B.
+///
+/// ```text
+/// Offsets start at the end of the parameter-scope prologue. A nullable local record reference follows this control.
+/// ```
+pub(crate) mod split_body_extension {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `extend_tool` (`u8`). Spec §3.1.
+    pub(crate) const EXTEND_TOOL: usize = 0;
+    /// Offset of `following_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FOLLOWING_WORD: usize = 1;
+    /// Stated value of `following_word` (`u32`). Spec §3.1.
+    pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0001;
 }
 
 /// Byte offsets for the `mesh_plane_cut_scope_prefix` record.

@@ -785,6 +785,18 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder places a Canvas with a zero byte in a non-legacy layout by its boundary segments and payload frame, keeps the byte in the native `second_boundary_flag` field, and reports `appearance.reference-image-flag-assumed`.
 
+### DR-812. Empty-label named tails and 78-byte fixed tails
+
+**Question.** How does a reader tell an empty-label named parameter-scope tail from a 78-byte fixed tail?
+
+**Known.** `f3d.md` "A named `Combine` tail also has a marked-reference form" gives the named tail. The fixed tail table gives the 78-byte fixed tail, with the preceding history-state identity at tail offset 31. With an empty label, the two readings cover the same bytes. The named field identity and first lane value are the bytes of the first record reference of the fixed form, and the named opaque u32 is the preceding history-state identity of the fixed form. Three `Combine` saves (`combine_tools_n1.f3d`, `combine_tools_n2.f3d`, `combine_tools_n3.f3d`) store the same tail layout. In the first two, the first tail reference names record `0x199` or `0x1fe`. The named first lane value is then `1`, and the scope reads as named with no preceding history state. In the third, the reference names record `0x263`, the lane value is `2`, and the scope reads as fixed.
+
+**Need.** A save whose `Combine` tail of this layout has a label, to tell whether the named form also stores a preceding history-state identity at the opaque u32.
+
+**Conflict.** None.
+
+**Note.** When a `Combine` scope stores no preceding history state, the decoder binds its operands in the predecessor that the history header names. An operand that this binding leaves native binds through its direct body recipe.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
@@ -1104,6 +1116,22 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** The scope and ordered references remain native.
+
+### DR-877. Split tool extension in other property forms
+
+**Question.** How is the splitting-tool extension Boolean encoded when the property block is absent or populated?
+
+**Known.** The empty-property form places the Boolean before a u32 one and a nullable local reference. The absent-property form has the same lane after the presence byte. The decoder reads that lane as the Boolean and reports `feature.split-tool-extension-assumed`. An unrecognized prefix reports `feature.split-tool-extension-unresolved`.
+
+**Need.** Matched extension-on and extension-off saves with absent and populated property blocks.
+
+### DR-878. Split face-tool groups with alternative face recipes
+
+**Question.** Which splitting surfaces do a role-`0x0000000900000000` group with multiple `[0, −1]` recipes and a single-member group with a `[0, 0]` recipe select?
+
+**Known.** Each group member has a complete face-recipe frame and occupies its ordered scope-reference position. The decoder reads these members as splitting surfaces and reports `feature.split-body-face-tool-group-assumed`. A complete unique preceding-face reading projects the tool as a historical face selection. Other readings retain the native group.
+
+**Need.** Controlled Split Body saves that distinguish the single-member terminal words and vary the number of splitting surfaces.
 
 ### DR-118. Split tool face without a tool group
 
