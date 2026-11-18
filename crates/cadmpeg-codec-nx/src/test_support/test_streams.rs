@@ -1526,3 +1526,54 @@ pub(crate) fn deltas_intersection_curve_stream() -> Vec<u8> {
     }
     stream
 }
+
+/// Append LOOP `loop_xmt` of FACE `face`, whose single FIN `fin_xmt` is a
+/// vertex-loop FIN at VERTEX `vertex`.
+pub(crate) fn push_vertex_loop(
+    stream: &mut Vec<u8>,
+    loop_xmt: u16,
+    fin_xmt: u16,
+    face: u16,
+    vertex: u16,
+) {
+    let mut loop_ = record(15, 16);
+    put_ref(&mut loop_, 2, loop_xmt);
+    put_ref(&mut loop_, 8, 1);
+    put_ref(&mut loop_, 10, fin_xmt);
+    put_ref(&mut loop_, 12, face);
+    put_ref(&mut loop_, 14, 1);
+    stream.extend(loop_);
+    let mut fin = record(17, 23);
+    put_ref(&mut fin, 2, fin_xmt);
+    put_ref(&mut fin, 4, 1);
+    put_ref(&mut fin, 6, loop_xmt);
+    put_ref(&mut fin, 8, fin_xmt);
+    put_ref(&mut fin, 10, fin_xmt);
+    put_ref(&mut fin, 12, vertex);
+    put_ref(&mut fin, 14, 1);
+    put_ref(&mut fin, 16, 1);
+    put_ref(&mut fin, 18, 1);
+    put_ref(&mut fin, 20, 1);
+    fin[22] = b'?';
+    stream.extend(fin);
+}
+
+/// A [`topology_partition_stream`] whose FACE 4 has a second LOOP 21: a
+/// vertex loop with FIN 22 at VERTEX `vertex`. VERTEX 40 at POINT 41 is
+/// no EDGE endpoint.
+pub(crate) fn vertex_loop_topology_partition_stream(vertex: u16) -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let ring_loop = super::test_bytes::record_offset(&stream, 15, 5);
+    put_ref(&mut stream, ring_loop + 14, 21);
+    push_vertex_loop(&mut stream, 21, 22, 4, vertex);
+    let mut apex = record(18, 28);
+    put_ref(&mut apex, 2, 40);
+    put_ref(&mut apex, 16, 41);
+    put_f64(&mut apex, 18, 0.000_1);
+    stream.extend(apex);
+    let mut apex_point = record(29, 40);
+    put_ref(&mut apex_point, 2, 41);
+    put_vec3(&mut apex_point, 16, [0.0, 0.0, 0.0]);
+    stream.extend(apex_point);
+    stream
+}
