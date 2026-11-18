@@ -4,7 +4,7 @@ use super::*;
 use crate::records::feature::motion_link::DesignLinkedRotations;
 use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
 use crate::records::identity::Located;
-use cadmpeg_ir::products::{JointConnector, JointOperand};
+use cadmpeg_ir::products::{JointConnector, JointOperand, OperandContainer};
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::transform::Transform;
 
@@ -75,8 +75,22 @@ fn motion_link_binds_the_projected_revolute_joints_in_record_order() {
         limits: None,
     });
     let scopes = [first, second, scope];
-    assert_eq!(project(&scopes, &motions[..1], &mut joints), (0, 1));
-    assert_eq!(project(&scopes, &motions, &mut joints), (1, 0));
+    let paths = LocalOccurrencePaths::default();
+    assert_eq!(project(&scopes, &motions[..1], &paths, &mut joints), (0, 1));
+    let mut unresolved = joints.clone();
+    unresolved
+        .get_mut(first_id.as_str())
+        .unwrap()
+        .connectors_mut()
+        .nth(1)
+        .unwrap()
+        .operand
+        .container = OperandContainer::Occurrence {
+        occurrence: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#missing").unwrap(),
+        occurrence_path: Vec::new(),
+    };
+    assert_eq!(project(&scopes, &motions, &paths, &mut unresolved), (0, 1));
+    assert_eq!(project(&scopes, &motions, &paths, &mut joints), (1, 0));
     let coupling = &joints[coupling_id.as_str()];
     let JointOperands::Pair {
         kind:

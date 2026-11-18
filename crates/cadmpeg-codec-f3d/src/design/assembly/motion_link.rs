@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::products::{AssemblyJoint, JointOperands, PairedJointKind};
 
+use crate::design::components::paths::LocalOccurrencePaths;
 use crate::ids::{native_stream, neutral_assembly_joint_id};
 use crate::records::feature::joint_motion::DesignJointMotion;
 use crate::records::feature::motion_link::ROTATE_Z;
@@ -12,6 +13,7 @@ use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 pub(super) fn project(
     scopes: &[DesignParameterScope],
     motions: &[DesignJointMotion],
+    paths: &LocalOccurrencePaths,
     joints: &mut BTreeMap<String, AssemblyJoint>,
 ) -> (usize, usize) {
     let links = scopes.iter().filter_map(|scope| match scope.payload() {
@@ -64,6 +66,11 @@ pub(super) fn project(
                 else {
                     return None;
                 };
+                if connectors.iter().any(|connector| {
+                    !paths.has_projected_joint_operand(&connector.operand.container)
+                }) {
+                    return None;
+                }
                 Some((joint.id.clone(), connectors[0].clone()))
             };
             let [first, second] = link.joints;
