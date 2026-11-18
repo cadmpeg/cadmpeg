@@ -607,3 +607,92 @@ fn fold_mode_and_fold_list_records_use_the_enumeration_and_list_grammars() {
         } if items.references() == [PmDcReference::from_packed(0x8000_0005)]
     ));
 }
+
+#[test]
+fn a_native_face_plate_names_its_first_refused_check() {
+    let (inventory, mut feature) = native_corner_round();
+    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: "Plate".into(),
+            parameters: BTreeMap::new(),
+        },
+    ));
+    let source = inventory.features[0].id();
+    let refusals = std::collections::BTreeMap::from([(source, "direction-normal")]);
+    let losses = face_losses(&refusals, std::slice::from_ref(&feature));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sheet-metal-face-refused"
+    );
+    assert!(losses[0].message.ends_with("is direction-normal."));
+    // A typed feature has no face note.
+    let mut typed = feature;
+    typed.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::SheetMetalCorner {
+            bend: FeatureId::mint("test:model:feature#bend").expect("bend"),
+            effect: cadmpeg_ir::features::SheetMetalCornerEffect::Unchanged,
+        },
+    ));
+    assert!(face_losses(&refusals, &[typed]).is_empty());
+}
+
+#[test]
+fn a_native_plate_without_another_note_names_its_projection_stage() {
+    let (mut inventory, mut feature) = native_corner_round();
+    let mut label = serde_json::to_value(&inventory.labels[0]).expect("label");
+    label["class_id"] = serde_json::to_value(super::super::PLATE_CLASS_ID).expect("class");
+    inventory.labels[0] = serde_json::from_value(label).expect("plate label");
+    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: "Plate".into(),
+            parameters: BTreeMap::new(),
+        },
+    ));
+    // A plate without a bend and without a face refusal.
+    let losses = unexplained_losses(&inventory, std::slice::from_ref(&feature), |_| false);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sheet-metal-native-unexplained"
+    );
+    assert!(losses[0].message.ends_with("the projection stage is face."));
+    // A refusal explains the plate.
+    assert!(unexplained_losses(&inventory, std::slice::from_ref(&feature), |_| true).is_empty());
+    // A record that no label classifies and no flange owns is not sheet metal.
+    inventory.labels.clear();
+    assert!(unexplained_losses(&inventory, &[feature], |_| false).is_empty());
+}
+
+#[test]
+fn a_missing_edge_inventory_reports_its_reason_for_selecting_plates() {
+    use crate::test_support::sheet_metal::feature;
+    let mut inventory = FeatureInventory::default();
+    inventory.edge_inputs.unavailable = Some(crate::feature::edge_selection::Unavailable::Archive);
+    // No plate selects edges: no note.
+    assert!(native_kind_losses(&inventory, &[]).is_empty());
+    let mut slots = vec![0; 13];
+    slots[12] = 5;
+    inventory.features.push(feature(100, &slots));
+    let losses = native_kind_losses(&inventory, &[]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.edge-inventory-unavailable"
+    );
+    assert!(losses[0].message.ends_with(": archive."));
+}
+
+#[test]
+fn a_style_record_without_a_layout_names_its_segment_version() {
+    let mut inventory = FeatureInventory::default();
+    assert!(native_kind_losses(&inventory, &[]).is_empty());
+    inventory.unread_style_versions.extend([30, 25]);
+    let losses = native_kind_losses(&inventory, &[]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sheet-metal-style-version-unread"
+    );
+    assert!(losses[0].message.contains("version(s) 25, 30 "));
+}
