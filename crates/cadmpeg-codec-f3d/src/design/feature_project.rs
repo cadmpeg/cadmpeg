@@ -65,6 +65,7 @@ mod surface_patch;
 mod surface_untrim;
 pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
+mod thread_companions;
 mod unstitch;
 mod work_axes;
 
@@ -381,6 +382,7 @@ fn authored_scope_ordinals_for_stream<'a>(
             ));
         }
     }
+    thread_companions::insert_positions(stream, &scopes_by_record, &mut out)?;
     Ok(out)
 }
 
@@ -1277,6 +1279,19 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 native_stream(owner.id()) == Some(native_scope)
                                     && owner.scope_record_index() == scope.record_index
                             });
+                            if matches!(construction.form, crate::records::feature::thread::DesignThreadForm::CompactExtended(_))
+                                && owners.iter().any(|owner| {
+                                    native_stream(owner.id()) == Some(native_scope)
+                                        && owner.scope_record_index() == scope.record_index
+                                        && owner.local_ordinal() == 0
+                                        && owner.evaluated_value().get() > 0.0
+                                })
+                            {
+                                projection_losses.push(crate::loss::F3dLossCode::ThreadOffsetNative.note(format!(
+                                    "Thread {} retains its positive start offset in its native owner.",
+                                    scope.id
+                                )));
+                            }
                             let face_reference_count =
                                 construction.face_group_record_indices.len().checked_mul(2);
                             let full_face_extent = !has_parameter_owners
@@ -1703,7 +1718,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                 source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
-                    FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::Form(_) | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
+                    FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::Form(_) | FeatureOperation::FilledSurface { .. } | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
                     || matches!(family, Some(DesignFeatureFamily::Hole))
                     || matches!(family, Some(DesignFeatureFamily::Emboss))
@@ -1809,6 +1824,24 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         else {
             continue;
         };
+        if let Some(results) =
+            crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
+                .and_then(|group| {
+                    group
+                        .into_iter()
+                        .map(|scope| Some(u64::from(scope.derived_base_owner?.result_body?.value)))
+                        .collect::<Option<Vec<_>>>()
+                })
+        {
+            let bodies = design_body_selection(scope, results.into_iter(), body_bindings);
+            if matches!(bodies, cadmpeg_ir::features::BodySelection::Resolved { .. }) {
+                feature
+                    .evaluation
+                    .set_definition(FeatureDefinition::Operation(
+                        FeatureOperation::BaseFeature { bodies },
+                    ));
+            }
+        }
         let ScopeHistoryPredecessor::Scope(predecessor_scope) =
             scope_history.predecessor(scope, |candidate| {
                 let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
