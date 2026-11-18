@@ -15,12 +15,12 @@ use cadmpeg_ir::geometry::pcurve::{
     PcurveNurbsPoles, PolarHarmonicPcurve,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::NonZeroReal;
@@ -359,6 +359,36 @@ impl Builder {
         )
     }
 
+    /// An edge from `start` to `end` on the degree-1 B-spline through
+    /// `corners`, on `[0, corners.len() − 1]` with one knot per corner.
+    pub(crate) fn polyline(
+        &mut self,
+        corners: &[[f64; 3]],
+        start: &VertexId,
+        end: &VertexId,
+    ) -> EdgeId {
+        let segments = corners.len() - 1;
+        let points = corners
+            .iter()
+            .map(|&[x, y, z]| Point3::new(x, y, z))
+            .collect();
+        let curve = self.curve(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                polyline_knots(segments),
+                NurbsPoles3::from_lanes(points, None).expect("poles"),
+                false,
+            )
+            .expect("polyline"),
+        ));
+        let last = f64::from(u32::try_from(segments).expect("segment count"));
+        self.edge(
+            EdgeCarrier::new(Some(curve), Some([0.0, last])).expect("carrier"),
+            start.clone(),
+            end.clone(),
+        )
+    }
+
     /// Append the closed degree-1 pcurve through `corners`, parameterized as
     /// [`Self::closed_polyline`], on the use interval `range` or on none, to
     /// the pcurve uses of the coedge at `position` of ring `ring` of `face`.
@@ -573,6 +603,41 @@ impl Builder {
         self.surface(SolvedSurfaceGeometry::Torus(
             TorusSurface::try_new(origin, axis, reference, major, minor).expect("torus"),
         ))
+    }
+
+    /// A spindle torus about the frame origin with its outer (`select_outer`)
+    /// or inner sheet selected.
+    pub(crate) fn degenerate_torus(
+        &mut self,
+        frame: Frame,
+        major: f64,
+        minor: f64,
+        select_outer: bool,
+    ) -> SurfaceId {
+        let (origin, axis, reference) = frame.vectors();
+        let n = self.serial();
+        let surface = id(SurfaceId::mint, "surface", n);
+        let construction = id(ProceduralSurfaceId::mint, "degenerate-torus", n);
+        self.ir
+            .geometry
+            .procedural_surfaces
+            .push(ProceduralSurface::new(
+                construction.clone(),
+                ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
+                None,
+            ));
+        self.ir.geometry.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction,
+                cache: Some(SolvedSurfaceGeometry::Torus(
+                    TorusSurface::try_new(origin, axis, reference, major, minor).expect("torus"),
+                )),
+            },
+            source_object: None,
+            native_ref: None,
+        });
+        surface
     }
 
     /// A face on `surface` bounded only by vertex loops at `vertices`.

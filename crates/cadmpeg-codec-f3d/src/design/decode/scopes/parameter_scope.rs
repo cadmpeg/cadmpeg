@@ -58,6 +58,7 @@ use super::surfaces::exact_surface_extend_operation;
 use super::surfaces::exact_surface_offset_operation;
 use super::surfaces::exact_surface_stitch_operation;
 use super::surfaces::exact_surface_untrim_operation;
+use super::surfaces::surface_extend_loss;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::thread::thread_modeled_flag_loss;
@@ -571,18 +572,7 @@ pub(crate) fn decode_parameter_scopes(
                 let construction =
                     exact_surface_extend_operation(bytes, &records, &scope, &mut losses);
                 if let Some(operation) = &construction {
-                    let distance = operation.distance.get();
-                    losses.push(
-                        if cadmpeg_ir::scalar::PositiveLength::new(distance * 10.0).is_some() {
-                            crate::loss::F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
-                                format!("SurfaceExtend scope {} projects with an unresolved extension method (DR-311).", scope.id),
-                            )
-                        } else {
-                            crate::loss::F3dLossCode::FeatureSurfaceExtendDistanceNonpositive.note(
-                                format!("SurfaceExtend scope {} stores extension distance {distance} cm and stays native (DR-312).", scope.id),
-                            )
-                        },
-                    );
+                    losses.extend(surface_extend_loss(&scope.id, operation));
                 }
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
                     *slot = construction;
@@ -747,6 +737,7 @@ pub(crate) fn decode_parameter_scopes(
                     &records,
                     &scope,
                     parameter_owners,
+                    &stream_types,
                 )?;
                 if let scope::DesignScopePayloadMut::RPattern(slot)
                 | scope::DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut()

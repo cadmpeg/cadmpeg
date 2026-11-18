@@ -60,19 +60,8 @@
           "id": "usd:stage:occurrence#/Legacy",
           "name": "Legacy",
           "native_ref": "/Legacy",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Legacy",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Legacy",
           "transform": [
             [
               1.0,
@@ -107,10 +96,32 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Legacy",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Legacy",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Legacy",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Legacy"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],

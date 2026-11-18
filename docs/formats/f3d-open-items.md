@@ -136,7 +136,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which placement does a Hole carrier state when its `refType` is not `13`, `14`, or `19`?
 
-**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the three admitted forms. The point-data record `refType` values `5`, `6`, and `17` occur on carrier `refType` `19` and do not change its placement.
+**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the three admitted forms. The point-data record `refType` values `5` and `6` occur on carrier `refType` `19` and do not change its placement. A `refType` `17` record that names a reconstructed plane is the case of §3.1 "A point-data record with `refType` `17`".
 
 **Need.** A file with a Hole carrier of any further `refType`.
 
@@ -499,9 +499,9 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does the flag byte after the `variant` byte of a parameter owner store?
 
-**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero.
+**Known.** `f3d.md` §3.1 "A dimension or feature-input parameter without the null owner stores `owner_record_index`" gives the byte. It is zero in almost every owner. It is one only in scalar owners whose `variant` is one, and one design stores variant one with flag zero. The owner of a driven dimension stores variant zero and flag zero. One save pair stores the same dimension driving and driven. The 104-byte owner frames of the pair differ in one byte, the last digit of the class tag: `361` in the driving save and `363` in the driven save. Each tag is `256` plus the type-table index of type `D91D429C-1BB5-4640-B49F-69AF14F463E9` in its save, and all four parameter owners of each save carry the tag of that save.
 
-**Need.** The flag can mark a driven or suppressed parameter. A design that toggles one dimension between driving and driven, saved in each state, fixes the meaning.
+**Need.** The flag can mark a suppressed parameter. A design that suppresses the feature of one scalar owner, saved in each state, and a save that creates a scalar owner with `variant` one.
 
 ### DR-88. Secondary asset-folder run
 
@@ -551,14 +551,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** In `Parametric_extrusion_generator.f3d`, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`.
 
-
-### DR-641. Record named by the counted head of a rectangular-pattern distribution block
-
-**Question.** What record does the marked reference in the counted head of a rectangular-pattern distribution block name, and what selects the counted head over the twelve-zero-byte head?
-
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the counted head layout. The distance type, entry count, entries, instance count, generated-instance references and suffix follow at the same relative offsets in both forms.
-
-**Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
 
 ### DR-654. Stored profile loop curves off the selected material boundary
 
@@ -2439,6 +2431,22 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
+### DR-642. Circular-pattern compute option
+
+**Question.** Which bytes store the Compute option of a circular pattern of features, and does it share the rectangular distribution block's fields?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder reads the symmetric byte from a payload whose distribution block stores u32 `2` in the matching position.
+
+**Need.** The circular distribution-block bytes for Compute options `0` and `1`, with symmetric byte `0` and `1`.
+
+### DR-818. Targets of rectangular-pattern body references
+
+**Question.** Which body does the entity suffix of the body browser node that a rectangular-pattern body reference names select, and which record does the marked reference after that suffix name?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the body references of the distribution block. A feature seed stores the references, and each one names a body browser node. In the decoded files, the entity suffix names a body that the pattern acts on, and the marked reference after the suffix names the feature scope that made that body. The decoder checks the node type and counts the references.
+
+**Need.** A rectangular pattern of features whose target body is a body that a scope other than the seed's scope made, with its body references, to tell whether the entity suffix selects the target body or the seed's body.
+
 ### DR-644. Atomic regions with holes
 
 **Question.** How does a nested profile-region selection store an atomic region that has a hole?
@@ -2565,25 +2573,25 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Note.** Partial Shell projection retains both selections and reports `feature.shell-group-roles-assumed`. The wall-selection solver uses the admitted complete construction; partial wall assumptions remain separate from its geometry proof.
 
-### DR-311. Extension method of a SurfaceExtend scope
+### DR-311. Trailing reference of a surface boundary carrier and other SurfaceExtend prologues
 
-**Question.** Which field of a `SurfaceExtend` scope stores the extension method, and which records can the trailing reference of a SurfaceExtend or boundary-carrier SurfaceOffset group name?
+**Question.** Which records can the trailing reference of a `SurfaceExtend` or boundary-carrier `SurfaceOffset` group name, what does the boolean of a compact flag record state, and where does a `SurfaceExtend` scope with another prologue store its extension method?
 
-**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner and the boundary carrier. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. The candidate fields are the boolean of a compact flag record, the group `variant` and closing flag, and the u32 fields that precede the scope's marked references to the distance owner and the boundary carrier. Each candidate holds one value in every available scope. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`.
+**Known.** `f3d.md` §3.1 "A `SurfaceExtend` scope has at least three ordered references" defines the distance owner, the boundary carrier, and the scope prologue with the extension method. The boundary carrier is a counted construction-operand group with role `0x0000000800000000`, `trailing_count` 1, and one trailing reference. A compact flag record has an indexed header followed by ten zero bytes, marker byte `01`, a boolean byte, and terminator byte `00`. The boolean is `1` for each extension method with edge chaining on.
 
-**Need.** Three saves that extend the same edge by the same distance, one with each extension method, compared byte for byte. Controlled saves and record comparisons that establish the trailing reference target forms and their effect on the operation.
+**Need.** Two saves of one extension that differ only in the edge-chaining option, compared byte for byte. Controlled saves and record comparisons that establish the trailing reference target forms and their effect on the operation. A `SurfaceExtend` scope whose prologue differs from the fixed prologue, with its extension method.
 
 **Conflict.** None.
 
-**Note.** The decoder projects each `SurfaceExtend` scope with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. It retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
+**Note.** The decoder reads the extension method from the fixed scope prologue. A scope with another prologue, or with a method code above `2`, projects with `SurfaceExtension::Unresolved` and reports `feature.surface-extend-method-unresolved`. The decoder retains each boundary operation and reports `feature.surface-boundary-flag-record-assumed` when its trailing reference does not name a compact flag record.
 
 ### DR-312. Negative SurfaceExtend distance
 
 **Question.** What operation does a negative `SurfaceExtend` extension distance select?
 
-**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive.
+**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive. A natural extension with a negative distance is a failed feature in Fusion: the scope keeps its frame, its signed distance and a history state, and the body keeps its unextended boundary.
 
-**Need.** Two saves that extend the same edge by a positive distance and by its negation, with the resulting body geometry of each.
+**Need.** Saves of a perpendicular extension and of a tangent extension of one edge by a positive distance and by its negation, with the resulting body geometry of each.
 
 **Conflict.** None.
 
@@ -2737,15 +2745,15 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-341. Chamfer distance reference face
 
-**Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
+**Question.** How do the set controls and ordered recipe references assign the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
 
-**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false. A distance-angle set stores a distance-reversal byte at primary-relative offset 22. Chamfertestcube sets 312 and 327 store 0 and 1 there. Both store 1 mm and 30 degrees. Their selected edges are ASM slots 178 at `y=10, z=10` and 182 at `y=0, z=10`. The STEP treatment planes give top/side setbacks of `(1, 0.577350269189626)` mm and `(0.577350269189625, 1)` mm. Sets 342 and 357 store first/second distances `(1, 3)` mm and `(3, 1)` mm on slots 177 at `x=10, z=10` and 180 at `x=0, z=10`; their STEP top/side setbacks agree with that order. Testchamfer1 and Testchamfer2 select the front top edge and store first/second distances `(1, 3)` mm and `(3, 1)` mm, equal to their STEP top/front setbacks. Testchamfer3 and Testchamfer4 store 1 mm and 30 degrees and reversal bytes 0 and 1. Their STEP top/front setbacks are `(1, 0.577350269189626)` mm and `(0.577350269189625, 1)` mm. Each 30-degree treatment plane forms that angle with the face carrying the 1 mm setback.
 
 **Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
 
 **Conflict.** None.
 
-**Note.** Projection keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection retains each distance-reversal flag in its native set, keeps owner-slot order with forward neutral direction, and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
@@ -3309,6 +3317,26 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A stored carrier or a derivation rule for the absent curves, and the Sketch that owner 1977 names.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
+
+### DR-670. Carrier state of a Hole on a reconstructed plane
+
+**Question.** What do the carrier position and the carrier point parameters of a face-point Hole store when its point record names a reconstructed plane at another position?
+
+**Known.** The carrier has `refType` `19`. The point record has `refType` `17` and its position lies on the reconstructed plane. The carrier position differs from the point-record position, and the carrier point parameters share their first value with the point-record parameters. The drilled cylinder lies on the point-record position.
+
+**Need.** A second Hole whose carrier and point record disagree, with the Hole saved before and after the plane is moved.
+
+**Note.** The entry point is the point-record position. The carrier position is retained in the native carrier record.
+
+### DR-671. Second direct selection of a Hole on a reconstructed plane
+
+**Question.** What does the second direct support-face selection of the same Hole select, and how does it relate to the carrier input?
+
+**Known.** The Hole scope references two direct support-face selections after its point-data records. The first is the sole input of the point record. The carrier input names the second. The second selection owns a record with a sketch name and a sketch frame in place of a reconstructed plane record.
+
+**Need.** A second Hole whose carrier input names a sketch selection, and a save that moves the sketch.
+
+**Note.** The sketch frame is not used for placement.
 
 ### DR-760. Structured Chamfer recipes on faces with several deleted boundary edges
 
