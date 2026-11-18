@@ -4490,16 +4490,18 @@ pub(super) fn project_shell(
     });
     let bodies = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)
         .map(|group| BodySelection::Native(group.id.clone()));
-    let removed_faces =
-        if let Some(group) = single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10) {
-            FaceSelection::Native(group.id.clone())
-        } else if bodies.is_some() {
-            FaceSelection::Faces(Vec::new())
-        } else if wall.is_none() {
-            direct_face_selection(scope, operands).unwrap_or(FaceSelection::Unresolved)
-        } else {
-            or_none!(direct_face_selection(scope, operands))
-        };
+    let removed_faces = if let Some(group) =
+        single_operand_group(groups, scope, DesignOperandRole::ROLE_0X10)
+    {
+        resolved_historical_face_group(scope, scope.previous_history_state_id(), group, operands)
+            .unwrap_or_else(|| FaceSelection::Native(group.id.clone()))
+    } else if bodies.is_some() {
+        FaceSelection::Faces(Vec::new())
+    } else if wall.is_none() {
+        direct_face_selection(scope, operands).unwrap_or(FaceSelection::Unresolved)
+    } else {
+        or_none!(direct_face_selection(scope, operands))
+    };
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Shell {
             bodies,
