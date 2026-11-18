@@ -406,6 +406,9 @@ pub(crate) enum StepLossCode {
     /// The end-to-end lengths of a context's plant items agree on a length
     /// unit other than the one the context declares.
     LengthUnitContradicted,
+    /// A parent representation's `MAPPED_ITEM` placed an assembly occurrence
+    /// that no STEP relationship associates with that item.
+    OccurrencePlacementInferred,
     /// A CSG item's attributes do not resolve; it has no feature and no body.
     CsgItemUnresolved,
     /// A plant CSG shape lists several plant item orientations, so its items
@@ -604,6 +607,7 @@ impl StepLossCode {
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
         Self::LengthUnitContradicted,
+        Self::OccurrencePlacementInferred,
         Self::CsgItemUnresolved,
         Self::CsgPlantOrientationAmbiguous,
         Self::CsgSolidUnsynthesized,
@@ -817,6 +821,7 @@ impl StepLossCode {
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
+            Self::OccurrencePlacementInferred => "product.occurrence-placement-inferred",
             Self::CsgItemUnresolved => "csg.item-unresolved",
             Self::CsgPlantOrientationAmbiguous => "csg.plant-orientation-ambiguous",
             Self::CsgSolidUnsynthesized => "csg.solid-unsynthesized",
@@ -887,7 +892,8 @@ impl StepLossCode {
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
             | Self::SourceNativeRecordOmitted
-            | Self::NonManifoldEdgeSplit => Severity::Info,
+            | Self::NonManifoldEdgeSplit
+            | Self::OccurrencePlacementInferred => Severity::Info,
             _ => Severity::Warning,
         }
     }
@@ -1033,7 +1039,8 @@ impl StepLossCode {
             }
             Self::CsgProfileGapClosed
             | Self::AngleUnitFactorCorrected
-            | Self::LengthUnitContradicted => LossTaxonomy::DecodeDiagnostic,
+            | Self::LengthUnitContradicted
+            | Self::OccurrencePlacementInferred => LossTaxonomy::DecodeDiagnostic,
             Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
@@ -1293,6 +1300,7 @@ mod tests {
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
                 "geometry.length-unit-contradicted",
+                "product.occurrence-placement-inferred",
                 "csg.item-unresolved",
                 "csg.plant-orientation-ambiguous",
                 "csg.solid-unsynthesized",

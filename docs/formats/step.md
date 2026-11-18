@@ -2085,6 +2085,9 @@ assembly-placement loss.
 For the implicit parent-representation salvage path, CADIR considers only a
 mapped item directly listed by a representation linked to the parent
 definition. This salvage rule is not a STEP occurrence association.
+CADIR decision: an occurrence placed by this path keeps the inferred
+transform, and the decode reports one `product.occurrence-placement-inferred`
+note that names every `NEXT_ASSEMBLY_USAGE_OCCURRENCE` so placed.
 CADIR decision: for standalone mapped items that resolve to one body, an
 identical transform is assigned once to that body's `transform`. Distinct
 transforms cannot be represented by one body transform, so CADIR leaves the
