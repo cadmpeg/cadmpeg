@@ -80,15 +80,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-319. WorkAxis point-and-direction construction rules
 
-**Question.** What do the position, direction, construction rules, and input roles encode for the other `refType` values of a WorkAxis point-and-direction carrier?
+**Question.** How do nonzero point parameters, `refType` values, and carrier inputs determine the authored axis construction? How do the marked references of a legacy two-point carrier relate to the scope members? Which payload follows a nonzero carrier leading-block byte, and which registered type identities select the legacy fixed carrier and support layouts?
 
-**Known.** `f3d.md` §3.1 "A `WorkAxis` scope can reference a point-and-direction carrier" describes the carrier and the two-point rule.
+**Known.** `f3d.md` §3.1 describes the legacy and version 1 and 4 carrier layouts. In the corroborated legacy pattern, the marked carrier references name the scope members at indices 2 and 4 in that order. The corroborated `refType` 12 pattern has zero point parameters and two inputs that resolve to point-data records in endpoint order. In both patterns, the first endpoint agrees with the stored origin and the second agrees with the origin plus the displacement. Readable stored line components project independently into a checked datum axis. Counted property and reference runs retain their readable prefixes and declared arity. Unknown input roles remain absent. Literal parameter expressions and source options remain source facts. Detached parameter owners retain their source definitions without a canonical scope binding.
 
-**Need.** Controlled designs that vary one axis construction rule and its inputs at a time.
+**Need.** Controlled designs that vary each construction rule, nonzero point parameter, operand path, property lane and leading-block payload independently, with independently measured solved axes. Registered legacy carrier and support type identities for each fixed layout.
 
-**Conflict.** None.
+**Conflict.** In a two-point reading, carrier inputs can fail to resolve as points, and resolved points can disagree with the separately stored line. In either case, readable points retain unknown roles and a named assumption identifies use of the stored line. Independently eligible legacy and registered sibling carriers remain separate readings. Competition leaves the neutral construction unresolved.
 
-**Note.** The decoder takes position and direction as the solved axis for other values and reports `feature.work-axis-rule-unassigned`; the construction inputs remain native.
+**Note.** Nonzero point parameters retain a named stored-line assumption and unknown rules retain `feature.work-axis-rule-unassigned`. Their authored construction semantics remain unassigned. `feature.work-axis-leading-block-layout-assumed` retains the prior bounded one-byte leading-block reading. `feature.work-axis-unsupported-version-legacy-layout-assumed` distinguishes an unsupported modern revision from an unregistered legacy carrier. `feature.work-axis-legacy-layout-assumed` identifies fixed-layout admission independently of dynamic class spellings. Partial carriers retain actual unreadable-part records and source images; endpoint tolerance is an explicitly reported hypothesis.
 
 ### DR-284. Compact sketch-profile tail flags
 
@@ -317,7 +317,7 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Known.** `f3d.md` §3.1 defines the stable Base Face scope, ordered source-profile pairs, persistent region identities, and separate sheet-metal settings. The one-identity carrier is valid; the enclosing scope is a different record. The repeated discriminator differs between Forward results and is not a constant Forward or feature-family code. The complete carrier suffix remains opaque and has not been shown to omit side or result choice. Family-2 profile clauses, nonconstant loop markers, and secondary loop programs also require preservation; a family-3-only primary-loop decoder does not cover every source recipe.
 
-**Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Complete carrier, settings, and profile programs must be compared, with exact result topology confirming each intended change. Until the selected region, thickness, material side, and result choice are independently resolved, retain the operation as native sheet-metal Base Face data.
+**Need.** Controlled saves must vary side and result choice independently while holding the sketch, regions, thickness, and rule fixed. Compare the carrier, settings, and profile programs and confirm each change against exact result topology. Resolve the ordered region identities to the corresponding sketch regions, including secondary loops.
 
 ### DR-74. Lost-edge runs shorter than the operand list
 
@@ -3166,7 +3166,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which source occurrence and containing component does a Component Insert scope select when its relation carrier or authored placement path remains unresolved?
 
-**Known.** The shared identity and matrix scope forms in §3.1 of `f3d.md` retain an occurrence identity, one relation reference, and a scope-local placement. The carrier contributes the source occurrence role used by external-reference binding. The scope occurrence identity can repeat across scopes.
+**Known.** The shared identity and matrix scope forms in §3.1 of `f3d.md` retain an occurrence identity, one relation reference, and a scope-local placement. This includes the 256-, 257-, 261- and 267-byte identity scopes and the 385-, 389- and 399-byte matrix scopes with legacy tails. The carrier contributes the source occurrence role used by external-reference binding. The scope occurrence identity can repeat across scopes.
 
 **Need.** Controlled public assemblies with independently varied source occurrences, containing components, and placement matrices, including a retained relation with an unresolved source document.
 
@@ -3411,6 +3411,16 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Complete anchor definitions and unique selector bindings for these forms.
 
 **Note.** The decoder retains a partial neutral-plane Draft with native anchor and face selectors and any recovered angle, and reports `feature.draft-neutral-anchor-assumed`. A finite angle outside the neutral slope domain remains native and reports `feature.draft-slope-out-of-range`.
+
+### DR-792. Pose of an unresolved legacy insertion
+
+**Question.** Which current occurrence pose accompanies a legacy insertion whose source carrier or operation table remains unresolved?
+
+**Known.** The insertion scope stores an identity or rigid insertion frame. A separate occurrence carrier or operation table can store the current pose. The scope retains its occurrence identity and relation reference independently of those records.
+
+**Need.** Controlled public assemblies that move an inserted occurrence while retaining the insertion scope and independently varying its source carrier and operation table.
+
+**Note.** `assembly.legacy-insert-frame-assumed` names the assumption that an unresolved occurrence uses its scope-local insertion frame as its current frame. `feature.component-insert-membership-assumed` separately names unresolved source membership. A decoded source binding takes precedence over this fallback. The public API separates [initial position](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_initialTransform.htm) from [assembly-context position and orientation](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_transform2.htm).
 
 ### DR-796. Healed DeleteFace transitions that delete more faces than the group has members
 

@@ -76,6 +76,15 @@ pub struct Members<T, O> {
     order: PhantomData<O>,
 }
 
+impl<T, O> Default for Members<T, O> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            order: PhantomData,
+        }
+    }
+}
+
 impl<T: Keyed, O: MemberOrder> Members<T, O> {
     /// Admits a list of members that are distinct by identity. An
     /// `Unordered` list is sorted by identity key.
@@ -110,6 +119,11 @@ impl<T, O> Members<T, O> {
     #[must_use]
     pub fn as_slice(&self) -> &[T] {
         &self.items
+    }
+
+    #[doc = "Consume the checked list in its stored order."]
+    pub fn into_vec(self) -> Vec<T> {
+        self.items
     }
 }
 

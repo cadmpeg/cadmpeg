@@ -18,6 +18,7 @@ use crate::compare::PlacementClass;
 fn definition(ir: &CadIr) -> ProductDefinition {
     ProductDefinition {
         sketches: Vec::default(),
+        tessellations: Vec::new(),
         id: ProductDefinitionId::mint("test:model:product#1").expect("id"),
         kind: ProductDefinitionKind::Part,
         source_name: None,
