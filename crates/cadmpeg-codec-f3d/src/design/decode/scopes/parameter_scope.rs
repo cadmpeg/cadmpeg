@@ -269,7 +269,7 @@ pub(crate) fn decode_parameter_scopes(
                     super::position::decode(ctx, bytes, &records, &scope, &stream_types)?;
                 if scope.captured_positions.is_none() {
                     losses.push(crate::loss::F3dLossCode::PositionEnvelopeUnparsed.note(format!(
-                        "Position scope {} has no admitted version-six captured-position envelope; its native scope is retained.", scope.id
+                        "Position scope {} has no admitted captured-position envelope; the decoder retains its native scope.", scope.id
                     )));
                 }
             }
