@@ -24,6 +24,7 @@ use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
 use crate::report::check::Finding;
 use crate::schema::EntitySchema;
+use crate::topology::ChildLists;
 use crate::transform::Transform;
 
 macro_rules! topology_arenas {
@@ -161,12 +162,40 @@ struct Resolver<'a, 'c, 'd> {
     ctx: &'c DecodeContext<'d>,
     index: &'c DesignRecords<'a>,
     geometry: BTreeMap<&'a str, Located<'a>>,
+    children: ChildLists<'a>,
 }
 
 impl<'a> Resolver<'a, '_, '_> {
+    /// The children of a current-geometry record that only their parent
+    /// pointers list (D29): a body's regions and a shell's faces.
+    fn derived_children(&self, located: Located<'a>) -> Vec<&'a str> {
+        match located.arena {
+            Arena::Body => located
+                .topology
+                .bodies
+                .get(located.index)
+                .map(|body| self.children.body_regions(&body.id))
+                .unwrap_or_default()
+                .iter()
+                .map(|region| region.id.as_str())
+                .collect(),
+            Arena::Shell => located
+                .topology
+                .shells
+                .get(located.index)
+                .map(|shell| self.children.shell_faces(&shell.id))
+                .unwrap_or_default()
+                .iter()
+                .map(|face| face.id.as_str())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// The extent of a scope's current state at `position`: its bodies and the
-    /// records of the current geometry they reach, their name entries, and its
-    /// poses. `None` where the scope has no current state there.
+    /// records of the current geometry they reach, through references and
+    /// through the derived child lists, their name entries, and its poses.
+    /// `None` where the scope has no current state there.
     fn extent(
         &self,
         scope: &str,
@@ -197,6 +226,7 @@ impl<'a> Resolver<'a, '_, '_> {
             if state.records.insert(id, located).is_some() {
                 continue;
             }
+            pending.extend(self.derived_children(located));
             located.visit_references(self.ctx, &mut |target| {
                 if let Some((target, _)) = self.geometry.get_key_value(target) {
                     if !state.records.contains_key(target) {
@@ -344,6 +374,7 @@ pub(super) fn check_resolved_states(
         ctx,
         index,
         geometry: locate(&ir.geometry),
+        children: ir.geometry.child_lists(),
     };
     check_current_names(&resolver, findings);
     let mut topology: BTreeSet<&str> = resolver.geometry.keys().copied().collect();
@@ -366,6 +397,16 @@ pub(super) fn check_resolved_states(
         let id = evaluation.id.as_str();
         check_entries(index, &state, id, findings);
         check_closure(ctx, &state, &topology, ids, id, findings)?;
+        if let Some(content) = &evaluation.content {
+            state_topology::check_state_topology(
+                ctx,
+                ir.tolerances.linear,
+                &state,
+                &content.delta.records,
+                id,
+                findings,
+            )?;
+        }
         check_stored_bodies(index, evaluation, &state, findings);
     }
     Ok(())
@@ -550,5 +591,6 @@ fn check_stored_bodies(
     }
 }
 
+mod state_topology;
 #[cfg(test)]
 mod tests;
