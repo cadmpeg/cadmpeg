@@ -2113,6 +2113,7 @@ pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
     use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
@@ -2220,7 +2221,7 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells }) =
+            if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells, .. }) =
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
@@ -2233,6 +2234,9 @@ pub(crate) fn bind_feature_body_selections(
                         body_recipe_operands,
                     );
                     for cell in cells {
+                        let BoundaryFillCell::BodyRegion(cell) = cell else {
+                            continue;
+                        };
                         bind_body_recipe_body_selection(
                             cell,
                             feature_id,
@@ -2245,6 +2249,9 @@ pub(crate) fn bind_feature_body_selections(
                 } else {
                     bind_direct_body_recipe_body_selection(tools, scope, inputs, &mut body_candidates);
                     for cell in cells {
+                        let BoundaryFillCell::BodyRegion(cell) = cell else {
+                            continue;
+                        };
                         bind_direct_body_recipe_body_selection(cell, scope, inputs, &mut body_candidates);
                     }
                 }

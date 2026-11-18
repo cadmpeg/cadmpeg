@@ -10496,6 +10496,38 @@ pub(crate) mod mesh_plane_cut_scope_prefix {
     pub(crate) const FILL_SELECTOR: usize = 157;
 }
 
+/// Byte offsets for the `boundary_fill_scope_prefix_plain` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// This form uses property flag zero and operation at offset 21.
+/// ```
+pub(crate) mod boundary_fill_scope_prefix_plain {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `property_flag` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_FLAG: usize = 20;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+}
+
+/// Byte offsets for the `boundary_fill_scope_prefix_property` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// This form uses property flag one, a zero word at offset 21, and operation at offset 25.
+/// ```
+pub(crate) mod boundary_fill_scope_prefix_property {
+    /// Stated value of `optional_property_word` (`u32`). Spec §3.1.
+    pub(crate) const OPTIONAL_PROPERTY_WORD_VALUE: u32 = 0x0000_0000;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 25;
+}
+
 #[doc = "Byte offsets for the `replace_face_fixed_prefix` record."]
 #[doc = ""]
 #[doc = "Spec §3.1. Record length 26 B."]
