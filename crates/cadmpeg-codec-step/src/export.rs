@@ -1449,6 +1449,17 @@ impl<'a> Builder<'a> {
                 format!("instance path '{path}' names no occurrence of the document; its bodies and placement were not applied"),
             );
         }
+        for (definition, bodies) in &graph.omitted {
+            if !bodies.is_empty() {
+                self.loss(
+                    StepLossCode::InstancePrototypeBodiesOmitted,
+                    format!(
+                        "definition '{definition}' is placed only by instances that show bodies of their own; its {} body record(s) were not written in a product",
+                        bodies.len()
+                    ),
+                );
+            }
+        }
         // A definition of a document that was not read has no product here.
         let (external_products, products): (Vec<_>, Vec<_>) = graph
             .definitions
@@ -1569,12 +1580,13 @@ impl<'a> Builder<'a> {
             let description = product.description.as_deref().unwrap_or("");
             // A split instance's definition is a further definition of its
             // prototype's product.
-            let shared_formation = graph
+            // When every instance of the prototype was split, the first of
+            // those definitions states the product and keeps its identifier.
+            let base = graph
                 .shared_products
                 .get(&product.id)
-                .and_then(|base| formations.get(base))
-                .copied();
-            let (formation, definition_id) = if let Some(formation) = shared_formation {
+                .unwrap_or(&product.id);
+            let (formation, definition_id) = if let Some(&formation) = formations.get(base) {
                 (formation, product.id.as_str())
             } else {
                 let product_ref = self.emitter.emit(
@@ -1588,11 +1600,13 @@ impl<'a> Builder<'a> {
                 );
                 self.product_step_refs
                     .insert(product.id.as_str().to_owned(), product_ref);
+                self.product_step_refs
+                    .insert(base.as_str().to_owned(), product_ref);
                 let formation = self.emitter.emit(
                     "PRODUCT_DEFINITION_FORMATION",
                     &format!("'','',{product_ref}"),
                 );
-                formations.insert(product.id.clone(), formation);
+                formations.insert(base.clone(), formation);
                 (formation, product_id)
             };
             let definition = self.emitter.emit(
@@ -1640,10 +1654,18 @@ impl<'a> Builder<'a> {
             .or_else(|| (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id))
             .and_then(|product| representations.get(product))
             .copied();
+        // An omitted prototype's bodies are charged below, not written at
+        // the root.
         let owned = graph
             .definitions
             .iter()
             .flat_map(|product| product.bodies.iter().cloned())
+            .chain(
+                graph
+                    .omitted
+                    .iter()
+                    .flat_map(|(_, bodies)| bodies.iter().cloned()),
+            )
             .collect::<BTreeSet<_>>();
         self.emit_unclaimed_body_representation(context, root_representation, &owned);
 

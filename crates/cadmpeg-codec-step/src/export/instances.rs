@@ -26,6 +26,11 @@ pub(super) struct ProductGraph<'a> {
     pub(super) split: Vec<String>,
     /// The instance paths that name no occurrence of the document.
     pub(super) unresolved: Vec<String>,
+    /// The document definitions that every instance of which was split, so
+    /// that nothing places them, each with its bodies that no emitted
+    /// definition shows. Neither the definitions nor the occurrences they own
+    /// are in the graph.
+    pub(super) omitted: Vec<(ProductDefinitionId, Vec<BodyId>)>,
 }
 
 /// What the definition that owns a path states for the instance at it.
@@ -59,6 +64,7 @@ pub(super) fn lower(ir: &CadIr) -> ProductGraph<'_> {
         shared_products: HashMap::new(),
         split: Vec::new(),
         unresolved: Vec::new(),
+        omitted: Vec::new(),
     };
     let mut lowering = Lowering {
         definition_index: index(&graph.definitions, |definition| &definition.id),
@@ -112,7 +118,83 @@ pub(super) fn lower(ir: &CadIr) -> ProductGraph<'_> {
             lowering.apply(owner, &occurrence, instance, definition.id.as_str());
         }
     }
-    lowering.graph
+    let mut graph = lowering.graph;
+    prune(ir, &mut graph);
+    graph
+}
+
+/// Removes the document definitions that only split instances placed, and
+/// the occurrences they own, so that no definition the source places once
+/// is written beside its split instance as a root of its own.
+fn prune(ir: &CadIr, graph: &mut ProductGraph<'_>) {
+    let placed = ir
+        .model
+        .occurrences
+        .iter()
+        .map(|occurrence| &occurrence.prototype)
+        .collect::<HashSet<_>>();
+    let mut owners = HashMap::<&OccurrenceId, &ProductDefinitionId>::new();
+    for definition in &graph.definitions {
+        for occurrence in &definition.occurrences {
+            owners.entry(occurrence).or_insert(&definition.id);
+        }
+    }
+    let mut dropped = HashSet::<ProductDefinitionId>::new();
+    loop {
+        let live = graph
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                owners
+                    .get(&occurrence.id)
+                    .is_none_or(|owner| !dropped.contains(*owner))
+            })
+            .map(|occurrence| &occurrence.prototype)
+            .collect::<HashSet<_>>();
+        let newly = graph
+            .definitions
+            .iter()
+            .map(|definition| &definition.id)
+            .filter(|id| placed.contains(id) && !live.contains(id) && !dropped.contains(*id))
+            .cloned()
+            .collect::<Vec<_>>();
+        if newly.is_empty() {
+            break;
+        }
+        dropped.extend(newly);
+    }
+    if dropped.is_empty() {
+        return;
+    }
+    let owned_occurrences = graph
+        .definitions
+        .iter()
+        .filter(|definition| dropped.contains(&definition.id))
+        .flat_map(|definition| definition.occurrences.iter().cloned())
+        .collect::<HashSet<_>>();
+    graph
+        .occurrences
+        .retain(|occurrence| !owned_occurrences.contains(&occurrence.id));
+    let (omitted, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut graph.definitions)
+        .into_iter()
+        .partition(|definition| dropped.contains(&definition.id));
+    let shown = kept
+        .iter()
+        .flat_map(|definition| definition.bodies.iter())
+        .collect::<HashSet<_>>();
+    graph.omitted = omitted
+        .iter()
+        .map(|definition| {
+            let bodies = definition
+                .bodies
+                .iter()
+                .filter(|body| !shown.contains(body))
+                .cloned()
+                .collect();
+            (definition.id.clone(), bodies)
+        })
+        .collect();
+    graph.definitions = kept;
 }
 
 struct Lowering<'a> {
@@ -137,15 +219,20 @@ impl Lowering<'_> {
             self.graph.unresolved.push(path);
             return;
         };
+        let variant = if instance.bodies.is_none() && instance.nested.is_empty() {
+            None
+        } else {
+            let prototype = self.graph.occurrences[target].prototype.clone();
+            let Some(variant) = self.split(&prototype, instance.bodies) else {
+                self.graph.unresolved.push(path);
+                return;
+            };
+            Some(variant)
+        };
         if let Some(transform) = instance.placement {
             self.graph.occurrences[target].to_mut().transform = Some(transform);
         }
-        if instance.bodies.is_none() && instance.nested.is_empty() {
-            return;
-        }
-        let prototype = self.graph.occurrences[target].prototype.clone();
-        let Some(variant) = self.split(&prototype, instance.bodies) else {
-            self.graph.unresolved.push(path);
+        let Some(variant) = variant else {
             return;
         };
         let variant_id = self.graph.definitions[variant].id.clone();

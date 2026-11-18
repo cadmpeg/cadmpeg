@@ -386,5 +386,3 @@ gap recorded in the loss note. A consumer that reads the emitted file reads
 a reduced layer as source-small. The answer either
 defines a carrier for each neutral member or specifies subset export with a
 per-item record as the exchange form.
-
-## 8. Product structure and placement

@@ -283,6 +283,9 @@ pub(crate) enum StepLossCode {
     InstanceDefinitionSplit,
     /// An instance path names no occurrence of the document.
     InstancePathUnresolved,
+    /// A definition whose every instance shows bodies of its own was not
+    /// written, nor were its bodies.
+    InstancePrototypeBodiesOmitted,
     /// PMI annotations were not written.
     PmiAnnotationNotWritten,
     /// An all-around scope has fewer than two writable geometric components.
@@ -557,6 +560,7 @@ impl StepLossCode {
         Self::OccurrenceMetadataOmitted,
         Self::InstanceDefinitionSplit,
         Self::InstancePathUnresolved,
+        Self::InstancePrototypeBodiesOmitted,
         Self::PmiAnnotationNotWritten,
         Self::PmiAllAroundComponentsUnresolved,
         Self::SourceAssociationOmitted,
@@ -768,6 +772,7 @@ impl StepLossCode {
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
             Self::InstanceDefinitionSplit => "product.instance-definition-split",
             Self::InstancePathUnresolved => "product.instance-path-unresolved",
+            Self::InstancePrototypeBodiesOmitted => "product.instance-prototype-bodies-omitted",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
             Self::PmiAllAroundComponentsUnresolved => "pmi.all-around-components-unresolved",
             Self::SourceAssociationOmitted => "source.association-omitted",
@@ -974,6 +979,7 @@ impl StepLossCode {
             | Self::ValidationMeasureUnitUnresolved
             | Self::GeometryCarrierNotWritten
             | Self::HelixFitFailed
+            | Self::InstancePrototypeBodiesOmitted
             | Self::ProceduralDefinitionNotWritten => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
@@ -1253,6 +1259,7 @@ mod tests {
                 "occurrence.metadata-omitted",
                 "product.instance-definition-split",
                 "product.instance-path-unresolved",
+                "product.instance-prototype-bodies-omitted",
                 "pmi.annotation-not-written",
                 "pmi.all-around-components-unresolved",
                 "source.association-omitted",
