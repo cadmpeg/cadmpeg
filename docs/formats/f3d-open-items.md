@@ -2747,15 +2747,15 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-341. Chamfer distance reference face
 
-**Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
+**Question.** How do the set controls and ordered recipe references assign the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
 
-**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false. A distance-angle set stores a distance-reversal byte at primary-relative offset 22. Chamfertestcube sets 312 and 327 store 0 and 1 there. Both store 1 mm and 30 degrees. Their selected edges are ASM slots 178 at `y=10, z=10` and 182 at `y=0, z=10`. The STEP treatment planes give top/side setbacks of `(1, 0.577350269189626)` mm and `(0.577350269189625, 1)` mm. Sets 342 and 357 store first/second distances `(1, 3)` mm and `(3, 1)` mm on slots 177 at `x=10, z=10` and 180 at `x=0, z=10`; their STEP top/side setbacks agree with that order. Testchamfer1 and Testchamfer2 select the front top edge and store first/second distances `(1, 3)` mm and `(3, 1)` mm, equal to their STEP top/front setbacks. Testchamfer3 and Testchamfer4 store 1 mm and 30 degrees and reversal bytes 0 and 1. Their STEP top/front setbacks are `(1, 0.577350269189626)` mm and `(0.577350269189625, 1)` mm. Each 30-degree treatment plane forms that angle with the face carrying the 1 mm setback.
 
 **Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
 
 **Conflict.** None.
 
-**Note.** Projection keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection retains each distance-reversal flag in its native set, keeps owner-slot order with forward neutral direction, and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
