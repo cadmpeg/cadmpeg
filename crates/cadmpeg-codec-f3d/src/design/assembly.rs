@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod motion_link;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
@@ -520,8 +522,7 @@ impl RigidGroupLocatorLayout {
         registered: Option<(&str, u32)>,
         length: usize,
     ) -> Option<Self> {
-        Self::admit(registered, length)
-            .filter(|layout| !layout.typed && !layout.wide && layout.null_construction)
+        Self::admit(registered, length).filter(|layout| !layout.typed && !layout.wide)
     }
 
     pub(crate) fn admit_assemble(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
@@ -1100,6 +1101,13 @@ pub(crate) fn project_assembly_joints_with_paths(
             "{unprojected_members} rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects."
         )));
     }
+    let (linked, unbound_links) = motion_link::project(scopes, motions, paths, &mut joints);
+    if unbound_links != 0 {
+        losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+            "{unbound_links} MotionLink scope(s) retain their source relation because both revolute joints could not be bound."
+        )));
+    }
+    assumed_active += linked;
     if assumed_active != 0 {
         losses.push(F3dLossCode::AssemblyJointActivationAssumed.note(format!(
             "{assumed_active} projected Design assembly joint(s) are assumed active: the activation meaning of their scope-tail booleans is unknown."
@@ -1581,6 +1589,26 @@ fn projected_frame_sense(scope: &DesignParameterScope) -> Option<cadmpeg_ir::pro
                 cadmpeg_ir::products::PlaneSense::Opposed
             }
         })
+}
+
+pub(super) fn compact_as_built_relation_only(
+    scope: &DesignParameterScope,
+    alignment: &crate::records::feature::assembly::DesignAssemblyAlignment,
+    stream_types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> bool {
+    let older_joint = scope
+        .record_index
+        .checked_sub(1)
+        .and_then(|index| stream_types.get(&u64::from(index)))
+        .is_some_and(|(guid, version)| {
+            *version == 4 && guid.eq_ignore_ascii_case(super::decode::joint_motion::JOINT_TYPE_GUID)
+        });
+    older_joint
+        || matches!(
+            &alignment.form,
+            Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(operands))
+                if operands.iter().any(|operand| !null_construction_operand(operand))
+        )
 }
 
 fn null_construction_operand(

@@ -873,6 +873,7 @@ The feature-family name is display text that varies with the application languag
 | `F84CD988-9696-458D-8AF3-795D12E6B9EF` | `MeshSmooth` |
 | `D1728651-3640-4CCF-8083-AF7703013978` | `Mirror` |
 | `DDB7BC00-2E41-4BC1-8DA1-A0F104A67E71` | `Modify` |
+| `29098FE8-08FC-4FD8-9D31-42CF164F73EB` | `MotionLink` |
 | `64E40C8E-E564-469C-8690-5C4E77C1B02C` | `Move` |
 | `21B67709-045F-4903-B3FA-FD82E3DC3ADA` | `MoveFace` |
 | `D087EFE5-2D28-42E6-BB45-61739E7D0204` | `OffsetFaces` |
@@ -1738,7 +1739,9 @@ A version-0 `SilhouetteSplit` scope has four ordered plain local references: the
 
 The Silhouette Split scope starts with the indexed header and nine zero bytes through offset `19`. A property flag at offset `20` is zero in the compact form or one followed by a zero u32 property count. Eight zero bytes follow the property block. The next plain local reference repeats the carrier, followed by the u32 result mode, a zero u32 and a u32 browser-reference count. Result mode `0` splits the faces of the input body, `1` splits a shelled body, and `2` splits a solid body. The browser references are plain local references. A zero u32 and a u32 of value one follow the run. The next plain local reference repeats the target group. A 36-code-unit LP-UTF16 GUID and three zero bytes precede the ordered-reference table.
 
-A `SplitFace` scope stores its u32 ordered-reference count at offset `P`, which is 168, 172, or 176, followed by the table of `r` ordered references. The LP-UTF16 kind payload starts eight bytes after the table, at offset `P + 12 + 11r`. A fixed scope tail of 77, 78, or 87 bytes follows the kind and ends at the same-index paired header. Every frame contains exactly two nonempty counted construction-operand groups. The first reference is the splitting-tool group with role `0x0000002100000000`; it uses the `DcFeatureOperationIdFlag` metadata prefix defined for `SurfaceStitch` groups. A path tool has nested entity-selection members whose primary identity names one planar Sketch and whose secondary identity names one curve in that Sketch. An edge path tool instead has nested entity-selection members with no secondary or curve-secondary identity; each primary identity must resolve through history to exactly one edge in the feature's preceding topology. The ordered edge slots form a historical path in the feature input topology. If any member fails this proof, the tool remains native. A plane tool has one or more compact entity-selection members. Each member's sole identity `p` names the WorkPlane scope at record index `p + 1`. The ordered WorkPlane features are the tool dependencies. The second group immediately follows the tool members in the scope reference table, has role `0x0000001000000000`, and contains the bounded-face operands partitioned by the operation. The two groups and their members consume the complete reference table. A path projects its ordered Sketch curves or historical input edges onto the selected faces; every plane extends through them. Both forms retain every resulting face region.
+A `SplitFace` scope begins with an eleven-byte indexed header and eight zero bytes. Its common parameter-scope prologue starts at scope offset 19. After the prologue and a nullable direction reference, the method control has a little-endian u32 family, a u8 projection, and a u8 extension. A null direction reference with family 1 and projection 0 selects surface intersection; extension 0 disables tool extension and extension 1 enables it. A null direction reference with family 1, projection 1, and extension 0 selects closest point. A non-null direction reference with family 0, projection 1, and extension 0 selects along-vector projection. The extension field applies to surface intersection. A local along-vector reference registered to a point-direction carrier provides a three-component f64 vector and ordered input references. The carrier's primary-index entry selects its header and type registration; its same-entity secondary-index entry terminates the counted input-reference run. The vector and source selections are separate values.
+
+A `SplitFace` scope stores its u32 ordered-reference count at offset `P`, which is 168, 172, or 176, followed by the table of `r` ordered references. The LP-UTF16 kind payload starts eight bytes after the table, at offset `P + 12 + 11r`. A fixed scope tail of 77, 78, or 87 bytes follows the kind and ends at the same-index paired header. The first reference is a nonempty counted splitting-tool group. Role `0x0000000900000000` names face operand members. Each member contributes a selected face when its recipe and preceding topology prove one. Grouped and direct face operands have a same-index paired header at N, followed by nested indexed headers N+1 through N+3. A registered envelope identifies these headers through four adjacent primary records and the secondary index at N. Each primary header selects the type-table row that registers its entity. The face recipe occupies N+3. Its registered secondary header, or the next registered primary header, bounds the recipe when the chain has a registered envelope. Role `0x0000002100000000` names path, plane, or face selections. A path tool has nested entity-selection members whose primary identity names one planar Sketch and whose secondary identity names one curve in that Sketch. An edge path tool instead has nested entity-selection members with no secondary or curve-secondary identity; each primary identity must resolve through history to exactly one edge in the feature's preceding topology. The ordered edge slots form a historical path in the feature input topology. A plane tool has one or more compact entity-selection members. Each member's sole identity `p` names the WorkPlane scope at record index `p + 1`. The ordered WorkPlane features are the tool dependencies. The target group immediately follows the tool group and its members, has role `0x0000001000000000`, and contains the bounded-face operands partitioned by the operation. In the along-vector form, the direction carrier and its ordered input references follow both groups. A path projects its ordered Sketch curves or historical input edges onto the selected faces; every plane extends through them. Both forms retain every resulting face region.
 
 In a `SplitFace` target group, a complete counted bounded-face member whose effective active candidate set is wholly present in the preceding face candidates contributes that set. When the member's own candidate lanes are empty, faces named by its nested recipe references are topology supports. Stable surface-carrier identity maps each support to the preceding topology. A unique preceding support, a unique changed preceding support, or a unique complete preceding boundary set whose total edge count equals the counted recipe header contributes the mapped face set. Without one of those proofs, the member is topology context and contributes no target face. Every other member must contribute a proven face set, and at least one member must contribute. The target list follows member order and removes repeated stable face slots after its first occurrence.
 
@@ -1986,10 +1989,13 @@ A fillet set is one indexed record. Its frame ends at the next indexed header an
 | constant | 97 | `+23: u8 1`; `+25: u8 curvature continuity`; `+26: u8 tangent chain`; `+29: edge-group reference`; `+63: Radius owner reference`; `+78: u32 set ordinal`; `+82: TangencyWeight owner reference` |
 | chordal | 97 | `+22: u8 1`; `+26: u8 flag`; `+28: ChordLen owner reference`; `+39: edge-group reference`; `+78: u32 set ordinal`; `+82: TangencyWeight owner reference` |
 | compact constant | 93 | `+22: u8 1`; `+24: u8 flag`; `+27: edge-group reference`; `+59: Radius owner reference`; `+70: four bytes`; `+74: u32 set ordinal`; `+78: TangencyWeight owner reference`; `+89: four bytes` |
+| short constant | 80 | `+22: u8 1`, `+26: edge-group reference`, `+57: Radius owner reference` |
 | asymmetric without weight | 97 | `+21: u8 1`; `+27: u32 1`; `+31: EdgeOffset1 owner reference`; `+42: EdgeOffset2 owner reference`; `+72: edge-group reference`; `+84: u32 2`; `+93: u32 3` |
 | variable with two midpoint controls | 153 | `+29: edge-group reference`; `+47: u32 2`; `+51: first MidParams owner reference`; `+62: second MidParams owner reference`; `+77: u32 4`; `+81: StartRadius owner reference`; `+92: EndRadius owner reference`; `+103: first MidRadius owner reference`; `+114: second MidRadius owner reference`; `+138: TangencyWeight owner reference` |
 
 The asymmetric and variable forms above each occupy a singleton set list with implicit ordinal zero. The asymmetric form stores two offsets and omits a tangency weight. In the variable form, midpoint radii and positions pair by their index in their respective lists. The two endpoint radii precede the midpoint radii.
+
+The short constant form uses its position in the compact set list as its ordinal. Its referenced edge group starts at the next indexed header. The set applies its Radius parameter to that group. In a list of short constant sets, one unclaimed dimensionless `TangencyWeight` parameter per edge group pairs by increasing owner-local ordinal and scope-reference group order. Each weight ordinal and group reference occurs once.
 
 For forms with a stored ordinal, the set ordinals of a prefix's `N` sets are the integers `0` through `N - 1`, each used once. List order and ordinal order can differ. The edge-group reference equals the prefix's edge-group reference at the set's list position. Each owner reference names an indexed parameter owner of the scope. That owner references exactly one Design parameter, and the parameter references the owner back. The parameter's source kind is the kind the form names. The set's radius-law and `TangencyWeight` parameters apply to its edge group. In the constant form, the tangent-chain byte is `1` when the set extends its edges along tangent edges and `0` otherwise, and the curvature-continuity byte is `1` when the set has curvature (G2) continuity and `0` for tangent continuity. The flag byte of the chordal and compact forms is `0` or `1`.
 
@@ -2143,6 +2149,18 @@ The first ordered member is the direct axis carrier and the second is its constr
 
 A `JointOrigin` scope owns one coordinate frame. The 336- and 347-byte forms store 34 zero bytes after the primary indexed header, a marked construction-record reference at offset 45 with ten trailing zero bytes, and a row-major rigid 4×4 local-to-model matrix at offset 60. The 385-byte class-364 form is paired with class 264 and stores 34 zero bytes, `0x01, 0x01, 0x00, 0x00`, and the matrix at offset 49. The 389-byte class-337 form is paired with class 266 and uses the same 34-byte zero prefix, marker, and matrix offset; its 212-byte tail is generation-specific. The 300-, 322-, and 344-byte parameter-scope envelopes store construction graphs; their solved frame is the unique matching operand frame in the consuming `Assemble` scope. An operand frame whose construction reference equals the `JointOrigin` scope record index defines that origin. The 604-byte class-276 `Assemble` form paired with class 258 stores a marked construction reference at offset 24, seven zero bytes, the origin matrix at offset 36, a marked `JointOrigin` scope reference at offset 164, six zero bytes, and u32 value 1. It has exactly eight parameter owners. Four placement owners at local ordinals zero through three precede the angle, local X offset, local Y offset, and local Z offset alignment owners at ordinals four through seven. Matrix columns 0, 1, and 2 are the coordinate-system x, y, and z axes; column 3 is its origin in centimetres.
 
+A version-2 `JointOrigin` scope can store its solved frame in a separate placement carrier of type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`. The first scope reference names the carrier. Its index is the scope index plus one. Its indexed header starts 30 bytes after the paired scope header. The final eleven bytes of the carrier are a marked scope backlink. The paired carrier header follows it.
+
+| Carrier version | Carrier length | Matrix offset | Scope backlink offset |
+| ---: | ---: | ---: | ---: |
+| 6 | 369 | 60 | 358 |
+| 6 | 391 | 60 | 380 |
+| 8 | 412 | 61 | 401 |
+
+The 369- and 391-byte carriers store 34 zero bytes after the indexed header, a marked construction-record reference at offset 45, and four zero bytes after that reference. The 412-byte carrier stores 35 zero bytes after the indexed header, a marked construction-record reference at offset 46, and the bytes `00 00 01 00` after that reference. The matrix columns give the axes and the origin in centimetres.
+
+The marked scope reference in an `Assemble` datum envelope identifies its `JointOrigin`. For a carrier-backed `JointOrigin`, the carrier matrix is the solved frame even when the datum envelope stores a different matrix at offset 36.
+
 A direct `WorkPoint` scope references a point-data construction record. The primary record is paired by its record index. Its class level is:
 
 ```
@@ -2274,15 +2292,35 @@ A suppressed edge-treatment scope resolves its recipes against the unique termin
 
 #### Captured component positions
 
-A Position scope has type GUID `8EE00B00-76BB-49AB-8C25-E837FEC5BDA5`, version 6. Its stored kind can be `Position` or `Posición`. The inline prefix starts with the eleven-byte indexed header, eighteen zero bytes at offset 11, and a u32 row count at offset 29. Ordered rows start at offset 33. The count includes every row in source order; repeated targets remain separate rows. An empty row sequence has count zero.
+A Position scope has type GUID `8EE00B00-76BB-49AB-8C25-E837FEC5BDA5`, version 4 or 6. Its stored kind can be `Position` or `Posición`. The inline prefix starts with the eleven-byte indexed header in version 6, followed by eighteen zero bytes at offset 11 and a u32 row count at offset 29. Ordered rows start at offset 33. The count includes every row in source order; repeated targets remain separate rows. An empty row sequence has count zero.
 
 Each Position row starts with byte zero at offset 0, a marked same-segment reference at offset 1, and a matrix marker at offset 12. The reference stores marker 1, a u64 record index at offset 2, and a zero u16 at offset 10. The record index fits u32. Matrix marker 0 is followed by sixteen row-major finite f64 coefficients at offset 13; that row spans 141 bytes. Matrix marker 1 omits the coefficients; that row spans 13 bytes.
 
-The Position suffix spans 83 bytes between the rows and the normal ordered-reference count. It stores u32 zero at offset 0, u32 value 36 at offset 4, the UTF-16LE text `00000000-0000-0000-0000-000000000000` at offset 8, and three zero bytes at offset 80. The last row ends at the suffix start. The suffix ends at the scope's ordered-reference count.
+The Position suffix spans 83 bytes in version 6 between the rows and the normal ordered-reference count. It stores u32 zero at offset 0, u32 value 36 at offset 4, the UTF-16LE text `00000000-0000-0000-0000-000000000000` at offset 8, and three zero bytes at offset 80. The last row ends at the suffix start. The suffix ends at the scope's ordered-reference count.
 
-Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`, version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
+The version-4 prefix before the ordered-reference count spans 319 bytes. A u32 row count of one occurs at offset 95. The 141-byte row at offset 99 stores one matrix, with coefficients starting at offset 112. The version-4 suffix starts at offset 240 with the u32 GUID length, followed by the same UTF-16LE null GUID and three zero bytes.
+
+Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`. Version 4 uses locator version 3. Its 62-byte identity locator stores u32 discriminator one at offset 56. Version 6 uses locator version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
 
 #### Assembly operands
+
+A 297-byte `MotionLink` scope of type `29098FE8-08FC-4FD8-9D31-42CF164F73EB`
+version 3 stores a marked relation reference at scope offset 43. In the
+166-byte two-revolute form, that reference names the preceding indexed
+record. The relation index is the scope index minus one. The relation type
+is `3A218162-55F3-492E-93A4-390F8A56FBEA` version 2.
+
+The 166-byte two-revolute relation stores u32 parent count 2 at offset 20
+and two 15-byte parent entries at offsets 24 and 39. Each parent entry is
+an eleven-byte marked reference and a u32. The reference names a version-5
+Joint record. Marked references at offsets 63 and 74 repeat the two joint
+identities in parent order. The u32 freedom codes at offsets 85 and 89
+are both 2 for rotation about connector Z. The zero-phase, same-direction
+form stores f64 zero at offset 93 and six zero bytes at offset 101.
+Evaluated f64 angles at offsets 107 and 115 are in radians and correspond
+to the two repeated references in order. The second angle divided by the
+first gives the second joint's angular change per unit of first-joint
+angular change.
 
 The four direct-construction 421-byte `As-built` generations use one exact class and offset map:
 
@@ -2579,15 +2617,17 @@ the operand construction references and transforms. The 378-, 422-, and
 reference and transform, or the identity when the locator's identity flag is 1.
 
 An `As-built` scope of type `AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0` version 1
-with no additional owners can use two compact version-3 locators with null
-construction references. The owner count at offset 43 is zero and the
+with no additional owners can use two version-3 locators. Each locator has
+either the compact null-construction layout or the ordinary construction
+layout. The owner count at offset 43 is zero and the
 locator count at offset 47 is two. The two locator references are followed
-by a marked reference to the version-5 joint at the scope index minus one.
+by a marked reference to the version-4 or version-5 joint at the scope index
+minus one.
 The reference-table count at offset 163 is seven or nine. The four alignment
 owners occur once and contiguously in the reference table, in local order
 `OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ`. The scope tail from the feature
 ordinal occupies 87 bytes. With the eight-code-unit name the scope spans
-355 or 377 bytes. Each compact locator supplies one frame and its wrapper
+355 or 377 bytes. Each locator supplies one frame and its wrapper
 names the typed occurrence paths in operand order.
 
 The wide locator identity frame is 97 bytes. Its zero separator is at offset
@@ -2786,9 +2826,11 @@ An assembly joint has a joint record and, when the joint has relative motion, a 
 A version-3 motion record of type `8C188F11-5D1B-4E1C-8E87-AF7214CA3C83`
 stores its parent count at offset 20 and its first parent reference at
 offset 24. Each 15-byte parent entry stores an eleven-byte marked reference
-followed by a u32. In the As-built form with a version-5 joint, the final
-parent reference names the joint. The preceding entries, when present,
-name occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
+followed by a u32. Version 2 uses the same parent run. In the compact
+As-built form, the final parent reference
+names the joint. Version-2 motion names a version-4 joint. Version-3 motion
+names a version-5 joint. The preceding entries, when present, name
+occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
 
 The class-363 carrier subform uses the operand-frame reference as its locator.
 The class-363 frame is 389 bytes and has a paired class-264 header. Its rigid

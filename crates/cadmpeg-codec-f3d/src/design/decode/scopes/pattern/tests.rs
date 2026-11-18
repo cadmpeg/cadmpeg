@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use std::collections::HashSet;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use super::exact_pattern_identity_wrapper;
@@ -1096,7 +1098,12 @@ fn run_pattern_constructions_fixture() {
         *slot = Some(axial_alignment.clone());
     }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
+    let bind_legacy_origins = |bytes: &[u8], scopes: &mut [DesignParameterScope]| {
+        let mut losses = Vec::new();
+        bind_joint_origin_frames_from_assemblies(bytes, scopes, &HashSet::default(), &mut losses);
+        assert!(losses.is_empty());
+    };
+    bind_legacy_origins(&axial_assembly_bytes, &mut linked_scopes);
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
         linked_scopes[1].joint_origin_transform(),
@@ -1167,7 +1174,7 @@ fn run_pattern_constructions_fixture() {
         })
         .unwrap();
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut single_frame_scopes);
+    bind_legacy_origins(&single_frame_bytes, &mut single_frame_scopes);
     assert_eq!(
         single_frame_scopes[1].joint_origin_transform_offset(),
         Some(36)
@@ -1196,7 +1203,7 @@ fn run_pattern_constructions_fixture() {
     transform[2][3] += 1.0;
     frame.joint_origin_transform = transform.try_into().unwrap();
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
+    bind_legacy_origins(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(
         conflicting_scopes[0].assembly_alignment().and_then(
             crate::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index
@@ -1212,7 +1219,7 @@ fn run_pattern_constructions_fixture() {
         *slot = None;
     }
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
+    bind_legacy_origins(&single_frame_bytes, &mut invalid_single_frame_scopes);
     assert_eq!(
         invalid_single_frame_scopes[1].joint_origin_transform(),
         None

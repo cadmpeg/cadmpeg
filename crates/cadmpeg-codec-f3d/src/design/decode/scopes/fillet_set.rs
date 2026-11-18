@@ -12,6 +12,7 @@ use crate::layout::fillet_set_asymmetric as asymmetric;
 use crate::layout::fillet_set_chordal as chordal;
 use crate::layout::fillet_set_compact_constant as compact;
 use crate::layout::fillet_set_constant as constant;
+use crate::layout::fillet_set_short_constant as short;
 use crate::layout::fillet_set_variable as variable;
 use crate::records::feature::fillet_set::{
     DesignFilletMidpointOwners, DesignFilletSet, DesignFilletSetLaw, DesignFilletSetList,
@@ -94,8 +95,9 @@ pub(super) fn fillet_set_list(
     }
     let mut sets = Vec::new();
     let mut ordinals = Vec::new();
-    let set_count = count;
-    for (set_record_index, group_record_index) in set_references.into_iter().zip(group_references) {
+    for (list_ordinal, (set_record_index, group_record_index)) in
+        (0..count).zip(set_references.into_iter().zip(group_references))
+    {
         if !scope
             .reference_members()
             .values()
@@ -106,7 +108,8 @@ pub(super) fn fillet_set_list(
         let (set, ordinal) = fillet_set(
             bytes,
             records,
-            (set_record_index, set_count),
+            (set_record_index, count),
+            (form == DesignFilletSetListForm::Compact).then_some(list_ordinal),
             scope,
             parameters,
             parameter_owners,
@@ -283,6 +286,7 @@ fn fillet_set(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     (record_index, count): (u32, u32),
+    compact_ordinal: Option<u32>,
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
@@ -350,9 +354,72 @@ fn fillet_set(
         })
         .flatten()
         .map(|set| (set, 0));
-    let mut matches = simple.chain(extended);
+    let short = compact_ordinal.into_iter().filter_map(|ordinal| {
+        short_constant_set(
+            bytes,
+            start,
+            record_index,
+            scope,
+            parameters,
+            parameter_owners,
+        )
+        .map(|set| (set, ordinal))
+    });
+    let mut matches = simple.chain(extended).chain(short);
     let set = matches.next()?;
     matches.next().is_none().then_some(set)
+}
+
+fn short_constant_set(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+    scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
+) -> Option<DesignFilletSet> {
+    let end = start.checked_add(short::LEN)?;
+    let frame = bytes.get(start..end)?;
+    let zero_runs = [
+        short::ZERO_RUN_AT_11..short::FORM_MARKER,
+        short::ZERO_RUN_AT_23..short::EDGE_GROUP_REFERENCE,
+        short::ZERO_RUN_AT_37..short::RADIUS_OWNER_REFERENCE,
+        short::ZERO_RUN_AT_68..short::LEN,
+    ];
+    if frame[short::FORM_MARKER] != short::FORM_MARKER_VALUE
+        || zero_runs
+            .into_iter()
+            .any(|range| frame[range].iter().any(|&byte| byte != 0))
+    {
+        return None;
+    }
+    let group_record_index = marked_record_reference(frame, short::EDGE_GROUP_REFERENCE)?;
+    let (_, next_index_at) = lp_ascii_filtered_view(bytes, end, 3..=3, u8::is_ascii_digit)?;
+    if View::u32_le_at(bytes, next_index_at) != Some(group_record_index) {
+        return None;
+    }
+    let radius_owner_record_index = marked_record_reference(frame, short::RADIUS_OWNER_REFERENCE)?;
+    if owned_source_kind(
+        scope,
+        radius_owner_record_index,
+        parameters,
+        parameter_owners,
+    ) != Some("Radius")
+    {
+        return None;
+    }
+    Some(DesignFilletSet {
+        record_index,
+        byte_offset: u64::try_from(start).ok()?,
+        frame_length: u64::try_from(short::LEN).ok()?,
+        group_record_index,
+        law: DesignFilletSetLaw::Constant {
+            radius_owner_record_index,
+        },
+        tangency_weight_owner_record_index: None,
+        tangent_chain: None,
+        curvature_continuity: None,
+    })
 }
 
 fn extended_set(

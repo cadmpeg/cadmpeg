@@ -30,11 +30,26 @@ fn segments_cross(a: Uv, b: Uv, c: Uv, d: Uv) -> bool {
         && ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0))
 }
 
+/// Whether `p` lies on the segment `a`–`b` strictly between its ends.
+fn on_segment(a: Uv, b: Uv, p: Uv) -> bool {
+    if p == a || p == b || cross2(a, b, p) != 0.0 {
+        return false;
+    }
+    let along = (p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1]);
+    let length = (b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2);
+    along > 0.0 && along < length
+}
+
+/// Whether the bridge `from`–`to` crosses no ring segment and passes
+/// through no ring vertex, which would make the joined ring touch itself.
 fn visible(points: &[Uv], from: usize, to: usize, rings: &[&[usize]]) -> bool {
     let (a, b) = (points[from], points[to]);
     for ring in rings {
         for at in 0..ring.len() {
             let (c, d) = (ring[at], ring[(at + 1) % ring.len()]);
+            if on_segment(a, b, points[c]) {
+                return false;
+            }
             if [c, d].contains(&from) || [c, d].contains(&to) {
                 continue;
             }
@@ -44,6 +59,20 @@ fn visible(points: &[Uv], from: usize, to: usize, rings: &[&[usize]]) -> bool {
         }
     }
     true
+}
+
+/// Whether `point` lies in the wedge at `at` that turns counterclockwise
+/// from the ray toward `next` to the ray toward `previous`: the interior of
+/// a counterclockwise ring at that vertex.
+fn in_wedge(at: Uv, next: Uv, previous: Uv, point: Uv) -> bool {
+    let convex = cross2(at, next, previous) >= 0.0;
+    let after_next = cross2(at, next, point) > 0.0;
+    let before_previous = cross2(at, point, previous) > 0.0;
+    if convex {
+        after_next && before_previous
+    } else {
+        after_next || before_previous
+    }
 }
 
 /// Joins each hole to `outer` with a bridge.
@@ -87,6 +116,18 @@ fn bridge(
             .into_iter()
             .find(|position| visible(points, from, outer[*position], &rings))
             .ok_or_else(|| Refusal::new("an inner loop has no bridge to the outer loop"))?;
+        // A vertex that earlier bridges repeat appears once per visit; the
+        // bridge joins the visit whose interior wedge holds its direction.
+        let target = (0..outer.len())
+            .filter(|position| outer[*position] == outer[target])
+            .find(|position| {
+                let count = outer.len();
+                let at = points[outer[*position]];
+                let next = points[outer[(position + 1) % count]];
+                let previous = points[outer[(position + count - 1) % count]];
+                in_wedge(at, next, previous, points[from])
+            })
+            .unwrap_or(target);
         let mut joined = outer[..=target].to_vec();
         joined.extend(hole[from_position..].iter().copied());
         joined.extend(hole[..=from_position].iter().copied());
@@ -145,9 +186,17 @@ pub(crate) fn triangulate(rings: Rings<'_>) -> Result<Vec<[usize; 3]>, Refusal> 
             if best.is_none_or(|(_, largest)| turn > largest) {
                 best = Some((at, turn));
             }
+            // A bridged ring touches itself at its bridge ends, so an ear's
+            // diagonal must also stay clear of the rest of the ring.
             if ring
                 .iter()
                 .all(|p| *p == a || *p == b || *p == c || !inside(points, a, b, c, *p))
+                && (0..count).all(|k| {
+                    let (start, end) = (ring[k], ring[(k + 1) % count]);
+                    [start, end].contains(&a)
+                        || [start, end].contains(&c)
+                        || !segments_cross(points[a], points[c], points[start], points[end])
+                })
             {
                 clipped = Some(at);
                 break;
