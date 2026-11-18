@@ -4957,6 +4957,146 @@ source = "spec"
 anchor = "the kind code-unit count is at offset 217"
 
 [[record]]
+name = "scale_counted_group_head"
+kind = "byte"
+section = "3.1"
+anchor = "A counted-group uniform Scale uses the legacy factor"
+size = 56
+
+[[record.field]]
+name = "legacy_scale_fields"
+offset = 0
+type = "bytes[51]"
+source = "spec"
+anchor = "the marked center and factor-owner references at offsets 21, 29, and 40"
+
+[[record.field]]
+name = "marker"
+offset = 51
+type = "u8"
+source = "spec"
+anchor = "Byte 51 is one"
+value = 1
+
+[[record.field]]
+name = "group_count"
+offset = 52
+type = "u32"
+source = "spec"
+anchor = "The u32 group count at offset 52 is one or two"
+
+[[record]]
+name = "scale_counted_group_suffix"
+kind = "byte"
+section = "3.1"
+anchor = "They are followed by u32 one and u32 zero"
+size = 8
+
+[[record.field]]
+name = "one"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "They are followed by u32 one and u32 zero"
+value = 1
+
+[[record.field]]
+name = "zero"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "They are followed by u32 one and u32 zero"
+value = 0
+
+[[record]]
+name = "scale_axis_owner_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "An owner-backed per-axis Scale stores zero bytes"
+size = 95
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An owner-backed per-axis Scale stores zero bytes at offsets 11 through 28"
+
+[[record.field]]
+name = "zero_run_18"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "zero bytes at offsets 11 through 28"
+
+[[record.field]]
+name = "center_reference"
+offset = 29
+type = "bytes[11]"
+source = "spec"
+anchor = "The marked center reference is at offset 29"
+
+[[record.field]]
+name = "zero_byte"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "Byte 40 is zero"
+value = 0
+
+[[record.field]]
+name = "one"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "u32 at offset 41 is one"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 45
+type = "u16"
+source = "spec"
+anchor = "offsets 45 through 46 are zero"
+value = 0
+
+[[record.field]]
+name = "x_owner"
+offset = 47
+type = "bytes[11]"
+source = "spec"
+anchor = "references start at offsets 47, 58, and 69"
+
+[[record.field]]
+name = "y_owner"
+offset = 58
+type = "bytes[11]"
+source = "spec"
+anchor = "references start at offsets 47, 58, and 69"
+
+[[record.field]]
+name = "z_owner"
+offset = 69
+type = "bytes[11]"
+source = "spec"
+anchor = "references start at offsets 47, 58, and 69"
+
+[[record.field]]
+name = "group_count"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "Offset 80 stores u32 one"
+value = 1
+
+[[record.field]]
+name = "group_reference"
+offset = 84
+type = "bytes[11]"
+source = "spec"
+anchor = "offset 84 stores the marked body-group reference"
+
+[[record]]
 name = "scale_legacy_uniform_tail"
 kind = "byte"
 section = "3.1"
