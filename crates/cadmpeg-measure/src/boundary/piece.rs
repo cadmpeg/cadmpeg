@@ -28,6 +28,17 @@ const MAX_SINGULAR_APPROACH_STEPS: usize = 64;
 /// allowance of a singular point of the carrier.
 const MAX_SINGULAR_ENTRY_STEPS: usize = 64;
 
+/// Passes through singular points of the carrier at which one inverted
+/// curve interval splits into pieces.
+const MAX_SINGULAR_CROSSINGS_PER_PIECE: usize = 4;
+
+/// An inverted curve interval: its piece, or the parameter inside it where
+/// the curve passes through a singular point of the carrier.
+enum Inversion<'ir> {
+    Piece(Box<Piece<'ir>>),
+    Crossing(f64),
+}
+
 /// Where a piece's points come from.
 #[derive(Clone)]
 pub(crate) enum Source<'ir> {
@@ -196,15 +207,51 @@ impl<'ir> Piece<'ir> {
         }
     }
 
-    /// A curve interval inverted onto `chart`, with an unwrap reference fine
-    /// enough that consecutive samples differ by less than a quarter period.
+    /// A curve interval inverted onto `chart` as pieces in traversal order.
+    /// The interval splits at each parameter inside it where the curve
+    /// passes through a singular point of the carrier, so that the pieces
+    /// meet there.
     pub(crate) fn inverted(
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+        curve: &Rc<CurveChart<'ir>>,
+        interval: [f64; 2],
+        use_: CoedgeUse<'ir>,
+    ) -> Measure<Vec<Self>> {
+        let mut pieces = Vec::new();
+        let mut pending = vec![interval];
+        let mut crossings = 0_usize;
+        while let Some([t0, t1]) = pending.pop() {
+            match Self::inverted_interval(eval, chart, Rc::clone(curve), [t0, t1], use_)? {
+                Inversion::Piece(piece) => pieces.push(*piece),
+                Inversion::Crossing(t) => {
+                    crossings += 1;
+                    if crossings > MAX_SINGULAR_CROSSINGS_PER_PIECE {
+                        return Err(MeasureFailure::unavailable(
+                            UnavailableReason::EvaluationWorkExhausted,
+                            None,
+                            "the curve passes through more singular points of the surface than the crossing cap",
+                        ));
+                    }
+                    pending.push([t, t1]);
+                    pending.push([t0, t]);
+                }
+            }
+        }
+        Ok(pieces)
+    }
+
+    /// One curve interval inverted onto `chart`, with an unwrap reference
+    /// fine enough that consecutive samples differ by less than a quarter
+    /// period, or the parameter where the curve passes through a singular
+    /// point of the carrier inside the interval.
+    fn inverted_interval(
         eval: &Eval<'_, '_>,
         chart: &Chart<'_>,
         curve: Rc<CurveChart<'ir>>,
         [t0, t1]: [f64; 2],
         use_: CoedgeUse<'ir>,
-    ) -> Measure<Self> {
+    ) -> Measure<Inversion<'ir>> {
         let alpha = use_.alpha;
         let periods = chart.periods();
         let mut count = 4_usize;
@@ -234,17 +281,18 @@ impl<'ir> Piece<'ir> {
                 off_surface = off_surface.max(distance);
                 raw_samples.push((t, raw, chart.singular_at(point, alpha)));
             }
+            if let Some(bracket) = interior_singular_bracket(&raw_samples) {
+                return crossing(eval, chart, &curve, bracket, [t0, t1], alpha)
+                    .map(Inversion::Crossing);
+            }
             let (reference, smooth) = unwrap(periods, &raw_samples)?;
             if smooth {
                 break (reference, off_surface);
             }
             if count >= MAX_NESTING_SAMPLES_PER_PIECE {
-                if passes_singular_point(eval, chart, &curve, &raw_samples, alpha)? {
-                    return Err(MeasureFailure::unavailable(
-                        UnavailableReason::BoundaryInversionFailed,
-                        None,
-                        "the curve passes through a singular point of the surface inside its interval",
-                    ));
+                if let Some(bracket) = singular_jump(eval, chart, &curve, &raw_samples, alpha)? {
+                    return crossing(eval, chart, &curve, bracket, [t0, t1], alpha)
+                        .map(Inversion::Crossing);
                 }
                 return Err(MeasureFailure::unavailable(
                     UnavailableReason::EvaluationWorkExhausted,
@@ -255,7 +303,7 @@ impl<'ir> Piece<'ir> {
             count *= 2;
         };
         let held = held_ends(eval, chart, &curve, &mut reference, alpha)?;
-        Ok(Self {
+        Ok(Inversion::Piece(Box::new(Self {
             coedge: Some(use_.coedge),
             source: Source::Curve(curve),
             t0,
@@ -267,7 +315,7 @@ impl<'ir> Piece<'ir> {
             periods,
             alpha,
             held,
-        })
+        })))
     }
 
     /// The `u` the piece keeps at `t` inside the allowance of a singular
@@ -559,6 +607,9 @@ fn interpolate(t0: f64, t1: f64, index: usize, count: usize) -> f64 {
 /// Parameter-plane samples `(t, uv)` in parameter order.
 type Reference = Vec<(f64, [f64; 2])>;
 
+/// Two samples `(t, uv)` on either side of a pass near a singular point.
+type Bracket = [(f64, [f64; 2]); 2];
+
 /// Unwrap raw samples `(t, uv, singular)` into a continuous lift. A
 /// singular sample takes `u` from its nearest regular neighbour, preferring
 /// the previous one. The second value is whether consecutive lifted samples
@@ -705,60 +756,126 @@ fn held_ends(
     Ok(held)
 }
 
-/// Whether the curve passes within `alpha` of a singular point of `chart`
-/// between two consecutive samples `(t, uv, singular)` whose nearest lifts
-/// differ by a quarter period or more. Near a singular point the parameter
-/// image turns by up to half a period over a vanishing curve length, so
-/// such a pair brackets the point; a golden-section search of the distance
-/// to the singular points decides.
-fn passes_singular_point(
+/// The regular samples `(t, uv)` on either side of the first run of
+/// singular samples inside `samples`, when a regular sample precedes and
+/// follows that run.
+fn interior_singular_bracket(samples: &[(f64, [f64; 2], bool)]) -> Option<Bracket> {
+    let first = samples.iter().position(|(_, _, singular)| !singular)?;
+    let entry = first
+        + samples[first..]
+            .iter()
+            .position(|(_, _, singular)| *singular)?;
+    let exit = entry
+        + samples[entry..]
+            .iter()
+            .position(|(_, _, singular)| !singular)?;
+    let (before, after) = (samples.get(entry - 1)?, samples.get(exit)?);
+    Some([(before.0, before.1), (after.0, after.1)])
+}
+
+/// The first pair of consecutive samples `(t, uv, singular)` whose nearest
+/// lifts differ by a quarter period or more, and between which the curve
+/// passes within `alpha` of a singular point of `chart`. Near a singular
+/// point the parameter image turns by up to half a period over a vanishing
+/// curve length, so such a pair brackets the point; a golden-section search
+/// of the distance to the singular points decides.
+fn singular_jump(
     eval: &Eval<'_, '_>,
     chart: &Chart<'_>,
     curve: &CurveChart<'_>,
     samples: &[(f64, [f64; 2], bool)],
     alpha: f64,
-) -> Measure<bool> {
+) -> Measure<Option<Bracket>> {
     let singular: Vec<Point3> = chart.singular_points(alpha).collect();
     if singular.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
     let periods = chart.periods();
-    let distance = |t: f64| -> Measure<f64> {
-        let point = curve.point(eval, t)?;
-        Ok(singular
-            .iter()
-            .map(|candidate| candidate.distance(point))
-            .fold(f64::INFINITY, f64::min))
-    };
+    let distance = |t: f64| singular_distance(eval, curve, &singular, t);
     for pair in samples.windows(2) {
         let ((ta, a, _), (tb, b, _)) = (pair[0], pair[1]);
         let lifted = nearest(periods, b, a);
         let jumps = (0..2).any(|axis| {
             periods[axis].is_some_and(|period| (lifted[axis] - a[axis]).abs() >= period / 4.0)
         });
-        if jumps && golden_minimum(eval, &distance, [ta, tb])? <= alpha {
-            return Ok(true);
+        if jumps && golden_minimum(eval, &distance, [ta, tb])?.1 <= alpha {
+            return Ok(Some([(ta, a), (tb, b)]));
         }
     }
-    Ok(false)
+    Ok(None)
 }
 
-/// The smallest value of `value` that a golden-section search finds on
-/// `[low, high]`, including both ends.
+/// The distance from the curve point at `t` to the nearest of `singular`.
+fn singular_distance(
+    eval: &Eval<'_, '_>,
+    curve: &CurveChart<'_>,
+    singular: &[Point3],
+    t: f64,
+) -> Measure<f64> {
+    let point = curve.point(eval, t)?;
+    Ok(singular
+        .iter()
+        .map(|candidate| candidate.distance(point))
+        .fold(f64::INFINITY, f64::min))
+}
+
+/// The parameter between the samples `bracket` where the curve passes
+/// through a singular point of `chart`: the minimum of the distance to the
+/// singular points by a golden-section search. The parameter lies inside
+/// `interval` and its point within `alpha` of a singular point. On a cone
+/// the samples lie on one side of the apex, so the curve stays on one
+/// nappe.
+fn crossing(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    curve: &CurveChart<'_>,
+    [(ta, a), (tb, b)]: Bracket,
+    [t0, t1]: [f64; 2],
+    alpha: f64,
+) -> Measure<f64> {
+    let failed = |message: &str| {
+        MeasureFailure::unavailable(
+            UnavailableReason::BoundaryInversionFailed,
+            None,
+            message.to_owned(),
+        )
+    };
+    if let Some((apex, _)) = chart.apex() {
+        if (a[1] - apex) * (b[1] - apex) < 0.0 {
+            return Err(failed(
+                "the curve passes through the cone apex onto the opposite nappe",
+            ));
+        }
+    }
+    let singular: Vec<Point3> = chart.singular_points(alpha).collect();
+    let distance = |t: f64| singular_distance(eval, curve, &singular, t);
+    let (t, distance) = golden_minimum(eval, &distance, [ta, tb])?;
+    let inside = t0.min(t1) < t && t < t0.max(t1);
+    if !inside || distance > alpha {
+        return Err(failed(
+            "the curve's pass near a singular point of the surface has no parameter inside its interval within the allowance",
+        ));
+    }
+    Ok(t)
+}
+
+/// The parameter and value of the smallest value of `value` that a
+/// golden-section search finds on `[low, high]`, including both ends.
 fn golden_minimum(
     eval: &Eval<'_, '_>,
     value: &dyn Fn(f64) -> Measure<f64>,
     [low, high]: [f64; 2],
-) -> Measure<f64> {
+) -> Measure<(f64, f64)> {
     let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
     let (mut lower, mut upper) = (low, high);
-    let mut best = value(lower)?.min(value(upper)?);
+    let keep = |best: (f64, f64), t: f64, at: f64| if at < best.1 { (t, at) } else { best };
+    let mut best = keep((lower, value(lower)?), upper, value(upper)?);
     let mut left = upper - ratio * (upper - lower);
     let mut right = lower + ratio * (upper - lower);
     let (mut at_left, mut at_right) = (value(left)?, value(right)?);
     for _ in 0..MAX_SINGULAR_APPROACH_STEPS {
         eval.charge(1)?;
-        best = best.min(at_left).min(at_right);
+        best = keep(keep(best, left, at_left), right, at_right);
         if at_left <= at_right {
             upper = right;
             right = left;
@@ -773,7 +890,7 @@ fn golden_minimum(
             at_right = value(right)?;
         }
     }
-    Ok(best.min(at_left).min(at_right))
+    Ok(keep(keep(best, left, at_left), right, at_right))
 }
 
 /// `raw` lifted by whole periods to the value nearest `reference`.

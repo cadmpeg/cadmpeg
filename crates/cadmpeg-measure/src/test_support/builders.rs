@@ -359,6 +359,36 @@ impl Builder {
         )
     }
 
+    /// An edge from `start` to `end` on the degree-1 B-spline through
+    /// `corners`, on `[0, corners.len() − 1]` with one knot per corner.
+    pub(crate) fn polyline(
+        &mut self,
+        corners: &[[f64; 3]],
+        start: &VertexId,
+        end: &VertexId,
+    ) -> EdgeId {
+        let segments = corners.len() - 1;
+        let points = corners
+            .iter()
+            .map(|&[x, y, z]| Point3::new(x, y, z))
+            .collect();
+        let curve = self.curve(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                polyline_knots(segments),
+                NurbsPoles3::from_lanes(points, None).expect("poles"),
+                false,
+            )
+            .expect("polyline"),
+        ));
+        let last = f64::from(u32::try_from(segments).expect("segment count"));
+        self.edge(
+            EdgeCarrier::new(Some(curve), Some([0.0, last])).expect("carrier"),
+            start.clone(),
+            end.clone(),
+        )
+    }
+
     /// Append the closed degree-1 pcurve through `corners`, parameterized as
     /// [`Self::closed_polyline`], on the use interval `range` or on none, to
     /// the pcurve uses of the coedge at `position` of ring `ring` of `face`.
