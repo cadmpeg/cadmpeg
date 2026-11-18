@@ -17,10 +17,17 @@ use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
 const PREVIOUS_STATE: i64 = 7;
+const TOLERANCE: f64 = 1e-12;
 
-fn project_short_fillet(identities: &[DesignEdgeIdentityOperand]) -> ProjectedParameterDesign {
+fn project_short_fillet(
+    identities: &[DesignEdgeIdentityOperand],
+    name_weight_owner: bool,
+) -> ProjectedParameterDesign {
     let mut scope = localized_fillet_scope_without_owners();
-    name_scope_references(&mut scope, [10, 20]);
+    name_scope_references(&mut scope, [10]);
+    if name_weight_owner {
+        name_scope_references(&mut scope, [20]);
+    }
     scope
         .try_edit(|draft| {
             draft.previous_history_state_id = Some(PREVIOUS_STATE);
@@ -78,24 +85,32 @@ fn project_short_fillet(identities: &[DesignEdgeIdentityOperand]) -> ProjectedPa
 }
 
 #[test]
-fn short_fillet_reports_unclaimed_scope_tangency_weight() {
-    let design = project_short_fillet(&[]);
-    let [feature] = design.features.as_slice() else {
-        panic!("one Fillet feature");
-    };
-    assert!(matches!(
-        feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
-    ));
-    assert_eq!(
-        design
-            .projection_losses
-            .iter()
-            .filter(|loss| loss.code == F3dLossCode::FeatureFilletSetInputUnresolved.kind())
-            .count(),
-        1,
-        "the unclaimed scope weight requires a Fillet input loss"
-    );
+fn short_fillet_pairs_unclaimed_scope_tangency_weight() {
+    for name_weight_owner in [true, false] {
+        let design = project_short_fillet(&[], name_weight_owner);
+        let [feature] = design.features.as_slice() else {
+            panic!("one Fillet feature");
+        };
+        let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
+            feature.evaluation.definition()
+        else {
+            panic!("short constant Fillet");
+        };
+        let [group] = groups.as_slice() else {
+            panic!("one Fillet group");
+        };
+        let weight = group.tangency_weight.expect("scope-owned tangency weight");
+        assert!((weight.get() - 0.75).abs() < TOLERANCE);
+        assert_eq!(
+            design
+                .projection_losses
+                .iter()
+                .filter(|loss| loss.code == F3dLossCode::FeatureFilletSetInputUnresolved.kind())
+                .count(),
+            1,
+            "the inferred weight requires a Fillet input loss"
+        );
+    }
 }
 
 #[test]
@@ -121,7 +136,7 @@ fn short_fillet_resolves_edges_from_its_constant_radius() {
         ]
     }))
     .unwrap();
-    let design = project_short_fillet(&[identity]);
+    let design = project_short_fillet(&[identity], true);
     let [feature] = design.features.as_slice() else {
         panic!("one Fillet feature");
     };
