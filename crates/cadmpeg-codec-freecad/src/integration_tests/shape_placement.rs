@@ -8,7 +8,6 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::transform::Transform;
 
 use crate::test_support::test_archive::archive_entries;
@@ -85,44 +84,42 @@ fn decode(objects: &[(&str, &str, Vec<String>)], payloads: &[(String, String)]) 
         .clone()
 }
 
-/// Every world position of each payload's vertex: occurrence chain, then body
-/// transform, then the stored point.
+/// Every world position of each payload's vertex: the placement of each
+/// instance that shows its body, walking occurrences from the root
+/// definitions, then the body transform, then the stored point.
 fn world_vertices(ir: &CadIr) -> HashMap<String, Vec<[f64; 3]>> {
+    let definitions = ir
+        .model
+        .product_definitions
+        .iter()
+        .map(|definition| (&definition.id, definition))
+        .collect::<HashMap<_, _>>();
     let occurrences = ir
         .model
         .occurrences
         .iter()
-        .map(|occurrence| (occurrence.id.clone(), occurrence))
+        .map(|occurrence| (&occurrence.id, occurrence))
         .collect::<HashMap<_, _>>();
-    let chain = |mut id| {
-        let mut transform = Transform::identity();
-        while let Some(occurrence) = occurrences.get(id) {
-            let local = occurrence
-                .effective_transform()
-                .expect("occurrence transform");
-            transform = local.compose(transform).expect("composed transform");
-            match &occurrence.parent {
-                OccurrenceParent::Root {} => break,
-                OccurrenceParent::Occurrence { occurrence } => id = occurrence,
+    let mut uses = HashMap::<_, Vec<Transform>>::new();
+    let mut pending = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .map(|definition| (definition, Transform::identity(), true))
+        .collect::<Vec<_>>();
+    while let Some((definition, placement, root)) = pending.pop() {
+        if !root {
+            for body in &definition.bodies {
+                uses.entry(body.clone()).or_default().push(placement);
             }
         }
-        transform
-    };
-    let mut uses = HashMap::<_, Vec<Transform>>::new();
-    for occurrence in &ir.model.occurrences {
-        let PrototypeReference::Local { definition } = &occurrence.prototype else {
-            continue;
-        };
-        let definition = ir
-            .model
-            .product_definitions
-            .iter()
-            .find(|candidate| &candidate.id == definition)
-            .expect("local prototype");
-        for body in &definition.bodies {
-            uses.entry(body.clone())
-                .or_default()
-                .push(chain(&occurrence.id));
+        for id in &definition.occurrences {
+            let occurrence = occurrences[id];
+            let placed = placement
+                .compose(occurrence.transform.unwrap_or_default())
+                .expect("composed transform");
+            pending.push((definitions[&occurrence.prototype], placed, false));
         }
     }
     let mut world = HashMap::new();
