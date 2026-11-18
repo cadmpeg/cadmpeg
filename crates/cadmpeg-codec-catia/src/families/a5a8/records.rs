@@ -204,26 +204,34 @@ pub(in crate::families) fn a8_nested_b5_run_start(
 fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<usize> {
     use crate::layout::surface_terminal_span_tail as layout;
 
-    let tail_len = end.checked_sub(at)?;
+    let tail = data.get(at..end)?;
+    let mut cursor = layout::CONTROLS;
+    let controls = [
+        compact_int(tail, &mut cursor)?,
+        compact_int(tail, &mut cursor)?,
+        compact_int(tail, &mut cursor)?,
+        compact_int(tail, &mut cursor)?,
+    ];
+    let extra = cursor.checked_sub(layout::PARAMETERS)?;
+    if !owned && extra != 0 {
+        return None;
+    }
+    let tail_len = tail.len().checked_sub(extra)?;
     let continuation_bytes = match tail_len {
         133 => 56,
         layout::LEN | 142 => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
-    let tail = data.get(at..end)?;
-    if tail[layout::CONTROLS] != 0x05
-        || !(tail[layout::CONTROLS + 2] == 0x05
-            || owned && tail_len == 142 && tail[layout::CONTROLS + 2] == 0x01)
-        || tail[layout::CONTROLS + 1] % 4 != 1
-        || tail[layout::CONTROLS + 3] % 4 != 1
+    if controls[0] != 1
+        || !(controls[2] == 1 || owned && tail_len == 142 && controls[2] == 0)
         || !matches!(
-            tail[layout::FLAGS..layout::CONTINUATION],
+            tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
             [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]
         )
     {
         return None;
     }
-    let parameters = read_f64_array::<8>(tail, layout::PARAMETERS)?.map(FiniteReal::get);
+    let parameters = read_f64_array::<8>(tail, cursor)?.map(FiniteReal::get);
     if parameters[0] >= parameters[1]
         || (if owned && tail_len == 142 {
             parameters[2] == parameters[3]
@@ -235,7 +243,7 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
     {
         return None;
     }
-    let continuation_start = layout::CONTINUATION;
+    let continuation_start = layout::CONTINUATION + extra;
     let continuation_end = continuation_start + continuation_bytes;
     let continuation = tail.get(continuation_start..continuation_end)?;
     for index in 0..continuation_bytes / 8 {
@@ -245,7 +253,10 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
         }
     }
     let suffix = &tail[continuation_end..];
-    let valid_suffix = match (tail_len, &tail[layout::FLAGS..layout::CONTINUATION]) {
+    let valid_suffix = match (
+        tail_len,
+        &tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
+    ) {
         (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
         (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
             matches!(
@@ -2165,6 +2176,7 @@ fn a5_distinct_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) ->
 
 fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     let (endpoint, interior) = match degree {
+        degree if degree > 0 && distinct.len() == 2 => (degree.checked_add(1)?, 1u32),
         1 | 3 if distinct.len() >= 2 => (degree + 1, 1u32),
         5 if distinct.len() >= 2 => (6u32, 3u32),
         _ => return None,

@@ -5,9 +5,13 @@
 mod ceilings;
 mod expressions;
 mod fixtures;
+mod identity_rewrite;
+mod root;
+mod root_fixtures;
 mod round_trip;
 #[cfg(feature = "schema")]
 mod schema;
+mod state_chains;
 pub(in crate::design) mod unit_variants;
 mod wire_forms;
 
@@ -18,7 +22,41 @@ use cadmpeg_core::CodecError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use super::feature::{FeatureOperation, OperationFamily};
 use super::read;
+
+/// Wraps each of `operations` in its `FeatureOperation` arm and requires the
+/// arm to write `{"kind": family, "value": operation}`, to read back as the
+/// same value and the same bytes, and to refuse its kind without a value.
+/// Returns a line for each failure.
+pub(in crate::design) fn arm_failures<T: Serialize>(
+    family: OperationFamily,
+    operations: Vec<T>,
+    arm: fn(Box<T>) -> FeatureOperation,
+) -> Vec<String> {
+    assert!(!operations.is_empty(), "{family:?} has no sample");
+    let kind = to_value(&family);
+    let mut failures = Vec::new();
+    if read_desktop::<FeatureOperation>(&serde_json::json!({ "kind": kind }).to_string()).is_ok() {
+        failures.push(format!("{family:?}: the kind alone was read"));
+    }
+    for operation in operations {
+        let expected = serde_json::json!({"kind": kind, "value": to_value(&operation)});
+        let wrapped = arm(Box::new(operation));
+        if to_value(&wrapped) != expected {
+            failures.push(format!(
+                "{family:?}: {} is not {expected}",
+                to_value(&wrapped)
+            ));
+        }
+        if let Err(error) = round_trip(&wrapped) {
+            failures.push(format!("{family:?}: {error}"));
+        } else if read_desktop::<FeatureOperation>(&expected.to_string()).ok() != Some(wrapped) {
+            failures.push(format!("{family:?}: {expected} read back as another value"));
+        }
+    }
+    failures
+}
 
 /// Writes `value`, reads it back strictly under the desktop ceilings, writes
 /// it again, and requires the same bytes.

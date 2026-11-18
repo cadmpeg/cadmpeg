@@ -15,6 +15,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
     LimitsAndFits, PmiDefinition, PmiDimension, PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 
@@ -310,19 +311,63 @@ pub(super) fn decode(
             };
         }
         let values = characteristic_values.get(&id);
-        let definition = PmiDimension::new(
-            kind,
-            values.and_then(|values| values.nominal),
-            values.and_then(|values| values.limits.clone()),
-        )
-        .and_then(|dimension| {
-            dimension.with_modifiers(
-                values
-                    .map(|values| values.modifiers.clone())
-                    .unwrap_or_default(),
+        let limits = values.and_then(|values| values.limits.clone());
+        let dimension = |kind: &DimensionKind, limits: Option<_>| {
+            PmiDimension::new(
+                kind.clone(),
+                values.and_then(|values| values.nominal),
+                limits,
             )
-        })
-        .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
+            .and_then(|dimension| {
+                dimension.with_modifiers(
+                    values
+                        .map(|values| values.modifiers.clone())
+                        .unwrap_or_default(),
+                )
+            })
+        };
+        let entity_kind = DimensionKind::Other(dimension_name.to_ascii_lowercase());
+        let replaceable = !matches!(kind, DimensionKind::Other(_));
+        let attempts = [
+            (&kind, limits.clone(), false, false),
+            (&entity_kind, limits.clone(), true, false),
+            (&kind, None, false, true),
+            (&entity_kind, None, true, true),
+        ];
+        let mut first_error = None;
+        let mut definition = None;
+        for (attempt_kind, attempt_limits, replaces_kind, omits_limits) in attempts {
+            if (replaces_kind && !replaceable) || (omits_limits && limits.is_none()) {
+                continue;
+            }
+            match dimension(attempt_kind, attempt_limits) {
+                Ok(built) => {
+                    let error = first_error.take().unwrap_or_default();
+                    if replaces_kind {
+                        losses.push(StepLossCode::PmiDimensionKindQuantityMismatch.note(format!(
+                            "dimension #{id}: {error}; the dimension keeps the kind {} in place of {kind:?}",
+                            dimension_name.to_ascii_lowercase()
+                        )));
+                    }
+                    if omits_limits {
+                        losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(
+                            "dimension #{id}: {error}; the dimension keeps no limits"
+                        )));
+                    }
+                    definition = Some(built);
+                    break;
+                }
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+        let Some(definition) = definition else {
+            return Err(CodecError::malformed(format_args!(
+                "dimension #{id}: {}",
+                first_error.unwrap_or_default()
+            )));
+        };
         let aspect_ids = record
             .partials
             .iter()
@@ -792,7 +837,7 @@ pub(super) fn decode(
         .pmi
         .iter()
         .flat_map(|annotation| &annotation.targets)
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::ShapeAspect { source_id } => {
                 source_id.as_str().strip_prefix('#')?.parse().ok()
             }
@@ -1050,34 +1095,38 @@ fn topology_targets(
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
         let body = body.clone();
-        push_target(&mut targets, PmiTarget::Body { body });
+        push_unique(&mut targets, PmiTarget::Body { body });
     }
     for face in topology.faces_by_source.get(&id).into_iter().flatten() {
         let face = face.clone();
-        push_target(&mut targets, PmiTarget::Face { face });
+        push_unique(&mut targets, PmiTarget::Face { face });
     }
     for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
         let edge = edge.clone();
-        push_target(&mut targets, PmiTarget::Edge { edge });
+        push_unique(&mut targets, PmiTarget::Edge { edge });
     }
     for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
         let vertex = vertex.clone();
-        push_target(&mut targets, PmiTarget::Vertex { vertex });
+        push_unique(&mut targets, PmiTarget::Vertex { vertex });
     }
     for point in geometry_sources.points.get(&id).into_iter().flatten() {
         let point = point.clone();
-        push_target(&mut targets, PmiTarget::Point { point });
+        push_unique(&mut targets, PmiTarget::Point { point });
     }
     for curve in geometry_sources.curves.get(&id).into_iter().flatten() {
         let curve = curve.clone();
-        push_target(&mut targets, PmiTarget::Curve { curve });
+        push_unique(&mut targets, PmiTarget::Curve { curve });
     }
     targets
 }
 
-fn push_target(targets: &mut Vec<PmiTarget>, target: PmiTarget) {
-    if !targets.contains(&target) {
-        targets.push(target);
+fn push_target(targets: &mut Vec<InstanceTarget<PmiTarget>>, target: PmiTarget) {
+    push_unique(targets, InstanceTarget::new(target));
+}
+
+fn push_unique<T: PartialEq>(items: &mut Vec<T>, item: T) {
+    if !items.contains(&item) {
+        items.push(item);
     }
 }
 
@@ -1773,17 +1822,7 @@ fn is_measure_record(record: &RawRecord) -> bool {
 }
 
 fn is_dimension_name(name: &str) -> bool {
-    name == "DIMENSIONAL_SIZE"
-        || name.starts_with("DIMENSIONAL_SIZE_")
-        || name == "DIMENSIONAL_LOCATION"
-        || name.starts_with("DIMENSIONAL_LOCATION_")
-        || name == "ANGULAR_SIZE"
-        || name.starts_with("ANGULAR_SIZE_")
-        || name == "ANGULAR_LOCATION"
-        || name.starts_with("ANGULAR_LOCATION_")
-        || matches!(name, "DIAMETER_SIZE" | "RADIUS_SIZE")
-        || name.ends_with("_SIZE")
-        || name.ends_with("_LOCATION")
+    dimension_kind(name).is_some()
 }
 
 fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
@@ -1794,6 +1833,9 @@ fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
         name if name == "DIMENSIONAL_LOCATION" || name.starts_with("DIMENSIONAL_LOCATION_") => {
             Some(DimensionKind::Location)
         }
+        "DIRECTED_DIMENSIONAL_LOCATION" => Some(DimensionKind::Other(
+            "directed_dimensional_location".to_owned(),
+        )),
         name if name == "ANGULAR_SIZE"
             || name.starts_with("ANGULAR_SIZE_")
             || name == "ANGULAR_LOCATION"
@@ -1803,11 +1845,6 @@ fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
         }
         "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
         "RADIUS_SIZE" => Some(DimensionKind::Radius),
-        name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
-            let mut name = name.to_owned();
-            name.make_ascii_lowercase();
-            Some(DimensionKind::Other(name))
-        }
         _ => None,
     }
 }

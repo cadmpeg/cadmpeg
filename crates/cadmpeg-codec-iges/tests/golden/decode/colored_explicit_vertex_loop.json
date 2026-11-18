@@ -1,6 +1,25 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
@@ -131,8 +150,10 @@
           "id": "iges:model:appearance-binding#body-D11",
           "object_type": "Body",
           "target": {
-            "kind": "body",
-            "value": "iges:model:body#D11"
+            "entity": {
+              "kind": "body",
+              "value": "iges:model:body#D11"
+            }
           }
         },
         {
@@ -141,8 +162,10 @@
           "id": "iges:model:appearance-binding#face-D9",
           "object_type": "Face",
           "target": {
-            "kind": "face",
-            "value": "iges:model:face#D11:D9"
+            "entity": {
+              "kind": "face",
+              "value": "iges:model:face#D11:D9"
+            }
           }
         }
       ],
@@ -1110,7 +1133,19 @@
         "views": []
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

@@ -56,6 +56,7 @@ fn extended_assembly_origins_keep_source_parameters_in_their_document() {
             *slot = Some(DesignJointOriginTransform {
                 joint_origin_transform: matrix,
                 joint_origin_transform_offset: 128,
+                carrier: None,
                 reference: None,
             });
         }

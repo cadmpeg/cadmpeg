@@ -1,6 +1,25 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
@@ -44,8 +63,10 @@
           "id": "usd:stage:articulation#/Arm",
           "native_ref": "/Arm",
           "root": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm"
+            }
           }
         }
       ],
@@ -318,8 +339,10 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Base/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Base/Geom",
+              "kind": "body"
+            }
           }
         },
         {
@@ -331,8 +354,10 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Slider/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Slider/Geom",
+              "kind": "body"
+            }
           }
         },
         {
@@ -344,8 +369,10 @@
             "kind": "convex_hull"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Upper/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Upper/Geom",
+              "kind": "body"
+            }
           }
         }
       ],
@@ -374,8 +401,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Base",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           }
         },
         {
@@ -395,8 +424,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Slider",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            }
           }
         },
         {
@@ -416,8 +447,10 @@
           "mass": 2.5,
           "native_ref": "/Arm/Upper",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            }
           }
         }
       ],
@@ -426,19 +459,8 @@
           "id": "usd:stage:occurrence#/Arm",
           "name": "Arm",
           "native_ref": "/Arm",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm",
           "transform": [
             [
               1.0,
@@ -464,20 +486,8 @@
           "id": "usd:stage:occurrence#/Arm/Base",
           "name": "Base",
           "native_ref": "/Arm/Base",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Base",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Base",
           "transform": [
             [
               1.0,
@@ -503,20 +513,8 @@
           "id": "usd:stage:occurrence#/Arm/Base/Geom",
           "name": "Geom",
           "native_ref": "/Arm/Base/Geom",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Base/Geom",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Base/Geom",
           "transform": [
             [
               1.0,
@@ -542,20 +540,8 @@
           "id": "usd:stage:occurrence#/Arm/Slider",
           "name": "Slider",
           "native_ref": "/Arm/Slider",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Slider",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Slider",
           "transform": [
             [
               1.0,
@@ -581,20 +567,8 @@
           "id": "usd:stage:occurrence#/Arm/Slider/Geom",
           "name": "Geom",
           "native_ref": "/Arm/Slider/Geom",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Slider"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Slider/Geom",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Slider/Geom",
           "transform": [
             [
               1.0,
@@ -620,20 +594,8 @@
           "id": "usd:stage:occurrence#/Arm/Upper",
           "name": "Upper",
           "native_ref": "/Arm/Upper",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Upper",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Upper",
           "transform": [
             [
               1.0,
@@ -659,20 +621,8 @@
           "id": "usd:stage:occurrence#/Arm/Upper/Geom",
           "name": "Geom",
           "native_ref": "/Arm/Upper/Geom",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Upper"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Upper/Geom",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Upper/Geom",
           "transform": [
             [
               1.0,
@@ -717,19 +667,39 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm",
+          "occurrences": [
+            "usd:stage:occurrence#/Arm/Base",
+            "usd:stage:occurrence#/Arm/Upper",
+            "usd:stage:occurrence#/Arm/Slider"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Arm"
+          "source_name": "Arm",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Base",
+          "occurrences": [
+            "usd:stage:occurrence#/Arm/Base/Geom"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Base"
+          "source_name": "Base",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -737,19 +707,35 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base/Geom",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Arm/Base/Geom",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Geom"
+          "source_name": "Geom",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Slider",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Slider",
+          "occurrences": [
+            "usd:stage:occurrence#/Arm/Slider/Geom"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Slider"
+          "source_name": "Slider",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -757,19 +743,35 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Slider/Geom",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Arm/Slider/Geom",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Geom"
+          "source_name": "Geom",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Upper",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Upper",
+          "occurrences": [
+            "usd:stage:occurrence#/Arm/Upper/Geom"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Upper"
+          "source_name": "Upper",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -777,10 +779,33 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Upper/Geom",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Arm/Upper/Geom",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Geom"
+          "source_name": "Geom",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Arm"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [
@@ -791,8 +816,10 @@
           "native_ref": "/Arm/Base",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           }
         },
         {
@@ -802,8 +829,10 @@
           "native_ref": "/Arm/Slider",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Slider"
+            }
           }
         },
         {
@@ -813,8 +842,10 @@
           "native_ref": "/Arm/Upper",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Upper"
+            }
           }
         }
       ],
@@ -1003,7 +1034,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

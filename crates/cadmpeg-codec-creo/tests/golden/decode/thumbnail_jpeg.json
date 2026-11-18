@@ -1,6 +1,25 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [],
@@ -44,7 +63,23 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
@@ -68,7 +103,19 @@
         ]
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

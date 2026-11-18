@@ -221,7 +221,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             .collect::<Vec<_>>();
         assert_eq!(attributes.len(), 6);
         assert_eq!(
-            attributes[0].target,
+            attributes[0].target.entity,
             AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar"))
         );
         assert_eq!(attributes[0].name, "parasolid_type_integer_reference_5");
@@ -252,7 +252,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         ] {
             assert!(attributes
                 .iter()
-                .all(|attribute| attribute.target == target));
+                .all(|attribute| attribute.target.entity == target));
             assert_eq!(
                 attributes[1].values,
                 [
@@ -692,7 +692,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             .collect::<Vec<_>>();
         assert_eq!(attributes.len(), 2);
         assert!(attributes.iter().all(|attribute| {
-            attribute.target
+            attribute.target.entity
                 == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
                 && attribute.name == "CLASS.field_0.parasolid_type_2"
         }));
@@ -842,7 +842,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
             .collect::<Vec<_>>();
         assert_eq!(attributes.len(), 6);
         assert!(attributes.iter().all(|attribute| {
-            attribute.target
+            attribute.target.entity
                 == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
         }));
         let values = attributes

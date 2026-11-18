@@ -3,6 +3,7 @@
 
 use std::num::NonZeroU32;
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, OccurrenceId, PmiId, PointId, ProductDefinitionId, VertexId,
 };
+use crate::references::InstanceTarget;
 use crate::transform::Transform;
 
 pub mod zones;
@@ -133,7 +135,7 @@ impl<'de> Deserialize<'de> for PmiMagnitude {
 }
 
 /// Physical quantity carried by a PMI value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -603,7 +605,7 @@ pub enum PmiDefinition {
         /// Target identifier shown with the datum target.
         identification: String,
         /// Shape aspects that provide the datum-target basis.
-        basis: Vec<PmiTarget>,
+        basis: Vec<InstanceTarget<PmiTarget>>,
     },
     /// Geometric tolerance, zone units, modifiers, and optional datum system.
     GeometricTolerance {
@@ -688,8 +690,9 @@ pub struct PmiAnnotation {
         deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
-    /// Qualified model objects.
-    pub targets: Vec<PmiTarget>,
+    /// Qualified model objects, each in the placed instance and the state
+    /// that hold it.
+    pub targets: Vec<InstanceTarget<PmiTarget>>,
     /// Semantic or graphical payload.
     pub definition: PmiDefinition,
 }
@@ -726,7 +729,8 @@ mod tests {
             targets: vec![PmiTarget::ShapeAspect {
                 source_id: cadmpeg_core::text::NonBlankString::new("#10")
                     .expect("nonempty source identity"),
-            }],
+            }
+            .into()],
             definition: PmiDefinition::Datum {
                 identification: "A".into(),
             },
@@ -1050,7 +1054,7 @@ mod tests {
             id: PmiId::mint("synthetic:model:pmi#curve-target").expect("valid identity"),
             name: Some("curve target".into()),
             visible: None,
-            targets: vec![PmiTarget::Curve { curve }],
+            targets: vec![PmiTarget::Curve { curve }.into()],
             definition: PmiDefinition::Dimension(
                 PmiDimension::new(
                     DimensionKind::Size,

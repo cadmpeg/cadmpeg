@@ -292,23 +292,39 @@
       "product_definitions": [
         {
           "id": "f3d:model:component#11111111-2222-3333-4444-555555555555",
-          "kind": "part",
           "bom_properties": {},
+          "storage": {
+            "kind": "embedded"
+          },
           "bodies": [],
+          "tessellations": [],
+          "occurrences": [],
+          "instance_bodies": [],
+          "representations": [],
+          "sketches": []
+        },
+        {
+          "id": "f3d:model:product-definition#root",
+          "bom_properties": {},
+          "storage": {
+            "kind": "file",
+            "document": {}
+          },
+          "bodies": [],
+          "tessellations": [],
+          "occurrences": [
+            "f3d:model:occurrence#aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
+            "f3d:model:occurrence#cccccccc-1111-2222-3333-dddddddddddd"
+          ],
+          "instance_bodies": [],
+          "representations": [],
           "sketches": []
         }
       ],
       "occurrences": [
         {
           "id": "f3d:model:occurrence#aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb",
-          "prototype": {
-            "kind": "local",
-            "definition": "f3d:model:component#11111111-2222-3333-4444-555555555555"
-          },
-          "parent": {
-            "kind": "root"
-          },
-          "ordinal": 0,
+          "prototype": "f3d:model:component#11111111-2222-3333-4444-555555555555",
           "transform": [
             [
               1.0,
@@ -329,23 +345,12 @@
               0.0
             ]
           ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-component-occurrence#3026"
         },
         {
           "id": "f3d:model:occurrence#cccccccc-1111-2222-3333-dddddddddddd",
-          "prototype": {
-            "kind": "local",
-            "definition": "f3d:model:component#11111111-2222-3333-4444-555555555555"
-          },
-          "parent": {
-            "kind": "root"
-          },
-          "ordinal": 1,
+          "prototype": "f3d:model:component#11111111-2222-3333-4444-555555555555",
           "transform": [
             [
               1.0,
@@ -366,11 +371,7 @@
               40.0
             ]
           ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
           "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-component-occurrence#3255"
         }
       ],
@@ -407,8 +408,10 @@
         {
           "id": "f3d:appearance:binding#0_985:11111111-2222-3333-4444-555555555555",
           "target": {
-            "kind": "body",
-            "value": "f3d:brep:entity#1"
+            "entity": {
+              "kind": "body",
+              "value": "f3d:brep:entity#1"
+            }
           },
           "appearance": "f3d:design:appearance#11111111-2222-3333-4444-555555555555",
           "source_entity_id": "0_985",
@@ -433,8 +436,39 @@
       "point_clouds": [],
       "history_bodies": []
     },
-    "design": {},
-    "process": {},
+    "design": {
+      "scopes": [],
+      "containers": [],
+      "features": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
+      "parameters": [],
+      "spreadsheets": [],
+      "sheet_metal_rules": [],
+      "programs": [],
+      "configurations": [],
+      "arrangements": [],
+      "publications": [],
+      "evaluations": [],
+      "names": []
+    },
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
+    },
     "native": {
       "f3d": {
         "act_component_links": [

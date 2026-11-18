@@ -124,6 +124,8 @@ pub(crate) mod selections;
 
 mod sketch_edges;
 
+mod sketch_lists;
+
 pub(crate) mod sketch_projection;
 
 mod sketch_write;

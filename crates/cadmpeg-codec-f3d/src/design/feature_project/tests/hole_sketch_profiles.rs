@@ -75,6 +75,7 @@ fn location(record_index: u32, point: Option<u32>) -> DesignHoleLocation {
         position_offset: 0,
         reference_type: 10,
         vertex_input: Some(DesignWorkPointInput::try_new(record_index, 0, carrier).unwrap()),
+        plane: None,
     }
 }
 

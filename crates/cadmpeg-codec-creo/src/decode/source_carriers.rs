@@ -69,8 +69,7 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         mut occurrence: Occurrence,
     ) -> Result<(), CodecError> {
-        self.scale_product_translation(&mut occurrence.transform)?;
-        if let Some(transform) = occurrence.linked_prototype.as_mut() {
+        if let Some(transform) = occurrence.transform.as_mut() {
             self.scale_product_translation(transform)?;
         }
         ir.model.occurrences.push(occurrence);
@@ -587,7 +586,7 @@ mod tests {
     };
     use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+    use cadmpeg_ir::products::Occurrence;
     use cadmpeg_ir::scalar::PositiveReal;
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintDefinitionInput,
@@ -1120,22 +1119,18 @@ mod tests {
         .expect("finite source translation")
     }
 
-    fn source_occurrence(transform: Transform, linked_prototype: Option<Transform>) -> Occurrence {
+    fn source_occurrence(transform: Transform) -> Occurrence {
         Occurrence {
             id: cadmpeg_ir::ids::OccurrenceId::mint("creo:test:occurrence#0")
                 .expect("identity grammar"),
-            prototype: PrototypeReference::Local {
-                definition: cadmpeg_ir::ids::ProductDefinitionId::mint("creo:test:product#0")
-                    .expect("identity grammar"),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform,
-            linked_prototype,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
+            prototype: cadmpeg_ir::ids::ProductDefinitionId::mint("creo:test:product#0")
+                .expect("identity grammar"),
+            transform: Some(transform),
+            suppressed: None,
             visible: None,
-            link: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: None,
             native_ref: None,
         }
     }
@@ -1163,10 +1158,7 @@ mod tests {
         {
             carriers.admit_occurrence(
                 &mut ir,
-                source_occurrence(
-                    translated_product_transform(2.0),
-                    Some(translated_product_transform(3.0)),
-                ),
+                source_occurrence(translated_product_transform(2.0)),
             )
         }
         .expect("occurrence admission");
@@ -1177,13 +1169,12 @@ mod tests {
                 .affine_rows()[0][3],
             25.4
         );
-        assert_eq!(ir.model.occurrences[0].transform.affine_rows()[0][3], 50.8);
         assert_eq!(
             ir.model.occurrences[0]
-                .linked_prototype
-                .expect("linked prototype")
+                .transform
+                .expect("occurrence transform")
                 .affine_rows()[0][3],
-            3.0 * 25.4
+            50.8
         );
     }
 
@@ -1194,7 +1185,7 @@ mod tests {
         let error = {
             carriers.admit_occurrence(
                 &mut ir,
-                source_occurrence(translated_product_transform(f64::MAX), None),
+                source_occurrence(translated_product_transform(f64::MAX)),
             )
         }
         .expect_err("a non-finite translation has no transform");

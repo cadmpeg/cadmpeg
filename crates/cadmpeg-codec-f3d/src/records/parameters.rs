@@ -191,7 +191,7 @@ pub(crate) struct DesignParameter {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     unit: Option<Located<NonBlankString>>,
     /// Source parameter name or dimension identifier.
-    name: NonBlankString,
+    name: String,
     /// Byte offset of the name's UTF-16LE code units.
     name_offset: u64,
     /// Evaluated scalar in the record's native unit convention.
@@ -261,7 +261,7 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             FiniteReal::new(draft.evaluated_value).ok_or("evaluated_value must be finite")?;
         let expression =
             NonBlankString::new(draft.expression).ok_or("expression must not be empty")?;
-        let name = NonBlankString::new(draft.name).ok_or("name must not be empty")?;
+        let name = draft.name;
         let unit = draft
             .unit
             .map(|unit| {
@@ -283,9 +283,10 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
                 .map_or(draft.source_kind_offset < draft.name_offset, |unit| {
                     draft.source_kind_offset < unit.offset && unit.offset < draft.name_offset
                 })
-            && draft.name_offset < draft.evaluated_value_offset)
+            && (draft.name_offset < draft.evaluated_value_offset
+                || name.is_empty() && draft.name_offset == draft.evaluated_value_offset))
         {
-            return Err("byte_offset, expression_offset, source_kind_offset, unit_offset, name_offset, and evaluated_value_offset must be strictly ordered".into());
+            return Err("parameter offsets must follow their encoded field order".into());
         }
         Ok(Self {
             id: draft.id,
@@ -449,7 +450,6 @@ impl DesignParameter {
     pub(crate) fn evaluated_value(&self) -> FiniteReal {
         self.evaluated_value
     }
-    /// Nonempty parameter name.
     pub(crate) fn name(&self) -> &str {
         self.name.as_str()
     }
@@ -503,6 +503,10 @@ impl DesignParameter {
     /// The source kind as text.
     pub(crate) fn source_kind_str(&self) -> &str {
         self.source_kind().as_str()
+    }
+
+    pub(crate) fn is_fillet_radius(&self) -> bool {
+        matches!(self.source_kind_str(), "Radius" | "radius")
     }
 
     pub(crate) fn kind(&self) -> DesignParameterKind {
@@ -769,7 +773,7 @@ impl From<DesignParameter> for DesignParameterSerde {
             kind,
             unit_offset: parameter.unit.as_ref().map(|field| field.offset),
             unit: parameter.unit.map(|field| field.value.to_string()),
-            name: parameter.name.to_string(),
+            name: parameter.name,
             name_offset,
             evaluated_value,
             evaluated_value_offset,

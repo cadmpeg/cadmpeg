@@ -16,6 +16,8 @@ use crate::layout::assembly_variable_reference_operand_path_locator as variable_
 use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
 use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
+use crate::layout::captured_position_v4_identity_locator as v4_identity;
+use crate::layout::captured_position_v4_path_wrapper as v4_wrapper;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
@@ -31,6 +33,7 @@ use std::collections::HashMap;
 pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
 const RETAINED_BYTES_PER_SOURCE_BYTE: u64 = 16;
+pub(super) const POSITION_PATH_WRAPPER_TYPE_GUID: &str = "FF415D89-A1DB-44AC-B824-E9A772B86ED4";
 
 pub(super) fn exact_assembly_operand_paths(
     bytes: &[u8],
@@ -205,10 +208,14 @@ pub(super) fn exact_position_operand_path(
     types: &StreamTypes<'_>,
     target: &crate::records::identity::Located<u32>,
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
+    let Some(layout) = super::position::registered(scope, types) else {
+        return Ok(None);
+    };
     if !types
         .get(&u64::from(target.value))
         .is_some_and(|(guid, version)| {
-            *version == 5 && guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID)
+            *version == layout.locator_version()
+                && guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID)
         })
     {
         return Ok(None);
@@ -267,7 +274,9 @@ fn exact_assembly_operand_path_envelope(
     (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
         let position = super::position::registered(scope, stream_types);
-        let variable_reference = !position
+        let compact_as_built = crate::design::assembly::compact_placement_as_built_scope(scope);
+        let variable_reference = position.is_none()
+            && !compact_as_built
             && !super::assembly_v3::registered(scope, stream_types)
             && !crate::design::assembly::rigid_as_built_scope(scope)
             && crate::design::assembly::variable_reference_assembly_generation(
@@ -282,22 +291,29 @@ fn exact_assembly_operand_path_envelope(
             .get(&u64::from(locator_record_index))
             .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
         let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
-        let assemble = position || super::assembly_v3::registered(scope, stream_types);
-        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) || assemble {
-            Some(if assemble {
-                RigidGroupLocatorLayout::admit_assemble(
-                    registered_locator.copied(),
-                    locator_end.checked_sub(locator_at)?,
-                )?
+        let assemble = position.is_some() || super::assembly_v3::registered(scope, stream_types);
+        let group_layout =
+            if crate::design::assembly::rigid_as_built_scope(scope) || compact_as_built || assemble
+            {
+                Some(if assemble {
+                    RigidGroupLocatorLayout::admit_assemble(
+                        registered_locator.copied(),
+                        locator_end.checked_sub(locator_at)?,
+                    )?
+                } else if compact_as_built {
+                    RigidGroupLocatorLayout::admit_compact_as_built(
+                        registered_locator.copied(),
+                        locator_end.checked_sub(locator_at)?,
+                    )?
+                } else {
+                    RigidGroupLocatorLayout::admit(
+                        registered_locator.copied(),
+                        locator_end.checked_sub(locator_at)?,
+                    )?
+                })
             } else {
-                RigidGroupLocatorLayout::admit(
-                    registered_locator.copied(),
-                    locator_end.checked_sub(locator_at)?,
-                )?
-            })
-        } else {
-            None
-        };
+                None
+            };
         let wide = group_layout.map_or(wide_family && registered_locator.is_some(), |layout| {
             layout.wide
         });
@@ -487,6 +503,11 @@ fn exact_assembly_operand_path_envelope(
         // A variable-reference or wide locator's path can continue over
         // further path records before its wrapper.
         let counted_wrapper = variable_reference || wide || group_layout.is_some();
+        let discriminator = View::u32_le_at(bytes, locator_at.checked_add(constant_two)?)?;
+        let earlier_identity = matches!(position, Some(super::position::PositionLayout::V4))
+            && locator_length == v4_identity::LEN
+            && registered_locator.is_some_and(|(_, version)| *version == 3)
+            && discriminator == v4_identity::DISCRIMINATOR_VALUE;
         if scope_record_index != scope.record_index
             || if counted_wrapper {
                 !(locator_record_index.checked_add(2)?..=locator_record_index.checked_add(65)?)
@@ -494,7 +515,7 @@ fn exact_assembly_operand_path_envelope(
             } else {
                 wrapper_record_index != locator_record_index.checked_add(2)?
             }
-            || View::u32_le_at(bytes, locator_at.checked_add(constant_two)?)? != 2
+            || (discriminator != 2 && !earlier_identity)
             || bytes
                 .get(locator_at.checked_add(zero_tail)?..locator_at.checked_add(locator_length)?)?
                 != [0; 2]
@@ -529,12 +550,22 @@ fn exact_assembly_operand_path_envelope(
         } else {
             path_wrapper::LEN
         };
+        let zero_marker_position_wrapper = earlier_identity
+            && path_spans.len() == 1
+            && bytes.get(wrapper_at.checked_add(v4_wrapper::MARKER)?)
+                == Some(&v4_wrapper::MARKER_VALUE)
+            && stream_types
+                .get(&u64::from(wrapper_record_index))
+                .is_some_and(|(guid, version)| {
+                    *version == 1 && guid.eq_ignore_ascii_case(POSITION_PATH_WRAPPER_TYPE_GUID)
+                });
         if variable_reference && wrapper_class_tag != "397"
             || bytes.get(
                 wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?
                     ..wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?,
             )? != [0; 10]
-            || bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?) != Some(&1)
+            || (bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?) != Some(&1)
+                && !zero_marker_position_wrapper)
             || View::u32_le_at(
                 bytes,
                 wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)?,
@@ -587,7 +618,7 @@ fn exact_assembly_operand_path_envelope(
             return Some(Err(error));
         }
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
-            if super::assembly_v3::registered(scope, stream_types)
+            if (compact_as_built || super::assembly_v3::registered(scope, stream_types))
                 && !stream_types
                     .get(&u64::from(record_index))
                     .is_some_and(|(guid, version)| {

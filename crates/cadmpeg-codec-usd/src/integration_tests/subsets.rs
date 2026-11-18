@@ -58,7 +58,7 @@ fn group_bindings(result: &cadmpeg_ir::codec::DecodeResult) -> Vec<(String, Stri
     model
         .appearance_bindings
         .iter()
-        .filter_map(|binding| match &binding.target {
+        .filter_map(|binding| match &binding.target.entity {
             AppearanceTarget::TriangleGroup { group, .. } => {
                 let appearance = model
                     .appearances
@@ -131,7 +131,7 @@ fn a_face_subset_of_a_brep_array_binds_its_faces() {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+            .filter(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)))
             .count()
     };
     assert_eq!(faces(&first), 6);

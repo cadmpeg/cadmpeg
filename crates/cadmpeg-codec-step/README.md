@@ -56,6 +56,12 @@ and rational or non-rational NURBS surfaces. Supported curve carriers are lines,
 circles, ellipses, parabolas, hyperbolas, and rational or non-rational NURBS
 curves. The writer preserves shared carriers by reusing STEP instances.
 
+For non-periodic NURBS curves and pcurves, an internal knot of multiplicity
+`degree + 1` becomes a shared-pole join of multiplicity `degree` when both
+endpoint poles encode the same point and their rational weights are equal and
+positive. Polynomial joins use the same point condition. This preserves the
+curve and its parameterization exactly.
+
 Bodies absent from every product definition's body list are written once in
 model coordinates in a representation linked to the root product. Claimed
 bodies keep their component ownership and occurrence placements. Without a

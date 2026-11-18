@@ -463,6 +463,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             profile_selections: 2,
             path_selections: 1,
             face_selections: 1,
+            unresolved_extrude_start_faces: 0,
             active_face_substitutions: 0,
             body_selections: 0,
             partially_resolved_face_members: 0,
@@ -999,11 +1000,11 @@ fn appearance_base_colors_fill_only_uncolored_unambiguous_targets() {
         base_color: Some(material),
         properties: Default::default(),
     });
-    let binding = |id: &str, target| AppearanceBinding {
+    let binding = |id: &str, target: AppearanceTarget| AppearanceBinding {
         id: format!("test:model:appearance-binding#{id}")
             .try_into()
             .expect("valid identity"),
-        target,
+        target: target.into(),
         appearance: AppearanceId::mint("f3d:test:appearance#material").expect("identity grammar"),
         source_entity_id: None,
         object_type: None,

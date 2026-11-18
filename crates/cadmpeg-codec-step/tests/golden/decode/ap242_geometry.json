@@ -1,6 +1,25 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [],
@@ -736,8 +755,10 @@
           "id": "step:presentation:binding#37:0-0",
           "source_entity_id": "#37",
           "target": {
-            "kind": "curve",
-            "value": "step:data:curve#8"
+            "entity": {
+              "kind": "curve",
+              "value": "step:data:curve#8"
+            }
           }
         },
         {
@@ -746,8 +767,10 @@
           "id": "step:presentation:binding#38:0-0",
           "source_entity_id": "#38",
           "target": {
-            "kind": "surface",
-            "value": "step:data:surface#11"
+            "entity": {
+              "kind": "surface",
+              "value": "step:data:surface#11"
+            }
           }
         },
         {
@@ -756,8 +779,10 @@
           "id": "step:presentation:binding#39:0-0",
           "source_entity_id": "#39",
           "target": {
-            "kind": "point",
-            "value": "step:data:point#3"
+            "entity": {
+              "kind": "point",
+              "value": "step:data:point#3"
+            }
           }
         },
         {
@@ -766,8 +791,10 @@
           "id": "step:presentation:binding#47:0-0",
           "source_entity_id": "#47",
           "target": {
-            "kind": "point",
-            "value": "step:data:point#3"
+            "entity": {
+              "kind": "point",
+              "value": "step:data:point#3"
+            }
           }
         },
         {
@@ -776,8 +803,10 @@
           "id": "step:presentation:binding#47:1-0",
           "source_entity_id": "#47",
           "target": {
-            "kind": "curve",
-            "value": "step:data:curve#8"
+            "entity": {
+              "kind": "curve",
+              "value": "step:data:curve#8"
+            }
           }
         },
         {
@@ -786,8 +815,10 @@
           "id": "step:presentation:binding#49:0-0",
           "source_entity_id": "#49",
           "target": {
-            "kind": "curve",
-            "value": "step:data:curve#48"
+            "entity": {
+              "kind": "curve",
+              "value": "step:data:curve#48"
+            }
           }
         },
         {
@@ -796,9 +827,11 @@
           "id": "step:presentation:binding#50:0-0",
           "source_entity_id": "#50",
           "target": {
-            "kind": "source",
-            "value": {
-              "source_id": "#6"
+            "entity": {
+              "kind": "source",
+              "value": {
+                "source_id": "#6"
+              }
             }
           }
         }
@@ -870,7 +903,19 @@
         ]
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
@@ -980,7 +1025,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 2448,
+          "tag": "PRESENTATION_STYLE_ASSIGNMENT"
+        },
         "severity": "warning"
       },
       {
@@ -992,7 +1043,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 STYLED_ITEM instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 2505,
+          "tag": "STYLED_ITEM"
+        },
         "severity": "warning"
       }
     ],

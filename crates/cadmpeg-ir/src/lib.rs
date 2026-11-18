@@ -71,6 +71,7 @@ pub mod physics;
 pub mod pmi;
 pub mod point_cloud;
 pub mod presentation;
+pub mod process;
 pub mod products;
 mod provenance;
 pub mod references;
@@ -121,10 +122,9 @@ pub use presentation::{
 };
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{
-    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChange, CopyOnChangePolicy,
-    ExternalDocument, JointConnector, JointId, JointLimits, JointOperand, JointOperands,
-    LinkMember, LinkState, Occurrence, OperandContainer, PairedJointKind, PlaneSense,
-    ProductDefinition, ProductDefinitionKind, PrototypeReference, TangentContact,
+    AssemblyJoint, ExternalDocument, InstanceBodies, JointConnector, JointId, JointLimits,
+    JointOperand, JointOperands, Occurrence, OperandContainer, PairedJointKind, PlaneSense,
+    ProductDefinition, ProductDefinitionKind, Storage, TangentContact,
 };
 /// Source location attached to a [`report::loss::LossNote`].
 pub use provenance::{

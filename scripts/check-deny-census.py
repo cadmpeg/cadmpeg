@@ -12,8 +12,8 @@ the module's own declaration, or what its ``use`` declarations bring in under
 that name, and never a same-named declaration in a descendant module. A path
 that starts with a type parameter of its item is that parameter.
 Declarations without attributes are included when following a read route.
-Nongeneric type aliases are followed to their targets; other alias shapes
-fail the static check when used as a read route.
+Type aliases are followed to their targets; an alias with a ``where`` clause
+fails the static check when used as a read route.
 
 A type name is resolved by its module path, so same-named declarations in two
 modules are each checked against their own declaration. A generic parameter is
@@ -68,6 +68,24 @@ absent key is that key's one spelling of ``None``, ``null`` is refused, and the
 refusal names the key it refuses. A key that states neither the ``default`` nor
 such a reader is an undeclared key and is named here.
 
+A third, independent rule reads every field of a deserializable item in the
+three wire crates, a transparent newtype's and an enum payload's included: a
+set or a map it reads (``BTreeSet``, ``HashSet``, ``IndexSet``, ``BTreeMap``,
+``HashMap``, ``IndexMap``, ``serde_json::Map``, also through a type alias or
+inside another type) reads through a ``cadmpeg_core::distinct_keys`` reader,
+since serde's own readers take a set in any order, merge a repeated member,
+and keep the last value of a repeated key (§2.5: a set is an array sorted by
+value, a map with any key but a JSON string ``[key, value]`` pairs sorted by
+key, and each refuses a repeat). A map whose key is a JSON string is an object
+read by ``distinct_keys::btree_map``, which refuses a key stated twice and
+admits the keys in any order: member order is not part of a JSON object's
+value (RFC 8259 §4), as it is not of a struct's fields, and §2.5 states none.
+A ``named_optional_field!`` shim is read as its wire type, and a helper that
+forwards to one, or that calls a ``distinct_keys`` reader, as what it calls. A
+hand-written ``Deserialize`` impl of a type holding a set or a map passes when
+it calls a ``distinct_keys`` reader or reads through the derived reader of a
+type the wire crates declare, which this rule reads in turn.
+
 An item that derives ``Deserialize`` passes when its serde attributes state one
 of:
 
@@ -79,10 +97,16 @@ of:
 * ``untagged`` - unit arms read null, tuple fields are checked in turn, and
   inline struct arms require the container's ``deny_unknown_fields``. This
   also holds for an arm carrying ``#[serde(untagged)]`` inside a tagged enum;
-* every variant is a unit variant without an internal or adjacent tag - the
-  read is a bare name with no key to deny;
 * the enum has no variant at all - it is uninhabited, no document can name a
   variant of it, and serde refuses every input before a key is read.
+
+An enum whose variants hold no data, without a tag, ``untagged``, a
+conversion or ``transparent``, is read from its variant's name. It passes when
+it derives ``cadmpeg_derive::DeserializeName`` (bare under a ``use`` of that
+path, or by the path itself, whose root binds the workspace's
+``cadmpeg-derive``), which reads the name and nothing else. Such an enum that
+derives serde's ``Deserialize`` fails, ``deny_unknown_fields`` or not: serde
+also reads ``{"<variant>": null}`` as the variant, a second spelling.
 
 Anything else fails, unless it is one of the named exceptions below.
 Only actual unconditional metadata supplies refusal evidence. Conditional
@@ -1190,10 +1214,28 @@ def deserializer_helpers(path, contracts=None):
         if len(parts) < 2:
             continue
         target = parts[1].strip()
+        if call.group("macro") == "named_optional_field":
+            # `Wire as Value` reads `Wire` and converts it; `Wire` is the
+            # reader that meets the document.
+            target = wire_before_as(target)
         if not target:
             continue
         named[name] = (target, call.group("macro") == "named_optional_field")
     return forwarders, named
+
+
+def wire_before_as(target):
+    """The type a ``Wire as Value`` argument reads, or the argument itself."""
+    depth = 0
+    for match in re.finditer(r"[<>]|\s+as\s+", target):
+        token = match.group(0)
+        if token == "<":
+            depth += 1
+        elif token == ">":
+            depth -= 1
+        elif depth == 0:
+            return target[:match.start()].strip()
+    return target
 
 
 def split_metadata(text):
@@ -1430,7 +1472,11 @@ class Arm:
 # import from outside the crate can bring in a module of that name. Either
 # leaves the path unproved. `crate::` names the reader only in the crate that
 # is the workspace's package of it.
-PATH_READER_PACKAGES = {"cadmpeg_core": "cadmpeg-core", "cadmpeg_ir": "cadmpeg-ir"}
+PATH_READER_PACKAGES = {
+    "cadmpeg_core": "cadmpeg-core",
+    "cadmpeg_derive": "cadmpeg-derive",
+    "cadmpeg_ir": "cadmpeg-ir",
+}
 STANDARD_ROOTS = {"std", "core", "alloc"}
 REGISTRY_ROOTS = {"serde_json", "serde_bytes", "indexmap"}
 DEPENDENCY_TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
@@ -1677,6 +1723,83 @@ def reads_by_tag_alone(raw, item):
         return False, None
     reason = reader_path_failure(reader, item.crate, (TAG_ONLY_OWNER,), "tag_only")
     return reason is None, reason
+
+
+# A data-free enum reads through the derive `cadmpeg_derive::DeserializeName`,
+# which accepts the variant's name alone. serde's derive also reads the
+# one-key object `{"<variant>": null}`, a second spelling of the same value.
+NAME_READER = "cadmpeg_derive::DeserializeName"
+NAME_READER_OWNER = "cadmpeg-derive"
+# The container options that give an enum a wire form other than its
+# variant's name.
+NAMELESS_FORMS = {"tag", "content", "untagged", "from", "try_from", "transparent", "remote"}
+
+
+def imported_path(item, name):
+    """The one path ``name`` is imported from in the module of ``item``, or
+    ``None``. A block between the item and its module, such as a
+    ``macro_rules!`` body, sees the module's imports."""
+    scope = item.scope
+    while True:
+        targets = {
+            binding.target for binding in collect_imports(item.path)
+            if binding.alias == name and binding.scope == scope
+        }
+        if targets or not scope or not scope[-1].startswith("@"):
+            return targets.pop() if len(targets) == 1 else None
+        scope = scope[:-1]
+
+
+@SOURCE_POLICY.cached_analysis
+def name_reader_derive(item):
+    """``(derives, failure)``: whether ``item`` derives ``DeserializeName``,
+    and why the derive is not ``cadmpeg_derive::DeserializeName`` reading a
+    data-free enum by its variant's name, or ``None``."""
+    derives = False
+    for arguments, conditional in attribute_arguments(item.attrs, "derive"):
+        for name in split_metadata(arguments):
+            path = canonical_path(SOURCE_POLICY.mask_rust_non_code(name))
+            if path.rsplit("::", 1)[-1] != "DeserializeName":
+                continue
+            derives = True
+            if conditional:
+                return True, "the derive is conditional"
+            if "::" not in path:
+                path = imported_path(item, path)
+                if path is None:
+                    return True, f"its scope imports no one {NAME_READER}"
+            if canonical_path(path).lstrip(":") != NAME_READER:
+                return True, f"{path} is not {NAME_READER}"
+            reason = reader_path_failure(path, item.crate, (NAME_READER_OWNER,))
+            if reason is not None:
+                return True, reason
+    if not derives:
+        return False, None
+    if item.kind != "enum" or not all_unit_variants(item):
+        return True, "it reads an enum whose variants hold no data"
+    forms = sorted({key for key, _, _ in serde_options(item.attrs)} & NAMELESS_FORMS)
+    if forms:
+        return True, f"serde {', '.join(forms)} gives the enum another wire form"
+    return True, None
+
+
+def name_form_failure(item):
+    """Why ``item``, an enum read from its variant's name, does not read that
+    name alone, or ``None``."""
+    named, failure = name_reader_derive(item)
+    if named:
+        return None if failure is None else f"derives DeserializeName, but {failure}"
+    if (
+        item.kind == "enum"
+        and derives_deserialize(item.attrs)
+        and all_unit_variants(item)
+        and not {key for key, _, _ in serde_options(item.attrs)} & NAMELESS_FORMS
+    ):
+        return (
+            "serde's derived Deserialize reads a data-free enum from "
+            f'{{"<variant>": null}} beside its name; derive {NAME_READER}'
+        )
+    return None
 
 
 GENERIC_HEADER_RE = re.compile(
@@ -2818,8 +2941,19 @@ def untagged_arms(item):
 
 
 def alias_target(item):
-    """Read a nongeneric type alias; other alias shapes need explicit proof."""
+    """Read a type alias's target; a `where` clause needs explicit proof.
+
+    A generic alias's parameters reach only its target's arguments, so the
+    target's own generic-parameter proof follows them to every instantiation
+    of the alias.
+    """
     code = SOURCE_POLICY.mask_rust_non_code(item.body)
+    header = GENERIC_HEADER_RE.match(code)
+    if header is not None:
+        end = generic_end(code, header.end() - 1)
+        if end is None:
+            return None
+        code = code[:header.end() - 1] + code[end:]
     match = re.fullmatch(
         r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?type\s+\w+\s*=\s*(.*?)\s*;\s*",
         code,
@@ -3006,19 +3140,21 @@ def module_of(path, scope):
 
 
 def macro_invocation_key(raw, source, opening):
-    """The key literal one ``named_optional_field!`` invocation states.
+    """The reader name, key literal and wire type one ``named_optional_field!``
+    invocation states.
 
     The arguments are read from the raw source: ``production_source`` masks
-    string literals, and the key is one.
+    string literals, and the key is one. The wire type is the type the reader
+    deserializes: the one before ``as`` in the ``Wire as Value`` form.
     """
     end = delimited_end(source, opening, "(", ")")
     if end is None:
-        return None, None
+        return None, None, None
     name = DECLARED_READER_NAME.match(raw, opening + 1)
     if name is None:
-        return None, None
+        return None, None, None
     depth = 0
-    last = opening + 1
+    commas = []
     for index in range(opening + 1, end - 1):
         character = source[index]
         if character in "(<[":
@@ -3026,15 +3162,19 @@ def macro_invocation_key(raw, source, opening):
         elif character in ")>]":
             depth -= 1
         elif character == "," and depth == 0:
-            last = index + 1
-    literal = raw[last:end - 1].strip()
+            commas.append(index)
+    wire = None
+    if len(commas) >= 2:
+        wire = wire_before_as(raw[commas[-2] + 1:commas[-1]].strip())
+    literal = raw[commas[-1] + 1 if commas else opening + 1:end - 1].strip()
     if len(literal) < 2 or literal[0] != '"' or literal[-1] != '"':
-        return name.group(1), None
-    return name.group(1), literal[1:-1]
+        return name.group(1), None, wire
+    return name.group(1), literal[1:-1], wire
 
 
-def present_forwarders():
-    """Every ``named_optional_field!`` declaration, and the macro's own failures.
+def present_forwarders(files=None):
+    """Every ``named_optional_field!`` declaration of ``files`` (by default
+    every crate's sources), and the macro's own failures.
 
     The macro is the one sanctioned declaration. A hand-written function that
     calls ``absent_key::named_present`` itself states the key as an argument
@@ -3047,7 +3187,7 @@ def present_forwarders():
     failures = []
     sources = {}
     macro_crates = set()
-    for path in absent_key_source_files():
+    for path in absent_key_source_files() if files is None else files:
         raw = read_source(path)
         source, _ = SOURCE_POLICY.production_source(raw)
         sources[path] = (raw, source)
@@ -3084,12 +3224,12 @@ def present_forwarders():
                 continue
             if qualifier == "crate" and crate not in macro_crates:
                 continue
-            name, key = macro_invocation_key(raw, source, match.end() - 1)
+            name, key, wire = macro_invocation_key(raw, source, match.end() - 1)
             if name is None:
                 continue
             scope = scopes[bisect_right(offsets, match.start()) - 1]
             declarations.setdefault(name, []).append(
-                (path, module_of(path, scope), key)
+                (path, module_of(path, scope), key, wire)
             )
     return forwarders, failures
 
@@ -3133,6 +3273,27 @@ def reader_module(owner_module, prefix):
     return owner_module + tuple(prefix)
 
 
+def reached_declarations(declarations, path, item, reader):
+    """The ``named_optional_field!`` declarations a reader path reaches from
+    the module of ``item`` in ``path``, or ``None`` for an empty path."""
+    segments = [part for part in reader.split("::") if part]
+    if not segments:
+        return None
+    owner_module = tuple(part for part in item.scope if not part.startswith("@"))
+    candidates = declarations.get(segments[-1], ())
+    prefix = tuple(segments[:-1])
+    if prefix:
+        wanted = reader_module(owner_module, prefix)
+        return [candidate for candidate in candidates if candidate[1] == wanted]
+    resolved = [candidate for candidate in candidates if candidate[0] == path]
+    if not resolved:
+        imported = file_imports(path).get(segments[-1])
+        if imported is not None:
+            wanted = reader_module(owner_module, imported)
+            resolved = [candidate for candidate in candidates if candidate[1] == wanted]
+    return resolved
+
+
 def declared_reader(declarations, path, item, name, text):
     """Why the readers one optional key names are no declaration, or None.
 
@@ -3146,33 +3307,11 @@ def declared_reader(declarations, path, item, name, text):
         return False, None
     rename = SERDE_RENAME.search(text)
     key = rename.group(1) if rename is not None else name
-    owner_module = tuple(
-        part for part in item.scope if not part.startswith("@")
-    )
     reasons = []
     for reader in named:
-        segments = [part for part in reader.split("::") if part]
-        if not segments:
+        resolved = reached_declarations(declarations, path, item, reader)
+        if resolved is None:
             continue
-        candidates = declarations.get(segments[-1], ())
-        prefix = tuple(segments[:-1])
-        if prefix:
-            wanted = reader_module(owner_module, prefix)
-            resolved = [
-                candidate for candidate in candidates if candidate[1] == wanted
-            ]
-        else:
-            resolved = [
-                candidate for candidate in candidates if candidate[0] == path
-            ]
-            if not resolved:
-                imported = file_imports(path).get(segments[-1])
-                if imported is not None:
-                    wanted = reader_module(owner_module, imported)
-                    resolved = [
-                        candidate for candidate in candidates
-                        if candidate[1] == wanted
-                    ]
         if not resolved:
             reasons.append(
                 f"the reader `{reader}` is no declaration this module reaches; "
@@ -3521,6 +3660,398 @@ def absent_key_failures():
                         "beside serde(default)"
                     )),
                 ))
+    return found
+
+
+# The set and map types serde reads in any order. Its set reader merges a
+# repeated member and its map reader keeps the last value of a repeated key, so
+# each admits a second spelling of one value.
+SET_TYPES = {"BTreeSet", "HashSet", "IndexSet"}
+SPELLED_TYPES = SET_TYPES | MAP_TYPES
+# The readers of `cadmpeg_core::distinct_keys` and what each reads: an array
+# sorted by value, an array of `[key, value]` pairs sorted by key, and a JSON
+# object that states each key once.
+DISTINCT_READERS = {
+    "set": "set",
+    "set::deserialize": "set",
+    "pairs": "pairs",
+    "pairs::deserialize": "pairs",
+    "btree_map": "object",
+    "json_object": "object",
+}
+DISTINCT_READER_ROOTS = ("crate", "cadmpeg_core")
+DISTINCT_READER_CALL = re.compile(
+    r"(?<![\w$])(?:::\s*)?(?:crate|cadmpeg_core)\s*::\s*distinct_keys\s*::\s*"
+    r"(?:set\s*::\s*deserialize|pairs\s*::\s*deserialize|btree_map|json_object)\b"
+)
+# Keys a JSON object cannot spell once: §2.5 writes a map with such a key as
+# `[key, value]` pairs.
+NON_STRING_KEYS = (SCALAR_TYPES - {"char", "str", "String"}) | NONZERO_INTEGER_TYPES
+READER_CALL = re.compile(r"(?<![\w$:.])([A-Za-z_]\w*)\s*(?:::\s*<[^<>]*>\s*)?\(")
+DEFAULT_SET_FIX = "read it with cadmpeg_core::distinct_keys::set"
+DEFAULT_MAP_FIX = (
+    "read it with cadmpeg_core::distinct_keys::btree_map (a key that is a JSON "
+    "string) or cadmpeg_core::distinct_keys::pairs (any other key)"
+)
+
+
+def split_offsets(text):
+    """``split_metadata`` with each part's offset in ``text``."""
+    offset = 0
+    for part in split_metadata(text):
+        yield offset, part
+        offset += len(part) + 1
+
+
+def leading_attributes(raw):
+    """``(attributes, rest)`` of one field or variant text."""
+    code = SOURCE_POLICY.mask_rust_non_code(raw)
+    cursor = 0
+    while True:
+        while cursor < len(code) and code[cursor].isspace():
+            cursor += 1
+        if SOURCE_POLICY.OUTER_ATTRIBUTE.match(code, cursor) is None:
+            return raw[:cursor], raw[cursor:]
+        end = SOURCE_POLICY.attribute_end(code, cursor)
+        if end is None:
+            raise ValueError("incomplete field attribute")
+        cursor = end
+
+
+VISIBILITY = re.compile(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?")
+NAMED_FIELD = re.compile(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(\w+)\s*:(.*)\Z", re.S)
+VARIANT_NAME = re.compile(r"\s*(\$?\w+)\s*")
+
+
+def delimited_fields(body, opening, label):
+    """``(label, offset, attributes, type)`` of each field one ``(..)`` or
+    ``{..}`` list at ``opening`` of ``body`` declares."""
+    code = SOURCE_POLICY.mask_rust_non_code(body)
+    right = ")" if code[opening] == "(" else "}"
+    end = delimited_end(code, opening, code[opening], right)
+    if end is None:
+        return
+    inner = body[opening + 1:end - 1]
+    position = 0
+    for offset, part in split_offsets(inner):
+        attributes, rest = leading_attributes(part)
+        if not SOURCE_POLICY.mask_rust_non_code(rest).strip():
+            continue
+        if right == ")":
+            name = str(position)
+            field_type = rest[VISIBILITY.match(rest).end():]
+            position += 1
+        else:
+            named = NAMED_FIELD.match(rest)
+            if named is None:
+                continue
+            name, field_type = named.group(1), named.group(2)
+        yield f"{label}.{name}", opening + 1 + offset, attributes, field_type.strip()
+
+
+def read_fields(item):
+    """``(label, offset, attributes, type)`` of each field serde reads of a
+    struct or enum item; a variant's own attributes join a newtype payload's."""
+    if any(
+        key in {"from", "try_from", "remote"}
+        for key, _, _ in serde_options(item.attrs)
+    ):
+        return
+    body = strip_macro_repetition(item.body) if "$(" in item.body else item.body
+    code = SOURCE_POLICY.mask_rust_non_code(body)
+    header = re.match(r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?:struct|enum)\s+\$?\w+\s*", code)
+    if header is None:
+        return
+    cursor = header.end()
+    if cursor < len(code) and code[cursor] == "<":
+        cursor = generic_end(code, cursor)
+        if cursor is None:
+            return
+    opening = re.compile(r"[({;]").search(code, cursor)
+    if opening is None or code[opening.start()] == ";":
+        return
+    if item.kind == "struct":
+        yield from delimited_fields(body, opening.start(), item.name)
+        return
+    start = opening.start() + 1
+    end = delimited_end(code, opening.start())
+    if end is None:
+        return
+    for offset, variant in split_offsets(body[start:end - 1]):
+        attributes, rest = leading_attributes(variant)
+        if has_serde_flag(attributes, "skip") or has_serde_flag(attributes, "skip_deserializing"):
+            continue
+        name = VARIANT_NAME.match(rest)
+        if name is None or not name.group(1):
+            continue
+        at = len(attributes) + name.end()
+        if at >= len(variant) or variant[at] not in "({":
+            continue
+        fields = list(delimited_fields(variant, at, f"{item.name}::{name.group(1)}"))
+        if variant[at] == "(" and len(fields) == 1:
+            label, field_offset, field_attributes, field_type = fields[0]
+            fields = [(label, field_offset, attributes + "\n" + field_attributes, field_type)]
+        for label, field_offset, field_attributes, field_type in fields:
+            yield label, start + offset + field_offset, field_attributes, field_type
+
+
+class SetSpelling:
+    """The aliases, readers and helper functions the set rule reads."""
+
+    def __init__(self, paths, items, declarations):
+        self.items = items
+        self.declarations = declarations
+        self.aliases = {}
+        self.functions = {}
+        self.declared = set()
+        for path in paths:
+            for item in items[path]:
+                self.declared.add(item.name)
+                # An associated type is no alias: its name is read through
+                # the trait, never bare.
+                if (
+                    item.kind == "type"
+                    and not item.name.startswith("$")
+                    and not any(part.startswith("@") for part in item.scope)
+                ):
+                    target = alias_target(item)
+                    if target is not None:
+                        self.aliases.setdefault(item.name, []).append((item, target))
+            for function in collect_deserialize_functions(path):
+                self.functions.setdefault(function.name, []).append(function)
+
+    def spelled(self, text, item, seen=frozenset()):
+        """The set and map types serde's own reader reads in a type, through
+        the crate's aliases it names bare or by a module path."""
+        found = []
+        code = SOURCE_POLICY.mask_rust_non_code(text)
+        imports = file_imports(item.path)
+        for match in re.finditer(r"(?<![\w$:])((?:\w+\s*::\s*)*)([A-Za-z_]\w*)", code):
+            qualifier = canonical_path(match.group(1)).rstrip(":")
+            name = match.group(2)
+            root = qualifier.split("::", 1)[0]
+            if name in SPELLED_TYPES:
+                found.append(name)
+            elif name == "Map" and (
+                qualifier == "serde_json"
+                or (not qualifier and imports.get("Map") == ("serde_json",))
+            ):
+                found.append("serde_json::Map")
+            elif (
+                name in self.aliases
+                and name not in seen
+                and (not qualifier or root.islower())
+                and root not in REGISTRY_ROOTS | STANDARD_ROOTS
+            ):
+                for alias, target in self.aliases[name]:
+                    if alias.crate == item.crate:
+                        found.extend(self.spelled(target, alias, seen | {name}))
+        return found
+
+    def delegates(self, reader):
+        """Whether a hand-written reader reads through the derived reader of
+        a type the wire crates declare, which this rule checks in turn, and
+        through no standard collection."""
+        body = SOURCE_POLICY.mask_rust_non_code(reader.body)
+        read = [
+            canonical_path(match.group("path")).rsplit("::", 1)[-1]
+            for match in DESERIALIZE_CALL_RE.finditer(body)
+        ]
+        return bool(read) and all(
+            name in self.declared and name not in SPELLED_TYPES | SEQUENCE_TYPES
+            for name in read
+        )
+
+    def outer(self, text, item):
+        """The outer type and its arguments, through a nongeneric alias."""
+        path, arguments = type_parts(text)
+        name = path.rsplit("::", 1)[-1] if path else None
+        if name in self.aliases and not arguments:
+            targets = [target for alias, target in self.aliases[name]
+                       if alias.crate == item.crate]
+            if len(targets) == 1:
+                return type_parts(targets[0])
+        return path, arguments
+
+    def distinct_reader(self, reader, item):
+        """``(kind, failure)`` of a reader path naming a distinct-keys reader."""
+        path = canonical_path(reader).lstrip(":")
+        root, _, rest = path.partition("::")
+        module, _, function = rest.partition("::")
+        if root not in DISTINCT_READER_ROOTS or module != "distinct_keys":
+            return None, None
+        kind = DISTINCT_READERS.get(function)
+        if kind is None:
+            return None, None
+        return kind, reader_path_failure(path, item.crate, ("cadmpeg-core",), "distinct_keys")
+
+    def under_distinct(self, kind, field_type, item):
+        """Why a field read by one distinct-keys reader has a second spelling."""
+        path, arguments = self.outer(field_type, item)
+        name = path.rsplit("::", 1)[-1] if path else None
+        expected = SET_TYPES if kind == "set" else MAP_TYPES | {"Map"}
+        if name not in expected or not arguments:
+            return f"the distinct_keys::{kind} reader reads {field_type}, which the census cannot read"
+        if kind == "object" and name != "Map":
+            key_path, _ = type_parts(arguments[0])
+            if key_path in {"[", "("} or (
+                key_path and key_path.rsplit("::", 1)[-1] in NON_STRING_KEYS
+            ):
+                return (
+                    f"a JSON object key {arguments[0]} is not a JSON string; §2.5 "
+                    "writes such a map as [key, value] pairs: read it with "
+                    "cadmpeg_core::distinct_keys::pairs"
+                )
+        for argument in arguments:
+            failure = self.under_default(argument, item)
+            if failure is not None:
+                return failure
+        return None
+
+    def under_default(self, field_type, item):
+        """Why serde's own reader of a type admits a second spelling."""
+        spelled = self.spelled(field_type, item)
+        if not spelled:
+            return None
+        name = spelled[0]
+        if name in SET_TYPES:
+            return (
+                f"serde reads the {name} in {field_type.strip()} in any order and "
+                f"merges a repeated member; {DEFAULT_SET_FIX}"
+            )
+        return (
+            f"serde reads the {name} in {field_type.strip()} keeping the last "
+            f"value of a repeated key; {DEFAULT_MAP_FIX}"
+        )
+
+    def helper(self, name, item):
+        """The one function of ``name`` in the file of ``item``, else its
+        directory, or ``None``."""
+        candidates = [
+            function for function in self.functions.get(name, ())
+            if function.path == item.path
+        ] or [
+            function for function in self.functions.get(name, ())
+            if function.path.parent == item.path.parent
+        ]
+        return candidates[0] if len(candidates) == 1 else None
+
+    def forwarded(self, reader, item, seen=frozenset()):
+        """Why a custom reader of a field holding a set or a map is not one
+        this rule follows to a reader that reads one spelling, or ``None``."""
+        declarations = self.declarations.get(item.crate, {})
+        resolved = reached_declarations(declarations, item.path, item, reader)
+        if resolved:
+            if len(resolved) > 1:
+                return f"the reader {reader} resolves to {len(resolved)} declarations"
+            wire = resolved[0][3]
+            if wire is None:
+                return f"the reader {reader} states no wire type the census can read"
+            return self.under_default(wire, item)
+        name = canonical_path(reader).rsplit("::", 1)[-1]
+        function = self.helper(name, item)
+        if function is None or name in seen:
+            return (
+                f"the reader {reader} is no one function the census follows to a "
+                "cadmpeg_core::distinct_keys reader"
+            )
+        body = SOURCE_POLICY.mask_rust_non_code(function.body)
+        if DISTINCT_READER_CALL.search(body):
+            return None
+        calls = [
+            call for call in dict.fromkeys(READER_CALL.findall(body))
+            if call != name and (
+                reached_declarations(declarations, item.path, item, call)
+                or self.helper(call, item) is not None
+            )
+        ]
+        if not calls:
+            return (
+                f"the reader {reader} calls no cadmpeg_core::distinct_keys reader "
+                "and no reader the census follows"
+            )
+        for call in calls:
+            failure = self.forwarded(call, item, seen | {name})
+            if failure is not None:
+                return failure
+        return None
+
+    def field_failure(self, item, attributes, field_type):
+        """Why one field serde reads states a set or a map in two spellings."""
+        if has_serde_flag(attributes, "skip") or has_serde_flag(attributes, "skip_deserializing"):
+            return None
+        readers = [
+            (key, reader_type(value), conditional)
+            for key, value, conditional in serde_options(attributes)
+            if key in {"with", "deserialize_with"}
+        ]
+        if not readers:
+            return self.under_default(field_type, item)
+        if len(readers) != 1 or readers[0][2] or readers[0][1] is None:
+            if self.spelled(field_type, item):
+                return "a conditional or repeated reader leaves the set or map unproved"
+            return None
+        key, reader, _ = readers[0]
+        kind, failure = self.distinct_reader(reader, item)
+        if failure is not None:
+            return failure
+        if kind is not None:
+            return self.under_distinct(kind, field_type, item)
+        if canonical_path(reader) in ABSENT_KEY_HELPERS:
+            return self.under_default(field_type, item)
+        if not self.spelled(field_type, item):
+            return None
+        return self.forwarded(reader, item)
+
+
+def set_spelling_lines(item):
+    """The line of each offset in ``item.body``."""
+    source = read_source(item.path)
+    start = item.end - len(item.body)
+    first = source.count("\n", 0, start) + 1
+    return lambda offset: first + item.body.count("\n", 0, offset)
+
+
+@SOURCE_POLICY.analysis_session
+def set_spelling_failures():
+    """Every set or map a wire type reads in more than one spelling."""
+    paths = list(source_files())
+    items = {}
+    for path in paths:
+        try:
+            items[path] = collect_items(path)
+        except ValueError:
+            items[path] = []
+    declarations, _ = present_forwarders(paths)
+    spelling = SetSpelling(paths, items, declarations)
+    found = []
+    for path in paths:
+        for item in items[path]:
+            if item.kind not in {"struct", "enum"} or not derives_deserialize(item.attrs):
+                continue
+            line = set_spelling_lines(item)
+            for label, offset, attributes, field_type in read_fields(item):
+                failure = spelling.field_failure(item, attributes, field_type)
+                if failure is not None:
+                    found.append((path, line(offset), f"{label}: {failure}"))
+        for reader in collect_deserialize_impls(path):
+            held = sorted({
+                name
+                for item in items[path]
+                if item.name == reader.name and item.kind in {"struct", "enum"}
+                for name in spelling.spelled(item.body, item)
+            })
+            if not held or spelling.delegates(reader) or DISTINCT_READER_CALL.search(
+                SOURCE_POLICY.mask_rust_non_code(reader.body)
+            ):
+                continue
+            found.append((
+                path,
+                reader.line,
+                f"{reader.name}: a hand-written reader of a type holding a "
+                f"{', '.join(held)} calls no cadmpeg_core::distinct_keys reader, so "
+                "the census cannot show it refuses a repeat or an array out of order",
+            ))
     return found
 
 
@@ -4600,6 +5131,12 @@ def main():
                 if target is None:
                     return False
                 return payload_proof(target, item)[0]
+            failure = name_form_failure(item)
+            if failure is not None:
+                arm_failures.append((item.path, item.line, f"{item.name}: {failure}"))
+                return False
+            if name_reader_derive(item)[0]:
+                return True
             if not derives_deserialize(item.attrs) and not item.reader_proven:
                 return False
 
@@ -4648,16 +5185,22 @@ def main():
                 return check_untagged_arms(item, untagged_arms(item))
             if is_uninhabited_enum(item):
                 return True
-            if all_unit_variants(item):
-                return not any(key in {"tag", "content"} for key, _, _ in options)
             return False
         finally:
             checking.discard(identity)
+
+    # A template that a macro instantiates states its derives for every
+    # instance, whichever macro calls the census expands.
+    for path in paths:
+        for item in raw_items[path]:
+            if item.name.startswith("$") and (failure := name_form_failure(item)):
+                arm_failures.append((item.path, item.line, f"{item.name}: {failure}"))
 
     for item in order:
         if not (
             derives_deserialize(item.attrs)
             or item.reader_proven
+            or name_reader_derive(item)[0]
         ):
             continue
         if not passes(item):
@@ -4668,6 +5211,7 @@ def main():
                 failures.append((item.path, item.line, item.name))
 
     failures.extend(absent_key_failures())
+    arm_failures.extend(set_spelling_failures())
 
     for path, line, owner, name, candidates in sorted(set(ambiguities), key=str):
         locations = ", ".join(candidate.as_posix() for candidate in candidates)

@@ -25,6 +25,7 @@ SPEC.loader.exec_module(census)
 # The root of each wire package a reader path can name, as a fixture states it.
 WIRE_PACKAGES = {
     "cadmpeg-core": "pub mod absent_key; pub mod distinct_keys; pub mod tag_only;",
+    "cadmpeg-derive": "",
     "cadmpeg-ir": "pub mod bytes; pub mod features; pub mod ids; pub mod units;",
 }
 REGISTRY_PACKAGES = {"serde_json": "1", "serde_bytes": "0.11", "indexmap": "2"}
@@ -79,14 +80,25 @@ class DenyCensusTests(unittest.TestCase):
             output = io.StringIO()
             # The absent-key rule has its own scope, the whole crates tree.
             # These fixtures state the unknown-key rule only, so that pass is
-            # held out here and exercised by `run_absent_key_census` below.
+            # held out here and exercised by `run_absent_key_census` below,
+            # and the set rule by `run_set_census`.
             with patch.object(census, "source_files", return_value=paths), \
                     patch.object(census, "EXCEPTIONS", {}), \
                     patch.object(census, "absent_key_failures", return_value=[]), \
+                    patch.object(census, "set_spelling_failures", return_value=[]), \
                     patch.object(census, "trait_impl_source_files", return_value=[]), \
                     contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 status = census.main()
             return status, output.getvalue()
+
+    def run_set_census(self, files: dict[str, str]) -> list[str]:
+        """The set rule's findings over one fixture crate."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_workspace(root, root, "fixture")
+            paths = write_fixture(root / "src", files)
+            with patch.object(census, "source_files", return_value=paths):
+                return [message for _, _, message in census.set_spelling_failures()]
 
     def run_absent_key_census(self, files: dict[str, str]) -> list[str]:
         """The absent-key rule's findings over one fixture tree."""
@@ -530,6 +542,292 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
                 self.assertEqual(status, 1, output)
                 self.assertIn("Reader", output)
 
+    NAME_READ = '''
+        IMPORT
+        #[derive(Serialize, DERIVE)]
+        #[serde(rename_all = "snake_case", deny_unknown_fields)]
+        enum Reader { A, B = 2 }
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Holder { base: Reader }
+    '''
+
+    def name_read(self, derive="DeserializeName",
+                  imported="use cadmpeg_derive::DeserializeName;") -> str:
+        return self.NAME_READ.replace("IMPORT", imported).replace("DERIVE", derive)
+
+    SET_PRELUDE = '''
+        use std::collections::{BTreeMap, BTreeSet};
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Class { Model, Process }
+    '''
+
+    def test_a_set_or_map_read_by_serde_states_a_second_spelling(self) -> None:
+        unsorted = "in any order and merges a repeated member"
+        last = "keeping the last value of a repeated key"
+        cases = {
+            "a transparent newtype over a set": ('''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(std::collections::BTreeSet<Class>);
+            ''', f"ArenaClasses.0: serde reads the BTreeSet in std::collections::BTreeSet<Class> {unsorted}"),
+            "an optional set field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine { #[serde(default)] axes: Option<BTreeSet<Class>> }
+            ''', f"Machine.axes: serde reads the BTreeSet in Option<BTreeSet<Class>> {unsorted}"),
+            "a map field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { names: BTreeMap<String, u8> }
+            ''', f"Holder.names: serde reads the BTreeMap in BTreeMap<String, u8> {last}"),
+            "a JSON object field": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { context: serde_json::Map<String, serde_json::Value> }
+            ''', "Holder.context: serde reads the serde_json::Map"),
+            "a newtype variant": ('''
+                #[derive(Deserialize)] #[serde(tag = "kind", content = "value")]
+                enum Holder { Classes(BTreeSet<Class>) }
+            ''', f"Holder::Classes.0: serde reads the BTreeSet in BTreeSet<Class> {unsorted}"),
+            "a struct variant": ('''
+                #[derive(Deserialize)] #[serde(tag = "kind")]
+                enum Holder { Classes { members: Vec<BTreeSet<Class>> } }
+            ''', f"Holder::Classes.members: serde reads the BTreeSet in Vec<BTreeSet<Class>> {unsorted}"),
+            "an alias": ('''
+                type Classes = BTreeSet<Class>;
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { classes: Classes }
+            ''', f"Holder.classes: serde reads the BTreeSet in Classes {unsorted}"),
+            "a set inside a distinct map": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    by_name: BTreeMap<String, BTreeSet<Class>>,
+                }
+            ''', f"Holder.by_name: serde reads the BTreeSet in BTreeSet<Class> {unsorted}"),
+            "an integer key in a JSON object": ('''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    by_index: BTreeMap<u32, u8>,
+                }
+            ''', "Holder.by_index: a JSON object key u32 is not a JSON string"),
+            "a reader that reads serde's set": ('''
+                fn read_classes<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeSet<Class>, D::Error> {
+                    BTreeSet::deserialize(d)
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { #[serde(deserialize_with = "read_classes")] classes: BTreeSet<Class> }
+            ''', "Holder.classes: the reader read_classes calls no cadmpeg_core::distinct_keys reader"),
+            "a shim over a hand-written set reader": ('''
+                struct Distinct<T>(BTreeSet<T>);
+                impl<'de, T: Deserialize<'de> + Ord> Deserialize<'de> for Distinct<T> {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        Ok(Distinct(BTreeSet::from_iter(Vec::<T>::deserialize(d)?)))
+                    }
+                }
+                impl<T> From<Distinct<T>> for BTreeSet<T> {
+                    fn from(set: Distinct<T>) -> Self { set.0 }
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_axes")]
+                    axes: Option<BTreeSet<Class>>,
+                }
+                cadmpeg_core::named_optional_field!(read_axes, Distinct<Class> as BTreeSet<Class>, "axes");
+            ''', "Distinct: a hand-written reader of a type holding a BTreeSet calls no "
+                 "cadmpeg_core::distinct_keys reader"),
+            "a set reader whose root binds another item": ('''
+                mod cadmpeg_core { pub mod distinct_keys { pub mod set {} } }
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct Classes(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+            ''', "spells cadmpeg_core where it can bind another item"),
+        }
+        for case, (source, expected) in cases.items():
+            with self.subTest(case=case):
+                findings = self.run_set_census({"lib.rs": self.SET_PRELUDE + source})
+                self.assertEqual(len(findings), 1, findings)
+                self.assertIn(expected, findings[0])
+
+    def test_a_set_or_map_read_by_a_distinct_keys_reader_has_one_spelling(self) -> None:
+        cases = {
+            "a transparent newtype over a set": '''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(
+                    #[serde(with = "cadmpeg_core::distinct_keys::set")] std::collections::BTreeSet<Class>,
+                );
+            ''',
+            "maps by their key": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    names: BTreeMap<String, u8>,
+                    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
+                    by_index: BTreeMap<u32, u8>,
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::json_object")]
+                    context: serde_json::Map<String, serde_json::Value>,
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::set::deserialize")]
+                    classes: BTreeSet<Class>,
+                }
+            ''',
+            "a shim over a set newtype": '''
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct AxisSet(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+                impl From<AxisSet> for BTreeSet<Class> {
+                    fn from(AxisSet(axes): AxisSet) -> Self { axes }
+                }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Machine {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_axes")]
+                    axes: Option<BTreeSet<Class>>,
+                }
+                cadmpeg_core::named_optional_field!(read_axes, AxisSet as BTreeSet<Class>, "axes");
+            ''',
+            "a reader that forwards to a shim": '''
+                #[derive(Deserialize)] #[serde(transparent)]
+                struct Centers(#[serde(with = "cadmpeg_core::distinct_keys::set")] BTreeSet<Class>);
+                fn read_centers<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BTreeSet<Class>>, D::Error> {
+                    read_center_set(d).map(|centers| centers.map(|Centers(set)| set))
+                }
+                cadmpeg_core::named_optional_field!(read_center_set, Centers, "centers");
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder {
+                    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "read_centers")]
+                    centers: Option<BTreeSet<Class>>,
+                }
+            ''',
+            "a hand-written reader that reads a checked wire type": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct StatsWire {
+                    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+                    kinds: BTreeMap<String, usize>,
+                }
+                struct Stats { kinds: BTreeMap<String, usize> }
+                impl<'de> Deserialize<'de> for Stats {
+                    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                        let wire = StatsWire::deserialize(d)?;
+                        Ok(Stats { kinds: wire.kinds })
+                    }
+                }
+            ''',
+            "an associated type and serde_json's value": '''
+                trait Kind { type Value; }
+                struct Classes;
+                impl Kind for Classes { type Value = BTreeSet<Class>; }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder<K: Kind> { value: K::Value, raw: serde_json::Value }
+            ''',
+            "a skipped field": '''
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { #[serde(skip)] cache: BTreeSet<Class> }
+            ''',
+        }
+        for case, source in cases.items():
+            with self.subTest(case=case):
+                self.assertEqual(self.run_set_census({"lib.rs": self.SET_PRELUDE + source}), [])
+
+    def test_the_whole_census_fails_on_a_set_read_by_serde(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_workspace(root, root, "fixture")
+            paths = write_fixture(root / "src", {"lib.rs": self.SET_PRELUDE + '''
+                #[derive(Serialize, Deserialize)] #[serde(transparent)]
+                pub struct ArenaClasses(BTreeSet<Class>);
+            '''})
+            output = io.StringIO()
+            with patch.object(census, "source_files", return_value=paths), \
+                    patch.object(census, "absent_key_failures", return_value=[]), \
+                    patch.object(census, "trait_impl_source_files", return_value=[]), \
+                    contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+                status = census.main()
+        self.assertEqual(status, 1, output.getvalue())
+        self.assertIn("ArenaClasses.0: serde reads the BTreeSet", output.getvalue())
+
+    def test_a_data_free_enum_read_by_serde_states_a_second_spelling(self) -> None:
+        for case, (source, name) in {
+            "denying": (self.name_read("Deserialize", ""), "Reader"),
+            "not denying": ('''
+                #[derive(Deserialize)] #[serde(rename_all = "snake_case")]
+                enum Reader { A, B }
+            ''', "Reader"),
+            "a macro template": ('''
+                macro_rules! labels {
+                    ($name:ident { $($variant:ident,)* }) => {
+                        #[derive(Deserialize)]
+                        enum $name { $($variant,)* }
+                    };
+                }
+                labels! { Reader { A, B, } }
+            ''', "$name"),
+        }.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 1, output)
+                self.assertIn(
+                    f"{name}: serde's derived Deserialize reads a data-free enum from "
+                    '{"<variant>": null} beside its name; derive cadmpeg_derive::DeserializeName',
+                    output,
+                )
+
+    def test_a_data_free_enum_read_by_its_name_alone(self) -> None:
+        for case, source in {
+            "imported": self.name_read(),
+            "by its path": self.name_read("cadmpeg_derive::DeserializeName", ""),
+            "by its absolute path": self.name_read("::cadmpeg_derive::DeserializeName", ""),
+            "a macro template": '''
+                use cadmpeg_derive::DeserializeName;
+                macro_rules! labels {
+                    ($name:ident { $($variant:ident,)* }) => {
+                        #[derive(DeserializeName)]
+                        enum $name { $($variant,)* }
+                    };
+                }
+                labels! { Reader { A, B, } }
+                #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+                struct Holder { base: Reader }
+            ''',
+        }.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 0, output)
+
+    def test_a_name_reader_that_is_not_the_workspace_derive_proves_nothing(self) -> None:
+        local = "mod cadmpeg_derive { pub use serde::Deserialize as DeserializeName; }"
+        cases = {
+            "no import": (self.name_read(imported=""), "imports no one"),
+            "an import from another crate": (
+                self.name_read(imported="use serde::Deserialize as DeserializeName;"),
+                "serde::Deserialize is not cadmpeg_derive::DeserializeName",
+            ),
+            "a local module of the root's name": (
+                local + self.name_read(),
+                r"spells cadmpeg_derive where it can bind another item",
+            ),
+            "a conditional derive": (
+                self.name_read().replace(
+                    "#[derive(Serialize, DeserializeName)]",
+                    '#[derive(Serialize)] #[cfg_attr(feature = "x", derive(DeserializeName))]',
+                ),
+                "the derive is conditional",
+            ),
+            "a variant that holds data": (
+                self.name_read().replace("B = 2", "B(u8)"),
+                "it reads an enum whose variants hold no data",
+            ),
+            "a tag": (
+                self.name_read().replace('rename_all = "snake_case"', 'tag = "kind"'),
+                "serde tag gives the enum another wire form",
+            ),
+        }
+        for case, (source, reason) in cases.items():
+            with self.subTest(case=case):
+                status, output = self.run_census({"lib.rs": source})
+                self.assertEqual(status, 1, output)
+                self.assertIn("Reader: derives DeserializeName, but", output)
+                self.assertRegex(output, reason)
+        undeclared = '[package]\nname = "fixture"\n[dependencies]\nserde_json.workspace = true\n'
+        status, output = self.run_census(
+            {"lib.rs": self.name_read(), "../Cargo.toml": undeclared}, crate="fixture")
+        self.assertEqual(status, 1, output)
+        self.assertIn("names no dependency cadmpeg_derive", output)
+
     def test_adjacent_tagged_unit_enum_can_deny_unknown_keys(self) -> None:
         status, output = self.run_census({"lib.rs": '''
             #[derive(Deserialize)]
@@ -971,6 +1269,54 @@ print(json.dumps([(name, optional) for _, _, name, optional in runs]))
         '''})
         self.assertEqual(status, 1, output)
         self.assertIn("Reader::A", output)
+
+    NAMED_OPTIONAL_FIELD = '''
+        macro_rules! named_optional_field {
+            ($name:ident, $wire:ty as $value:ty, $field:literal) => {
+                fn $name<'de, D: serde::Deserializer<'de>>(d: D)
+                    -> Result<Option<$value>, D::Error> {
+                    $crate::absent_key::named_present::<D, $wire>(d, $field)
+                        .map(|value| value.map(Into::into))
+                }
+            };
+        }
+    '''
+
+    def test_a_converting_shim_is_proved_through_the_wire_it_reads(self) -> None:
+        status, output = self.run_census({"lib.rs": self.NAMED_OPTIONAL_FIELD + '''
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            struct Value;
+            impl From<Closed> for Value { fn from(_: Closed) -> Self { Self } }
+            named_optional_field!(read_closed, Closed as Value, "closed");
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "read_closed")] Option<Value>),
+            }
+        '''}, crate="cadmpeg-core")
+        self.assertEqual(status, 0, output)
+
+    def test_a_converting_shim_over_an_open_wire_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.NAMED_OPTIONAL_FIELD + '''
+            struct Open;
+            impl<'de> serde::Deserialize<'de> for Open {
+                fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                    let _ = serde_json::Value::deserialize(d)?;
+                    Ok(Self)
+                }
+            }
+            #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+            struct Closed { value: u8 }
+            impl From<Open> for Closed { fn from(_: Open) -> Self { Self { value: 0 } } }
+            named_optional_field!(read_open, Open as Closed, "open");
+            #[derive(Deserialize)] #[serde(tag = "kind", deny_unknown_fields)]
+            enum Reader {
+                A(#[serde(deserialize_with = "read_open")] Option<Closed>),
+            }
+        '''}, crate="cadmpeg-core")
+        self.assertEqual(status, 1, output)
+        self.assertIn("Reader::A", output)
+        self.assertIn("payload reader Open lacks checked unknown-key refusal", output)
 
     def test_unproved_deserializer_macro_body_cannot_certify_a_payload(self) -> None:
         status, output = self.run_census({"lib.rs": '''
@@ -2109,6 +2455,19 @@ class AbsentKeyCensusTests(unittest.TestCase):
             self.run_absent_key_census({"wire.rs": declared + shim}), []
         )
 
+    def test_a_converting_shim_states_the_spelling(self) -> None:
+        declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
+        shim = (
+            'cadmpeg_core::named_optional_field!(\n'
+            '    read_key,\n'
+            '    wire::Distinct<u32> as BTreeSet<u32>,\n'
+            '    "key"\n'
+            ');\n'
+        )
+        self.assertEqual(
+            self.run_absent_key_census({"wire.rs": declared + shim}), []
+        )
+
     def test_a_declaration_macro_whose_root_binds_another_item_declares_nothing(self) -> None:
         declared = self.OMITTED % ',\n        deserialize_with = "read_key"'
         local = (
@@ -2131,7 +2490,6 @@ class AbsentKeyCensusTests(unittest.TestCase):
                     findings,
                 )
                 self.assertTrue(any("Wire.key" in finding for finding in findings), findings)
-
     def test_the_unnamed_refusal_is_not_a_declaration(self) -> None:
         declared = self.OMITTED % (
             ',\n        deserialize_with = "cadmpeg_core::absent_key::present"'
@@ -2592,6 +2950,42 @@ class GenericParameterProofTests(unittest.TestCase):
         '''})
         self.assertEqual(status, 0, output)
 
+    GENERIC_ALIAS = CLOSED + '''
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", content = "value", deny_unknown_fields,
+                bound(deserialize = "T: Deserialize<'de>, P: Deserialize<'de>"))]
+        enum Dimension<T, P = Closed> { Literal(T), Parameter(P) }
+        #[derive(Deserialize)] #[serde(deny_unknown_fields)]
+        struct Ref { id: u8 }
+        pub type RefDimension<T> = Dimension<T, Ref>;
+    '''
+
+    def test_a_generic_alias_is_proved_through_its_instantiations(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(RefDimension<Closed>) }
+        '''})
+        self.assertEqual(status, 0, output)
+
+    def test_an_open_instantiation_of_a_generic_alias_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + self.OPEN + '''
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(RefDimension<Open>) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("Feed::PerTooth: payload RefDimension<Open>", output)
+        self.assertIn("generic parameter T of RefDimension", output)
+        self.assertIn("instantiated as Open", output)
+
+    def test_a_generic_alias_with_a_where_clause_is_unproved(self) -> None:
+        status, output = self.run_census({"lib.rs": self.GENERIC_ALIAS + '''
+            pub type Bounded<T> where T: Copy = Dimension<T, Ref>;
+            #[derive(Deserialize)] #[serde(tag = "kind", content = "value", deny_unknown_fields)]
+            enum Feed { PerTooth(Bounded<Closed>) }
+        '''})
+        self.assertEqual(status, 1, output)
+        self.assertIn("payload reader Bounded lacks checked unknown-key refusal", output)
+
     SAME_NAMED_GENERICS = {
         "lib.rs": "mod first; mod second;",
         "first.rs": CLOSED + '''
@@ -2753,7 +3147,6 @@ class GenericParameterProofTests(unittest.TestCase):
         '''})
         self.assertEqual(status, 1, output)
         self.assertIn("instantiated as $t", output)
-
     def test_generic_parameters_reads_names_bounds_and_defaults(self) -> None:
         item = census.Item(
             Path("crates/ir/src/lib.rs"), 1, "enum", "Reader",

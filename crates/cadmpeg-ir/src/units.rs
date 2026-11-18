@@ -10,6 +10,7 @@ use crate::math::sum::ScaledValue;
 use crate::math::{Point2, Vector3};
 use crate::scalar::{PositiveAngle, PositiveLength, PositiveReal};
 use crate::transform::Transform;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -24,7 +25,7 @@ pub(crate) struct CanonicalUnitsWire {
     time: CanonicalTimeUnitWire,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -33,7 +34,7 @@ enum CanonicalLengthUnitWire {
     Millimeter,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -42,7 +43,7 @@ enum CanonicalAngleUnitWire {
     Radian,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -51,7 +52,7 @@ enum CanonicalMassUnitWire {
     Kilogram,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -719,8 +720,10 @@ impl From<UnitVector3> for DirectionAboveEpsilon {
 }
 
 /// A planar direction whose `hypot` length is one within the analytic frame
-/// tolerance.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// tolerance. It is written `[x, y]` and read only at unit length.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "[f64; 2]", into = "[f64; 2]")]
 pub struct UnitVector2([f64; 2]);
 impl UnitVector2 {
     /// Admit a planar unit direction.
@@ -743,6 +746,18 @@ impl UnitVector2 {
     #[must_use]
     pub fn reverse_quarter_turn(self) -> Self {
         Self([self.0[1], -self.0[0]])
+    }
+}
+
+impl TryFrom<[f64; 2]> for UnitVector2 {
+    type Error = &'static str;
+    fn try_from(value: [f64; 2]) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or("a planar direction has unit length")
+    }
+}
+impl From<UnitVector2> for [f64; 2] {
+    fn from(value: UnitVector2) -> Self {
+        value.0
     }
 }
 

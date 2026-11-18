@@ -88,6 +88,7 @@
 mod act;
 mod brep;
 mod bytes;
+mod clock;
 mod container;
 mod decode;
 mod design;
@@ -112,6 +113,7 @@ mod records;
 mod report;
 mod repro;
 mod scene;
+mod tree;
 mod tsm;
 mod validate;
 mod writer;

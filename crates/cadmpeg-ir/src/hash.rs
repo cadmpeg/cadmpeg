@@ -9,13 +9,16 @@ use cadmpeg_core::CodecError;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::document::{CadIr, Design, Process, SortedModel, SortedTopology, SourceMeta};
+use crate::document::{
+    CadIr, SortedDesign, SortedModel, SortedProcess, SortedTopology, SourceMeta,
+};
 use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
 pub mod digest;
 pub mod finite_json;
 
+use finite_json::admission::CanonicalAdmission;
 use finite_json::{write_canonical_json, CanonicalJsonError};
 
 /// Bytes gathered before the hasher sees them; the pretty JSON writer emits one
@@ -63,7 +66,7 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
 ) -> Result<String, DigestError> {
     let mut buffered =
         std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(ctx, &mut buffered, value)?;
+    write_canonical_json(CanonicalAdmission::limited(ctx), &mut buffered, value)?;
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
@@ -158,8 +161,8 @@ pub fn document_local_sha256_without_carried(
             tolerances: &ir.tolerances,
             geometry: ir.geometry.sorted(),
             model: ir.model.sorted()?,
-            design: &ir.design,
-            process: &ir.process,
+            design: ir.design.sorted(),
+            process: ir.process.sorted(),
             native: normalized_native(&ir.native, format, &unknowns, carried),
         })
     })()?;
@@ -204,8 +207,8 @@ struct NormalizedDocument<'a> {
     tolerances: &'a Tolerances,
     geometry: SortedTopology<'a>,
     model: SortedModel<'a>,
-    design: &'a Design,
-    process: &'a Process,
+    design: SortedDesign<'a>,
+    process: SortedProcess<'a>,
     native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>,
 }
 
@@ -608,7 +611,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            "605c1866a39cdda1e5b5a7580c89e21104c3bc766eeb3d9c64ab1574774b7fd8"
+            "ed973e3fccbfe465c1ce26ee06372ac3151356fcdaeba850c5bd028009a61e02"
         );
         assert_eq!(
             document_local_sha256(
@@ -619,7 +622,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "bb61a43c3983f15f7874744df8f3c7114da2ffa213de9900072866ae37c37c41"
+            "b05cf37e11d812511ae3830a8f0d138eb69e7d0fbf87b00534f39a79a30722de"
         );
     }
 
@@ -706,7 +709,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "c662a5a11fcacc9b780464205447c39b5cce2be6fdb5986cf31e7e2929a05b8d"
+            "93ec763bbb89f3a4269601f6ba4102cd6c0bb47cc670fa2fbec1999ebee25888"
         );
         assert_eq!(
             document_local_sha256(

@@ -25,6 +25,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
@@ -1282,6 +1283,7 @@ pub(crate) fn append_design_losses(
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}
         | AngularTermination::ToLast {}
+        | AngularTermination::ToPlane { .. }
         | AngularTermination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
@@ -1922,8 +1924,15 @@ pub(crate) fn append_design_losses(
                             cadmpeg_ir::features::CombineDestination::NewComponent
                         )
                 }
-                FeatureOperation::BoundaryFill { tools, cells } => {
-                    incomplete_body_selection(tools) || cells.iter().any(incomplete_body_selection)
+                FeatureOperation::BoundaryFill { tools, cells, plane_tools, .. } => {
+                    incomplete_body_selection(tools)
+                        || !plane_tools.is_empty()
+                        || cells.iter().any(|cell| match cell {
+                            BoundaryFillCell::BodyRegion(body) => {
+                                incomplete_body_selection(body)
+                            }
+                            BoundaryFillCell::Recorded { .. } => true,
+                        })
                 }
                 FeatureOperation::CutWithSurface { targets, tools, .. } => {
                     incomplete_body_selection(targets) || incomplete_face_selection(tools)
@@ -1939,18 +1948,37 @@ pub(crate) fn append_design_losses(
                     incomplete_body_selection(targets)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
                 }
-                FeatureOperation::SplitBody { targets, tool } => {
+                FeatureOperation::SilhouetteSplit { target, direction, mode } => {
+                    incomplete_body_selection(target)
+                        || direction.is_none()
+                        || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
+                }
+        FeatureOperation::SplitBody { targets, tool, .. } => {
                     incomplete_body_selection(targets)
                         || match tool {
                             SplitBodyTool::Faces(faces) => incomplete_face_selection(faces),
                             SplitBodyTool::Plane { .. } => false,
                         }
                 }
-                FeatureOperation::SplitFace { targets, tool } => {
+                FeatureOperation::SplitFace {
+                    targets,
+                    tool,
+                    method,
+                } => {
                     incomplete_face_selection(targets)
                         || match tool {
                             SplitFaceTool::Path(path) => incomplete_path(path),
+                            SplitFaceTool::Faces(faces) => incomplete_face_selection(faces),
+                            SplitFaceTool::Native(_) => true,
                             SplitFaceTool::Plane { .. } | SplitFaceTool::Planes { .. } => false,
+                        }
+                        || match method {
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::Unresolved {} => true,
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::SurfaceIntersection {
+                                ..
+                            }
+                            | cadmpeg_ir::features::surfaces::SplitFaceMethod::ClosestPoint {} => false,
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::AlongVector { .. } => true,
                         }
                 }
                 FeatureOperation::SewBodies {
@@ -3093,7 +3121,8 @@ fn retain_unresolved_appearance(
         id: binding_id,
         target: AppearanceTarget::Source {
             source_id: unresolved.identity.clone(),
-        },
+        }
+        .into(),
         appearance: appearance_id,
         source_entity_id: Some(unresolved.identity.clone()),
         object_type: Some(unresolved.owner_class.clone()),
@@ -3273,7 +3302,7 @@ fn push_display_meshes(
                             .then(display.ordinal())
                             .colon(table_index),
                     ),
-                    target: AppearanceTarget::Tessellation(id.clone()),
+                    target: AppearanceTarget::Tessellation(id.clone()).into(),
                     appearance,
                     source_entity_id: Some(source_entity_id),
                     object_type: Some("DisplayFace".into()),
@@ -3490,11 +3519,13 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut sketches,
         &mut sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -3566,6 +3597,11 @@ fn build_geometry_ir(
         &ir.model.parameters,
         sketch_lanes,
     )?;
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut sketch_entities,
+        held_handles,
+        &mut pmi_losses,
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut sketch_constraints,
@@ -3770,6 +3806,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &all_lanes,
     )?;
+    crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
@@ -3919,7 +3956,7 @@ fn build_geometry_ir(
             {
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: binding_id,
-                    target: AppearanceTarget::Face(target),
+                    target: AppearanceTarget::Face(target).into(),
                     appearance: id,
                     source_entity_id: Some(face_color.face_attr.to_string()),
                     object_type: Some("Face".into()),
@@ -4076,7 +4113,7 @@ fn build_geometry_ir(
                     .colon(definition.record_offset)
                     .colon(face_index),
             ),
-            target: AppearanceTarget::Face(face_id.clone()),
+            target: AppearanceTarget::Face(face_id.clone()).into(),
             appearance,
             source_entity_id: Some(format!(
                 "{}:{}",
@@ -4735,11 +4772,13 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
+    let mut held_handles = Vec::new();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
+        &mut held_handles,
         &histories,
         sketch_lanes,
     )?;
@@ -4896,6 +4935,11 @@ fn build_metadata_ir(
         &histories,
         lanes,
     );
+    crate::resolved_features::profiles::finalize_unread_marker_entities(
+        &mut ir.model.sketch_entities,
+        held_handles,
+        &mut pmi_losses,
+    );
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
         &mut ir.model.sketch_constraints,
@@ -4919,6 +4963,7 @@ fn build_metadata_ir(
         &ir.geometry.surfaces,
     );
     sync_active_configuration_resolutions(&mut ir)?;
+    crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
@@ -5893,13 +5938,13 @@ fn brep_local_sha256_in_place(
     let mut appearance_partition =
         digest_partition::DigestPartition::split(&mut ir.model.appearances, |appearance| {
             ir.model.appearance_bindings.iter().any(|binding| {
-                matches!(binding.target, AppearanceTarget::Face(_))
+                matches!(binding.target.entity, AppearanceTarget::Face(_))
                     && binding.appearance == appearance.id
             })
         });
     let mut binding_partition =
         digest_partition::DigestPartition::split(&mut ir.model.appearance_bindings, |binding| {
-            matches!(binding.target, AppearanceTarget::Face(_))
+            matches!(binding.target.entity, AppearanceTarget::Face(_))
         });
     let mut saved_body_display = Vec::new();
     for body in &mut ir.geometry.bodies {
@@ -5993,7 +6038,7 @@ mod digest_tests {
     fn binding(id: &str, target: AppearanceTarget, appearance: &str) -> AppearanceBinding {
         AppearanceBinding {
             id: AppearanceBindingId::mint(id).unwrap(),
-            target,
+            target: target.into(),
             appearance: AppearanceId::mint(appearance).unwrap(),
             source_entity_id: None,
             object_type: None,
@@ -6104,7 +6149,7 @@ fn brep_partition_sha256(
     normalized
         .model
         .appearance_bindings
-        .retain(|binding| matches!(binding.target, AppearanceTarget::Face(_)));
+        .retain(|binding| matches!(binding.target.entity, AppearanceTarget::Face(_)));
     let bindings = &normalized.model.appearance_bindings;
     normalized.model.appearances.retain(|appearance| {
         bindings

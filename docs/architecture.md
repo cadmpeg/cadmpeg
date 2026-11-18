@@ -71,7 +71,7 @@ Writers create a unique temporary file in the destination directory, then rename
 
 ## Loss reports
 
-Source decoders return `DecodeReport`, including a typed `DecodeTransfer`, a decode-coverage census, notes, and attributable `LossNote` entries. `DecodeTransfer` distinguishes container-only, geometry, and full decodes, and records the geometry outcome for geometry and full decodes. The JSON form tags the state as `container`, `geometry`, or `full`, the `DecodeDepth` it delivered, and carries `geometry_transferred` only for the last two. Validation propagates supplied decode losses unchanged.
+Source decoders return `DecodeReport`, including a typed `DecodeTransfer`, a decode-coverage census, notes, and attributable `LossNote` entries. A `LossNote` carries its kind, severity, and message; its optional provenance names the source offset and record type, and its optional `count` is the number of source instances the note reports together. The STEP decoder reports each named opaque entity type in one `decode.opaque-record-preserved` note whose provenance tag is the entity type, whose offset is its first instance, and whose `count` is its instances. `DecodeTransfer` distinguishes container-only, geometry, and full decodes, and records the geometry outcome for geometry and full decodes. The JSON form tags the state as `container`, `geometry`, or `full`, the `DecodeDepth` it delivered, and carries `geometry_transferred` only for the last two. Validation propagates supplied decode losses unchanged.
 
 Each codec owns a `*LossCode` enum in `src/loss.rs`. Every reported drop goes through `code.note(message)`, which pins the namespaced local code, `LossTaxonomy`, severity, and strict floor. Shared taxonomy is the category used for subsystem reporting; the stable machine-readable identifier is the codec-local `family.detail` string.
 
@@ -123,6 +123,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | `cadmpeg-measure`        | Geometric measurement of decoded models and ID-free comparison of measured bodies; an oracle that no codec consumes.                   |
 | `cadmpeg-tessellate`     | Display meshes and parameter-space boundary traces of B-rep faces, for writers that need a proxy mesh or a pcurve.                     |
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, checked text, serialization helpers, and I/O helpers.                      |
+| `cadmpeg-derive`         | The `DeserializeName` derive, which reads a data-free wire enum from its variant's name alone.                                        |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
 | `cadmpeg-parasolid`      | Shared Parasolid schema-token grammar, embedded-layer identity, native pointers, schema field lists, and node-sequence and Deltas reading. |
 | `cadmpeg-protein`        | Shared schema and paged instance-property decoding for Protein asset packages.                                                         |

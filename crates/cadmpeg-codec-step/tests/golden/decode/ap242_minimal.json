@@ -1,6 +1,25 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [],
@@ -74,7 +93,19 @@
         ]
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
@@ -175,7 +206,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 267,
+          "tag": "EXAMPLE_RECORD"
+        },
         "severity": "warning"
       },
       {
@@ -187,7 +224,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 OPAQUE_TARGET instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 337,
+          "tag": "OPAQUE_TARGET"
+        },
         "severity": "warning"
       }
     ],

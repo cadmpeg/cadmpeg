@@ -36,7 +36,7 @@ fn generic_tag_attribute(
 ) -> SourceAttribute {
     SourceAttribute {
         id: "f3d:brep:attribute#1".try_into().expect("valid identity"),
-        target,
+        target: target.into(),
         name: "ATTRIB_CUSTOM-attrib".into(),
         values: [
             AttributeValue::String("generic_tag_attrib_def".into()),
@@ -673,7 +673,7 @@ fn sketch_region_brep(bodies: &[RegionBody], key: Option<u64>) -> Brep {
         if spec.face_attribute {
             asm.attributes.push(
                 serde_json::from_value(serde_json::json!({
-                    "id": entity(8, 1), "target": {"kind": "face", "value": face},
+                    "id": entity(8, 1), "target": {"entity": {"kind": "face", "value": face}},
                     "name": "generic_tag_attrib_def", "values": [],
                 }))
                 .unwrap(),

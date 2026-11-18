@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use std::collections::HashSet;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use super::exact_pattern_identity_wrapper;
@@ -34,7 +36,14 @@ fn tested_rectangular_pattern_construction(
     scope: &DesignParameterScope,
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Option<crate::records::feature::patterns::DesignRectangularPatternConstruction> {
-    super::exact_rectangular_pattern_construction(bytes, records, scope, parameter_owners).unwrap()
+    super::exact_rectangular_pattern_construction(
+        bytes,
+        records,
+        scope,
+        parameter_owners,
+        &std::collections::HashMap::new(),
+    )
+    .unwrap()
 }
 
 fn tested_rectangular_pattern_instances(
@@ -581,24 +590,24 @@ fn run_pattern_constructions_fixture() {
         [4.0, 9.0, 14.0]
     );
 
-    let mut invalid_inactive_spacing = rectangular_owners.clone();
+    // A count-one direction keeps the distance Fusion stores for it.
+    let mut inactive_spacing = rectangular_owners.clone();
     {
-        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(
-            invalid_inactive_spacing[3].clone(),
-        );
+        let mut wire =
+            crate::records::parameters::DesignParameterOwnerWire::from(inactive_spacing[3].clone());
         wire.evaluated_value = 1.0;
-        invalid_inactive_spacing[3] =
+        inactive_spacing[3] =
             crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
-    assert_eq!(
-        tested_rectangular_pattern_construction(
-            &[],
-            &crate::design::test_support::indexed_record_offsets_for_test(&[]),
-            &scope,
-            &invalid_inactive_spacing
-        ),
-        None
-    );
+    let kept = tested_rectangular_pattern_construction(
+        &[],
+        &crate::design::test_support::indexed_record_offsets_for_test(&[]),
+        &scope,
+        &inactive_spacing,
+    )
+    .expect("count-one direction with a distance");
+    assert_eq!(kept.v_extent(), 1.0);
+    assert_eq!(kept.active_direction_count(), 1);
     let mut duplicate_lane = rectangular_owners.clone();
     {
         let mut wire =
@@ -1089,7 +1098,12 @@ fn run_pattern_constructions_fixture() {
         *slot = Some(axial_alignment.clone());
     }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&axial_assembly_bytes, &mut linked_scopes);
+    let bind_legacy_origins = |bytes: &[u8], scopes: &mut [DesignParameterScope]| {
+        let mut losses = Vec::new();
+        bind_joint_origin_frames_from_assemblies(bytes, scopes, &HashSet::default(), &mut losses);
+        assert!(losses.is_empty());
+    };
+    bind_legacy_origins(&axial_assembly_bytes, &mut linked_scopes);
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
     assert_eq!(
         linked_scopes[1].joint_origin_transform(),
@@ -1160,7 +1174,7 @@ fn run_pattern_constructions_fixture() {
         })
         .unwrap();
     let mut single_frame_scopes = [single_frame_assembly, single_frame_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut single_frame_scopes);
+    bind_legacy_origins(&single_frame_bytes, &mut single_frame_scopes);
     assert_eq!(
         single_frame_scopes[1].joint_origin_transform_offset(),
         Some(36)
@@ -1189,7 +1203,7 @@ fn run_pattern_constructions_fixture() {
     transform[2][3] += 1.0;
     frame.joint_origin_transform = transform.try_into().unwrap();
     let mut conflicting_scopes = [conflicting_assembly, conflicting_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut conflicting_scopes);
+    bind_legacy_origins(&single_frame_bytes, &mut conflicting_scopes);
     assert_eq!(
         conflicting_scopes[0].assembly_alignment().and_then(
             crate::records::feature::assembly::DesignAssemblyAlignment::joint_origin_scope_record_index
@@ -1205,7 +1219,7 @@ fn run_pattern_constructions_fixture() {
         *slot = None;
     }
     let mut invalid_single_frame_scopes = [single_frame_scopes[0].clone(), invalid_joint_origin];
-    bind_joint_origin_frames_from_assemblies(&single_frame_bytes, &mut invalid_single_frame_scopes);
+    bind_legacy_origins(&single_frame_bytes, &mut invalid_single_frame_scopes);
     assert_eq!(
         invalid_single_frame_scopes[1].joint_origin_transform(),
         None
@@ -1725,9 +1739,10 @@ fn rectangular_pattern_spacing_direction_validates_shifted_fields() {
     }
 }
 
+mod body_references;
 mod compact_extent;
 mod compact_spacing;
-mod counted_distribution;
+mod direction_records;
 
 fn spacing_payload() -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -1875,8 +1890,13 @@ fn distribution_payload(symmetric: u8, v_direction: Option<u32>, distance_type: 
     bytes
 }
 
-#[test]
-fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() {
+/// The scope, the 5 by 3 construction, and the U direction that
+/// `distribution_payload` belongs to.
+fn distribution_inputs() -> (
+    DesignParameterScope,
+    crate::records::feature::patterns::DesignRectangularPatternConstruction,
+    crate::records::feature::patterns::DesignRectangularPatternDirection,
+) {
     use crate::records::feature::patterns::{
         DesignRectangularPatternConstruction, DesignRectangularPatternConstructionWire,
     };
@@ -1911,6 +1931,12 @@ fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() 
     let direction =
         super::exact_rectangular_pattern_direction(&spacing_direction_frame(), 0, 221, 20, 23, 10)
             .unwrap();
+    (scope, construction, direction)
+}
+
+#[test]
+fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() {
+    let (scope, construction, direction) = distribution_inputs();
     let parse = |bytes: &[u8]| {
         super::exact_rectangular_pattern_distribution(
             bytes,
@@ -1918,6 +1944,7 @@ fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() 
             &scope,
             &construction,
             &[direction],
+            &std::collections::HashMap::new(),
         )
     };
 
@@ -1964,6 +1991,7 @@ fn rectangular_pattern_payload_distribution_reads_symmetric_and_distance_type() 
         &scope,
         &construction,
         &[],
+        &std::collections::HashMap::new(),
     )
     .is_none());
 }

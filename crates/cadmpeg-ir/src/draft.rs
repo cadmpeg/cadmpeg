@@ -47,7 +47,7 @@ pub trait ArenaEntity: private::Sealed + EntitySchema + Sized {
 /// Registry-complete arena lengths captured at a model transaction boundary.
 #[derive(Debug)]
 pub struct ModelCheckpoint {
-    lengths: [usize; EntityKind::ALL.len()],
+    lengths: [usize; crate::document::MODEL_ARENA_COUNT],
     feature_parents: crate::document::FeatureRegenerationParents,
 }
 
@@ -520,7 +520,7 @@ struct CommitState<'ctx, D: BorrowMut<CadIr>> {
     unknown_namespace: Option<&'ctx str>,
     identities: Option<CommittedIdentityIndex>,
     admission: Option<crate::validate::admit::incremental::AdmittedState>,
-    unindexed_start: Option<[usize; EntityKind::ALL.len()]>,
+    unindexed_start: Option<[usize; crate::document::MODEL_ARENA_COUNT]>,
     source_admission: Option<crate::validate::admit::NativeUnknownAdmission>,
 }
 
@@ -853,7 +853,10 @@ impl<'ctx, D: BorrowMut<CadIr>> CommitSession<'ctx, D> {
                 (format, &self.state.unknowns),
                 changes.annotations(),
                 allowed,
-                ([0; EntityKind::ALL.len()], CandidateScope::Detached),
+                (
+                    [0; crate::document::MODEL_ARENA_COUNT],
+                    CandidateScope::Detached,
+                ),
             )?,
             None => None,
         };
@@ -1100,7 +1103,12 @@ fn stage_committed_identities(
     unknown_namespace: Option<&str>,
 ) -> CommittedIdentityIndex {
     let mut staged = CommittedIdentityIndex::new();
-    let candidate = crate::document::Arenas { geometry, model };
+    let candidate = crate::document::Arenas {
+        geometry,
+        model,
+        design: &base.design,
+        process: &base.process,
+    };
     macro_rules! stage_model {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
             for (offset, entity) in candidate.$home.$field.iter().enumerate() {

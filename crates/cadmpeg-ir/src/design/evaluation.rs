@@ -1,0 +1,296 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Evaluations and current states: the states of a scope.
+//!
+//! An evaluation is a state of a scope under one configuration, stored as a
+//! base with a delta applied. The current state of every scope is held
+//! outside evaluations: its geometry in `CadIr.geometry`, its names in
+//! `Design.names`, and its poses in [`CurrentState::poses`].
+
+use std::collections::BTreeMap;
+
+use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_derive::DeserializeName;
+#[cfg(feature = "schema")]
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use super::ids::EvaluationId;
+use super::names::NameEntry;
+use super::read::{self, Ceiling};
+use super::refs::{EntityRef, Evaluated, Position, RecordRef};
+use super::selection::OccurrencePath;
+use crate::document::Topology;
+use crate::features::ConfigurationId;
+use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
+use crate::transform::Transform;
+
+/// A state of a scope under one configuration: the model at a position, or a
+/// feature's tool body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct Evaluation {
+    /// The evaluation's identity.
+    pub id: EvaluationId,
+    /// The product definition whose scope the state is a state of.
+    pub scope: ProductDefinitionId,
+    /// The configuration of the state. `None` only when the scope has no
+    /// configurations.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_configuration"
+    )]
+    pub configuration: Option<ConfigurationId>,
+    /// What the evaluation evaluates.
+    pub of: Evaluated,
+    /// The status the source records for the state.
+    pub status: EvaluationStatus,
+    /// The stored state. `None` states only the status the source records for
+    /// a state it does not store.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_content"
+    )]
+    pub content: Option<StateContent>,
+    /// The source's record of the state, so a writer to the same codec
+    /// re-emits the chain from it.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+}
+
+/// A stored state: its base with a delta applied.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct StateContent {
+    /// The state the delta applies to.
+    pub base: StateBase,
+    /// The state's difference from its base.
+    pub delta: StateDelta,
+}
+
+/// The status of stored solved values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum EvaluationStatus {
+    /// The source does not flag the values.
+    Current,
+    /// The values predate an edit of what they depend on.
+    Stale,
+    /// The source records a failure to compute the values.
+    Failed,
+}
+
+/// The state a delta applies to. Bases form a forest: no evaluation is its own
+/// ancestor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum StateBase {
+    /// Nothing.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Empty,
+    /// The extent of the scope's current state at the position.
+    Current(Position),
+    /// An evaluation with content.
+    Evaluation(EvaluationId),
+}
+
+/// A state's difference from its base. The state is the base's records, minus
+/// `removed`, with each record of `records` inserted or replacing the base's
+/// record of the same id; each map sets (`Some`) or removes (`None`) entries
+/// relative to the base's.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct StateDelta {
+    /// The records the state inserts or replaces.
+    pub records: Topology,
+    /// The base's records the state does not hold.
+    pub removed: Vec<RecordRef>,
+    /// The state's name table entries.
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeSet<(EntityRef, Option<NameEntry>)>")
+    )]
+    pub names: BTreeMap<EntityRef, Option<NameEntry>>,
+    /// The definition that owns a body.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub owners: BTreeMap<BodyId, Option<ProductDefinitionId>>,
+    /// The definition that owns an occurrence.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
+    pub members: BTreeMap<OccurrenceId, Option<ProductDefinitionId>>,
+    /// An instance's bodies, keyed by the instance's path.
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeSet<(OccurrencePath, Option<Vec<BodyId>>)>")
+    )]
+    pub instance_bodies: BTreeMap<OccurrencePath, Option<Vec<BodyId>>>,
+    /// A placed instance's placement in the state, only where it differs from
+    /// the placement the state's configuration resolves to.
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeSet<(OccurrencePath, Option<Transform>)>")
+    )]
+    pub poses: BTreeMap<OccurrencePath, Option<Transform>>,
+}
+
+/// A current state of a scope: a position and the bodies of `CadIr.geometry`
+/// that belong to the state there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct CurrentState {
+    /// The state's position, spelled through its member.
+    pub at: Position,
+    /// The bodies of `CadIr.geometry` that belong to the state.
+    pub bodies: Vec<BodyId>,
+    /// A placed instance's placement in the current state where it differs
+    /// from the placement its configuration resolves to, keyed by the
+    /// instance's path.
+    #[serde(with = "cadmpeg_core::distinct_keys::pairs")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeSet<(OccurrencePath, Transform)>")
+    )]
+    pub poses: BTreeMap<OccurrencePath, Transform>,
+    /// The status the source records for the state.
+    pub status: EvaluationStatus,
+    /// The source's record of the state.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+}
+
+/// Walks every chain of state bases of `evaluations` and refuses one deeper
+/// than [`Ceiling::StateChain`] or one that is a cycle.
+///
+/// An evaluation with content has depth one more than the evaluation its
+/// `StateBase::Evaluation` base names, or one where its base is another arm or
+/// names no evaluation of `evaluations`. An evaluation without content has
+/// depth zero. Returns the depth of each evaluation by its id; of two
+/// evaluations with one id, the first keeps it.
+pub(crate) fn admit_state_chains(
+    evaluations: &[Evaluation],
+) -> Result<BTreeMap<&str, u64>, String> {
+    let mut index = BTreeMap::new();
+    for (at, evaluation) in evaluations.iter().enumerate() {
+        index.entry(evaluation.id.as_str()).or_insert(at);
+    }
+    let depths = chain_depths(
+        evaluations,
+        |evaluation| match &evaluation.content {
+            None => ChainLink::Unstored,
+            Some(StateContent {
+                base: StateBase::Evaluation(base),
+                ..
+            }) => index
+                .get(base.as_str())
+                .map_or(ChainLink::Below(0), |&base| ChainLink::Within(base)),
+            Some(_) => ChainLink::Below(0),
+        },
+        |evaluation| format!("evaluation {}", evaluation.id.as_str()),
+    )?;
+    Ok(index.into_iter().map(|(id, at)| (id, depths[at])).collect())
+}
+
+/// What a state of one arena rests on in a chain of state bases.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ChainLink {
+    /// The state holds no content, and has depth zero.
+    Unstored,
+    /// The state's base is the state of the arena at this index.
+    Within(usize),
+    /// The state's base lies outside the arena and has this depth.
+    Below(u64),
+}
+
+/// The depth of each of the `states` of one arena, whose bases `link`
+/// states, refusing a chain deeper than [`Ceiling::StateChain`] or one that
+/// is a cycle.
+///
+/// A state with content has depth one more than its base. `name` names a
+/// state in the refusal of a cycle. The walk is iterative, and visits each
+/// state once.
+pub(crate) fn chain_depths<T>(
+    states: &[T],
+    link: impl Fn(&T) -> ChainLink,
+    name: impl Fn(&T) -> String,
+) -> Result<Vec<u64>, String> {
+    #[derive(Clone, Copy)]
+    enum Mark {
+        Unseen,
+        OnChain,
+        Depth(u64),
+    }
+
+    let mut marks = vec![Mark::Unseen; states.len()];
+    let mut chain = Vec::new();
+    for start in 0..states.len() {
+        let mut at = start;
+        let tail = loop {
+            match marks[at] {
+                Mark::Depth(depth) => break depth,
+                Mark::OnChain => {
+                    return Err(format!(
+                        "{} is its own ancestor through its state bases",
+                        name(&states[at])
+                    ));
+                }
+                Mark::Unseen => {}
+            }
+            let base = match link(&states[at]) {
+                ChainLink::Unstored => {
+                    marks[at] = Mark::Depth(0);
+                    break 0;
+                }
+                ChainLink::Within(base) => Ok(base),
+                ChainLink::Below(depth) => Err(depth),
+            };
+            marks[at] = Mark::OnChain;
+            chain.push(at);
+            read::within(Ceiling::StateChain, u64_from_index(chain.len()))?;
+            match base {
+                Ok(base) => at = base,
+                Err(depth) => break depth,
+            }
+        };
+        let mut depth = tail;
+        for at in chain.drain(..).rev() {
+            depth = depth
+                .checked_add(1)
+                .ok_or("the depth of a chain of state bases overflows")?;
+            marks[at] = Mark::Depth(depth);
+        }
+        read::within(Ceiling::StateChain, depth)?;
+    }
+    Ok(marks
+        .into_iter()
+        .map(|mark| match mark {
+            Mark::Depth(depth) => depth,
+            Mark::Unseen | Mark::OnChain => 0,
+        })
+        .collect())
+}
+
+cadmpeg_core::named_optional_field!(deserialize_configuration<T>, T, "configuration");
+cadmpeg_core::named_optional_field!(deserialize_content<T>, T, "content");
+cadmpeg_core::named_optional_field!(deserialize_native_ref<T>, T, "native_ref");

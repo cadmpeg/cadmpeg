@@ -1,6 +1,25 @@
 {
   "ir": {
-    "design": {},
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
     "fragment": false,
     "geometry": {
       "bodies": [
@@ -34,8 +53,10 @@
           "id": "usd:stage:articulation#/Arm",
           "native_ref": "/Arm",
           "root": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm"
+            }
           }
         }
       ],
@@ -223,8 +244,10 @@
             "kind": "convex_decomposition"
           },
           "target": {
-            "body": "usd:stage:body#/Arm/Base/Geom",
-            "kind": "body"
+            "entity": {
+              "body": "usd:stage:body#/Arm/Base/Geom",
+              "kind": "body"
+            }
           }
         }
       ],
@@ -241,19 +264,8 @@
           "id": "usd:stage:occurrence#/Arm",
           "name": "Arm",
           "native_ref": "/Arm",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm",
           "transform": [
             [
               1.0,
@@ -279,20 +291,8 @@
           "id": "usd:stage:occurrence#/Arm/Base",
           "name": "Base",
           "native_ref": "/Arm/Base",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Base",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Base",
           "transform": [
             [
               1.0,
@@ -318,20 +318,8 @@
           "id": "usd:stage:occurrence#/Arm/Base/Geom",
           "name": "Geom",
           "native_ref": "/Arm/Base/Geom",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Base/Geom",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Base/Geom",
           "transform": [
             [
               1.0,
@@ -357,20 +345,8 @@
           "id": "usd:stage:occurrence#/Arm/Finger",
           "name": "Finger",
           "native_ref": "/Arm/Finger",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Finger",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Finger",
           "transform": [
             [
               1.0,
@@ -396,20 +372,8 @@
           "id": "usd:stage:occurrence#/Arm/Link",
           "name": "Link",
           "native_ref": "/Arm/Link",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Link",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Link",
           "transform": [
             [
               1.0,
@@ -464,19 +428,39 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm",
+          "occurrences": [
+            "usd:stage:occurrence#/Arm/Base",
+            "usd:stage:occurrence#/Arm/Link",
+            "usd:stage:occurrence#/Arm/Finger"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Arm"
+          "source_name": "Arm",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Base",
+          "occurrences": [
+            "usd:stage:occurrence#/Arm/Base/Geom"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "Base"
+          "source_name": "Base",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [
@@ -484,28 +468,65 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base/Geom",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Arm/Base/Geom",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Geom"
+          "source_name": "Geom",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Finger",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Finger",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Finger"
+          "source_name": "Finger",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Link",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Link",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "Link"
+          "source_name": "Link",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Arm"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [
@@ -516,8 +537,10 @@
           "native_ref": "/Arm/Base",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           }
         },
         {
@@ -527,8 +550,10 @@
           "native_ref": "/Arm/Finger",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Finger"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Finger"
+            }
           }
         },
         {
@@ -538,8 +563,10 @@
           "native_ref": "/Arm/Link",
           "starts_asleep": false,
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Link"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Link"
+            }
           }
         }
       ],
@@ -554,8 +581,10 @@
           "schema": "PhysxArticulationAPI",
           "solver": "physx",
           "target": {
-            "articulation": "usd:stage:articulation#/Arm",
-            "kind": "articulation"
+            "entity": {
+              "articulation": "usd:stage:articulation#/Arm",
+              "kind": "articulation"
+            }
           },
           "values": {
             "physxArticulation:enabledSelfCollisions": {
@@ -574,8 +603,10 @@
           "schema": "PhysxRigidBodyAPI",
           "solver": "physx",
           "target": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
+            "entity": {
+              "kind": "occurrence",
+              "occurrence": "usd:stage:occurrence#/Arm/Base"
+            }
           },
           "values": {
             "physxRigidBody:linearDamping": {
@@ -617,8 +648,10 @@
           "schema": "PhysxCollisionAPI",
           "solver": "physx",
           "target": {
-            "collider": "usd:stage:collider#/Arm/Base/Geom",
-            "kind": "collider"
+            "entity": {
+              "collider": "usd:stage:collider#/Arm/Base/Geom",
+              "kind": "collider"
+            }
           },
           "values": {
             "physxCollision:contactOffset": {
@@ -642,8 +675,10 @@
           "schema": "PhysxConvexDecompositionCollisionAPI",
           "solver": "physx",
           "target": {
-            "collider": "usd:stage:collider#/Arm/Base/Geom",
-            "kind": "collider"
+            "entity": {
+              "collider": "usd:stage:collider#/Arm/Base/Geom",
+              "kind": "collider"
+            }
           },
           "values": {
             "physxConvexDecompositionCollision:maxConvexHulls": {
@@ -658,8 +693,10 @@
           "schema": "PhysxJointAPI",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Grip",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Grip",
+              "kind": "joint"
+            }
           },
           "values": {
             "physxJoint:armature": {
@@ -688,8 +725,10 @@
           "schema": "PhysxMimicJointAPI:transX",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Grip",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Grip",
+              "kind": "joint"
+            }
           },
           "values": {
             "physxMimicJoint:transX:gearing": {
@@ -714,8 +753,10 @@
               "kind": "targets",
               "targets": [
                 {
-                  "joint": "usd:stage:joint#/Arm/Shoulder",
-                  "kind": "joint"
+                  "entity": {
+                    "joint": "usd:stage:joint#/Arm/Shoulder",
+                    "kind": "joint"
+                  }
                 }
               ]
             },
@@ -731,8 +772,10 @@
           "schema": "PhysxMaterialAPI",
           "solver": "physx",
           "target": {
-            "kind": "physical_material",
-            "material": "usd:stage:physical-material#/Arm/Rubber"
+            "entity": {
+              "kind": "physical_material",
+              "material": "usd:stage:physical-material#/Arm/Rubber"
+            }
           },
           "values": {
             "physxMaterial:frictionCombineMode": {
@@ -747,8 +790,10 @@
           "schema": "PhysxSceneAPI",
           "solver": "physx",
           "target": {
-            "kind": "scene",
-            "scene": "usd:stage:physics-scene#/Arm/Scene"
+            "entity": {
+              "kind": "scene",
+              "scene": "usd:stage:physics-scene#/Arm/Scene"
+            }
           },
           "values": {
             "physxScene:bounceThreshold": {
@@ -776,8 +821,10 @@
           "schema": "PhysicsJointStateAPI:angular",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Shoulder",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Shoulder",
+              "kind": "joint"
+            }
           },
           "values": {
             "state:angular:physics:position": {
@@ -797,8 +844,10 @@
           "schema": "PhysxJointAPI",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Shoulder",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Shoulder",
+              "kind": "joint"
+            }
           },
           "values": {
             "physxJoint:armature": {
@@ -836,8 +885,10 @@
           "schema": "PhysxLimitAPI:angular",
           "solver": "physx",
           "target": {
-            "joint": "usd:stage:joint#/Arm/Shoulder",
-            "kind": "joint"
+            "entity": {
+              "joint": "usd:stage:joint#/Arm/Shoulder",
+              "kind": "joint"
+            }
           },
           "values": {
             "physxLimit:angular:damping": {
@@ -927,7 +978,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

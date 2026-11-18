@@ -254,7 +254,7 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -265,8 +265,10 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
+      - name: Limit concurrent test links
+        # Link at most two test binaries at once, within the runner's memory.
+        shell: bash
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Hash the Cargo profiles
         id: profiles
@@ -289,8 +291,12 @@ jobs:
 
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
-        # A separate `cargo build` step would repeat that compilation.
-        run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+        # A separate `cargo build` step would repeat that compilation. The
+        # memory line every 30 seconds stays in the log if the runner stops.
+        shell: bash
+        run: |
+          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
+          python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
@@ -372,6 +378,12 @@ jobs:
           cargo test -q -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
+
+      - name: Annex A
+        if: needs.changes.outputs.schema == 'true'
+        # Annex A of docs/cadir-v11.md states the schema of each type the
+        # specification names and does not state; it is generated, never edited.
+        run: python3 scripts/generate-annex-a.py --check
 
       - name: Single-codec CLI feature gate
         if: needs.changes.outputs.sldprt_cli == 'true'

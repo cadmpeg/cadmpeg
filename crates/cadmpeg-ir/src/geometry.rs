@@ -16,6 +16,7 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -608,7 +609,7 @@ pub struct CompositeCurveSegment {
 }
 
 /// STEP composite-curve transition continuity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -3356,7 +3357,7 @@ pub struct RollingBallJetDerivative<R = f64, V = Vector3> {
 }
 
 /// Cross-section family of a procedural blend.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4393,7 +4394,7 @@ pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Geometry role selected by a variable-blend support-side discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4411,7 +4412,7 @@ pub enum VariableBlendSupportKind {
 }
 
 /// Convexity selected for a variable-radius blend surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4423,7 +4424,7 @@ pub enum VariableBlendConvexity {
 }
 
 /// Solved-surface representation selected for a variable-radius blend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4727,7 +4728,7 @@ pub enum VariableBlendCrossSection<R = f64, V = Vector3, P = Point3> {
 
 /// Native zero-width variable-blend cross-section selectors whose framing is
 /// established while their geometric laws remain unclassified.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[repr(i64)]
 #[serde(deny_unknown_fields)]
@@ -4769,7 +4770,7 @@ impl TryFrom<i64> for VariableBlendBareCrossSection {
 }
 
 /// Native variable-radius blend surface subtype.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7477,7 +7478,7 @@ pub enum SurfaceCurveFamily {
 }
 
 /// Discriminant of a native surface-curve family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -8182,7 +8183,7 @@ impl ProceduralCurveRow {
 }
 
 /// Independent variable used by a curve-offset distance law.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

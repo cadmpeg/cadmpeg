@@ -12,11 +12,13 @@ use crate::records::feature::base_feature::{
 };
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use std::collections::HashMap;
 
 use super::shared_frames::marked_record_reference;
+
+mod owned_body_runs;
 
 fn marked_u64_reference(bytes: &[u8], marker_offset: usize, marker_value: u8) -> Option<u64> {
     if bytes.get(marker_offset) != Some(&marker_value) {
@@ -987,18 +989,25 @@ fn paste_sources(
 /// paste object without a paired header and copy sources that do not resolve
 /// each add a loss.
 pub(super) fn timeline_owned_base_feature(
-    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+    stream: View<'_>,
     scope: &DesignParameterScope,
     owners: &[TimelineBodyOwner],
     nodes: &HashMap<String, Option<u64>>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Option<DesignBaseFeatureConstruction> {
-    let (owner, (mut construction, source_loss)) = owners.iter().find_map(|owner| {
-        Some((
-            owner,
-            exact_timeline_owned_base_feature(bytes, scope, *owner, nodes)?,
-        ))
-    })?;
+) -> Result<Option<DesignBaseFeatureConstruction>, CodecError> {
+    let mut admitted = None;
+    for &owner in owners {
+        if let Some(construction) =
+            exact_timeline_owned_base_feature(ctx, stream, scope, owner, nodes)?
+        {
+            admitted = Some((owner, construction));
+            break;
+        }
+    }
+    let Some((owner, (mut construction, source_loss))) = admitted else {
+        return Ok(None);
+    };
     if owners.len() > 1 {
         losses.push(F3dLossCode::FeatureTimelineOwnerCompeting.note(format!(
             "{} is named by timeline objects {}; object {}, the lowest record whose owned runs read, owns it.",
@@ -1015,6 +1024,9 @@ pub(super) fn timeline_owned_base_feature(
         {
             copy_sources.clear();
         }
+        if !owner.pastes {
+            losses.extend(source_loss);
+        }
     } else {
         losses.extend(source_loss);
     }
@@ -1024,7 +1036,7 @@ pub(super) fn timeline_owned_base_feature(
             scope.id, owner.record
         )));
     }
-    Some(construction)
+    Ok(Some(construction))
 }
 
 /// Read the parallel parameter-body and body-entity runs of an owned scope.
@@ -1033,44 +1045,38 @@ pub(super) fn timeline_owned_base_feature(
 /// sources. Unread pairs or unresolved sources then leave the copy sources
 /// empty and give a loss.
 pub(super) fn exact_timeline_owned_base_feature(
-    bytes: &[u8],
+    ctx: &DecodeContext<'_>,
+    stream: View<'_>,
     scope: &DesignParameterScope,
     owner: TimelineBodyOwner,
     nodes: &HashMap<String, Option<u64>>,
-) -> Option<(
-    DesignBaseFeatureConstruction,
-    Option<cadmpeg_ir::report::loss::LossNote>,
-)> {
-    if scope.kind() != scope::DesignFeatureKind::BaseFeature {
-        return None;
-    }
-    let start = usize::try_from(scope.byte_offset()).ok()?;
-    let bytes = bytes.get(..usize::try_from(scope.paired_byte_offset()).ok()?)?;
-    if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
-        || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
-        || usize::try_from(View::u32_le_at(
-            bytes,
-            start + result_body::COMBINED_BODY_REFERENCE_COUNT,
-        )?)
-        .ok()?
-            != owner.body_count.checked_mul(2)?
-    {
-        return None;
-    }
-    let mut cursor = start + result_body::LEN;
-    let mut run = |count: usize| -> Option<Vec<DesignBaseFeatureEntry<u64>>> {
-        (0..count)
-            .map(|_| read_base_feature_entry_at(bytes, &mut cursor))
-            .collect()
+) -> Result<
+    Option<(
+        DesignBaseFeatureConstruction,
+        Option<cadmpeg_ir::report::loss::LossNote>,
+    )>,
+    CodecError,
+> {
+    let Some(owned_body_runs::OwnedBodyRuns {
+        parameter_bodies,
+        bodies,
+        end,
+        typed,
+    }) = owned_body_runs::decode(ctx, stream, scope, owner)?
+    else {
+        return Ok(None);
     };
-    let parameter_bodies = run(owner.body_count)?;
-    let bodies = run(owner.body_count)?;
-    let mut source_loss = None;
+    let mut source_loss = typed.then(|| {
+        F3dLossCode::FeatureOwnedBodyPairingAssumed.note(format!(
+            "{} pairs its typed parameter-body and result-body runs by position",
+            scope.id
+        ))
+    });
     let copy_sources = if owner.keeps_sources {
         let pairs = usize::try_from(scope.reference_count_offset())
             .ok()
-            .and_then(|references| bytes.get(..references))
-            .and_then(|bounded| paste_source_pairs(bounded, cursor, owner.body_count));
+            .and_then(|references| stream.window().get(..references))
+            .and_then(|bounded| paste_source_pairs(bounded, end, owner.body_count));
         match pairs {
             None => {
                 source_loss = Some(F3dLossCode::FeaturePasteSourcesUnresolved.note(format!(
@@ -1090,7 +1096,7 @@ pub(super) fn exact_timeline_owned_base_feature(
     } else {
         Vec::new()
     };
-    Some((
+    Ok(Some((
         DesignBaseFeatureConstruction::TimelineOwnedBodies {
             parameter_bodies,
             bodies,
@@ -1099,7 +1105,7 @@ pub(super) fn exact_timeline_owned_base_feature(
             copy_sources,
         },
         source_loss,
-    ))
+    )))
 }
 
 /// Read the zero-body frame whose shared-metadata reference starts at offset 36.
