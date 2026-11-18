@@ -10,6 +10,62 @@ use crate::records::identity::ReferenceRun;
 use crate::records::references::DesignClassTag;
 use std::collections::HashSet;
 
+fn source_frame() -> Vec<u8> {
+    let mut bytes = vec![0; 562];
+    for at in [19, 24, 39, 54, 59, 74, 85] {
+        bytes[at] = 1;
+    }
+    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    bytes[70..74].copy_from_slice(&1u32.to_le_bytes());
+    for (at, value) in [(25, 31u64), (40, 41), (60, 51), (75, 61), (86, 41)] {
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn source_pair_names_the_source_result_and_timeline_owner() {
+    let source = super::derived_base_source(&source_frame(), 1000).unwrap();
+    assert_eq!(source.parameter_body.value, 31);
+    assert_eq!(source.result_body.value, 41);
+    assert_eq!(source.owner_record.value, 51);
+    assert_eq!(source.source_body.value, 61);
+    assert_eq!(source.source_body.offset, 1075);
+    assert_eq!(source.result_repeat_offset, 1086);
+    assert!(source.frame_holds(1000, 1444));
+    assert!(source.snapshot.is_none());
+    assert!(super::derived_base_owner(&source_frame(), 1000).is_none());
+}
+
+#[test]
+fn source_pair_requires_its_counts_local_references_and_repeated_result() {
+    for at in [
+        19, 20, 24, 33, 39, 48, 54, 55, 59, 68, 70, 74, 83, 85, 86, 94, 96,
+    ] {
+        let mut bytes = source_frame();
+        bytes[at] ^= 3;
+        assert!(super::derived_base_source(&bytes, 0).is_none(), "byte {at}");
+    }
+    assert!(super::derived_base_source(&source_frame()[..96], 0).is_none());
+}
+
+#[test]
+fn source_pair_preserves_wide_body_references_and_checks_location_arithmetic() {
+    let mut bytes = source_frame();
+    bytes[75..83].copy_from_slice(&u64::MAX.to_le_bytes());
+    assert_eq!(
+        super::derived_base_source(&bytes, 0)
+            .unwrap()
+            .source_body
+            .value,
+        u64::MAX
+    );
+    assert!(super::derived_base_source(&bytes, usize::MAX).is_none());
+    let mut source = super::derived_base_source(&bytes, 1000).unwrap();
+    source.source_body.offset += 1;
+    assert!(!source.frame_holds(1000, 1444));
+}
+
 /// A derived base frame of `len` bytes that names `owner` at offset 59 and
 /// again twelve bytes before its end, with a zero last byte.
 fn frame(len: usize, owner: u64) -> Vec<u8> {
@@ -114,13 +170,17 @@ fn mirror_derived_base_owner_requires_registered_reciprocal_references() {
     ];
     let mut bytes = [0; 779];
     bytes[20..24].copy_from_slice(&2_u32.to_le_bytes());
+    let mut body_rows = Vec::new();
+    for target in [9, 10] {
+        crate::test_support::push_marked_reference(&mut body_rows, target);
+        body_rows.extend_from_slice(&[0; 4]);
+    }
+    bytes[24..54].copy_from_slice(&body_rows);
     let reference = |bytes: &mut [u8], at: usize, index: u64| {
         bytes[at] = 1;
         bytes[at + 1..at + 9].copy_from_slice(&index.to_le_bytes());
     };
     for (at, index) in [
-        (mirror::FIRST_BODY_REFERENCE, 9),
-        (mirror::RESULT_BODY_REFERENCE, 10),
         (owner::MARKER, 4),
         (mirror::COMPANION_REFERENCE, 7),
         (664 + companion::OWNER_REFERENCE, 4),
@@ -139,14 +199,14 @@ fn mirror_derived_base_owner_requires_registered_reciprocal_references() {
     assert_eq!(binding.repeat_offset, 695);
     let result = binding.result_body.unwrap();
     assert_eq!(result.value, 10);
-    assert_eq!(result.offset, 42);
+    assert_eq!(result.offset, 40);
     let mut bound_scope = scope.clone();
     bound_scope.derived_base_owner = Some(binding);
     let wire = serde_json::to_value(&bound_scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(wire).unwrap();
     assert_eq!(decoded.derived_base_owner, Some(binding));
     let mut missing_result = bytes;
-    missing_result[mirror::RESULT_BODY_REFERENCE] = 0;
+    missing_result[39] = 0;
     let owner_only = read(&missing_result, &frames, &owners).unwrap();
     assert_eq!(owner_only.record_index, binding.record_index);
     assert_eq!(owner_only.result_body, None);
