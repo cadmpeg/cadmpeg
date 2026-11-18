@@ -661,6 +661,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             histories: &design.asm_histories,
             face_boundaries: &design.asm_face_boundaries,
             sheet_metal_settings: &design.design_sheet_metal_settings,
+            construction_recipes: &prereqs.construction_recipes,
+            persistent_subentity_tags: geometry.persistent_subentity_tags,
         },
     )?;
     losses.extend(
@@ -1637,6 +1639,10 @@ fn extend_related_design_records(
         scan,
         &mut design.design_parameter_scopes,
         &mut design.design_record_headers,
+    )?;
+    crate::design::decode::derived_base::mark_derived_base_owners(
+        scan,
+        &mut design.design_parameter_scopes,
     )?;
     let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,

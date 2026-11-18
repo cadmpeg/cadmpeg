@@ -126,6 +126,9 @@ pub(crate) enum StepLossCode {
     PmiZoneUnresolved,
     /// A dimensional modifier has no complete semantic value.
     PmiDimensionModifierUnresolved,
+    /// A dimension's nominal or limit quantity disagrees with the kind of its
+    /// dimension entity, so the dimension keeps the entity name as its kind.
+    PmiDimensionKindQuantityMismatch,
     /// Dimensional limit measures do not form one lower and one upper limit.
     DimensionalLimitsOmitted,
     /// Independent styled items assign conflicting scalar colors.
@@ -466,6 +469,7 @@ impl StepLossCode {
         Self::PmiDatumSystemInvalid,
         Self::PmiZoneUnresolved,
         Self::PmiDimensionModifierUnresolved,
+        Self::PmiDimensionKindQuantityMismatch,
         Self::DimensionalLimitsOmitted,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
@@ -662,6 +666,7 @@ impl StepLossCode {
             Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::PmiZoneUnresolved => "pmi.zone-unresolved",
             Self::PmiDimensionModifierUnresolved => "pmi.dimension-modifier-unresolved",
+            Self::PmiDimensionKindQuantityMismatch => "pmi.dimension-kind-quantity-mismatch",
             Self::DimensionalLimitsOmitted => "pmi.dimensional-limits-omitted",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
@@ -1054,6 +1059,7 @@ impl StepLossCode {
             | Self::PmiDatumSystemInvalid
             | Self::PmiZoneUnresolved
             | Self::PmiDimensionModifierUnresolved
+            | Self::PmiDimensionKindQuantityMismatch
             | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
@@ -1145,6 +1151,7 @@ mod tests {
                 "pmi.datum-system-invalid",
                 "pmi.zone-unresolved",
                 "pmi.dimension-modifier-unresolved",
+                "pmi.dimension-kind-quantity-mismatch",
                 "pmi.dimensional-limits-omitted",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",

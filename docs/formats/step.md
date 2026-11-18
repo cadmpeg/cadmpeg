@@ -2382,7 +2382,13 @@ whose name begins with `DIMENSIONAL_SIZE_`, `DIMENSIONAL_LOCATION_`,
 `relating_shape_aspect` to its `related_shape_aspect`; its CADIR dimension kind
 is `other` with the name `directed_dimensional_location`.
 A complex dimension uses its dimensional partial for its kind and all inherited
-partials for its name, targets, and characteristic value.
+partials for its name, targets, and characteristic value. Dimensions of CADIR kind size,
+location, diameter, radius, spherical diameter, and spherical radius carry
+length measures, and dimensions of CADIR kind angular carry plane-angle
+measures. When the nominal or limits of a dimension disagree with its kind or
+with each other, CADIR keeps the first of these readings that is valid: the
+kind `other`, named by the dimensional entity in lower case, with the limits;
+the dimension's kind without the limits; the kind `other` without the limits.
 ISO 10303-47 defines `DIMENSIONAL_CHARACTERISTIC_REPRESENTATION` as the
 association of a dimension with its explicit representation. Its
 `SHAPE_DIMENSION_REPRESENTATION.items` attribute is a `SET[1:?]` of

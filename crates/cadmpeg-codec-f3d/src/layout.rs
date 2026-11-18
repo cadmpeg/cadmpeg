@@ -9129,6 +9129,26 @@ pub(crate) mod sketch_typed_compact_member_head {
     pub(crate) const REFERENCE: usize = 23;
 }
 
+/// Byte offsets for the `derived_base_owner_reference` record.
+///
+/// Spec §3.1. Record length 70 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header of a derived base scope whose references use the eleven-byte form; the 711-, 707-, and 491-byte typed-reference forms store other fields here. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
+/// ```
+pub(crate) mod derived_base_owner_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 70;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 59;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const RECORD_INDEX: usize = 60;
+    /// Offset of `zero_run_2` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_2: usize = 68;
+}
+
 /// Byte offsets for the `local_component_occurrence_empty_attributes_prefix` record.
 ///
 /// Spec §3.1. Record length 213 B.
@@ -10494,6 +10514,38 @@ pub(crate) mod mesh_plane_cut_scope_prefix {
     pub(crate) const MATRIX: usize = 29;
     /// Offset of `fill_selector` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FILL_SELECTOR: usize = 157;
+}
+
+/// Byte offsets for the `boundary_fill_scope_prefix_plain` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// This form uses property flag zero and operation at offset 21.
+/// ```
+pub(crate) mod boundary_fill_scope_prefix_plain {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `property_flag` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_FLAG: usize = 20;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+}
+
+/// Byte offsets for the `boundary_fill_scope_prefix_property` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// This form uses property flag one, a zero word at offset 21, and operation at offset 25.
+/// ```
+pub(crate) mod boundary_fill_scope_prefix_property {
+    /// Stated value of `optional_property_word` (`u32`). Spec §3.1.
+    pub(crate) const OPTIONAL_PROPERTY_WORD_VALUE: u32 = 0x0000_0000;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 25;
 }
 
 #[doc = "Byte offsets for the `replace_face_fixed_prefix` record."]

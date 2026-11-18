@@ -44,6 +44,10 @@ mod operation;
 mod selection_overlap;
 mod source_literals;
 
+/// Boundary fill cell selections.
+pub mod boundary_fill;
+use boundary_fill::BoundaryFillCell;
+
 #[doc = "Checked datum geometry and construction inputs."]
 pub mod datums;
 pub mod edge_treatments;
@@ -3812,13 +3816,29 @@ pub enum FeatureOperation {
         #[doc = "Component creation requested for the Boolean result."]
         destination: CombineDestination,
     },
-    /// Creates solid bodies from selected cells enclosed by boundary bodies.
+    /// Creates or combines solids from cells enclosed by boundary tools.
     BoundaryFill {
         /// Bodies whose faces partition space into candidate cells.
         tools: BodySelection,
-        /// Enclosed cells retained as result bodies, in source order.
+        /// Selected cells, in source order.
         #[serde(deserialize_with = "deserialize_local_cells")]
-        cells: NonEmptyMembers<BodySelection>,
+        cells: NonEmptyMembers<BoundaryFillCell>,
+        /// Construction-plane selectors in source order, including empty source slots.
+        plane_tools: Vec<Option<SelectionReference>>,
+        /// Boolean effect of the selected cells.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_boundary_fill_operation"
+        )]
+        operation: Option<BooleanOp>,
+        /// Whether to remove tool bodies after the fill.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_boundary_fill_remove_tools"
+        )]
+        remove_tools: Option<bool>,
     },
     /// Removes one side of selected bodies using selected surface faces.
     CutWithSurface {
@@ -7670,6 +7690,20 @@ pub enum AngularTermination {
         /// Native or resolved target shape selection.
         target: FaceSelection,
     },
+    /// Extends until it reaches a plane with its native target reference.
+    ToPlane {
+        /// Model-space frame of the terminating plane.
+        plane: FeatureSupportPlaneFrame,
+        /// Native target record.
+        native: NonBlankString,
+        /// Source of the target plane.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_plane_target_source"
+        )]
+        source: Option<PlaneTargetSource>,
+    },
     /// Fixed angular travel.
     Angle {
         /// Angular travel.
@@ -7935,6 +7969,9 @@ pub enum SurfaceProjectionMode {
     /// Retain projected edges only.
     Edges,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_boundary_fill_operation, BooleanOp, "operation");
+cadmpeg_core::named_optional_field!(deserialize_boundary_fill_remove_tools, bool, "remove_tools");
 
 /// Boolean effect of a solid-producing feature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
