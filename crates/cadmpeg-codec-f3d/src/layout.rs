@@ -5242,6 +5242,56 @@ pub(crate) mod shifted_extrude_offset_283_two_sided_tail {
     pub(crate) const ZERO_RUN_8: usize = 196;
 }
 
+/// Byte offsets for the `thread_compact_hole_owners_prefix` record.
+///
+/// Spec §3.1. Record length 42 B.
+///
+/// ```text
+/// Relative to the primary Thread indexed header. The designation starts at offset 42.
+/// ```
+pub(crate) mod thread_compact_hole_owners_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 42;
+    /// Offset of `prefix_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_WORD: usize = 29;
+    /// Offset of `form_marker` (`bytes[5]`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 33;
+    /// Offset of `form_token` (`bytes[4]`). Spec §3.1.
+    pub(crate) const FORM_TOKEN: usize = 38;
+}
+
+/// Byte offsets for the `thread_hole_companion_tail` record.
+///
+/// Spec §3.1. Record length 88 B.
+///
+/// ```text
+/// Relative to the end of the LP-UTF16 Thread kind.
+/// ```
+pub(crate) mod thread_hole_companion_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 88;
+    /// Offset of `zero_prefix` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 4;
+    /// Offset of `first_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_COMPANION: usize = 19;
+    /// Offset of `null_reference` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE: usize = 30;
+    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 31;
+    /// Offset of `evaluation_duration` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const EVALUATION_DURATION: usize = 39;
+    /// Offset of `second_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SECOND_COMPANION: usize = 51;
+    /// Offset of `flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const FLAGS: usize = 62;
+    /// Offset of `third_companion` (`bytes[11]`). Spec §3.1.
+    pub(crate) const THIRD_COMPANION: usize = 65;
+    /// Offset of `hole` (`bytes[11]`). Spec §3.1.
+    pub(crate) const HOLE: usize = 76;
+    /// Offset of `zero_suffix` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_SUFFIX: usize = 87;
+}
+
 /// Byte offsets for the `thread_standard_scope_prefix` record.
 ///
 /// Spec §3.1. Record length 38 B.

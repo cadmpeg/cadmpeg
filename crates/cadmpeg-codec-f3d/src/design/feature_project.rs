@@ -65,6 +65,7 @@ mod surface_patch;
 mod surface_untrim;
 pub(crate) mod sweep_fallback;
 pub(crate) mod thicken;
+mod thread_companions;
 mod unstitch;
 mod work_axes;
 
@@ -381,6 +382,7 @@ fn authored_scope_ordinals_for_stream<'a>(
             ));
         }
     }
+    thread_companions::insert_positions(stream, &scopes_by_record, &mut out)?;
     Ok(out)
 }
 
@@ -1277,6 +1279,19 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 native_stream(owner.id()) == Some(native_scope)
                                     && owner.scope_record_index() == scope.record_index
                             });
+                            if matches!(construction.form, crate::records::feature::thread::DesignThreadForm::CompactExtended(_))
+                                && owners.iter().any(|owner| {
+                                    native_stream(owner.id()) == Some(native_scope)
+                                        && owner.scope_record_index() == scope.record_index
+                                        && owner.local_ordinal() == 0
+                                        && owner.evaluated_value().get() > 0.0
+                                })
+                            {
+                                projection_losses.push(crate::loss::F3dLossCode::ThreadOffsetNative.note(format!(
+                                    "Thread {} retains its positive start offset in its native owner.",
+                                    scope.id
+                                )));
+                            }
                             let face_reference_count =
                                 construction.face_group_record_indices.len().checked_mul(2);
                             let full_face_extent = !has_parameter_owners

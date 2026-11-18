@@ -2988,8 +2988,26 @@ impl DesignParameterScope {
         if named_tail.is_some() && draft.label.is_none() {
             return Err(fail("named_tail/label"));
         }
+        let mut named_hole_history = None;
         if let Some(label) = &draft.label {
             let units = label.value.encode_utf16().count();
+            if kind == "Hole" {
+                named_hole_history = crate::design::decode::scopes::parameter_scope::named_reciprocal_hole_previous_history_offset(
+                    tail, units,
+                );
+            }
+            let history_layout_holds = if let Some(relative) = named_hole_history {
+                draft.previous_history_state_id_offset
+                    == draft
+                        .feature_ordinal_offset
+                        .checked_add(u64_from_index(relative))
+            } else {
+                draft.previous_history_state_id_offset.is_none()
+                    && named_scope_tail::LEN
+                        .checked_add(units * 2)
+                        .and_then(|base| base.checked_add(extra_bytes))
+                        == Some(tail)
+            };
             if units == 0
                 || units > 256
                 || label.value.chars().any(char::is_control)
@@ -2997,11 +3015,7 @@ impl DesignParameterScope {
                     .feature_ordinal_offset
                     .checked_add(u64_from_index(named_scope_tail::ASSOCIATED_COUNT))
                     != Some(label.offset)
-                || named_scope_tail::LEN
-                    .checked_add(units * 2)
-                    .and_then(|base| base.checked_add(extra_bytes))
-                    != Some(tail)
-                || draft.previous_history_state_id_offset.is_some()
+                || !history_layout_holds
                 || named_tail.is_some_and(|references| {
                     label
                         .offset
@@ -3029,7 +3043,7 @@ impl DesignParameterScope {
         {
             return Err(fail("silhouette_split_operation/reference_members"));
         }
-        if typed && named_tail.is_some() {
+        if typed && (named_tail.is_some() || named_hole_history.is_some()) {
             return Err(fail("named_tail/reference_members"));
         }
         let tail_valid = if typed_canvas || named_tail.is_some() {
@@ -3054,6 +3068,8 @@ impl DesignParameterScope {
                     Vec::new()
                 } else if typed {
                     crate::design::decode::scopes::parameter_scope::typed_scope_previous_history_offset(kind, tail).into_iter().collect()
+                } else if let Some(relative) = named_hole_history {
+                    vec![relative]
                 } else {
                     [false, true]
                         .into_iter()

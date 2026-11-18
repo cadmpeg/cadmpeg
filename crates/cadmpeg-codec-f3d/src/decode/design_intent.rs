@@ -1450,16 +1450,10 @@ pub(super) fn scope_related_indices(
 ) -> Vec<(String, u32)> {
     collect_related_indices(scopes.iter().flat_map(|scope| {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let thread_trailer =
-            scope
-                .thread_construction()
-                .and_then(|construction| match &construction.form {
-                    crate::records::feature::thread::DesignThreadForm::Compact(Some(reference))
-                    | crate::records::feature::thread::DesignThreadForm::CompactExtended(reference) => {
-                        Some(reference.value.get())
-                    }
-                    _ => None,
-                });
+        let thread_trailer = scope
+            .thread_construction()
+            .and_then(|construction| construction.form.hole_reference())
+            .map(|reference| reference.value.get());
         scope
             .reference_members()
             .values()
