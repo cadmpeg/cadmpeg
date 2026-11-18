@@ -39803,6 +39803,88 @@ source = "spec"
 anchor = "and a control byte"
 
 [[record]]
+name = "boundary_fill_scope_prefix_plain"
+kind = "byte"
+section = "3.1"
+anchor = "scope prefix begins with nine zero bytes."
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/boundary_fill.rs"
+note = "This form uses property flag zero and operation at offset 21."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "scope prefix begins with nine zero bytes."
+
+[[record.field]]
+name = "property_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The byte at scope offset 20 selects the operation word at offset 21"
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the operation word at offset 21 when it is zero"
+
+[[record]]
+name = "boundary_fill_scope_prefix_property"
+kind = "byte"
+section = "3.1"
+anchor = "scope prefix begins with nine zero bytes."
+size = 29
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/boundary_fill.rs"
+note = "This form uses property flag one, a zero word at offset 21, and operation at offset 25."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "scope prefix begins with nine zero bytes."
+
+[[record.field]]
+name = "property_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "The byte at scope offset 20 selects the operation word at offset 21"
+
+[[record.field]]
+name = "optional_property_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "When it is one, the u32 at offset 21 is zero"
+value = 0
+
+[[record.field]]
+name = "operation"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "the operation word is at offset 25"
+
+[[record]]
 name = "replace_face_fixed_prefix"
 rust_doc_attributes = true
 kind = "byte"

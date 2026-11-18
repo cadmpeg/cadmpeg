@@ -878,6 +878,16 @@ pub(crate) enum F3dLossCode {
     FeatureTrimCellTableNative,
     /// `SurfaceTrim` group members without a decoded operand record project by group role.
     FeatureTrimMemberTypeAssumed,
+    /// Selected Boundary Fill cells retain their source records.
+    FeatureBoundaryFillCellsNative,
+    /// Boundary Fill has no admitted cell selection.
+    FeatureBoundaryFillCellsUnresolved,
+    /// Boundary Fill stores an unassigned operation word.
+    FeatureBoundaryFillOperationUnresolved,
+    /// Boundary Fill tool identity is unresolved.
+    FeatureBoundaryFillToolsUnresolved,
+    /// Boundary Fill Boolean target bodies are unresolved.
+    FeatureBoundaryFillTargetsUnresolved,
     /// An Extrude bounded-face operand drops fallback faces that one recipe operand contradicts.
     FeatureFaceOperandFallbackContradicted,
     /// An Extrude to-face termination keeps its native group: its recipe face and
@@ -1660,6 +1670,11 @@ impl F3dLossCode {
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureTrimCellTableNative,
         Self::FeatureTrimMemberTypeAssumed,
+        Self::FeatureBoundaryFillCellsNative,
+        Self::FeatureBoundaryFillCellsUnresolved,
+        Self::FeatureBoundaryFillOperationUnresolved,
+        Self::FeatureBoundaryFillToolsUnresolved,
+        Self::FeatureBoundaryFillTargetsUnresolved,
         Self::FeatureFaceOperandFallbackContradicted,
         Self::FeatureExtrudeTargetDisputed,
         Self::FeatureEdgeSelectionNative,
@@ -2643,6 +2658,15 @@ impl F3dLossCode {
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureTrimMemberTypeAssumed => "feature.trim-member-type-assumed",
+            Self::FeatureBoundaryFillCellsNative => "feature.boundary-fill-cells-native",
+            Self::FeatureBoundaryFillCellsUnresolved => "feature.boundary-fill-cells-unresolved",
+            Self::FeatureBoundaryFillOperationUnresolved => {
+                "feature.boundary-fill-operation-unresolved"
+            }
+            Self::FeatureBoundaryFillToolsUnresolved => "feature.boundary-fill-tools-unresolved",
+            Self::FeatureBoundaryFillTargetsUnresolved => {
+                "feature.boundary-fill-targets-unresolved"
+            }
             Self::FeatureExtrudeTargetDisputed => "feature.extrude-target-disputed",
             Self::FeatureFaceOperandFallbackContradicted => {
                 "feature.face-operand-fallback-contradicted"
@@ -3367,6 +3391,11 @@ impl F3dLossCode {
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
+            | Self::FeatureBoundaryFillCellsNative
+            | Self::FeatureBoundaryFillCellsUnresolved
+            | Self::FeatureBoundaryFillOperationUnresolved
+            | Self::FeatureBoundaryFillToolsUnresolved
+            | Self::FeatureBoundaryFillTargetsUnresolved
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureExtrudeTargetDisputed
             | Self::FeatureEdgeSelectionNative
@@ -3997,6 +4026,11 @@ impl F3dLossCode {
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureTrimCellTableNative
             | Self::FeatureTrimMemberTypeAssumed
+            | Self::FeatureBoundaryFillCellsNative
+            | Self::FeatureBoundaryFillCellsUnresolved
+            | Self::FeatureBoundaryFillOperationUnresolved
+            | Self::FeatureBoundaryFillToolsUnresolved
+            | Self::FeatureBoundaryFillTargetsUnresolved
             | Self::FeatureFaceOperandFallbackContradicted
             | Self::FeatureExtrudeTargetDisputed
             | Self::FeatureEdgeSelectionNative
@@ -4746,6 +4780,11 @@ mod tests {
                 "feature.face-operand-unresolved",
                 "feature.trim-cell-table-native",
                 "feature.trim-member-type-assumed",
+                "feature.boundary-fill-cells-native",
+                "feature.boundary-fill-cells-unresolved",
+                "feature.boundary-fill-operation-unresolved",
+                "feature.boundary-fill-tools-unresolved",
+                "feature.boundary-fill-targets-unresolved",
                 "feature.face-operand-fallback-contradicted",
                 "feature.extrude-target-disputed",
                 "feature.edge-selection-native",

@@ -122,6 +122,16 @@ cadmpeg_core::named_optional_field!(
     "circular_pattern_construction"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_boundary_fill,
+    super::boundary_fill::DesignBoundaryFill,
+    "boundary_fill"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_boundary_fill_named_tail,
+    DesignNamedScopeReferences,
+    "boundary_fill_named_tail"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_combine_operation,
     DesignCombineOperation,
     "combine_operation"
@@ -469,6 +479,12 @@ impl ScopePayloadCompleteness for DesignEdgeFlangeScope {
     }
 }
 
+impl ScopePayloadCompleteness for super::boundary_fill::DesignBoundaryFillScope {
+    fn is_uninterpreted(&self) -> bool {
+        false
+    }
+}
+
 impl ScopePayloadCompleteness for DesignCombineScope {
     fn is_uninterpreted(&self) -> bool {
         self.operation.is_none() && self.named_tail.is_none()
@@ -769,6 +785,7 @@ design_feature_kinds! {
         Fillet => "Fillet": super::fillet_set::DesignFilletScope,
         Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
         Combine => "Combine": DesignCombineScope,
+        BoundaryFill => "BoundaryFill": super::boundary_fill::DesignBoundaryFillScope,
         Draft => "Draft": Option<DesignDraftOperation>,
         ReplaceFace => "ReplaceFace": Option<DesignReplaceFaceOperation>,
         CPattern => "C-Pattern": Option<DesignCircularPatternConstruction>,
@@ -827,7 +844,6 @@ design_feature_kinds! {
     }
     names {
         SurfaceTrim => "SurfaceTrim",
-        BoundaryFill => "BoundaryFill",
         Split => "Split",
         Canvas => "Canvas",
         Decal => "Decal",
@@ -1302,6 +1318,18 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_combine_named_tail"
     )]
     combine_named_tail: Option<DesignNamedScopeReferences>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_boundary_fill"
+    )]
+    boundary_fill: Option<super::boundary_fill::DesignBoundaryFill>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_boundary_fill_named_tail"
+    )]
+    boundary_fill_named_tail: Option<DesignNamedScopeReferences>,
     /// Exact form and size construction carried by a `Thread` scope.
     #[serde(
         default,
@@ -2039,6 +2067,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.combine_operation.is_some() || wire.combine_named_tail.is_some() {
             present.push("combine_operation");
         }
+        if wire.boundary_fill.is_some() || wire.boundary_fill_named_tail.is_some() {
+            present.push("boundary_fill");
+        }
         if wire.emboss_construction.is_some() {
             present.push("emboss_construction");
         }
@@ -2264,7 +2295,12 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 })?,
             ),
             DesignFeatureKind::SurfaceTrim => DesignScopePayload::SurfaceTrim,
-            DesignFeatureKind::BoundaryFill => DesignScopePayload::BoundaryFill,
+            DesignFeatureKind::BoundaryFill => {
+                DesignScopePayload::BoundaryFill(super::boundary_fill::DesignBoundaryFillScope {
+                    prefix: wire.boundary_fill.take(),
+                    named_tail: wire.boundary_fill_named_tail.take(),
+                })
+            }
             DesignFeatureKind::Hole => {
                 DesignScopePayload::Hole(crate::records::feature::hole::DesignHoleScope {
                     point: wire.hole_construction.take(),
@@ -2446,6 +2482,8 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.chamfer_sets.is_some()
             || wire.combine_operation.is_some()
             || wire.combine_named_tail.is_some()
+            || wire.boundary_fill.is_some()
+            || wire.boundary_fill_named_tail.is_some()
             || wire.emboss_construction.is_some()
             || wire.thread_construction.is_some()
             || wire.draft_operation.is_some()
@@ -2640,6 +2678,8 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             path_feature: None,
             combine_operation: None,
             combine_named_tail: None,
+            boundary_fill: None,
+            boundary_fill_named_tail: None,
             thread_construction: None,
             emboss_construction: None,
             draft_operation: None,
@@ -2775,6 +2815,10 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.combine_operation = value.operation;
                 wire.combine_named_tail = value.named_tail;
             }
+            DesignScopePayload::BoundaryFill(value) => {
+                wire.boundary_fill = value.prefix;
+                wire.boundary_fill_named_tail = value.named_tail;
+            }
             DesignScopePayload::Thread(value) => wire.thread_construction = value,
             DesignScopePayload::Emboss(value) => wire.emboss_construction = value,
             DesignScopePayload::Draft(value) => wire.draft_operation = value,
@@ -2807,7 +2851,6 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.hole_extent = value.extent;
             }
             DesignScopePayload::SurfaceTrim
-            | DesignScopePayload::BoundaryFill
             | DesignScopePayload::Split
             | DesignScopePayload::Canvas
             | DesignScopePayload::Decal
@@ -2899,15 +2942,26 @@ impl DesignParameterScope {
             .checked_sub(draft.feature_ordinal_offset)
             .and_then(|length| usize::try_from(length).ok())
             .ok_or_else(|| fail("feature_ordinal_offset"))?;
+        if let DesignScopePayload::BoundaryFill(fill) = &draft.payload {
+            if fill.prefix.as_ref().is_some_and(|prefix| {
+                draft
+                    .reference_count_offset
+                    .checked_sub(draft.byte_offset)
+                    .is_none_or(|length| !prefix.fits_prefix(length))
+            }) {
+                return Err(fail("boundary_fill"));
+            }
+        }
         let named_tail = match &draft.payload {
             DesignScopePayload::Combine(value) => value.named_tail.as_ref(),
+            DesignScopePayload::BoundaryFill(value) => value.named_tail.as_ref(),
             _ => None,
         };
         let extra_bytes = named_tail
             .map_or(Some(0), DesignNamedScopeReferences::extra_bytes)
-            .ok_or_else(|| fail("combine_named_tail"))?;
+            .ok_or_else(|| fail("named_tail"))?;
         if named_tail.is_some() && draft.label.is_none() {
-            return Err(fail("combine_named_tail/label"));
+            return Err(fail("named_tail/label"));
         }
         if let Some(label) = &draft.label {
             let units = label.value.encode_utf16().count();
@@ -2951,7 +3005,7 @@ impl DesignParameterScope {
             return Err(fail("silhouette_split_operation/reference_members"));
         }
         if typed && named_tail.is_some() {
-            return Err(fail("combine_named_tail/reference_members"));
+            return Err(fail("named_tail/reference_members"));
         }
         let tail_valid = if typed_canvas || named_tail.is_some() {
             true
@@ -3476,6 +3530,13 @@ impl DesignParameterScope {
     pub(crate) fn fixed_chamfer_parameters(&self) -> Option<&DesignFixedChamferParameters> {
         match &self.payload {
             DesignScopePayload::Chamfer(value) => value.fixed.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn boundary_fill(&self) -> Option<&super::boundary_fill::DesignBoundaryFillScope> {
+        match &self.payload {
+            DesignScopePayload::BoundaryFill(value) => Some(value),
             _ => None,
         }
     }
