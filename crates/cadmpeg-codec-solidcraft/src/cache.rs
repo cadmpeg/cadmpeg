@@ -52,6 +52,8 @@ pub(crate) struct Outcome {
     pub(crate) losses: Vec<LossNote>,
     /// The bodies each feature made, by feature id.
     pub(crate) outputs: BTreeMap<u64, Vec<BodyId>>,
+    /// The bodies each component owns, by component id; 0 is the root.
+    pub(crate) components: BTreeMap<u64, Vec<BodyId>>,
 }
 
 /// One model body of the final state.
@@ -64,6 +66,8 @@ struct ModelBody<'a> {
     slice: View<'a>,
     /// The feature that made it.
     feature: Option<u64>,
+    /// The component that owns it; 0 is the root.
+    component: u64,
     /// The persistent name of each face, in face order.
     face_names: Vec<String>,
 }
@@ -148,6 +152,11 @@ pub(crate) fn decode(
                             .or_default()
                             .push(record.id.clone());
                     }
+                    outcome
+                        .components
+                        .entry(body.component)
+                        .or_default()
+                        .push(record.id.clone());
                     ir.geometry.bodies.push(record);
                     outcome.bodies += 1;
                 }
@@ -175,8 +184,14 @@ pub(crate) fn decode(
         match emitted {
             Ok(Some(id)) => {
                 if let Some(feature) = body.feature {
-                    outcome.outputs.entry(feature).or_default().push(id);
+                    outcome.outputs.entry(feature).or_default().push(id.clone());
                 }
+                outcome
+                    .components
+                    .entry(body.component)
+                    .or_default()
+                    .push(id);
+                name_faces(&mut geometry, &body);
                 paint(&mut geometry, &body, appearances);
                 ir.geometry.extend_rewritten(geometry, &mut Unchanged)?;
                 annotations.append(body_builder.build())?;
@@ -239,6 +254,16 @@ fn look_color(look: &Value) -> Option<Color> {
     let channel = |value: &Value| Some(f64::from(u8::try_from(value.as_u64()?).ok()?) / 255.0);
     let opacity = look.get("opacity").and_then(Value::as_f64).unwrap_or(1.0);
     Color::new(channel(r)?, channel(g)?, channel(b)?, opacity)
+}
+
+/// Names each face of the body by its persistent name, which a rebuild of
+/// the design keeps.
+fn name_faces(geometry: &mut Topology, body: &ModelBody<'_>) {
+    for (face, name) in geometry.faces.iter_mut().zip(&body.face_names) {
+        if !name.is_empty() {
+            face.name = Some(name.clone());
+        }
+    }
 }
 
 /// Applies the document's appearances to one body's records: the body's
@@ -439,6 +464,10 @@ fn select<'a>(
                     .map(str::to_owned),
                 slice,
                 feature: model_body.get("feature").and_then(Value::as_u64),
+                component: model_body
+                    .get("component")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
                 face_names: model_body
                     .get("names")
                     .and_then(Value::as_u64)

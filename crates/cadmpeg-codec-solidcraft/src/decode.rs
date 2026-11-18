@@ -94,6 +94,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let mut annotations = Annotations::default();
     let mut geometry_transferred = false;
     let mut outputs = BTreeMap::new();
+    let mut owners = BTreeMap::new();
     if let (Some(package), Some(_)) = (&source.package, source.header()) {
         if !ctx.container_only() && has_cache(package) {
             let document = package.member(ctx, DOCUMENT_MEMBER)?;
@@ -112,6 +113,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             geometry_transferred = outcome.bodies > 0;
             losses.extend(outcome.losses);
             outputs = outcome.outputs;
+            owners = outcome.components;
         }
     }
     if let Some(document) = &source.document {
@@ -123,7 +125,8 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 document.header.features
             )));
         } else if decodes_history {
-            let outcome = crate::history::decode(ctx, &document.object, &outputs, &mut ir)?;
+            let outcome =
+                crate::history::decode(ctx, &document.object, &outputs, &owners, &mut ir)?;
             losses.extend(outcome.losses);
         }
     }

@@ -12,6 +12,7 @@
 //! the retained document. A feature that made a body of the final cached
 //! state names that body as an output.
 
+mod assembly;
 mod constraints;
 mod expr;
 mod operations;
@@ -46,6 +47,9 @@ fn id(kind: &'static str, key: &str) -> String {
         "feature" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "feature"),
         "sketch" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "sketch"),
         "parameter" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "parameter"),
+        "product" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "product"),
+        "occurrence" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "occurrence"),
+        "joint" => cadmpeg_ir::identity_namespace!("solidcraft", "design", "joint"),
         "constraint" => {
             cadmpeg_ir::identity_namespace!("solidcraft", "design", "sketch-constraint")
         }
@@ -91,6 +95,8 @@ struct Walk<'w, 'c> {
     owners: BTreeMap<String, u64>,
     /// The parameters of dimensions without a design parameter.
     dimension_parameters: Vec<Value>,
+    /// Each sketch feature's neutral sketch id and component.
+    sketch_owners: Vec<(String, u64)>,
 }
 
 /// Decodes the feature history of `document` into `ir`. `outputs` maps a
@@ -99,6 +105,7 @@ pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     document: &Map<String, Value>,
     outputs: &BTreeMap<u64, Vec<BodyId>>,
+    components: &BTreeMap<u64, Vec<BodyId>>,
     ir: &mut CadIr,
 ) -> Result<Outcome, CodecError> {
     let mut outcome = Outcome::default();
@@ -122,6 +129,7 @@ pub(crate) fn decode(
         planes: BTreeMap::new(),
         owners: BTreeMap::new(),
         dimension_parameters: Vec::new(),
+        sketch_owners: Vec::new(),
     };
     for (ordinal, record) in features.iter().enumerate() {
         let Some(feature_id) = record.get("id").and_then(Value::as_u64) else {
@@ -130,6 +138,15 @@ pub(crate) fn decode(
         walk.feature(ordinal, feature_id, record, outputs.get(&feature_id))?;
     }
     walk.parameters(params)?;
+    let sketch_owners = std::mem::take(&mut walk.sketch_owners);
+    let assembled = walk.assembly(
+        document,
+        &assembly::Owned {
+            bodies: components,
+            sketches: &sketch_owners,
+        },
+    )?;
+    outcome.losses.extend(assembled.losses);
     let tally = walk.tally;
     if !tally.native.is_empty() {
         let total: usize = tally.native.values().sum();
@@ -316,6 +333,10 @@ impl Walk<'_, '_> {
             return Ok(None);
         };
         let sketch_id = id("sketch", key);
+        self.sketch_owners.push((
+            sketch_id.clone(),
+            record.get("component").and_then(Value::as_u64).unwrap_or(0),
+        ));
         let frame = record
             .get("plane")
             .and_then(|plane| sketch::plane(plane, &self.scope, &self.planes, 0));
@@ -943,7 +964,11 @@ fn primitive(kind: &str, record: &Value, scope: &Scope) -> Option<Value> {
     )
 }
 
-/// A native operation of `kind` with the record's scalar fields.
+/// The longest list or record that a native operation keeps as text.
+const NATIVE_TEXT_LIMIT: usize = 1024;
+
+/// A native operation of `kind` with the record's scalar fields and its
+/// short lists.
 fn native(kind: &str, record: &Value) -> Value {
     let mut parameters = BTreeMap::new();
     if let Some(object) = record.as_object() {
@@ -954,7 +979,15 @@ fn native(kind: &str, record: &Value) -> Value {
             let text = match value {
                 Value::String(text) => text.clone(),
                 Value::Number(_) | Value::Bool(_) => value.to_string(),
-                _ => continue,
+                // A list or a record is kept as its text when it is short.
+                Value::Array(_) | Value::Object(_) => {
+                    let text = value.to_string();
+                    if text.len() > NATIVE_TEXT_LIMIT {
+                        continue;
+                    }
+                    text
+                }
+                Value::Null => continue,
             };
             parameters.insert(key.clone(), text);
         }

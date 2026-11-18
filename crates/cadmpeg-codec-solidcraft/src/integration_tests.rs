@@ -505,6 +505,109 @@ fn the_operation_families_carry_their_semantics() {
 }
 
 #[test]
+fn components_occurrences_and_joints_form_the_product_structure() {
+    let identity = json!([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]
+    ]);
+    let moved = json!([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [10.0, 20.0, 30.0, 1.0]
+    ]);
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Hinge",
+        "units": "mm",
+        "params": [],
+        "components": [
+            {"id": 1, "name": "Leaf", "parent": 0, "identification_color_index": 0},
+            {"id": 5, "name": "Pin", "parent": 1, "identification_color_index": 1}
+        ],
+        "occurrences": [
+            {"id": 2, "component": 1, "parent": 0, "name": "Leaf:1", "transform": identity, "grounded": true},
+            {"id": 3, "component": 1, "parent": 0, "name": "Leaf:2", "transform": moved, "grounded": false},
+            {"id": 6, "component": 5, "parent": 1, "name": "Pin:1", "transform": moved, "grounded": false}
+        ],
+        "assembly": {
+            "joints": [
+                {"id": 1, "name": "Hinge", "kind": "revolute", "a": {"occurrence": 2, "snap":
+                    {"type": "frame", "origin": [1.0, 2.0, 3.0], "x": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}},
+                 "b": {"occurrence": 3, "snap": {"type": "point", "point": [0.0, 0.0, 0.0]}},
+                 "values": [0.5], "limits": [[-1.0, 1.0]], "flip": false, "offset": 2.0,
+                 "offset_xy": [1.0, 0.0], "angle": 0.0},
+                {"id": 2, "name": "Pivot", "kind": "revolute", "a": {"occurrence": 2, "snap":
+                    {"type": "circle_center", "pick": [1.0, 37.0, 4.0]}},
+                 "b": {"occurrence": 3, "snap": {"type": "point", "point": [0.0, 0.0, 0.0]}},
+                 "values": [0.0], "limits": [null], "flip": true, "offset": 0.0, "offset_xy": [0.0, 0.0], "angle": 0.0}
+            ],
+            "links": [{"a": 1, "b": 2, "ratio": 1.0}]
+        },
+        "features": [
+            {"id": 7, "name": "Block", "suppressed": false, "type": "box", "component": 1,
+             "corner": [0, 0, 0], "length": "4", "width": "4", "height": "4", "operation": "new_body"}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let model = serde_json::to_value(&result.ir().model).unwrap();
+    let ids = |key: &str| -> Vec<String> {
+        model[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                row["id"]
+                    .as_str()
+                    .unwrap()
+                    .rsplit('#')
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect()
+    };
+    assert_eq!(ids("product_definitions"), ["0", "1", "5"]);
+    // The pin sits in a leaf with two occurrences, so it is placed twice.
+    assert_eq!(ids("occurrences"), ["2", "2/6", "3", "3/6", "root"]);
+    let pin = model["occurrences"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"].as_str().unwrap().ends_with("#3/6"))
+        .unwrap();
+    assert_eq!(
+        pin["parent"]["occurrence"],
+        "solidcraft:design:occurrence#3"
+    );
+    assert_eq!(pin["transform"][0], json!([1.0, 0.0, 0.0, 10.0]));
+    assert_eq!(pin["transform"][2], json!([0.0, 0.0, 1.0, 30.0]));
+    assert_eq!(
+        model["features"][0]["product_definition"],
+        "solidcraft:design:product#1"
+    );
+    // The first joint has frames; the second snaps to geometry.
+    assert_eq!(ids("assembly_joints"), ["1", "grounded%3A2"]);
+    let joint = &model["assembly_joints"][0]["operands"]["value"];
+    assert_eq!(joint["kind"]["kind"], "revolute");
+    assert_eq!(joint["kind"]["angular_limits"]["maximum"], 1.0);
+    assert_eq!(joint["frame_sense"], "opposed");
+    assert_eq!(
+        joint["connectors"][0]["frame"][1],
+        json!([1.0, 0.0, 0.0, 2.0])
+    );
+    assert_eq!(joint["offset_frames"][1][2][3], 2.0);
+    let codes = loss_codes(&bytes);
+    assert!(codes.contains(&"solidcraft/assembly.joint-unresolved".to_owned()));
+    assert!(codes.contains(&"solidcraft/assembly.links-undecoded".to_owned()));
+}
+
+#[test]
 fn body_and_face_looks_colour_the_cached_body() {
     let bytes = crate::test_support::cached_design_editing(|document| {
         document["appearances"] = json!({

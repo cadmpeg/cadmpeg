@@ -249,7 +249,33 @@ plus a half turn when `flip`), `radius`, `diameter`, and the circle,
 slot, arc, and offset dimensions. A `driven` dimension measures and does
 not constrain. Two curves that index one point share it.
 
-### 3.7 Appearances
+### 3.7 Components and joints
+
+The design is its root component, id 0. A `component` has an `id`, a `name`,
+and a `parent`, and is authored in its own frame. A feature, a sketch, and a
+model body belong to the component named by their `component` (0 when it is
+absent). An `occurrence` places a component inside the component its
+`parent` names: its `transform` is a column-major 4×4 matrix `m[column][row]`
+with the translation in `m[3]`, and its geometry stays in the component's
+frame, so two occurrences of one component share its bodies. A `grounded`
+occurrence does not move. The `assembly` section holds the `joints`, the
+`links` between them, and the motion `studies`.
+
+A joint mates the frame `a` of one occurrence to the frame `b` of another. A
+snap names a frame: `frame` (an `origin`, a `z` axis, and an `x` axis), or
+`point` (a point with an optional `z`, default +Z, and `x`). Frames of the
+other snaps (`face_center`, `circle_center`, `edge`, and the plane snaps)
+come from the model. By default the two z axes oppose, as two faces meet;
+`flip` makes them agree. `offset_xy` moves the frame of `a` along its x and
+y, `offset` moves the frame of `b` along its z, and `angle` turns it about
+z. `values` hold the current degrees of freedom (an angle for `revolute`, a
+distance for `slider`, an angle and a distance for `cylindrical`) and
+`limits` hold one range, or `null`, for each.
+
+The cache names every face of a model body in `names[k].faces`, in face
+order; the model body's `names` is the index `k`.
+
+### 3.8 Appearances
 
 `appearances.bodies` maps a body name to a look: `name`, `color` as
 eight-bit RGB, `opacity`, and optional physically based parameters.

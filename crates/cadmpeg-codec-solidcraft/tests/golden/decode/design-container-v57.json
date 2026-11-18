@@ -94,6 +94,7 @@
           "name": "Box1",
           "ordinal": 0,
           "outputs": [],
+          "product_definition": "solidcraft:design:product#0",
           "source_content": [],
           "source_properties": {},
           "source_tag": "box",
@@ -102,7 +103,45 @@
       ],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [],
+      "occurrences": [
+        {
+          "id": "solidcraft:design:occurrence#root",
+          "name": "Block",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "solidcraft:design:product#0",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
       "parameters": [
         {
           "dependencies": [],
@@ -125,7 +164,18 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "solidcraft:design:product#0",
+          "kind": "part",
+          "label": "Block",
+          "sketches": [],
+          "source_name": "Block",
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],

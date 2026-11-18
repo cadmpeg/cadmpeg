@@ -74,6 +74,10 @@ pub(crate) enum SolidcraftLossCode {
     SketchPlaneUnresolved,
     /// A sketch constraint has no neutral family.
     SketchConstraintNative,
+    /// A joint has no neutral form.
+    AssemblyJointUnresolved,
+    /// Joint links and motion studies were retained without decoding.
+    AssemblyLinksUndecoded,
 }
 
 impl SolidcraftLossCode {
@@ -106,6 +110,8 @@ impl SolidcraftLossCode {
         Self::SketchCurveUntyped,
         Self::SketchPlaneUnresolved,
         Self::SketchConstraintNative,
+        Self::AssemblyJointUnresolved,
+        Self::AssemblyLinksUndecoded,
     ];
 
     #[must_use]
@@ -138,6 +144,8 @@ impl SolidcraftLossCode {
             Self::SketchCurveUntyped => "history.sketch-curve-untyped",
             Self::SketchPlaneUnresolved => "history.sketch-plane-unresolved",
             Self::SketchConstraintNative => "history.sketch-constraint-native",
+            Self::AssemblyJointUnresolved => "assembly.joint-unresolved",
+            Self::AssemblyLinksUndecoded => "assembly.links-undecoded",
         }
     }
 
@@ -169,7 +177,9 @@ impl SolidcraftLossCode {
             | Self::FaceShared
             | Self::SketchCurveUntyped
             | Self::SketchPlaneUnresolved
-            | Self::SketchConstraintNative => Severity::Warning,
+            | Self::SketchConstraintNative
+            | Self::AssemblyJointUnresolved
+            | Self::AssemblyLinksUndecoded => Severity::Warning,
             Self::DocumentUnreadable => Severity::Error,
         }
     }
@@ -188,7 +198,9 @@ impl SolidcraftLossCode {
             | Self::SketchCurveUntyped
             | Self::SketchPlaneUnresolved
             | Self::SketchConstraintNative => LossTaxonomy::FeatureHistoryRetained,
-            Self::ParametersUndecoded
+            Self::AssemblyJointUnresolved => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::AssemblyLinksUndecoded
+            | Self::ParametersUndecoded
             | Self::DocumentSectionUndecoded
             | Self::EntryRetained
             | Self::DrawingUndecoded
@@ -260,6 +272,8 @@ mod tests {
                 "history.sketch-curve-untyped",
                 "history.sketch-plane-unresolved",
                 "history.sketch-constraint-native",
+                "assembly.joint-unresolved",
+                "assembly.links-undecoded",
             ]
         );
     }
