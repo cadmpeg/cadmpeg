@@ -528,10 +528,8 @@ pub(crate) mod design_parameter_wide_expression_trailer {
 pub(crate) mod design_parameter_compact_owned_expression_trailer {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 5;
-    /// Offset of `reserved_0` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_0: usize = 0;
-    /// Stated value of `reserved_0` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_0_VALUE: u8 = 0;
+    /// Offset of `opaque_flag` (`u8`). Spec §3.1.
+    pub(crate) const OPAQUE_FLAG: usize = 0;
     /// Offset of `driven` (`u8`). Spec §3.1.
     pub(crate) const DRIVEN: usize = 1;
     /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
@@ -6314,6 +6312,16 @@ pub(crate) mod modify_marker_one_prologue {
     pub(crate) const BODY_COUNT: usize = 36;
     /// Offset of `first_body_group` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_BODY_GROUP: usize = 40;
+}
+
+/// Byte offsets for the `legacy_extrude_group_tail_marker` record.
+///
+/// Spec §3.1. Record length 29 B.
+pub(crate) mod legacy_extrude_group_tail_marker {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_payload` (`bytes[18]`). Spec §3.1.
+    pub(crate) const ZERO_PAYLOAD: usize = 11;
 }
 
 /// Byte offsets for the `component_insert_identity_scope_compact` record.
