@@ -103,24 +103,31 @@ fn split_body_groups(tool_role: DesignOperandRole) -> [DesignConstructionOperand
 }
 
 fn split_body_face_tool() -> crate::records::topology::face::DesignFaceOperand {
+    split_body_face_tool_at(101, 1)
+}
+
+fn split_body_face_tool_at(
+    record_index: u32,
+    scope_ordinal: u32,
+) -> crate::records::topology::face::DesignFaceOperand {
     use crate::records::recipes::ConstructionRecipeKind;
     crate::records::topology::face::DesignFaceOperand::try_new(
         crate::records::topology::face::DesignFaceOperandDraft {
-            id: "f3d:Design/BulkStream.dat:face-operand#101".into(),
+            id: format!("f3d:Design/BulkStream.dat:face-operand#{record_index}"),
             scope_record_index: 77,
-            scope_reference_ordinal: 1,
+            scope_reference_ordinal: scope_ordinal,
             group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
                 group_record_index: 100,
-                group_member_ordinal: 0,
+                group_member_ordinal: scope_ordinal - 1,
             }),
-            record_index: 101,
+            record_index,
             byte_offset: 1200,
             class_tag: "297".to_owned().try_into().unwrap(),
             paired_byte_offset: 1250,
             paired_class_tag: "259".to_owned().try_into().unwrap(),
-            recipe_record_index: 104,
+            recipe_record_index: record_index + 3,
             recipe_record_byte_offset: 1300,
-            recipe_id: "f3d:Design/BulkStream.dat:recipe#104".into(),
+            recipe_id: format!("f3d:Design/BulkStream.dat:recipe#{}", record_index + 3),
             recipe_prefix_offset: 1311,
             recipe_prefix_bytes: Vec::new(),
             recipe_references: Vec::new(),
@@ -136,7 +143,7 @@ fn split_body_face_tool() -> crate::records::topology::face::DesignFaceOperand {
             historical_support_contexts: Vec::new(),
             resolved_face_slots: Vec::new(),
             resolved_active_face: None,
-            next_record_index: 105,
+            next_record_index: record_index + 4,
             next_byte_offset: 1411,
         },
     )
@@ -147,7 +154,7 @@ fn split_body_face_tool() -> crate::records::topology::face::DesignFaceOperand {
 fn split_body_path_tool_keeps_group_id() {
     let scope = split_body_scope();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
-    let definition = project_split(&scope, &[], &groups, &[], &[], &[])
+    let definition = project_split(&scope, &[], &groups, &[], &[], &[], &mut Vec::new())
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -163,15 +170,103 @@ fn split_body_face_tool_keeps_native_id() {
     let scope = split_body_scope();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
     let tool = split_body_face_tool();
-    let definition = project_split(&scope, &[], &groups, &[], std::slice::from_ref(&tool), &[])
-        .unwrap()
-        .unwrap();
+    let definition = project_split(
+        &scope,
+        &[],
+        &groups,
+        &[],
+        std::slice::from_ref(&tool),
+        &[],
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(ref native)), ..
         }) if native == &tool.id
     ));
+}
+
+#[test]
+fn split_body_face_tool_group_resolves_every_member_or_retains_the_group() {
+    use cadmpeg_ir::features::SplitBodyTool;
+    let mut scope = split_body_scope_referencing(vec![100, 101, 201, 102, 103]);
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let groups = [
+        group(77, 0, 100, vec![101, 201], DesignOperandRole::ROLE_0X9),
+        group(77, 3, 102, vec![103], DesignOperandRole::BODIES_A),
+    ];
+    let mut operands = [split_body_face_tool(), split_body_face_tool_at(201, 2)];
+    let slots = [42, 11];
+    for (operand, slot) in operands.iter_mut().zip(slots) {
+        let face = cadmpeg_ir::ids::FaceId::mint(format!("f3d:model:face#{slot}")).unwrap();
+        operand.candidate_faces = vec![face.clone()];
+        operand.preceding_candidate_faces = vec![face];
+    }
+    let mut losses = Vec::new();
+    let definition = project_split(&scope, &[], &groups, &[], &operands, &[], &mut losses)
+        .unwrap()
+        .unwrap();
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let prefix = crate::ids::feature_input_prefix(&feature, 7);
+    let expected = slots.map(|slot| crate::ids::history_input_face_id(&prefix, slot));
+    assert!(matches!(
+        split_body_tool(&definition),
+        SplitBodyTool::Faces(FaceSelection::Historical { faces, native, .. })
+            if faces.as_slice() == expected.as_slice() && native.as_str() == groups[0].id.as_str()
+    ));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureSplitBodyFaceToolGroupAssumed.kind()
+    );
+
+    operands[1].preceding_candidate_faces.clear();
+    let definition = project_split(&scope, &[], &groups, &[], &operands, &[], &mut Vec::new())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        split_body_tool(&definition),
+        &SplitBodyTool::Faces(FaceSelection::Native(groups[0].id.clone()))
+    );
+    assert!(project_split(
+        &scope,
+        &[],
+        &groups,
+        &[],
+        &operands[..1],
+        &[],
+        &mut Vec::new()
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn split_body_admits_zero_terminal_face_tool_with_an_assumption() {
+    let scope = split_body_scope();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
+    let mut tool = split_body_face_tool();
+    tool.recipe_program = vec![0, 0];
+    let mut losses = Vec::new();
+    let definition = project_split(&scope, &[], &groups, &[], &[tool], &[], &mut losses)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        split_body_tool(&definition),
+        &cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(groups[0].id.clone()))
+    );
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureSplitBodyFaceToolGroupAssumed.kind()
+    );
 }
 
 #[test]
@@ -186,9 +281,17 @@ fn split_body_historical_face_tool_keeps_native_id() {
     let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
     let mut tool = split_body_face_tool();
     tool.resolved_face_slots = vec![42];
-    let definition = project_split(&scope, &[], &groups, &[], std::slice::from_ref(&tool), &[])
-        .unwrap()
-        .unwrap();
+    let definition = project_split(
+        &scope,
+        &[],
+        &groups,
+        &[],
+        std::slice::from_ref(&tool),
+        &[],
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
@@ -1005,6 +1108,40 @@ fn split_body_tool(definition: &FeatureDefinition) -> &cadmpeg_ir::features::Spl
 }
 
 #[test]
+fn split_body_projects_tool_extension_independently_of_native_tool_selection() {
+    let mut scope = split_body_scope();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
+    for extend_tool in [None, Some(false), Some(true)] {
+        let crate::records::feature::scope::DesignScopePayloadMut::Split(split) =
+            scope.payload_mut()
+        else {
+            panic!("Split scope payload");
+        };
+        split.extend_tool =
+            extend_tool.map(|value| crate::records::identity::Located { value, offset: 25 });
+        let definition = project_split(&scope, &[], &groups, &[], &[], &[], &mut Vec::new())
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            split_body_tool(&definition),
+            &cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(
+                groups[0].id.clone()
+            )),
+        );
+        let wire = serde_json::to_value(&definition).unwrap();
+        let operation = &wire["value"];
+        assert_eq!(
+            operation["value"].get("extend_tool"),
+            extend_tool.map(serde_json::Value::Bool).as_ref(),
+        );
+        assert_eq!(
+            serde_json::from_value::<FeatureDefinition>(wire).unwrap(),
+            definition
+        );
+    }
+}
+
+#[test]
 fn split_body_work_plane_tool_selects_the_plane_feature() {
     let scope = split_body_scope();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
@@ -1016,6 +1153,7 @@ fn split_body_work_plane_tool_selects_the_plane_feature() {
         &[compact_plane_selection(101, 0, 600)],
         &[],
         &[],
+        &mut Vec::new(),
     )
     .unwrap()
     .unwrap();
@@ -1044,6 +1182,7 @@ fn split_body_tool_without_exactly_one_work_plane_keeps_the_group() {
         &[compact_plane_selection(101, 0, 601)],
         &[],
         &[],
+        &mut Vec::new(),
     )
     .unwrap()
     .unwrap();
@@ -1059,9 +1198,17 @@ fn split_body_tool_without_exactly_one_work_plane_keeps_the_group() {
         compact_plane_selection(101, 0, 600),
         compact_plane_selection(102, 1, 700),
     ];
-    let definition = project_split(&scope, &planes, &groups, &selections, &[], &[])
-        .unwrap()
-        .unwrap();
+    let definition = project_split(
+        &scope,
+        &planes,
+        &groups,
+        &selections,
+        &[],
+        &[],
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(split_body_tool(&definition), &native(&groups[0]));
 }
 
@@ -1468,6 +1615,7 @@ fn split_body_tool_body_selects_the_resolved_body_faces() {
         &[],
         &[],
         &[split_body_tool_body(true)],
+        &mut Vec::new(),
     )
     .unwrap()
     .unwrap();
@@ -1492,9 +1640,17 @@ fn split_body_tool_body_selects_the_resolved_body_faces() {
         group(77, 0, 100, vec![101, 102], DesignOperandRole::ROLE_0X21),
         group(77, 3, 103, vec![104], DesignOperandRole::BODIES_A),
     ];
-    let definition = project_split(&scope, &[], &mixed, &[], &[], &[split_body_tool_body(true)])
-        .unwrap()
-        .unwrap();
+    let definition = project_split(
+        &scope,
+        &[],
+        &mixed,
+        &[],
+        &[],
+        &[split_body_tool_body(true)],
+        &mut Vec::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(
         split_body_tool(&definition),
         &cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(mixed[0].id.clone()))
@@ -1508,6 +1664,7 @@ fn split_body_tool_body_selects_the_resolved_body_faces() {
         &[],
         &[],
         &[split_body_tool_body(false)],
+        &mut Vec::new(),
     )
     .unwrap()
     .unwrap();

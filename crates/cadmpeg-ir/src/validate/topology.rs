@@ -3715,7 +3715,7 @@ fn check_feature_references(
                     BoundaryFillCell::Recorded { .. } => None,
                 }));
             }
-            FeatureOperation::SplitBody { targets, tool } => {
+            FeatureOperation::SplitBody { targets, tool, .. } => {
                 body_selections.push(targets);
                 match tool {
                     SplitBodyTool::Faces(faces) => face_selections.push(faces),

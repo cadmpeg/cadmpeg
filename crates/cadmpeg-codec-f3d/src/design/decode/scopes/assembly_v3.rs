@@ -4,6 +4,7 @@
 use super::assembly_operand_paths::{exact_assembly_operand_paths, StreamTypes};
 use super::shared_frames::{exact_indexed_header_at, rigid_transform_at};
 use crate::bytes::{local_reference_target, lp_ascii_filtered_view};
+use crate::design::decode::joint_motion::JOINT_TYPE_GUID;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::assembly_version_five_scope as five;
@@ -23,8 +24,6 @@ use cadmpeg_core::CodecError;
 pub(crate) const TYPE_GUID: &str = "8DFDD543-F823-43AA-BDAF-C638E023F0A0";
 /// UTF-16 code units of the English family name that the span formula counts.
 const ASSEMBLE_NAME_UNITS: usize = 8;
-/// Type GUID of the referenced joint record.
-const JOINT_TYPE_GUID: &str = "7F5A0426-1D2A-4DC4-9F06-58631F69D2F5";
 const ADDITIONAL_TAIL_TYPE_GUID: &str = "074F9459-89C2-4B7D-8AB4-DCE67AE944FE";
 
 pub(crate) fn registered(scope: &DesignParameterScope, types: &StreamTypes<'_>) -> bool {

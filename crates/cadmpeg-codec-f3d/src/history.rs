@@ -1652,7 +1652,7 @@ pub(crate) fn bind_feature_outputs(
                 }
             }
         }
-        let split_body_plane = if let FeatureOperation::SplitBody { targets, tool } = op_ref {
+        let split_body_plane = if let FeatureOperation::SplitBody { targets, tool, .. } = op_ref {
             resolve_split_tool_plane(
                 tool,
                 &datum_plane_frames,
