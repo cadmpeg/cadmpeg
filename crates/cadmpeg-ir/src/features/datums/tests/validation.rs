@@ -151,20 +151,12 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
             .into_iter()
             .filter(|key| feature_scope == Some(*key) || parameter_scope == Some(*key))
         {
-            ir.model
-                .product_definitions
-                .push(crate::products::ProductDefinition {
-                    id: id(key),
-                    kind: crate::products::ProductDefinitionKind::Part,
-                    source_name: None,
-                    label: None,
-                    description: None,
-                    part_number: None,
-                    bom_properties: std::collections::BTreeMap::new(),
-                    bodies: Vec::new(),
-                    sketches: Vec::default(),
-                    native_ref: None,
-                });
+            let mut definition = crate::products::ProductDefinition::new(
+                id(key),
+                crate::products::Storage::Embedded,
+            );
+            definition.kind = Some(crate::products::ProductDefinitionKind::Part);
+            ir.model.product_definitions.push(definition);
         }
         ir.model.parameters.push(crate::features::DesignParameter {
             product_definition: parameter_scope.map(id),

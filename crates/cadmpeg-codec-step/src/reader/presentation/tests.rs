@@ -1708,7 +1708,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     use cadmpeg_ir::ids::{LayerId, OccurrenceId, PmiId, ProductDefinitionId};
     use cadmpeg_ir::pmi::{PmiAnnotation, PmiDefinition};
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
-    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition};
+    use cadmpeg_ir::products::{
+        ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
+    };
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     let body = ir.geometry.bodies[0].id.clone();
@@ -1716,75 +1718,34 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         ProductDefinitionId::mint("test:model:product#parent").expect("identity grammar");
     let child_product =
         ProductDefinitionId::mint("test:model:product#child").expect("identity grammar");
-    ir.model.product_definitions.extend([
-        ProductDefinition {
-            sketches: Vec::default(),
-
-            tessellations: Vec::new(),
-            id: parent_product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: Some("Parent assembly".into()),
-            label: Some("Parent assembly".into()),
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: Vec::new(),
-            native_ref: None,
-        },
-        ProductDefinition {
-            sketches: Vec::default(),
-
-            tessellations: Vec::new(),
-            id: child_product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: Some("Child part".into()),
-            label: Some("Child part".into()),
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: vec![body],
-            native_ref: None,
-        },
-    ]);
-    let root = OccurrenceId::mint("test:model:occurrence#root").expect("identity grammar");
     let child = OccurrenceId::mint("test:model:occurrence#child").expect("identity grammar");
-    ir.model.occurrences.extend([
-        Occurrence {
-            id: root.clone(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: parent_product.clone(),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform: Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some("Root assembly".into()),
-            visible: None,
-            link: None,
-            native_ref: None,
-        },
-        Occurrence {
-            id: child.clone(),
-            prototype: cadmpeg_ir::products::PrototypeReference::Local {
-                definition: child_product,
-            },
-            parent: OccurrenceParent::Occurrence { occurrence: root },
-            ordinal: 0,
-            transform: Transform::affine([
+    let mut parent = ProductDefinition::root(parent_product.clone(), ExternalDocument::default());
+    parent.kind = Some(ProductDefinitionKind::Part);
+    parent.source_name = Some("Parent assembly".into());
+    parent.label = Some("Parent assembly".into());
+    parent.occurrences = vec![child.clone()];
+    let mut child_definition = ProductDefinition::new(child_product.clone(), Storage::Embedded);
+    child_definition.kind = Some(ProductDefinitionKind::Part);
+    child_definition.source_name = Some("Child part".into());
+    child_definition.label = Some("Child part".into());
+    child_definition.bodies = vec![body];
+    ir.model
+        .product_definitions
+        .extend([parent, child_definition]);
+    let mut child_occurrence = Occurrence::new(
+        child.clone(),
+        child_product,
+        Some(
+            Transform::affine([
                 [1.0, 0.0, 0.0, 25.0],
                 [0.0, 1.0, 0.0, 0.0],
                 [0.0, 0.0, 1.0, 0.0],
             ])
             .expect("affine transform"),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: Some("Child occurrence".into()),
-            visible: None,
-            link: None,
-            native_ref: None,
-        },
-    ]);
+        ),
+    );
+    child_occurrence.name = Some("Child occurrence".into());
+    ir.model.occurrences.push(child_occurrence);
     let annotation = PmiId::mint("test:model:pmi#note").expect("identity grammar");
     ir.model.pmi.push(PmiAnnotation {
         id: annotation.clone(),
