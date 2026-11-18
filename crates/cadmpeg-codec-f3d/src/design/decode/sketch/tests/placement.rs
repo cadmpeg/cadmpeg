@@ -372,10 +372,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&[0, 1]);
-    bytes.resize(
-        head_at + crate::design::decode::sketch::MEMBER_RUN_HEAD_FRAME,
-        0,
-    );
+    bytes.resize(head_at + crate::layout::sketch_explicit_member_head::LEN, 0);
 
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
@@ -1601,4 +1598,50 @@ fn typed_profile_compact_sketch_head_supplies_identity_placement() {
     let mut invalid = bytes.clone();
     invalid.insert(head + 74, 0);
     assert!(parse(&invalid).is_none());
+}
+
+#[test]
+fn scope_placement_accepts_typed_container_and_frame_references() {
+    const EPS_PROFILE_SEARCH: f64 = 1.0e-6;
+    let entity = member_run_test_entity();
+    let mut bytes = Vec::new();
+    typed_sketch_reference(&mut bytes, 173);
+    typed_sketch_reference(&mut bytes, 185);
+    let scope_end = bytes.len();
+    crate::test_support::indexed_header(&mut bytes, *b"356", 185);
+    bytes.resize(scope_end + 55, 0);
+    let transform = [
+        [0.0f64, 0.0, 1.0, 12.0],
+        [1.0, 0.0, 0.0, 34.0],
+        [0.0, 1.0, 0.0, 56.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.resize(scope_end + 329, 0);
+    crate::test_support::indexed_header(&mut bytes, *b"259", 185);
+    let parse = |frame: &[u8]| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        super::super::parse_scope_sketch_placement(&bytes, frame, 177, &entity.entity_id, &records)
+    };
+    let mut placement = parse(&bytes[..scope_end]).expect("typed scope placement");
+    assert_eq!(placement.scope_record_index, Some(177));
+    assert_eq!(placement.entity_id, entity.entity_id);
+    assert_eq!(*placement.transform(), transform);
+    placement.id = format!("f3d:Design/BulkStream.dat:design-sketch-placement#{scope_end}");
+    let (sketches, _) = crate::test_support::with_decode_context(|ctx| {
+        project_sketch_design(
+            ctx,
+            &SketchProjectInputs::new(&[placement], &[], &[], &[], &[]),
+            EPS_PROFILE_SEARCH,
+        )
+    })
+    .unwrap()
+    .into_tuple();
+    let (origin, normal, u_axis) = sketches[0].resolved_placement().expect("resolved plane");
+    assert_eq!(origin.get(), Point3::new(120.0, 340.0, 560.0));
+    assert_eq!(normal.get(), Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(u_axis.get(), Vector3::new(0.0, 1.0, 0.0));
+    assert!(parse(&bytes[..scope_end - 1]).is_none());
 }

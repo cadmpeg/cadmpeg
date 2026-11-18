@@ -32699,7 +32699,7 @@ name = "sketch_null_explicit_member_head"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
 kind = "byte"
 section = "3.1"
-anchor = "A null-reference explicit head record is 152 bytes"
+anchor = "The explicit head record stores its u32 record index at offset 7"
 size = 152
 note = "Offsets are relative to the indexed head-placement header."
 
@@ -32713,7 +32713,7 @@ name = "zero_run"
 offset = 11
 type = "bytes[11]"
 source = "spec"
-anchor = "Its indexed header is followed by eleven zero bytes"
+anchor = "eleven zero bytes, the row-major 4×4 f64 local-to-model placement at offset 22"
 value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 [[record.field]]
@@ -32721,14 +32721,14 @@ name = "transform"
 offset = 22
 type = "f64[16]"
 source = "spec"
-anchor = "sixteen row-major f64 transform values"
+anchor = "the row-major 4×4 f64 local-to-model placement at offset 22"
 
 [[record.field]]
 name = "padding"
 offset = 150
 type = "u8"
 source = "spec"
-anchor = "one zero byte, and a one-byte null closing reference"
+anchor = "then `00` plus either a one-byte null closing reference (152 bytes)"
 value = 0
 
 [[record.field]]
@@ -32738,6 +32738,94 @@ type = "u8"
 source = "spec"
 anchor = "one-byte null closing reference"
 value = 0
+
+[[record]]
+name = "sketch_explicit_member_head"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The explicit head record stores its u32 record index at offset 7"
+size = 162
+note = "Offsets are relative to the indexed head-placement header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes the placement fields."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven zero bytes, the row-major 4×4 f64 local-to-model placement at offset 22"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "transform"
+offset = 22
+type = "f64[16]"
+source = "spec"
+anchor = "the row-major 4×4 f64 local-to-model placement at offset 22"
+
+[[record.field]]
+name = "padding"
+offset = 150
+type = "u8"
+source = "spec"
+anchor = "a marked closing reference that starts with `01` (162 bytes, or 202 bytes with an inline type GUID)"
+value = 0
+
+[[record.field]]
+name = "closing_reference"
+offset = 151
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked closing reference that starts with `01` (162 bytes, or 202 bytes with an inline type GUID)"
+
+[[record]]
+name = "sketch_typed_explicit_member_head"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The explicit head record stores its u32 record index at offset 7"
+size = 202
+note = "Offsets are relative to the indexed head-placement header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes the placement fields."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven zero bytes, the row-major 4×4 f64 local-to-model placement at offset 22"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "transform"
+offset = 22
+type = "f64[16]"
+source = "spec"
+anchor = "the row-major 4×4 f64 local-to-model placement at offset 22"
+
+[[record.field]]
+name = "padding"
+offset = 150
+type = "u8"
+source = "spec"
+anchor = "a marked closing reference that starts with `01` (162 bytes, or 202 bytes with an inline type GUID)"
+value = 0
+
+[[record.field]]
+name = "closing_reference"
+offset = 151
+type = "bytes[51]"
+source = "spec"
+anchor = "a marked closing reference that starts with `01` (162 bytes, or 202 bytes with an inline type GUID)"
 
 [[record]]
 name = "sketch_typed_compact_member_head"

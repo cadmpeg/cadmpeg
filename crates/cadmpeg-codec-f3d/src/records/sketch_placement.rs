@@ -3,8 +3,10 @@
 
 use super::identity::{DesignAffineTransform, DesignEntityId, IDENTITY_MATRIX};
 use super::references::DesignClassTag;
+use crate::layout::sketch_explicit_member_head as marked_head;
 use crate::layout::sketch_null_explicit_member_head as null_head;
 use crate::layout::sketch_typed_compact_member_head as typed_compact;
+use crate::layout::sketch_typed_explicit_member_head as typed_head;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 
@@ -299,9 +301,9 @@ impl DesignSketchFrame {
                 typed_reference, ..
             } => {
                 if typed_reference {
-                    202
+                    cadmpeg_core::decode::u64_from_index(typed_head::LEN)
                 } else {
-                    162
+                    cadmpeg_core::decode::u64_from_index(marked_head::LEN)
                 }
             }
         }
@@ -335,10 +337,16 @@ impl DesignSketchFrame {
             }
             DesignSketchFrameForm::ScopeExplicit(_) => 55,
             DesignSketchFrameForm::ScopeGenesisExplicit(_) => 66,
-            DesignSketchFrameForm::MemberNullExplicit { .. }
-            | DesignSketchFrameForm::MemberExplicit { .. } => {
+            DesignSketchFrameForm::MemberNullExplicit { .. } => {
                 cadmpeg_core::decode::u64_from_index(null_head::TRANSFORM)
             }
+            DesignSketchFrameForm::MemberExplicit {
+                typed_reference, ..
+            } => cadmpeg_core::decode::u64_from_index(if typed_reference {
+                typed_head::TRANSFORM
+            } else {
+                marked_head::TRANSFORM
+            }),
         };
         Some(self.byte_offset + relative)
     }

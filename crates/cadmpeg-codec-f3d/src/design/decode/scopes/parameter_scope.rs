@@ -302,29 +302,16 @@ pub(crate) fn decode_parameter_scopes(
                 let frame = start
                     .zip(end)
                     .and_then(|(start, end)| bytes.get(start..end));
-                let mut unique_match = None;
-                let mut multiple_matches = false;
-                if let Some(frame) = frame {
-                    let first_at = first_marked_reference_offsets(frame);
-                    for entity in entities {
-                        if native_stream(&entity.id) != Some(stream.as_str())
-                            || !entity.in_sketch_module()
-                            || entity.entity_id.suffix() > u64::from(u32::MAX)
-                        {
-                            continue;
-                        }
-                        let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) else {
-                            continue;
-                        };
-                        if let Some(at) = first_at.get(&suffix) {
-                            if unique_match.replace((entity, at + 1)).is_some() {
-                                multiple_matches = true;
-                            }
-                        }
-                    }
-                }
-                if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
-                {
+                if let Some((entity, relative_offset)) = frame.and_then(|frame| {
+                    sketch_scope_entity(
+                        bytes,
+                        frame,
+                        scope.record_index,
+                        &stream,
+                        entities,
+                        &records,
+                    )
+                }) {
                     let Some(entity_reference_offset) = scope
                         .byte_offset()
                         .checked_add(u64_from_index(relative_offset))
@@ -906,6 +893,61 @@ pub(crate) fn decode_parameter_scopes(
         losses,
         work_plane_inferred_axes,
     })
+}
+
+fn sketch_scope_entity<'a>(
+    bytes: &[u8],
+    frame: &[u8],
+    scope_record_index: u32,
+    stream: &str,
+    entities: &'a [crate::records::entity_header::DesignEntityHeader],
+    records: &IndexedRecordOffsets,
+) -> Option<(&'a crate::records::entity_header::DesignEntityHeader, usize)> {
+    let first_at = first_marked_reference_offsets(frame);
+    let candidates = entities
+        .iter()
+        .filter_map(|entity| {
+            if native_stream(&entity.id) != Some(stream) || !entity.in_sketch_module() {
+                return None;
+            }
+            let suffix = u32::try_from(entity.entity_id.suffix()).ok()?;
+            Some((entity, *first_at.get(&suffix)?))
+        })
+        .collect::<Vec<_>>();
+    if let [(entity, at)] = candidates.as_slice() {
+        return Some((entity, at + 1));
+    }
+    let (entity, _) = candidates.first()?;
+    if let Some(placement) = crate::design::decode::sketch::parse_scope_sketch_placement(
+        bytes,
+        frame,
+        scope_record_index,
+        &entity.entity_id,
+        records,
+    ) {
+        let start = usize::try_from(placement.byte_offset()).ok()?;
+        let end = usize::try_from(placement.paired_byte_offset()).ok()?;
+        let placement_references = first_marked_reference_offsets(bytes.get(start..end)?);
+        let mut shared = candidates.iter().copied().filter(|(entity, _)| {
+            u32::try_from(entity.entity_id.suffix())
+                .ok()
+                .is_some_and(|suffix| placement_references.contains_key(&suffix))
+        });
+        if let (Some((entity, at)), None) = (shared.next(), shared.next()) {
+            return Some((entity, at + 1));
+        }
+    }
+    let mut plain = candidates.into_iter().filter_map(|(entity, _)| {
+        let at = memchr::memchr_iter(1, frame).find(|at| {
+            crate::bytes::local_reference_target(frame, *at, false).map(u64::from)
+                == Some(entity.entity_id.suffix())
+        })?;
+        Some((entity, at))
+    });
+    match (plain.next(), plain.next()) {
+        (Some((entity, at)), None) => Some((entity, at + 1)),
+        _ => None,
+    }
 }
 
 fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {

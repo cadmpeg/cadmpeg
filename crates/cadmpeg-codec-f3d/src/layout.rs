@@ -9118,17 +9118,51 @@ pub(crate) mod sketch_null_explicit_member_head {
     pub(crate) const LEN: usize = 152;
     /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
     pub(crate) const ZERO_RUN: usize = 11;
-    /// Stated value of `zero_run` (`bytes[11]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_VALUE: [u8; 11] = [
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
     /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
     pub(crate) const TRANSFORM: usize = 22;
     /// Offset of `padding` (`u8`). Spec §3.1.
     pub(crate) const PADDING: usize = 150;
-    /// Stated value of `padding` (`u8`). Spec §3.1.
-    pub(crate) const PADDING_VALUE: u8 = 0;
     /// Offset of `closing_reference` (`u8`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 151;
+}
+
+/// Byte offsets for the `sketch_explicit_member_head` record.
+///
+/// Spec §3.1. Record length 162 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_explicit_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 162;
+    /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 22;
+    /// Offset of `padding` (`u8`). Spec §3.1.
+    pub(crate) const PADDING: usize = 150;
+    /// Offset of `closing_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 151;
+}
+
+/// Byte offsets for the `sketch_typed_explicit_member_head` record.
+///
+/// Spec §3.1. Record length 202 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_typed_explicit_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 202;
+    /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 22;
+    /// Offset of `padding` (`u8`). Spec §3.1.
+    pub(crate) const PADDING: usize = 150;
+    /// Offset of `closing_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const CLOSING_REFERENCE: usize = 151;
 }
 
