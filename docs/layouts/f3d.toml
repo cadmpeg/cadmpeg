@@ -53,6 +53,14 @@ Records `thread_extended_standard_trailer`, `thread_extended_compact_trailer`: O
 Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `extended_prefixed_marked_reference_box_prefix`: Scope-relative prefix through the ordered reference count.
 """
 
+[[type]]
+name = "base_feature_inline_typed_body_reference"
+bytes = 51
+endianness = "little"
+note = "Marker, u64 record index, LP-ASCII Body type GUID of 36 bytes, and two zero bytes."
+section = "3.1"
+anchor = "The 51-byte body reference stores marker"
+
 [[record]]
 name = "named_parameter_scope_tail"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"
