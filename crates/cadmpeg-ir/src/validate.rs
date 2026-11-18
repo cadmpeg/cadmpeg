@@ -512,6 +512,7 @@ mod tests {
                     1,
                     Vec::new(),
                     FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                        extend_tool: None,
                         targets: BodySelection::Unresolved,
                         tool: SplitBodyTool::Faces(FaceSelection::Unresolved),
                     }),
@@ -521,6 +522,7 @@ mod tests {
                     2,
                     vec![plane.clone(), other.clone()],
                     FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                        extend_tool: None,
                         targets: BodySelection::Unresolved,
                         tool: SplitBodyTool::Plane { plane: tool },
                     }),
@@ -574,6 +576,7 @@ mod tests {
                     1,
                     Vec::new(),
                     FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                        extend_tool: None,
                         targets: BodySelection::Unresolved,
                         tool: SplitBodyTool::Faces(FaceSelection::Unresolved),
                     }),

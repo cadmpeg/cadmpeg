@@ -75,6 +75,7 @@ fn scope_with(
                     side_extent_discriminator_offsets: [177, 190],
                     first_side_target_ordinal: None,
                     distance_tail: None,
+                    opaque_distance_word: None,
                     extent,
                     direction_face_extend_offsets: [132, 136],
                     direction_reversed: false,
@@ -474,6 +475,35 @@ fn selected_face_start_read_as_offset_plane_reports_the_absent_start_group() {
         code
     )
     .is_empty());
+}
+
+#[test]
+fn group_free_extrude_start_reports_the_unresolved_face() {
+    let code = F3dLossCode::FeatureExtrudeStartFaceUnresolved;
+    let native_code = F3dLossCode::FeatureFaceSelectionNative;
+    let native = native_with(scope(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::FromFace,
+    ));
+    let start = |face| serde_json::json!({"kind": "from_face", "face": face, "offset": -5.0});
+    let unresolved = definition(
+        SCOPE_ID,
+        start(serde_json::json!({"kind": "unresolved"})),
+        one_sided(),
+    );
+    assert_eq!(notes(&native, unresolved.clone(), code).len(), 1);
+    assert!(notes(&native, unresolved, native_code).is_empty());
+
+    let native_face = definition(
+        SCOPE_ID,
+        start(serde_json::json!({
+            "kind": "native",
+            "value": format!("{STREAM}:operand-group#13")
+        })),
+        one_sided(),
+    );
+    assert!(notes(&native, native_face.clone(), code).is_empty());
+    assert_eq!(notes(&native, native_face, native_code).len(), 1);
 }
 
 #[test]
