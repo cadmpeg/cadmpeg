@@ -147,11 +147,17 @@ fn f3z_form_evidence_survives_shared_and_distinct_occurrences() {
         .collect::<Vec<_>>();
     assert_eq!(forms.len(), 2);
     let mut definitions = std::collections::BTreeMap::new();
-    for occurrence in &decoded.ir().model.occurrences {
-        let cadmpeg_ir::products::PrototypeReference::Local { definition } = &occurrence.prototype
-        else {
-            panic!("local prototype");
-        };
+    let model = &decoded.ir().model;
+    for occurrence in &model.occurrences {
+        let definition = &occurrence.prototype;
+        assert!(
+            model
+                .product_definitions
+                .iter()
+                .any(|row| &row.id == definition
+                    && !matches!(row.storage, cadmpeg_ir::products::Storage::External(_))),
+            "local prototype"
+        );
         *definitions.entry(definition).or_insert(0usize) += 1;
     }
     assert_eq!(definitions.len(), 2);

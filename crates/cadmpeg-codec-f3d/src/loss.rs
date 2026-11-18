@@ -969,6 +969,12 @@ pub(crate) enum F3dLossCode {
     /// every definition-local pose agrees. The assignment is an inference;
     /// the bytes do not store it.
     LocalOccurrencePathPoseInferred,
+    /// A nested occurrence that only some placements of its definition hold
+    /// is owned by the definition, so every placement shows it.
+    PlacementChildrenDiffer,
+    /// A reference that named one placed instance of a nested occurrence,
+    /// whose definition is placed more than once, names the occurrence.
+    InstanceReferenceShared,
     /// External occurrence instances take the pose their contained
     /// occurrences' component-path carriers store; the placement matrix stays
     /// native.
@@ -1717,6 +1723,8 @@ impl F3dLossCode {
         Self::LocalOccurrencePathPoseUnresolved,
         Self::LocalOccurrencePathPoseDisagrees,
         Self::LocalOccurrencePathPoseInferred,
+        Self::PlacementChildrenDiffer,
+        Self::InstanceReferenceShared,
         Self::XrefContainedPose,
         Self::XrefContainedPoseDisagrees,
         Self::XrefContainedPoseNative,
@@ -2720,6 +2728,8 @@ impl F3dLossCode {
                 "assembly.local-occurrence-path-pose-disagrees"
             }
             Self::LocalOccurrencePathPoseInferred => "assembly.local-occurrence-path-pose-inferred",
+            Self::PlacementChildrenDiffer => "assembly.placement-children-differ",
+            Self::InstanceReferenceShared => "assembly.instance-reference-shared",
             Self::XrefContainedPose => "xref.contained-pose",
             Self::XrefContainedPoseDisagrees => "xref.contained-pose-disagrees",
             Self::XrefContainedPoseNative => "xref.contained-pose-native",
@@ -3428,6 +3438,8 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseUnresolved
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
+            | Self::PlacementChildrenDiffer
+            | Self::InstanceReferenceShared
             | Self::XrefContainedPoseDisagrees
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefPlacementMetadataMissing
@@ -3583,6 +3595,8 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseUnresolved
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
+            | Self::PlacementChildrenDiffer
+            | Self::InstanceReferenceShared
             | Self::XrefContainedPose
             | Self::XrefContainedPoseDisagrees
             | Self::XrefContainedPoseNative
@@ -4831,6 +4845,8 @@ mod tests {
                 "assembly.local-occurrence-path-pose-unresolved",
                 "assembly.local-occurrence-path-pose-disagrees",
                 "assembly.local-occurrence-path-pose-inferred",
+                "assembly.placement-children-differ",
+                "assembly.instance-reference-shared",
                 "xref.contained-pose",
                 "xref.contained-pose-disagrees",
                 "xref.contained-pose-native",

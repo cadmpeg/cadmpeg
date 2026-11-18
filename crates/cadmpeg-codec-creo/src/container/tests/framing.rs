@@ -105,36 +105,14 @@ fn scan_decodes_length_prefixed_native_model_name() {
     assert_eq!(product.part_number.as_deref(), Some("widget.prt "));
     assert_eq!(product.label.as_deref(), Some("widget.prt "));
     assert!(product.bodies.is_empty());
-    let [occurrence] = result.ir().model.occurrences.as_slice() else {
-        panic!("one root occurrence");
-    };
-    assert!(matches!(
-        &occurrence.prototype,
-        cadmpeg_ir::products::PrototypeReference::Local { definition }
-            if definition == &product.id
-    ));
-    assert!(matches!(
-        occurrence.parent,
-        cadmpeg_ir::products::OccurrenceParent::Root {}
-    ));
-    assert_eq!(
-        occurrence.transform,
-        cadmpeg_ir::transform::Transform::identity()
-    );
+    assert!(result.ir().model.occurrences.is_empty());
+    assert!(product.is_root());
     assert_annotation(
         &result.source_fidelity().annotations,
         product.id.as_str(),
         "creo:archive_header",
         cadmpeg_core::decode::u64_from_index(model_name_offset),
         "part_product",
-        Exactness::Derived,
-    );
-    assert_annotation(
-        &result.source_fidelity().annotations,
-        occurrence.id.as_str(),
-        "creo:archive_header",
-        cadmpeg_core::decode::u64_from_index(model_name_offset),
-        "part_product_occurrence",
         Exactness::Derived,
     );
 }

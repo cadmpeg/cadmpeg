@@ -1756,10 +1756,6 @@ impl CopyOnChangePolicy {
     pub(crate) fn as_str(&self) -> &str {
         &self.raw
     }
-
-    pub(crate) fn index(&self) -> i64 {
-        self.index
-    }
 }
 
 /// Copy-on-change policy and its dependent payload.
@@ -1920,13 +1916,6 @@ impl ProductNodeRecord {
         self.occurrence()
             .and_then(|node| node.copy_on_change.as_ref())
             .map(|copy| copy.policy.as_str())
-    }
-
-    /// Admitted copy-on-change policy, including its parsed source index.
-    pub(crate) fn copy_on_change_policy(&self) -> Option<&CopyOnChangePolicy> {
-        self.occurrence()
-            .and_then(|node| node.copy_on_change.as_ref())
-            .map(|copy| &copy.policy)
     }
 
     /// Original object tracked by copy-on-change.
