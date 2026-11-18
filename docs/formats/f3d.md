@@ -2579,15 +2579,17 @@ the operand construction references and transforms. The 378-, 422-, and
 reference and transform, or the identity when the locator's identity flag is 1.
 
 An `As-built` scope of type `AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0` version 1
-with no additional owners can use two compact version-3 locators with null
-construction references. The owner count at offset 43 is zero and the
+with no additional owners can use two version-3 locators. Each locator has
+either the compact null-construction layout or the ordinary construction
+layout. The owner count at offset 43 is zero and the
 locator count at offset 47 is two. The two locator references are followed
-by a marked reference to the version-5 joint at the scope index minus one.
+by a marked reference to the version-4 or version-5 joint at the scope index
+minus one.
 The reference-table count at offset 163 is seven or nine. The four alignment
 owners occur once and contiguously in the reference table, in local order
 `OffsetX`, `OffsetY`, `OffsetZ`, `AngleZ`. The scope tail from the feature
 ordinal occupies 87 bytes. With the eight-code-unit name the scope spans
-355 or 377 bytes. Each compact locator supplies one frame and its wrapper
+355 or 377 bytes. Each locator supplies one frame and its wrapper
 names the typed occurrence paths in operand order.
 
 The wide locator identity frame is 97 bytes. Its zero separator is at offset
@@ -2786,9 +2788,11 @@ An assembly joint has a joint record and, when the joint has relative motion, a 
 A version-3 motion record of type `8C188F11-5D1B-4E1C-8E87-AF7214CA3C83`
 stores its parent count at offset 20 and its first parent reference at
 offset 24. Each 15-byte parent entry stores an eleven-byte marked reference
-followed by a u32. In the As-built form with a version-5 joint, the final
-parent reference names the joint. The preceding entries, when present,
-name occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
+followed by a u32. Version 2 uses the same parent run. In the compact
+As-built form, the final parent reference
+names the joint. Version-2 motion names a version-4 joint. Version-3 motion
+names a version-5 joint. The preceding entries, when present, name
+occurrence records of type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` version 2.
 
 The class-363 carrier subform uses the operand-frame reference as its locator.
 The class-363 frame is 389 bytes and has a paired class-264 header. Its rigid
