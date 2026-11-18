@@ -40425,6 +40425,32 @@ size = 2
 note = "Shared identity-locator tail."
 
 [[record]]
+name = "captured_position_v4_path_wrapper"
+kind = "byte"
+section = "Captured component positions"
+anchor = "A version-4 identity locator also uses a 37-byte wrapper"
+size = 37
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Shared indexed header and zero run."
+
+[[record.field]]
+name = "marker"
+offset = 21
+type = "u8"
+value = 0
+source = "spec"
+anchor = "marker zero at offset 21"
+
+[[record.gap]]
+offset = 22
+size = 15
+note = "Shared path count and marked path reference."
+
+[[record]]
 name = "unmarked_sphere_local_frame"
 kind = "byte"
 section = "3.1"
