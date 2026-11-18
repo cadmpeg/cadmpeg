@@ -40,7 +40,10 @@ fn scene_local_paths_bind_without_changing_occurrences_or_joints() {
             occurrence
         })
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(bound.len(), 3);
+    // §8.1: the module, placed twice, owns its child once, so the poses of
+    // the child under both placements bind the one child occurrence; each
+    // row keeps its own path.
+    assert_eq!(bound.len(), 2);
 }
 
 #[test]

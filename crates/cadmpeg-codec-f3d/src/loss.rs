@@ -405,6 +405,12 @@ pub(crate) enum F3dLossCode {
     FeatureCircularPatternPlacementNotTransferred,
     /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
     FeatureCircularPatternDistributionAssumed,
+    /// A rectangular-pattern payload's seed kind or body references disagree
+    /// with its seed group, whose seeds are kept.
+    FeaturePatternPayloadSeedUnconfirmed,
+    /// A rectangular-pattern direction record of distance type 10 without a
+    /// readable distribution block is read as a seed-to-final-instance extent.
+    FeatureRectangularPatternDistanceFormAssumed,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -977,6 +983,12 @@ pub(crate) enum F3dLossCode {
     /// every definition-local pose agrees. The assignment is an inference;
     /// the bytes do not store it.
     LocalOccurrencePathPoseInferred,
+    /// A nested occurrence that only some placements of its definition hold
+    /// is owned by the definition, so every placement shows it.
+    PlacementChildrenDiffer,
+    /// A reference that named one placed instance of a nested occurrence,
+    /// whose definition is placed more than once, names the occurrence.
+    InstanceReferenceShared,
     /// External occurrence instances take the pose their contained
     /// occurrences' component-path carriers store; the placement matrix stays
     /// native.
@@ -1366,6 +1378,8 @@ impl F3dLossCode {
         Self::FeatureRevolvePlaneWorkPlaneAssumed,
         Self::FeatureCircularPatternPlacementNotTransferred,
         Self::FeatureCircularPatternDistributionAssumed,
+        Self::FeaturePatternPayloadSeedUnconfirmed,
+        Self::FeatureRectangularPatternDistanceFormAssumed,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -1733,6 +1747,8 @@ impl F3dLossCode {
         Self::LocalOccurrencePathPoseUnresolved,
         Self::LocalOccurrencePathPoseDisagrees,
         Self::LocalOccurrencePathPoseInferred,
+        Self::PlacementChildrenDiffer,
+        Self::InstanceReferenceShared,
         Self::XrefContainedPose,
         Self::XrefContainedPoseDisagrees,
         Self::XrefContainedPoseNative,
@@ -2072,6 +2088,12 @@ impl F3dLossCode {
             }
             Self::FeatureCircularPatternDistributionAssumed => {
                 "feature.circular-pattern-distribution-assumed"
+            }
+            Self::FeaturePatternPayloadSeedUnconfirmed => {
+                "feature.pattern-payload-seed-unconfirmed"
+            }
+            Self::FeatureRectangularPatternDistanceFormAssumed => {
+                "feature.rectangular-pattern-distance-form-assumed"
             }
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
@@ -2750,6 +2772,8 @@ impl F3dLossCode {
                 "assembly.local-occurrence-path-pose-disagrees"
             }
             Self::LocalOccurrencePathPoseInferred => "assembly.local-occurrence-path-pose-inferred",
+            Self::PlacementChildrenDiffer => "assembly.placement-children-differ",
+            Self::InstanceReferenceShared => "assembly.instance-reference-shared",
             Self::XrefContainedPose => "xref.contained-pose",
             Self::XrefContainedPoseDisagrees => "xref.contained-pose-disagrees",
             Self::XrefContainedPoseNative => "xref.contained-pose-native",
@@ -3045,6 +3069,8 @@ impl F3dLossCode {
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeaturePatternPayloadSeedUnconfirmed
+            | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -3466,6 +3492,8 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseUnresolved
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
+            | Self::PlacementChildrenDiffer
+            | Self::InstanceReferenceShared
             | Self::XrefContainedPoseDisagrees
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefPlacementMetadataMissing
@@ -3621,6 +3649,8 @@ impl F3dLossCode {
             | Self::LocalOccurrencePathPoseUnresolved
             | Self::LocalOccurrencePathPoseDisagrees
             | Self::LocalOccurrencePathPoseInferred
+            | Self::PlacementChildrenDiffer
+            | Self::InstanceReferenceShared
             | Self::XrefContainedPose
             | Self::XrefContainedPoseDisagrees
             | Self::XrefContainedPoseNative
@@ -3683,6 +3713,8 @@ impl F3dLossCode {
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
             | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeaturePatternPayloadSeedUnconfirmed
+            | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -4518,6 +4550,8 @@ mod tests {
                 "feature.revolve-plane-work-plane-assumed",
                 "feature.circular-pattern-placement-not-transferred",
                 "feature.circular-pattern-distribution-assumed",
+                "feature.pattern-payload-seed-unconfirmed",
+                "feature.rectangular-pattern-distance-form-assumed",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
@@ -4885,6 +4919,8 @@ mod tests {
                 "assembly.local-occurrence-path-pose-unresolved",
                 "assembly.local-occurrence-path-pose-disagrees",
                 "assembly.local-occurrence-path-pose-inferred",
+                "assembly.placement-children-differ",
+                "assembly.instance-reference-shared",
                 "xref.contained-pose",
                 "xref.contained-pose-disagrees",
                 "xref.contained-pose-native",
