@@ -63,10 +63,8 @@
         {
           "definition": {
             "operation": {
-              "kind": "unresolved",
-              "value": {
-                "family": "sketch"
-              }
+              "kind": "sketch",
+              "value": "creo:model:sketch#917"
             }
           },
           "id": "creo:model:sketch_feature#917",
@@ -219,7 +217,24 @@
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
-      "sketches": [],
+      "sketches": [
+        {
+          "id": "creo:model:sketch#917",
+          "native_options": {},
+          "native_ref": "creo:featdefs:sketch#917",
+          "owner": "creo:model:sketch_feature#917",
+          "plane": {
+            "after": [],
+            "inputs": [],
+            "kind": "placed",
+            "resolved_in": {}
+          },
+          "solve": {
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],

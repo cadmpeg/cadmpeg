@@ -67,8 +67,10 @@ fn timeline_follows_regeneration_order_and_leaves_the_model_unchanged() {
     let plane = feature("1", 0, unresolved(UnresolvedFamily::DatumPlane));
     let (mut ir, definition) = part(vec![extrude.clone(), plane.clone()], &["1"]);
     let model = ir.model.clone();
-    crate::decode::with_service_context(|ctx| project_timeline(ctx, &mut ir, &definition))
-        .expect("timeline");
+    crate::decode::with_service_context(|ctx| {
+        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new())
+    })
+    .expect("timeline");
     let (members, rollback) = timeline(&ir);
     assert_eq!(
         members,
@@ -104,8 +106,10 @@ fn timeline_follows_regeneration_order_and_leaves_the_model_unchanged() {
 #[test]
 fn an_empty_timeline_holds_its_current_state_at_its_start() {
     let (mut ir, definition) = part(Vec::new(), &[]);
-    crate::decode::with_service_context(|ctx| project_timeline(ctx, &mut ir, &definition))
-        .expect("timeline");
+    crate::decode::with_service_context(|ctx| {
+        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new())
+    })
+    .expect("timeline");
     let root = ir.design.scopes[0].roots[0].clone();
     assert_eq!(ir.design.scopes[0].current[0].at, Position::Start(root));
 }
@@ -172,22 +176,43 @@ fn the_root_definition_is_stated_once_and_owns_every_body() {
 #[test]
 fn operations_keep_their_family_or_their_native_kind() {
     assert_eq!(
-        operation(&unresolved(UnresolvedFamily::Fillet)).expect("family"),
+        operation(&unresolved(UnresolvedFamily::Fillet), &BTreeSet::new()).expect("family"),
         FeatureOperation::Unresolved {
             family: OperationFamily::Fillet
         }
     );
     assert_eq!(
-        operation(&LegacyOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Other("Future Feature".to_owned()),
-            parameters: BTreeMap::new(),
-        })
+        operation(
+            &LegacyOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::Other("Future Feature".to_owned()),
+                parameters: BTreeMap::new(),
+            },
+            &BTreeSet::new()
+        )
         .expect("native"),
         native("Future Feature").expect("native")
     );
     assert_eq!(
-        operation(&LegacyOperation::StoredGeometry {}).expect("stored"),
+        operation(&LegacyOperation::StoredGeometry {}, &BTreeSet::new()).expect("stored"),
         native("stored_geometry").expect("native")
+    );
+}
+
+#[test]
+fn a_sketch_feature_names_its_sketch_only_where_the_sketch_is_stated() {
+    let sketch = SketchId::mint("creo:model:sketch#917").expect("sketch id");
+    let feature = LegacyOperation::Sketch {
+        sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+    };
+    assert_eq!(
+        operation(&feature, &BTreeSet::from([sketch.clone()])).expect("sketch"),
+        FeatureOperation::Sketch(sketch)
+    );
+    assert_eq!(
+        operation(&feature, &BTreeSet::new()).expect("sketch"),
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Sketch
+        }
     );
 }
 
@@ -223,6 +248,7 @@ fn fixture_decodes_state_a_scope_that_passes_the_design_checks() {
                 .max(ir.geometry.bodies.len() * usize::from(ir.model.features.is_empty()))
         );
         assert_eq!(ir.design.parameters.len(), ir.model.parameters.len());
+        assert_eq!(ir.design.sketches.len(), ir.model.sketches.len());
         let findings = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
             .expect("validation")
             .findings

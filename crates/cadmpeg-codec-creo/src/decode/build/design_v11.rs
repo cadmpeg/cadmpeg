@@ -25,10 +25,12 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::{BodyId, IdentityNamespace, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::sketches::SketchId;
 
 use crate::container::ContainerScan;
 
 mod parameters;
+mod sketches;
 
 const TIMELINE: IdentityNamespace = cadmpeg_ir::identity_namespace!("creo", "model", "timeline");
 const GROUP: IdentityNamespace = cadmpeg_ir::identity_namespace!("creo", "model", "group");
@@ -44,12 +46,13 @@ pub(super) fn project(
     definition: &ProductDefinitionId,
 ) -> Result<(), CodecError> {
     let definition = definition.clone();
+    parameters::project(ctx, scan, ir, &definition)?;
+    let sketches = sketches::project(ctx, scan, ir)?;
     if ir.model.features.is_empty() {
         project_stored_bodies(ctx, ir, &definition)?;
     } else {
-        project_timeline(ctx, ir, &definition)?;
+        project_timeline(ctx, ir, &definition, &sketches)?;
     }
-    parameters::project(ctx, scan, ir, &definition)?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(())
@@ -120,6 +123,7 @@ fn project_timeline(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
+    sketches: &BTreeSet<SketchId>,
 ) -> Result<(), CodecError> {
     let mut ordered = ir.model.features.iter().collect::<Vec<_>>();
     ordered.sort_by(|a, b| (a.ordinal, &a.id).cmp(&(b.ordinal, &b.id)));
@@ -135,7 +139,7 @@ fn project_timeline(
     let mut features = Vec::new();
     for feature in &ordered {
         ctx.charge_entities(1, "project Creo v11 feature")?;
-        features.push(project_feature(feature)?);
+        features.push(project_feature(feature, sketches)?);
     }
     ctx.charge_entities(1, "project Creo v11 timeline")?;
     let current = CurrentState {
@@ -228,7 +232,10 @@ fn project_stored_bodies(
 
 /// The v11 feature of one model feature. The decoder does not read Creo's
 /// suppression state, so `suppressed` is unstated.
-fn project_feature(feature: &LegacyFeature) -> Result<Feature, CodecError> {
+fn project_feature(
+    feature: &LegacyFeature,
+    sketches: &BTreeSet<SketchId>,
+) -> Result<Feature, CodecError> {
     let (operation, refine) = match feature.evaluation.definition() {
         LegacyDefinition::Operation(operation) => (operation, None),
         LegacyDefinition::PostProcess {
@@ -240,7 +247,7 @@ fn project_feature(feature: &LegacyFeature) -> Result<Feature, CodecError> {
         name: feature.name.clone(),
         suppressed: None,
         definition: FeatureDefinition {
-            operation: self::operation(operation)?,
+            operation: self::operation(operation, sketches)?,
             refine,
             fuzzy_tolerance: None,
         },
@@ -260,10 +267,19 @@ fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
     })
 }
 
-/// The family of a model operation. Every operation keeps its family and no
-/// operands in this projection; an operation the decoder keeps native stays
-/// native under its Creo kind.
-fn operation(operation: &LegacyOperation) -> Result<FeatureOperation, CodecError> {
+/// The family of a model operation. A sketch feature whose sketch is stated
+/// names it; every other operation keeps its family and no operands in this
+/// projection, and an operation the decoder keeps native stays native under
+/// its Creo kind.
+fn operation(
+    operation: &LegacyOperation,
+    sketches: &BTreeSet<SketchId>,
+) -> Result<FeatureOperation, CodecError> {
+    if let Some(sketch) =
+        self::sketches::sketch_of(operation).filter(|sketch| sketches.contains(*sketch))
+    {
+        return Ok(FeatureOperation::Sketch(sketch.clone()));
+    }
     let family = match operation {
         LegacyOperation::TreeNode { .. } => return native("tree_node"),
         LegacyOperation::BaseFeature { .. } => return native("base_feature"),
