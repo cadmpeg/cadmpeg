@@ -2435,9 +2435,17 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which bytes store the Compute option of a circular pattern of features, and does it share the rectangular distribution block's fields?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder requires u32 `2` in the matching position of its distribution block. Three circular saves that differ only in this option store the same instances; the decoder reads the circular symmetric byte only from the Adjust save.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder reads the symmetric byte from a payload whose distribution block stores u32 `2` in the matching position.
 
-**Need.** The circular payload bytes of saves with each option, symmetric and not.
+**Need.** The circular distribution-block bytes for Compute options `0` and `1`, with symmetric byte `0` and `1`.
+
+### DR-818. Targets of rectangular-pattern body references
+
+**Question.** Which body does the entity suffix of the body browser node that a rectangular-pattern body reference names select, and which record does the marked reference after that suffix name?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the body references of the distribution block. A feature seed stores the references, and each one names a body browser node. In the decoded files, the entity suffix names a body that the pattern acts on, and the marked reference after the suffix names the feature scope that made that body. The decoder checks the node type and counts the references.
+
+**Need.** A writer must emit one reference for each body that the pattern acts on, and a reader must know whether the references select the pattern's target bodies.
 
 ### DR-643. Persistent tags of omitted bodies
 

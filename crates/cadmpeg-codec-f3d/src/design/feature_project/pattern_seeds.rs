@@ -214,8 +214,8 @@ pub(super) fn entity_selection_feature_seeds(
 }
 
 /// The loss a rectangular-pattern payload charges when its seed kind or its
-/// body references disagree with the seeds that the seed group supplies. The
-/// seeds stay those of the seed group.
+/// body references break the distribution-block rules, or disagree with the
+/// face, feature, or body seeds of the pattern. The pattern keeps its seeds.
 pub(super) fn distribution_seed_conflict(
     scope: &DesignParameterScope,
     distribution: &crate::records::feature::patterns::DesignRectangularPatternDistribution,
@@ -227,6 +227,11 @@ pub(super) fn distribution_seed_conflict(
     const FEATURE_SEED: u32 = 1;
     const BODY_SEED: u32 = 2;
 
+    let name = |kind: u32| match kind {
+        FACE_SEED => "faces",
+        FEATURE_SEED => "features",
+        _ => "bodies",
+    };
     let kinds = seeds
         .iter()
         .map(|seed| match seed {
@@ -241,39 +246,37 @@ pub(super) fn distribution_seed_conflict(
         [first, rest @ ..] if rest.iter().all(|kind| kind == first) => Some(*first),
         _ => None,
     };
-    let name = |kind: u32| match kind {
-        FACE_SEED => "faces",
-        FEATURE_SEED => "features",
-        _ => "bodies",
-    };
+    let stored = distribution.seed_kind.value;
     let mut conflicts = Vec::new();
-    if let Some(kind) = seed_kind {
-        if distribution.seed_kind.value != kind {
-            conflicts.push(format!(
-                "stores seed kind {} at byte {} where its seed group selects {}",
-                distribution.seed_kind.value,
-                distribution.seed_kind.offset,
-                name(kind)
-            ));
-        }
-        if kind != FEATURE_SEED && distribution.body_references.value != 0 {
-            conflicts.push(format!(
-                "stores {} body references at byte {} with a seed group that selects {}",
-                distribution.body_references.value,
-                distribution.body_references.offset,
-                name(kind)
-            ));
-        }
+    if stored > BODY_SEED {
+        conflicts.push(format!(
+            "stores seed kind {stored} at byte {}, above the last seed kind {BODY_SEED}",
+            distribution.seed_kind.offset
+        ));
+    }
+    if let Some(kind) = seed_kind.filter(|kind| *kind != stored) {
+        conflicts.push(format!(
+            "stores seed kind {stored} at byte {} where its seeds are {}",
+            distribution.seed_kind.offset,
+            name(kind)
+        ));
+    }
+    let face_or_body = stored != FEATURE_SEED || seed_kind.is_some_and(|kind| kind != FEATURE_SEED);
+    if face_or_body && distribution.body_references.value != 0 {
+        conflicts.push(format!(
+            "stores {} body references at byte {} with a face or body seed",
+            distribution.body_references.value, distribution.body_references.offset
+        ));
     }
     if distribution.untyped_body_references != 0 {
         conflicts.push(format!(
-            "names {} records that the stream does not register as body browser nodes among its {} body references",
+            "names {} records of a type other than the body browser node type among its {} body references",
             distribution.untyped_body_references, distribution.body_references.value
         ));
     }
     (!conflicts.is_empty()).then(|| {
         crate::loss::F3dLossCode::FeaturePatternPayloadSeedUnconfirmed.note(format!(
-            "RectangularPattern scope {}: pattern payload record {} {}; the seeds are those of the seed group.",
+            "RectangularPattern scope {}: pattern payload record {} {}; the pattern keeps its seeds.",
             scope.id,
             distribution.record_index,
             conflicts.join(", and ")
