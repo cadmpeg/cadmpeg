@@ -36,6 +36,9 @@ const FIRST_POWER: NonZeroI8 = match NonZeroI8::new(1) {
 /// Relative agreement a literal in its unit needs with the stored value.
 const LITERAL_AGREEMENT: f64 = 1e-12;
 
+/// Millimetres in one nanometre.
+const MILLIMETRES_PER_NANOMETRE: f64 = 1e-6;
+
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -244,7 +247,7 @@ fn quantity(unit: &Unit) -> Option<Quantity> {
 /// The canonical value of one unit of a length or angle symbol.
 fn canonical_factor(symbol: UnitSymbol) -> Option<f64> {
     Some(match symbol {
-        UnitSymbol::Nm => 1e-6,
+        UnitSymbol::Nm => MILLIMETRES_PER_NANOMETRE,
         UnitSymbol::Um => 1e-3,
         UnitSymbol::Mm | UnitSymbol::Rad => 1.0,
         UnitSymbol::Cm => 10.0,

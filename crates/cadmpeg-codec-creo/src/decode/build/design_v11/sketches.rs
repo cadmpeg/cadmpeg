@@ -643,256 +643,278 @@ fn ordered_along(
 }
 
 /// The v11 relation of one v10 constraint; `None` for a disabled slot.
-#[allow(clippy::too_many_lines)]
 fn relation(
     input: &Input,
     points: &mut Points,
     kinds: &BTreeMap<ParameterId, ValueKind>,
 ) -> Result<Option<SketchRelation<Planar>>, CodecError> {
+    if matches!(input, Input::Disabled {}) {
+        return Ok(None);
+    }
+    if let Some(relation) =
+        geometric_relation(input, points).or_else(|| dimensional_relation(input, points, kinds))
+    {
+        return Ok(Some(relation));
+    }
+    native_relation(input, points, kinds).map(Some)
+}
+
+/// The v11 relation of a constraint that holds no value, where its operands
+/// resolve.
+fn geometric_relation(input: &Input, points: &mut Points) -> Option<SketchRelation<Planar>> {
     let entity = |points: &Points, entity: &SketchEntityId| points.entity(entity);
-    let relation =
-        match input {
-            Input::Disabled {} => return Ok(None),
-            Input::Coincident { entities } => match entities.as_slice() {
-                [a, b] => entity(points, a)
-                    .zip(entity(points, b))
-                    .map(|(a, b)| SketchRelation::Coincident { a, b }),
-                _ => None,
-            },
-            Input::CoincidentLoci { loci } => match loci.as_slice() {
-                [a, b] => pair(points, a, b).map(|(a, b)| SketchRelation::Coincident { a, b }),
-                _ => None,
-            },
-            Input::SameCoordinate { relation } => {
-                let (a, b) = (relation.first().clone(), relation.second().clone());
-                points
-                    .point(&a)
-                    .zip(points.point(&b))
-                    .map(|(a, b)| match relation.axis() {
-                        SketchCoordinateAxis::U => SketchRelation::Vertical {
-                            a: Operand::Entity(a),
-                            b: Some(Operand::Entity(b)),
-                        },
-                        SketchCoordinateAxis::V => SketchRelation::Horizontal {
-                            a: Operand::Entity(a),
-                            b: Some(Operand::Entity(b)),
-                        },
-                    })
-            }
-            Input::PointOnObject { point, entity: of } => points
-                .point(point)
-                .zip(entity(points, of))
-                .map(|(point, b)| SketchRelation::Coincident {
-                    a: Operand::Entity(point),
-                    b,
-                }),
-            Input::Midpoint { point, entity: of } => points
-                .point(point)
-                .zip(entity(points, of))
-                .map(|(point, of)| SketchRelation::Midpoint { point, of }),
-            Input::Concentric { first, second } => entity(points, first)
-                .zip(entity(points, second))
-                .map(|(a, b)| SketchRelation::Concentric { a, b }),
-            Input::Collinear { first, second } => entity(points, first)
-                .zip(entity(points, second))
-                .map(|(a, b)| SketchRelation::Collinear { a, b }),
-            Input::Symmetric {
-                first,
-                second,
-                axis,
-            } => pair(points, first, second)
-                .zip(entity(points, axis))
-                .map(|((a, b), about)| SketchRelation::Symmetric { a, b, about }),
-            Input::PointSymmetric {
-                first,
-                second,
-                center,
-            } => {
-                let about = points.point(center).map(Operand::Entity);
-                pair(points, first, second)
-                    .zip(about)
-                    .map(|((a, b), about)| SketchRelation::Symmetric { a, b, about })
-            }
-            Input::Horizontal { entity: of } => {
-                entity(points, of).map(|a| SketchRelation::Horizontal { a, b: None })
-            }
-            Input::Vertical { entity: of } => {
-                entity(points, of).map(|a| SketchRelation::Vertical { a, b: None })
-            }
-            Input::Parallel { first, second } => entity(points, first)
-                .zip(entity(points, second))
-                .map(|(a, b)| SketchRelation::Parallel { a, b }),
-            Input::Perpendicular { first, second } => entity(points, first)
-                .zip(entity(points, second))
-                .map(|(a, b)| SketchRelation::Perpendicular { a, b }),
-            Input::Tangent { first, second } => entity(points, first)
+    match input {
+        Input::Coincident { entities } => match entities.as_slice() {
+            [a, b] => entity(points, a)
+                .zip(entity(points, b))
+                .map(|(a, b)| SketchRelation::Coincident { a, b }),
+            _ => None,
+        },
+        Input::CoincidentLoci { loci } => match loci.as_slice() {
+            [a, b] => pair(points, a, b).map(|(a, b)| SketchRelation::Coincident { a, b }),
+            _ => None,
+        },
+        Input::SameCoordinate { relation } => {
+            let (a, b) = (relation.first().clone(), relation.second().clone());
+            points
+                .point(&a)
+                .zip(points.point(&b))
+                .map(|(a, b)| match relation.axis() {
+                    SketchCoordinateAxis::U => SketchRelation::Vertical {
+                        a: Operand::Entity(a),
+                        b: Some(Operand::Entity(b)),
+                    },
+                    SketchCoordinateAxis::V => SketchRelation::Horizontal {
+                        a: Operand::Entity(a),
+                        b: Some(Operand::Entity(b)),
+                    },
+                })
+        }
+        Input::PointOnObject { point, entity: of } => points
+            .point(point)
+            .zip(entity(points, of))
+            .map(|(point, b)| SketchRelation::Coincident {
+                a: Operand::Entity(point),
+                b,
+            }),
+        Input::Midpoint { point, entity: of } => points
+            .point(point)
+            .zip(entity(points, of))
+            .map(|(point, of)| SketchRelation::Midpoint { point, of }),
+        Input::Concentric { first, second } => entity(points, first)
+            .zip(entity(points, second))
+            .map(|(a, b)| SketchRelation::Concentric { a, b }),
+        Input::Collinear { first, second } => entity(points, first)
+            .zip(entity(points, second))
+            .map(|(a, b)| SketchRelation::Collinear { a, b }),
+        Input::Symmetric {
+            first,
+            second,
+            axis,
+        } => pair(points, first, second)
+            .zip(entity(points, axis))
+            .map(|((a, b), about)| SketchRelation::Symmetric { a, b, about }),
+        Input::PointSymmetric {
+            first,
+            second,
+            center,
+        } => {
+            let about = points.point(center).map(Operand::Entity);
+            pair(points, first, second)
+                .zip(about)
+                .map(|((a, b), about)| SketchRelation::Symmetric { a, b, about })
+        }
+        Input::Horizontal { entity: of } => {
+            entity(points, of).map(|a| SketchRelation::Horizontal { a, b: None })
+        }
+        Input::Vertical { entity: of } => {
+            entity(points, of).map(|a| SketchRelation::Vertical { a, b: None })
+        }
+        Input::Parallel { first, second } => entity(points, first)
+            .zip(entity(points, second))
+            .map(|(a, b)| SketchRelation::Parallel { a, b }),
+        Input::Perpendicular { first, second } => entity(points, first)
+            .zip(entity(points, second))
+            .map(|(a, b)| SketchRelation::Perpendicular { a, b }),
+        Input::Tangent { first, second } => {
+            entity(points, first)
                 .zip(entity(points, second))
                 .map(|(a, b)| SketchRelation::Tangent {
                     a,
                     b,
                     contact: None,
-                }),
-            Input::TangentLoci { first, second } => match (first, second) {
-                (
-                    SketchLocus::Start(a) | SketchLocus::End(a),
-                    SketchLocus::Start(b) | SketchLocus::End(b),
-                ) => {
-                    let ends = points.point(first).zip(points.point(second));
-                    entity(points, a)
-                        .zip(entity(points, b))
-                        .zip(ends)
-                        .map(|((a, b), (p, q))| SketchRelation::Tangent {
-                            a,
-                            b,
-                            contact: Some(Contact::Ends([p, q])),
-                        })
-                }
-                _ => None,
-            },
-            Input::Curvature { first, second } => entity(points, first)
-                .zip(entity(points, second))
-                .map(|(a, b)| SketchRelation::Curvature {
-                    a,
-                    b,
-                    contact: None,
-                }),
-            Input::Equal { first, second } => entity(points, first)
+                })
+        }
+        Input::TangentLoci { first, second } => match (first, second) {
+            (
+                SketchLocus::Start(a) | SketchLocus::End(a),
+                SketchLocus::Start(b) | SketchLocus::End(b),
+            ) => {
+                let ends = points.point(first).zip(points.point(second));
+                entity(points, a)
+                    .zip(entity(points, b))
+                    .zip(ends)
+                    .map(|((a, b), (p, q))| SketchRelation::Tangent {
+                        a,
+                        b,
+                        contact: Some(Contact::Ends([p, q])),
+                    })
+            }
+            _ => None,
+        },
+        Input::Curvature { first, second } => entity(points, first)
+            .zip(entity(points, second))
+            .map(|(a, b)| SketchRelation::Curvature {
+                a,
+                b,
+                contact: None,
+            }),
+        Input::Equal { first, second } => {
+            entity(points, first)
                 .zip(entity(points, second))
                 .map(|(a, b)| SketchRelation::Equal {
                     members: vec![a, b],
-                }),
-            Input::Fixed { entity: of } => {
-                entity(points, of).map(|of| SketchRelation::Fixed { of })
-            }
-            Input::ArcAngle { entity: of, angle } => entity(points, of).and_then(|_| {
-                Some(SketchRelation::Angle {
-                    between: AngleOperands::Sweep(of.clone()),
-                    sector: None,
-                    value: Dimension::Literal(Angle::new(angle.get())?),
                 })
-            }),
-            Input::DistanceLoci {
-                first,
-                second,
-                parameter,
-            } if length(kinds, parameter) => {
-                pair(points, first, second).map(|(a, b)| SketchRelation::Distance {
+        }
+        Input::Fixed { entity: of } => entity(points, of).map(|of| SketchRelation::Fixed { of }),
+        _ => None,
+    }
+}
+
+/// The v11 relation of a constraint that holds a value of the quantity the
+/// relation measures, where its operands resolve.
+fn dimensional_relation(
+    input: &Input,
+    points: &mut Points,
+    kinds: &BTreeMap<ParameterId, ValueKind>,
+) -> Option<SketchRelation<Planar>> {
+    let entity = |points: &Points, entity: &SketchEntityId| points.entity(entity);
+    match input {
+        Input::ArcAngle { entity: of, angle } => entity(points, of).and_then(|_| {
+            Some(SketchRelation::Angle {
+                between: AngleOperands::Sweep(of.clone()),
+                sector: None,
+                value: Dimension::Literal(Angle::new(angle.get())?),
+            })
+        }),
+        Input::DistanceLoci {
+            first,
+            second,
+            parameter,
+        } if length(kinds, parameter) => {
+            pair(points, first, second).map(|(a, b)| SketchRelation::Distance {
+                a,
+                b,
+                along: Some(DistanceAxis::Aligned),
+                doubled: None,
+                value: Dimension::Parameter(parameter.clone()),
+            })
+        }
+        Input::DistanceLociValue {
+            first,
+            second,
+            distance,
+            parameter,
+        } if parameter
+            .as_ref()
+            .is_none_or(|parameter| length(kinds, parameter)) =>
+        {
+            pair(points, first, second).map(|(a, b)| SketchRelation::Distance {
+                a,
+                b,
+                along: Some(DistanceAxis::Aligned),
+                doubled: None,
+                value: parameter
+                    .clone()
+                    .map_or(Dimension::Literal(*distance), Dimension::Parameter),
+            })
+        }
+        Input::HorizontalDistance {
+            first,
+            second,
+            parameter,
+        } if length(kinds, parameter) => {
+            ordered_along(points, first, second, SketchCoordinateAxis::U).map(|(a, b)| {
+                SketchRelation::Distance {
                     a,
                     b,
-                    along: Some(DistanceAxis::Aligned),
+                    along: Some(DistanceAxis::Horizontal),
                     doubled: None,
                     value: Dimension::Parameter(parameter.clone()),
-                })
-            }
-            Input::DistanceLociValue {
-                first,
-                second,
-                distance,
-                parameter,
-            } if parameter
-                .as_ref()
-                .is_none_or(|parameter| length(kinds, parameter)) =>
-            {
-                pair(points, first, second).map(|(a, b)| SketchRelation::Distance {
+                }
+            })
+        }
+        Input::VerticalDistance {
+            first,
+            second,
+            parameter,
+        } if length(kinds, parameter) => {
+            ordered_along(points, first, second, SketchCoordinateAxis::V).map(|(a, b)| {
+                SketchRelation::Distance {
                     a,
                     b,
-                    along: Some(DistanceAxis::Aligned),
+                    along: Some(DistanceAxis::Vertical),
                     doubled: None,
-                    value: parameter
-                        .clone()
-                        .map_or(Dimension::Literal(*distance), Dimension::Parameter),
+                    value: Dimension::Parameter(parameter.clone()),
+                }
+            })
+        }
+        Input::EqualDistance { first, second } => {
+            let first = pair(points, &first.first, &first.second);
+            let second = pair(points, &second.first, &second.second);
+            first
+                .zip(second)
+                .map(|((a, b), (c, d))| SketchRelation::EqualDistance {
+                    first: [a, b],
+                    second: [c, d],
                 })
-            }
-            Input::HorizontalDistance {
-                first,
-                second,
-                parameter,
-            } if length(kinds, parameter) => {
-                ordered_along(points, first, second, SketchCoordinateAxis::U).map(|(a, b)| {
-                    SketchRelation::Distance {
-                        a,
-                        b,
-                        along: Some(DistanceAxis::Horizontal),
-                        doubled: None,
-                        value: Dimension::Parameter(parameter.clone()),
-                    }
+        }
+        Input::Angle {
+            first,
+            second,
+            parameter,
+        } if angle(kinds, parameter) => {
+            entity(points, first)
+                .zip(entity(points, second))
+                .map(|(a, b)| SketchRelation::Angle {
+                    between: AngleOperands::Between([a, b]),
+                    sector: None,
+                    value: Dimension::Parameter(parameter.clone()),
                 })
-            }
-            Input::VerticalDistance {
-                first,
-                second,
-                parameter,
-            } if length(kinds, parameter) => {
-                ordered_along(points, first, second, SketchCoordinateAxis::V).map(|(a, b)| {
-                    SketchRelation::Distance {
-                        a,
-                        b,
-                        along: Some(DistanceAxis::Vertical),
-                        doubled: None,
-                        value: Dimension::Parameter(parameter.clone()),
-                    }
-                })
-            }
-            Input::EqualDistance { first, second } => {
-                let first = pair(points, &first.first, &first.second);
-                let second = pair(points, &second.first, &second.second);
-                first
-                    .zip(second)
-                    .map(|((a, b), (c, d))| SketchRelation::EqualDistance {
-                        first: [a, b],
-                        second: [c, d],
-                    })
-            }
-            Input::Angle {
-                first,
-                second,
-                parameter,
-            } if angle(kinds, parameter) => {
-                entity(points, first)
-                    .zip(entity(points, second))
-                    .map(|(a, b)| SketchRelation::Angle {
-                        between: AngleOperands::Between([a, b]),
-                        sector: None,
-                        value: Dimension::Parameter(parameter.clone()),
-                    })
-            }
-            Input::AngleToAxis {
-                entity: of,
-                axis,
-                parameter,
-            } if angle(kinds, parameter) => entity(points, of).map(|line| SketchRelation::Angle {
-                between: AngleOperands::Between([
-                    Operand::Frame(match axis {
-                        SketchAxis::Horizontal => PrincipalEntity::XAxis,
-                        SketchAxis::Vertical => PrincipalEntity::YAxis,
-                    }),
-                    line,
-                ]),
-                sector: None,
-                value: Dimension::Parameter(parameter.clone()),
-            }),
-            Input::Radius {
-                entity: of,
-                parameter,
-            } if length(kinds, parameter) && circular(points, of) => Some(SketchRelation::Radial {
-                of: of.clone(),
-                measure: RadialMeasure::Radius,
-                value: Dimension::Parameter(parameter.clone()),
-            }),
-            Input::Diameter {
-                entity: of,
-                parameter,
-            } if length(kinds, parameter) && circular(points, of) => Some(SketchRelation::Radial {
-                of: of.clone(),
-                measure: RadialMeasure::Diameter,
-                value: Dimension::Parameter(parameter.clone()),
-            }),
-            _ => None,
-        };
-    if let Some(relation) = relation {
-        return Ok(Some(relation));
+        }
+        Input::AngleToAxis {
+            entity: of,
+            axis,
+            parameter,
+        } if angle(kinds, parameter) => entity(points, of).map(|line| SketchRelation::Angle {
+            between: AngleOperands::Between([
+                Operand::Frame(match axis {
+                    SketchAxis::Horizontal => PrincipalEntity::XAxis,
+                    SketchAxis::Vertical => PrincipalEntity::YAxis,
+                }),
+                line,
+            ]),
+            sector: None,
+            value: Dimension::Parameter(parameter.clone()),
+        }),
+        Input::Radius {
+            entity: of,
+            parameter,
+        } if length(kinds, parameter) && circular(points, of) => Some(SketchRelation::Radial {
+            of: of.clone(),
+            measure: RadialMeasure::Radius,
+            value: Dimension::Parameter(parameter.clone()),
+        }),
+        Input::Diameter {
+            entity: of,
+            parameter,
+        } if length(kinds, parameter) && circular(points, of) => Some(SketchRelation::Radial {
+            of: of.clone(),
+            measure: RadialMeasure::Diameter,
+            value: Dimension::Parameter(parameter.clone()),
+        }),
+        _ => None,
     }
-    native_relation(input, points, kinds).map(Some)
 }
 
 fn circular(points: &Points, entity: &SketchEntityId) -> bool {
