@@ -113,15 +113,19 @@ fn assembly_envelope_keeps_a_registered_joint_origin_with_either_matrix() {
     .into_iter()
     .enumerate()
     .map(|(ordinal, (guid, version, record))| {
+        let mut row = crate::design::test_support::design_type(
+            guid,
+            None,
+            version,
+            "Fusion",
+            vec![u64::from(record)],
+        );
+        row.byte_offset = u64_from_index(ordinal) * 100;
+        row.type_guid_offset = row.byte_offset + 4;
+        row.version_offset = row.byte_offset + 44;
         SegmentType::try_new(
-            crate::ids::native_design_type_id(META, u64_from_index(ordinal)),
-            crate::design::test_support::design_type(
-                guid,
-                None,
-                version,
-                "Fusion",
-                vec![u64::from(record)],
-            ),
+            crate::ids::native_design_type_id(META, row.byte_offset),
+            row,
         )
         .unwrap()
     })
