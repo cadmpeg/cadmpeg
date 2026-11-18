@@ -19,6 +19,7 @@ mod blend_spine;
 mod body_candidates;
 mod body_index;
 mod cache;
+mod combine_binding;
 pub(crate) mod combine_history_tools;
 mod combine_selection;
 pub(crate) mod compact_lineage;
@@ -2126,7 +2127,7 @@ pub(crate) fn bind_feature_body_selections(
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
-    use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
     let scopes = inputs.scopes;
@@ -2199,58 +2200,33 @@ pub(crate) fn bind_feature_body_selections(
         let feature_id = &feature.id;
         let dependencies = &feature.dependencies;
         feature.evaluation.edit(|definition, _| {
-        'feature_edit: {
-            let Some(native_ref) = native_ref else {
-                break 'feature_edit;
-            };
-            let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
-            let Some(scope) = matching_scopes.next() else {
-                break 'feature_edit;
-            };
-            if matching_scopes.next().is_some() {
-                break 'feature_edit;
-            }
-            if matches!(
-                definition,
-                FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
-            ) {
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit { target, .. }) =
-                definition
-            {
-                if let Some(previous_state_id) =
-                    effective_scope_previous_history_state_id(scope, histories)
-                {
-                    bind_body_recipe_body_selection(
-                        target,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        body_recipe_operands,
-                    );
+            'feature_edit: {
+                let Some(native_ref) = native_ref else {
+                    break 'feature_edit;
+                };
+                let mut matching_scopes = scopes.iter().filter(|scope| scope.id == native_ref);
+                let Some(scope) = matching_scopes.next() else {
+                    break 'feature_edit;
+                };
+                if matching_scopes.next().is_some() {
+                    break 'feature_edit;
                 }
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells, .. }) =
-                definition
-            {
-                if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
-                        tools,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        body_recipe_operands,
-                    );
-                    for cell in cells {
-                        let BoundaryFillCell::BodyRegion(cell) = cell else {
-                            continue;
-                        };
+                if matches!(
+                    definition,
+                    FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
+                ) {
+                    break 'feature_edit;
+                }
+                if let FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit {
+                    target,
+                    ..
+                }) = definition
+                {
+                    if let Some(previous_state_id) =
+                        effective_scope_previous_history_state_id(scope, histories)
+                    {
                         bind_body_recipe_body_selection(
-                            cell,
+                            target,
                             feature_id,
                             previous_state_id,
                             scope,
@@ -2258,400 +2234,284 @@ pub(crate) fn bind_feature_body_selections(
                             body_recipe_operands,
                         );
                     }
-                } else {
-                    bind_direct_body_recipe_body_selection(tools, scope, inputs, &mut body_candidates);
-                    for cell in cells {
-                        let BoundaryFillCell::BodyRegion(cell) = cell else {
-                            continue;
-                        };
-                        bind_direct_body_recipe_body_selection(cell, scope, inputs, &mut body_candidates);
-                    }
+                    break 'feature_edit;
                 }
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
-                definition
-            {
-                let refusal = combine_selection::refine(operands, feature_id, |target, tools| {
-                        let (Some(state_id), Some(previous_state_id)) = (
-                            scope.history_state_id(),
-                            effective_scope_previous_history_state_id(scope, histories),
-                        )
-                        else {
-                            bind_direct_body_recipe_body_selection(target, scope, inputs, &mut body_candidates);
-                            bind_direct_body_recipe_body_selection(tools, scope, inputs, &mut body_candidates);
-                            if matches!(
-                                tools,
-                                BodySelection::Native(_) | BodySelection::NativeSet(_)
-                            ) {
-                                if let Some(local) = combine_external_local_tools(scope) {
-                                    *tools = local;
-                                }
-                            }
-                            return;
-                        };
-                        // A scope that stores no predecessor takes the
-                        // direct binding on `main`; with its history header
-                        // predecessor, an operand that the historical binding
-                        // leaves native keeps that direct binding.
-                        let header_predecessor = scope.previous_history_state_id().is_none();
-                        (|| {
-                        if let Some(local) = combine_external_local_tools(scope) {
-                            *tools = local;
-                        }
-                        if let Some(operation) = scope.combine_operation().filter(|operation| {
-                            operation.form
-                                == crate::records::feature::combine::DesignCombineForm::OperandLists
-                        }) {
-                            bind_operand_list_combine_bodies(
-                                target,
-                                tools,
-                                scope,
-                                operation,
+                if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
+                    tools,
+                    cells,
+                    ..
+                }) = definition
+                {
+                    if let Some(previous_state_id) = scope.previous_history_state_id() {
+                        bind_body_recipe_body_selection(
+                            tools,
+                            feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            body_recipe_operands,
+                        );
+                        for cell in cells {
+                            let BoundaryFillCell::BodyRegion(cell) = cell else {
+                                continue;
+                            };
+                            bind_body_recipe_body_selection(
+                                cell,
                                 feature_id,
                                 previous_state_id,
-                                (histories, inputs.scopes),
+                                scope,
+                                groups,
+                                body_recipe_operands,
                             );
-                            return;
                         }
-                        let BodySelection::Native(native) = target else {
-                            return;
-                        };
-                        let Some((history, state, _)) =
-                            unique_history_state_pair(histories, state_id, previous_state_id)
-                        else {
-                            return;
-                        };
-                        let history_states = unique_feature_history_states(history);
-                        let Some(body) = singleton_revised_input_body_across_state_chain(history, state, previous_state_id, &history_states) else {
-                            return;
-                        };
-                        let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
-                        let input_state = crate::ids::history_input_state_id(&prefix);
-                        let body_id = crate::ids::history_input_body_id(&prefix, body);
-                        let native_id = native.to_owned();
-                        let target_bodies = vec![body_id];
-                        if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(crate::ids::history_input_state_id(&prefix), target_bodies, native_id) {
-                            *target = historical;
-                        }
-                        let Some(stream) = crate::ids::native_stream(&scope.id) else {
-                            return;
-                        };
-                        let Some(operation) = scope.combine_operation() else {
-                            return;
-                        };
-                        let mut native_tools = Vec::new();
-                        for tool in operation.tools.iter() {
-                            let native = format!("{stream}:design-record#{}", tool.record_index);
-                            native_tools.push(native);
-                        }
-                        let current_history_source = historical_brep_source(&state.id);
-                        let mut historical_tool_rows = Vec::new();
-                        let mut direct_tool_rows = Vec::new();
-                        for (record_index, native) in operation.tools.iter()
-                            .map(|tool| tool.record_index).zip(&native_tools) {
-                            let mut matching = body_recipe_operands.iter().filter(|operand| {
-                                crate::ids::native_stream(&operand.id) == Some(stream)
-                                    && operand.scope_record_index == scope.record_index
-                                    && matches!(
-                            operand.owner,
-                            crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference { .. }
-                        ) && operand.record_index() == record_index
-                            });
-                            let Some(operand) = matching.next() else {
-                                historical_tool_rows.clear();
-                                direct_tool_rows.clear();
-                                break;
-                            };
-                            if matching.next().is_some() {
-                                historical_tool_rows.clear();
-                                direct_tool_rows.clear();
-                                break;
-                            }
-                            if let Some(body) = operand.resolved_body_slot {
-                                let body = crate::ids::history_input_body_id(&prefix, body);
-                                let repeated = historical_tool_rows
-                                    .iter()
-                                    .any(|row: &BodyMember<_>| row.body() == &body);
-                                let row = body_member(body, native.to_owned());
-                                let (false, Some(row)) = (repeated, row) else {
-                                    historical_tool_rows.clear();
-                                    direct_tool_rows.clear();
-                                    break;
-                                };
-                                historical_tool_rows.push(row);
+                    } else {
+                        bind_direct_body_recipe_body_selection(
+                            tools,
+                            scope,
+                            inputs,
+                            &mut body_candidates,
+                        );
+                        for cell in cells {
+                            let BoundaryFillCell::BodyRegion(cell) = cell else {
                                 continue;
-                            }
-                            let Some(body) =
-                                body_candidates.external(operand, current_history_source)
-                            else {
-                                historical_tool_rows.clear();
-                                direct_tool_rows.clear();
-                                break;
                             };
-                            let repeated = direct_tool_rows
-                                .iter()
-                                .any(|row: &BodyMember<_>| row.body() == &body);
-                            let row = body_member(body, native.to_owned());
-                            let (false, Some(row)) = (repeated, row) else {
-                                historical_tool_rows.clear();
-                                direct_tool_rows.clear();
-                                break;
-                            };
-                            direct_tool_rows.push(row);
+                            bind_direct_body_recipe_body_selection(
+                                cell,
+                                scope,
+                                inputs,
+                                &mut body_candidates,
+                            );
                         }
-                        if historical_tool_rows.len() == native_tools.len() {
-                            let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(historical_tool_rows) else {
-                                return;
-                            };
-                            *tools = BodySelection::HistoricalSet {
-                                state: input_state,
-                                members,
-                            };
-                        } else if direct_tool_rows.len() == native_tools.len() {
-                            *tools = if direct_tool_rows.len() == 1 {
-                                let Some(row) = direct_tool_rows.pop() else { return; };
-                                let (body, native) = row.into_parts();
-                                let selected = vec![body];
-                                let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(selected) else {
-    return;
-};
-                                BodySelection::Resolved {
-                                    bodies,
-                                    native,
-                                }
-                            } else {
-                                let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(direct_tool_rows) else {
-                                    return;
-                                };
-                                BodySelection::ResolvedSet { members }
-                            };
-                        } else {
-                            let tool_record_indices = operation.tools.iter().map(|tool| tool.record_index).collect::<Vec<_>>();
-                            if let Some(tool_slots) = combine_recipe_family_tool_slots((stream, scope.record_index), &tool_record_indices, previous_state_id, body, body_recipe_operands, inputs.construction_recipes) {
-                                if tool_slots.len() != native_tools.len() {
-                                    return;
-                                }
-                                let Some(rows) = combine_historical_rows(&prefix, tool_slots, native_tools) else {
-                                    return;
-                                };
-                                let Ok(members) =
-                                    cadmpeg_ir::features::BodyMembers::try_from_rows(rows)
-                                else {
-                                    return;
-                                };
-                                *tools = BodySelection::HistoricalSet {
-                                    state: input_state,
-                                    members,
-                                };
-                                return;
-                            }
-                            let mut dependency_sets = dependencies.iter()
-                                .filter_map(|dependency| pattern_body_slots.get(dependency));
-                            let pattern_bodies = dependency_sets.next();
-                            if dependency_sets.next().is_none() {
-                              if let Some(pattern_bodies) = pattern_bodies {
-                                if let Some(tool_slots) = pattern_combine_tool_slots(pattern_bodies, body, native_tools.len()) {
-                                    if tool_slots.len() != native_tools.len() {
-                                        return;
-                                    }
-                                    let Some(rows) = combine_historical_rows(&prefix, tool_slots, native_tools) else {
-                                        return;
-                                    };
-                                    let Ok(members) =
-                                        cadmpeg_ir::features::BodyMembers::try_from_rows(rows)
-                                    else {
-                                        return;
-                                    };
-                                    *tools = BodySelection::HistoricalSet {
-                                        state: input_state,
-                                        members,
-                                    };
-                                }
-                              }
-                            }
-                        }
-                        })();
-                        if header_predecessor {
-                            for operand in [target, tools] {
-                                if matches!(
-                                    operand,
-                                    BodySelection::Native(_) | BodySelection::NativeSet(_)
-                                ) {
-                                    bind_direct_body_recipe_body_selection(
-                                        operand,
-                                        scope,
-                                        inputs,
-                                        &mut body_candidates,
-                                    );
-                                }
-                            }
-                        }
-                    });
-                if let Some(loss) = refusal {
-                    losses.push(loss);
-                }
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::Coil {
-                result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
-                ..
-            } | FeatureOperation::Thicken {
-                result: Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }),
-                ..
-            }) = definition
-            {
-                if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
-                        targets,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        body_recipe_operands,
-                    );
-                } else {
-                    bind_direct_body_recipe_body_selection(targets, scope, inputs, &mut body_candidates);
-                }
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) =
-                definition
-            {
-                if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
-                        bodies,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        body_recipe_operands,
-                    );
-                } else {
-                    let native = bodies.clone();
-                    bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
-                    // The recipe identity of the operands outranks a face match.
-                    generated_bodies::keep_recipe_body_slots(bodies, native, scope, inputs);
-                }
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::ReverseShape { source: bodies }) =
-                definition
-            {
-                if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
-                        bodies,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        body_recipe_operands,
-                    );
-                } else {
-                    bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
-                }
-                break 'feature_edit;
-            }
-            if let FeatureDefinition::Operation(FeatureOperation::Scale { bodies, .. }) =
-                definition
-            {
-                if let Some(previous_state_id) = scope.previous_history_state_id() {
-                    bind_body_recipe_body_selection(
-                        bodies,
-                        feature_id,
-                        previous_state_id,
-                        scope,
-                        groups,
-                        body_recipe_operands,
-                    );
-                    if matches!(bodies, BodySelection::Native(_)) {
-                        bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
                     }
-                } else {
-                    bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
+                    break 'feature_edit;
                 }
-                break 'feature_edit;
+                if let FeatureDefinition::Operation(FeatureOperation::Combine {
+                    operands, ..
+                }) = definition
+                {
+                    let pattern_bodies = {
+                        let mut sets = dependencies
+                            .iter()
+                            .filter_map(|dependency| pattern_body_slots.get(dependency));
+                        match (sets.next(), sets.next()) {
+                            (Some(bodies), None) => Some(bodies),
+                            _ => None,
+                        }
+                    };
+                    let refusal =
+                        combine_selection::refine(operands, feature_id, |target, tools| {
+                            combine_binding::bind_combine_operands(
+                                (target, tools),
+                                scope,
+                                feature_id,
+                                pattern_bodies,
+                                inputs,
+                                &mut body_candidates,
+                            );
+                        });
+                    if let Some(loss) = refusal {
+                        losses.push(loss);
+                    }
+                    break 'feature_edit;
+                }
+                if let FeatureDefinition::Operation(
+                    FeatureOperation::Coil {
+                        result: cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. },
+                        ..
+                    }
+                    | FeatureOperation::Thicken {
+                        result:
+                            Some(cadmpeg_ir::features::SolidFeatureResult::Boolean { targets, .. }),
+                        ..
+                    },
+                ) = definition
+                {
+                    if let Some(previous_state_id) = scope.previous_history_state_id() {
+                        bind_body_recipe_body_selection(
+                            targets,
+                            feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            body_recipe_operands,
+                        );
+                    } else {
+                        bind_direct_body_recipe_body_selection(
+                            targets,
+                            scope,
+                            inputs,
+                            &mut body_candidates,
+                        );
+                    }
+                    break 'feature_edit;
+                }
+                if let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+                    bodies, ..
+                }) = definition
+                {
+                    if let Some(previous_state_id) = scope.previous_history_state_id() {
+                        bind_body_recipe_body_selection(
+                            bodies,
+                            feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            body_recipe_operands,
+                        );
+                    } else {
+                        let native = bodies.clone();
+                        bind_direct_body_recipe_body_selection(
+                            bodies,
+                            scope,
+                            inputs,
+                            &mut body_candidates,
+                        );
+                        // The recipe identity of the operands outranks a face match.
+                        generated_bodies::keep_recipe_body_slots(bodies, native, scope, inputs);
+                    }
+                    break 'feature_edit;
+                }
+                if let FeatureDefinition::Operation(FeatureOperation::ReverseShape {
+                    source: bodies,
+                }) = definition
+                {
+                    if let Some(previous_state_id) = scope.previous_history_state_id() {
+                        bind_body_recipe_body_selection(
+                            bodies,
+                            feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            body_recipe_operands,
+                        );
+                    } else {
+                        bind_direct_body_recipe_body_selection(
+                            bodies,
+                            scope,
+                            inputs,
+                            &mut body_candidates,
+                        );
+                    }
+                    break 'feature_edit;
+                }
+                if let FeatureDefinition::Operation(FeatureOperation::Scale { bodies, .. }) =
+                    definition
+                {
+                    if let Some(previous_state_id) = scope.previous_history_state_id() {
+                        bind_body_recipe_body_selection(
+                            bodies,
+                            feature_id,
+                            previous_state_id,
+                            scope,
+                            groups,
+                            body_recipe_operands,
+                        );
+                        if matches!(bodies, BodySelection::Native(_)) {
+                            bind_direct_body_recipe_body_selection(
+                                bodies,
+                                scope,
+                                inputs,
+                                &mut body_candidates,
+                            );
+                        }
+                    } else {
+                        bind_direct_body_recipe_body_selection(
+                            bodies,
+                            scope,
+                            inputs,
+                            &mut body_candidates,
+                        );
+                    }
+                    break 'feature_edit;
+                }
+                let (bodies, proof) = match definition {
+                    FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
+                        (bodies, BodySelectionProof::TopologyStableRevision)
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Shell {
+                        bodies: Some(bodies),
+                        ..
+                    }) => (bodies, BodySelectionProof::RevisedInput),
+                    FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                        targets, ..
+                    }) => (targets, BodySelectionProof::RevisedInput),
+                    _ => break 'feature_edit,
+                };
+                let BodySelection::Native(group_id) = bodies else {
+                    break 'feature_edit;
+                };
+                let mut matching_groups = groups.iter().filter(|group| {
+                    group.id == *group_id
+                        && group.scope_record_index == scope.record_index
+                        && group.role() == DesignOperandRole::BODIES_A
+                        && crate::ids::native_stream(&group.id)
+                            == crate::ids::native_stream(&scope.id)
+                });
+                let Some(group) = matching_groups.next() else {
+                    break 'feature_edit;
+                };
+                if matching_groups.next().is_some() || group.members().len() != 1 {
+                    break 'feature_edit;
+                }
+                let (Some(state_id), Some(previous_state_id)) =
+                    (scope.history_state_id(), scope.previous_history_state_id())
+                else {
+                    bind_direct_body_recipe_body_selection(
+                        bodies,
+                        scope,
+                        inputs,
+                        &mut body_candidates,
+                    );
+                    break 'feature_edit;
+                };
+                let Some((history, state, _previous)) =
+                    unique_history_state_pair(histories, state_id, previous_state_id)
+                else {
+                    bind_direct_body_recipe_body_selection(
+                        bodies,
+                        scope,
+                        inputs,
+                        &mut body_candidates,
+                    );
+                    break 'feature_edit;
+                };
+                let history_states = unique_feature_history_states(history);
+                let body = match proof {
+                    BodySelectionProof::TopologyStableRevision => {
+                        singleton_body_revision_across_state_chain(
+                            history,
+                            state,
+                            previous_state_id,
+                            &history_states,
+                        )
+                    }
+                    BodySelectionProof::RevisedInput => {
+                        singleton_revised_input_body_across_state_chain(
+                            history,
+                            state,
+                            previous_state_id,
+                            &history_states,
+                        )
+                    }
+                };
+                let Some(body) = body else {
+                    break 'feature_edit;
+                };
+                let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
+                let state_id = crate::ids::history_input_state_id(&prefix);
+                let body_id = crate::ids::history_input_body_id(&prefix, body);
+                let native = group_id.to_owned();
+                let selected = vec![body_id];
+                if let Ok(historical) =
+                    cadmpeg_ir::features::BodySelection::historical(state_id, selected, native)
+                {
+                    *bodies = historical;
+                }
             }
-            let (bodies, proof) = match definition {
-                FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
-                    (bodies, BodySelectionProof::TopologyStableRevision)
-                }
-                FeatureDefinition::Operation(FeatureOperation::Shell {
-                    bodies: Some(bodies),
-                    ..
-                }) => (bodies, BodySelectionProof::RevisedInput),
-                FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, .. }) => {
-                    (targets, BodySelectionProof::RevisedInput)
-                }
-                _ => break 'feature_edit,
-            };
-            let BodySelection::Native(group_id) = bodies else {
-                break 'feature_edit;
-            };
-            let mut matching_groups = groups.iter().filter(|group| {
-                group.id == *group_id
-                    && group.scope_record_index == scope.record_index
-                    && group.role() == DesignOperandRole::BODIES_A
-                    && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
-            });
-            let Some(group) = matching_groups.next() else {
-                break 'feature_edit;
-            };
-            if matching_groups.next().is_some() || group.members().len() != 1 {
-                break 'feature_edit;
-            }
-            let (Some(state_id), Some(previous_state_id)) =
-                (scope.history_state_id(), scope.previous_history_state_id())
-            else {
-                bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
-                break 'feature_edit;
-            };
-            let Some((history, state, _previous)) =
-                unique_history_state_pair(histories, state_id, previous_state_id)
-            else {
-                bind_direct_body_recipe_body_selection(bodies, scope, inputs, &mut body_candidates);
-                break 'feature_edit;
-            };
-            let history_states = unique_feature_history_states(history);
-            let body = match proof {
-                BodySelectionProof::TopologyStableRevision => {
-                    singleton_body_revision_across_state_chain(history, state, previous_state_id, &history_states)
-                }
-                BodySelectionProof::RevisedInput => {
-                    singleton_revised_input_body_across_state_chain(history, state, previous_state_id, &history_states)
-                }
-            };
-            let Some(body) = body else {
-                break 'feature_edit;
-            };
-            let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
-            let state_id = crate::ids::history_input_state_id(&prefix);
-            let body_id = crate::ids::history_input_body_id(&prefix, body);
-            let native = group_id.to_owned();
-            let selected = vec![body_id];
-            if let Ok(historical) = cadmpeg_ir::features::BodySelection::historical(state_id, selected, native) {
-                *bodies = historical;
-            }
-        }
         });
     }
 
     losses
-}
-
-fn combine_historical_rows(
-    prefix: &cadmpeg_ir::ids::IdentityKey,
-    slots: Vec<i64>,
-    native_tools: Vec<String>,
-) -> Option<Vec<cadmpeg_ir::features::BodyMember<cadmpeg_ir::ids::HistoricalBodyId>>> {
-    let mut rows = Vec::new();
-    for (slot, native) in slots.into_iter().zip(native_tools) {
-        let body = crate::ids::history_input_body_id(prefix, slot);
-        let row = body_member(body, native)?;
-
-        rows.push(row);
-    }
-    Some(rows)
 }
 
 fn pattern_combine_tool_slots(
