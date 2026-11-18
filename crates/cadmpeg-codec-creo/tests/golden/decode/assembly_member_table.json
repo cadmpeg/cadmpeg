@@ -236,7 +236,8 @@
           "label": "TOP_ASSY",
           "part_number": "TOP_ASSY",
           "sketches": [],
-          "source_name": "TOP_ASSY"
+          "source_name": "TOP_ASSY",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

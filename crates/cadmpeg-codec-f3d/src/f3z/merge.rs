@@ -1912,6 +1912,7 @@ fn define_member(
         bom_properties: std::collections::BTreeMap::new(),
         bodies,
         sketches,
+        tessellations: Vec::new(),
         native_ref: None,
     });
     Ok(id)
@@ -2505,6 +2506,7 @@ mod tests {
                 bom_properties: std::collections::BTreeMap::new(),
                 bodies: vec![body.clone()],
                 sketches: Vec::new(),
+                tessellations: Vec::new(),
                 native_ref: None,
             });
         let ctx = cadmpeg_test_support::service_decode_context();

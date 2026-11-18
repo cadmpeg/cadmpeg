@@ -110,7 +110,8 @@
           "kind": "group",
           "native_ref": "/Legacy",
           "sketches": [],
-          "source_name": "Legacy"
+          "source_name": "Legacy",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
