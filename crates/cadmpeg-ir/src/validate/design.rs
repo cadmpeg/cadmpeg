@@ -16,11 +16,16 @@ mod configurations;
 mod constructions;
 mod containers;
 mod evaluations;
+mod fit;
 #[cfg(test)]
 mod fixture;
+mod folds;
 mod index;
 mod linkage;
+mod matching;
+mod materials;
 mod names;
+mod overrides;
 mod parameters;
 mod records;
 mod resolved;
@@ -135,14 +140,18 @@ pub(super) fn check_design(
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);
+    overrides::check(records, findings);
 
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
     index.add_dependencies(&held);
     let states = states::States::new(ir);
+    let matchers = matching::Matchers::new(&states);
     names::check(ctx, &index, &states, &held, findings)?;
-    selections::check(ctx, &index, &states, &held, findings)?;
+    selections::check(ctx, &index, &matchers, &held, findings)?;
     constructions::check(&index, &held, findings);
+    folds::check(&index, &matchers, &held, findings);
+    materials::check(&index, &matchers, findings);
     Ok(())
 }
 

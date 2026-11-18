@@ -49,6 +49,14 @@ pub(super) struct States<'a> {
     pub(super) extents: Vec<Extent<'a>>,
 }
 
+/// A stored evaluation's chain of deltas, from its own down.
+pub(super) struct Chain<'s, 'a> {
+    /// Each delta's records and the records it removes from its base.
+    pub(super) layers: Vec<(&'a Topology, &'s BTreeSet<&'a str>)>,
+    /// The current state's extent the chain ends on, where it ends on one.
+    pub(super) bottom: Option<&'s Extent<'a>>,
+}
+
 /// Where a lookup in an evaluation's chain stops.
 enum Bottom<'a> {
     Empty,
@@ -185,6 +193,36 @@ impl<'a> States<'a> {
                 .filter(|(entity, _)| self.holds(evaluation, entity) == Some(true))
                 .collect(),
         )
+    }
+
+    /// The current geometry.
+    pub(super) const fn geometry(&self) -> &'a Topology {
+        &self.ir.geometry
+    }
+
+    /// The deltas of a stored evaluation's chain of bases, its own first, each
+    /// with the records it removes from its base, and the extent the chain
+    /// ends on where it ends on a current state. `None` where the chain does
+    /// not resolve.
+    pub(super) fn chain(&self, evaluation: &str) -> Option<Chain<'_, 'a>> {
+        let mut chain = Chain {
+            layers: Vec::new(),
+            bottom: None,
+        };
+        let mut at = self.layers.get(evaluation)?;
+        for _ in 0..=self.layers.len() {
+            let content = at.evaluation.content.as_ref()?;
+            chain.layers.push((&content.delta.records, &at.removed));
+            match self.bottom_or_next(at)? {
+                Ok(next) => at = next,
+                Err(Bottom::Empty) => return Some(chain),
+                Err(Bottom::Current(extent)) => {
+                    chain.bottom = Some(extent);
+                    return Some(chain);
+                }
+            }
+        }
+        None
     }
 
     /// The instance paths with bodies in the resolved state of a stored
