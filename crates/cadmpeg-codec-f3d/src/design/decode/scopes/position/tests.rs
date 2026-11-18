@@ -1,4 +1,5 @@
 use super::*;
+use crate::layout::{assembly_operand_path_wrapper as wrapper, indexed_design_record_header};
 use crate::test_support::position::{append_locator, fixture, OCCURRENCE_KEY};
 
 fn read(
@@ -165,7 +166,16 @@ fn version_four_position_preserves_its_single_matrix_row() {
         positions.paths[0].occurrence_guids()[0].value.as_str(),
         OCCURRENCE_KEY
     );
-    scope.captured_positions = Some(positions);
+    let wrapper_start = bytes.len() - indexed_design_record_header::LEN - wrapper::LEN;
+    bytes[wrapper_start + wrapper::CONSTANT_ONE_BYTE] = 0;
+    let unregistered = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(unregistered.rows[0].path_index, None);
+    assert_eq!(unregistered.rows[0].matrix, positions.rows[0].matrix);
+
+    types.insert(702, ("FF415D89-A1DB-44AC-B824-E9A772B86ED4", 1));
+    let legacy = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(legacy, positions);
+    scope.captured_positions = Some(legacy);
     let decoded: DesignParameterScope =
         serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
     assert_eq!(decoded.captured_positions, scope.captured_positions);

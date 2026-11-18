@@ -2287,7 +2287,7 @@ The Position suffix spans 83 bytes in version 6 between the rows and the normal 
 
 The version-4 prefix before the ordered-reference count spans 319 bytes. A u32 row count of one occurs at offset 95. The 141-byte row at offset 99 stores one matrix, with coefficients starting at offset 112. The version-4 suffix starts at offset 240 with the u32 GUID length, followed by the same UTF-16LE null GUID and three zero bytes.
 
-Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`. Version 4 uses locator version 3. Its 62-byte identity locator stores u32 discriminator one at offset 56. Version 6 uses locator version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope.
+Each row target selects an operand-path locator of type `2E3AC990-483D-4A55-8662-C064B976A957`. Version 4 uses locator version 3. Its 62-byte identity locator stores u32 discriminator one at offset 56. Version 6 uses locator version 5. The locator's backlink names the Position scope. Its ordered typed path records and wrapper use the assembly operand-path envelope. The version-4 identity locator also uses a 37-byte wrapper of type `FF415D89-A1DB-44AC-B824-E9A772B86ED4`, version 1, with marker zero and one path reference.
 
 #### Assembly operands
 

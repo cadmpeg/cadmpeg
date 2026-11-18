@@ -32,6 +32,7 @@ use std::collections::HashMap;
 pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
 const RETAINED_BYTES_PER_SOURCE_BYTE: u64 = 16;
+const POSITION_PATH_WRAPPER_TYPE_GUID: &str = "FF415D89-A1DB-44AC-B824-E9A772B86ED4";
 
 pub(super) fn exact_assembly_operand_paths(
     bytes: &[u8],
@@ -548,12 +549,22 @@ fn exact_assembly_operand_path_envelope(
         } else {
             path_wrapper::LEN
         };
+        let wrapper_marker =
+            *bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?)?;
+        let zero_marker_position_wrapper = wrapper_marker == 0
+            && earlier_identity
+            && path_spans.len() == 1
+            && stream_types
+                .get(&u64::from(wrapper_record_index))
+                .is_some_and(|(guid, version)| {
+                    *version == 1 && guid.eq_ignore_ascii_case(POSITION_PATH_WRAPPER_TYPE_GUID)
+                });
         if variable_reference && wrapper_class_tag != "397"
             || bytes.get(
                 wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?
                     ..wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?,
             )? != [0; 10]
-            || bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?) != Some(&1)
+            || (wrapper_marker != 1 && !zero_marker_position_wrapper)
             || View::u32_le_at(
                 bytes,
                 wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)?,
