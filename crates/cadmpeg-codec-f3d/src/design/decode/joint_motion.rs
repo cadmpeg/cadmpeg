@@ -237,7 +237,8 @@ fn as_built_motion_joint(
             .get(&u64::from(index))
             .is_some_and(|(actual, v)| *v == version && actual.eq_ignore_ascii_case(guid))
     };
-    if !is_type(motion.index, MOTION_TYPE_GUID, 3) {
+    let &(guid, version) = as_built.types.get(&u64::from(motion.index))?;
+    if !guid.eq_ignore_ascii_case(MOTION_TYPE_GUID) || !matches!(version, 2 | 3) {
         return None;
     }
     let record = bytes.get(motion.start..motion.end)?;
@@ -262,7 +263,7 @@ fn as_built_motion_joint(
         .chunks_exact(parent_entry::LEN);
     let joint = marked_record_reference(entries.next_back()?, parent_entry::REFERENCE)?;
     (as_built.joints.contains(&joint)
-        && is_type(joint, JOINT_TYPE_GUID, 5)
+        && is_type(joint, JOINT_TYPE_GUID, version + 2)
         && entries.all(|entry| {
             marked_record_reference(entry, parent_entry::REFERENCE)
                 .is_some_and(|parent| is_type(parent, OCCURRENCE_TYPE_GUID, 2))
