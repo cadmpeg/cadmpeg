@@ -736,6 +736,38 @@ fn a_loft_construction_group_admits_the_point_role() {
 }
 
 #[test]
+fn a_surface_patch_group_admits_boundary_profile_and_interior_roles() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayload};
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::CadIr::empty();
+        let mut native = native(true, false);
+        native.design_parameter_scopes[0]
+            .try_edit(|draft| {
+                draft.payload =
+                    DesignScopePayload::try_from(DesignFeatureKind::SurfacePatch).unwrap();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        for (role, admitted) in [
+            (DesignOperandRole::BODIES_A, true),
+            (DesignOperandRole::PROFILE, true),
+            (DesignOperandRole::ROLE_0X21, true),
+            (DesignOperandRole::ROLE_0X10, false),
+        ] {
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(role);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(findings.is_empty(), admitted, "{role:?}: {findings:?}");
+        }
+    });
+}
+
+#[test]
 fn a_path_pattern_group_role_matches_its_scope_reference_ordinal() {
     use crate::records::{
         feature::scope::{DesignFeatureKind, DesignParameterScope},

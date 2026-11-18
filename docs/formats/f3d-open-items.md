@@ -552,14 +552,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Note.** In `Parametric_extrusion_generator.f3d`, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`.
 
 
-### DR-641. Record named by the counted head of a rectangular-pattern distribution block
-
-**Question.** What record does the marked reference in the counted head of a rectangular-pattern distribution block name, and what selects the counted head over the twelve-zero-byte head?
-
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the counted head layout. The distance type, entry count, entries, instance count, generated-instance references and suffix follow at the same relative offsets in both forms.
-
-**Need.** A writer must emit the counted head and its reference for a pattern that uses it, and a reader must know whether the reference changes the pattern's seed, direction or distribution.
-
 ### DR-654. Stored profile loop curves off the selected material boundary
 
 **Question.** Which sketch curves does a typed profile loop list when the selected region has a curve that ends inside it, or two coincident curves along one boundary interval?
@@ -2438,6 +2430,22 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 **Need.** Saves that vary the spacing and the start point on one path, with the two values compared against the instance positions.
 
 **Conflict.** None.
+
+### DR-642. Circular-pattern compute option
+
+**Question.** Which bytes store the Compute option of a circular pattern of features, and does it share the rectangular distribution block's fields?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder reads the symmetric byte from a payload whose distribution block stores u32 `2` in the matching position.
+
+**Need.** The circular distribution-block bytes for Compute options `0` and `1`, with symmetric byte `0` and `1`.
+
+### DR-818. Targets of rectangular-pattern body references
+
+**Question.** Which body does the entity suffix of the body browser node that a rectangular-pattern body reference names select, and which record does the marked reference after that suffix name?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the body references of the distribution block. A feature seed stores the references, and each one names a body browser node. In the decoded files, the entity suffix names a body that the pattern acts on, and the marked reference after the suffix names the feature scope that made that body. The decoder checks the node type and counts the references.
+
+**Need.** A rectangular pattern of features whose target body is a body that a scope other than the seed's scope made, with its body references, to tell whether the entity suffix selects the target body or the seed's body.
 
 ### DR-643. Persistent tags of omitted bodies
 

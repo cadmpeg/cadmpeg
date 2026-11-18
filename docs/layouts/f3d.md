@@ -5681,6 +5681,43 @@ Unstated regions:
 - `0..139` (139 B): The preceding shifted prologue and profile-normal envelope are outside this tail.
 - `150..166` (16 B): Sixteen zero bytes separate the first parameter reference from the first-side extent.
 
+## `thread_compact_hole_owners_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Relative to the primary Thread indexed header. The designation starts at offset 42.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The [word-prefixed compact Thread] |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The [word-prefixed compact Thread] |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | The [word-prefixed compact Thread] |
+| 29 | 4 | `prefix_word` | `u32` | little | spec | The [word-prefixed compact Thread] |
+| 33 | 5 | `form_marker` | `bytes[5]` | little | spec | The [word-prefixed compact Thread] |
+| 38 | 4 | `form_token` | `bytes[4]` | little | spec | The [word-prefixed compact Thread] |
+
+## `thread_hole_companion_tail`
+
+Spec §3.1 · layout: byte offsets · size: 88 B
+
+Relative to the end of the LP-UTF16 Thread kind.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | The [88-byte Thread companion tail] |
+| 4 | 15 | `zero_prefix` | `bytes[15]` | little | spec | The [88-byte Thread companion tail] |
+| 19 | 11 | `first_companion` | `bytes[11]` | little | spec | The [88-byte Thread companion tail] |
+| 30 | 1 | `null_reference` | `u8` | little | spec | The [88-byte Thread companion tail] |
+| 31 | 4 | `previous_history_state` | `u32` | little | spec | The [88-byte Thread companion tail] |
+| 35 | 4 | `first_epoch` | `u32` | little | spec | The [88-byte Thread companion tail] |
+| 39 | 8 | `evaluation_duration` | `f64` | little | spec | The [88-byte Thread companion tail] |
+| 47 | 4 | `second_epoch` | `u32` | little | spec | The [88-byte Thread companion tail] |
+| 51 | 11 | `second_companion` | `bytes[11]` | little | spec | The [88-byte Thread companion tail] |
+| 62 | 3 | `flags` | `bytes[3]` | little | spec | The [88-byte Thread companion tail] |
+| 65 | 11 | `third_companion` | `bytes[11]` | little | spec | The [88-byte Thread companion tail] |
+| 76 | 11 | `hole` | `bytes[11]` | little | spec | The [88-byte Thread companion tail] |
+| 87 | 1 | `zero_suffix` | `u8` | little | spec | The [88-byte Thread companion tail] |
+
 ## `thread_standard_scope_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 38 B
@@ -7067,16 +7104,27 @@ Only type version 7 assigns normal reversal to primary-scope offset 31.
 | 31 | 1 | `normal_flip` | `u8` | little | spec | the byte at primary-scope offset `P + 31` reverses the whole created surface normal |
 | 32 | 4 | `following_word` | `u32` | little | spec | The following `u32le` at `P + 32` is `4` · value `4` |
 
+## `surface_patch_v5_compact_selection_frame`
+
+Spec §3.1 · layout: byte offsets · size: 39 B
+
+The compact version-5 form has the same selection, interior-list and tool-reference prefixes as the regular version-5 form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 27 | `scope_prefix` | `bytes[27]` | little | spec | A `SurfacePatch` scope of type version 5, 6, or 7 |
+| 27 | 12 | `selection_prefix` | `bytes[12]` | little | spec | `Q` is 27 in the compact version-5 form |
+
 ## `surface_patch_v5_selection_frame`
 
 Spec §3.1 · layout: byte offsets · size: 43 B
 
-Type versions 5 and 6 start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
+Regular version-5 and version-6 forms start the selection prefix at primary-scope offset 31. Version 7 starts it at the following word of surface_patch_v7_normal_flip_prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 31 | `scope_prefix` | `bytes[31]` | little | spec | A `SurfacePatch` scope of type version 5, 6, or 7 |
-| 31 | 12 | `selection_prefix` | `bytes[12]` | little | spec | `Q` is 31 in versions 5 and 6 |
+| 31 | 12 | `selection_prefix` | `bytes[12]` | little | spec | 31 in the regular version-5 and version-6 forms |
 
 ## `surface_patch_selection_prefix`
 
@@ -8915,34 +8963,20 @@ Parsed by:
 
 Spec §Assembly operands · layout: byte offsets · size: 29 B
 
-Offsets are relative to the byte after the leading zero byte or V-direction reference.
+Offsets are relative to the byte after the leading zero byte or V-direction reference. Each body reference moves every field after `body_count` eleven bytes later.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 12 | `zero_run` | `bytes[12]` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
-| 12 | 4 | `fixed_two` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. · value `2` |
-| 16 | 4 | `word` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
-| 20 | 4 | `sentinel` | `u32` | little | spec | Twelve zero bytes, u32 `2`, one u32, and u32 `0xffffffff` follow. |
+| 0 | 4 | `body_count` | `u32` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
+| 4 | 8 | `zero_run` | `bytes[8]` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
+| 12 | 4 | `compute_option` | `u32` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
+| 16 | 4 | `seed_kind` | `u32` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
+| 20 | 4 | `sentinel` | `u32` | little | spec | Next come a u32 body count, that many marked body references, eight zero bytes, the u32 Compute option, the u32 seed kind, and u32 `0xffffffff`. |
 | 24 | 1 | `distance_type` | `u8` | little | spec | The next byte is the distance type |
 | 25 | 4 | `entry_count` | `u32` | little | spec | A u32 entry count, that many sixteen-byte entries |
-
-## `rectangular_pattern_payload_counted_head`
-
-Spec §Assembly operands · layout: byte offsets · size: 19 B
-
-Offsets are relative to the byte after the leading zero byte of the distribution block.
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `count` | `u32` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. · value `1` |
-| 4 | 11 | `reference` | `bytes[11]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
-| 15 | 4 | `zero_run` | `bytes[4]` | little | spec | In the counted form, the leading byte `0` is followed by u32 `1`, a marked record reference, and four zero bytes in place of the twelve zero bytes. |
 
 ## `rectangular_pattern_payload_suffix`
 
@@ -10139,6 +10173,48 @@ Parsed by:
 Unstated regions:
 
 - `0..59` (59 B): The specification states no field in this range.
+
+## `derived_base_mirror_scope`
+
+Spec §3.1 · layout: byte offsets · size: 664 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `body_reference_count` | `u32` | little | spec | The body reference count at offset 20 is u32 2 · value `2` |
+| 24 | 11 | `first_body_reference` | `bytes[11]` | little | spec | Two plain local body references begin at offsets 24 and 41 |
+| 41 | 11 | `result_body_reference` | `bytes[11]` | little | spec | The second names the saved result body entity |
+| 621 | 11 | `companion_reference` | `bytes[11]` | little | spec | A plain local companion reference begins at offset 621 |
+| 632 | 2 | `closing_zeroes` | `bytes[2]` | little | spec | two zero bytes begin at offset 632 |
+| 634 | 30 | `paired_header` | `bytes[30]` | little | spec | the 30-byte paired header begins at offset 634 |
+
+Unstated regions:
+
+- `0..20` (20 B): Indexed header and prologue.
+- `35..41` (6 B): Body-reference trailer.
+- `52..621` (569 B): The owner reference is in derived_base_owner_reference.
+
+## `derived_base_mirror_companion`
+
+Spec §3.1 · layout: byte offsets · size: 115 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 31 | 11 | `owner_reference` | `bytes[11]` | little | spec | plain local owner reference at offset 31 |
+| 69 | 11 | `scope_reference` | `bytes[11]` | little | spec | plain local references at offsets 69 and 88 |
+| 88 | 11 | `repeated_scope_reference` | `bytes[11]` | little | spec | plain local references at offsets 69 and 88 |
+
+Unstated regions:
+
+- `0..31` (31 B): Header and presentation fields.
+- `42..69` (27 B): Presentation fields.
+- `80..88` (8 B): Presentation field.
+- `99..115` (16 B): Presentation fields.
 
 ## `entity_tracking_carrier_prefix`
 
