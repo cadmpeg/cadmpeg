@@ -573,7 +573,7 @@ fn version_three_decoder_keeps_qualified_scope_connectors_and_reports_partial_bi
         assert_eq!(
             connector.operand.container,
             cadmpeg_ir::products::OperandContainer::External {
-                external_document: cadmpeg_ir::products::ExternalDocument::Missing {},
+                external_document: cadmpeg_ir::products::ExternalDocument::default(),
             }
         );
     }
