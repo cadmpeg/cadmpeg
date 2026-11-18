@@ -1342,12 +1342,11 @@ size = 5
 note = "This trailer is relative to the end of the variable LP-UTF16 expression of an ordinary compact owned parameter."
 
 [[record.field]]
-name = "reserved_0"
+name = "opaque_flag"
 offset = 0
 type = "u8"
 source = "spec"
 anchor = "The compact owned expression trailer is five bytes"
-value = 0
 
 [[record.field]]
 name = "driven"
@@ -21606,6 +21605,28 @@ offset = 40
 type = "bytes[11]"
 source = "spec"
 anchor = "the `N` marked group references start at offset 40"
+
+[[record]]
+name = "legacy_extrude_group_tail_marker"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The empty group-tail record is its indexed header and eighteen zero bytes"
+size = 29
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The empty group-tail record is its indexed header and eighteen zero bytes"
+
+[[record.field]]
+name = "zero_payload"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "The empty group-tail record is its indexed header and eighteen zero bytes"
 
 [[record]]
 name = "legacy_body_group_frame_123"

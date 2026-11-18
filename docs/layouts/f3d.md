@@ -494,7 +494,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `reserved_0` | `u8` | little | spec | The compact owned expression trailer is five bytes · value `0` |
+| 0 | 1 | `opaque_flag` | `u8` | little | spec | The compact owned expression trailer is five bytes |
 | 1 | 1 | `driven` | `u8` | little | spec | The compact owned expression trailer is five bytes |
 | 2 | 3 | `zero_run_3` | `bytes[3]` | little | spec | The compact owned expression trailer is five bytes |
 
@@ -6667,6 +6667,18 @@ Spec §3.1 · layout: byte offsets · size: 51 B
 | 25 | 11 | `transform_reference` | `bytes[11]` | little | spec | the marked transform reference is at offset 25 |
 | 36 | 4 | `body_count` | `u32` | little | spec | `N` is at offset 36 |
 | 40 | 11 | `first_body_group` | `bytes[11]` | little | spec | the `N` marked group references start at offset 40 |
+
+## `legacy_extrude_group_tail_marker`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The empty group-tail record is its indexed header and eighteen zero bytes |
+| 11 | 18 | `zero_payload` | `bytes[18]` | little | spec | The empty group-tail record is its indexed header and eighteen zero bytes |
 
 ## `legacy_body_group_frame_123`
 
