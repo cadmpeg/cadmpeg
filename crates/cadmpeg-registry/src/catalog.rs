@@ -219,7 +219,8 @@ impl InputCatalog {
                             feature = "iges",
                             feature = "sat",
                             feature = "pvz",
-                            feature = "usd"
+                            feature = "usd",
+                            feature = "solidcraft"
                         ))]
                         crate::descriptors::FormatKind::Native(native) => InputKind::Native {
                             native,
@@ -492,6 +493,9 @@ mod tests {
         }
         if cfg!(feature = "pvz") {
             expected.push("pvz");
+        }
+        if cfg!(feature = "solidcraft") {
+            expected.push("solidcraft");
         }
         assert_eq!(
             tie.candidates()

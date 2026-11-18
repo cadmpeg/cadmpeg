@@ -124,6 +124,8 @@ Focused parser coverage. Focused codec parser targets import `::fuzz` only.
   through `cadmpeg_codec_iges::fuzz`
 - Creo View: `pvz_package` and `pvz_exact` go through `cadmpeg_codec_pvz::fuzz`
 - OpenUSD: `usd_layer` goes through `cadmpeg_codec_usd::fuzz`
+- SolidCraft: `solidcraft_source` goes through `cadmpeg_codec_solidcraft::fuzz`
+  and the whole-codec inspect and decode paths
 
 IR and STEP:
 

@@ -1,0 +1,52 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "174",
+        "crc32": "c67e2105",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "kind": "stored",
+      "name": "drawing.json",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 33
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "232",
+        "crc32": "612bb4b1",
+        "data_offset": "119",
+        "header_offset": "75"
+      },
+      "kind": "stored",
+      "name": "container.json",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 55
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "container_format": "solidcraft-container/1"
+        },
+        "dialect": "solidcraft:drawing-container-1"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": []
+}

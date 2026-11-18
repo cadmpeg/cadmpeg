@@ -1,0 +1,254 @@
+{
+  "ir": {
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
+      "view_presentations": []
+    },
+    "native": {
+      "solidcraft": {
+        "unknowns": [
+          {
+            "id": "solidcraft:native:entry#container.json",
+            "links": []
+          },
+          {
+            "id": "solidcraft:native:entry#document.json",
+            "links": []
+          }
+        ]
+      }
+    },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
+    "source": {
+      "attributes": {
+        "document_name": "Block",
+        "feature_records": "1",
+        "parameter_records": "1",
+        "units": "mm"
+      },
+      "identity": {
+        "dialects": {
+          "extra": [],
+          "primary": {
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {
+              "container_format": "solidcraft-container/1",
+              "document_format": "solidcraft/57"
+            },
+            "dialect": "solidcraft:container-1-v57"
+          }
+        },
+        "kind": "classified"
+      }
+    },
+    "tolerances": {
+      "angular": 1e-10,
+      "linear": 1e-6
+    },
+    "units": {
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
+    }
+  },
+  "report": {
+    "coverage": {},
+    "identity": {
+      "dialects": {
+        "extra": [],
+        "primary": {
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {
+            "container_format": "solidcraft-container/1",
+            "document_format": "solidcraft/57"
+          },
+          "dialect": "solidcraft:container-1-v57"
+        }
+      },
+      "kind": "classified"
+    },
+    "losses": [
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.features-undecoded",
+            "kind": "feature_history_retained",
+            "namespace": "solidcraft"
+          }
+        },
+        "message": "1 feature records are retained without decoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.parameters-undecoded",
+            "kind": "record_not_typed",
+            "namespace": "solidcraft"
+          }
+        },
+        "message": "1 parameter records are retained without decoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "document.section-undecoded",
+            "kind": "record_not_typed",
+            "namespace": "solidcraft"
+          }
+        },
+        "message": "document sections retained without decoding: appearances, components, links",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "cache.model-absent",
+            "kind": "missing_geometry_stream",
+            "namespace": "solidcraft",
+            "strict_floor": "warning"
+          }
+        },
+        "message": "the container carries no model cache: its geometry exists only as the evaluation of its feature history",
+        "severity": "warning"
+      }
+    ],
+    "notes": [],
+    "transfer": {
+      "geometry_transferred": false,
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
+    }
+  },
+  "source_fidelity": {
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "f0bc696f2a240a2204d715e016c00879232a1e91e94e2f9609a2a68be94fae7c",
+    "file_digests": {},
+    "retained_records": {
+      "solidcraft:native:entry#container.json": {
+        "bytes": {
+          "data": "eyJmb3JtYXQiOiJzb2xpZGNyYWZ0LWNvbnRhaW5lci8xIn0=",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:entry#document.json": {
+        "bytes": {
+          "data": "eyJhcHBlYXJhbmNlcyI6eyJib2RpZXMiOnt9fSwiY29tcG9uZW50cyI6W3siaWQiOjMsIm5hbWUiOiJBcm0iLCJwYXJlbnQiOjB9XSwiZmVhdHVyZXMiOlt7ImNvcm5lciI6WzAuMCwwLjAsMC4wXSwiaGVpZ2h0IjoiNSBtbSIsImlkIjoxLCJsZW5ndGgiOiJ3IiwibmFtZSI6IkJveDEiLCJvcGVyYXRpb24iOiJuZXdfYm9keSIsInN1cHByZXNzZWQiOmZhbHNlLCJ0eXBlIjoiYm94Iiwid2lkdGgiOiIxMCBtbSJ9XSwiZm9ybWF0Ijoic29saWRjcmFmdC81NyIsImxpbmtzIjp7IjMiOnsiZmVhdHVyZSI6MiwicGF0aCI6InBhcnRzL2FybS5zYyJ9fSwibmFtZSI6IkJsb2NrIiwicGFyYW1zIjpbeyJleHByIjoiMjAgbW0iLCJtb2RlbCI6ZmFsc2UsIm5hbWUiOiJ3IiwidW5pdCI6Im1tIn1dLCJ1bml0cyI6Im1tIn0=",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      }
+    },
+    "unrepresented": []
+  }
+}

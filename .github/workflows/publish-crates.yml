@@ -54,6 +54,7 @@ jobs:
             cadmpeg-codec-rhino
             cadmpeg-codec-sat
             cadmpeg-codec-sldprt
+            cadmpeg-codec-solidcraft
             cadmpeg-codec-step
             cadmpeg-codec-usd
             cadmpeg-registry

@@ -1,0 +1,39 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "features": "1",
+        "format": "57",
+        "name": "Block",
+        "params": "1"
+      },
+      "kind": "stored",
+      "name": "document",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 505
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "document_format": "solidcraft/57"
+        },
+        "dialect": "solidcraft:json-v57"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "design document with 1 features and 1 parameters"
+  ]
+}

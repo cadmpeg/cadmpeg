@@ -5,7 +5,12 @@ use crate::{InputCatalog, ResolvedSource};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
-#[cfg(any(feature = "fcstd", feature = "f3d", feature = "step"))]
+#[cfg(any(
+    feature = "fcstd",
+    feature = "f3d",
+    feature = "step",
+    feature = "solidcraft"
+))]
 #[test]
 fn zip_members_beyond_the_prefix_resolve_with_or_without_first_frame_damage() {
     let cases = [
@@ -15,6 +20,8 @@ fn zip_members_beyond_the_prefix_resolve_with_or_without_first_frame_damage() {
         ("FusionAssetName[Active]/Breps.BlobParts/body.smbh", "f3d"),
         #[cfg(feature = "step")]
         ("ISO-10303.p21", "step"),
+        #[cfg(feature = "solidcraft")]
+        ("container.json", "solidcraft"),
     ];
     for (member, format) in cases {
         for damaged in [false, true] {

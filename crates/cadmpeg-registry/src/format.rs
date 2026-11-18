@@ -158,6 +158,8 @@ mod tests {
             "parasolid",
             "pvz",
             "usd",
+            "solidcraft",
+            "sc",
         ] {
             assert!(
                 Format::is_known_name(name).expect("embedded registry loads"),

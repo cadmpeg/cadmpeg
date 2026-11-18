@@ -154,6 +154,10 @@ scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:p
 level = 2
 scored = ["usd:usda-1.0"]
 
+[format.solidcraft]
+level = 1
+scored = ["solidcraft:container-1-v57", "solidcraft:json-v57"]
+
 
 # --------------------------------------------------------------------------
 # iges
@@ -1214,3 +1218,44 @@ the sldprt and nx readers emit this residual layer for every other schema token
 extracted from a framed Parasolid stream. The source token names no classified
 row, so recovery is admitted without claiming a verified dialect. Both hosts
 charge source.kernel-dialect-unverified from this layer"""
+
+# --------------------------------------------------------------------------
+# solidcraft
+# --------------------------------------------------------------------------
+
+[[support]]
+dialect = "solidcraft:container-1-v57"
+read = "L1"
+write = "none"
+
+[[support]]
+dialect = "solidcraft:container-1-v1-56"
+read = "L1"
+write = "none"
+
+[[support]]
+dialect = "solidcraft:json-v57"
+read = "L1"
+write = "none"
+
+[[support]]
+dialect = "solidcraft:json-v1-56"
+read = "L1"
+write = "none"
+
+[[support]]
+dialect = "solidcraft:drawing-container-1"
+read = "detected"
+write = "none"
+reason = """
+the container layer is read and every member is retained; the drawing
+document is not decoded"""
+
+[[support]]
+dialect = "solidcraft:unknown"
+read = "unclassified-recovered"
+write = "none"
+reason = """
+a container with any other marker, a design format past 57, or a nonempty
+format_pending list is read on the residual path, and decode charges
+solidcraft/source.dialect-unverified"""
