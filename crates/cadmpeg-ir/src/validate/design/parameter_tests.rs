@@ -4,6 +4,9 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::text::NonBlankString;
+
+use crate::design::configuration::{DefinitionOverride, PartNumber};
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::expr::{
     parse, Expression, ExpressionDialect, ExpressionToken, Measure, MeasureKind, MeasureTarget,
@@ -17,7 +20,9 @@ use crate::design::selection::{Anchor, Picks, Selection};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use crate::document::CadIr;
+use crate::ids::ProductDefinitionId;
 use crate::pmi::LimitsAndFits;
+use crate::products::{GeneralTolerance, LinearGeneral, LinearGeneralClass};
 use crate::report::Severity;
 use crate::scalar::FiniteReal;
 use crate::validate::design::fixture::{
@@ -314,6 +319,52 @@ fn fit_designations_are_capital_letters_and_a_grade() {
     });
     assert_finding(&ir, "is not capital letters only");
     assert_finding(&ir, "states an empty grade");
+}
+
+#[test]
+fn a_general_tolerance_needs_a_rule_and_an_entry() {
+    let mut ir = with_width();
+    ir.design.parameters[0].tolerance = Some(Tolerance::General);
+    assert_finding(&ir, "states no general tolerance rule for its quantity");
+    let part = id::<ProductDefinitionId>("definition", "part");
+    let definition = ir
+        .model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.id == part)
+        .unwrap();
+    definition.general_tolerance = Some(GeneralTolerance {
+        linear: Some(LinearGeneral::Iso2768(LinearGeneralClass::Medium)),
+        angular: None,
+    });
+    assert_no_design_finding(&ir);
+    ir.design.parameters[0].definition = expression("0.25[mm]", &[]);
+    ir.design.parameters[0].value = Some(number(0.25));
+    assert_finding(&ir, "states no entry for it");
+}
+
+#[test]
+fn names_of_documents_and_external_parameters_need_storage() {
+    let mut ir = with_width();
+    let external = ParameterRef {
+        target: RefTarget::External {
+            definition: id("definition", "part"),
+            name: NonBlankString::new("d0").unwrap(),
+        },
+        through: None,
+    };
+    ir.design.parameters[0].definition = expression("$0", &[external]);
+    assert_finding(&ir, "is no external definition");
+    let mut ir = with_width();
+    ir.design.configurations[1].overrides.definitions.insert(
+        id("definition", "part"),
+        DefinitionOverride {
+            source_name: Some("part".to_owned()),
+            part_number: Some(PartNumber::DocumentName),
+            ..DefinitionOverride::default()
+        },
+    );
+    assert_finding(&ir, "but no document of its own stores it");
 }
 
 #[test]

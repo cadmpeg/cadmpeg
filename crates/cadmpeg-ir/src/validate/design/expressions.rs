@@ -24,6 +24,7 @@ use crate::design::selection::{Anchor, Picks, StepRef};
 use crate::design::units::ValueKind;
 use crate::features::ParameterId;
 use crate::process::groups::ProcessDefinition;
+use crate::products::Storage;
 use crate::report::check::Finding;
 
 /// Where one expression occurs.
@@ -376,12 +377,18 @@ pub(super) fn check_reference(
         },
         RefTarget::External { definition, .. } => {
             let definition = definition.as_str();
-            if !index.definitions.contains_key(definition) {
-                super::error(
+            match index.definitions.get(definition).map(|record| &record.storage) {
+                None => super::error(
                     findings,
                     entity,
                     format_args!("expression references a parameter of {definition}, which is no product definition"),
-                );
+                ),
+                Some(Storage::External(_)) => {}
+                Some(Storage::Embedded | Storage::File { .. }) => super::error(
+                    findings,
+                    entity,
+                    format_args!("expression references a parameter of {definition} by name, but {definition} is no external definition"),
+                ),
             }
             Some(definition)
         }
