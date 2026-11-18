@@ -1225,8 +1225,14 @@ charge source.kernel-dialect-unverified from this layer"""
 
 [[support]]
 dialect = "solidcraft:container-1-v57"
-read = "L1"
+read = "L3"
 write = "none"
+reason = """
+the final state of the model cache decodes into connected neutral B-rep:
+SCBREP05 bodies with typed analytic and NURBS carriers, pcurves, oriented
+loops, radial coedge order, shells, and regions, and SCMESH01 bodies as
+tessellations. design-container-v57-cached.sc pins it. A container with no
+cache carries no geometry and is charged solidcraft/cache.model-absent"""
 
 [[support]]
 dialect = "solidcraft:container-1-v1-56"

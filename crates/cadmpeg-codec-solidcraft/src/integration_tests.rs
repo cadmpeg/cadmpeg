@@ -128,3 +128,75 @@ fn an_unreadable_container_document_is_residual_and_charged() {
     assert!(codes.contains(&"solidcraft/document.unreadable".to_owned()));
     assert!(codes.contains(&"solidcraft/source.dialect-unverified".to_owned()));
 }
+
+#[test]
+fn the_final_cached_state_decodes_into_one_closed_body() {
+    let result = SolidcraftCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::CACHED_DESIGN),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(
+        geometry.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Solid
+    );
+    assert_eq!(geometry.bodies[0].name.as_deref(), Some("Body1"));
+    assert_eq!(geometry.faces.len(), 8);
+    assert_eq!(geometry.edges.len(), 18);
+    assert_eq!(geometry.vertices.len(), 12);
+    assert_eq!(geometry.coedges.len(), 36);
+    let codes: Vec<String> = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.code.to_string())
+        .collect();
+    assert!(
+        codes.iter().all(|code| !code.contains("cache.body")),
+        "{codes:?}"
+    );
+    assert!(codes
+        .iter()
+        .any(|code| code.ends_with("cache.model-undecoded")));
+}
+
+#[test]
+fn a_cache_of_another_document_is_stale() {
+    let members = crate::test_support::members(crate::test_support::CACHED_DESIGN);
+    let mut document = members
+        .iter()
+        .find(|(name, _)| name == "document.json")
+        .unwrap()
+        .1
+        .clone();
+    document.push(b'\n');
+    let bytes = crate::test_support::cached_design_with(&[("document.json", &document)]);
+    let codes = loss_codes(&bytes);
+    assert!(
+        codes.iter().any(|code| code.ends_with("cache.model-stale")),
+        "{codes:?}"
+    );
+}
+
+#[test]
+fn a_payload_that_its_digest_does_not_pin_is_malformed() {
+    let members = crate::test_support::members(crate::test_support::CACHED_DESIGN);
+    let mut payload = members
+        .iter()
+        .find(|(name, _)| name == "cache/bodies.bin")
+        .unwrap()
+        .1
+        .clone();
+    payload.push(0);
+    let bytes = crate::test_support::cached_design_with(&[("cache/bodies.bin", &payload)]);
+    let codes = loss_codes(&bytes);
+    assert!(
+        codes
+            .iter()
+            .any(|code| code.ends_with("cache.model-malformed")),
+        "{codes:?}"
+    );
+}

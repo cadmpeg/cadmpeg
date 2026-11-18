@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Code-built SolidCraft designs for the unit, integration, and golden tests.
+//! Code-built `SolidCraft` designs for the unit, integration, and golden tests.
 
 use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
 use serde_json::{json, Value};
@@ -73,4 +73,45 @@ pub(crate) fn container(document: &Value, extra: &[(&str, &[u8])]) -> Vec<u8> {
 pub(crate) fn import_container() -> Vec<u8> {
     let name = blob_name(STEP_TEXT, "step");
     container(&import_document(&name), &[(&name, STEP_TEXT)])
+}
+
+/// The cached v57 design fixture: a block with a hole and a round, saved
+/// with its model cache.
+pub(crate) const CACHED_DESIGN: &[u8] =
+    include_bytes!("../tests/golden/fixtures/design-container-v57-cached.sc");
+
+/// The expanded members of a container, in name order.
+pub(crate) fn members(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .unwrap();
+    let package = crate::package::Package::open(&ctx, root).unwrap();
+    package
+        .roles()
+        .keys()
+        .map(|name| {
+            let view = package.member(&ctx, name).unwrap();
+            (name.clone(), view.window().to_vec())
+        })
+        .collect()
+}
+
+/// The cached design with the members `replace` substituted.
+pub(crate) fn cached_design_with(replace: &[(&str, &[u8])]) -> Vec<u8> {
+    let members = members(CACHED_DESIGN);
+    let entries: Vec<RawEntry> = members
+        .iter()
+        .map(|(name, bytes)| {
+            let bytes = replace
+                .iter()
+                .find(|(replaced, _)| replaced == name)
+                .map_or(bytes.as_slice(), |(_, bytes)| *bytes);
+            RawEntry::stored(name, bytes)
+        })
+        .collect();
+    archive(&entries)
 }

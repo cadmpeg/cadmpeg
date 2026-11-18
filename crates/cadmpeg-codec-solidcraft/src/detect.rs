@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Content detection for SolidCraft designs.
+//! Content detection for `SolidCraft` designs.
 //!
 //! A JSON object whose top-level `format` is a design format tag is
 //! [`Confidence::High`]; an untagged object with top-level `params` and
@@ -34,7 +34,7 @@ const FLAG_DATA_DESCRIPTOR: u16 = 0x0008;
 /// UTF-8 byte order mark.
 const BOM: &[u8] = &[0xef, 0xbb, 0xbf];
 
-/// How strongly a byte prefix names a SolidCraft design.
+/// How strongly a byte prefix names a `SolidCraft` design.
 pub(crate) fn confidence(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<Confidence, CodecError> {
     let directory = if ArchiveSnapshot::has_footer(prefix) {
         match directory_confidence(ctx, prefix) {
@@ -256,14 +256,7 @@ impl<'a> TopLevel<'a> {
 
     fn member(&mut self) -> Option<Member<'a>> {
         self.skip_whitespace();
-        if !self.opened {
-            if self.bytes.get(self.at) != Some(&b'{') {
-                return None;
-            }
-            self.opened = true;
-            self.at += 1;
-            self.skip_whitespace();
-        } else {
+        if self.opened {
             match self.bytes.get(self.at)? {
                 b',' => {
                     self.at += 1;
@@ -271,6 +264,13 @@ impl<'a> TopLevel<'a> {
                 }
                 _ => return None,
             }
+        } else {
+            if self.bytes.get(self.at) != Some(&b'{') {
+                return None;
+            }
+            self.opened = true;
+            self.at += 1;
+            self.skip_whitespace();
         }
         let key = self.string()?;
         self.skip_whitespace();

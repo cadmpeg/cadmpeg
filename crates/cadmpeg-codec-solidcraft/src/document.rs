@@ -68,9 +68,10 @@ impl Tag {
     fn of(value: Option<&Value>) -> Self {
         match value {
             None => Self::Untagged,
-            Some(Value::String(text)) => design_version(text)
-                .map(|(prefix, version)| Self::Design { prefix, version })
-                .unwrap_or_else(|| Self::Other(text.clone())),
+            Some(Value::String(text)) => design_version(text).map_or_else(
+                || Self::Other(text.clone()),
+                |(prefix, version)| Self::Design { prefix, version },
+            ),
             Some(other) => Self::Other(other.to_string()),
         }
     }

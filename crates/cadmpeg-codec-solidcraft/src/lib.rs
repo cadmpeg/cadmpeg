@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg_attr(test, allow(clippy::unwrap_used))]
-//! Inspect and decode SolidCraft `.sc` and `.solidcraft` designs.
+//! Inspect and decode `SolidCraft` `.sc` and `.solidcraft` designs.
 //!
 //! A design is a plain JSON document or a ZIP container that holds the
 //! document beside content-addressed payload blobs and disposable caches.
 //! [`SolidcraftCodec`] implements [`cadmpeg_ir::codec::Codec`]: it detects a
 //! design by its content, inspects every container member with its role and
 //! checks each blob against the digest in its name, and classifies the
-//! encoding and the document format. Decode reads the document header and
-//! retains every member as a named native record.
+//! encoding and the document format. Decode reads the document header,
+//! decodes the final state of the model cache into neutral B-rep, and retains
+//! every member as a named native record.
 //!
 //! <!-- generated: capability solidcraft -->
 //! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidcraft-sc-and-solidcraft)).
@@ -33,6 +34,7 @@
 //! # }
 //! ```
 
+mod cache;
 mod decode;
 mod detect;
 mod dialect;
@@ -50,7 +52,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
-/// Codec for SolidCraft designs.
+/// Codec for `SolidCraft` designs.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SolidcraftCodec;
 

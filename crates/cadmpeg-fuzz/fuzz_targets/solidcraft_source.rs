@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for SolidCraft design detection, file opening, document
-//! parsing, classification, the blob audit, and the whole-codec inspect and
-//! decode paths. No input may panic.
+//! parsing, classification, the blob audit, the model cache body slice
+//! parsers and B-rep emitter, and the whole-codec inspect and decode paths.
+//! No input may panic.
 
 #![no_main]
 
@@ -20,6 +21,7 @@ fuzz_target!(|data: &[u8]| {
     {
         let _detect = cadmpeg_codec_solidcraft::fuzz::detect(&ctx, data);
         let _source = cadmpeg_codec_solidcraft::fuzz::source(&ctx, root);
+        let _body = cadmpeg_codec_solidcraft::fuzz::cache_body(&ctx, root);
         let _ = ctx.finish_session();
     }
     let _ = SolidcraftCodec.inspect(&mut Cursor::new(data), &InspectOptions::default());

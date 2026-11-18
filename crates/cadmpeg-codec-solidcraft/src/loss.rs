@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stable loss vocabulary for SolidCraft design decoding.
+//! Stable loss vocabulary for `SolidCraft` design decoding.
 //!
 //! [`SolidcraftLossCode::note`] is the single construction path for a
 //! decode-time [`LossNote`] in this crate: it fixes the loss category and
@@ -11,7 +11,7 @@ use cadmpeg_ir::report::Severity;
 
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("solidcraft");
 
-/// A stable, machine-readable identifier for one SolidCraft transfer loss.
+/// A stable, machine-readable identifier for one `SolidCraft` transfer loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum SolidcraftLossCode {
     /// The container marker or the document format tag selects no declared
@@ -48,6 +48,26 @@ pub(crate) enum SolidcraftLossCode {
     DrawingUndecoded,
     /// The document part does not parse as a JSON object.
     DocumentUnreadable,
+    /// The model cache was computed for another document.
+    ModelCacheStale,
+    /// The model cache manifest or payload does not follow the cache format.
+    ModelCacheMalformed,
+    /// A cached body slice did not decode into neutral topology.
+    BodyUndecoded,
+    /// An edge curve has no neutral carrier.
+    CurveUntyped,
+    /// A surface-intersection edge takes its leader curve as its carrier.
+    CurveApproximated,
+    /// A face surface has no neutral carrier.
+    SurfaceUntyped,
+    /// A face's pcurves are in the parameters of a NURBS form that the
+    /// neutral carrier does not use.
+    PcurveOmitted,
+    /// A blend face keeps its net as its carrier; its definition stays in
+    /// the retained cache.
+    BlendReduced,
+    /// A face that two shells use is written in the first shell only.
+    FaceShared,
 }
 
 impl SolidcraftLossCode {
@@ -68,6 +88,15 @@ impl SolidcraftLossCode {
         Self::EntryRetained,
         Self::DrawingUndecoded,
         Self::DocumentUnreadable,
+        Self::ModelCacheStale,
+        Self::ModelCacheMalformed,
+        Self::BodyUndecoded,
+        Self::CurveUntyped,
+        Self::CurveApproximated,
+        Self::SurfaceUntyped,
+        Self::PcurveOmitted,
+        Self::BlendReduced,
+        Self::FaceShared,
     ];
 
     #[must_use]
@@ -88,15 +117,26 @@ impl SolidcraftLossCode {
             Self::EntryRetained => "container.entry-retained",
             Self::DrawingUndecoded => "document.drawing-undecoded",
             Self::DocumentUnreadable => "document.unreadable",
+            Self::ModelCacheStale => "cache.model-stale",
+            Self::ModelCacheMalformed => "cache.model-malformed",
+            Self::BodyUndecoded => "cache.body-undecoded",
+            Self::CurveUntyped => "geometry.curve-untyped",
+            Self::CurveApproximated => "geometry.curve-approximated",
+            Self::SurfaceUntyped => "geometry.surface-untyped",
+            Self::PcurveOmitted => "geometry.pcurve-omitted",
+            Self::BlendReduced => "geometry.blend-reduced",
+            Self::FaceShared => "topology.face-shared",
         }
     }
 
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
-            Self::BlobUnreferenced | Self::DocumentSectionUndecoded | Self::EntryRetained => {
-                Severity::Info
-            }
+            Self::BlobUnreferenced
+            | Self::DocumentSectionUndecoded
+            | Self::EntryRetained
+            | Self::PcurveOmitted
+            | Self::BlendReduced => Severity::Info,
             Self::SourceDialectUnverified
             | Self::ContainerDirectoryRecovered
             | Self::BlobReferenceMalformed
@@ -107,7 +147,14 @@ impl SolidcraftLossCode {
             | Self::ParametersUndecoded
             | Self::ModelCacheUndecoded
             | Self::ModelCacheAbsent
-            | Self::DrawingUndecoded => Severity::Warning,
+            | Self::DrawingUndecoded
+            | Self::ModelCacheStale
+            | Self::ModelCacheMalformed
+            | Self::BodyUndecoded
+            | Self::CurveUntyped
+            | Self::CurveApproximated
+            | Self::SurfaceUntyped
+            | Self::FaceShared => Severity::Warning,
             Self::DocumentUnreadable => Severity::Error,
         }
     }
@@ -128,7 +175,15 @@ impl SolidcraftLossCode {
             | Self::EntryRetained
             | Self::DrawingUndecoded
             | Self::DocumentUnreadable => LossTaxonomy::RecordNotTyped,
-            Self::ModelCacheUndecoded => LossTaxonomy::GeometryNotTransferred,
+            Self::ModelCacheUndecoded
+            | Self::ModelCacheStale
+            | Self::ModelCacheMalformed
+            | Self::BodyUndecoded
+            | Self::CurveUntyped
+            | Self::SurfaceUntyped => LossTaxonomy::GeometryNotTransferred,
+            Self::CurveApproximated | Self::BlendReduced => LossTaxonomy::ProceduralReduced,
+            Self::PcurveOmitted => LossTaxonomy::PcurveOmitted,
+            Self::FaceShared => LossTaxonomy::TopologyNotTransferred,
             Self::ModelCacheAbsent => LossTaxonomy::MissingGeometryStream,
         }
     }
@@ -175,6 +230,15 @@ mod tests {
                 "container.entry-retained",
                 "document.drawing-undecoded",
                 "document.unreadable",
+                "cache.model-stale",
+                "cache.model-malformed",
+                "cache.body-undecoded",
+                "geometry.curve-untyped",
+                "geometry.curve-approximated",
+                "geometry.surface-untyped",
+                "geometry.pcurve-omitted",
+                "geometry.blend-reduced",
+                "topology.face-shared",
             ]
         );
     }

@@ -636,7 +636,7 @@ These gaps remain:
 
 | Dialect                          | Read                   | Write |
 | -------------------------------- | ---------------------- | ----- |
-| `solidcraft:container-1-v57`     | L1                     | none  |
+| `solidcraft:container-1-v57`     | L3                     | none  |
 | `solidcraft:container-1-v1-56`   | L1                     | none  |
 | `solidcraft:json-v57`            | L1                     | none  |
 | `solidcraft:json-v1-56`          | L1                     | none  |
@@ -645,13 +645,15 @@ These gaps remain:
 
 <!-- /generated: dialects solidcraft -->
 
-The codec selects the encoding from the first bytes, reads the container marker and the document format tag, and classifies the file by encoding and format number. It opens every container member under the decode caps, checks each blob against the SHA-256 in its name, and lists the blobs, the caches, the plugin and provenance members, and the linked design files. Decode reads the document name, unit, and record counts into the source metadata and retains every container member, or the whole plain JSON document, as a named native record. No feature, parameter, sketch, or cache record is decoded, which blocks L2.
+The codec selects the encoding from the first bytes, reads the container marker and the document format tag, and classifies the file by encoding and format number. It opens every container member under the decode caps, checks each blob against the SHA-256 in its name, and lists the blobs, the caches, the plugin and provenance members, and the linked design files. Decode reads the document name, unit, and record counts into the source metadata and retains every container member, or the whole plain JSON document, as a named native record. The final state of a container's model cache decodes into connected neutral B-rep, with mesh bodies as tessellations. A plain JSON document carries no cache, so its geometry exists only as the evaluation of its feature history, which blocks L2 on the JSON rows.
 
 These gaps remain:
 
 - Feature records are retained without decoding (`solidcraft/history.features-undecoded`).
 - Parameter records are retained without decoding (`solidcraft/history.parameters-undecoded`).
-- The model cache is retained without decoding (`solidcraft/cache.model-undecoded`). A design without the cache carries no evaluated geometry (`solidcraft/cache.model-absent`).
+- The model states before the final state are retained without decoding (`solidcraft/cache.model-undecoded`). A design without the cache carries no evaluated geometry (`solidcraft/cache.model-absent`).
+- Component occurrences are not placed, so the bodies of a component's second and later occurrences are absent.
+- Pcurves in the parameters of a face's NURBS form are omitted where the face keeps its analytic carrier (`solidcraft/geometry.pcurve-omitted`). A blend face keeps its net and drops its definition (`solidcraft/geometry.blend-reduced`).
 - Blob payloads are retained without decoding (`solidcraft/blob.payload-undecoded`).
 - Drawing containers are retained without decoding (`solidcraft/document.drawing-undecoded`).
 
@@ -659,7 +661,7 @@ These gaps remain:
 
 - **Container and versions: Partial.** The codec admits plain JSON documents and version 1 containers, including the `solvecraft-container/1` marker and the `solvecraft/N` tag. A container with another marker, a design format past 57, or a nonempty `format_pending` list is read on the residual path and reports `solidcraft/source.dialect-unverified`. Blob references that are malformed, missing, unreferenced, or whose payload has another SHA-256 report `solidcraft/container.*` losses.
 - **Design: None.** The document header is decoded; the feature history, sketches, parameters, components, and appearances are retained.
-- **Geometry: None.**
+- **Geometry: Partial.** The final cached state decodes into bodies, regions, shells, faces, loops, coedges, edges, and vertices. Planes, cylinders, cones, spheres, tori, lines, circles, ellipses, splines, and rational splines are typed carriers; polylines become degree-one NURBS curves. Each body takes its model body's name. A cache that another document computed reports `solidcraft/cache.model-stale`, and one that does not follow the cache format reports `solidcraft/cache.model-malformed`.
 
 ### Write and round trip
 

@@ -2,7 +2,8 @@
 //! Design decode.
 //!
 //! Decode opens the file, classifies it, reads the document header into the
-//! source metadata, and checks every blob reference. Each container member,
+//! source metadata, and checks every blob reference. The final state of a
+//! container's model cache decodes into neutral topology. Each container member,
 //! or the whole plain JSON document, is retained as an unknown record of the
 //! `solidcraft` native namespace, so every byte survives; each family of
 //! content that is retained without decoding is named by a loss.
@@ -12,8 +13,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{IdentityKey, UnknownId};
 use cadmpeg_ir::report::decode::DecodeTransfer;
 use cadmpeg_ir::report::loss::LossNote;
@@ -24,7 +27,7 @@ use crate::dialect::FORMAT;
 use crate::document::Header;
 use crate::inspect::JSON_DOCUMENT_ENTRY;
 use crate::loss::SolidcraftLossCode;
-use crate::package::{BlobKind, Marker, MemberRole, Package};
+use crate::package::{BlobKind, Marker, MemberRole, Package, DOCUMENT_MEMBER};
 use crate::source::Source;
 
 /// Source attribute: the document name.
@@ -78,7 +81,19 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         DialectLayers::of(classification.into_matched()),
         attributes,
     ));
-    let mut source_fidelity = SourceFidelity::for_root(root);
+    let mut annotations = Annotations::default();
+    let mut geometry_transferred = false;
+    if let (Some(package), Some(_)) = (&source.package, source.header()) {
+        if !ctx.container_only() && has_cache(package) {
+            let document = package.member(ctx, DOCUMENT_MEMBER)?;
+            let outcome = crate::cache::decode(ctx, package, document, &mut ir, &mut annotations)?;
+            geometry_transferred = outcome.bodies > 0;
+            losses.extend(outcome.losses);
+            ir.finalize();
+        }
+    }
+    let mut source_fidelity =
+        SourceFidelity::with_annotations(annotations, Sha256Digest::digest(root.window()));
     if !ctx.container_only() {
         let records = retained_records(ctx, &source)?;
         source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, records, ctx)?;
@@ -87,7 +102,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         ir,
         body: DecodeBody {
             losses,
-            ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), false))
+            ..DecodeBody::new(DecodeTransfer::at(ctx.depth(), geometry_transferred))
         },
         source_fidelity,
     })
@@ -118,6 +133,12 @@ fn document_losses(header: &Header) -> Vec<LossNote> {
     losses
 }
 
+/// Whether the container holds both members of a model cache.
+fn has_cache(package: &Package<'_>) -> bool {
+    package.contains(crate::cache::MANIFEST_MEMBER)
+        && package.contains(crate::cache::PAYLOAD_MEMBER)
+}
+
 /// The losses for the container members that this decoder retains without
 /// decoding.
 fn package_losses(package: &Package<'_>, has_document: bool) -> Vec<LossNote> {
@@ -144,18 +165,11 @@ fn package_losses(package: &Package<'_>, has_document: bool) -> Vec<LossNote> {
             SolidcraftLossCode::DrawingUndecoded
                 .note("the container holds a drawing document, retained without decoding"),
         );
-    } else if has_document {
-        losses.push(if cache {
-            SolidcraftLossCode::ModelCacheUndecoded.note(
-                "the model cache (cache/model.json, cache/bodies.bin) is retained without \
-                 decoding",
-            )
-        } else {
-            SolidcraftLossCode::ModelCacheAbsent.note(
-                "the container carries no model cache: its geometry exists only as the \
-                 evaluation of its feature history",
-            )
-        });
+    } else if has_document && !cache {
+        losses.push(SolidcraftLossCode::ModelCacheAbsent.note(
+            "the container carries no model cache: its geometry exists only as the \
+             evaluation of its feature history",
+        ));
     }
     if !payloads.is_empty() {
         losses.push(SolidcraftLossCode::PayloadUndecoded.note(format!(

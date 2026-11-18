@@ -17,6 +17,12 @@ pub fn source<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(), CodecEr
     source.audit_blobs(ctx).map(|_| ())
 }
 
+/// Exercise the `SCBREP05` and `SCMESH01` body slice parsers and the
+/// neutral B-rep emitter on one slice.
+pub fn cache_body<'a>(ctx: &DecodeContext<'a>, slice: View<'a>) -> Result<(), CodecError> {
+    crate::cache::probe_body(ctx, slice)
+}
+
 /// Exercise the content detector.
 pub fn detect(ctx: &DecodeContext<'_>, prefix: &[u8]) -> Result<(), CodecError> {
     crate::detect::confidence(ctx, prefix).map(|_| ())

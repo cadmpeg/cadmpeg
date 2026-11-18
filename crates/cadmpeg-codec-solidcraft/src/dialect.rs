@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! SolidCraft dialect identity: which registry row a file is, and how it was
+//! `SolidCraft` dialect identity: which registry row a file is, and how it was
 //! admitted.
 //!
 //! The discriminants are the encoding (a version 1 container or a plain JSON
@@ -168,7 +168,7 @@ mod tests {
     use crate::document::Header;
     use crate::package::Marker;
 
-    fn header(value: serde_json::Value) -> Header {
+    fn header(value: &serde_json::Value) -> Header {
         let text = value.to_string();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -184,9 +184,9 @@ mod tests {
 
     #[test]
     fn rows_follow_encoding_and_format_band() {
-        let current = header(json!({"format": "solidcraft/57", "features": []}));
-        let earlier = header(json!({"format": "solvecraft/13", "features": []}));
-        let untagged = header(json!({"features": []}));
+        let current = header(&json!({"format": "solidcraft/57", "features": []}));
+        let earlier = header(&json!({"format": "solvecraft/13", "features": []}));
+        let untagged = header(&json!({"features": []}));
         for (encoding, header, dialect) in [
             (
                 Encoding::Container(&Marker::Design),
@@ -216,13 +216,13 @@ mod tests {
 
     #[test]
     fn newer_pending_and_foreign_files_are_residual() {
-        let newer = header(json!({"format": "solidcraft/58", "features": []}));
-        let pending = header(json!({
+        let newer = header(&json!({"format": "solidcraft/58", "features": []}));
+        let pending = header(&json!({
             "format": "solidcraft/57",
             "format_pending": ["a-change"],
             "features": []
         }));
-        let foreign = header(json!({"format": "another/1"}));
+        let foreign = header(&json!({"format": "another/1"}));
         let other_marker = Marker::Other("{\"format\":\"solidcraft-container/2\"}".into());
         for (encoding, header) in [
             (Encoding::Json, Some(&newer)),
