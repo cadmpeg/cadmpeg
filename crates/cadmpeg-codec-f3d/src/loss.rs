@@ -635,7 +635,9 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeFaceControlAssumed,
     FeatureExtrudeSketchPlacementNative,
     FeatureExtrudeTargetOptionAssumed,
+    FeatureExtrudeOpaqueDistanceWordAssumed,
     FeatureExtrudeStartFaceAbsentAssumed,
+    FeatureExtrudeStartFaceUnresolved,
     FeatureExtrudeZeroSideTaperIgnored,
     /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.
     FeatureExtrudeProfileFaceOrderAssumed,
@@ -1516,7 +1518,9 @@ impl F3dLossCode {
         Self::FeatureExtrudeFaceControlAssumed,
         Self::FeatureExtrudeSketchPlacementNative,
         Self::FeatureExtrudeTargetOptionAssumed,
+        Self::FeatureExtrudeOpaqueDistanceWordAssumed,
         Self::FeatureExtrudeStartFaceAbsentAssumed,
+        Self::FeatureExtrudeStartFaceUnresolved,
         Self::FeatureExtrudeZeroSideTaperIgnored,
         Self::FeatureExtrudeProfileFaceOrderAssumed,
         Self::FeatureExtrudeProfileFaceSearchCapped,
@@ -2392,9 +2396,13 @@ impl F3dLossCode {
             Self::FeatureExtrudeFaceControlAssumed => "feature.extrude-face-control-assumed",
             Self::FeatureExtrudeSketchPlacementNative => "feature.extrude-sketch-placement-native",
             Self::FeatureExtrudeTargetOptionAssumed => "feature.extrude-target-option-assumed",
+            Self::FeatureExtrudeOpaqueDistanceWordAssumed => {
+                "feature.extrude-opaque-distance-word-assumed"
+            }
             Self::FeatureExtrudeStartFaceAbsentAssumed => {
                 "feature.extrude-start-face-absent-assumed"
             }
+            Self::FeatureExtrudeStartFaceUnresolved => "feature.extrude-start-face-unresolved",
             Self::FeatureExtrudeZeroSideTaperIgnored => "feature.extrude-zero-side-taper-ignored",
             Self::FeatureExtrudeProfileFaceOrderAssumed => {
                 "feature.extrude-profile-face-order-assumed"
@@ -3261,7 +3269,9 @@ impl F3dLossCode {
             | Self::FeatureExtrudeFaceControlAssumed
             | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeTargetOptionAssumed
+            | Self::FeatureExtrudeOpaqueDistanceWordAssumed
             | Self::FeatureExtrudeStartFaceAbsentAssumed
+            | Self::FeatureExtrudeStartFaceUnresolved
             | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
@@ -3908,7 +3918,9 @@ impl F3dLossCode {
             | Self::FeatureExtrudeFaceControlAssumed
             | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeTargetOptionAssumed
+            | Self::FeatureExtrudeOpaqueDistanceWordAssumed
             | Self::FeatureExtrudeStartFaceAbsentAssumed
+            | Self::FeatureExtrudeStartFaceUnresolved
             | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
             | Self::FeatureExtrudeProfileFaceSearchCapped
@@ -4670,7 +4682,9 @@ mod tests {
                 "feature.extrude-face-control-assumed",
                 "feature.extrude-sketch-placement-native",
                 "feature.extrude-target-option-assumed",
+                "feature.extrude-opaque-distance-word-assumed",
                 "feature.extrude-start-face-absent-assumed",
+                "feature.extrude-start-face-unresolved",
                 "feature.extrude-zero-side-taper-ignored",
                 "feature.extrude-profile-face-order-assumed",
                 "feature.extrude-profile-face-search-capped",

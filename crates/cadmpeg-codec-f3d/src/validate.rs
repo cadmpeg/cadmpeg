@@ -3788,11 +3788,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 side_extent_discriminators,
                 side_extent_discriminator_offsets,
                 first_side_target_ordinal,
+                opaque_distance_word,
                 extent,
                 direction_face_extend_offsets,
                 direction_reversed_offset,
                 solid_operation_offset,
+                solid_operation,
                 start_offset,
+                start,
                 ..
             }) => {
                 let typed_references = scope_has_typed_references(scope);
@@ -3949,6 +3952,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .is_some_and(|slot_expansion| {
                         extent_slot_expansion_valid(typed_references, slot_expansion)
                     });
+                let opaque_distance_word_valid = opaque_distance_word.is_none_or(|word| {
+                    typed_references
+                        && scope.byte_offset().checked_add(u64_from_index(
+                            crate::layout::typed_reference_extrude_prologue::OPERATION,
+                        )) == Some(operation_offset)
+                        && direction_face_extend_values == [1, 2]
+                        && side_extent_discriminators == [1, 0]
+                        && solid_operation
+                        && start == records::feature::extrude::DesignExtrudeStart::ProfilePlane
+                        && side_extent_discriminator_offsets[0].checked_add(u64_from_index(
+                            crate::layout::current_extrude_non_target_extent_pair::TARGET_OPTION,
+                        )) == Some(word.byte_offset)
+                });
                 let second_side_offset_valid = (if side_extent_discriminators == [2, 2]
                     || (side_extent_discriminators == [2, 1]
                         && extent == records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero)
@@ -3992,6 +4008,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         || dual_lane_symmetric_extent)
                     && first_side_target_ordinal.is_none_or(|_| side_extent_discriminators[0] == 2)
                     && target_ordinal_valid
+                    && opaque_distance_word_valid
                     && first_side_offset_valid
                     && second_side_offset_valid
                     && operation_offset
@@ -5246,6 +5263,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     .map(records::feature::extrude::DesignExtrudePrologue::start)
                                     == Some(records::feature::extrude::DesignExtrudeStart::FromFace)
                                     || design::decode::operands::extrude_has_selected_termination(scope)
+                                    || (group.extrude_face_role()
+                                        == Some(records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
+                                        && group.members().len() == 1
+                                        && design::decode::operands::allows_slotted_extrude_face_targets(scope))
                             }
                         },
                         records::topology::construction::DesignConstructionOperandRole::Other(role) => {
