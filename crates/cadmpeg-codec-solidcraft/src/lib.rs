@@ -12,7 +12,7 @@
 //! every member as a named native record.
 //!
 //! <!-- generated: capability solidcraft -->
-//! Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidcraft-sc-and-solidcraft)).
+//! Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidcraft-sc-and-solidcraft)).
 //! <!-- /generated: capability solidcraft -->
 //!
 //! # Quick start

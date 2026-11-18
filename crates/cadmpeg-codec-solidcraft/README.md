@@ -6,7 +6,7 @@ holds the document beside content-addressed payload blobs and caches.
 
 <!-- generated: capability solidcraft -->
 
-Support: L1 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidcraft-sc-and-solidcraft)).
+Support: L3 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#solidcraft-sc-and-solidcraft)).
 
 <!-- /generated: capability solidcraft -->
 

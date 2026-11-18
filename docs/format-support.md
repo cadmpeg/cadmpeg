@@ -72,7 +72,7 @@ its result.
 | Creo Parametric `.prt`                            | L1    |
 | Creo View `.pvz`                                  | L3    |
 | OpenUSD layers                                    | L2    |
-| SolidCraft `.sc` and `.solidcraft`                | L1    |
+| SolidCraft `.sc` and `.solidcraft`                | L3    |
 | STEP Part 21                                      | L8    |
 
 <!-- /generated: ladder-table -->
@@ -632,13 +632,13 @@ These gaps remain:
 
 <!-- generated: dialects solidcraft -->
 
-**Ladder: L1.**
+**Ladder: L3.**
 
 | Dialect                          | Read                   | Write |
 | -------------------------------- | ---------------------- | ----- |
 | `solidcraft:container-1-v57`     | L3                     | none  |
 | `solidcraft:container-1-v1-56`   | L1                     | none  |
-| `solidcraft:json-v57`            | L1                     | none  |
+| `solidcraft:json-v57`            | L3                     | none  |
 | `solidcraft:json-v1-56`          | L1                     | none  |
 | `solidcraft:drawing-container-1` | detected               | none  |
 | `solidcraft:unknown`             | unclassified-recovered | none  |
@@ -656,6 +656,11 @@ These gaps remain:
 - Pcurves in the parameters of a face's NURBS form are omitted where the face keeps its analytic carrier (`solidcraft/geometry.pcurve-omitted`). A blend face keeps its net and drops its definition (`solidcraft/geometry.blend-reduced`).
 - Blob payloads are retained without decoding (`solidcraft/blob.payload-undecoded`).
 - Drawing containers are retained without decoding (`solidcraft/document.drawing-undecoded`).
+- No evaluation of real files is recorded in `docs/evaluations.toml`.
+
+### Ladder applicability
+
+- **L2 and L3 are inapplicable to plain JSON designs.** A plain JSON document holds no model cache and no geometry record. Its geometry is the evaluation of its feature history, which a decoder without a modelling kernel cannot compute. A container carries the evaluated geometry in its model cache.
 
 ### Read profile
 

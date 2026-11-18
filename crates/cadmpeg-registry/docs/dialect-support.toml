@@ -155,7 +155,7 @@ level = 2
 scored = ["usd:usda-1.0"]
 
 [format.solidcraft]
-level = 1
+level = 3
 scored = ["solidcraft:container-1-v57", "solidcraft:json-v57"]
 
 
@@ -1241,8 +1241,13 @@ write = "none"
 
 [[support]]
 dialect = "solidcraft:json-v57"
-read = "L1"
+read = "L3"
 write = "none"
+reason = """
+L2 and L3 are inapplicable: a plain JSON design holds no model cache and no
+geometry record, only the feature history whose evaluation is the
+geometry. Decode charges solidcraft/cache.model-absent.
+design-json-v57.sc pins the row"""
 
 [[support]]
 dialect = "solidcraft:json-v1-56"
