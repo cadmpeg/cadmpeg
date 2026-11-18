@@ -1182,6 +1182,24 @@ The diameter owner has local ordinal zero and retains its evaluated diameter in 
 
 `BoxPrimitive` and the named `CylinderPrimitive` form use the named parameter-scope prologue. Bytes 11 through 19 are zero, the result-operation u32 is at primary-header offset 20 with values `1 = join`, `2 = cut`, `3 = intersect`, and `4 = new body`, byte 24 is zero, and byte 25 is `0x01`. Box scopes whose reference count is at offset 335, 339, 343, or 655 use the framed prefix layouts below. The ordered parameter owners are joined to the scope by native stream, scope record index, reference membership, and local ordinal. A box has five owners in ordinal order: `DistanceX`, `DistanceY`, `DistanceZ`, `OffsetDistanceX`, and `OffsetDistanceY`; the first three are positive lengths in centimetres and the last two are signed translations along the source x and y axes. A cylinder has two owners in ordinal order: `Height` and `Diameter`; both are positive centimetre lengths and the result is a full-turn cylinder. The box and named-cylinder result operation is the value at offset 20. A named cylinder references a version-8 or version-9 placement construction in the same Design stream. Exactly one referenced registered placement record supplies its solved frame. Its solved frame is a proper rigid transform with zero inferred-x, inferred-z, z-flip, and axis-flipped fields. Matrix column 3 is the cylinder origin in centimetres; column 2 is its positive axis and column 0 is its radial x direction. The local cylinder extends from zero to `Height` along its positive z-axis. The explicit matrix or an identity marker supplies the solved frame.
 
+The extended `CylinderPrimitive` forms use the same four ordered prefix references as the shifted form. The fourth reference names the support placement. The [prefixed Cylinder header](../layouts/f3d.md#prefixed_cylinder_header) has nine zero bytes at offsets 11 through 19, u32 `1` at offset 20, zero at offset 24, and `0x01` at offset 25. It shifts the result operation and each subsequent prefix field by four bytes.
+
+The [counted Cylinder reference](../layouts/f3d.md#counted_cylinder_reference) is 15 bytes. The count is u32 `1`, followed by one marked reference. A 36-code-unit LP-UTF16 GUID and three zero bytes precede the ordered scope reference table. The frame layouts give the following offsets relative to the primary indexed header.
+
+| Frame length | Ordered references | Operation | Matrix | Counted reference | GUID | Ordered reference count |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 356 | 5 | 26 | | 76 | 99 | 178 |
+| 479 | 5 | 22 | 72 | 200 | 223 | 302 |
+| 501 or 502 | 7 | 22 | 72 | 200 | 223 | 302 |
+| 506 | 7 | 26 | 76 | 212 | 227 | 306 |
+| 507 | 7 | 22 | 72 | 212 | 227 | 306 |
+
+The 356-byte form stores the compact tail marker `0x01` at offset 75. The 479-, 501-, and 502-byte forms in the table store eight zero bytes between the counted reference and the GUID. In the 506-byte form, eight zero bytes follow the matrix. In the 507-byte form, twelve zero bytes follow it. At offset 200, the counted 502-byte form stores u32 `1` and the shifted 502-byte form stores eight zero bytes.
+
+The [typed Cylinder prefix](../layouts/f3d.md#typed_cylinder_prefix) has a byte `0x01` after the shifted operation. Four 51-byte typed references follow in reverse order of the last four ordered references. A zero byte precedes the rigid matrix. The matrix is followed by u32 `1`, a typed reference, eight zero bytes, a 36-code-unit LP-UTF16 GUID, and three zero bytes. The ordered reference count is `5`. The first ordered reference has type GUID `5A1BF548-241F-46FD-9FB5-E4B05126EB9D`. The remaining types are `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`, two `D91D429C-1BB5-4640-B49F-69AF14F463E9` entries, and `92112554-B316-46D1-8AFD-C49D91252558`. The reference after the matrix has type GUID `D26351F0-5940-4D23-AA20-2C35475A6D9E`.
+
+The extended form's support construction supplies its solved frame. The expanded and typed forms store a matrix relative to that frame. The fourth column of the composed frame is the base centre. The signed `Height` extends from the base along local z. `Diameter` remains positive. Both dimensions are in centimetres.
+
 The shifted `CylinderPrimitive` form is keyed by its primary and paired class tags and its frame length:
 
 | Primary class | Paired class | Frame length |

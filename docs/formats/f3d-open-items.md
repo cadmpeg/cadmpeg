@@ -3460,6 +3460,16 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder applies the compact discriminator meanings and reports `feature.coil-short-controls-assumed`. It retains signed driving dimensions and the checked solved placement. An unbound placement remains native. A missing or ambiguous target group retains the Coil with an unresolved Boolean selection and reports `feature.coil-target-unresolved`.
 
+### DR-813. Cylinder support-local frame and reference roles
+
+**Question.** Which extended Cylinder configurations use a different base frame, and what does the counted reference select?
+
+**Known.** The extended scope stores a counted reference and a separate support placement target. The expanded form also stores a rigid matrix. The support frame composed on the left of this matrix agrees with the saved cylinder axis and transverse centre in resolved cases.
+
+**Need.** Controlled saves that vary the support frame, base centre, and selected construction independently.
+
+**Note.** The decoder uses the support frame directly for the compact form and composes it on the left of the local matrix for the expanded and typed forms. Both readings report `feature.cylinder-local-frame-assumed`. The native construction retains the counted reference and any local matrix.
+
 ### DR-596. BoundaryFill cell geometry
 
 **Question.** Which boundaries define each selected-cell record?

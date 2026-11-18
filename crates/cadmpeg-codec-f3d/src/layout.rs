@@ -2670,6 +2670,62 @@ pub(crate) mod named_solid_primitive_prologue {
     pub(crate) const FORM_MARKER: usize = 25;
 }
 
+/// Byte offsets for the `prefixed_cylinder_header` record.
+///
+/// Spec §3.1. Record length 26 B.
+pub(crate) mod prefixed_cylinder_header {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 26;
+    /// Offset of `zero_prefix` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_PREFIX: usize = 11;
+    /// Offset of `prefix_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PREFIX_WORD: usize = 20;
+    /// Offset of `zero_flag` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_FLAG: usize = 24;
+    /// Offset of `form_marker` (`u8`). Spec §3.1.
+    pub(crate) const FORM_MARKER: usize = 25;
+}
+
+/// Byte offsets for the `counted_cylinder_reference` record.
+///
+/// Spec §3.1. Record length 15 B.
+pub(crate) mod counted_cylinder_reference {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 15;
+    /// Offset of `count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COUNT: usize = 0;
+    /// Offset of `reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const REFERENCE: usize = 4;
+}
+
+/// Byte offsets for the `typed_cylinder_prefix` record.
+///
+/// Spec §3.1. Record length 506 B.
+pub(crate) mod typed_cylinder_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 506;
+    /// Offset of `nested_marker` (`u8`). Spec §3.1.
+    pub(crate) const NESTED_MARKER: usize = 26;
+    /// Offset of `typed_references` (`bytes[204]`). Spec §3.1.
+    pub(crate) const TYPED_REFERENCES: usize = 27;
+    /// Offset of `matrix_flag` (`u8`). Spec §3.1.
+    pub(crate) const MATRIX_FLAG: usize = 231;
+    /// Offset of `matrix` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const MATRIX: usize = 232;
+    /// Offset of `one_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ONE_COUNT: usize = 360;
+    /// Offset of `tail_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const TAIL_REFERENCE: usize = 364;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 415;
+    /// Offset of `guid_code_unit_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GUID_CODE_UNIT_COUNT: usize = 423;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 499;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 502;
+}
+
 /// Byte offsets for the `shifted_cylinder_primitive_352_frame` record.
 ///
 /// Spec §3.1. Record length 352 B.
