@@ -3,6 +3,7 @@
 
 mod assembly_bodies;
 mod closed_faces;
+mod context_uncertainties;
 mod csg_solids;
 mod declared_measures;
 mod partial_geometry;

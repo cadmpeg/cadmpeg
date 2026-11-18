@@ -891,6 +891,24 @@ Parsed by:
 | 78 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+78: TangencyWeight owner reference` |
 | 89 | 4 | `tangency_weight_owner_padding` | `bytes[4]` | little | spec | `+89: four bytes` |
 
+## `fillet_set_short_constant`
+
+Spec §3.1 · layout: byte offsets · size: 80 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 11 | `zero_run_at_11` | `bytes[11]` | little | spec | Every byte that the form does not name is zero |
+| 22 | 1 | `form_marker` | `u8` | little | spec | `+22: u8 1` · value `1` |
+| 23 | 3 | `zero_run_at_23` | `bytes[3]` | little | spec | Every byte that the form does not name is zero |
+| 26 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+26: edge-group reference` |
+| 37 | 20 | `zero_run_at_37` | `bytes[20]` | little | spec | Every byte that the form does not name is zero |
+| 57 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | `+57: Radius owner reference` |
+| 68 | 12 | `zero_run_at_68` | `bytes[12]` | little | spec | Every byte that the form does not name is zero |
+
 ## `fillet_set_asymmetric`
 
 Spec §3.1 · layout: byte offsets · size: 97 B
@@ -11993,6 +12011,41 @@ Parsed by:
 | 8 | 72 | `identity` | `bytes[72]` | little | spec | The Position suffix spans 83 bytes |
 | 80 | 3 | `zero_tail` | `bytes[3]` | little | spec | The Position suffix spans 83 bytes · value `[0, 0, 0]` |
 
+## `captured_position_v4`
+
+Spec §Captured component positions · layout: byte offsets · size: 319 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 95 | 4 | `row_count` | `u32` | little | spec | A u32 row count of one occurs at offset 95 · value `1` |
+| 99 | 141 | `row` | `bytes[141]` | little | spec | The 141-byte row at offset 99 stores one matrix |
+| 240 | 4 | `identity_length` | `u32` | little | spec | The version-4 suffix starts at offset 240 with the u32 GUID length |
+| 244 | 72 | `identity` | `bytes[72]` | little | spec | followed by the same UTF-16LE null GUID and three zero bytes |
+| 316 | 3 | `zero_tail` | `bytes[3]` | little | spec | followed by the same UTF-16LE null GUID and three zero bytes |
+
+Unstated regions:
+
+- `0..95` (95 B): Indexed header and prefix fields.
+
+## `captured_position_v4_identity_locator`
+
+Spec §Captured component positions · layout: byte offsets · size: 62 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 4 | `discriminator` | `u32` | little | spec | Its 62-byte identity locator stores u32 discriminator one at offset 56 · value `1` |
+
+Unstated regions:
+
+- `0..56` (56 B): Shared identity-locator fields.
+- `60..62` (2 B): Shared identity-locator tail.
+
 ## `unmarked_sphere_local_frame`
 
 Spec §3.1 · layout: byte offsets · size: 128 B
@@ -12317,6 +12370,31 @@ Parsed by:
 Unstated regions:
 
 - `0..21` (21 B): Indexed header and mesh scope prefix.
+
+## `split_face_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 19 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/split_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | eleven-byte indexed header |
+| 11 | 8 | `zero_run` | `bytes[8]` | little | spec | eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `split_face_method_flags`
+
+Spec §3.1 · layout: byte offsets · size: 6 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/split_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `family` | `u32` | little | spec | u32 family |
+| 4 | 1 | `projection` | `u8` | little | spec | u8 projection |
+| 5 | 1 | `extension` | `u8` | little | spec | u8 extension |
 
 ## `boundary_fill_scope_prefix_plain`
 
