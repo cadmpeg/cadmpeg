@@ -20,6 +20,7 @@ mod revolve_direction;
 mod ring_traversal;
 mod shape_placement;
 mod sketch_bspline;
+mod unreadable_shapes;
 mod visibility;
 
 use super::FcstdCodec;
