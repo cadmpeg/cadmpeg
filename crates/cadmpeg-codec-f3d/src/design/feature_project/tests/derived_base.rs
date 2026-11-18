@@ -41,6 +41,7 @@ fn derived(
             offset: 0,
         },
         repeat_offset: 0,
+        result_body: None,
     });
     scope
 }
