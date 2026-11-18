@@ -745,6 +745,20 @@ The object-evaluation chunk contains `i32 evaluation_type`, an
 `ON_Interval` values. Path items are ordered from the selected instance
 reference through nested definitions to the referenced definition geometry.
 
+In the v11 design layer each history record is a `Native` feature of kind
+`rhino:<command_id>`. Its `source_settings` are empty. Its `native_options`
+hold these keys, all case (a), whose meaning is not established. A record key
+is the record's UUID, or `offset-<n>` with the record's byte offset where the
+UUID is nil or an earlier record holds it.
+
+| Key                              | Option                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `rhino:value_<id>`               | the boolean, integer, `f64`, string, or UUID of the record's single-element value `<id>` |
+| `rhino:value_<id>.<i>`           | element `<i>` of a value `<id>` with several elements                                    |
+| `rhino:value_<id>_<n>`           | the same, for the `<n>`-th repeat of value id `<id>` in the record                       |
+| `rhino:antecedents`              | a selection of the antecedents no other record produces, anchored `Current`              |
+| `rhino:antecedents.<record_key>` | a selection of the antecedents the record `<record_key>` produces, anchored after it     |
+
 ### 7.2 Class userdata
 
 A class userdata chunk begins with a packed version byte.

@@ -181,8 +181,8 @@ impl History<'_> {
 
     /// The record's antecedents, each a pick by its object UUID. A pick of an
     /// object another record produces is anchored after that record, under
-    /// `antecedents.<its key>`; every other pick is anchored `Current`, under
-    /// `antecedents` (§5.8). A pick resolves to the object's bodies where its
+    /// `rhino:antecedents.<its key>`; every other pick is anchored `Current`,
+    /// under `rhino:antecedents` (§5.8). A pick resolves to the object's bodies where its
     /// anchored state holds them.
     fn antecedents(
         &self,
@@ -222,7 +222,7 @@ impl History<'_> {
             };
             let picks = Members::new(picks).map_err(CodecError::malformed)?;
             options.insert(
-                text(name)?,
+                option_key(&name)?,
                 NativeOption::Selection(Selection {
                     at,
                     picks: Picks::Named(picks),
@@ -235,8 +235,8 @@ impl History<'_> {
 }
 
 /// Each boolean, integer, real, text, and UUID a record stores, under the
-/// record's value id (`value_<id>`, `value_<id>_<n>` for its n-th repeat) and,
-/// where the value holds several, the element's index.
+/// record's value id (`rhino:value_<id>`, `rhino:value_<id>_<n>` for its n-th
+/// repeat) and, where the value holds several, the element's index.
 fn native_options(
     ctx: &DecodeContext<'_>,
     record: &HistoryRecord,
@@ -292,10 +292,15 @@ fn native_options(
             } else {
                 format!("{key}.{index}")
             };
-            options.insert(text(name)?, element);
+            options.insert(option_key(&name)?, element);
         }
     }
     Ok(options)
+}
+
+/// A native option key, `rhino:<name>` (§6).
+fn option_key(name: &str) -> Result<NonBlankString, CodecError> {
+    text(format!("rhino:{name}"))
 }
 
 fn text(value: String) -> Result<NonBlankString, CodecError> {

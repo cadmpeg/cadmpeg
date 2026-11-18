@@ -235,9 +235,9 @@ fn history_records_are_native_members_of_one_group_holding_their_descendants() {
             cadmpeg_ir::design::dimension::Dimension::Literal(value),
         ))
     };
-    assert_eq!(option("value_9"), integer(2));
-    assert_eq!(option("value_100.0"), integer(1));
-    assert_eq!(option("value_100.1"), integer(0));
+    assert_eq!(option("rhino:value_9"), integer(2));
+    assert_eq!(option("rhino:value_100.0"), integer(1));
+    assert_eq!(option("rhino:value_100.1"), integer(0));
 
     let [current] = scope.current.as_slice() else {
         panic!("one current state");
@@ -378,14 +378,14 @@ fn antecedents_are_picks_anchored_after_their_producer_or_current() {
     assert_eq!(
         keys,
         [
-            "antecedents".to_owned(),
-            format!("antecedents.{}", id(1)),
-            "value_3.0".to_owned(),
-            "value_4".to_owned(),
+            "rhino:antecedents".to_owned(),
+            format!("rhino:antecedents.{}", id(1)),
+            "rhino:value_3.0".to_owned(),
+            "rhino:value_4".to_owned(),
         ]
     );
     assert_eq!(
-        selection(native_options, &format!("antecedents.{}", id(1))),
+        selection(native_options, &format!("rhino:antecedents.{}", id(1))),
         (
             Anchor::Pinned(Position::After(Member::Feature(producer))),
             vec![(
@@ -394,7 +394,7 @@ fn antecedents_are_picks_anchored_after_their_producer_or_current() {
             )],
         )
     );
-    let (at, mut picks) = selection(native_options, "antecedents");
+    let (at, mut picks) = selection(native_options, "rhino:antecedents");
     picks.sort();
     assert_eq!(at, Anchor::Current);
     assert_eq!(
@@ -429,5 +429,42 @@ fn options_skip_values_no_option_can_hold() {
         .keys()
         .map(|key| key.as_str().to_owned())
         .collect::<Vec<_>>();
-    assert_eq!(keys, ["value_3.0", "value_4"]);
+    assert_eq!(keys, ["rhino:value_3.0", "rhino:value_4"]);
+}
+
+#[test]
+fn every_option_key_is_rhino_codec_name() {
+    let records = [
+        record(1, &[0x40]),
+        record_with_antecedents(2, &[0x41], &[0x40, 0x50]),
+    ];
+    let mut ir = CadIr::empty();
+    project(
+        &cadmpeg_test_support::service_decode_context(),
+        &records,
+        &ObjectBodies::from([(id(0x40), vec![body(0x40)])]),
+        None,
+        &mut ir,
+    )
+    .expect("projection");
+    let keys = ir
+        .design
+        .features
+        .iter()
+        .flat_map(|feature| {
+            let FeatureOperation::Native { native_options, .. } = &feature.definition.operation
+            else {
+                panic!("a native operation");
+            };
+            native_options.keys().map(|key| key.as_str().to_owned())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(keys.len(), 6);
+    for key in keys {
+        let name = key.strip_prefix("rhino:");
+        assert!(
+            name.is_some_and(|name| !name.is_empty()),
+            "{key:?} is not rhino:<name>"
+        );
+    }
 }
