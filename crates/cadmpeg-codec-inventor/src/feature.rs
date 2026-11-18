@@ -3712,8 +3712,8 @@ fn project_plate(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
                 profile,
-                thickness,
-                side,
+                thickness: Some(thickness),
+                side: Some(side),
             }),
         ),
         native_ref: Some(source.id()),

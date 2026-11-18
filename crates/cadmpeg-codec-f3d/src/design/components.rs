@@ -2273,6 +2273,7 @@ pub(crate) struct ComponentInserts {
     /// Inserts with no container reference that no authored order classifies.
     unordered: usize,
     assumed_containers: usize,
+    frame_assumptions: Vec<LossNote>,
 }
 
 #[derive(Debug)]
@@ -2362,6 +2363,14 @@ impl ComponentInserts {
             });
             if construction.is_none() {
                 inserts.assumed_containers += 1;
+                if matches!(
+                    scope.canonical_name_frame_length(),
+                    Some(256 | 257 | 261 | 267 | 385 | 389 | 399)
+                ) {
+                    inserts.frame_assumptions.push(F3dLossCode::ComponentInsertLegacyFrameAssumed.note(format!(
+                        "{} uses its legacy scope-local insertion frame as its unresolved occurrence frame, with the current pose assumed equal to the insertion frame (DR-792).", scope.id
+                    )));
+                }
             }
         }
         inserts
@@ -2434,9 +2443,8 @@ impl ComponentInserts {
         Ok(occurrences)
     }
 
-    /// Losses for the inserts that project no occurrence.
     pub(crate) fn losses(&self) -> Vec<LossNote> {
-        let mut losses = Vec::new();
+        let mut losses = self.frame_assumptions.clone();
         if self.assumed_containers != 0 {
             losses.push(F3dLossCode::ComponentInsertContainerAssumed.note(format!(
                 "{} Component Insert occurrence(s) use their decoded scope placement in the document root with an unresolved prototype; the container frame is assumed (DR-491).", self.assumed_containers
@@ -2530,6 +2538,7 @@ pub(crate) fn neutral_transform(
 #[cfg(test)]
 mod tests {
     mod copy_paste;
+    mod legacy_inserts;
     mod owners;
     mod path_poses;
 

@@ -1950,8 +1950,8 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         2,
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(planar_sketch.clone()),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-            side: SheetMetalThicknessSide::Forward,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
+            side: Some(SheetMetalThicknessSide::Forward),
         }),
     );
     let loft = feature(
