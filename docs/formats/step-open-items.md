@@ -389,30 +389,6 @@ per-item record as the exchange form.
 
 ## 8. Product structure and placement
 
-### PS-16. Occurrence placement inferred without a STEP occurrence association
-
-**Question.** Can a parent representation's `MAPPED_ITEM` place a
-`NEXT_ASSEMBLY_USAGE_OCCURRENCE` when no STEP relationship associates that
-mapped item with the occurrence?
-
-**Known.** The occurrence-specific mapped-item assembly form uses an additional
-shape representation linked to the occurrence through
-`SHAPE_DEFINITION_REPRESENTATION` and `PRODUCT_DEFINITION_SHAPE`.
-`step.md` §8 also defines an implicit parent-representation salvage path and
-states that it is not a STEP occurrence association.
-`crates/cadmpeg-codec-step/src/reader/product.rs:1101-1163` searches the parent
-definition's representations for mapped items whose mapped representation
-resolves to the child definition. It assigns the transform when the child
-definition has one matching usage and the search finds one distinct transform.
-The uniqueness checks make the result independent of aggregate and record
-order, but they do not create a source relationship between the mapped item and
-the occurrence.
-
-**Need.** The neutral occurrence receives a placement that the source graph does
-not assign to it. The answer either requires an occurrence association before
-the placement transfers, or represents the inferred association explicitly so
-that it cannot be mistaken for a STEP-declared occurrence placement.
-
 ### PS-17. Product-definition reuse with instance-specific children
 
 **Question.** How can STEP retain distinct child structures under occurrences
