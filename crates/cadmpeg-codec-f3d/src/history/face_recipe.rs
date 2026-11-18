@@ -211,6 +211,13 @@ impl FaceRecipeIndex {
     }
 
     pub(super) fn resolve_loop(&self, operand: &DesignFaceOperand) -> Option<i64> {
+        if operand
+            .recipe_nodes
+            .iter()
+            .any(|node| !node.has_two_side_clauses())
+        {
+            return None;
+        }
         self.resolve_boundary(operand, true)
     }
 

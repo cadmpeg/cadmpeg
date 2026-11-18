@@ -211,6 +211,36 @@ fn a_one_clause_node_binds_a_closed_edge_by_the_fan_at_its_one_vertex() {
 }
 
 #[test]
+fn a_one_clause_closed_edge_leaves_the_loop_recipe_unresolved() {
+    let index = FaceRecipeIndex::new(&topology_with_inner_loop());
+    let mut operand = operand();
+    add_closed_edge_node(&mut operand, [4, 0]);
+    let node = operand.recipe_nodes.pop().unwrap();
+    operand.recipe_program = vec![0, -1, 1];
+    operand.recipe_program.extend_from_slice(&node.program);
+    operand.recipe_nodes = vec![node];
+    let structure = operand.recipe_nodes[0].recipe_structure.as_ref().unwrap();
+    assert_eq!(structure.prelude[1], 1);
+    assert!(structure.has_valid_boundary_edge_ordinals(&operand.recipe_references));
+    assert!(operand.resolved_face_slots.is_empty());
+    assert_eq!(operand.group_record_index(), Some(20));
+    let mut lanes: Vec<_> = (100..=104).map(|face| BTreeSet::from([face])).collect();
+    assert!(index.node_matches(structure, 20, &lanes));
+    assert_eq!(index.resolve_loop(&operand), None);
+
+    let mut topology = topology_with_inner_loop();
+    topology.faces.retain(|face| *face != 104);
+    let other = topology.face_loops.pop().unwrap();
+    topology.face_loops[0].member_refs.extend(other.member_refs);
+    operand.recipe_references[4].candidate_faces = vec![crate::ids::brep_face_id(100)];
+    lanes[4] = lanes[0].clone();
+    let index = FaceRecipeIndex::new(&topology);
+    assert_eq!(index.edge_faces[&20], [100, 100]);
+    assert!(index.node_matches(structure, 20, &lanes));
+    assert_eq!(index.resolve_loop(&operand), None);
+}
+
+#[test]
 fn a_one_clause_node_does_not_bind_an_open_edge() {
     let index = FaceRecipeIndex::new(&topology());
     let mut operand = operand();
