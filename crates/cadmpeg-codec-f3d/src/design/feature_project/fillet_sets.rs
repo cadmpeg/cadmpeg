@@ -51,6 +51,24 @@ pub(super) fn project(
     }) {
         return Ok(None);
     }
+    if sets.sets.iter().any(DesignFilletSet::is_short_constant)
+        && inputs.owners.iter().any(|owner| {
+            native_stream(owner.id()) == Some(stream)
+                && scope.names_owner(owner)
+                && parameters.iter().any(|(_, parameter)| {
+                    parameter.record_index == owner.parameter_record_index()
+                        && parameter.source_kind_str() == "TangencyWeight"
+                })
+                && sets.sets.iter().all(|set| {
+                    set.tangency_weight_owner_record_index != Some(owner.record_index())
+                })
+        })
+    {
+        losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
+            "{}: Short Fillet sets leave a scope-owned tangency weight unassigned.",
+            scope.id
+        )));
+    }
     let parameter = |owner, kind| {
         unique_feature_match(parameters.iter().filter_map(|(_, parameter)| {
             (parameter.owner_record_index() == Some(owner)

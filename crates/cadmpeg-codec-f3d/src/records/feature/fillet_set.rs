@@ -148,7 +148,7 @@ pub(crate) struct DesignFilletSet {
 }
 
 impl DesignFilletSet {
-    fn is_short_constant(&self) -> bool {
+    pub(crate) fn is_short_constant(&self) -> bool {
         usize::try_from(self.frame_length) == Ok(crate::layout::fillet_set_short_constant::LEN)
             && matches!(self.law, DesignFilletSetLaw::Constant { .. })
     }
