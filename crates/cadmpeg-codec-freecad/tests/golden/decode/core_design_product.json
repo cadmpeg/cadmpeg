@@ -8101,7 +8101,8 @@
           "label": "Box",
           "native_ref": "fcstd:native:object#Box",
           "sketches": [],
-          "source_name": "Box"
+          "source_name": "Box",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -8115,7 +8116,8 @@
           "label": "Cut",
           "native_ref": "fcstd:native:object#Cut",
           "sketches": [],
-          "source_name": "Cut"
+          "source_name": "Cut",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -8129,7 +8131,8 @@
           "label": "Cylinder",
           "native_ref": "fcstd:native:object#Cylinder",
           "sketches": [],
-          "source_name": "Cylinder"
+          "source_name": "Cylinder",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -8143,7 +8146,8 @@
           "label": "DesignedFeature",
           "native_ref": "fcstd:native:object#DesignedFeature",
           "sketches": [],
-          "source_name": "DesignedFeature"
+          "source_name": "DesignedFeature",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -8155,7 +8159,8 @@
           "label": "CC0 Product",
           "native_ref": "fcstd:native:object#Product",
           "sketches": [],
-          "source_name": "Product"
+          "source_name": "Product",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -8169,7 +8174,8 @@
           "label": "Profile",
           "native_ref": "fcstd:native:object#Profile",
           "sketches": [],
-          "source_name": "Profile"
+          "source_name": "Profile",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

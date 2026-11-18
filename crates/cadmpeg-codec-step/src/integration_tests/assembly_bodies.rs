@@ -34,6 +34,7 @@ fn product(name: &str, bodies: Vec<BodyId>) -> ProductDefinition {
         bom_properties: BTreeMap::new(),
         bodies,
         sketches: Vec::default(),
+        tessellations: Vec::new(),
         native_ref: None,
     }
 }
