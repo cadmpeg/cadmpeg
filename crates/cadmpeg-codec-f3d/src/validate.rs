@@ -780,9 +780,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// The edge-recipe evidence that scope history binding reads from the
 /// native namespace.
-fn native_edge_recipe_faces(
-    native: &native::F3dNative,
-) -> history::edge_recipe_scope::Sources<'_> {
+fn native_edge_recipe_faces(native: &native::F3dNative) -> history::edge_recipe_scope::Sources<'_> {
     history::edge_recipe_scope::Sources {
         operands: &native.design_edge_operands,
         recipes: &native.construction_recipes,
