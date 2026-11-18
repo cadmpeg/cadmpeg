@@ -318,7 +318,30 @@ impl Editor<'_> {
         self.apply(|document| document.insert_member(container, index, records))
     }
 
-    /// Deletes `member` from the document with what it owns (§4).
+    /// Deletes `member` from the document with what it owns (§4): where it is
+    /// a container, every member under it; the sketches and spatial sketches
+    /// a deleted feature owns, with their entities and constraints; the sheet
+    /// a deleted feature's `Spreadsheet` operation names; the parameters a
+    /// deleted feature or container owns, and the programs a deleted feature
+    /// owns; and every override keyed by a deleted record. It marks `Stale`
+    /// every evaluation and current state at or after the member's position
+    /// in an ordered container, and every one that depends on a feature at
+    /// or after it; in an unordered container, every one that depends on a
+    /// deleted member. It deletes the evaluations keyed by a deleted member
+    /// and rebases the evaluations and process states based on them, and
+    /// strips from each kept state's name table the names that mention a
+    /// deleted record. In an ordered container every other position that
+    /// names a deleted member retargets to the position before the member,
+    /// and a rollback before it moves to the member after it. In an
+    /// unordered container, and for a current state inside a removed
+    /// container, the current state at the position is deleted with the part
+    /// of its extent no other body holds, after what was based on it is
+    /// rebased; selections pinned to a deleted member's result are anchored
+    /// `Current`; each model-class record that targets only deleted geometry
+    /// or deleted evaluations is deleted, with the tessellations a removed
+    /// `Stored` feature names; and presentation layers lose the deleted
+    /// entities. Every pick whose `resolved` lists a deleted record loses
+    /// that cache.
     ///
     /// # Errors
     ///
@@ -332,6 +355,25 @@ impl Editor<'_> {
 
     /// Makes `configuration` the active configuration of `scope`'s design
     /// (§4, §5.5).
+    ///
+    /// For each current state of that scope it writes the outgoing extent
+    /// (its bodies and the records they reach, their names and owners, and
+    /// its poses) into an evaluation of the outgoing configuration at the
+    /// state's position, and installs the incoming configuration's
+    /// evaluation of that position in its place: its records into
+    /// `CadIr.geometry`, its names into `Design.names`, its bodies' owners
+    /// into the product definitions' `bodies`, and its poses into the current
+    /// state, which lists the installed bodies; that evaluation is removed.
+    /// The outgoing records that no other body reaches leave the geometry,
+    /// with their names and owners. Where the document holds no evaluation
+    /// of that position for `configuration`, the current state is kept and
+    /// marked `Stale`. Evaluations based on an exchanged current state are
+    /// rebased onto the outgoing evaluation, and those based on an installed
+    /// evaluation onto the current state, so their resolved states are
+    /// unchanged. Each construction of the scope's design whose `resolved`
+    /// is a cache moves it into `resolved_in` under the outgoing
+    /// configuration, and takes the incoming configuration's entry. Other
+    /// scopes, and the scope's other records, are untouched.
     ///
     /// # Errors
     ///

@@ -297,6 +297,29 @@ fn timeline() -> CadIr {
     document
 }
 
+/// Gives the timeline's scope configuration 9, a base with no overrides,
+/// as its active configuration, and makes every evaluation one of it.
+fn with_base(document: &mut CadIr) {
+    document.design.configurations.push(DesignConfiguration {
+        id: configuration(9),
+        scope: definition(),
+        name: "Base".to_owned(),
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    document.design.scopes[0].active_configuration = Some(configuration(9));
+    for evaluation in &mut document.design.evaluations {
+        evaluation
+            .configuration
+            .get_or_insert_with(|| configuration(9));
+    }
+    document.design.finalize();
+}
+
 fn status(document: &CadIr, key: u32) -> EvaluationStatus {
     document
         .design
@@ -653,11 +676,11 @@ fn an_edit_clears_the_resolved_transformation_its_parameter_binds() {
             "value": {
                 "bodies": {"at": {"kind": "input"}, "picks": {"kind": "unread"}},
                 "transformation": {
-                    "steps": [{"kind": "components", "delta": [
+                    "steps": [{"kind": "components", "value": {"delta": [
                         {"kind": "parameter", "value": parameter_id(parameter).as_str()},
                         {"kind": "literal", "value": 0.0},
                         {"kind": "literal", "value": 0.0},
-                    ]}],
+                    ]}}],
                     "resolved": identity,
                 },
                 "native_options": {},
@@ -764,6 +787,7 @@ fn set_dimension_marks_dependents_and_recomputes_caches() {
         materials: Vec::new(),
         native_ref: None,
     });
+    with_base(&mut document);
 
     document
         .edit()
@@ -922,12 +946,35 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
         materials: Vec::new(),
         native_ref: None,
     });
+    with_base(&mut document);
     let doubled = BTreeMap::from([(
         parameter_id(2),
         length_override("$0 * 2", &[reference(1)], 1.0),
     )]);
     let occurrence = |key: u32| -> OccurrenceId { id("occurrence", key) };
-    document.design.scopes[0].occurrences = BTreeMap::from([
+    let assembly: ProductDefinitionId = id("product-definition", 2);
+    document.model.product_definitions = vec![product_definition(&[]), {
+        let mut placing = crate::products::ProductDefinition::new(
+            assembly.clone(),
+            crate::products::Storage::Embedded,
+        );
+        placing.kind = Some(crate::products::ProductDefinitionKind::Assembly);
+        placing.occurrences = vec![occurrence(1), occurrence(2)];
+        placing
+    }];
+    document.model.occurrences = [1, 2]
+        .into_iter()
+        .map(|key| crate::products::Occurrence::new(occurrence(key), definition(), None))
+        .collect();
+    document.design.scopes.push(DesignScope {
+        definition: assembly,
+        roots: Vec::new(),
+        active_configuration: None,
+        active_arrangements: BTreeSet::new(),
+        occurrences: BTreeMap::new(),
+        current: Vec::new(),
+    });
+    document.design.scopes[1].occurrences = BTreeMap::from([
         (
             occurrence(1),
             OccurrenceDesign {
@@ -957,7 +1004,7 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
         .unwrap();
 
     let value = |key: u32| {
-        document.design.scopes[0].occurrences[&occurrence(key)].parameters[&parameter_id(2)]
+        document.design.scopes[1].occurrences[&occurrence(key)].parameters[&parameter_id(2)]
             .value
             .clone()
     };
@@ -1695,8 +1742,18 @@ fn switching_exchanges_every_current_state_of_the_scope() {
     document.model.product_definitions[0]
         .bodies
         .push(id("body", 3));
+    document.design.containers.push(Container::Ordered {
+        id: id("container", 2),
+        kind: OrderedKind::Body,
+        members: vec![Member::Feature(feature(4))],
+        folders: Vec::new(),
+        rollback: Rollback::End,
+        placement: None,
+    });
+    document.design.scopes[0].roots.push(id("container", 2));
+    document.design.features.push(unresolved(4));
     document.design.scopes[0].current.push(CurrentState {
-        at: after(1),
+        at: after(4),
         bodies: vec![id("body", 3)],
         poses: BTreeMap::new(),
         status: EvaluationStatus::Current,
@@ -1704,10 +1761,11 @@ fn switching_exchanges_every_current_state_of_the_scope() {
     });
     document.design.evaluations.push(evaluation(
         7,
-        Evaluated::State(after(1)),
+        Evaluated::State(after(4)),
         Some(configuration(2)),
         Some(with_bodies(&[4])),
     ));
+    document.finalize();
     document
         .edit()
         .unwrap()
@@ -1731,7 +1789,7 @@ fn switching_exchanges_every_current_state_of_the_scope() {
         .map(|evaluation| evaluation.of.clone())
         .collect();
     assert_eq!(written.len(), 2);
-    assert!(written.contains(&Evaluated::State(after(1))));
+    assert!(written.contains(&Evaluated::State(after(4))));
     assert!(written.contains(&Evaluated::State(after(3))));
 }
 

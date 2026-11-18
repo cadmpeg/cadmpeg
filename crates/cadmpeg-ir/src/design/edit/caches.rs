@@ -8,8 +8,9 @@
 //! recomputes the cache of every dependent neutral expression that has no
 //! uncached measure, and clears every dependent cache it cannot recompute: a
 //! parameter's value, the `Cell` and `Unchecked` deviations of a fit, a
-//! measure's cached value, and an override's value. An override with no
-//! expression whose value it clears states nothing, so it is removed.
+//! measure's cached value, an override's value, and the `resolved` of a
+//! transformation whose steps bind a dependent parameter. An override with
+//! no expression whose value it clears states nothing, so it is removed.
 
 use std::collections::{BTreeMap, BTreeSet};
 
