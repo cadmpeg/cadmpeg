@@ -272,7 +272,9 @@ fn exact_assembly_operand_path_envelope(
     (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
         let position = super::position::registered(scope, stream_types);
+        let compact_as_built = crate::design::assembly::compact_placement_as_built_scope(scope);
         let variable_reference = position.is_none()
+            && !compact_as_built
             && !super::assembly_v3::registered(scope, stream_types)
             && !crate::design::assembly::rigid_as_built_scope(scope)
             && crate::design::assembly::variable_reference_assembly_generation(
@@ -288,21 +290,28 @@ fn exact_assembly_operand_path_envelope(
             .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
         let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
         let assemble = position.is_some() || super::assembly_v3::registered(scope, stream_types);
-        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) || assemble {
-            Some(if assemble {
-                RigidGroupLocatorLayout::admit_assemble(
-                    registered_locator.copied(),
-                    locator_end.checked_sub(locator_at)?,
-                )?
+        let group_layout =
+            if crate::design::assembly::rigid_as_built_scope(scope) || compact_as_built || assemble
+            {
+                Some(if assemble {
+                    RigidGroupLocatorLayout::admit_assemble(
+                        registered_locator.copied(),
+                        locator_end.checked_sub(locator_at)?,
+                    )?
+                } else if compact_as_built {
+                    RigidGroupLocatorLayout::admit_compact_as_built(
+                        registered_locator.copied(),
+                        locator_end.checked_sub(locator_at)?,
+                    )?
+                } else {
+                    RigidGroupLocatorLayout::admit(
+                        registered_locator.copied(),
+                        locator_end.checked_sub(locator_at)?,
+                    )?
+                })
             } else {
-                RigidGroupLocatorLayout::admit(
-                    registered_locator.copied(),
-                    locator_end.checked_sub(locator_at)?,
-                )?
-            })
-        } else {
-            None
-        };
+                None
+            };
         let wide = group_layout.map_or(wide_family && registered_locator.is_some(), |layout| {
             layout.wide
         });
@@ -597,7 +606,7 @@ fn exact_assembly_operand_path_envelope(
             return Some(Err(error));
         }
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
-            if super::assembly_v3::registered(scope, stream_types)
+            if (compact_as_built || super::assembly_v3::registered(scope, stream_types))
                 && !stream_types
                     .get(&u64::from(record_index))
                     .is_some_and(|(guid, version)| {

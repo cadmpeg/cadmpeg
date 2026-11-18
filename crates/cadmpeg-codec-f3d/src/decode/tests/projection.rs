@@ -359,6 +359,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     }];
     let projection = MeshProjection {
         count: 2,
+        unjoined: 0,
         tessellations_by_scope: std::collections::HashMap::from([(
             ("f3d:Design/BulkStream.dat".into(), 10),
             vec![
@@ -1370,12 +1371,14 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     };
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: resolved_target.clone(),
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(resolved_tool),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: resolved_target.clone(),
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(
                 "native:tool".into()
@@ -1384,6 +1387,7 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Native("native:target".into()),
             tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Resolved {
                 faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
