@@ -368,13 +368,23 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 ### DE-24. Feature class `55dbdf16d3118c9b6000f2b21d6eefb0`
 
-**Question.** What are the operand layout and the operation of feature-label class `55dbdf16d3118c9b6000f2b21d6eefb0`?
+**Question.** What are the operand layout and the operation of feature-label class `55dbdf16d3118c9b6000f2b21d6eefb0`, and does it make a sheet-metal Cut?
 
-**Known.** One local design has one feature of this class. Its label has one sketch participant. Its feature record has 34 property slots, and the slot pattern is similar to the extrusion layout. Slot 0 is the part-operation enumeration `(5, 2)`. Slot 6 is an enumeration of type 12.
+**Known.** One local design has one feature of this class. Its label has one sketch participant. Its feature record has 34 property slots, and the slot pattern is similar to the extrusion layout. Slot 0 is the part-operation enumeration `(5, 2)`. Slot 6 is an enumeration of type 12. A scan of 9235 inputs parsed 381199 feature labels and found zero labels of this class. The scan identified 385 parts with a sheet-metal style record; four inputs failed inspection. The 19 CC0 sheet-metal fixtures also contain zero labels of this class.
 
-**Need.** Parts with this class from several designs, with their stored bodies, so that the profile, the extent, and the direction can be checked against the body faces.
+**Need.** Parts with this class from at least three distinct designs, with the stored states before and after the feature. Each operand slot requires its role and valid values. The selected profile, depth rule, direction, and any sheet-normal controls require agreement with the stored result. Controlled changes must separate fixed depth, through-thickness termination, reversed direction, and cuts across bends.
 
 **Note.** The decoder reports `feature.native-class-unrecognized` for this class.
+
+### DE-25. Zero-distance extrusion Cuts in sheet-metal parts
+
+**Question.** What depth rule does a fixed-distance Cut with a zero slot-4 value specify in a sheet-metal part?
+
+**Known.** Two of 385 parts with a sheet-metal style record contain this form. Both features have extrusion class `3111a90cd0118b83000819b00524dc09`, segment major version 19, and 30 property slots. Slot 0 has part-operation type/value `(5, 2)`. Slots 1 and 23 select the same one-member boundary patch. Slot 2 has a nonzero direction vector, zero entity flags, zero parameter, and an absent extension. Slot 3 is true. Slot 4 has model value zero. Slot 5 has model value zero. Slot 6 has extent type/value `(11, 1)`. Slot 7 is false, and slot 29 is null. The 19 CC0 sheet-metal fixtures contain zero instances of this form. The decoder retains these features as native operations.
+
+**Need.** At least three distinct designs with stored states before and after the Cut. The profile, active depth parameter or termination rule, sheet-normal relation, and direction require exact joins that reproduce each stored result. Controlled changes must separate a zero depth, an inactive parameter, and a sheet-thickness termination.
+
+**Note.** The decoder reports `feature.extrusion-operands-native` for this form. Projection and validation use the same extrusion-operand predicate.
 
 ## 5. Adjacent envelopes
 

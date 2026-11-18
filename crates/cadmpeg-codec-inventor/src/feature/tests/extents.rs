@@ -1349,6 +1349,71 @@ fn native_profile_refuses_unequal_patch_references_and_zero_blind_length() {
 }
 
 #[test]
+fn fixed_distance_cut_with_zero_length_keeps_native_operands_and_loss() {
+    let case = ExtentCase {
+        output: Output::Solid,
+        operation: 2,
+        extent: 1,
+        symmetric: false,
+        solid_input: SolidInput::None,
+    };
+    let positive = build_extent_extrusion(
+        case,
+        &[],
+        Vec::new(),
+        IDENTITY_MATRIX,
+        |_| {},
+        |_, _, _, _| {},
+    )
+    .expect("positive fixed-distance cut");
+    assert!(matches!(
+        positive.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: BooleanOp::Cut,
+            ..
+        })
+    ));
+    assert!(build_extent_extrusion(
+        case,
+        &[(4, 74)],
+        Vec::new(),
+        IDENTITY_MATRIX,
+        |_| {},
+        |source, label, index, projected| {
+            assert!(projected.is_none());
+            assert!(!crate::feature::extrusion::matches(
+                index,
+                source,
+                label,
+                positive.evaluation.definition()
+            ));
+            assert!(crate::feature::extrusion::indexed_operands(
+                source,
+                label,
+                index,
+                Output::Solid
+            )
+            .is_none());
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("projection context");
+            let mut losses = Vec::new();
+            assert!(
+                crate::feature::extrusion::project(&ctx, source, label, index, &mut losses)
+                    .is_none()
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.namespace(), "inventor");
+            assert_eq!(
+                losses[0].code.local_code(),
+                "feature.extrusion-operands-native"
+            );
+        }
+    )
+    .is_none());
+}
+
+#[test]
 fn native_profile_retains_signed_taper_on_each_side() {
     let projected = configured_extent_extrusion(
         1,
