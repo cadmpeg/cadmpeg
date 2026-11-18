@@ -1662,6 +1662,116 @@ fn a_body_recipe_selects_the_input_body_whose_last_design_link_it_stores() {
 }
 
 #[test]
+fn body_recipes_resolve_design_link_307_8_before_body_deletion() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipeSelector,
+    };
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let (fixture_scope, mut history, operands, _) = body_recipe_history_fixture();
+    let (_, _, _, _, mut body, _, _, _) = direct_body_fixture();
+    body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#4").unwrap();
+    let attribute = SourceAttribute {
+        id: "f3d:brep:attribute#1".try_into().unwrap(),
+        target: AttributeTarget::Body(body.id.clone()).into(),
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        values: vec![
+            AttributeValue::String("generic_tag_attrib_def".into()),
+            AttributeValue::Integer(3),
+            AttributeValue::Integer(3),
+            AttributeValue::Integer(-1),
+            AttributeValue::String("generic_tag_attrib_def ".into()),
+            AttributeValue::Integer(1),
+            AttributeValue::Integer(3),
+            AttributeValue::String("307".into()),
+            AttributeValue::Integer(8),
+            AttributeValue::Integer(0),
+            AttributeValue::Integer(0),
+        ],
+    };
+    let brep = cadmpeg_asm::brep::AsmBrep {
+        bodies: vec![body],
+        attributes: vec![attribute],
+        ..Default::default()
+    };
+    let tagged = super::super::historical_topology(&brep).unwrap().unwrap();
+    crate::test_support::history::edit(&mut history, 1, |topology, _| {
+        topology.body_design_links = tagged.body_design_links;
+    });
+    crate::test_support::history::edit(&mut history, 0, |topology, _| {
+        topology.bodies.retain(|body| *body != 4);
+        topology.regions.retain(|region| *region != 5);
+        topology.shells.retain(|shell| *shell != 6);
+        topology.faces.retain(|face| *face != 20);
+        topology.surfaces.retain(|surface| *surface != 200);
+        topology.body_regions.retain(|row| row.owner_ref != 4);
+        topology.region_shells.retain(|row| row.owner_ref != 5);
+        topology.shell_faces.retain(|row| row.owner_ref != 6);
+        topology.shell_wire_edges.retain(|row| row.owner_ref != 6);
+        topology
+            .shell_free_vertices
+            .retain(|row| row.owner_ref != 6);
+        topology.face_loops.retain(|row| row.owner_ref != 20);
+        topology.face_surfaces.retain(|row| row.entity != 20);
+    });
+    let current = &history.states()[0];
+    assert_eq!(history.topology(current).unwrap().bodies, [1]);
+    assert_eq!(history.topology(current).unwrap().faces, [10, 11, 12]);
+    assert_eq!(
+        current.transition.as_ref().unwrap().topology.bodies.deleted,
+        [4]
+    );
+    let recipe = ConstructionRecipe {
+        id: operands[0].recipe_id.clone(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
+                value: "307".into(),
+                offset: 0,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 8,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: None,
+    };
+    for kind in [
+        DesignFeatureKind::Mirror,
+        DesignFeatureKind::RemoveBody,
+        DesignFeatureKind::Extrude,
+    ] {
+        let mut scope = DesignParameterScope::empty(&fixture_scope.id, kind, 10);
+        scope
+            .try_edit(|draft| draft.history_state_id = Some(2))
+            .unwrap();
+        let mut operands = operands.clone();
+        for reference in operands[0].reference_bindings_mut() {
+            *reference.candidate_faces = [10, 20]
+                .map(|slot| {
+                    cadmpeg_ir::ids::FaceId::mint(format!("f3d:brep:entity#{slot}")).unwrap()
+                })
+                .to_vec();
+        }
+        bind_body_recipe_operand_history_candidates(
+            &mut operands,
+            std::slice::from_ref(&recipe),
+            std::slice::from_ref(&scope),
+            BindingHistories::Shared(std::slice::from_ref(&history)),
+        )
+        .unwrap();
+        assert_eq!(operands[0].references()[0].preceding_body_slots, [1, 4]);
+        assert_eq!(operands[0].resolved_body_state_id, Some(1));
+        assert_eq!(operands[0].resolved_body_slot, Some(4));
+        assert_eq!(operands[0].resolved_body_face_slots, [20]);
+    }
+}
+
+#[test]
 fn a_body_recipe_design_link_shared_by_two_bodies_or_by_none_selects_no_body() {
     assert_eq!(design_linked_case("308", 6, &[(7, 6), (8, 6)], true), None);
     assert_eq!(design_linked_case("308", 7, &[(7, 5), (8, 6)], true), None);

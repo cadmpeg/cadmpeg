@@ -2439,16 +2439,6 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-### DR-643. Persistent tags of omitted bodies
-
-**Question.** Does the generic tag on a BREP body that the final model omits supply the recipe join for whole-body operands that select it?
-
-**Known.** A body that a `RemoveBody` deletes stays in the model BREP and the history BREP. Its generic tag stores Design id `307` and reference `8`. The whole-body recipe operands of the `Mirror`, the `RemoveBody`, and the cutting `Extrude` that select it have Design id `307` and selector `8`. The decoder reads persistent design links from model bodies only, and leaves this tag unread.
-
-**Need.** A save in which two omitted bodies carry different tags and are selected by different features.
-
-**Conflict.** None.
-
 ### DR-644. Atomic regions with holes
 
 **Question.** How does a nested profile-region selection store an atomic region that has a hole?
