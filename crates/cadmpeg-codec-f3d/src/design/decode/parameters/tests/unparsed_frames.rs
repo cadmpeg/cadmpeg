@@ -14,13 +14,13 @@ use crate::test_support::zip_test::with_scan;
 #[test]
 fn compact_owned_parameter_keeps_offset_with_opaque_trailer_flag() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let fixture = |owner, flag| {
+    let fixture = |owner, kind, flag| {
         let expression = "2 mm";
         let mut bytes = super::compact_owned_parameter_record(
             owner,
             2,
             expression,
-            "Side1Offset",
+            kind,
             Some("mm"),
             "d2",
             0.2,
@@ -29,8 +29,9 @@ fn compact_owned_parameter_keeps_offset_with_opaque_trailer_flag() {
         bytes[trailer] = flag;
         bytes
     };
-    let mut bulk = fixture(31, 1);
-    bulk.extend_from_slice(&fixture(34, 2));
+    let mut bulk = fixture(31, "Side1Offset", 1);
+    bulk.extend_from_slice(&fixture(34, "Side1Offset", 2));
+    bulk.extend_from_slice(&fixture(37, "TangencyWeight", 1));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     write_synthetic_manifests(&mut zip, stored);
@@ -45,6 +46,12 @@ fn compact_owned_parameter_keeps_offset_with_opaque_trailer_flag() {
     assert_eq!(offset.owner_record_index(), Some(31));
     assert_eq!(offset.source_kind(), "Side1Offset");
     assert_eq!(offset.expression(), "2 mm");
+    assert!(!offset.flags().driven);
+    let [unparsed] = decoded.unparsed.as_slice() else {
+        panic!("expected one stream with unparsed compact parameter frames");
+    };
+    assert_eq!(unparsed.stream, stream);
+    assert_eq!(unparsed.count, 2);
     let [flagged] = decoded.trailer_flags.as_slice() else {
         panic!("one compact trailer flag report");
     };

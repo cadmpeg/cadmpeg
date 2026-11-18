@@ -98,19 +98,16 @@ fn compact_owned_trailer_states_the_driven_flag() {
         frame[expression_end..expression_end + 5].copy_from_slice(&trailer);
         parse_design_parameter_record(&frame)
     };
-    for opaque_flag in [0, 1] {
-        let driven = read([opaque_flag, 1, 0, 0, 0]).expect("driven compact parameter");
-        assert!(driven.flags().driven);
-        assert_eq!(driven.driving(), Some(false));
-        let driving = read([opaque_flag, 0, 0, 0, 0]).expect("driving compact parameter");
-        assert!(!driving.flags().driven);
-        assert_eq!(driving.driving(), None);
-    }
+    let driven = read([0, 1, 0, 0, 0]).expect("driven compact parameter");
+    assert!(driven.flags().driven);
+    assert_eq!(driven.driving(), Some(false));
+    let driving = read([0; 5]).expect("driving compact parameter");
+    assert!(!driving.flags().driven);
+    assert_eq!(driving.driving(), None);
     for refused in [
-        [2, 0, 0, 0, 0],
+        [1, 0, 0, 0, 0],
         [0, 2, 0, 0, 0],
         [0, 0, 1, 0, 0],
-        [0, 0, 0, 1, 0],
         [0, 0, 0, 0, 1],
     ] {
         assert!(read(refused).is_none(), "{refused:?}");

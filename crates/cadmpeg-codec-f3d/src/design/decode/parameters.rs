@@ -88,7 +88,7 @@ pub(crate) struct DecodedParameters {
     pub(crate) parameters: Vec<DesignParameter>,
     /// Per-stream counts of parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
-    /// Per-stream counts of decoded parameters whose trailer byte 3 is set.
+    /// Per-stream counts of decoded parameters with a set opaque trailer flag.
     pub(crate) trailer_flags: Vec<StreamParameterCount>,
     /// Per-stream counts of decoded compact null-owner parameters.
     pub(crate) null_owners: Vec<StreamParameterCount>,
@@ -204,7 +204,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     comment: Option<ParsedParameterUnit>,
     flags: crate::records::parameters::DesignParameterFlags,
     text_value: Option<ParsedParameterUnit>,
-    /// Whether byte 3 of the five-byte compact expression trailer is `1`.
+    /// Whether the compact expression trailer sets its opaque flag.
     compact_flag: bool,
     /// Whether the frame is the compact null-owner form.
     compact_null_owner: bool,
@@ -549,6 +549,10 @@ fn parse_header_form(
         Some(value) => value,
         None => parameter_text!(payload, source_kind_at, 1..=256),
     };
+    let compact_flag = compact_flags.is_some_and(|(_, opaque)| opaque);
+    if compact_flag && source_kind != "Side1Offset" {
+        return None;
+    }
     let document_flag = match wide_flags {
         Some(wide) => wide.document,
         None => expression_trailer.get(DOCUMENT_TRAILER_FLAG) == Some(&1),
@@ -633,7 +637,7 @@ fn parse_header_form(
             value: text_value,
             offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
         }),
-        compact_flag: compact_flags.is_some_and(|(_, opaque)| opaque),
+        compact_flag,
         compact_null_owner: false,
     }))
 }
