@@ -17,7 +17,52 @@
         "evaluations": [],
         "features": [],
         "names": [],
-        "parameters": [],
+        "parameters": [
+          {
+            "definition": {
+              "kind": "expression",
+              "value": {
+                "kind": "source",
+                "value": {
+                  "dialect": {
+                    "kind": "nx"
+                  },
+                  "tokens": [
+                    {
+                      "kind": "text",
+                      "value": "25"
+                    }
+                  ]
+                }
+              }
+            },
+            "id": "nx:om-entry-0:parameter#99",
+            "kind": {
+              "kind": "quantity",
+              "value": {
+                "angle": 0,
+                "length": 1,
+                "mass": 0,
+                "time": 0
+              }
+            },
+            "name": "length",
+            "native_options": {},
+            "native_ref": "nx:om-entry-0:expression#99",
+            "scope": "nx:document:product-definition#root",
+            "source_settings": {},
+            "unit": [
+              {
+                "power": 1,
+                "symbol": "mm"
+              }
+            ],
+            "value": {
+              "kind": "number",
+              "value": 25.0
+            }
+          }
+        ],
         "programs": [],
         "publications": [],
         "scopes": [

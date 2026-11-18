@@ -29,6 +29,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 
+mod parameters;
+
 /// The root definition of an NX assembly, as the placement attachment states it.
 const ASSEMBLY_ROOT: &str = "nx:assembly:product-definition#root";
 /// The root definition of an NX part that states no assembly root.
@@ -82,6 +84,7 @@ pub(super) fn project(
         timeline(ctx, &features, bodies, &mut minted)?
     };
     let (arrangements, active_arrangements) = arrangements(ctx, ir, &definition, &mut minted)?;
+    parameters::project(ctx, ir, &definition)?;
     ctx.charge_entities(1, "project NX v11 scope")?;
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
