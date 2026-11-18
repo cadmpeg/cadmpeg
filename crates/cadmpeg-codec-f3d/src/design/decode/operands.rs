@@ -2553,6 +2553,16 @@ pub(crate) fn decode_fillet_radius_groups(
                     && group.scope_record_index == scope.record_index
             })
             .collect::<Vec<_>>();
+        if scope.fillet_sets().is_some_and(|sets| {
+            sets.projects_short_sets(
+                scope_groups
+                    .iter()
+                    .filter(|group| !group.members().is_empty())
+                    .map(|group| group.record_index),
+            )
+        }) {
+            continue;
+        }
         scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
         let mut owned_parameters = owners
             .iter()
