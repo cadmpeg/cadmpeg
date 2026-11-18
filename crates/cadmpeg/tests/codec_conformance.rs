@@ -693,7 +693,7 @@ mod product_roundtrip {
             .expect("decode FCStd part")
             .into_parts()
             .0;
-        let bodies = source.geometry.bodies.len();
+        let (_, _, _, bodies) = product_shape(&source);
         assert!(bodies > 0);
         assert_eq!(product_shape(&source), (1, 1, 0, bodies));
 
