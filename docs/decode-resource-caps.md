@@ -568,16 +568,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 345.
+Production `MAX_*` constants: 346.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 77    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 173   |
+| 4    | Local work cap             | 174   |
 | N    | Not a decode bound         | 53    |
-|      | Total                      | 345   |
+|      | Total                      | 346   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
