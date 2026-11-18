@@ -756,11 +756,15 @@ fn tolerance(value: &Value, scale: f64) -> Tolerance {
             .zip(at(upper))
             .map(|(lower, upper)| Deviations { lower, upper })
     };
+    let ordered = |lower: f64, upper: f64| {
+        deviations(lower, upper)
+            .filter(|deviations| deviations.lower.get() <= deviations.upper.get())
+    };
     let tolerance = match value.tolerance {
         0 => Some(None),
-        TOLERANCE_SYMMETRIC => deviations(-value.upper.abs(), value.upper.abs())
+        TOLERANCE_SYMMETRIC => ordered(-value.upper.abs(), value.upper.abs())
             .map(|deviations| Some(DimensionTolerance::Deviations(deviations))),
-        TOLERANCE_DEVIATION | 3 => deviations(value.lower, value.upper)
+        TOLERANCE_DEVIATION | 3 => ordered(value.lower, value.upper)
             .map(|deviations| Some(DimensionTolerance::Deviations(deviations))),
         2 => deviations(value.lower, value.upper)
             .zip(fit(&value.hole_fit, &value.shaft_fit))
