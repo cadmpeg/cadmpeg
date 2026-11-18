@@ -25,6 +25,7 @@ struct Fixture {
     opposite_reference: u32,
     zero_at_11: u8,
     opposite_value: f64,
+    tail: Vec<u8>,
 }
 
 impl Fixture {
@@ -39,6 +40,7 @@ impl Fixture {
             opposite_reference: OPPOSITE,
             zero_at_11: 0,
             opposite_value: 0.0,
+            tail: vec![0; 20],
         }
     }
 
@@ -59,7 +61,7 @@ impl Fixture {
         bytes.extend_from_slice(&self.mode.to_le_bytes());
         marked(&mut bytes, self.angle_reference);
         marked(&mut bytes, self.opposite_reference);
-        bytes.extend_from_slice(&[0; 20]);
+        bytes.extend_from_slice(&self.tail);
         let table = [91_u32, 92, 93, 94, ANGLE, OPPOSITE];
         bytes.extend_from_slice(&u32::try_from(table.len()).unwrap().to_le_bytes());
         for record in table {
@@ -130,6 +132,7 @@ fn the_prologue_reads_flip_and_tangent_chain_apart() {
                 flipped: flipped == 1,
                 tangent_chain: tangent_chain == 1,
                 two_sided: None,
+                ..Default::default()
             })
         );
     }
@@ -200,7 +203,7 @@ fn a_frame_without_this_prologue_states_no_flags() {
     other_form.form = 4;
     other_form.mode = 2;
     let mut other_constant = Fixture::new();
-    other_constant.constant = 2;
+    other_constant.constant = 4;
     other_constant.mode = 2;
     let mut nonzero = Fixture::new();
     nonzero.zero_at_11 = 1;
@@ -219,5 +222,104 @@ fn a_frame_without_this_prologue_states_no_flags() {
         other_opposite,
     ] {
         assert_eq!(fixture.decode().unwrap().flags, None);
+    }
+}
+
+const PARTING_TAIL: &[u8] = &[
+    0, 0, 0, 0, 0, 0, 248, 63, 0, 0, 0, 0, 0, 0, 224, 63, 0, 0, 1, 93, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1, 92, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 91, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+];
+
+fn parting_fixture(form: u32) -> Fixture {
+    let mut fixture = Fixture::new();
+    fixture.constant = form;
+    fixture.mode = if form == 2 { 3 } else { 1 };
+    fixture.opposite_value = 0.25;
+    fixture.tail = PARTING_TAIL.to_vec();
+    if form == 3 {
+        fixture
+            .tail
+            .splice(17..18, [1, 94, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+    fixture
+}
+
+#[test]
+fn parting_prefixes_retain_both_angles_and_explicit_group_roles() {
+    for form in [2, 3] {
+        let fixture = parting_fixture(form);
+        let operation = fixture.decode().unwrap();
+        assert!((operation.angle.get() - 0.25).abs() < 1.0e-12);
+        assert!((operation.opposite_angle.unwrap().get() - 0.25).abs() < 1.0e-12);
+        let parting = operation.flags.unwrap().parting.unwrap();
+        assert_eq!((parting.form, parting.mode), (form, fixture.mode));
+        assert!((parting.prefix_scalars[0].get() - 1.5).abs() < 1.0e-12);
+        assert!((parting.prefix_scalars[1].get() - 0.5).abs() < 1.0e-12);
+        assert_eq!(
+            parting.fixed_edges.map(|value| value.value),
+            (form == 3).then_some(94)
+        );
+        assert_eq!(
+            parting.fixed_edges.map(|value| value.offset),
+            (form == 3).then_some(74)
+        );
+        assert_eq!(
+            (parting.pull.value, parting.tool.value, parting.faces.value),
+            (93, 92, 91)
+        );
+        assert_eq!(parting.pull.offset, if form == 2 { 75 } else { 85 });
+    }
+}
+
+#[test]
+fn rejected_parting_controls_leave_the_single_angle_available() {
+    for form in [2, 3] {
+        let mut fixture = parting_fixture(form);
+        fixture.opposite_value = 0.0;
+        fixture.tail[16] = 2;
+        let operation = fixture.decode().unwrap();
+        assert_eq!(operation.angle.get(), 0.25);
+        assert_eq!(operation.flags, None);
+        assert_eq!(operation.opposite_angle, None);
+    }
+}
+
+#[test]
+fn parting_prefixes_reject_truncation_invalid_flags_and_foreign_or_duplicate_references() {
+    for form in [2, 3] {
+        let fixture = parting_fixture(form);
+        for end in 0..fixture.tail.len() {
+            let mut truncated = fixture.clone();
+            truncated.tail.truncate(end);
+            assert!(truncated.decode().is_none(), "form {form}, tail {end}");
+        }
+        for offset in [16, 17] {
+            let mut bad = fixture.clone();
+            bad.tail[offset] = 2;
+            assert!(bad.decode().is_none());
+        }
+        let group_at = if form == 2 { 18 } else { 28 };
+        for (offset, value) in [
+            (group_at, 2),
+            (group_at + 1, 99),
+            (group_at + 12, 93),
+            (group_at + 5, 1),
+        ] {
+            let mut bad = fixture.clone();
+            bad.tail[offset] = value;
+            assert!(bad.decode().is_none());
+        }
+        if form == 3 {
+            for (offset, value) in [(18, 0), (18, 93), (18, 99), (22, 1)] {
+                let mut bad = fixture.clone();
+                bad.tail[offset] = value;
+                assert!(bad.decode().is_none());
+            }
+        }
+        for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            let mut bad = fixture.clone();
+            bad.tail[..8].copy_from_slice(&value.to_le_bytes());
+            assert!(bad.decode().is_none());
+        }
     }
 }

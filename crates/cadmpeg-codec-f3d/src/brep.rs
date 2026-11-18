@@ -410,7 +410,7 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
     })
 }
 
-fn persistent_design_links(
+pub(crate) fn persistent_design_links(
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentDesignLink>, CodecError> {
     let AttributeTarget::Body(_) = &attribute.target.entity else {

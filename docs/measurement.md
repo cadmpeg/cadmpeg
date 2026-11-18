@@ -212,6 +212,10 @@ names the source of each coedge. An edge with no 3D curve takes its length
 and box from the pcurve uses of its first coedge, mapped through that
 coedge's face surface.
 
+A `v` side of a NURBS pole grid collapses to a point when all its control
+points lie within the model tolerance of its first control point. Along
+such a side `u` is not defined.
+
 An inverted 3D curve interval that passes within the allowance of a cone
 apex, a sphere pole, a torus sheet pole, or the point to which a whole `v`
 side of a NURBS pole grid collapses inside the interval splits there into
