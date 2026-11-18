@@ -81,6 +81,35 @@ pub(crate) struct Persistence<'a> {
     pub(crate) xml: roxmltree::Document<'a>,
 }
 
+/// An archive entry that could not be opened. It is given up once the
+/// records that need it are known.
+pub(crate) struct UnreadableEntry<'a> {
+    /// The archive entry name.
+    pub(crate) name: String,
+    part: Part<'a>,
+    error: CodecError,
+}
+
+impl UnreadableEntry<'_> {
+    /// Gives the entry up, naming the records dropped because they need it.
+    pub(crate) fn give_up(
+        self,
+        ctx: &DecodeContext<'_>,
+        drops: Option<&crate::persistence::UnreadableDrops>,
+    ) -> Result<GivenUpPart, CodecError> {
+        let mut part = self.part;
+        if let Some(drops) = drops {
+            let records = drops
+                .records
+                .iter()
+                .map(|id| Identity::new(id.clone()).map_err(CodecError::malformed))
+                .collect::<Result<Vec<_>, _>>()?;
+            part = part.dropping(records);
+        }
+        ctx.give_up_part(part, self.error)
+    }
+}
+
 /// Fully scanned container used by inspection and decode.
 pub(crate) struct Scan<'a> {
     /// Recoverable container metadata diagnostics.
@@ -91,8 +120,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) persistence: Option<Persistence<'a>>,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
-    /// Archive entries that could not be opened, given up as parts.
-    pub(crate) given_up: Vec<GivenUpPart>,
+    /// Archive entries that could not be opened, to be given up as parts.
+    pub(crate) unreadable: Vec<UnreadableEntry<'a>>,
     /// Names of the given-up archive entries.
     pub(crate) unreadable_names: BTreeSet<String>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
@@ -140,7 +169,7 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         });
     }
     let mut data = BTreeMap::new();
-    let mut given_up = Vec::new();
+    let mut unreadable = Vec::new();
     let mut unreadable_names = BTreeSet::new();
     for file in archive.entries() {
         let name = file.name.clone();
@@ -201,14 +230,14 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
         if let Some(containing) = containing {
             part = part.contained_in(Identity::new(containing).map_err(CodecError::malformed)?);
         }
-        given_up.push(ctx.give_up_part(part, error)?);
-        unreadable_names.insert(name);
+        unreadable_names.insert(name.clone());
+        unreadable.push(UnreadableEntry { name, part, error });
     }
     Ok(Scan {
         losses,
         entries: archive.container_entries(classify),
         persistence,
-        given_up,
+        unreadable,
         unreadable_names,
         ledger,
         data,
@@ -337,7 +366,15 @@ pub(crate) fn source_attributes(
 }
 
 /// Summarize one scan.
-pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
+pub(crate) fn summarize(
+    ctx: &DecodeContext<'_>,
+    mut scan: Scan<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let given_up = std::mem::take(&mut scan.unreadable)
+        .into_iter()
+        .map(|entry| entry.give_up(ctx, None))
+        .collect::<Result<Vec<_>, _>>()?;
+    let scan = &scan;
     let matched = scan.persistence.as_ref().map(|persistence| {
         crate::dialect::FcstdDialect::classify(&persistence.document, &persistence.schema_version)
     });
@@ -346,7 +383,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         .losses
         .iter()
         .cloned()
-        .chain(scan.given_up.iter().map(GivenUpPart::loss))
+        .chain(given_up.iter().map(GivenUpPart::loss))
         .chain(
             matched
                 .as_ref()
@@ -370,7 +407,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     }
     let kind = cadmpeg_ir::ContainerKind::Zip;
     let notes = summary_notes(scan);
-    match matched {
+    Ok(match matched {
         Some(matched) => ContainerSummary::classified(
             cadmpeg_core::dialect::DialectLayers::of(matched),
             kind,
@@ -381,7 +418,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
         None => {
             ContainerSummary::unclassified(crate::dialect::FORMAT, kind, entries, losses, notes)
         }
-    }
+    })
 }
 
 /// Notes shared by inspect and decode without reclassifying host identity.

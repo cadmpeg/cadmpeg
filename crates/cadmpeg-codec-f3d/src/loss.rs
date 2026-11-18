@@ -26,6 +26,11 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    BaseFaceRegionsNative,
+    BaseFaceSourceCarrierUnresolved,
+    BaseFaceThicknessUnresolved,
+    BaseFaceMaterialSideUnresolved,
+    BaseFaceResultChoiceUnresolved,
     ContourVectorOwnerDistanceRoleAssumed,
     ContourProfileNative,
     ContourDefaultSideOneLeftAssumed,
@@ -191,6 +196,7 @@ pub(crate) enum F3dLossCode {
     /// top-level inserts from internal operands.
     ComponentInsertOrderUnknown,
     ComponentInsertContainerAssumed,
+    ComponentInsertLegacyFrameAssumed,
     /// Component definitions stored as revised records that each bind a context
     /// UUID; the earliest record defines the component.
     ComponentDefinitionRevised,
@@ -701,6 +707,16 @@ pub(crate) enum F3dLossCode {
     FeatureScaleUnlistedGroupsAssumed,
     FeatureWorkAxisRuleUnassigned,
     FeatureWorkAxisEndpointToleranceAssumed,
+    FeatureWorkAxisNonzeroParametersSolvedAssumed,
+    FeatureWorkAxisPartialCarrierSolvedAssumed,
+    FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed,
+    FeatureWorkAxisTwoPointConflictSolvedAssumed,
+    FeatureWorkAxisGeometryUnrepresentable,
+    FeatureWorkAxisBindingUnresolved,
+    FeatureWorkAxisLeadingBlockLayoutAssumed,
+    FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
+    FeatureWorkAxisLegacyLayoutAssumed,
+    FeatureWorkAxisCandidatesUnresolved,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
@@ -1062,6 +1078,11 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::SceneOverrideRefused,
+        Self::BaseFaceRegionsNative,
+        Self::BaseFaceSourceCarrierUnresolved,
+        Self::BaseFaceThicknessUnresolved,
+        Self::BaseFaceMaterialSideUnresolved,
+        Self::BaseFaceResultChoiceUnresolved,
         Self::ContourVectorOwnerDistanceRoleAssumed,
         Self::ContourProfileNative,
         Self::ContourDefaultSideOneLeftAssumed,
@@ -1183,6 +1204,7 @@ impl F3dLossCode {
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentInsertContainerAssumed,
+        Self::ComponentInsertLegacyFrameAssumed,
         Self::ComponentDefinitionRevised,
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
@@ -1510,6 +1532,16 @@ impl F3dLossCode {
         Self::FeatureScaleUnlistedGroupsAssumed,
         Self::FeatureWorkAxisRuleUnassigned,
         Self::FeatureWorkAxisEndpointToleranceAssumed,
+        Self::FeatureWorkAxisNonzeroParametersSolvedAssumed,
+        Self::FeatureWorkAxisPartialCarrierSolvedAssumed,
+        Self::FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed,
+        Self::FeatureWorkAxisTwoPointConflictSolvedAssumed,
+        Self::FeatureWorkAxisGeometryUnrepresentable,
+        Self::FeatureWorkAxisBindingUnresolved,
+        Self::FeatureWorkAxisLeadingBlockLayoutAssumed,
+        Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed,
+        Self::FeatureWorkAxisLegacyLayoutAssumed,
+        Self::FeatureWorkAxisCandidatesUnresolved,
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureFaceGroupsTypeUnverified,
@@ -1729,6 +1761,11 @@ impl F3dLossCode {
             Self::ContourVectorOwnerDistanceRoleAssumed => {
                 "feature.contour-vector-owner-distance-role-assumed"
             }
+            Self::BaseFaceRegionsNative => "feature.base-face-regions-native",
+            Self::BaseFaceSourceCarrierUnresolved => "feature.base-face-source-carrier-unresolved",
+            Self::BaseFaceThicknessUnresolved => "feature.base-face-thickness-unresolved",
+            Self::BaseFaceMaterialSideUnresolved => "feature.base-face-material-side-unresolved",
+            Self::BaseFaceResultChoiceUnresolved => "feature.base-face-result-choice-unresolved",
             Self::ContourProfileNative => "feature.contour-profile-native",
             Self::ContourDefaultSideOneLeftAssumed => {
                 "feature.contour-default-side-one-left-assumed"
@@ -1955,6 +1992,7 @@ impl F3dLossCode {
             Self::FeatureDerivedInstanceComponentInsertAssumed => {
                 "feature.derived-instance-component-insert-assumed"
             }
+            Self::ComponentInsertLegacyFrameAssumed => "assembly.legacy-insert-frame-assumed",
             Self::FeatureComponentInsertMembershipAssumed => {
                 "feature.component-insert-membership-assumed"
             }
@@ -2384,6 +2422,30 @@ impl F3dLossCode {
             Self::FeatureScaleMatrixWordAssumed => "feature.scale-matrix-word-assumed",
             Self::FeatureScaleUnlistedGroupsAssumed => "feature.scale-unlisted-groups-assumed",
             Self::FeatureWorkAxisRuleUnassigned => "feature.work-axis-rule-unassigned",
+            Self::FeatureWorkAxisNonzeroParametersSolvedAssumed => {
+                "feature.work-axis-nonzero-parameters-solved-assumed"
+            }
+            Self::FeatureWorkAxisPartialCarrierSolvedAssumed => {
+                "feature.work-axis-partial-carrier-solved-assumed"
+            }
+            Self::FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed => {
+                "feature.work-axis-two-point-operands-unresolved-solved-assumed"
+            }
+            Self::FeatureWorkAxisTwoPointConflictSolvedAssumed => {
+                "feature.work-axis-two-point-conflict-solved-assumed"
+            }
+            Self::FeatureWorkAxisGeometryUnrepresentable => {
+                "feature.work-axis-geometry-unrepresentable"
+            }
+            Self::FeatureWorkAxisBindingUnresolved => "feature.work-axis-binding-unresolved",
+            Self::FeatureWorkAxisLeadingBlockLayoutAssumed => {
+                "feature.work-axis-leading-block-layout-assumed"
+            }
+            Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed => {
+                "feature.work-axis-unsupported-version-legacy-layout-assumed"
+            }
+            Self::FeatureWorkAxisLegacyLayoutAssumed => "feature.work-axis-legacy-layout-assumed",
+            Self::FeatureWorkAxisCandidatesUnresolved => "feature.work-axis-candidates-unresolved",
             Self::FeatureWorkAxisEndpointToleranceAssumed => {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
@@ -2707,6 +2769,11 @@ impl F3dLossCode {
             | Self::EdgeWidthUnresolved
             | Self::EdgeHeightTargetNative
             | Self::EdgeHeightTargetScopeAssumed
+            | Self::BaseFaceRegionsNative
+            | Self::BaseFaceSourceCarrierUnresolved
+            | Self::BaseFaceThicknessUnresolved
+            | Self::BaseFaceMaterialSideUnresolved
+            | Self::BaseFaceResultChoiceUnresolved
             | Self::ContourVectorOwnerDistanceRoleAssumed
             | Self::ContourProfileNative
             | Self::ContourDefaultSideOneLeftAssumed
@@ -2841,6 +2908,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentInsertContainerAssumed
+            | Self::ComponentInsertLegacyFrameAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -3159,6 +3227,16 @@ impl F3dLossCode {
             | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
+            | Self::FeatureWorkAxisNonzeroParametersSolvedAssumed
+            | Self::FeatureWorkAxisPartialCarrierSolvedAssumed
+            | Self::FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed
+            | Self::FeatureWorkAxisTwoPointConflictSolvedAssumed
+            | Self::FeatureWorkAxisGeometryUnrepresentable
+            | Self::FeatureWorkAxisBindingUnresolved
+            | Self::FeatureWorkAxisLeadingBlockLayoutAssumed
+            | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
+            | Self::FeatureWorkAxisLegacyLayoutAssumed
+            | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureFaceGroupsTypeUnverified
@@ -3369,6 +3447,11 @@ impl F3dLossCode {
             | Self::EdgeWidthUnresolved
             | Self::EdgeHeightTargetNative
             | Self::EdgeHeightTargetScopeAssumed
+            | Self::BaseFaceRegionsNative
+            | Self::BaseFaceSourceCarrierUnresolved
+            | Self::BaseFaceThicknessUnresolved
+            | Self::BaseFaceMaterialSideUnresolved
+            | Self::BaseFaceResultChoiceUnresolved
             | Self::ContourVectorOwnerDistanceRoleAssumed
             | Self::ContourProfileNative
             | Self::ContourDefaultSideOneLeftAssumed
@@ -3774,6 +3857,16 @@ impl F3dLossCode {
             | Self::FeatureScaleUnlistedGroupsAssumed
             | Self::FeatureWorkAxisRuleUnassigned
             | Self::FeatureWorkAxisEndpointToleranceAssumed
+            | Self::FeatureWorkAxisNonzeroParametersSolvedAssumed
+            | Self::FeatureWorkAxisPartialCarrierSolvedAssumed
+            | Self::FeatureWorkAxisTwoPointOperandsUnresolvedSolvedAssumed
+            | Self::FeatureWorkAxisTwoPointConflictSolvedAssumed
+            | Self::FeatureWorkAxisGeometryUnrepresentable
+            | Self::FeatureWorkAxisBindingUnresolved
+            | Self::FeatureWorkAxisLeadingBlockLayoutAssumed
+            | Self::FeatureWorkAxisUnsupportedVersionLegacyLayoutAssumed
+            | Self::FeatureWorkAxisLegacyLayoutAssumed
+            | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureFaceGroupsTypeUnverified
@@ -3929,6 +4022,7 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::ComponentInsertContainerAssumed
+            | Self::ComponentInsertLegacyFrameAssumed
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
@@ -4054,6 +4148,11 @@ mod tests {
             codes,
             [
                 "scene.override-refused",
+                "feature.base-face-regions-native",
+                "feature.base-face-source-carrier-unresolved",
+                "feature.base-face-thickness-unresolved",
+                "feature.base-face-material-side-unresolved",
+                "feature.base-face-result-choice-unresolved",
                 "feature.contour-vector-owner-distance-role-assumed",
                 "feature.contour-profile-native",
                 "feature.contour-default-side-one-left-assumed",
@@ -4175,6 +4274,7 @@ mod tests {
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-insert-container-assumed",
+                "assembly.legacy-insert-frame-assumed",
                 "assembly.component-definition-revised",
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
@@ -4502,6 +4602,16 @@ mod tests {
                 "feature.scale-unlisted-groups-assumed",
                 "feature.work-axis-rule-unassigned",
                 "feature.work-axis-endpoint-tolerance-assumed",
+                "feature.work-axis-nonzero-parameters-solved-assumed",
+                "feature.work-axis-partial-carrier-solved-assumed",
+                "feature.work-axis-two-point-operands-unresolved-solved-assumed",
+                "feature.work-axis-two-point-conflict-solved-assumed",
+                "feature.work-axis-geometry-unrepresentable",
+                "feature.work-axis-binding-unresolved",
+                "feature.work-axis-leading-block-layout-assumed",
+                "feature.work-axis-unsupported-version-legacy-layout-assumed",
+                "feature.work-axis-legacy-layout-assumed",
+                "feature.work-axis-candidates-unresolved",
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.mesh-face-groups-type-unverified",
