@@ -90,6 +90,7 @@ mod delete_face;
 mod edge_flange;
 mod extrude;
 mod fillet;
+mod fillet_sets;
 mod fold;
 mod replace_face;
 
@@ -755,6 +756,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             }
             let family = design_feature_family(&scope.kind());
             let mut retain_chamfer_records = false;
+            let mut promoted_fillet_sets = None;
             let mut inserted_bodies: Vec<cadmpeg_ir::ids::BodyId> = Vec::new();
             let mut promoted_fillet_source = None;
             let definition = match family {
@@ -786,20 +788,32 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     );
                     definition
                 }
-                Some(DesignFeatureFamily::Fillet) => match fillet::project(
-                    ctx,
-                    inputs,
-                    scope,
-                    parameters.as_slice(),
-                    native_scope,
-                    &mut projection_losses,
-                )? {
-                    FilletProjection::Existing(definition) => definition,
-                    FilletProjection::Promoted { definition, source } => {
-                        promoted_fillet_source = Some(source);
+                Some(DesignFeatureFamily::Fillet) => {
+                    let definition = match fillet::project(
+                        ctx, inputs, scope, &parameters, native_scope, &mut projection_losses,
+                    )? {
+                        FilletProjection::Existing(definition) => definition,
+                        FilletProjection::Promoted { definition, source } => {
+                            promoted_fillet_source = Some(source);
+                            definition
+                        }
+                    };
+                    if let FeatureDefinition::Operation(FeatureOperation::Native { parameters: expressions, .. }) = &definition {
+                        if let Some(operation) = fillet_sets::project(
+                            scope, &parameters, inputs, ctx, &mut projection_losses,
+                        )? {
+                            promoted_fillet_sets = Some((
+                                serde_json::to_string(&scope.fillet_sets()).map_err(CodecError::malformed)?,
+                                serde_json::to_string(expressions).map_err(CodecError::malformed)?,
+                            ));
+                            FeatureDefinition::Operation(operation)
+                        } else {
+                            definition
+                        }
+                    } else {
                         definition
                     }
-                },
+                }
                 Some(DesignFeatureFamily::Chamfer) => {
                     let projection = chamfer::prepare(scope, inputs, &parameters);
                     let mut definition = if projection.legacy_compatible() && parameters.is_empty() {
@@ -1654,7 +1668,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         && scope.previous_history_state_id().is_none(),
                 ),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                source_properties: if promoted_fillet_source.is_some() || matches!(
+                source_properties: if promoted_fillet_source.is_some() || promoted_fillet_sets.is_some() || matches!(
                     &definition,
                     FeatureDefinition::Operation(FeatureOperation::Native { .. } | FeatureOperation::Form(_) | FeatureOperation::MeshGenerateFaceGroups { .. } | FeatureOperation::MeshCombineFaceGroups { .. })
                 ) || matches!(&definition, FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), cadmpeg_ir::features::patterns::PatternTransform::CurveDrivenPartial { .. }))
@@ -1665,6 +1679,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     || extended_joint_origin
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
+                    if let Some((sets, expressions)) = promoted_fillet_sets {
+                        properties.insert(cadmpeg_core::nonblank_literal!("fillet:sets"), sets);
+                        properties.insert(cadmpeg_core::nonblank_literal!("fillet:parameters"), expressions);
+                    }
                     if let Some(source) = promoted_fillet_source {
                         properties.insert(
                             cadmpeg_core::nonblank_literal!("fillet:source"),
