@@ -3,7 +3,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::products::{ExternalDocument, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::Storage;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::loss::CreoLossCode;
@@ -32,38 +32,37 @@ fn loss_messages(result: &EditableDecodeResult, code: CreoLossCode) -> Vec<Strin
 fn component_rows_place_external_children_under_the_root() {
     let result = decode(build_asm());
     let model = &result.ir().model;
-    assert_eq!(model.product_definitions.len(), 1);
+    // The root and one external definition per distinct child file.
+    assert_eq!(model.product_definitions.len(), 3);
     let root = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .expect("root definition");
+    assert_eq!(root.label.as_deref(), Some("TOP_ASSY"));
+    let placed = root
         .occurrences
         .iter()
-        .find(|occurrence| occurrence.parent == OccurrenceParent::Root {})
-        .expect("root occurrence");
-    assert_eq!(root.name.as_deref(), Some("TOP_ASSY"));
-    let mut children = model
-        .occurrences
-        .iter()
-        .filter(|occurrence| {
-            occurrence.parent
-                == OccurrenceParent::Occurrence {
-                    occurrence: root.id.clone(),
-                }
-        })
-        .collect::<Vec<_>>();
-    children.sort_by_key(|occurrence| occurrence.ordinal);
-    let placed = children
-        .iter()
-        .map(|occurrence| {
-            let PrototypeReference::External {
-                document: ExternalDocument::Path { path },
-                object: None,
-            } = &occurrence.prototype
-            else {
-                panic!("external path prototype: {:?}", occurrence.prototype);
+        .enumerate()
+        .map(|(ordinal, id)| {
+            let occurrence = model
+                .occurrences
+                .iter()
+                .find(|occurrence| &occurrence.id == id)
+                .expect("owned occurrence");
+            let prototype = model
+                .product_definitions
+                .iter()
+                .find(|definition| definition.id == occurrence.prototype)
+                .expect("prototype");
+            let Storage::External(document) = &prototype.storage else {
+                panic!("external prototype: {:?}", prototype.storage);
             };
+            assert!(document.object.is_none());
             (
-                occurrence.ordinal,
-                path.as_str().to_owned(),
-                occurrence.transform.affine_rows(),
+                ordinal,
+                document.path.as_ref().expect("path").as_str().to_owned(),
+                occurrence.transform.unwrap().affine_rows(),
                 occurrence.native_ref.clone(),
             )
         })
@@ -133,7 +132,7 @@ fn an_assembly_header_without_a_component_table_reports_the_drop() {
     let mut assembly = b"#UGC:2 ASSEMBLY 2562 2120".to_vec();
     assembly.extend_from_slice(&part[header_end..]);
     let result = decode(assembly);
-    assert_eq!(result.ir().model.occurrences.len(), 1);
+    assert!(result.ir().model.occurrences.is_empty());
     assert_eq!(
         loss_messages(&result, CreoLossCode::AssemblyMemberTableIncomplete).len(),
         1
@@ -178,7 +177,8 @@ fn a_frame_that_is_not_rigid_drops_its_occurrence() {
     let mut table = members_table();
     replace_once(&mut table, b"\x18\x10\x18\x2d", b"\x18\x0f\x18\x2d");
     let result = decode(build_asm_with(table));
-    assert_eq!(result.ir().model.occurrences.len(), 3);
+    // The root definition owns the two component rows that stay.
+    assert_eq!(result.ir().model.occurrences.len(), 2);
     assert_eq!(
         loss_messages(&result, CreoLossCode::AssemblyPlacementUnresolved),
         [
@@ -202,7 +202,18 @@ fn a_family_instance_row_has_an_unresolved_prototype() {
         .model
         .occurrences
         .iter()
-        .filter(|occurrence| occurrence.prototype == PrototypeReference::Unresolved {})
+        .filter(|occurrence| {
+            result
+                .ir()
+                .model
+                .product_definitions
+                .iter()
+                .any(|definition| {
+                    definition.id == occurrence.prototype
+                        && definition.storage
+                            == Storage::External(cadmpeg_ir::products::ExternalDocument::default())
+                })
+        })
         .count();
     assert_eq!(unresolved, 1);
     assert_eq!(

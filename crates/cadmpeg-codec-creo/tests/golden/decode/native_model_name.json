@@ -55,45 +55,7 @@
       "features": [],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "creo:model:occurrence#root",
-          "name": "widget.prt ",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "creo:model:product_definition#root",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
+      "occurrences": [],
       "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
@@ -106,11 +68,18 @@
           "bodies": [],
           "bom_properties": {},
           "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
           "kind": "part",
           "label": "widget.prt ",
+          "occurrences": [],
           "part_number": "widget.prt ",
+          "representations": [],
           "sketches": [],
           "source_name": "widget.prt ",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],
@@ -645,11 +614,6 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "creo:model:occurrence#root": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
         "creo:model:product_definition#root": {
           "entity": "derived",
           "fields": {},
@@ -657,11 +621,6 @@
         }
       },
       "provenance": {
-        "creo:model:occurrence#root": {
-          "offset": 30,
-          "stream": "creo:archive_header",
-          "tag": "part_product_occurrence"
-        },
         "creo:model:product_definition#root": {
           "offset": 30,
           "stream": "creo:archive_header",

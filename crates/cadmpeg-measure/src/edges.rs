@@ -155,6 +155,7 @@ pub(crate) fn measure_edge<'ir>(
                     &PcurveEnds {
                         placement: *placement,
                         alpha,
+                        tau,
                         start,
                         end,
                     },
@@ -232,6 +233,7 @@ pub(crate) fn measure_edge<'ir>(
 struct PcurveEnds {
     placement: Placement,
     alpha: f64,
+    tau: f64,
     start: Point3,
     end: Point3,
 }
@@ -272,7 +274,7 @@ fn pcurve_trace(
             )
         })?;
     let carrier = Carrier::resolve_in(owners, surface, ends.placement)?;
-    let chart = carrier.chart()?;
+    let chart = &carrier.chart()?.collapsing_within(ends.tau);
     let (start, end) = match coedge.sense {
         cadmpeg_ir::topology::Sense::Forward => (ends.start, ends.end),
         cadmpeg_ir::topology::Sense::Reversed => (ends.end, ends.start),
