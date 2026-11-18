@@ -2,7 +2,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::Occurrence;
 
 use super::{apply_hidden_occurrences, decode_stream, DesignHiddenOccurrence};
 use crate::records::feature::assembly_features::{
@@ -130,27 +130,25 @@ fn occurrence_id(name: &str) -> OccurrenceId {
     OccurrenceId::mint(format!("f3d:model:occurrence#{name}")).unwrap()
 }
 
-fn occurrence(name: &str, parent: Option<&str>, carrier: &DesignComponentOccurrence) -> Occurrence {
+/// The occurrence each named nested occurrence sits in.
+fn parents(pairs: &[(&str, &str)]) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
+    pairs
+        .iter()
+        .map(|(child, parent)| (occurrence_id(child), occurrence_id(parent)))
+        .collect()
+}
+
+fn occurrence(name: &str, carrier: &DesignComponentOccurrence) -> Occurrence {
     Occurrence {
         id: occurrence_id(name),
-        prototype: PrototypeReference::Local {
-            definition: cadmpeg_ir::ids::ProductDefinitionId::mint(
-                "f3d:model:component#definition",
-            )
+        prototype: cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:component#definition")
             .unwrap(),
-        },
-        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-            OccurrenceParent::Occurrence {
-                occurrence: occurrence_id(parent),
-            }
-        }),
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: Some(carrier.id.clone()),
     }
 }
@@ -167,11 +165,14 @@ fn hidden(target: u32, ancestors: &[u32]) -> DesignHiddenOccurrence {
 #[test]
 fn a_hidden_record_sets_visibility_on_each_instance_of_its_target() {
     let carriers = [carrier(30), carrier(40)];
-    let mut occurrences = vec![
-        occurrence("a", None, &carriers[0]),
-        occurrence("b", None, &carriers[1]),
-    ];
-    apply_hidden_occurrences(&mut occurrences, &carriers, &[], &[hidden(30, &[])]);
+    let mut occurrences = vec![occurrence("a", &carriers[0]), occurrence("b", &carriers[1])];
+    apply_hidden_occurrences(
+        &mut occurrences,
+        &parents(&[]),
+        &carriers,
+        &[],
+        &[hidden(30, &[])],
+    );
     assert_eq!(occurrences[0].visible, Some(false));
     assert_eq!(occurrences[1].visible, None);
 }
@@ -180,11 +181,17 @@ fn a_hidden_record_sets_visibility_on_each_instance_of_its_target() {
 fn a_named_ancestor_limits_the_hidden_instances_to_its_descendants() {
     let carriers = [carrier(30), carrier(40)];
     let mut occurrences = vec![
-        occurrence("outer", None, &carriers[1]),
-        occurrence("inside", Some("outer"), &carriers[0]),
-        occurrence("beside", None, &carriers[0]),
+        occurrence("outer", &carriers[1]),
+        occurrence("inside", &carriers[0]),
+        occurrence("beside", &carriers[0]),
     ];
-    apply_hidden_occurrences(&mut occurrences, &carriers, &[], &[hidden(30, &[40])]);
+    apply_hidden_occurrences(
+        &mut occurrences,
+        &parents(&[("inside", "outer")]),
+        &carriers,
+        &[],
+        &[hidden(30, &[40])],
+    );
     assert_eq!(occurrences[0].visible, None);
     assert_eq!(occurrences[1].visible, Some(false));
     assert_eq!(occurrences[2].visible, None);
@@ -193,10 +200,10 @@ fn a_named_ancestor_limits_the_hidden_instances_to_its_descendants() {
 #[test]
 fn a_record_of_another_stream_hides_nothing() {
     let carriers = [carrier(30)];
-    let mut occurrences = vec![occurrence("a", None, &carriers[0])];
+    let mut occurrences = vec![occurrence("a", &carriers[0])];
     let mut other = hidden(30, &[]);
     other.stream = "f3d:Other/BulkStream.dat".to_owned();
-    apply_hidden_occurrences(&mut occurrences, &carriers, &[], &[other]);
+    apply_hidden_occurrences(&mut occurrences, &parents(&[]), &carriers, &[], &[other]);
     assert_eq!(occurrences[0].visible, None);
 }
 
@@ -228,10 +235,16 @@ fn xref_reference(carrier_record_index: u64) -> crate::records::xref::XrefRefere
 fn a_hidden_record_names_an_external_occurrence_by_its_placement_carrier() {
     let carriers = [carrier(30)];
     let references = [xref_reference(50)];
-    let mut external = occurrence("external", None, &carriers[0]);
+    let mut external = occurrence("external", &carriers[0]);
     external.native_ref = Some(references[0].id.clone());
-    let mut occurrences = vec![occurrence("local", None, &carriers[0]), external];
-    apply_hidden_occurrences(&mut occurrences, &carriers, &references, &[hidden(50, &[])]);
+    let mut occurrences = vec![occurrence("local", &carriers[0]), external];
+    apply_hidden_occurrences(
+        &mut occurrences,
+        &parents(&[]),
+        &carriers,
+        &references,
+        &[hidden(50, &[])],
+    );
     assert_eq!(occurrences[0].visible, None);
     assert_eq!(occurrences[1].visible, Some(false));
     let mut bytes = Vec::new();
