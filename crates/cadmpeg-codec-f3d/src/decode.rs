@@ -598,6 +598,7 @@ fn angular_termination_is_resolved(termination: &cadmpeg_ir::features::AngularTe
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
         ),
         AngularTermination::Angle { .. }
+        | AngularTermination::ToPlane { .. }
         | AngularTermination::ThroughAll {}
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}
@@ -1059,6 +1060,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let replacements = operands.replacements();
             !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements)
         }
+        FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit {
+            target, direction, mode,
+        }) => {
+            !body_selection_is_resolved(target)
+                || direction.is_none()
+                || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
+        }
         FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
             !body_selection_is_resolved(targets)
                 || match tool {
@@ -1311,6 +1319,11 @@ fn design_projection_gaps(
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: &native.design_edge_operands,
+            recipes: &native.construction_recipes,
+            tags: &native.persistent_subentity_tags,
+        },
         &native.design_component_naming_spaces,
         &native.asm_histories,
     );
@@ -1742,6 +1755,9 @@ fn design_projection_gaps(
             }
             FeatureDefinition::Operation(FeatureOperation::InsertBodies { bodies }) => {
                 gaps.body_selections += usize::from(!bodies.is_resolved());
+            }
+            FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit { target, .. }) => {
+                gaps.body_selections += native_body_selection_count(target);
             }
             FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
                 let target = operands.target();
