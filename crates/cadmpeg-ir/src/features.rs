@@ -3881,6 +3881,13 @@ pub enum FeatureOperation {
         targets: BodySelection,
         /// Geometry that partitions the target bodies.
         tool: SplitBodyTool,
+        /// Whether the operation extends the splitting geometry through the targets.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_split_body_extend_tool"
+        )]
+        extend_tool: Option<bool>,
     },
     /// Partitions selected faces along selected sketch curves while retaining
     /// every resulting face region.
@@ -9370,7 +9377,7 @@ impl<'de> Deserialize<'de> for GeometryImportPath {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SplitBodyTool {
-    /// Surface faces extended as necessary to partition the targets.
+    /// Surface faces used to partition the targets.
     Faces(FaceSelection),
     /// Datum-plane feature extended through the target bodies.
     Plane {
@@ -9528,6 +9535,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_thread_pitch, PositiveLength, "pitch");
 cadmpeg_core::named_optional_field!(deserialize_thread_modeled, bool, "modeled");
+cadmpeg_core::named_optional_field!(deserialize_split_body_extend_tool, bool, "extend_tool");
 cadmpeg_core::named_optional_field!(deserialize_opacity, Fraction, "opacity");
 cadmpeg_core::named_optional_field!(deserialize_reference, DatumPlaneReference, "reference");
 cadmpeg_core::named_optional_field!(

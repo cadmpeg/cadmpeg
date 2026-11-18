@@ -24,6 +24,7 @@ use super::component_constructions::exact_component_insert_construction;
 use super::component_constructions::exact_copy_paste_component_operation;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::derived_instance;
+use super::direct_face::exact_axis_owner_scale;
 use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
@@ -295,6 +296,7 @@ pub(crate) fn decode_parameter_scopes(
             if let Some(loss) = extrude_extent_native_loss(&scope) {
                 losses.push(loss);
             }
+            super::split::decode_split_tool_extension(bytes, &mut scope, &mut losses);
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -564,7 +566,17 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
-                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)?;
+                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)
+                        .or_else(|| {
+                            exact_axis_owner_scale(
+                                bytes,
+                                &records,
+                                &scope,
+                                &stream_types,
+                                parameters,
+                                parameter_owners,
+                            )
+                        });
                 if let scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -856,9 +868,17 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let owned = body_owners.get(&scope.record_index).and_then(|owners| {
-                    timeline_owned_base_feature(bytes, &scope, owners, &browser_nodes, &mut losses)
-                });
+                let owned = match body_owners.get(&scope.record_index) {
+                    Some(owners) => timeline_owned_base_feature(
+                        ctx,
+                        stream_view,
+                        &scope,
+                        owners,
+                        &browser_nodes,
+                        &mut losses,
+                    )?,
+                    None => None,
+                };
                 let construction = match owned {
                     Some(owned) => Some(owned),
                     None => exact_base_feature_construction(bytes, &scope)?,
