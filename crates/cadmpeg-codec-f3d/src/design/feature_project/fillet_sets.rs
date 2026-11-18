@@ -59,9 +59,10 @@ pub(super) fn project(
                     parameter.record_index == owner.parameter_record_index()
                         && parameter.source_kind_str() == "TangencyWeight"
                 })
-                && sets.sets.iter().all(|set| {
-                    set.tangency_weight_owner_record_index != Some(owner.record_index())
-                })
+                && sets
+                    .sets
+                    .iter()
+                    .all(|set| set.tangency_weight_owner_record_index != Some(owner.record_index()))
         })
     {
         losses.push(F3dLossCode::FeatureFilletSetInputUnresolved.note(format!(
@@ -125,7 +126,10 @@ pub(super) fn project(
                     histories: inputs.histories,
                     previous_state_id: scope.previous_history_state_id(),
                     feature_id: &feature_id,
-                    treatment_radius: None,
+                    treatment_radius: match &radius {
+                        RadiusSpec::Constant { radius } => Some(radius.get()),
+                        _ => None,
+                    },
                 },
                 ctx,
                 losses,
