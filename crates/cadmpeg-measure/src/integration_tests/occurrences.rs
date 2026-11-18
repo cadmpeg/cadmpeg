@@ -36,6 +36,7 @@ fn assembly_id() -> ProductDefinitionId {
 fn definition(id: ProductDefinitionId, bodies: Vec<cadmpeg_ir::ids::BodyId>) -> ProductDefinition {
     ProductDefinition {
         sketches: Vec::default(),
+        tessellations: Vec::new(),
         id,
         kind: ProductDefinitionKind::Part,
         source_name: None,

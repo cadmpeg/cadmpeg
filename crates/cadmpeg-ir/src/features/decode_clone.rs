@@ -15,16 +15,15 @@ use super::{
     GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
     LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
     NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
-    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
-    RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter,
-    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
-    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
-    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
-    SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
-    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
-    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
-    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    VertexSelection,
+    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolveConstruction,
+    RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands,
+    SelectionMembers, SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths,
+    SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth,
+    SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection,
+    SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions,
+    SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
+    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
+    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -226,7 +225,7 @@ rewrite_enum!(FeatureOperation, []; {
     DatumPlane { frame },
     DatumThreePointPlane { frame, points },
     DatumOffsetPlane { reference, distance },
-    DatumAxis { origin, direction },
+    DatumAxis { axis },
     DatumPoint { position, construction },
     PointGeometry { position },
     LineSegment { segment },
@@ -450,8 +449,6 @@ rewrite_enum!(ProfileRef, []; {
     Planar(field0),
 });
 
-rewrite_record!(ReplaceFaceOperands, []; { targets, replacements });
-
 rewrite_record!(RevolutionAxis, []; { origin, direction, reference });
 
 rewrite_enum!(RevolveConstruction, []; {
@@ -616,7 +613,6 @@ rewrite_enum!(VertexSelection, []; {
 rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
 rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
-rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });

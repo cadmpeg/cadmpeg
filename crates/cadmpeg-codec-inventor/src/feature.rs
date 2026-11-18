@@ -415,6 +415,8 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     SheetMetalAttachmentSelections,
     TransformList,
     BodySelection,
+    /// The slot-4 list of an Unfold or Refold.
+    SheetMetalFoldList,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2448,6 +2450,7 @@ pub(crate) fn project(
     let mut thicken_losses = Vec::new();
     let mut plate_refusals = sheet_metal::projection::Refusals::default();
     let mut contour_refusals = sheet_metal::contour::Refusals::default();
+    let mut fold_refusals = sheet_metal::fold::Refusals::default();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
         let token = feature.identity.segment_token.as_str();
@@ -2466,6 +2469,18 @@ pub(crate) fn project(
                 }
                 Err(refusal) => {
                     contour_refusals.insert(feature.id(), refusal);
+                    None
+                }
+            }
+        } else if let Some((label, kind)) = label.and_then(|label| {
+            sheet_metal::fold::FoldKind::of(label.class_id()).map(|kind| (label, kind))
+        }) {
+            match sheet_metal::fold::project(ctx, feature, label, kind, |reference| {
+                resolve_property(token, reference.index(), &index)
+            })? {
+                Ok(projected) => Some((projected, None)),
+                Err(refusal) => {
+                    fold_refusals.insert(feature.id(), refusal);
                     None
                 }
             }
@@ -2867,6 +2882,7 @@ pub(crate) fn project(
             .losses(&features)
             .into_iter()
             .chain(contour_refusals.losses(&features))
+            .chain(fold_refusals.losses(&features))
             .collect(),
         mirror_losses: mirror::native_losses(
             &inventory.pattern_features,
@@ -3696,8 +3712,8 @@ fn project_plate(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
                 profile,
-                thickness,
-                side,
+                thickness: Some(thickness),
+                side: Some(side),
             }),
         ),
         native_ref: Some(source.id()),
