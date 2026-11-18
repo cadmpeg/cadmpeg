@@ -161,7 +161,8 @@
           "kind": "part",
           "native_ref": "/Cube",
           "sketches": [],
-          "source_name": "Cube"
+          "source_name": "Cube",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -172,7 +173,8 @@
           "kind": "object",
           "native_ref": "/Cube/Box",
           "sketches": [],
-          "source_name": "Box"
+          "source_name": "Box",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

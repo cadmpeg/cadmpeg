@@ -310,6 +310,30 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
 }
 
 #[test]
+fn witnessed_inline_torus_reads_its_radius_slots() {
+    let mut suffix = vec![0x2d];
+    suffix.extend_from_slice(&4.75_f64.to_be_bytes()[1..]);
+    suffix.push(0x0d);
+    let torus = inline_non_plane_record(
+        0x26,
+        [2.0, 4.0],
+        [[0.0, 0.0, 6.0], [1.0, 1.0, 8.0]],
+        &[
+            &INLINE_TEST_LOCAL_SYSTEM_Z[..],
+            &[0x2f, 0x14, 0x00, 0x2f, 0x14, 0x00, 0x2f, 0x10, 0x00],
+        ]
+        .concat(),
+        &suffix,
+    );
+    let torus_frame = torus
+        .positional_torus_frame()
+        .expect("witnessed inline torus with radius-slot forms");
+    assert_eq!(torus_frame.frame().origin(), [5.0, 5.0, 4.0]);
+    assert_eq!(torus_frame.major_radius.get(), 4.75);
+    assert_eq!(torus_frame.minor_radius.get(), 0.25);
+}
+
+#[test]
 fn compact_y_image_uses_the_unique_envelope_axis_witness() {
     let mut local_system = vec![0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
     push_inline_test_scalar(&mut local_system, 2.0);
@@ -1115,7 +1139,7 @@ fn owned_radius_test_record(major: u8, minor: u8) -> SurfaceParameterRecord {
 }
 
 #[test]
-fn owned_type26_radius_replay_preserves_generic_and_carrier_lanes() {
+fn owned_type26_radius_slots_resolve_the_carrier_and_replay_the_minor_radius() {
     let cache = scalar::ScalarCache::default();
     assert_eq!(
         scalar::decode_inline_surface_suffix_scalar(&[0x0d], 0, &cache),
@@ -1132,12 +1156,10 @@ fn owned_type26_radius_replay_preserves_generic_and_carrier_lanes() {
         for invalid in [0.0, -1.0, f64::INFINITY, f64::NAN] {
             assert_eq!(record.type26_replayed_minor_radius(invalid), None);
         }
-        if token == 0x0d {
-            assert!(matches!(
-                record.carrier,
-                crate::surface::SurfaceParameterCarrier::Unresolved(_)
-            ));
-        }
+        let frame = record
+            .positional_torus_frame()
+            .expect("type-26 radius slots resolve the torus");
+        assert!((frame.minor_radius().get() - radius).abs() < 1.0e-12);
     }
     assert_eq!(
         owned_radius_test_record(0x18, 0x0d).type26_replayed_minor_radius(0.25),
@@ -1370,5 +1392,28 @@ fn compact_y_image_stores_the_axis_sign_in_its_second_token() {
         assert_eq!(frame.frame().origin(), [0.0, 4.0, 0.0]);
         assert_eq!(frame.frame().axis(), [0.0, axis, 0.0]);
         assert_eq!(frame.frame().ref_direction(), [reference, 0.0, 0.0]);
+    }
+}
+
+#[test]
+fn inline_torus_suffix_reads_its_radii_in_the_radius_slot_lane() {
+    let cache = scalar::ScalarCache::default();
+    let one_and_a_half = [0x83, 0, 0, 0, 0, 0, 0];
+    let mut quarter = vec![0x0d];
+    quarter.extend_from_slice(&one_and_a_half);
+    let mut sphere = vec![0x18];
+    sphere.extend_from_slice(&one_and_a_half);
+    let mut explicit = vec![0x2d];
+    explicit.extend_from_slice(&6.4_f64.to_be_bytes()[1..]);
+    explicit.extend_from_slice(&one_and_a_half);
+    for (suffix, expected) in [
+        (quarter, [0.25, 1.5]),
+        (sphere, [0.0, 1.5]),
+        (explicit, [6.4, 1.5]),
+    ] {
+        assert_eq!(
+            crate::surface::inline_surface_suffix(SurfaceKind::TorusOrSphere, &suffix, 0, &cache),
+            Some((expected, suffix.len()))
+        );
     }
 }

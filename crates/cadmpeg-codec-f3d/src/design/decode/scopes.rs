@@ -38,7 +38,7 @@ mod path_feature;
 mod path_pattern;
 mod pattern;
 pub(crate) mod pipe;
-pub(super) mod point_data;
+pub(in crate::design) mod point_data;
 mod point_direction;
 pub(crate) mod position;
 mod replace_face;
@@ -52,6 +52,7 @@ mod sphere;
 mod surfaces;
 mod thicken_shell;
 mod thread;
+mod work_axes;
 mod work_geometry;
 
 #[cfg(test)]

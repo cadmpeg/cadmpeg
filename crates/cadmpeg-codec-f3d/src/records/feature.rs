@@ -33,4 +33,5 @@ mod test_support;
 #[cfg(test)]
 mod tests;
 pub(crate) mod thread;
+pub(crate) mod work_axes;
 pub(crate) mod work_geometry;
