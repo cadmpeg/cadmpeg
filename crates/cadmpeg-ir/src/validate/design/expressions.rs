@@ -18,6 +18,7 @@ use crate::design::configuration::ParameterOverride;
 use crate::design::dimension::{ParamRef, ParameterRef, RefTarget};
 use crate::design::edit::{check_types, kind_type, ExpressionSite, Type};
 use crate::design::expr::{Expression, ExpressionToken, Measure, MeasureKind, MeasureTarget, Node};
+use crate::design::feature::Feature;
 use crate::design::parameter::{ParameterDefinition, ParameterOwner, ParameterValue};
 use crate::design::program::{ProgramBody, Statement};
 use crate::design::selection::{Anchor, Picks, StepRef};
@@ -112,6 +113,9 @@ pub(super) fn check_expressions(index: &DesignRecords<'_>, findings: &mut Vec<Fi
             }
         }
     }
+    for feature in &design.features {
+        check_feature_expressions(index, feature, findings);
+    }
     check_process_parameters(index, findings);
     check_cycles(index, findings);
 }
@@ -169,15 +173,10 @@ fn check_tokens<R>(entity: &str, tokens: &[ExpressionToken<R>], findings: &mut V
     }
 }
 
-/// A neutral tree type-checks, its root has the site's kind, and its
-/// measures are anchored and sized as their kinds take.
-fn check_tree(
-    index: &DesignRecords<'_>,
-    site: Site<'_>,
-    root: &Node<ParameterRef>,
-    findings: &mut Vec<Finding>,
-) {
-    let type_of = |reference: &ParameterRef| match &reference.target {
+/// The type of a design parameter reference: its parameter's kind, unknown
+/// where the parameter is not in the document.
+fn design_type(index: &DesignRecords<'_>, reference: &ParameterRef) -> Result<Type, String> {
+    match &reference.target {
         RefTarget::Parameter(target) => match index.parameters.get(target.as_str()) {
             Some(record) => Type::of_kind(&record.kind).ok_or_else(|| {
                 format!(
@@ -189,24 +188,57 @@ fn check_tree(
             None => Ok(Type::Unknown),
         },
         RefTarget::External { .. } => Ok(Type::Unknown),
-    };
-    match check_types(root, site.variables, &type_of) {
+    }
+}
+
+/// A design neutral tree type-checks, its root has the site's kind, and its
+/// measures are anchored and sized as their kinds take.
+fn check_tree(
+    index: &DesignRecords<'_>,
+    site: Site<'_>,
+    root: &Node<ParameterRef>,
+    findings: &mut Vec<Finding>,
+) {
+    check_typed_tree(
+        site,
+        root,
+        &|reference| design_type(index, reference),
+        findings,
+    );
+}
+
+/// A neutral tree type-checks with `type_of` giving each reference's type,
+/// its root has the site's kind (a number for a law), and its measures are
+/// anchored and sized as their kinds take.
+fn check_typed_tree<R>(
+    site: Site<'_>,
+    root: &Node<R>,
+    type_of: &dyn Fn(&R) -> Result<Type, String>,
+    findings: &mut Vec<Finding>,
+) {
+    match check_types(root, site.variables, type_of) {
         Err(reason) => super::error(
             findings,
             site.entity,
             format_args!("expression does not type-check: {reason}"),
         ),
         Ok(found) => {
-            if let Some(kind) = site.kind {
-                if let Err(reason) = kind_type(kind, found) {
-                    super::error(
-                        findings,
-                        site.entity,
-                        format_args!(
-                            "expression's root does not have the parameter's kind: {reason}"
-                        ),
-                    );
-                }
+            let root_kind = match (site.kind, site.variables) {
+                (Some(kind), _) => kind_type(kind, found),
+                (None, ExpressionSite::Law) => match found {
+                    Type::Number(_) | Type::Unknown => Ok(()),
+                    Type::Boolean | Type::Text => {
+                        Err(format!("a law's value is a number, not {found:?}"))
+                    }
+                },
+                (None, ExpressionSite::Parameter | ExpressionSite::BendAllowance) => Ok(()),
+            };
+            if let Err(reason) = root_kind {
+                super::error(
+                    findings,
+                    site.entity,
+                    format_args!("expression's root does not have the parameter's kind: {reason}"),
+                );
             }
         }
     }
@@ -429,17 +461,9 @@ pub(super) fn wire_expressions(wire: &Json) -> Vec<Expression> {
         match node {
             Json::Array(items) => pending.extend(items),
             Json::Object(object) => {
-                let tagged = object.len() == 2
-                    && object.contains_key("value")
-                    && matches!(
-                        object.get("kind").and_then(Json::as_str),
-                        Some("neutral" | "source")
-                    );
-                if tagged {
-                    if let Ok(expression) = serde_json::from_value::<Expression>(node.clone()) {
-                        found.push(expression);
-                        continue;
-                    }
+                if let Some(expression) = tagged_expression(node) {
+                    found.push(expression);
+                    continue;
                 }
                 pending.extend(object.values());
             }
@@ -449,15 +473,144 @@ pub(super) fn wire_expressions(wire: &Json) -> Vec<Expression> {
     found
 }
 
+/// A wire node that is an `Expression`, read back through its strict reader.
+fn tagged_expression(node: &Json) -> Option<Expression> {
+    let object = node.as_object()?;
+    let tagged = object.len() == 2
+        && object.contains_key("value")
+        && matches!(
+            object.get("kind").and_then(Json::as_str),
+            Some("neutral" | "source")
+        );
+    if !tagged {
+        return None;
+    }
+    serde_json::from_value(node.clone()).ok()
+}
+
+/// Where a feature operation holds an expression.
+enum FeaturePlace {
+    /// A `Law::Expression`.
+    Law,
+    /// An `AngleRange.value`.
+    BendAllowance,
+    /// A pattern instance's expression for the seed parameter it names.
+    Seed(String),
+    /// Anywhere else.
+    Other,
+}
+
+/// Every expression a feature's operation holds: its laws, its bend
+/// allowances, and its pattern instances' seed expressions.
+fn check_feature_expressions(
+    index: &DesignRecords<'_>,
+    feature: &Feature,
+    findings: &mut Vec<Finding>,
+) {
+    let Ok(wire) = serde_json::to_value(&feature.definition.operation) else {
+        return;
+    };
+    let entity = feature.id.as_str();
+    for (place, expression) in feature_expressions(&wire) {
+        let base = Site {
+            entity,
+            kind: None,
+            feature_owned: false,
+            variables: ExpressionSite::Parameter,
+        };
+        let site = match &place {
+            FeaturePlace::Law => Site {
+                variables: ExpressionSite::Law,
+                ..base
+            },
+            FeaturePlace::BendAllowance => Site {
+                variables: ExpressionSite::BendAllowance,
+                ..base
+            },
+            FeaturePlace::Seed(parameter) => {
+                let record = index.parameters.get(parameter.as_str());
+                Site {
+                    kind: record.map(|record| &record.kind),
+                    feature_owned: record.is_some_and(|record| {
+                        matches!(record.owner, Some(ParameterOwner::Feature(_)))
+                    }),
+                    ..base
+                }
+            }
+            FeaturePlace::Other => base,
+        };
+        check_expression(index, site, &expression, findings);
+    }
+}
+
+/// The expressions of a feature operation's wire form, each with its place.
+fn feature_expressions(wire: &Json) -> Vec<(FeaturePlace, Expression)> {
+    let mut found = Vec::new();
+    let mut pending = vec![wire];
+    while let Some(node) = pending.pop() {
+        let object = match node {
+            Json::Array(items) => {
+                pending.extend(items);
+                continue;
+            }
+            Json::Object(object) => object,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_) => continue,
+        };
+        if let Some(expression) = tagged_expression(node) {
+            found.push((FeaturePlace::Other, expression));
+            continue;
+        }
+        let kind = object.get("kind").and_then(Json::as_str);
+        let value = object.get("value");
+        if kind == Some("expression") && object.len() == 2 {
+            if let Some(expression) = value.and_then(tagged_expression) {
+                found.push((FeaturePlace::Law, expression));
+                continue;
+            }
+        }
+        if object.contains_key("from_inclusive") && object.contains_key("to_inclusive") {
+            if let Some(expression) = value.and_then(tagged_expression) {
+                found.push((FeaturePlace::BendAllowance, expression));
+                continue;
+            }
+        }
+        if kind == Some("varied") {
+            if let Some(Json::Object(parameters)) = object.get("parameters") {
+                for (parameter, expression) in parameters {
+                    if let Some(expression) = tagged_expression(expression) {
+                        found.push((FeaturePlace::Seed(parameter.clone()), expression));
+                    }
+                }
+                continue;
+            }
+        }
+        pending.extend(object.values());
+    }
+    found
+}
+
 /// A process parameter with no kind holds a `Number`, a stated value follows
-/// a stated kind, and each reference of its expression resolves.
+/// a stated kind, each reference of its expression resolves, and a neutral
+/// expression type-checks with a root of the stated kind.
 fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let process = &index.ir.process;
-    let ids: BTreeSet<&str> = process
+    let kinds: BTreeMap<&str, Option<&ValueKind>> = process
         .parameters
         .iter()
-        .map(|parameter| parameter.id.as_str())
+        .map(|parameter| (parameter.id.as_str(), parameter.kind.as_ref()))
         .collect();
+    let type_of = |reference: &ParamRef| match reference {
+        ParamRef::Process(target) => match kinds.get(target.as_str()) {
+            Some(Some(kind)) => Type::of_kind(kind).ok_or_else(|| {
+                format!(
+                    "{} has the kind {kind:?}, with no neutral value",
+                    target.as_str()
+                )
+            }),
+            Some(None) | None => Ok(Type::Unknown),
+        },
+        ParamRef::Design(design) => design_type(index, design),
+    };
     for parameter in &process.parameters {
         let entity = parameter.id.as_str();
         if let Some(value) = &parameter.value {
@@ -493,7 +646,16 @@ fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut Vec<Findin
             continue;
         };
         let refs: Vec<&ParamRef> = match expression {
-            Expression::Neutral(neutral) => node_references(&neutral.0),
+            Expression::Neutral(neutral) => {
+                let site = Site {
+                    entity,
+                    kind: parameter.kind.as_ref(),
+                    feature_owned: false,
+                    variables: ExpressionSite::Parameter,
+                };
+                check_typed_tree(site, &neutral.0, &type_of, findings);
+                node_references(&neutral.0)
+            }
             Expression::Source { tokens, .. } => {
                 check_tokens(entity, tokens, findings);
                 tokens
@@ -507,7 +669,7 @@ fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut Vec<Findin
         };
         for reference in refs {
             match reference {
-                ParamRef::Process(target) if !ids.contains(target.as_str()) => super::error(
+                ParamRef::Process(target) if !kinds.contains_key(target.as_str()) => super::error(
                     findings,
                     entity,
                     format_args!(

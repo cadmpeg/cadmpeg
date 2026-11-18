@@ -7,22 +7,31 @@ use std::collections::BTreeMap;
 use cadmpeg_core::text::NonBlankString;
 
 use crate::design::configuration::{DefinitionOverride, PartNumber};
-use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
+use crate::design::construction::Construction;
+use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::expr::{
     parse, Expression, ExpressionDialect, ExpressionToken, Measure, MeasureKind, MeasureTarget,
     Neutral,
 };
 use crate::design::feature::FeatureOperation;
+use crate::design::ops::shared::Law;
 use crate::design::ops::sketch::{SketchConstraint, SketchRelation};
-use crate::design::parameter::{ParameterDefinition, ParameterOwner, ParameterValue, Tolerance};
+use crate::design::ops::surface::{CurveDefinition, CurveFeature, EquationCoordinates};
+use crate::design::parameter::{
+    Deviations, ParameterDefinition, ParameterOwner, ParameterValue, Tolerance,
+};
 use crate::design::program::{ParameterProgram, ProgramBody, ProgramStage, Statement};
-use crate::design::selection::{Anchor, Picks, Selection};
+use crate::design::selection::{Anchor, OccurrencePath, Picks, Selection};
 use crate::design::spreadsheet::Spreadsheet;
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
 use crate::pmi::LimitsAndFits;
-use crate::products::{GeneralTolerance, LinearGeneral, LinearGeneralClass};
+use crate::process::groups::{ProcessDefinition, ProcessOwner, ProcessParameter};
+use crate::products::{
+    AngularGeneral, ExternalDocument, GeneralTolerance, LinearGeneral, LinearGeneralClass,
+    ProductDefinition, Storage,
+};
 use crate::report::Severity;
 use crate::scalar::FiniteReal;
 use crate::validate::design::fixture::{
@@ -385,4 +394,227 @@ fn cached_values_agree_with_their_expressions() {
     count.definition = expression("7 / 2", &[]);
     ir.design.parameters.push(count);
     assert_warning(&ir, "evaluates to 3.5, not a whole number");
+}
+
+#[track_caller]
+fn assert_no_finding_containing(ir: &CadIr, fragment: &str) {
+    let findings = design_findings(ir);
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.message.contains(fragment)),
+        "a design finding contains {fragment:?}: {findings:#?}"
+    );
+}
+
+/// `with_width`, where `width` is assigned by the program `rules`, which
+/// assigns it `2[mm]`.
+fn with_assigned_width() -> CadIr {
+    let mut ir = with_width();
+    ir.design.parameters[0].definition = ParameterDefinition::Assigned(id("program", "rules"));
+    ir.design.programs.push(program(
+        "rules",
+        vec![Statement::Assign {
+            target: reference("width"),
+            value: neutral("2[mm]", &[]),
+        }],
+    ));
+    ir
+}
+
+#[test]
+fn programs_assign_through_paths_and_external_names() {
+    let mut ir = with_assigned_width();
+    let ProgramBody::Neutral(statements) = &mut ir.design.programs[0].body else {
+        unreachable!()
+    };
+    statements[0] = Statement::Assign {
+        target: ParameterRef {
+            target: RefTarget::Parameter(id("parameter", "width")),
+            through: Some(OccurrencePath(Vec::new())),
+        },
+        value: neutral("2[mm]", &[]),
+    };
+    assert_no_finding_containing(&ir, "program assigns");
+    ir.design.parameters[0].definition = expression("2[mm]", &[]);
+    assert_finding(
+        &ir,
+        "program assigns test:design:parameter#width through an occurrence path, whose definition is not `assigned`",
+    );
+
+    let mut ir = with_width();
+    ir.model.product_definitions.push(ProductDefinition::new(
+        id("definition", "unread"),
+        Storage::External(ExternalDocument::path("unread.prt")),
+    ));
+    ir.design.programs.push(program(
+        "rules",
+        vec![Statement::Assign {
+            target: ParameterRef {
+                target: RefTarget::External {
+                    definition: id("definition", "unread"),
+                    name: NonBlankString::new("d0").unwrap(),
+                },
+                through: None,
+            },
+            value: neutral("4[mm]", &[]),
+        }],
+    ));
+    assert_no_finding_containing(&ir, "program assigns");
+}
+
+#[test]
+fn assigned_caches_are_compared() {
+    let mut ir = with_assigned_width();
+    let mut double = parameter("double", LENGTH);
+    double.definition = expression("$0 * 2", &[reference("width")]);
+    double.value = Some(number(5.0));
+    ir.design.parameters.push(double);
+    assert_warning(&ir, "disagrees with its expression's value");
+    ir.design.parameters[1].value = Some(number(4.0));
+    assert_no_design_finding(&ir);
+
+    let ProgramBody::Neutral(statements) = &mut ir.design.programs[0].body else {
+        unreachable!()
+    };
+    let measure = Measure {
+        kind: MeasureKind::Length,
+        of: MeasureTarget::Model,
+        cached: None,
+    };
+    statements[0] = Statement::Assign {
+        target: reference("width"),
+        value: Neutral(parse("@0", &[], &[measure]).unwrap()),
+    };
+    ir.design.parameters[1].value = Some(number(5.0));
+    assert_no_finding_containing(&ir, "disagrees");
+}
+
+fn process_parameter(
+    key: &str,
+    kind: Option<ValueKind>,
+    text: &str,
+    refs: &[ParamRef],
+) -> ProcessParameter {
+    ProcessParameter {
+        id: id("process-parameter", key),
+        owner: ProcessOwner::Setup(id("setup", "job")),
+        name: NonBlankString::new(key).unwrap(),
+        kind,
+        definition: ProcessDefinition::Expression(Expression::Neutral(Neutral(
+            parse(text, refs, &[]).unwrap(),
+        ))),
+        value: None,
+        native_ref: None,
+    }
+}
+
+#[test]
+fn process_expressions_type_check() {
+    let mut ir = with_width();
+    ir.process.parameters.push(process_parameter(
+        "depth",
+        Some(LENGTH),
+        "1[mm] + $0",
+        &[ParamRef::Design(reference("width"))],
+    ));
+    assert_no_finding_containing(&ir, "process-parameter");
+    ir.process.parameters.push(process_parameter(
+        "bad",
+        Some(LENGTH),
+        "1[mm] + 1[deg]",
+        &[],
+    ));
+    assert_finding(&ir, "expression does not type-check");
+    ir.process.parameters[1] = process_parameter("bad", Some(LENGTH), "true", &[]);
+    assert_finding(&ir, "expression's root does not have the parameter's kind");
+    ir.process.parameters[1] = process_parameter(
+        "bad",
+        None,
+        "$0 + 1[deg]",
+        &[ParamRef::Process(id("process-parameter", "depth"))],
+    );
+    assert_finding(&ir, "expression does not type-check");
+    ir.process.parameters[1] = process_parameter("bad", None, "3 * 2", &[]);
+    assert_no_finding_containing(&ir, "expression");
+}
+
+fn equation_curve(x: &str) -> FeatureOperation {
+    let law = |text: &str| {
+        Law::Expression(Expression::Neutral(Neutral(
+            parse::<ParameterRef>(text, &[], &[]).unwrap(),
+        )))
+    };
+    FeatureOperation::Curve(Box::new(CurveFeature {
+        definition: CurveDefinition::Equation {
+            frame: Construction::default(),
+            coordinates: EquationCoordinates::Cartesian {
+                x: law(x),
+                y: law("0[mm]"),
+                z: law("0[mm]"),
+            },
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+#[test]
+fn law_expressions_type_check() {
+    let mut ir = with_width();
+    ir.design.features[0].definition.operation = equation_curve("t * 10[mm]");
+    assert_no_finding_containing(&ir, "expression");
+    ir.design.features[0].definition.operation = equation_curve("t + 1[mm]");
+    assert_finding(&ir, "expression does not type-check");
+    ir.design.features[0].definition.operation = equation_curve("t > 0.5");
+    assert_finding(&ir, "a law's value is a number");
+    ir.design.features[0].definition.operation = equation_curve("bendangle * 1[mm]");
+    assert_finding(&ir, "a bend variable occurs only in a bend allowance");
+    ir.design.parameters[0].definition = expression("t * 1[mm]", &[]);
+    ir.design.features[0].definition.operation = equation_curve("t * 10[mm]");
+    assert_finding(&ir, "the law parameter occurs only in a law expression");
+}
+
+#[test]
+fn a_definitions_general_tolerance_is_checked() {
+    let mut ir = with_width();
+    let part = id::<ProductDefinitionId>("definition", "part");
+    let index = ir
+        .model
+        .product_definitions
+        .iter()
+        .position(|definition| definition.id == part)
+        .unwrap();
+    let deviations = |lower: f64, upper: f64| Deviations {
+        lower: FiniteReal::new(lower).unwrap(),
+        upper: FiniteReal::new(upper).unwrap(),
+    };
+    ir.model.product_definitions[index].general_tolerance = Some(GeneralTolerance {
+        linear: Some(LinearGeneral::Uniform(deviations(-0.1, 0.2))),
+        angular: Some(AngularGeneral::ByDecimals(BTreeMap::from([(
+            1,
+            deviations(-0.01, 0.01),
+        )]))),
+    });
+    assert_no_design_finding(&ir);
+    ir.model.product_definitions[index].general_tolerance = Some(GeneralTolerance {
+        linear: Some(LinearGeneral::Uniform(deviations(0.2, -0.1))),
+        angular: Some(AngularGeneral::ByDecimals(BTreeMap::new())),
+    });
+    assert_finding(
+        &ir,
+        "general tolerance's linear lower deviation 0.2 is not below its upper deviation -0.1",
+    );
+    assert_finding(
+        &ir,
+        "general tolerance's angular `by_decimals` rule holds no entry",
+    );
+    ir.model.product_definitions[index].general_tolerance = Some(GeneralTolerance {
+        linear: None,
+        angular: None,
+    });
+    assert_finding(
+        &ir,
+        "general tolerance states neither a linear nor an angular rule",
+    );
 }

@@ -194,7 +194,7 @@ fn same(left: Quantity, right: Quantity, what: &str) -> Result<Quantity, EvalErr
 }
 
 /// The value of a literal exponent: a number, or a negated number.
-fn literal_exponent(node: &Node<ParameterRef>) -> Option<f64> {
+fn literal_exponent<R>(node: &Node<R>) -> Option<f64> {
     match node {
         Node::Number { value, unit } if unit.0.is_empty() => Some(value.get()),
         Node::Unary {
@@ -678,11 +678,11 @@ fn expect_quantity(operand: Type, expected: Quantity, what: &str) -> Result<(), 
     }
 }
 
-fn binary_type(
+fn binary_type<R>(
     op: BinaryOp,
     left: Type,
     right: Type,
-    right_node: &Node<ParameterRef>,
+    right_node: &Node<R>,
 ) -> Result<Type, String> {
     let domain = |error: EvalError| error.to_string();
     Ok(match op {
@@ -804,10 +804,10 @@ fn branch_type(then: Type, otherwise: Type) -> Result<Type, String> {
     }
 }
 
-enum Check<'a> {
-    Visit(&'a Node<ParameterRef>),
+enum Check<'a, R> {
+    Visit(&'a Node<R>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<ParameterRef>),
+    Binary(BinaryOp, &'a Node<R>),
     Call(Function, usize),
     If,
 }
@@ -820,6 +820,8 @@ pub(crate) enum ExpressionSite {
     Parameter,
     /// An `AngleRange.value`: the bend variables are in scope.
     BendAllowance,
+    /// A `Law::Expression`: the law parameter, dimensionless, is in scope.
+    Law,
 }
 
 /// The quantity of a bend variable.
@@ -832,17 +834,17 @@ const fn bend_quantity(variable: BendVariable) -> Quantity {
 
 /// Type-checks a neutral expression tree by the semantics table of §5.13
 /// and the function arities of part 10, every branch of an `if` included.
-/// `reference` gives a reference's type, or why the reference has none. No
-/// site has a law path in scope, so the law parameter is refused; the bend
-/// variables are refused outside a bend allowance.
+/// `reference` gives a reference's type, or why the reference has none. The
+/// law parameter is refused outside a law, and the bend variables outside a
+/// bend allowance.
 ///
 /// # Errors
 ///
 /// Returns why a node does not type-check.
-pub(crate) fn check_types(
-    root: &Node<ParameterRef>,
+pub(crate) fn check_types<R>(
+    root: &Node<R>,
     site: ExpressionSite,
-    reference: &dyn Fn(&ParameterRef) -> Result<Type, String>,
+    reference: &dyn Fn(&R) -> Result<Type, String>,
 ) -> Result<Type, String> {
     let mut tasks = vec![Check::Visit(root)];
     let mut types: Vec<Type> = Vec::new();
@@ -860,14 +862,17 @@ pub(crate) fn check_types(
                 Node::Measure(measure) => {
                     types.push(Type::Number(measure_quantity(&measure.kind)));
                 }
-                Node::LawParameter => {
-                    return Err("the law parameter occurs only in a law expression".into());
-                }
+                Node::LawParameter => match site {
+                    ExpressionSite::Law => types.push(Type::Number(DIMENSIONLESS)),
+                    ExpressionSite::Parameter | ExpressionSite::BendAllowance => {
+                        return Err("the law parameter occurs only in a law expression".into());
+                    }
+                },
                 Node::Bend(variable) => match site {
                     ExpressionSite::BendAllowance => {
                         types.push(Type::Number(bend_quantity(*variable)));
                     }
-                    ExpressionSite::Parameter => {
+                    ExpressionSite::Parameter | ExpressionSite::Law => {
                         return Err("a bend variable occurs only in a bend allowance".into());
                     }
                 },

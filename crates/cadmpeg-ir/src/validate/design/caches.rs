@@ -16,6 +16,7 @@ use crate::design::expr::{Expression, Node};
 use crate::design::feature::FeatureOperation;
 use crate::design::ops::shared::{Coupling, JointKind};
 use crate::design::parameter::{DesignParameter, ParameterDefinition};
+use crate::design::program::{ProgramBody, Statement};
 use crate::design::units::{Quantity, ValueKind};
 use crate::report::check::Finding;
 
@@ -94,9 +95,11 @@ fn check_parameter(
 }
 
 /// Whether a tree reads a measure, in itself or through the expressions of
-/// the parameters it references. A reference whose value no in-IR arithmetic
-/// decides (a driven or assigned parameter, a parameter of a document that
-/// was not read, or one read through an occurrence path) counts as one.
+/// the parameters it references. An assigned parameter reads what its
+/// program's conditions and its own assigned values read. A reference whose
+/// value no in-IR arithmetic decides (a driven parameter, one a `Source`
+/// program assigns, a parameter of a document that was not read, or one read
+/// through an occurrence path) counts as one.
 fn depends_on_measure(index: &DesignRecords<'_>, root: &Node<ParameterRef>) -> bool {
     let mut seen = BTreeSet::new();
     let mut pending = vec![root];
@@ -126,11 +129,49 @@ fn depends_on_measure(index: &DesignRecords<'_>, root: &Node<ParameterRef>) -> b
                         return true;
                     }
                 }
-                ParameterDefinition::Driven | ParameterDefinition::Assigned(_) => return true,
+                ParameterDefinition::Assigned(program) => {
+                    let body = index
+                        .ir
+                        .design
+                        .programs
+                        .iter()
+                        .find(|candidate| candidate.id == *program)
+                        .map(|program| &program.body);
+                    let Some(ProgramBody::Neutral(statements)) = body else {
+                        return true;
+                    };
+                    pending.extend(program_reads(statements, target.as_str()));
+                }
+                ParameterDefinition::Driven => return true,
             }
         }
     }
     false
+}
+
+/// The trees a program reads to assign `parameter`: every condition, and
+/// each value it assigns to `parameter`, walked without recursion.
+fn program_reads<'a>(statements: &'a [Statement], parameter: &str) -> Vec<&'a Node<ParameterRef>> {
+    let mut reads = Vec::new();
+    let mut pending: Vec<&Statement> = statements.iter().collect();
+    while let Some(statement) = pending.pop() {
+        match statement {
+            Statement::Assign { target, value } => {
+                if matches!(&target.target, RefTarget::Parameter(id) if id.as_str() == parameter) {
+                    reads.push(&value.0);
+                }
+            }
+            Statement::If {
+                condition,
+                then,
+                otherwise,
+            } => {
+                reads.push(&condition.0);
+                pending.extend(then.iter().chain(otherwise));
+            }
+        }
+    }
+    reads
 }
 
 /// Whether two values agree: a length within the linear tolerance, an angle

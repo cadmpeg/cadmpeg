@@ -45,15 +45,15 @@ pub(super) fn check_programs(index: &DesignRecords<'_>, findings: &mut Vec<Findi
         let targets = assign_targets(statements);
         let mut named = BTreeSet::new();
         for target in targets {
-            let assigns_here = match &target.target {
-                RefTarget::Parameter(parameter) if target.through.is_none() => {
-                    named.insert(parameter.as_str());
-                    index.parameters.get(parameter.as_str()).is_some_and(|record| {
-                        matches!(&record.definition, ParameterDefinition::Assigned(by) if by.as_str() == id)
-                    })
-                }
-                RefTarget::Parameter(_) | RefTarget::External { .. } => false,
+            // An `External` target names a parameter of a document that was
+            // not read, so no record states its definition (interim, G2-04).
+            let RefTarget::Parameter(parameter) = &target.target else {
+                continue;
             };
+            named.insert(parameter.as_str());
+            let assigns_here = index.parameters.get(parameter.as_str()).is_some_and(|record| {
+                matches!(&record.definition, ParameterDefinition::Assigned(by) if by.as_str() == id)
+            });
             if !assigns_here {
                 super::error(
                     findings,

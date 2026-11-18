@@ -9,7 +9,7 @@ use super::records::DesignRecords;
 use crate::design::parameter::{DesignParameter, Deviations, ParameterValue, Tolerance};
 use crate::design::units::{Quantity, ValueKind};
 use crate::pmi::LimitsAndFits;
-use crate::products::{AngularGeneral, LinearGeneral, LinearGeneralClass};
+use crate::products::{AngularGeneral, GeneralTolerance, LinearGeneral, LinearGeneralClass};
 use crate::report::check::Finding;
 
 pub(super) fn check_tolerances(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
@@ -27,6 +27,71 @@ pub(super) fn check_tolerances(index: &DesignRecords<'_>, findings: &mut Vec<Fin
             | None => {}
         }
     }
+    for definition in &index.ir.model.product_definitions {
+        if let Some(general) = &definition.general_tolerance {
+            check_general_rule(definition.id.as_str(), general, findings);
+        }
+    }
+}
+
+/// A definition's general tolerance states `linear` or `angular`, a
+/// `ByDecimals` map is not empty, and each of its `Deviations` has `lower`
+/// below `upper`.
+fn check_general_rule(entity: &str, general: &GeneralTolerance, findings: &mut Vec<Finding>) {
+    if general.linear.is_none() && general.angular.is_none() {
+        super::error(
+            findings,
+            entity,
+            format_args!("general tolerance states neither a linear nor an angular rule"),
+        );
+    }
+    let linear = match &general.linear {
+        Some(LinearGeneral::ByDecimals(entries)) => Some(Entries::ByDecimals(entries)),
+        Some(LinearGeneral::Uniform(entry)) => Some(Entries::Uniform(entry)),
+        Some(LinearGeneral::Iso2768(_)) | None => None,
+    };
+    let angular = match &general.angular {
+        Some(AngularGeneral::ByDecimals(entries)) => Some(Entries::ByDecimals(entries)),
+        Some(AngularGeneral::Uniform(entry)) => Some(Entries::Uniform(entry)),
+        None => None,
+    };
+    for (rule, entries) in [("linear", linear), ("angular", angular)] {
+        let deviations: Vec<&Deviations> = match entries {
+            Some(Entries::ByDecimals(entries)) => {
+                if entries.is_empty() {
+                    super::error(
+                        findings,
+                        entity,
+                        format_args!(
+                            "general tolerance's {rule} `by_decimals` rule holds no entry"
+                        ),
+                    );
+                }
+                entries.values().collect()
+            }
+            Some(Entries::Uniform(entry)) => vec![entry],
+            None => Vec::new(),
+        };
+        for Deviations { lower, upper } in deviations {
+            if lower.get() >= upper.get() {
+                super::error(
+                    findings,
+                    entity,
+                    format_args!(
+                        "general tolerance's {rule} lower deviation {} is not below its upper deviation {}",
+                        lower.get(),
+                        upper.get()
+                    ),
+                );
+            }
+        }
+    }
+}
+
+/// The deviations a general rule states.
+enum Entries<'a> {
+    ByDecimals(&'a BTreeMap<u8, Deviations>),
+    Uniform(&'a Deviations),
 }
 
 /// A designation's `form_variance` holds capital letters only, and its
