@@ -12320,6 +12320,51 @@ source = "spec"
 anchor = "offset 25 stores u32 `N`"
 
 [[record]]
+name = "timeline_owned_base_feature_typed_body_entry"
+kind = "byte"
+section = "3.1"
+anchor = "two runs of 55-byte typed body entries"
+size = 55
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/base_feature/owned_body_runs.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+value = 1
+source = "spec"
+anchor = "Each entry starts with marker 1"
+
+[[record.field]]
+name = "reference_value"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "a u64 target at offset 1"
+
+[[record.field]]
+name = "guid_length"
+offset = 9
+type = "u32"
+value = 36
+source = "spec"
+anchor = "The u32 at offset 9 gives the 36-byte ASCII"
+
+[[record.field]]
+name = "guid"
+offset = 13
+type = "bytes[36]"
+source = "spec"
+anchor = "The GUID at offset 13 is the Body presentation type"
+
+[[record.field]]
+name = "reference_field"
+offset = 49
+type = "bytes[6]"
+source = "spec"
+anchor = "The six-byte field at offset 49"
+
+[[record]]
 name = "timeline_owned_paste_source_pairs"
 kind = "byte"
 section = "3.1"

@@ -3441,6 +3441,18 @@ pub(crate) mod timeline_body_owner_marked_prefix {
     pub(crate) const BODY_COUNT: usize = 25;
 }
 
+/// Byte offsets for the `timeline_owned_base_feature_typed_body_entry` record.
+///
+/// Spec §3.1. Record length 55 B.
+pub(crate) mod timeline_owned_base_feature_typed_body_entry {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 55;
+    /// Offset of `reference_value` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_VALUE: usize = 1;
+    /// Offset of `reference_field` (`bytes[6]`). Spec §3.1.
+    pub(crate) const REFERENCE_FIELD: usize = 49;
+}
+
 /// Byte offsets for the `timeline_owned_paste_source_pairs` record.
 ///
 /// Spec §3.1. Record length 9 B.
