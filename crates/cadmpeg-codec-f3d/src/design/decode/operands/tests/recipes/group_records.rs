@@ -477,6 +477,11 @@ fn surface_face_groups_retain_owned_face_recipe_members() {
             DesignOperandRole::ROLE_0X10,
         ),
         (
+            DesignFeatureKind::SurfaceTrim,
+            DesignOperandRole::ROLE_0X9,
+            DesignOperandRole::ROLE_0X21,
+        ),
+        (
             DesignFeatureKind::ReplaceFace,
             DesignOperandRole::ROLE_0X9,
             DesignOperandRole::ROLE_0X21,

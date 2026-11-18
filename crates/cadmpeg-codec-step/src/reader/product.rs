@@ -1101,6 +1101,7 @@ fn occurrence_placements(
             }
         }
     }
+    let mut inferred = Vec::new();
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
     for usage in usages.values() {
         let pair = (usage.parent_definition, usage.child_definition);
@@ -1165,11 +1166,23 @@ fn occurrence_placements(
             sibling_usage_counts[&(usage.parent_definition, usage.child_definition)];
         if sibling_usage_count == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);
+            inferred.push(usage_id);
         } else if !placements.is_empty() {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "NAUO #{usage_id} has an ambiguous mapped-item placement"
             )));
         }
+    }
+    if !inferred.is_empty() {
+        let listed = inferred
+            .iter()
+            .map(|usage_id| format!("#{usage_id}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(StepLossCode::OccurrencePlacementInferred.note(format!(
+            "{} NEXT_ASSEMBLY_USAGE_OCCURRENCE record(s) take their placement from a parent representation's MAPPED_ITEM that no STEP relationship associates with them: {listed}",
+            inferred.len()
+        )));
     }
     Ok(result)
 }

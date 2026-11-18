@@ -8,6 +8,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 use crate::document::CadIr;
+use crate::features::boundary_fill::BoundaryFillCell;
 use crate::features::{
     patterns::{PatternKind, PatternSeed, PatternTransform},
     BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, Feature, FeatureSourceContent,
@@ -3669,9 +3670,12 @@ fn check_feature_references(
                     );
                 }
             }
-            FeatureOperation::BoundaryFill { tools, cells } => {
+            FeatureOperation::BoundaryFill { tools, cells, .. } => {
                 body_selections.push(tools);
-                body_selections.extend(cells);
+                body_selections.extend(cells.iter().filter_map(|cell| match cell {
+                    BoundaryFillCell::BodyRegion(body) => Some(body),
+                    BoundaryFillCell::Recorded { .. } => None,
+                }));
             }
             FeatureOperation::SplitBody { targets, tool, .. } => {
                 body_selections.push(targets);
