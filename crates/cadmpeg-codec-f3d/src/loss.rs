@@ -1023,6 +1023,8 @@ pub(crate) enum F3dLossCode {
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
     BodylessDesignCarrier,
+    /// A part design stores mesh geometry containers and no BREP entry, and no mesh body transferred.
+    MeshOnlyDesignUntransferred,
     /// An assembly document's geometry lives in external references.
     AssemblyComponentsExternal,
     /// Spline surface records were decoded into NURBS carriers from cache.
@@ -1766,6 +1768,7 @@ impl F3dLossCode {
         Self::JointPlacedOccurrenceUnsolved,
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
+        Self::MeshOnlyDesignUntransferred,
         Self::AssemblyComponentsExternal,
         Self::NurbsSurfaceCarrier,
         Self::SketchRegionBodyOmitted,
@@ -2791,6 +2794,7 @@ impl F3dLossCode {
             Self::JointPlacedOccurrenceUnsolved => "assembly.joint-placed-occurrence-unsolved",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
+            Self::MeshOnlyDesignUntransferred => "design.mesh-only-untransferred",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
             Self::SketchRegionBodyOmitted => "geometry.sketch-region-body-omitted",
@@ -2943,6 +2947,7 @@ impl F3dLossCode {
             | Self::ParameterOrderBudgetExceeded
             | Self::HistoryRecordFramingFailed
             | Self::MeshContainerUndecoded
+            | Self::MeshOnlyDesignUntransferred
             | Self::MissingGeometryStream
             | Self::XrefCycle
             | Self::XrefMemberMissing
@@ -4203,6 +4208,7 @@ impl F3dLossCode {
             Self::BrepBlobUndecoded
             | Self::SurfaceShapeNotDecoded
             | Self::GeometryNotTransferred
+            | Self::MeshOnlyDesignUntransferred
             | Self::TsplineCageUndecoded
             | Self::SketchPointUndecoded => LossTaxonomy::GeometryNotTransferred,
             Self::MeshContainerUnjoined | Self::MeshContainerMissing => {
@@ -4944,6 +4950,7 @@ mod tests {
                 "assembly.joint-placed-occurrence-unsolved",
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
+                "design.mesh-only-untransferred",
                 "assembly.components-external",
                 "geometry.nurbs-surface-carrier",
                 "geometry.sketch-region-body-omitted",
