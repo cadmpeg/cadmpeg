@@ -1582,6 +1582,26 @@ fn projected_frame_sense(scope: &DesignParameterScope) -> Option<cadmpeg_ir::pro
         })
 }
 
+pub(super) fn compact_as_built_relation_only(
+    scope: &DesignParameterScope,
+    alignment: &crate::records::feature::assembly::DesignAssemblyAlignment,
+    stream_types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> bool {
+    let older_joint = scope
+        .record_index
+        .checked_sub(1)
+        .and_then(|index| stream_types.get(&u64::from(index)))
+        .is_some_and(|(guid, version)| {
+            *version == 4 && guid.eq_ignore_ascii_case(super::decode::joint_motion::JOINT_TYPE_GUID)
+        });
+    older_joint
+        || matches!(
+            &alignment.form,
+            Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(operands))
+                if operands.iter().any(|operand| !null_construction_operand(operand))
+        )
+}
+
 fn null_construction_operand(
     operand: &crate::records::feature::assembly::DesignQualifiedAssemblyOperand,
 ) -> bool {
