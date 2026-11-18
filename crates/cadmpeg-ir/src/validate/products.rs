@@ -205,6 +205,7 @@ pub(super) fn check_products(
             );
         }
     }
+    check_root_definition(ir, findings);
     if let Some(definition) = placement_cycle(ctx, ir)? {
         record_finding(
             findings,
@@ -276,6 +277,76 @@ pub(super) fn check_products(
     Ok(())
 }
 
+/// Part 10: exactly one definition is `File` with `source: None`, the root
+/// definition, and no occurrence places it (§8.1). A definition that no
+/// occurrence places and that holds bodies, tessellations, or occurrences is
+/// the top of a product tree, which only the root is. The root is what the
+/// decode's root file holds at its top, so only a decoded document, one with
+/// a `source`, must state it and no other top; a fragment's root and the
+/// placements of its tops can lie outside it. The counts are not in the
+/// decoder admission sets, which judge candidate parts of a document.
+fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let definitions = &ir.model.product_definitions;
+    let whole = ir.source.is_some() && !ir.fragment;
+    let mut roots = definitions.iter().filter(|definition| definition.is_root());
+    let first = roots.next();
+    if first.is_none() && whole {
+        record_finding(
+            findings,
+            Check::Counts,
+            crate::report::Severity::Error,
+            None,
+            format_args!("document states no root definition"),
+        );
+    }
+    if let Some(first) = first {
+        for extra in roots {
+            super::record_related_finding(
+                findings,
+                Check::Counts,
+                crate::report::Severity::Error,
+                extra.id.as_str(),
+                &[first.id.as_str()],
+                format_args!("document states more than one root definition"),
+            );
+        }
+    }
+    let placed = BorrowedIdentities::build(|add| {
+        for occurrence in &ir.model.occurrences {
+            add(occurrence.prototype.as_str(), occurrence.id.as_str());
+        }
+    });
+    for definition in definitions {
+        let placement = placed.get(definition.id.as_str());
+        if definition.is_root() {
+            if let Some(&occurrence) = placement {
+                super::record_related_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    crate::report::Severity::Error,
+                    definition.id.as_str(),
+                    &[occurrence],
+                    format_args!("an occurrence places the root definition"),
+                );
+            }
+        } else if placement.is_none()
+            && whole
+            && !matches!(definition.storage, crate::products::Storage::External(_))
+            && !(definition.bodies.is_empty()
+                && definition.tessellations.is_empty()
+                && definition.occurrences.is_empty())
+        {
+            record_finding(
+                findings,
+                Check::Counts,
+                crate::report::Severity::Error,
+                Some(definition.id.as_str()),
+                format_args!("a definition no occurrence places holds content but is not the root definition"),
+            );
+        }
+    }
+}
+
 /// A definition that places itself through its occurrences, if any.
 ///
 /// Definitions whose occurrences place only definitions already cleared are
@@ -339,6 +410,7 @@ fn placement_cycle<'ir>(
 mod tests {
     mod admission;
     mod history_owners;
+    mod root;
     use super::check_products;
     use crate::document::CadIr;
     use crate::ids::OccurrenceId;

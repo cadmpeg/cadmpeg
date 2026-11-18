@@ -1278,6 +1278,11 @@ impl CodecBackend for FcstdCodec {
             .as_ref()
             .and_then(|dialects| dialect::FcstdDialect::dialect_loss(dialects.primary()));
         losses.extend(dialect_losses);
+        ir.state_root_definition(
+            ctx,
+            product::document_definition_id()?,
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
         // Only the FCStd writer reads this digest, and it admits only a `Full`
         // document. The serialization and hash are too costly to pay below that.
         if ctx.depth() == DecodeDepth::Full {

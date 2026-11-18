@@ -164,7 +164,13 @@ impl CodecBackend for RhinoCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        container::decode(ctx, root)
+        let mut decoded = container::decode(ctx, root)?;
+        decoded.ir.state_root_definition(
+            ctx,
+            product::root_definition_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        Ok(decoded)
     }
 }
 

@@ -199,6 +199,14 @@ fn decoded(
         admitted_entities,
         "admit NX entities",
     )?;
+    ir.state_root_definition(
+        ctx,
+        cadmpeg_ir::ids::ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("nx", "model", "product-definition"),
+            cadmpeg_ir::identity_key!("root"),
+        ),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;

@@ -712,7 +712,10 @@ impl<'a> Builder<'a> {
         let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
         let has_model_items = !emitted_items.is_empty();
-        if self.ir.model.product_definitions.is_empty() {
+        if cadmpeg_ir::products::stated_definitions(&self.ir.model.product_definitions)
+            .next()
+            .is_none()
+        {
             let origin = geometry::placement(
                 &mut self.emitter,
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),

@@ -4960,7 +4960,9 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
         ("spreadsheets", !ir.model.spreadsheets.is_empty()),
         (
             "product_definitions",
-            !ir.model.product_definitions.is_empty(),
+            cadmpeg_ir::products::stated_definitions(&ir.model.product_definitions)
+                .next()
+                .is_some(),
         ),
         ("occurrences", !ir.model.occurrences.is_empty()),
         ("assembly_joints", !ir.model.assembly_joints.is_empty()),
