@@ -2352,7 +2352,7 @@ fn report_design_projection_gaps(
             )
         }) {
             report.losses.push(F3dLossCode::FeatureExtrudeOpaqueDistanceWordAssumed.note(format!(
-                "Extrude {} reads the stored blind distance with an opaque word {:#010x} at offset {} (DR-811).",
+                "Extrude {} reads the stored blind distance with an opaque word {:#010x} at offset {} (DR-819).",
                 feature.id, word.value, word.byte_offset
             )));
         }
