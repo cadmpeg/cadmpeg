@@ -475,20 +475,12 @@ pub(crate) fn bind_topology_selections(
                         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
                             operands,
                         }) => {
-                            let empty = cadmpeg_ir::features::ReplaceFaceOperands::new(
-                                FaceSelection::Unresolved,
-                                FaceSelection::Unresolved,
-                            )
-                            .map_err(CodecError::malformed)?;
-                            let (mut targets, mut replacements) =
-                                std::mem::replace(operands, empty).into_parts();
-                            resolve_face(&mut targets);
-                            resolve_face(&mut replacements);
-                            *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(
-                                targets,
-                                replacements,
-                            )
-                            .map_err(CodecError::malformed)?;
+                            operands
+                                .try_edit(|targets, replacements| {
+                                    resolve_face(targets);
+                                    resolve_face(replacements);
+                                })
+                                .map_err(CodecError::malformed)?;
                         }
                         FeatureDefinition::Operation(FeatureOperation::Hole {
                             face: Some(face),
