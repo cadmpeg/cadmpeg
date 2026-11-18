@@ -1298,7 +1298,7 @@ The two variants are exclusive. A decoder emits `Neutral` when it translates eve
 | `* /` | any quantities | exponents add or subtract; `/` is real division |
 | `^` | dimensionless base: any dimensionless exponent; base with dimension: a literal exponent `n` with every product of `n` and a base exponent an integer | exponents times `n` |
 | unary `-`, `abs` | any quantity | same |
-| `== != < <= > >=` | same quantity (Text: `==`, `!=` only) | Boolean; exact comparison of canonical values |
+| `== != < <= > >=` | same quantity; two Booleans or two Texts: `==`, `!=` only | Boolean; exact comparison of canonical values, or equality of the two Booleans or texts |
 | `and or not` | Boolean | Boolean |
 | `if(c, a, b)` | `c` Boolean; `a`, `b` same kind | that kind; only the taken branch evaluates |
 | `sin cos tan` | angle | dimensionless |
