@@ -436,13 +436,17 @@ impl crate::document::CadIr {
     /// root then owns every body that no definition owns or shows for an
     /// instance, and every tessellation that represents no body and that no
     /// definition owns: what the file holds at its top. A new root is charged
-    /// to `ctx` as one entity.
+    /// to `ctx` as one entity. A container decode holds no model records, so
+    /// it states none and returns `None`.
     pub fn state_root_definition(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: ProductDefinitionId,
         document: ExternalDocument,
-    ) -> Result<&mut ProductDefinition, cadmpeg_core::CodecError> {
+    ) -> Result<Option<&mut ProductDefinition>, cadmpeg_core::CodecError> {
+        if ctx.container_only() {
+            return Ok(None);
+        }
         let definitions = &self.model.product_definitions;
         let held: std::collections::BTreeSet<&str> = definitions
             .iter()
@@ -490,7 +494,7 @@ impl crate::document::CadIr {
         let root = &mut self.model.product_definitions[index];
         root.bodies.extend(bodies);
         root.tessellations.extend(tessellations);
-        Ok(root)
+        Ok(Some(root))
     }
 }
 

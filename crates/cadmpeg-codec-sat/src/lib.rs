@@ -59,6 +59,9 @@ impl CodecBackend for SatCodec {
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         let mut decoded = decode::decode(ctx, root.window())?;
+        if decoded.body.transfer.depth() == cadmpeg_core::decode::DecodeDepth::Container {
+            return Ok(decoded);
+        }
         decoded.ir.state_root_definition(
             ctx,
             cadmpeg_ir::ids::ProductDefinitionId::compose(

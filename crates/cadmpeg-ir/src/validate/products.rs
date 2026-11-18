@@ -282,12 +282,15 @@ pub(super) fn check_products(
 /// occurrence places and that holds bodies, tessellations, or occurrences is
 /// the top of a product tree, which only the root is. The root is what the
 /// decode's root file holds at its top, so only a decoded document, one with
-/// a `source`, must state it and no other top; a fragment's root and the
-/// placements of its tops can lie outside it. The counts are not in the
-/// decoder admission sets, which judge candidate parts of a document.
+/// a `source`, that holds the model class must state it and no other top; a
+/// fragment's root and the placements of its tops can lie outside it. The
+/// counts are not in the decoder admission sets, which judge candidate parts
+/// of a document.
 fn check_root_definition(ir: &CadIr, findings: &mut Vec<Finding>) {
     let definitions = &ir.model.product_definitions;
-    let whole = ir.source.is_some() && !ir.fragment;
+    let whole = ir.source.is_some()
+        && !ir.fragment
+        && ir.scope().holds(cadmpeg_core::decode::ArenaClass::Model);
     let mut roots = definitions.iter().filter(|definition| definition.is_root());
     let first = roots.next();
     if first.is_none() && whole {

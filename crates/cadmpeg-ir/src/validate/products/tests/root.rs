@@ -47,6 +47,11 @@ fn summary(ir: &CadIr) -> Vec<(Check, Option<String>, String)> {
 #[test]
 fn a_decoded_document_states_exactly_one_root_definition() {
     assert!(summary(&CadIr::empty()).is_empty());
+    let mut container = decoded();
+    container
+        .set_scope(cadmpeg_core::decode::ContentScope::container())
+        .unwrap();
+    assert!(summary(&container).is_empty());
     let mut ir = decoded();
     assert_eq!(
         summary(&ir),

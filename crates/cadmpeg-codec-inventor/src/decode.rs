@@ -1548,13 +1548,16 @@ fn decode_container<'a>(
         ir.geometry = Topology::default();
         ir.model = Model::default();
     }
-    let root = ir.state_root_definition(ctx, root_product_id(), ExternalDocument::default())?;
-    if root.kind.is_none() {
-        root.kind = match document_kind {
-            DocumentKind::Part => Some(ProductDefinitionKind::Part),
-            DocumentKind::Assembly => Some(ProductDefinitionKind::Assembly),
-            _ => None,
-        };
+    if let Some(root) =
+        ir.state_root_definition(ctx, root_product_id(), ExternalDocument::default())?
+    {
+        if root.kind.is_none() {
+            root.kind = match document_kind {
+                DocumentKind::Part => Some(ProductDefinitionKind::Part),
+                DocumentKind::Assembly => Some(ProductDefinitionKind::Assembly),
+                _ => None,
+            };
+        }
     }
     if document_kind == DocumentKind::Part && ctx.depth() >= DecodeDepth::Design {
         crate::design_v11::project(

@@ -59,6 +59,7 @@ fn a_geometry_document_gains_a_root_that_owns_its_top() {
     ]);
     let root = ir
         .state_root_definition(&ctx, root_id(), ExternalDocument::document_id("uid"))
+        .unwrap()
         .unwrap();
     assert!(root.is_root());
     assert_eq!(
@@ -115,6 +116,7 @@ fn a_stated_root_is_kept_and_owns_only_what_no_definition_holds() {
     ir.model.product_definitions.extend([part, assembly]);
     let root = ir
         .state_root_definition(&ctx, root_id(), ExternalDocument::default())
+        .unwrap()
         .unwrap();
     assert_eq!(root.id.as_str(), "test:model:product-definition#assembly");
     assert_eq!(
