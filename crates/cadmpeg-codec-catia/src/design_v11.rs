@@ -43,8 +43,8 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
 }
 
 /// The part's root definition: the `File` definition with no source that no
-/// occurrence places, stated here where the decode states none. It owns the
-/// bodies no other definition owns (§8.1).
+/// occurrence places, stated here where the decode states none. It lists no
+/// body: no member the design states produces one (interim, errata A1).
 fn root_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -68,22 +68,10 @@ fn root_definition(
         &cadmpeg_ir::identity_namespace!("catia", "model", "product-definition"),
         cadmpeg_ir::identity_key!("root"),
     );
-    let held = ir
-        .model
-        .product_definitions
-        .iter()
-        .flat_map(|definition| &definition.bodies)
-        .collect::<BTreeSet<_>>();
-    let mut root = ProductDefinition::root(id.clone(), ExternalDocument::default());
-    root.bodies = ir
-        .geometry
-        .bodies
-        .iter()
-        .map(|body| &body.id)
-        .filter(|body| !held.contains(body))
-        .cloned()
-        .collect();
-    ir.model.product_definitions.push(root);
+    ir.model.product_definitions.push(ProductDefinition::root(
+        id.clone(),
+        ExternalDocument::default(),
+    ));
     ir.model.product_definitions.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(id)
 }

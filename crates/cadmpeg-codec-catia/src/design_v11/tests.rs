@@ -59,6 +59,8 @@ fn a_part_with_parameters_states_one_scope_over_its_root_definition() {
     };
     assert!(root.is_root());
     assert_eq!(root.id.as_str(), "catia:model:product-definition#root");
+    assert!(root.bodies.is_empty());
+    assert!(!ir.geometry.bodies.is_empty());
     let [scope] = ir.design.scopes.as_slice() else {
         panic!("one design scope");
     };

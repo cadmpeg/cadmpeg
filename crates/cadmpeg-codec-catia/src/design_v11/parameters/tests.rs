@@ -18,6 +18,8 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::test_formula::{
     standard_catpart_with_formula_relation, standard_catpart_with_typed_formula_inputs,
+    standard_catpart_with_typed_formula_inputs_and_object_payload,
+    standard_catpart_with_typed_formula_relation,
 };
 use crate::CatiaCodec;
 
@@ -143,28 +145,68 @@ fn a_predicate_keeps_its_source_text_with_resolved_bindings() {
 }
 
 #[test]
-fn a_formula_whose_tree_is_ill_typed_keeps_its_source_text() {
-    let result = decode(standard_catpart_with_typed_formula_inputs(
-        6,
+fn a_formula_of_an_integer_and_an_angle_is_neutral() {
+    let result = decode(standard_catpart_with_typed_formula_relation(
+        4,
         false,
-        &[
-            ("#1_", "Real", "Start", "#1_ /2", 2.0),
-            ("#2_", "Real", "End", "#2_ /3", 10.0),
-            ("#3_", "Real", "Fraction", "#3_ /4", 0.25),
-        ],
-        "LENGTH",
-        None,
-        "#1_ /2+1mm",
+        "Integer",
+        "ANGLE",
+        2.0,
+        0.5,
+        "#1_ /2*0.25rad",
     ));
+    let input = parameter(&result, "Thickness");
+    assert_eq!(input.kind, ValueKind::Integer);
+    assert_eq!(input.value, Some(ParameterValue::Integer(2)));
+    assert_eq!(input.definition, neutral("2", &[]));
     let output = parameter(&result, "Result");
-    let ParameterDefinition::Expression(Expression::Source { dialect, tokens }) =
-        &output.definition
-    else {
-        panic!("source text: {:?}", output.definition);
-    };
-    assert_eq!(*dialect, ExpressionDialect::Catia);
-    assert!(matches!(
-        tokens.as_slice(),
-        [ExpressionToken::Reference(_), ExpressionToken::Text(rest)] if rest == "+1mm"
-    ));
+    assert_eq!(output.kind, ValueKind::Quantity(Quantity::ANGLE));
+    assert_eq!(
+        output.definition,
+        neutral("$0 * 0.25[rad]", &[reference(&input.id)])
+    );
+}
+
+#[test]
+fn a_formula_whose_tree_disagrees_with_its_stored_value_keeps_its_source_text() {
+    let result = decode(
+        standard_catpart_with_typed_formula_inputs_and_object_payload(
+            4,
+            false,
+            &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
+            "LENGTH",
+            None,
+            "#1_ /2+1mm",
+            (&[0xfe], Some(0)),
+        ),
+    );
+    let width = reference(&parameter(&result, "Width").id);
+    let formula = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| !parameter.dependencies.is_empty())
+        .unwrap();
+    let output = result
+        .ir()
+        .design
+        .parameters
+        .iter()
+        .find(|parameter| parameter.id == formula.id)
+        .unwrap();
+    assert_eq!(
+        output.value,
+        Some(ParameterValue::Number(FiniteReal::new(1.0).unwrap()))
+    );
+    assert_eq!(
+        output.definition,
+        ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::Catia,
+            tokens: vec![
+                ExpressionToken::Reference(width),
+                ExpressionToken::Text("+1mm".into()),
+            ],
+        })
+    );
 }
