@@ -1068,7 +1068,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || direction.is_none()
                 || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool, .. }) => {
             !body_selection_is_resolved(targets)
                 || match tool {
                     cadmpeg_ir::features::SplitBodyTool::Faces(faces) => {

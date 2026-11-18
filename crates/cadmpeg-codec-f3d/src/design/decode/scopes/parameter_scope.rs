@@ -296,6 +296,7 @@ pub(crate) fn decode_parameter_scopes(
             if let Some(loss) = extrude_extent_native_loss(&scope) {
                 losses.push(loss);
             }
+            super::split::decode_split_tool_extension(bytes, &mut scope, &mut losses);
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
