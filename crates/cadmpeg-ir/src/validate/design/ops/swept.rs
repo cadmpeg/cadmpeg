@@ -223,9 +223,8 @@ fn check_controls(
 
 fn check_path_extent(site: Site<'_>, extent: &PathExtent, findings: &mut Vec<Finding>) {
     let literal = |fraction: &Option<Dimension<crate::scalar::Fraction>>| match fraction {
-        None => Some(0.0),
         Some(Dimension::Literal(value)) => Some(value.get()),
-        Some(_) => None,
+        _ => None,
     };
     for value in [literal(&extent.along), literal(&extent.against)]
         .into_iter()
@@ -289,13 +288,16 @@ pub(super) fn check_helical_sweep(
         }
     }
     if let Some(crate::design::ops::swept::HelixStart::Circle(circle)) = &sweep.helix.start {
-        check_helix_circle(site, circle, findings);
+        check_helix_circle(index, site, circle, findings);
     }
     options::check_solid_output(index, site, &sweep.output, findings);
 }
 
-/// `HelixStart::Circle` selects exactly one circle or arc.
+/// `HelixStart::Circle` selects exactly one circle or arc. An edge or a
+/// curve name does not state its curve's shape, so only a sketch entity's
+/// curve is read.
 pub(super) fn check_helix_circle(
+    index: &DesignRecords<'_>,
     site: Site<'_>,
     circle: &crate::design::selection::OrderedSelection,
     findings: &mut Vec<Finding>,
@@ -322,6 +324,17 @@ pub(super) fn check_helix_circle(
             findings,
             site.entity,
             format_args!("HelixStart::Circle picks {class}, not a circle or arc"),
+        );
+    }
+    let entities = picks::named(circle).unwrap_or_default();
+    if entities
+        .iter()
+        .any(|pick| super::sketches::picks_no_circle(index, &pick.target))
+    {
+        error(
+            findings,
+            site.entity,
+            format_args!("HelixStart::Circle picks a sketch entity whose curve is no circle or arc"),
         );
     }
 }

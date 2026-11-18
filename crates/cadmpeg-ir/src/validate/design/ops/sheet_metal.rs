@@ -526,7 +526,7 @@ pub(super) fn check_sheet_metal(
                 );
             }
             for constraint in constraints {
-                assembly::check_joint(site, constraint, findings);
+                assembly::check_joint(index, site, constraint, findings);
                 let names_tool = constraint.connectors.iter().any(|connector| {
                     let wire = super::wire_strings(connector);
                     wire.contains(tool.definition.as_str())

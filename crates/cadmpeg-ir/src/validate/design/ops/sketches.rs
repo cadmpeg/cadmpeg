@@ -250,6 +250,35 @@ fn curve<S: SketchSpace>(entity: &SketchEntity<S>) -> Option<&S::Curve> {
     }
 }
 
+fn shape_in<S: Space>(index: &DesignRecords<'_>, id: &str) -> Option<Shape> {
+    S::entities(index)
+        .iter()
+        .find(|entity| S::entity(&entity.id) == id)
+        .and_then(curve)
+        .map(S::shape)
+}
+
+/// The stated shape of the sketch entity a pick targets. `None` where the
+/// pick targets no sketch entity, or the entity states no curve.
+fn picked_shape(index: &DesignRecords<'_>, target: &PickTarget) -> Option<Shape> {
+    match target {
+        PickTarget::SketchEntity(id) => shape_in::<Planar>(index, id.as_str()),
+        PickTarget::SpatialSketchEntity(id) => shape_in::<Spatial>(index, id.as_str()),
+        _ => None,
+    }
+}
+
+/// Whether a pick targets a sketch entity whose stated curve is no point.
+pub(super) fn picks_no_point(index: &DesignRecords<'_>, target: &PickTarget) -> bool {
+    picked_shape(index, target).is_some_and(|shape| shape != Shape::Point)
+}
+
+/// Whether a pick targets a sketch entity whose stated curve is no circle
+/// or arc.
+pub(super) fn picks_no_circle(index: &DesignRecords<'_>, target: &PickTarget) -> bool {
+    picked_shape(index, target).is_some_and(|shape| !shape.circular())
+}
+
 /// The sketches of the design, both spaces.
 struct Sketches<'a> {
     planar: BTreeMap<&'a str, &'a crate::design::ops::sketch::Sketch>,

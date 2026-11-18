@@ -157,7 +157,7 @@ fn check_operation(
         FeatureOperation::BoundaryFill(fill) => {
             surface::check_boundary_fill(index, site, fill, findings);
         }
-        FeatureOperation::Curve(curve) => surface::check_curve(site, curve, findings),
+        FeatureOperation::Curve(curve) => surface::check_curve(index, site, curve, findings),
         FeatureOperation::Form(form) => surface::check_form(site, form, findings),
         FeatureOperation::SheetMetal(sheet) => {
             sheet_metal::check_sheet_metal(index, site, sheet, findings);
@@ -165,7 +165,7 @@ fn check_operation(
         FeatureOperation::Mesh(mesh) => surface::check_mesh(index, site, mesh, findings),
         FeatureOperation::Place(place) => assembly::check_place(index, site, place, findings),
         FeatureOperation::PlaceSet(set) => assembly::check_place_set(index, site, set, findings),
-        FeatureOperation::Joint(joint) => assembly::check_joint(site, joint, findings),
+        FeatureOperation::Joint(joint) => assembly::check_joint(index, site, joint, findings),
         FeatureOperation::RigidGroup(group) => {
             assembly::check_rigid_group(index, site, group, findings);
         }

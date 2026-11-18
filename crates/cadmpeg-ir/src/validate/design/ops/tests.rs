@@ -7,14 +7,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::text::NonBlankString;
 
 use super::super::fixture::{self, assert_finding, assert_no_design_finding, design_findings, id};
-use crate::design::construction::{Construction, FrameAxis};
+use crate::design::construction::{Construction, FrameAxis, PostStep};
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::EvaluationStatus;
-use crate::design::feature::{Driver, FeatureOperation};
+use crate::design::feature::{Driver, FeatureOperation, OperationFamily};
 use crate::design::names::{InstanceIndex, NameKind, TopoName};
 use crate::design::ops::assembly::{
-    ComponentInstance, ComponentPattern, MirrorComponents, MirrorResult, Place, PlaceSet,
+    AssemblyFeature, ComponentInstance, ComponentPattern, MirrorComponents, MirrorResult, Place,
+    PlaceSet,
 };
+use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::ops::body::{
     Combine, InstanceChange, InstanceOverride, NewComponent, Pattern, PatternInstances,
     PatternSeeds, TemplateInput, TemplateInstance, TransformBodies, TransformMode, TransformStep,
@@ -22,11 +24,12 @@ use crate::design::ops::body::{
 };
 use crate::design::ops::dressup::{
     BlendControls, Bore, Draft, DraftAngle, DraftSet, Fillet, FilletSection, FilletSet, FilletSize,
-    Hole, HoleHead, HolePositions, HoleShape, ThreadSpec, Transition, TransitionKind,
+    Hole, HoleHead, HolePositions, HoleShape, StageHole, StandardSize, ThreadSpec, Transition,
+    TransitionKind,
 };
 use crate::design::ops::shared::{
-    AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, JointOffset, Limit,
-    LinearRun, PatternLayout, PatternRun, RunSides, Spacing, Span,
+    AxisLimits, Bounds, Coupling, Joint, JointConnector, JointKind, JointMotion, JointOffset,
+    Limit, LinearRun, PatternLayout, PatternRun, RunSides, Spacing, Span,
 };
 use crate::design::ops::sheet_metal::{
     BendAllowance, BendSpec, Flange, FlangeWidth, KFactorRow, KFactorTable, SheetMetal,
@@ -38,7 +41,8 @@ use crate::design::ops::sketch::{
 };
 use crate::design::ops::surface::{Knit, MeshFeature, MeshKind};
 use crate::design::ops::swept::{
-    Extrude, ExtrudeDraft, HoleDraft, Loft, Primitive, PrimitiveShape,
+    Extrude, ExtrudeDraft, HelicalSection, HelicalSweep, Helix, HelixShape, HelixStart, HoleDraft,
+    Loft, PathExtent, Primitive, PrimitiveShape, SpineLimits, Sweep, SweepControls, SweepSection,
 };
 use crate::design::options::{
     BodyForm, Boolean, BooleanOp, NativeOption, SheetOutput, SolidOutput, Targets,
@@ -54,7 +58,7 @@ use crate::ids::OccurrenceId;
 use crate::math::Point2;
 use crate::products::Occurrence;
 use crate::report::Severity;
-use crate::scalar::{Angle, Length, PositiveLength};
+use crate::scalar::{Angle, Fraction, Length, PositiveLength};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
 use crate::units::FinitePoint2;
@@ -944,7 +948,7 @@ fn a_motion_joint_limits_the_freedoms_it_leaves() {
     let ir = with(joint(motion(revolute, vec![slide(FrameAxis::Z)])));
     assert_finding(&ir, "a degree of freedom the motion does not leave");
     assert_finding(&ir, "Bounds has min above max");
-    assert_finding(&ir, "a connector with no inputs has no resolved value");
+    assert_finding(&ir, "no inputs and no steps has no resolved value");
     assert_finding(
         &with(joint(JointKind::Slot {
             position: None,
@@ -1222,4 +1226,260 @@ fn a_profile_region_has_an_outer_boundary_of_curves() {
     })]);
     ir.design.features[1].definition.operation = FeatureOperation::Extrude(Box::new(picking));
     assert_finding(&ir, "which is no non-construction curve of the sketch");
+}
+
+// ----------------------------------------------------------------- stated content only
+
+#[track_caller]
+fn assert_no_finding_containing(ir: &CadIr, fragment: &str) {
+    let findings = design_findings(ir);
+    assert!(
+        !findings.iter().any(|f| f.message.contains(fragment)),
+        "a design finding containing {fragment:?} in {findings:#?}"
+    );
+}
+
+fn sweep(extent: PathExtent) -> FeatureOperation {
+    FeatureOperation::Sweep(Box::new(Sweep {
+        section: SweepSection::Profile(unread()),
+        path: unread(),
+        controls: SweepControls {
+            orientation: None,
+            twist: None,
+            scaling: None,
+        },
+        guides: Vec::new(),
+        extent: Some(extent),
+        placement: None,
+        limits: SpineLimits {
+            start: None,
+            end: None,
+        },
+        transition: None,
+        output: solid(),
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }))
+}
+
+#[test]
+fn an_unstated_path_extent_fraction_is_not_zero() {
+    let unstated = PathExtent {
+        along: None,
+        against: None,
+    };
+    assert_no_finding_containing(&with(sweep(unstated)), "PathExtent");
+    let zero = || Some(Dimension::Literal(Fraction::new(0.0).unwrap()));
+    let literal = PathExtent {
+        along: zero(),
+        against: zero(),
+    };
+    assert_finding(&with(sweep(literal)), "along + against not above zero");
+}
+
+#[test]
+fn a_connector_placed_by_a_step_has_no_resolved_value_to_state() {
+    let stepped = || {
+        JointConnector::Frame(Construction {
+            after: vec![PostStep::Translate {
+                axis: FrameAxis::Z,
+                distance: Dimension::Literal(length(1.0)),
+            }],
+            ..Construction::default()
+        })
+    };
+    let mut operation = joint(JointKind::Coincident { offset: None });
+    if let FeatureOperation::Joint(joint) = &mut operation {
+        joint.connectors = [stepped(), stepped()];
+    }
+    assert_no_finding_containing(&with(operation), "no resolved value");
+    assert_finding(
+        &with(joint(JointKind::Coincident { offset: None })),
+        "no inputs and no steps has no resolved value",
+    );
+}
+
+#[test]
+fn coupling_joints_pick_joint_features() {
+    let coupling = || {
+        joint(JointKind::Coupling {
+            coupling: Coupling::Screw { pitch: None },
+            joints: Some(named(vec![
+                pick(PickTarget::Feature(feature("fillet"))),
+                pick(PickTarget::Feature(feature("other"))),
+            ])),
+        })
+    };
+    let mut ir = with(coupling());
+    ir.design
+        .features
+        .push(fixture::unresolved("other", OperationFamily::Extrude));
+    assert_finding(&ir, "which is no Joint feature");
+    for feature in &mut ir.design.features[1..] {
+        feature.definition.operation = FeatureOperation::Unresolved {
+            family: OperationFamily::Joint,
+        };
+    }
+    assert_no_finding_containing(&ir, "which is no Joint feature");
+}
+
+#[test]
+fn a_symmetric_contour_flange_extent_is_admitted() {
+    let flange = |extent| {
+        sheet(SheetMetalKind::ContourFlange {
+            profile: unread(),
+            edges: None,
+            width: None,
+            extent: Some(extent),
+            thickness: None,
+            bend: bend(),
+            vertex_bends: Vec::new(),
+            rule: None,
+        })
+    };
+    let symmetric = Span::Symmetric {
+        amount: Dimension::Literal(length(5.0)),
+        measure: None,
+    };
+    assert_no_finding_containing(&with(flange(symmetric)), "ContourFlange.extent");
+    let negative = Span::Between {
+        start: Box::new(Limit::AtOrigin),
+        end: Box::new(Limit::Amount(Dimension::Literal(length(-1.0)))),
+    };
+    assert_finding(&with(flange(negative)), "a ContourFlange.extent end");
+}
+
+/// The sketch fixture with a circle beside its line and points.
+fn sketched_with_circle() -> CadIr {
+    let mut ir = sketched();
+    ir.design.sketch_entities.push(sketch_entity(
+        "circle",
+        PlanarCurve::Circle {
+            center: point(0.0, 0.0),
+            radius: positive(1.0),
+        },
+        Vec::new(),
+    ));
+    ir
+}
+
+fn sketch_entity_pick(key: &str) -> Picked {
+    pick(PickTarget::SketchEntity(id("sketch-entity", key)))
+}
+
+#[test]
+fn a_helix_start_circle_picks_a_circle_or_arc() {
+    let helical = |key| {
+        FeatureOperation::HelicalSweep(Box::new(HelicalSweep {
+            section: HelicalSection::Profile(unread()),
+            helix: Helix {
+                placement: Construction::default(),
+                start: Some(HelixStart::Circle(named(vec![sketch_entity_pick(key)]))),
+                shape: HelixShape::Helix {
+                    law: None,
+                    taper: None,
+                },
+                hand: None,
+            },
+            output: solid(),
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }))
+    };
+    let mut ir = sketched_with_circle();
+    ir.design.features[1].definition.operation = helical("line");
+    assert_finding(&ir, "whose curve is no circle or arc");
+    ir.design.features[1].definition.operation = helical("circle");
+    assert_no_finding_containing(&ir, "HelixStart::Circle");
+}
+
+#[test]
+fn hole_points_pick_points_or_sketches() {
+    let at = |picked| {
+        let mut operation = hole(None, false);
+        if let FeatureOperation::Hole(hole) = &mut operation {
+            hole.thread = None;
+            hole.positions = HolePositions::Points {
+                points: named(vec![picked]),
+                centers: None,
+            };
+        }
+        operation
+    };
+    let mut ir = sketched_with_circle();
+    ir.design.features[1].definition.operation = at(sketch_entity_pick("line"));
+    assert_finding(&ir, "that is no point");
+    ir.design.features[1].definition.operation = at(sketch_entity_pick("start"));
+    assert_no_finding_containing(&ir, "HolePositions::Points");
+    let mut plane = fixture::unresolved("plane", OperationFamily::Datum);
+    plane.definition.operation = FeatureOperation::Datum(Box::new(Datum {
+        element: DatumElement::Plane(Construction::default()),
+        link: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+    }));
+    ir.design.features.push(plane);
+    ir.design.features[1].definition.operation = at(pick(PickTarget::Datum {
+        feature: feature("plane"),
+        part: None,
+    }));
+    assert_finding(&ir, "that is no point");
+}
+
+#[test]
+fn an_index_has_the_followed_and_composite_coordinates() {
+    let follow = PatternLayout::Follow(named(vec![pick(PickTarget::Feature(feature("fillet")))]));
+    let mut ir = with(pattern(follow, vec![skipped(vec![1, 1, 1])]));
+    ir.design.features[1].definition.operation = pattern(linear(None, 3), Vec::new());
+    assert_finding(&ir, "other than one coordinate per run");
+    let composite = || PatternLayout::Composite(vec![linear(None, 2), linear(None, 2)]);
+    assert_finding(
+        &with(pattern(composite(), vec![skipped(vec![1])])),
+        "other than one coordinate per run",
+    );
+    assert_no_finding_containing(
+        &with(pattern(composite(), vec![skipped(vec![1, 1])])),
+        "one coordinate per run",
+    );
+}
+
+#[test]
+fn an_assembly_feature_operation_states_no_body_operand() {
+    let cutting = |targets| {
+        let mut operation = extrude();
+        operation.output.boolean = Some(Boolean::Apply {
+            op: BooleanOp::Cut,
+            targets,
+        });
+        FeatureOperation::AssemblyFeature(Box::new(AssemblyFeature {
+            participants: unread(),
+            effect: None,
+            operation: Box::new(FeatureOperation::Extrude(Box::new(operation))),
+        }))
+    };
+    let bodies = Targets::Selected(named(vec![entity(NameKind::Body, 1)]));
+    assert_finding(&with(cutting(Some(bodies))), "a body operand of its own");
+    assert_no_finding_containing(&with(cutting(None)), "body operand");
+}
+
+#[test]
+fn a_tapped_series_stage_states_no_standard() {
+    let mut operation = hole(None, true);
+    if let FeatureOperation::Hole(hole) = &mut operation {
+        let FeatureOperation::Hole(tapped) = self::hole(None, false) else {
+            unreachable!();
+        };
+        hole.series[0].hole = StageHole::Stated {
+            shape: Box::new(tapped.shape),
+            extent: None,
+            standard: Some(StandardSize {
+                standard: NonBlankString::new("ISO").unwrap(),
+                kind: None,
+                size: None,
+                class: None,
+            }),
+            thread: tapped.thread.map(Box::new),
+        };
+    }
+    assert_finding(&with(operation), "a tapped series stage states");
 }

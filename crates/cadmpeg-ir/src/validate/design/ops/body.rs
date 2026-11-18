@@ -9,7 +9,7 @@ use super::picks::{self, Class};
 use super::{assembly, error, Site};
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
-use crate::design::feature::{Feature, FeatureOperation};
+use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
 use crate::design::names::InstanceIndex;
 use crate::design::ops::body::{
     Combine, DeleteFaces, Flex, Graft, InstanceChange, Kept, MoveFaces, Pattern, PatternInstances,
@@ -193,7 +193,7 @@ pub(super) fn check_pattern(
                 );
             }
             let indices: Vec<&InstanceIndex> = overrides.iter().map(|o| &o.index).collect();
-            check_indices(site, &pattern.layout, &indices, findings);
+            check_indices(index, site, &pattern.layout, &indices, findings);
             for instance in overrides {
                 if let InstanceChange::Varied { parameters } = &instance.change {
                     if parameters.is_empty() {
@@ -223,7 +223,7 @@ pub(super) fn check_pattern(
         }
         PatternInstances::Members(members) => {
             let indices: Vec<&InstanceIndex> = members.iter().map(|m| &m.index).collect();
-            check_indices(site, &pattern.layout, &indices, findings);
+            check_indices(index, site, &pattern.layout, &indices, findings);
             let seeds = seeds.unwrap_or_default();
             let per_member = match &pattern.seeds {
                 PatternSeeds::Features { features, .. } => picks::count(features),
@@ -315,18 +315,58 @@ fn check_generated_members(
 }
 
 /// The coordinates an index of the layout holds, where the layout decides
-/// them.
-fn coordinates(layout: &PatternLayout) -> Option<usize> {
+/// them (§6.5): a `Composite` the sum of its stages', a `Follow` its
+/// followed pattern's. `follow` is whether a `Follow` is resolved; a
+/// followed pattern's own `Follow` is not, since no pattern follows a
+/// follower.
+fn coordinates(index: &DesignRecords<'_>, layout: &PatternLayout, follow: bool) -> Option<usize> {
     match layout {
         PatternLayout::Linear { second, .. } => Some(1 + usize::from(second.is_some())),
         PatternLayout::Circular { radial, .. } => Some(1 + usize::from(radial.is_some())),
-        PatternLayout::Path { .. } | PatternLayout::Chain(_) => Some(1),
+        PatternLayout::Path { .. }
+        | PatternLayout::Chain(_)
+        | PatternLayout::Points { .. }
+        | PatternLayout::Table(_)
+        | PatternLayout::Mirror { .. } => Some(1),
         PatternLayout::Dimensions(runs) => Some(runs.len()),
+        PatternLayout::Composite(stages) => stages
+            .iter()
+            .map(|stage| match stage {
+                PatternLayout::Composite(_) => None,
+                stage => coordinates(index, stage, follow),
+            })
+            .sum(),
+        PatternLayout::Follow(followed) if follow => {
+            coordinates(index, followed_layout(index, followed)?, false)
+        }
+        PatternLayout::Follow(_) | PatternLayout::Scale { .. } | PatternLayout::Native(_) => None,
+    }
+}
+
+/// The layout of the pattern a `Follow` picks, where it picks one feature
+/// of this definition that states a pattern operation.
+fn followed_layout<'a>(
+    index: &DesignRecords<'a>,
+    followed: &OrderedSelection,
+) -> Option<&'a PatternLayout> {
+    let [pick] = picks::named(followed)? else {
+        return None;
+    };
+    let PickTarget::Feature(target) = &pick.target else {
+        return None;
+    };
+    if pick.context.is_some() {
+        return None;
+    }
+    match &index.features.get(target.as_str())?.definition.operation {
+        FeatureOperation::Pattern(pattern) => Some(&pattern.layout),
+        FeatureOperation::ComponentPattern(pattern) => Some(&pattern.layout),
         _ => None,
     }
 }
 
 pub(super) fn check_indices(
+    index: &DesignRecords<'_>,
     site: Site<'_>,
     layout: &PatternLayout,
     indices: &[&InstanceIndex],
@@ -339,7 +379,7 @@ pub(super) fn check_indices(
             ..
         }
     );
-    let expected = coordinates(layout);
+    let expected = coordinates(index, layout, true);
     for (at, index) in indices.iter().enumerate() {
         if indices[..at].contains(index) {
             error(
@@ -736,6 +776,12 @@ fn check_follow(
         let layout = match index.features.get(at).map(|f| &f.definition.operation) {
             Some(FeatureOperation::Pattern(pattern)) => &pattern.layout,
             Some(FeatureOperation::ComponentPattern(pattern)) => &pattern.layout,
+            Some(
+                FeatureOperation::Unresolved {
+                    family: OperationFamily::Pattern | OperationFamily::ComponentPattern,
+                }
+                | FeatureOperation::Native { .. },
+            ) => return,
             _ => {
                 if at == target.as_str() {
                     error(

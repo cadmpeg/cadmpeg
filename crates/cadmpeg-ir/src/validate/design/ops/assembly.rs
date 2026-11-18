@@ -8,15 +8,18 @@ use super::{body, error, Site};
 use crate::design::construction::FrameAxis;
 use crate::design::container::Container;
 use crate::design::dimension::Dimension;
-use crate::design::feature::{Driver, Feature, FeatureOperation};
+use crate::design::feature::{Driver, Feature, FeatureOperation, OperationFamily};
 use crate::design::ops::assembly::{
     AssemblyFeature, ComponentPattern, MirrorComponents, Place, PlaceSet, RigidGroup,
 };
+use crate::design::ops::body::SplitMode;
+use crate::design::ops::dressup::OffsetResult;
 use crate::design::ops::shared::{
     AxisLimits, Bounds, Joint, JointConnector, JointKind, JointMotion, PathAxisControl,
     PathRollControl,
 };
-use crate::design::selection::{PickContext, PickTarget, StepRef};
+use crate::design::options::{Boolean, SheetOutput, SolidOutput, Targets};
+use crate::design::selection::{PickContext, PickTarget, Picks, SetSelection, StepRef};
 use crate::ids::OccurrenceId;
 use crate::report::check::Finding;
 use crate::scalar::{Angle, Length};
@@ -92,7 +95,7 @@ pub(super) fn check_place(
         );
     }
     for constraint in &place.constraints {
-        check_joint(site, constraint, findings);
+        check_joint(index, site, constraint, findings);
         let picks_into = constraint
             .connectors
             .iter()
@@ -179,7 +182,12 @@ fn check_bounds<Q: Copy>(
 }
 
 /// A joint's connectors fit its kind; its motion's limits name free axes.
-pub(super) fn check_joint(site: Site<'_>, joint: &Joint, findings: &mut Vec<Finding>) {
+pub(super) fn check_joint(
+    index: &DesignRecords<'_>,
+    site: Site<'_>,
+    joint: &Joint,
+    findings: &mut Vec<Finding>,
+) {
     check_connectors(site, &joint.connectors, &joint.kind, findings);
     match &joint.kind {
         JointKind::Motion { motion, limits, .. } => {
@@ -271,13 +279,35 @@ pub(super) fn check_joint(site: Site<'_>, joint: &Joint, findings: &mut Vec<Find
                     format_args!("Coupling.joints picks other than two other Joint features"),
                 );
             }
+            for target in targets.unwrap_or_default() {
+                let stated = index.features.get(target).map(|f| &f.definition.operation);
+                let joint = match stated {
+                    None
+                    | Some(
+                        FeatureOperation::Joint(_)
+                        | FeatureOperation::Unresolved {
+                            family: OperationFamily::Joint,
+                        }
+                        | FeatureOperation::Native { .. },
+                    ) => true,
+                    Some(_) => false,
+                };
+                if !joint {
+                    error(
+                        findings,
+                        site.entity,
+                        format_args!("Coupling.joints picks {target}, which is no Joint feature"),
+                    );
+                }
+            }
         }
         _ => {}
     }
 }
 
 /// The connector variants a joint kind admits, and a world connector's
-/// resolved value.
+/// resolved value. A connector with no inputs and a step is placed by its
+/// steps and is not taken for a world connector.
 pub(super) fn check_connectors(
     site: Site<'_>,
     connectors: &[JointConnector; 2],
@@ -285,18 +315,26 @@ pub(super) fn check_connectors(
     findings: &mut Vec<Finding>,
 ) {
     for connector in connectors {
-        let world = match connector {
-            JointConnector::Frame(c) => c.inputs.is_empty() && c.resolved.is_none(),
-            JointConnector::Plane(c) => c.inputs.is_empty() && c.resolved.is_none(),
-            JointConnector::Axis(c) => c.inputs.is_empty() && c.resolved.is_none(),
-            JointConnector::Point(c) => c.inputs.is_empty() && c.resolved.is_none(),
+        let unplaced = match connector {
+            JointConnector::Frame(c) => {
+                c.inputs.is_empty() && c.after.is_empty() && c.resolved.is_none()
+            }
+            JointConnector::Plane(c) => {
+                c.inputs.is_empty() && c.after.is_empty() && c.resolved.is_none()
+            }
+            JointConnector::Axis(c) => {
+                c.inputs.is_empty() && c.after.is_empty() && c.resolved.is_none()
+            }
+            JointConnector::Point(c) => {
+                c.inputs.is_empty() && c.after.is_empty() && c.resolved.is_none()
+            }
             JointConnector::Entity(_) => false,
         };
-        if world {
+        if unplaced {
             error(
                 findings,
                 site.entity,
-                format_args!("a connector with no inputs has no resolved value"),
+                format_args!("a connector with no inputs and no steps has no resolved value"),
             );
         }
     }
@@ -404,7 +442,7 @@ pub(super) fn check_component_pattern(
         .iter()
         .map(|instance| &instance.index)
         .collect();
-    body::check_indices(site, &pattern.layout, &indices, findings);
+    body::check_indices(index, site, &pattern.layout, &indices, findings);
     let mut seen = BTreeSet::new();
     for instance in &pattern.instances {
         if seeds.is_some_and(|seeds| instance.occurrences.len() != seeds) {
@@ -486,6 +524,13 @@ pub(super) fn check_assembly_feature(
             format_args!("an AssemblyFeature's operation is an assembly operation or Stored"),
         );
     }
+    if states_body_operand(&feature.operation) {
+        error(
+            findings,
+            site.entity,
+            format_args!("an AssemblyFeature's operation states a body operand of its own; participants states what the feature modifies"),
+        );
+    }
     if let Some(participants) = picks::named(&feature.participants) {
         if participants
             .iter()
@@ -497,6 +542,61 @@ pub(super) fn check_assembly_feature(
                 format_args!("an AssemblyFeature participant carries no occurrence context"),
             );
         }
+    }
+}
+
+/// Whether `operation` states bodies it acts on or combines with: a
+/// Boolean's `targets`, a hole's or an emboss's `targets`, a shell's
+/// `bodies`, a combine's `target` or `tools`, or a body pick of a split's
+/// targets or of a body operation's bodies.
+fn states_body_operand(operation: &FeatureOperation) -> bool {
+    let states = |selection: &SetSelection| {
+        !matches!(selection.picks, Picks::Unread) && !picks::is_empty(selection)
+    };
+    let targets = |targets: Option<&Targets>| match targets {
+        Some(Targets::All) => true,
+        Some(Targets::Selected(selection)) => states(selection),
+        None => false,
+    };
+    let boolean = |boolean: Option<&Boolean>| {
+        matches!(boolean, Some(Boolean::Apply { targets: t, .. }) if targets(t.as_ref()))
+    };
+    let bodies = |selection: &SetSelection| picks::classes(selection).into_iter().any(picks::is_body);
+    let output = |output: &SolidOutput| boolean(output.boolean.as_ref());
+    let sheet = |output: &SheetOutput| boolean(output.boolean.as_ref());
+    match operation {
+        FeatureOperation::Extrude(op) => output(&op.output),
+        FeatureOperation::Revolve(op) => output(&op.output),
+        FeatureOperation::Sweep(op) => output(&op.output),
+        FeatureOperation::HelicalSweep(op) => output(&op.output),
+        FeatureOperation::Primitive(op) => output(&op.output),
+        FeatureOperation::Loft(op) => output(&op.output),
+        FeatureOperation::ImplicitSweep(op) => output(&op.output),
+        FeatureOperation::Rib(op) => boolean(op.boolean.as_ref()),
+        FeatureOperation::Thicken(op) => boolean(op.boolean.as_ref()),
+        FeatureOperation::BoundaryFill(op) => boolean(op.boolean.as_ref()),
+        FeatureOperation::Patch(op) => sheet(&op.output),
+        FeatureOperation::Knit(op) => sheet(&op.output),
+        FeatureOperation::Extend(op) => op.output.as_ref().is_some_and(sheet),
+        FeatureOperation::Offset(op) => matches!(&op.result, OffsetResult::Copy(o) if sheet(o)),
+        FeatureOperation::Hole(op) => targets(op.targets.as_ref()),
+        FeatureOperation::Emboss(op) => targets(op.targets.as_ref()),
+        FeatureOperation::Shell(op) => op.bodies.as_ref().is_some_and(states),
+        FeatureOperation::Combine(op) => {
+            op.target.as_ref().is_some_and(states)
+                || !matches!(op.tools.picks, Picks::Unread) && !picks::is_empty(&op.tools)
+        }
+        FeatureOperation::Split(op) => match &op.mode {
+            SplitMode::ByTools { targets, .. } => bodies(targets),
+            SplitMode::Mutual { elements, .. } => {
+                picks::classes(elements).into_iter().any(picks::is_body)
+            }
+        },
+        FeatureOperation::DeleteBodies(op) => bodies(&op.bodies),
+        FeatureOperation::TransformBodies(op) => bodies(&op.bodies),
+        FeatureOperation::Flex(op) => bodies(&op.bodies),
+        FeatureOperation::Graft(op) => bodies(&op.body),
+        _ => false,
     }
 }
 

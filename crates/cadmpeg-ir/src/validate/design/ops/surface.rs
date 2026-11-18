@@ -256,7 +256,12 @@ pub(super) fn check_boundary_fill(
     }
 }
 
-pub(super) fn check_curve(site: Site<'_>, curve: &CurveFeature, findings: &mut Vec<Finding>) {
+pub(super) fn check_curve(
+    index: &DesignRecords<'_>,
+    site: Site<'_>,
+    curve: &CurveFeature,
+    findings: &mut Vec<Finding>,
+) {
     match &curve.definition {
         CurveDefinition::Spline(spline) => {
             let closed = matches!(spline.closed, Some(Dimension::Literal(true)));
@@ -274,7 +279,7 @@ pub(super) fn check_curve(site: Site<'_>, curve: &CurveFeature, findings: &mut V
         }
         CurveDefinition::Helix(helix) => {
             if let Some(crate::design::ops::swept::HelixStart::Circle(circle)) = &helix.start {
-                swept::check_helix_circle(site, circle, findings);
+                swept::check_helix_circle(index, site, circle, findings);
             }
         }
         CurveDefinition::Bridge { ends } => {

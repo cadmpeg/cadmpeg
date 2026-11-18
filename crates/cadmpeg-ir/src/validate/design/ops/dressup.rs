@@ -14,8 +14,9 @@ use crate::design::ops::dressup::{
     StageHole, StationAt, Stations, Thicken, Thread, ThreadLength, ThreadSpec, Transition,
     TransitionKind,
 };
+use crate::design::ops::datum::DatumElement;
 use crate::design::ops::shared::Limit;
-use crate::design::selection::PickTarget;
+use crate::design::selection::{DatumPart, PickTarget, PrincipalEntity};
 use crate::report::check::Finding;
 use crate::scalar::PositiveLength;
 
@@ -432,6 +433,21 @@ pub(super) fn check_hole(
                     format_args!("HolePositions::Points picks {class}, not a point or a sketch"),
                 );
             }
+            let no_point = picks::named(points).unwrap_or_default().iter().any(|pick| {
+                super::sketches::picks_no_point(index, &pick.target)
+                    || picks_no_datum_point(index, &pick.target)
+                    || matches!(
+                        pick.target,
+                        PickTarget::SketchFrame { entity, .. } if entity != PrincipalEntity::Origin
+                    )
+            });
+            if no_point {
+                error(
+                    findings,
+                    site.entity,
+                    format_args!("HolePositions::Points picks a sketch entity, a datum, or a sketch frame entity that is no point"),
+                );
+            }
         }
         HolePositions::Placed(placed) => {
             if placed.is_empty() {
@@ -488,6 +504,27 @@ pub(super) fn check_hole(
     check_series(index, site, hole, findings);
 }
 
+/// Whether a pick targets a datum, or a part of one, that its feature's
+/// stated element makes no point. A datum feature whose operation is not
+/// stated is not refused.
+fn picks_no_datum_point(index: &DesignRecords<'_>, target: &PickTarget) -> bool {
+    let PickTarget::Datum { feature, part } = target else {
+        return false;
+    };
+    let Some(FeatureOperation::Datum(datum)) = index
+        .features
+        .get(feature.as_str())
+        .map(|feature| &feature.definition.operation)
+    else {
+        return false;
+    };
+    match (part, &datum.element) {
+        (None | Some(DatumPart::Point(_)), DatumElement::Points(_))
+        | (Some(DatumPart::Principal(PrincipalEntity::Origin)), DatumElement::Frame(_)) => false,
+        _ => true,
+    }
+}
+
 fn check_series(
     index: &DesignRecords<'_>,
     site: Site<'_>,
@@ -542,12 +579,19 @@ fn check_series(
             StageHole::Stated {
                 shape,
                 extent,
+                standard,
                 thread,
-                ..
             } => {
                 check_hole_shape(site, shape, extent.as_deref(), findings);
                 if let Some(thread) = thread {
                     check_thread_spec(site, thread, findings);
+                    if standard.is_some() {
+                        error(
+                            findings,
+                            site.entity,
+                            format_args!("a tapped series stage states StageHole::Stated.standard; its designation is only in thread.standard"),
+                        );
+                    }
                 }
             }
         }
