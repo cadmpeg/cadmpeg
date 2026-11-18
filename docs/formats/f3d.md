@@ -873,6 +873,7 @@ The feature-family name is display text that varies with the application languag
 | `F84CD988-9696-458D-8AF3-795D12E6B9EF` | `MeshSmooth` |
 | `D1728651-3640-4CCF-8083-AF7703013978` | `Mirror` |
 | `DDB7BC00-2E41-4BC1-8DA1-A0F104A67E71` | `Modify` |
+| `29098FE8-08FC-4FD8-9D31-42CF164F73EB` | `MotionLink` |
 | `64E40C8E-E564-469C-8690-5C4E77C1B02C` | `Move` |
 | `21B67709-045F-4903-B3FA-FD82E3DC3ADA` | `MoveFace` |
 | `D087EFE5-2D28-42E6-BB45-61739E7D0204` | `OffsetFaces` |
