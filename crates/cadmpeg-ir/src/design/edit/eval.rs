@@ -804,7 +804,7 @@ fn branch_type(then: Type, otherwise: Type) -> Result<Type, String> {
     }
 }
 
-enum Check<'a, R> {
+enum Check<'a, R = ParameterRef> {
     Visit(&'a Node<R>),
     Unary(UnaryOp),
     Binary(BinaryOp, &'a Node<R>),
