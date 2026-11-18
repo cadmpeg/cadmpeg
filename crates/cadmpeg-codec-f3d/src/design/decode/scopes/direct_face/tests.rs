@@ -178,13 +178,13 @@ fn named_legacy_scale_matches_both_members_to_the_body_group() {
     for (members, matches) in [([103, 104], true), ([104, 103], false)] {
         let prefix = legacy_uniform_prefix();
         let mut bytes = labeled_scale_fixture(prefix, &[101, 102, 103, 104, 106, 105]);
-        append_scale_fixture_header(&mut bytes, b"351", 102);
+        append_scale_fixture_header(&mut bytes, *b"351", 102);
         bytes.extend_from_slice(&[0; 10]);
         bytes.extend_from_slice(&2_u32.to_le_bytes());
         for member in members {
             append_marked_reference(&mut bytes, member);
         }
-        append_scale_fixture_header(&mut bytes, b"263", 102);
+        append_scale_fixture_header(&mut bytes, *b"263", 102);
         let result = decode_scale(&bytes, 0, &HashMap::new());
         assert_eq!(
             result.as_ref().map(|op| op.body_group_record_index),
@@ -417,9 +417,9 @@ fn append_marked_reference(bytes: &mut Vec<u8>, record: u32) {
     bytes.extend_from_slice(&[0; 6]);
 }
 
-fn append_scale_fixture_header(bytes: &mut Vec<u8>, class: &[u8; 3], record: u32) {
+fn append_scale_fixture_header(bytes: &mut Vec<u8>, class: [u8; 3], record: u32) {
     bytes.extend_from_slice(&3_u32.to_le_bytes());
-    bytes.extend_from_slice(class);
+    bytes.extend_from_slice(&class);
     bytes.extend_from_slice(&record.to_le_bytes());
 }
 
