@@ -454,10 +454,19 @@ fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &m
         };
         let mut depth = tail.unwrap_or_default();
         for id in chain.into_iter().rev() {
-            depth = if tail.is_some() {
-                depth.saturating_add(1)
-            } else {
-                0
+            depth = match tail.map(|_| depth.checked_add(1)) {
+                Some(Some(next)) => next,
+                Some(None) => {
+                    super::error(
+                        findings,
+                        id,
+                        format_args!(
+                            "the depth of the process state's chain of state bases overflows"
+                        ),
+                    );
+                    0
+                }
+                None => 0,
             };
             marks.insert(id, Mark::Depth(depth));
         }
