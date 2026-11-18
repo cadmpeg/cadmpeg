@@ -673,6 +673,7 @@ impl Builder<'_, '_, '_, '_> {
             bom_properties: BTreeMap::new(),
             bodies,
             sketches: Vec::new(),
+            tessellations: Vec::new(),
             native_ref: Some(prim.path.clone()),
         });
         self.admit("usd_definition")

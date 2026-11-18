@@ -298,7 +298,8 @@
           "kind": "group",
           "native_ref": "/Root",
           "sketches": [],
-          "source_name": "Root"
+          "source_name": "Root",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -309,7 +310,8 @@
           "kind": "object",
           "native_ref": "/Root/Cage",
           "sketches": [],
-          "source_name": "Cage"
+          "source_name": "Cage",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -320,7 +322,8 @@
           "kind": "object",
           "native_ref": "/Root/Panel",
           "sketches": [],
-          "source_name": "Panel"
+          "source_name": "Panel",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
