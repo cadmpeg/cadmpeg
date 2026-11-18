@@ -488,6 +488,10 @@ impl DesignParameter {
         self.source_kind().as_str()
     }
 
+    pub(crate) fn is_fillet_radius(&self) -> bool {
+        matches!(self.source_kind_str(), "Radius" | "radius")
+    }
+
     pub(crate) fn kind(&self) -> DesignParameterKind {
         match &self.source {
             DesignParameterSource::User { .. } => DesignParameterKind::User,

@@ -1731,6 +1731,7 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
             &mut joint,
             &children,
             &instances,
+            super::super::JointRebind::All,
             &mut losses
         ));
         let operand = &joint.connectors().next().unwrap().operand;
@@ -1758,6 +1759,7 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
             &mut external,
             &children,
             &instances,
+            super::super::JointRebind::All,
             &mut losses
         ));
         assert_eq!(
@@ -1769,11 +1771,17 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
             occurrence: id("absent"),
             occurrence_path: Vec::new(),
         };
+        absent.connectors_mut().nth(1).unwrap().operand = JointOperand::external(
+            cadmpeg_ir::products::ExternalDocument::document_id(FIRST),
+            SECOND,
+            Vec::new(),
+        );
         let mut losses = Vec::new();
         assert!(!super::super::retain_complete_joint(
             &mut absent,
             &children,
             &instances,
+            super::super::JointRebind::All,
             &mut losses
         ));
         assert_eq!(
@@ -1794,6 +1802,7 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
                 &mut invalid,
                 &missing,
                 &instances,
+                super::super::JointRebind::All,
                 &mut losses
             ));
             assert_eq!(losses.len(), 1);
@@ -1806,7 +1815,7 @@ fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
 }
 
 #[test]
-fn standalone_external_joint_binds_without_changing_source_operands() {
+fn qualified_external_joint_binds_without_changing_source_operands() {
     use cadmpeg_ir::products::{ExternalDocument, JointOperand};
     let (mut model, _) = standalone_joint_model(Vec::new());
     for (ordinal, connector) in model.assembly_joints[0].connectors_mut().enumerate() {
@@ -1819,29 +1828,35 @@ fn standalone_external_joint_binds_without_changing_source_operands() {
     let decoded = model.assembly_joints.clone();
     let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
     let children = std::collections::BTreeMap::new();
-    let mut losses = Vec::new();
-    super::super::rebind_joints(
-        &mut super::super::JointRows {
-            occurrences: &model.occurrences,
-            joints: &mut model.assembly_joints,
-            features: &mut model.features,
-        },
-        &children,
-        &children,
-        &complete,
+    for mode in [
         super::super::JointRebind::CompleteScopes,
-        &mut losses,
-    );
-    assert_eq!(model.assembly_joints, decoded);
-    assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
-    );
-    assert_eq!(
-        model.features[0].evaluation.definition(),
-        &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
-            joint: decoded[0].id.clone(),
-        })
-    );
+        super::super::JointRebind::All,
+    ] {
+        let mut model = model.clone();
+        let mut losses = Vec::new();
+        super::super::rebind_joints(
+            &mut super::super::JointRows {
+                occurrences: &model.occurrences,
+                joints: &mut model.assembly_joints,
+                features: &mut model.features,
+            },
+            &children,
+            &children,
+            &complete,
+            mode,
+            &mut losses,
+        );
+        assert_eq!(model.assembly_joints, decoded);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::AssemblyJointSourceBindingAssumed.kind()
+        );
+        assert_eq!(
+            model.features[0].evaluation.definition(),
+            &FeatureDefinition::Operation(FeatureOperation::AssemblyJoint {
+                joint: decoded[0].id.clone(),
+            })
+        );
+    }
 }
