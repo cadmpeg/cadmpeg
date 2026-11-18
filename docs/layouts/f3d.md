@@ -1528,6 +1528,43 @@ Parsed by:
 | 213 | 4 | `history_state_id` | `u32` | little | spec | The current history-state identity is at offset 213 |
 | 217 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind code-unit count is at offset 217 |
 
+## `scale_counted_group_head`
+
+Spec §3.1 · layout: byte offsets · size: 56 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 51 | `legacy_scale_fields` | `bytes[51]` | little | spec | the marked center and factor-owner references at offsets 21, 29, and 40 |
+| 51 | 1 | `marker` | `u8` | little | spec | Byte 51 is one · value `1` |
+| 52 | 4 | `group_count` | `u32` | little | spec | The u32 group count at offset 52 is one or two |
+
+## `scale_counted_group_suffix`
+
+Spec §3.1 · layout: byte offsets · size: 8 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `one` | `u32` | little | spec | They are followed by u32 one and u32 zero · value `1` |
+| 4 | 4 | `zero` | `u32` | little | spec | They are followed by u32 one and u32 zero · value `0` |
+
+## `scale_axis_owner_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 95 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An owner-backed per-axis Scale stores zero bytes at offsets 11 through 28 |
+| 11 | 18 | `zero_run_18` | `bytes[18]` | little | spec | zero bytes at offsets 11 through 28 |
+| 29 | 11 | `center_reference` | `bytes[11]` | little | spec | The marked center reference is at offset 29 |
+| 40 | 1 | `zero_byte` | `u8` | little | spec | Byte 40 is zero · value `0` |
+| 41 | 4 | `one` | `u32` | little | spec | u32 at offset 41 is one · value `1` |
+| 45 | 2 | `zero_word` | `u16` | little | spec | offsets 45 through 46 are zero · value `0` |
+| 47 | 11 | `x_owner` | `bytes[11]` | little | spec | references start at offsets 47, 58, and 69 |
+| 58 | 11 | `y_owner` | `bytes[11]` | little | spec | references start at offsets 47, 58, and 69 |
+| 69 | 11 | `z_owner` | `bytes[11]` | little | spec | references start at offsets 47, 58, and 69 |
+| 80 | 4 | `group_count` | `u32` | little | spec | Offset 80 stores u32 one · value `1` |
+| 84 | 11 | `group_reference` | `bytes[11]` | little | spec | offset 84 stores the marked body-group reference |
+
 ## `scale_legacy_uniform_tail`
 
 Spec §3.1 · layout: byte offsets · size: 78 B
@@ -12264,6 +12301,43 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed record header precedes the fixed point payload.
 - `66..197` (131 B): The generation tail ends at the paired indexed header.
+
+## `derived_base_source_pair_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 97 B
+
+Offsets are relative to the primary indexed header of a one-body source-pair derived base scope.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 19 | 1 | `body_marker` | `u8` | little | spec | A source-pair derived base frame · value `1` |
+| 20 | 4 | `body_reference_count` | `u32` | little | spec | A source-pair derived base frame · value `2` |
+| 24 | 1 | `parameter_body_marker` | `u8` | little | spec | A source-pair derived base frame · value `1` |
+| 25 | 8 | `parameter_body_record` | `u64` | little | spec | A source-pair derived base frame |
+| 33 | 6 | `parameter_body_flags` | `bytes[6]` | little | spec | A source-pair derived base frame |
+| 39 | 1 | `result_body_marker` | `u8` | little | spec | A source-pair derived base frame · value `1` |
+| 40 | 8 | `result_body_record` | `u64` | little | spec | A source-pair derived base frame |
+| 48 | 6 | `result_body_flags` | `bytes[6]` | little | spec | A source-pair derived base frame |
+| 54 | 1 | `copy_marker` | `u8` | little | spec | A source-pair derived base frame · value `1` |
+| 55 | 4 | `copy_zero` | `u32` | little | spec | A source-pair derived base frame · value `0` |
+| 59 | 1 | `owner_marker` | `u8` | little | spec | A source-pair derived base frame · value `1` |
+| 60 | 8 | `owner_record` | `u64` | little | spec | A source-pair derived base frame |
+| 68 | 2 | `owner_flags` | `bytes[2]` | little | spec | A source-pair derived base frame |
+| 70 | 4 | `source_pair_count` | `u32` | little | spec | A source-pair derived base frame · value `1` |
+| 74 | 1 | `source_marker` | `u8` | little | spec | A source-pair derived base frame · value `1` |
+| 75 | 8 | `source_record` | `u64` | little | spec | A source-pair derived base frame |
+| 83 | 2 | `source_flags` | `bytes[2]` | little | spec | A source-pair derived base frame |
+| 85 | 1 | `repeat_marker` | `u8` | little | spec | A source-pair derived base frame · value `1` |
+| 86 | 8 | `repeat_record` | `u64` | little | spec | A source-pair derived base frame |
+| 94 | 2 | `repeat_flags` | `bytes[2]` | little | spec | A source-pair derived base frame |
+| 96 | 1 | `terminator` | `u8` | little | spec | A source-pair derived base frame · value `0` |
+
+Unstated regions:
+
+- `0..19` (19 B): The indexed header and zero prefix precede the body-reference count.
 
 ## `motion_link_rotation_scope`
 

@@ -47,6 +47,7 @@ use std::hash::Hash;
 
 mod axis_bindings;
 mod boundary_fill;
+mod derived_base;
 pub(crate) mod form_cages;
 use axis_bindings::{AxisBinding, AxisBindings};
 
@@ -1800,6 +1801,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         timelines,
         &source_ordinals,
     );
+    derived_base::project(&mut features, scopes, body_bindings)?;
     let scope_history = ScopeHistoryGraph::new(
         scopes,
         body_bindings,
@@ -3139,7 +3141,11 @@ fn resolved_fillet_assignments<'a>(
             DesignFilletRadiusLaw::Constant {
                 radius_parameter_record_index,
             } => RadiusSpec::Constant {
-                radius: length(*radius_parameter_record_index, "Radius")?,
+                radius: by_record
+                    .get(radius_parameter_record_index)
+                    .copied()
+                    .filter(|parameter| parameter.is_fillet_radius())
+                    .and_then(design_positive_length)?,
             },
             DesignFilletRadiusLaw::Chordal {
                 chord_length_parameter_record_index,

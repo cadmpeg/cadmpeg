@@ -5828,7 +5828,7 @@ fn validate_fillet_radius_groups<'a>(
                     radius_parameter_record_index,
                 } => {
                     assignment_parameter(*radius_parameter_record_index).is_some_and(|parameter| {
-                        parameter.source_kind() == "Radius"
+                        parameter.is_fillet_radius()
                             && parameter
                                 .unit()
                                 .map(|field| field.value.as_str())
