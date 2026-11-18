@@ -66,9 +66,6 @@ impl Fixture {
         }
     }
 
-    /// The scope frame and its angle owner's scalar frame. The kind is the
-    /// localized `Révolution`, and zero padding brings the token-independent
-    /// frame to 351 or 373 bytes for the marked form or 369 for the unmarked form.
     fn bytes(&self) -> Vec<u8> {
         fn marked(bytes: &mut Vec<u8>, marker: u8, record: u32) {
             bytes.push(marker);
@@ -93,7 +90,9 @@ impl Fixture {
         bytes.push(self.solid);
         bytes.extend_from_slice(&self.zero_flags);
         marked(&mut bytes, self.angle_marker, ANGLE);
-        let payload = if self.unmarked {
+        let payload = if self.unmarked && self.second_reference.is_some() {
+            379
+        } else if self.unmarked {
             369
         } else if self.second_reference.is_some() {
             361
@@ -384,4 +383,64 @@ fn a_361_byte_frame_carries_a_second_tail_reference() {
         ..fixture
     };
     assert_eq!(boolean.decode(), None);
+}
+
+#[test]
+fn an_unmarked_379_byte_frame_preserves_the_angle_and_second_tail_reference() {
+    for (operation, expected) in [
+        (1, DesignExtrudeOperation::Join),
+        (2, DesignExtrudeOperation::Cut),
+        (3, DesignExtrudeOperation::Intersect),
+    ] {
+        let fixture = Fixture {
+            operation,
+            second_reference: Some(60),
+            ..Fixture::unmarked()
+        };
+        let (construction, loss) = fixture.decode_with_loss();
+        let construction = construction.expect("unmarked referenced-angle Revolve");
+        assert_eq!(construction.operation, expected);
+        assert_eq!(construction.angle_record_index, ANGLE);
+        assert_eq!(construction.solid, Some(true));
+        assert_eq!(
+            construction.travel,
+            crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                cadmpeg_ir::scalar::PositiveAngle::new(1.5).unwrap()
+            )
+        );
+        assert!(!construction.reversed);
+        let loss = loss.expect("second tail reference loss");
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.kind()
+        );
+        assert!(loss.message.contains("target 60"));
+        assert!(loss.message.contains("379-byte"));
+        let negative = Fixture {
+            angle: -1.5,
+            ..fixture.clone()
+        };
+        assert!(negative.decode().unwrap().reversed);
+        for invalid in [
+            Fixture {
+                references: 6,
+                ..fixture.clone()
+            },
+            Fixture {
+                direction_kind: 1,
+                ..fixture.clone()
+            },
+            Fixture {
+                angle_marker: 0,
+                ..fixture.clone()
+            },
+            Fixture {
+                solid: 2,
+                ..fixture
+            },
+        ] {
+            assert!(invalid.decode().is_none());
+        }
+    }
+    assert_eq!(Fixture::unmarked().decode_with_loss().1, None);
 }

@@ -148,20 +148,22 @@ pub(super) fn tail_second_reference(bytes: &[u8], scope: &DesignParameterScope) 
     View::u64_le_at(bytes, marker.checked_add(1)?)
 }
 
-/// The loss of a 361-byte referenced-angle `Revolve` frame, whose second tail
-/// reference the decoder reads without a meaning (DR-657).
 pub(super) fn referenced_revolve_reference_loss(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
-    if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve
-        || parameter_scope_payload_length(scope)? != 361
-    {
+    if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve {
         return None;
     }
+    let length = parameter_scope_payload_length(scope)?;
+    let base_length = match length {
+        361 => 351,
+        379 => 369,
+        _ => return None,
+    };
     let target = tail_second_reference(bytes, scope)?;
     Some(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(format!(
-        "Revolve scope {} stores a second tail reference with target {target} in its 361-byte referenced-angle frame; the decoder reads the other fields at the 351-byte offsets (DR-657).",
+        "Revolve scope {} stores a second tail reference with target {target} in its {length}-byte referenced-angle frame; the decoder reads the other fields at the {base_length}-byte offsets (DR-657).",
         scope.id
     )))
 }
@@ -207,10 +209,11 @@ fn referenced_angle_revolve_construction(
                 referenced_revolve::ANGLE_REFERENCE_MARKER,
             )
         }
-        (369, 8)
-            if bytes
-                .get(start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION)?
-                == [0; 10]
+        (length @ (369 | 379), 8)
+            if (length == 369 || tail_second_reference(bytes, scope).is_some())
+                && bytes.get(
+                    start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION,
+                )? == [0; 10]
                 && View::u32_le_at(bytes, start + unmarked_revolve::EXTENT_KIND)
                     == Some(unmarked_revolve::EXTENT_KIND_VALUE)
                 && bytes.get(start + unmarked_revolve::DIRECTION_KIND)

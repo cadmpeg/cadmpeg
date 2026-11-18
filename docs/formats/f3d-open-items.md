@@ -2057,11 +2057,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-657. Referenced-angle Revolve direction kind 1 and second tail reference
 
-**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361-byte referenced-angle frame name?
+**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361- or 379-byte referenced-angle frame name?
 
-**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361-byte frame the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and records `feature.revolve-layout-assumed` with the target.
+**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361- and 379-byte frames the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and the 379-byte frame with the 369-byte fields, and records `feature.revolve-layout-assumed` with the target.
 
-**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and a 361-byte referenced-angle scope with the record that its second tail reference names.
+**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and 361- and 379-byte referenced-angle scopes with the records that their second tail references name.
 
 **Conflict.** None.
 
@@ -3555,3 +3555,16 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Paired saves that vary this word and identify the Extrude setting or record that supplies it.
 
 **Note.** The decoder retains the word and its offset. Neutral projection uses the stored blind distance and reports `feature.extrude-opaque-distance-word-assumed`.
+
+
+### DR-819. Connector GUIDs in version-four Assemble scopes
+
+**Question.** What identity does each connector GUID select in a version-four `Assemble` scope, and how does that identity affect its operand context and joint relation?
+
+**Known.** One local corpus file has two 810-byte version-four scopes with four ordered references. Each connector has an explicit matrix followed by an LP-UTF16 GUID of 36 code units. The version-four reader expects the next connector or alignment-owner reference after the matrix. These scopes retain their source records with `assembly.joint-unprojected`.
+
+**Need.** Public controlled version-four saves that change each connector GUID independently of its matrix, occurrence path, joint motion, and alignment owners. Establish the complete frame grammar and compare the selected occurrence poses with final geometry.
+
+**Conflict.** The connector suffix matches the version-five GUID spelling, while the scope registration and prologue select version four.
+
+**Note.** A final geometry snapshot constrains occurrence poses. Controlled motion states must establish the joint freedoms and identity roles.
