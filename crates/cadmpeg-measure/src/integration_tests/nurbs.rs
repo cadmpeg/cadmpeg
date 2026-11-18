@@ -228,14 +228,56 @@ fn a_patch_with_a_collapsed_side_measures_its_whole_area() {
     }
 }
 
+/// The strip `0 ≤ x ≤ 1`, `0 ≤ y ≤ 0.005` as a bilinear patch whose `v`
+/// sides are 0.005 long: shorter than the coincidence allowance and longer
+/// than the model tolerance, so `u` is defined along them. The patch is the
+/// whole face, of area 0.005.
+#[test]
+fn a_strip_narrower_than_the_allowance_measures_its_whole_area() {
+    let width = 0.005;
+    assert!(width < cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
+    let corners = [
+        [0.0, 0.0, 0.0],
+        [0.0, width, 0.0],
+        [1.0, width, 0.0],
+        [1.0, 0.0, 0.0],
+    ];
+    let mut builder = Builder::new();
+    let surface = builder.nurbs(
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        &[
+            vec![(corners[0], 1.0), (corners[3], 1.0)],
+            vec![(corners[1], 1.0), (corners[2], 1.0)],
+        ],
+    );
+    let vertices: Vec<_> = corners
+        .iter()
+        .map(|corner| builder.vertex(*corner))
+        .collect();
+    let ring: Vec<_> = (0..4)
+        .map(|from| {
+            (
+                builder.line(&vertices[from], &vertices[(from + 1) % 4]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    builder.face(&surface, Sense::Forward, &[ring], true);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    assert_measured(&report.faces[0].measures.area, width, 1.0);
+}
+
 /// The disk `r ≤ 50` at `z = 0` as a `u`-periodic rational quadratic by
 /// linear patch whose `v = 1` side collapses to the centre, bounded by a
 /// triangle whose first side runs along `y = 0.005` from `x = -24` to
 /// `x = 26`. That side passes within the allowance of the centre between
 /// two samples at every sample count up to the cap, where its parameter
-/// image turns by about half a period.
+/// image turns by about half a period. The side splits at the centre, and
+/// the loop reaches the region rule for a periodic NURBS domain.
 #[test]
-fn a_side_grazing_a_collapsed_nurbs_side_between_samples_does_not_invert() {
+fn a_side_grazing_a_collapsed_nurbs_side_between_samples_splits_there() {
     let radius = 50.0;
     let circle = [
         (1.0, 0.0, 1.0),
@@ -295,5 +337,5 @@ fn a_side_grazing_a_collapsed_nurbs_side_between_samples_does_not_invert() {
         .area()
         .unavailable()
         .expect("unavailable area");
-    assert_eq!(area.reason(), UnavailableReason::BoundaryInversionFailed);
+    assert_eq!(area.reason(), UnavailableReason::RegionDomainUnsupported);
 }

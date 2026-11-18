@@ -864,7 +864,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let parameter = localized_fillet_parameter;
     let owner = localized_fillet_owner;
     let parameters = [
-        parameter(10, 11, "Radius", Some("mm"), 0.5),
+        parameter(10, 11, "radius", Some("mm"), 0.5),
         parameter(20, 21, "Radius", Some("mm"), 0.3),
         parameter(30, 31, "TangencyWeight", None, 1.0),
         parameter(40, 41, "TangencyWeight", None, 0.75),

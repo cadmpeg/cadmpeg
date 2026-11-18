@@ -890,7 +890,8 @@ impl Index {
     }
 
     /// A hand `Serialize` writes a struct when it opens a struct or a map, or
-    /// when it delegates to a struct that derives `Serialize`.
+    /// when it delegates to a struct that derives `Serialize`; one that
+    /// writes a sequence and opens neither writes a value.
     fn hand_payload(&self, name: &str, tokens: &[String]) -> Payload {
         let has_kind = tokens.iter().any(|token| token == "\"kind\"");
         let opens_struct = tokens.iter().any(|token| {
@@ -906,8 +907,13 @@ impl Index {
                         && derives(&decl.attrs, "Serialize")
                 })
         });
+        let writes_sequence = tokens
+            .iter()
+            .any(|token| matches!(token.as_str(), "collect_seq" | "serialize_seq"));
         if opens_struct || delegates {
             Payload::Struct { has_kind }
+        } else if writes_sequence {
+            Payload::Value
         } else {
             Payload::Unresolved(format!("hand Serialize of {name} writes no struct"))
         }
@@ -1480,6 +1486,30 @@ pub enum Adjacent<S: Space> { Item(S::Curve), Qualified(<S as Space>::Curve) }
 #[test]
 fn an_associated_type_of_a_generic_parameter_need_not_be_a_struct() {
     let problems = probe_problems(ASSOCIATED_PROBE);
+    assert_eq!(problems.len(), 1, "{problems:#?}");
+    assert!(
+        problems[0].contains(" Internal: enum must take form Adjacent"),
+        "{problems:#?}"
+    );
+}
+
+const SEQUENCE_PROBE: &str = r#"pub struct Items { items: Vec<u32> }
+impl Serialize for Items {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(&self.items)
+    }
+}
+#[derive(Serialize)]
+#[serde(tag = "kind")]
+pub enum Internal { Item(Items) }
+#[derive(Serialize)]
+#[serde(tag = "kind", content = "value")]
+pub enum Adjacent { Item(Items) }
+"#;
+
+#[test]
+fn a_hand_serialize_that_writes_a_sequence_is_a_value_payload() {
+    let problems = probe_problems(SEQUENCE_PROBE);
     assert_eq!(problems.len(), 1, "{problems:#?}");
     assert!(
         problems[0].contains(" Internal: enum must take form Adjacent"),

@@ -20,3 +20,15 @@ pub(crate) mod split;
 pub(crate) mod thicken;
 
 pub(crate) mod thread;
+
+pub(crate) fn root_part_ir() -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::ids::ProductDefinitionId;
+    use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
+
+    let id = ProductDefinitionId::mint("inventor:document:product#root").expect("root part id");
+    let mut definition = ProductDefinition::root(id, ExternalDocument::default());
+    definition.kind = Some(ProductDefinitionKind::Part);
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.product_definitions.push(definition);
+    ir
+}

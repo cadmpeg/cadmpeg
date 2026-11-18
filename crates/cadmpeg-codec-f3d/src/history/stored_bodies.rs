@@ -240,6 +240,18 @@ pub(crate) fn losses(
                 }
             }
             "Derived Base Feature" | "DerivedBaseFeature" => {
+                if scope
+                    .derived_base_source
+                    .as_ref()
+                    .is_some_and(|source| source.snapshot.is_some())
+                    && feature.is_some()
+                {
+                    losses.push(F3dLossCode::FeatureStoredBodiesRecipeAbsent.note(format!(
+                        "{} supplies the captured derived result body.",
+                        scope.id
+                    )));
+                    continue;
+                }
                 let stored = feature.and_then(|feature| match feature.evaluation.definition() {
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved { bodies, .. },

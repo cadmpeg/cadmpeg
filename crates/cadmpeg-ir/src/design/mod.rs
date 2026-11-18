@@ -20,6 +20,7 @@ pub mod edit;
 pub mod evaluation;
 pub mod expr;
 pub mod feature;
+mod identity_rewrite;
 pub mod ids;
 pub mod names;
 pub mod ops;
@@ -33,6 +34,5 @@ pub mod selection;
 pub mod spreadsheet;
 pub mod units;
 
-mod identity_rewrite;
 #[cfg(test)]
 mod tests;
