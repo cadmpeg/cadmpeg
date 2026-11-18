@@ -41,6 +41,7 @@ mod dialect;
 mod document;
 mod history;
 mod inspect;
+mod look;
 mod loss;
 mod package;
 mod source;

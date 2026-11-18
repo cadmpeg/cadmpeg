@@ -98,18 +98,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     if let (Some(package), Some(_)) = (&source.package, source.header()) {
         if !ctx.container_only() && has_cache(package) {
             let document = package.member(ctx, DOCUMENT_MEMBER)?;
-            let appearances = source
-                .document
-                .as_ref()
-                .and_then(|document| document.object.get("appearances"));
-            let outcome = crate::cache::decode(
-                ctx,
-                package,
-                document,
-                appearances,
-                &mut ir,
-                &mut annotations,
-            )?;
+            let object = source.document.as_ref().map(|document| &document.object);
+            let outcome =
+                crate::cache::decode(ctx, package, document, object, &mut ir, &mut annotations)?;
             geometry_transferred = outcome.bodies > 0;
             losses.extend(outcome.losses);
             outputs = outcome.outputs;
@@ -128,6 +119,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             let outcome =
                 crate::history::decode(ctx, &document.object, &outputs, &owners, &mut ir)?;
             losses.extend(outcome.losses);
+            crate::look::views(&document.object, &mut ir)?;
         }
     }
     ir.finalize();
@@ -147,6 +139,50 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     })
 }
 
+/// The document sections that decode into neutral records with the history.
+/// Their content that has no neutral record stays in a retained section
+/// record, or is named by a loss of its own.
+const DECODED_SECTIONS: &[&str] = &[
+    "components",
+    "occurrences",
+    "assembly",
+    "appearances",
+    "materials",
+    "user_materials",
+    "visibility",
+    "named_views",
+];
+
+/// The document sections that have a retained record of their own, so that
+/// the application data keeps its identity through a rewrite.
+const SECTION_RECORDS: &[&str] = &[
+    "metadata",
+    "plugin_data",
+    "render",
+    "favorites",
+    "browser_groups",
+    "timeline_groups",
+    "browser_order",
+    "configs",
+    "plastic",
+    "sheet",
+    "parts",
+    "text_params",
+    "param_comments",
+    "print_faces",
+    "body_components",
+    "body_offsets",
+    "notes",
+    "canvases",
+    "point_clouds",
+    "links",
+    "reserved_body_names",
+    "next_component_color_index",
+    "appearances",
+    "visibility",
+    "assembly",
+];
+
 /// The losses for the document content that this decoder retains without
 /// decoding. The parameters decode with the history.
 fn document_losses(header: &Header, decodes_history: bool) -> Vec<LossNote> {
@@ -157,10 +193,16 @@ fn document_losses(header: &Header, decodes_history: bool) -> Vec<LossNote> {
             header.params
         )));
     }
-    if !header.sections.is_empty() {
+    let undecoded: Vec<&str> = header
+        .sections
+        .iter()
+        .map(String::as_str)
+        .filter(|section| !(decodes_history && DECODED_SECTIONS.contains(section)))
+        .collect();
+    if !undecoded.is_empty() {
         losses.push(SolidcraftLossCode::DocumentSectionUndecoded.note(format!(
             "document sections retained without decoding: {}",
-            header.sections.join(", ")
+            undecoded.join(", ")
         )));
     }
     losses
@@ -257,6 +299,23 @@ fn retained_records(
             }
         }
         None => retain(JSON_DOCUMENT_ENTRY, source.root.window())?,
+    }
+    if let Some(document) = &source.document {
+        let section = cadmpeg_ir::identity_namespace!("solidcraft", "native", "section");
+        for name in SECTION_RECORDS {
+            let Some(value) = document.object.get(*name) else {
+                continue;
+            };
+            let bytes = serde_json::to_vec(value)
+                .map_err(|error| CodecError::malformed(format_args!("design section: {error}")))?;
+            ctx.retain_bytes(u64_from_index(bytes.len()), "retain SolidCraft section")?;
+            records.push(UnknownRecord::retained(
+                UnknownId::compose(&section, IdentityKey::encode_segment(name)),
+                0,
+                bytes,
+                Vec::new(),
+            ));
+        }
     }
     Ok(records)
 }

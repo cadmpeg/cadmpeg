@@ -31,7 +31,7 @@ use cadmpeg_ir::ids::{BodyId, IdentityKey};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationId};
 use cadmpeg_ir::topology::{Body, BodyKind, Color};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::loss::SolidcraftLossCode;
 use crate::package::Package;
@@ -98,10 +98,12 @@ pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     package: &Package<'_>,
     document: View<'_>,
-    appearances: Option<&Value>,
+    object: Option<&Map<String, Value>>,
     ir: &mut CadIr,
     annotations: &mut Annotations,
 ) -> Result<Outcome, CodecError> {
+    let appearances = object.and_then(|object| object.get("appearances"));
+    let mut looks = crate::look::Looks::new(object);
     let mut outcome = Outcome::default();
     let selected = match select(ctx, package, document) {
         Ok(Selection::Bodies { bodies, states }) => {
@@ -157,6 +159,8 @@ pub(crate) fn decode(
                         .entry(body.component)
                         .or_default()
                         .push(record.id.clone());
+                    let mut record = record;
+                    looks.body(&mut record, &[], &body.face_names);
                     ir.geometry.bodies.push(record);
                     outcome.bodies += 1;
                 }
@@ -193,6 +197,14 @@ pub(crate) fn decode(
                     .push(id);
                 name_faces(&mut geometry, &body);
                 paint(&mut geometry, &body, appearances);
+                let faces: Vec<String> = geometry
+                    .faces
+                    .iter()
+                    .map(|face| face.id.to_string())
+                    .collect();
+                if let Some(record) = geometry.bodies.first_mut() {
+                    looks.body(record, &faces, &body.face_names);
+                }
                 ir.geometry.extend_rewritten(geometry, &mut Unchanged)?;
                 annotations.append(body_builder.build())?;
                 tally.merge(body_tally);
@@ -206,6 +218,7 @@ pub(crate) fn decode(
             )),
         }
     }
+    looks.finish(ir)?;
     outcome.losses.extend(tally.notes());
     if !undecoded.is_empty() {
         outcome

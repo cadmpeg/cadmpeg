@@ -3068,6 +3068,14 @@
           {
             "id": "solidcraft:native:entry#document.json",
             "links": []
+          },
+          {
+            "id": "solidcraft:native:section#next_component_color_index",
+            "links": []
+          },
+          {
+            "id": "solidcraft:native:section#reserved_body_names",
+            "links": []
           }
         ]
       }
@@ -3370,6 +3378,24 @@
       "solidcraft:native:entry#document.json": {
         "bytes": {
           "data": "eyJmZWF0dXJlcyI6W3siYm9keV9uYW1lcyI6WyJCb2R5MSJdLCJjb3JuZXIiOlswLjAsMC4wLDAuMF0sImhlaWdodCI6IjUiLCJpZCI6MSwibGVuZ3RoIjoiMjAiLCJuYW1lIjoiQmxvY2siLCJvcGVyYXRpb24iOiJuZXdfYm9keSIsInBhcmFtX25hbWVzIjpbImQxIiwiZDIiLCJkMyJdLCJzdXBwcmVzc2VkIjpmYWxzZSwidHlwZSI6ImJveCIsIndpZHRoIjoiMTAifSx7ImF4aXMiOlswLjAsMC4wLDEuMF0sImJhc2UiOlsxMC4wLDUuMCwtMS4wXSwiaGVpZ2h0IjoiNyIsImlkIjoyLCJuYW1lIjoiSG9sZSIsIm9wZXJhdGlvbiI6ImN1dCIsInBhcmFtX25hbWVzIjpbImQ0IiwiZDUiXSwicmFkaXVzIjoiMiIsInN1cHByZXNzZWQiOmZhbHNlLCJ0eXBlIjoiY3lsaW5kZXIifSx7ImVkZ2VfbmFtZXMiOlsiRjE6K3p8RjE6LXkiXSwiZWRnZV9yZWZzIjpbeyJkaXIiOlsxLjAsMC4wLDAuMF0sIm1heCI6WzIwLjAsMTAuMCw1LjBdLCJtaW4iOlswLjAsMC4wLDAuMF19XSwiZWRnZXMiOltbMTAuMCwwLjAsNS4wXV0sImlkIjozLCJuYW1lIjoiUm91bmQiLCJwYXJhbV9uYW1lcyI6WyJkNiJdLCJyYWRpdXMiOiIxIiwic3VwcHJlc3NlZCI6ZmFsc2UsInR5cGUiOiJmaWxsZXQifV0sImZvcm1hdCI6InNvbGlkY3JhZnQvNTciLCJuYW1lIjoiUHJvYmUiLCJuZXh0X2NvbXBvbmVudF9jb2xvcl9pbmRleCI6MCwibmV4dF9pZCI6NCwicGFyYW1zIjpbXSwicmVzZXJ2ZWRfYm9keV9uYW1lcyI6WyJCb2R5MSJdLCJ1bml0cyI6Im1tIn0=",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:section#next_component_color_index": {
+        "bytes": {
+          "data": "MA==",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:section#reserved_body_names": {
+        "bytes": {
+          "data": "WyJCb2R5MSJd",
           "kind": "inline"
         },
         "offset": 0,

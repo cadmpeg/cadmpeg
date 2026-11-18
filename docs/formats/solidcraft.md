@@ -282,3 +282,17 @@ eight-bit RGB, `opacity`, and optional physically based parameters.
 `appearances.faces` lists face looks: the `body`, a `point` on the face, the
 face's persistent `name`, and the `look`. The model cache's `names` records
 list each body's face names in face order.
+
+### 3.9 Presentation and application data
+
+`materials` maps a body name to a material name, and `user_materials` lists
+the user's materials with a `density` and an `appearance`. `visibility`
+lists the `hidden_bodies` by name and the `hidden_occurrences` by path of
+occurrence ids, with other hidden and shown sets. A named view is an orbit
+camera: its eye is `target` moved back by `distance` along `(-sin yaw cos
+pitch, -cos yaw cos pitch, sin pitch)`, and an `fov` of 0 is orthographic.
+The sections `metadata`, `plugin_data`, `render`, `favorites`,
+`browser_groups`, `timeline_groups`, `browser_order`, `configs`, `plastic`,
+`sheet`, `parts`, `text_params`, `param_comments`, `print_faces`,
+`body_components`, `body_offsets`, `notes`, `canvases`, and `point_clouds`
+are application data that a rewrite keeps as the section.

@@ -195,6 +195,10 @@
           {
             "id": "solidcraft:native:entry#document",
             "links": []
+          },
+          {
+            "id": "solidcraft:native:section#appearances",
+            "links": []
           }
         ]
       }
@@ -273,18 +277,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "document.section-undecoded",
-            "kind": "record_not_typed",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "document sections retained without decoding: appearances",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "cache.model-absent",
             "kind": "missing_geometry_stream",
             "namespace": "solidcraft",
@@ -315,6 +307,15 @@
       "solidcraft:native:entry#document": {
         "bytes": {
           "data": "ewogICJmb3JtYXQiOiAic29saWRjcmFmdC81NyIsCiAgIm5hbWUiOiAiQmxvY2siLAogICJ1bml0cyI6ICJtbSIsCiAgInBhcmFtcyI6IFsKICAgIHsKICAgICAgIm5hbWUiOiAidyIsCiAgICAgICJleHByIjogIjIwIG1tIiwKICAgICAgInVuaXQiOiAibW0iLAogICAgICAibW9kZWwiOiBmYWxzZQogICAgfQogIF0sCiAgImZlYXR1cmVzIjogWwogICAgewogICAgICAiaWQiOiAxLAogICAgICAibmFtZSI6ICJCb3gxIiwKICAgICAgInN1cHByZXNzZWQiOiBmYWxzZSwKICAgICAgInR5cGUiOiAiYm94IiwKICAgICAgImNvcm5lciI6IFsKICAgICAgICAwLjAsCiAgICAgICAgMC4wLAogICAgICAgIDAuMAogICAgICBdLAogICAgICAibGVuZ3RoIjogInciLAogICAgICAid2lkdGgiOiAiMTAgbW0iLAogICAgICAiaGVpZ2h0IjogIjUgbW0iLAogICAgICAib3BlcmF0aW9uIjogIm5ld19ib2R5IgogICAgfQogIF0sCiAgImFwcGVhcmFuY2VzIjogewogICAgImJvZGllcyI6IHt9CiAgfQp9Cg==",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:section#appearances": {
+        "bytes": {
+          "data": "eyJib2RpZXMiOnt9fQ==",
           "kind": "inline"
         },
         "offset": 0,

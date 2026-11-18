@@ -325,6 +325,24 @@ impl super::Walk<'_, '_> {
                 .or_default()
                 .push(occurrence);
         }
+        let hidden: BTreeSet<String> = document
+            .get("visibility")
+            .and_then(|visibility| visibility.get("hidden_occurrences"))
+            .and_then(Value::as_array)
+            .map(|paths| {
+                paths
+                    .iter()
+                    .filter_map(|path| {
+                        let ids: Option<Vec<String>> = path
+                            .as_array()?
+                            .iter()
+                            .map(|step| Some(step.as_u64()?.to_string()))
+                            .collect();
+                        Some(ids?.join("/"))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut first = BTreeMap::new();
         let mut stack = vec![(0_u64, root, String::new(), 0_usize)];
         while let Some((component, parent, parent_key, depth)) = stack.pop() {
@@ -359,6 +377,9 @@ impl super::Walk<'_, '_> {
                 });
                 if let Some(name) = occurrence.get("name").and_then(Value::as_str) {
                     record["name"] = json!(name);
+                }
+                if hidden.contains(&key) {
+                    record["visible"] = json!(false);
                 }
                 let placed: Occurrence = serde_json::from_value(record).map_err(malformed)?;
                 let ir_id = id("occurrence", &key);

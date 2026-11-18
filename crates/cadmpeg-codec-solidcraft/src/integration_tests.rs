@@ -101,7 +101,8 @@ fn every_member_survives_as_a_retained_record() {
         .namespace("solidcraft")
         .and_then(|namespace| namespace.arenas().get("unknowns"))
         .map_or(0, Vec::len);
-    assert_eq!(unknowns, 4);
+    // The four members, and the appearances section on its own.
+    assert_eq!(unknowns, 5);
 }
 
 #[test]
@@ -608,13 +609,50 @@ fn components_occurrences_and_joints_form_the_product_structure() {
 }
 
 #[test]
+fn named_views_and_hidden_occurrences_are_presentation() {
+    let mut document = box_document("solidcraft/57");
+    document["named_views"] = json!([
+        {"name": "Front", "target": [1.0, 2.0, 3.0], "yaw": 0.0, "pitch": 0.0, "distance": 10.0, "fov": 0.0}
+    ]);
+    document["components"] = json!([{"id": 1, "name": "Leaf", "parent": 0}]);
+    document["occurrences"] = json!([
+        {"id": 2, "component": 1, "parent": 0, "name": "Leaf:1", "grounded": false}
+    ]);
+    document["visibility"] = json!({"hidden_occurrences": [[2]]});
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let model = serde_json::to_value(&result.ir().model).unwrap();
+    let state = &model["presentation_documents"][0]["states"][0];
+    assert_eq!(state["attributes"]["name"], "Front");
+    assert_eq!(state["kind"]["value"]["position"], json!([1.0, -8.0, 3.0]));
+    assert_eq!(
+        state["kind"]["value"]["properties"]["projection"],
+        "orthographic"
+    );
+    let hidden = model["occurrences"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"].as_str().unwrap().ends_with("#2"))
+        .unwrap();
+    assert_eq!(hidden["visible"], false);
+}
+
+#[test]
 fn body_and_face_looks_colour_the_cached_body() {
     let bytes = crate::test_support::cached_design_editing(|document| {
         document["appearances"] = json!({
             "bodies": {"Body1": {"name": "Custom", "color": [255, 0, 0], "opacity": 0.5}},
             "faces": [{"body": "Body1", "point": [10.0, 0.0, 2.0], "name": "F2:side",
-                       "look": {"name": "Blue", "color": [0, 0, 255], "opacity": 1.0}}]
+                       "look": {"name": "Blue", "color": [0, 0, 255], "opacity": 1.0,
+                                "pbr": {"metallic": 0.25, "roughness": 0.5, "dielectric_ior": 1.5}}}]
         });
+        document["materials"] = json!({"Body1": "Resin"});
+        document["user_materials"] = json!([{"name": "Resin", "density": 1.2,
+            "appearance": {"name": "Resin", "color": [10, 20, 30], "opacity": 1.0}}]);
+        document["visibility"] = json!({"hidden_bodies": ["Body1"]});
     });
     let result = SolidcraftCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
@@ -632,4 +670,26 @@ fn body_and_face_looks_colour_the_cached_body() {
         .collect();
     assert_eq!(coloured.len(), 1);
     assert_eq!((coloured[0].r(), coloured[0].b()), (0.0, 1.0));
+    assert_eq!(geometry.bodies[0].visible, Some(false));
+    let model = serde_json::to_value(&result.ir().model).unwrap();
+    let bindings = model["appearance_bindings"].as_array().unwrap();
+    assert_eq!(bindings.len(), 2);
+    let body = bindings
+        .iter()
+        .find(|binding| binding["target"]["entity"]["kind"] == "body")
+        .unwrap();
+    assert_eq!(body["channels"]["physical_material"], "Resin");
+    let face = bindings
+        .iter()
+        .find(|binding| binding["target"]["entity"]["kind"] == "face")
+        .unwrap();
+    let look = model["appearances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|look| look["id"] == face["appearance"])
+        .unwrap();
+    assert_eq!(look["name"], "Blue");
+    assert_eq!(look["properties"]["metallic"], 0.25);
+    assert_eq!(model["physical_materials"][0]["density"], 1.2);
 }

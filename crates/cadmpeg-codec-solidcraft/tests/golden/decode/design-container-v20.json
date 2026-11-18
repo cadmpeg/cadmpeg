@@ -87,6 +87,10 @@
           {
             "id": "solidcraft:native:entry#document.json",
             "links": []
+          },
+          {
+            "id": "solidcraft:native:section#appearances",
+            "links": []
           }
         ]
       }
@@ -242,6 +246,15 @@
       "solidcraft:native:entry#document.json": {
         "bytes": {
           "data": "eyJhcHBlYXJhbmNlcyI6eyJib2RpZXMiOnt9fSwiZmVhdHVyZXMiOlt7ImNvcm5lciI6WzAuMCwwLjAsMC4wXSwiaGVpZ2h0IjoiNSBtbSIsImlkIjoxLCJsZW5ndGgiOiJ3IiwibmFtZSI6IkJveDEiLCJvcGVyYXRpb24iOiJuZXdfYm9keSIsInN1cHByZXNzZWQiOmZhbHNlLCJ0eXBlIjoiYm94Iiwid2lkdGgiOiIxMCBtbSJ9XSwiZm9ybWF0Ijoic29saWRjcmFmdC8yMCIsIm5hbWUiOiJCbG9jayIsInBhcmFtcyI6W3siZXhwciI6IjIwIG1tIiwibW9kZWwiOmZhbHNlLCJuYW1lIjoidyIsInVuaXQiOiJtbSJ9XSwidW5pdHMiOiJtbSJ9",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:section#appearances": {
+        "bytes": {
+          "data": "eyJib2RpZXMiOnt9fQ==",
           "kind": "inline"
         },
         "offset": 0,

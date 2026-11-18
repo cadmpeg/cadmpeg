@@ -209,6 +209,14 @@
           {
             "id": "solidcraft:native:entry#document.json",
             "links": []
+          },
+          {
+            "id": "solidcraft:native:section#appearances",
+            "links": []
+          },
+          {
+            "id": "solidcraft:native:section#links",
+            "links": []
           }
         ]
       }
@@ -294,7 +302,7 @@
             "namespace": "solidcraft"
           }
         },
-        "message": "document sections retained without decoding: appearances, components, links",
+        "message": "document sections retained without decoding: links",
         "severity": "info"
       },
       {
@@ -340,6 +348,24 @@
       "solidcraft:native:entry#document.json": {
         "bytes": {
           "data": "eyJhcHBlYXJhbmNlcyI6eyJib2RpZXMiOnt9fSwiY29tcG9uZW50cyI6W3siaWQiOjMsIm5hbWUiOiJBcm0iLCJwYXJlbnQiOjB9XSwiZmVhdHVyZXMiOlt7ImNvcm5lciI6WzAuMCwwLjAsMC4wXSwiaGVpZ2h0IjoiNSBtbSIsImlkIjoxLCJsZW5ndGgiOiJ3IiwibmFtZSI6IkJveDEiLCJvcGVyYXRpb24iOiJuZXdfYm9keSIsInN1cHByZXNzZWQiOmZhbHNlLCJ0eXBlIjoiYm94Iiwid2lkdGgiOiIxMCBtbSJ9XSwiZm9ybWF0Ijoic29saWRjcmFmdC81NyIsImxpbmtzIjp7IjMiOnsiZmVhdHVyZSI6MiwicGF0aCI6InBhcnRzL2FybS5zYyJ9fSwibmFtZSI6IkJsb2NrIiwicGFyYW1zIjpbeyJleHByIjoiMjAgbW0iLCJtb2RlbCI6ZmFsc2UsIm5hbWUiOiJ3IiwidW5pdCI6Im1tIn1dLCJ1bml0cyI6Im1tIn0=",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:section#appearances": {
+        "bytes": {
+          "data": "eyJib2RpZXMiOnt9fQ==",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:section#links": {
+        "bytes": {
+          "data": "eyIzIjp7ImZlYXR1cmUiOjIsInBhdGgiOiJwYXJ0cy9hcm0uc2MifX0=",
           "kind": "inline"
         },
         "offset": 0,
