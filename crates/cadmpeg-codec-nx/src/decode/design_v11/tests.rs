@@ -1,0 +1,326 @@
+// SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_ir::features::{
+    DesignConfiguration as LegacyConfiguration, DistinctMembers, FeatureContent,
+    FeatureDefinition as LegacyDefinition, FeatureEvaluation, SketchFeatureBinding, TreeChildren,
+};
+use cadmpeg_ir::report::check::Check;
+use cadmpeg_ir::topology::{Body, BodyKind};
+
+use super::*;
+
+fn feature(key: &str, ordinal: u64, operation: LegacyOperation) -> LegacyFeature {
+    LegacyFeature {
+        product_definition: None,
+        id: FeatureId::mint(format!("nx:feature-history:feature#{key}")).expect("id"),
+        ordinal,
+        name: Some("SKETCH".to_owned()),
+        suppressed: None,
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::default(),
+        source_tag: Some("SKETCH".to_owned()),
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(LegacyDefinition::Operation(operation)),
+        native_ref: None,
+    }
+}
+
+fn sketch() -> LegacyOperation {
+    LegacyOperation::Sketch {
+        sketch: SketchFeatureBinding::Unresolved,
+    }
+}
+
+fn equations() -> LegacyOperation {
+    LegacyOperation::TreeNode {
+        role: FeatureTreeNodeRole::Equations,
+        children: TreeChildren::default(),
+    }
+}
+
+fn body(key: &str) -> Body {
+    Body {
+        id: BodyId::mint(format!("nx:s0:body#{key}")).expect("id"),
+        kind: BodyKind::Solid,
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+        native_ref: None,
+    }
+}
+
+fn configuration(ordinal: u32, name: &str, active: bool) -> LegacyConfiguration {
+    LegacyConfiguration {
+        id: cadmpeg_ir::features::ConfigurationId::mint(format!(
+            "nx:arrangements:configuration#{ordinal}"
+        ))
+        .expect("id"),
+        ordinal,
+        active,
+        source_index: Some(ordinal),
+        name: Some(name.to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+
+fn project_ir(ir: &mut CadIr) -> Vec<String> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut minted = Vec::new();
+    let definition = root_definition(&ctx, ir, &mut minted).expect("root definition");
+    minted.extend(project(&ctx, ir, definition).expect("projection"));
+    minted
+}
+
+fn design_findings(ir: &CadIr) -> Vec<String> {
+    cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
+        .expect("validation")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Design)
+        .map(|finding| finding.message)
+        .collect()
+}
+
+#[test]
+fn history_is_one_timeline_in_construction_order() {
+    let mut ir = CadIr::empty();
+    ir.geometry.bodies = vec![body("1"), body("2")];
+    let mut suppressed = feature("b", 2, sketch());
+    suppressed.suppressed = Some(false);
+    ir.model.features = vec![
+        suppressed,
+        feature("a", 1, sketch()),
+        feature("equations", 0, equations()),
+    ];
+    let minted = project_ir(&mut ir);
+
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    assert_eq!(scope.definition.as_str(), PART_ROOT);
+    assert_eq!(scope.roots, [ContainerId::mint(TIMELINE).unwrap()]);
+    let [Container::Ordered {
+        members,
+        rollback: Rollback::End,
+        kind: OrderedKind::Timeline,
+        ..
+    }] = ir.design.containers.as_slice()
+    else {
+        panic!("one timeline");
+    };
+    let ids = members
+        .iter()
+        .map(|member| match member {
+            Member::Feature(id) => id.as_str(),
+            Member::Container(id) => id.as_str(),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        ids,
+        [
+            "nx:feature-history:feature#a",
+            "nx:feature-history:feature#b"
+        ]
+    );
+    let [current] = scope.current.as_slice() else {
+        panic!("one current state");
+    };
+    assert_eq!(current.at, Position::After(members[1].clone()));
+    assert_eq!(current.bodies, [body("1").id, body("2").id]);
+    assert_eq!(ir.design.features.len(), 2);
+    assert_eq!(
+        ir.design.features[1].suppressed,
+        Some(Dimension::Literal(false))
+    );
+    assert_eq!(ir.design.features[0].suppressed, None);
+    assert_eq!(
+        ir.design.features[0].definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Sketch
+        }
+    );
+    let [definition] = ir.model.product_definitions.as_slice() else {
+        panic!("one root definition");
+    };
+    assert_eq!(definition.bodies, [body("1").id, body("2").id]);
+    assert_eq!(minted, [PART_ROOT, TIMELINE]);
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+#[test]
+fn a_part_with_no_history_is_one_group_of_stored_bodies() {
+    let mut ir = CadIr::empty();
+    ir.geometry.bodies = vec![body("1"), body("2")];
+    ir.model.features = vec![feature("equations", 0, equations())];
+    project_ir(&mut ir);
+
+    let [Container::Unordered {
+        members,
+        kind: UnorderedKind::Group,
+        ..
+    }] = ir.design.containers.as_slice()
+    else {
+        panic!("one group");
+    };
+    assert_eq!(members.len(), 2);
+    let stored = FeatureId::mint("nx:document:feature#stored/nx:s0:body/1").unwrap();
+    assert!(members.contains(&Member::Feature(stored.clone())));
+    let current = &ir.design.scopes[0].current;
+    assert_eq!(current.len(), 2);
+    assert_eq!(current[0].at, Position::After(Member::Feature(stored)));
+    assert_eq!(current[0].bodies, [body("1").id]);
+    assert!(matches!(
+        &ir.design.features[0].definition.operation,
+        FeatureOperation::Stored {
+            bodies: Some(bodies),
+            origin: StoredOrigin::Base {},
+            ..
+        } if bodies == &[body("1").id]
+    ));
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+#[test]
+fn an_empty_part_has_an_empty_group() {
+    let mut ir = CadIr::empty();
+    project_ir(&mut ir);
+    assert_eq!(ir.design.scopes.len(), 1);
+    assert!(ir.design.scopes[0].current.is_empty());
+    assert!(ir.design.features.is_empty());
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+#[test]
+fn an_assembly_root_is_the_scope_definition() {
+    let mut ir = CadIr::empty();
+    ir.model.product_definitions.push(
+        serde_json::from_value(serde_json::json!({
+            "id": ASSEMBLY_ROOT, "kind": "group", "bom_properties": {}, "bodies": [],
+            "sketches": [], "tessellations": []
+        }))
+        .expect("definition"),
+    );
+    ir.model.features = vec![feature("a", 0, sketch())];
+    let minted = project_ir(&mut ir);
+    assert_eq!(ir.model.product_definitions.len(), 1);
+    assert_eq!(ir.design.scopes[0].definition.as_str(), ASSEMBLY_ROOT);
+    assert_eq!(minted, [TIMELINE]);
+}
+
+#[test]
+fn arrangements_are_positional_and_the_active_one_is_in_force() {
+    let mut ir = CadIr::empty();
+    ir.model.configurations = vec![
+        configuration(0, "Default", false),
+        configuration(1, "Open", true),
+    ];
+    project_ir(&mut ir);
+    let names = ir
+        .design
+        .arrangements
+        .iter()
+        .map(|arrangement| (arrangement.id.as_str(), arrangement.name.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            ("nx:arrangements:arrangement#0", "Default"),
+            ("nx:arrangements:arrangement#1", "Open")
+        ]
+    );
+    assert!(ir
+        .design
+        .arrangements
+        .iter()
+        .all(
+            |arrangement| arrangement.kind == ArrangementKind::Positional
+                && arrangement.overrides == Overrides::default()
+        ));
+    assert_eq!(
+        ir.design.scopes[0]
+            .active_arrangements
+            .iter()
+            .map(ArrangementId::as_str)
+            .collect::<Vec<_>>(),
+        ["nx:arrangements:arrangement#1"]
+    );
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+#[test]
+fn operations_keep_their_family_or_their_nx_kind() {
+    let mut native = feature(
+        "native",
+        0,
+        LegacyOperation::Native {
+            kind: "TUBE".into(),
+            parameters: BTreeMap::new(),
+        },
+    );
+    native.source_tag = Some("TUBE".to_owned());
+    assert_eq!(
+        operation(&native).unwrap(),
+        FeatureOperation::Native {
+            kind: NonBlankString::new("nx:TUBE").unwrap(),
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }
+    );
+    let datum = feature(
+        "datum",
+        0,
+        LegacyOperation::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem,
+        },
+    );
+    assert_eq!(
+        operation(&datum).unwrap(),
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Datum
+        }
+    );
+    let base = feature(
+        "base",
+        0,
+        LegacyOperation::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: DistinctMembers::try_from(vec![body("1").id]).unwrap(),
+                native: "nx:segment-body-bindings".to_owned(),
+            },
+        },
+    );
+    assert_eq!(
+        operation(&base).unwrap(),
+        FeatureOperation::Stored {
+            bodies: Some(vec![body("1").id]),
+            tessellations: Vec::new(),
+            origin: StoredOrigin::Base {},
+        }
+    );
+    let mut snapshot = feature(
+        "snapshot",
+        0,
+        LegacyOperation::BaseFeature {
+            bodies: BodySelection::Unresolved,
+        },
+    );
+    snapshot.source_tag = Some("MASTER SNAPSHOT BODY".to_owned());
+    assert_eq!(
+        operation(&snapshot).unwrap(),
+        FeatureOperation::Native {
+            kind: NonBlankString::new("nx:MASTER SNAPSHOT BODY").unwrap(),
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }
+    );
+}

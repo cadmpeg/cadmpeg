@@ -2,16 +2,110 @@
   "decode": {
     "ir": {
       "design": {
-        "arrangements": [],
+        "arrangements": [
+          {
+            "appearances": [],
+            "id": "nx:arrangements:arrangement#0",
+            "kind": {
+              "kind": "positional"
+            },
+            "moves": [],
+            "name": "Model",
+            "native_ref": "nx:arrangements-1:configuration#0",
+            "nested": [],
+            "overrides": {
+              "definitions": {},
+              "features": {},
+              "occurrences": {},
+              "parameters": {}
+            },
+            "scope": "nx:document:product-definition#root"
+          },
+          {
+            "appearances": [],
+            "id": "nx:arrangements:arrangement#1",
+            "kind": {
+              "kind": "positional"
+            },
+            "moves": [],
+            "name": "Exploded",
+            "native_ref": "nx:arrangements-1:configuration#1",
+            "nested": [],
+            "overrides": {
+              "definitions": {},
+              "features": {},
+              "occurrences": {},
+              "parameters": {}
+            },
+            "scope": "nx:document:product-definition#root"
+          }
+        ],
         "configurations": [],
-        "containers": [],
+        "containers": [
+          {
+            "kind": "unordered",
+            "value": {
+              "id": "nx:document:group#root",
+              "kind": "group",
+              "members": [
+                {
+                  "kind": "feature",
+                  "value": "nx:document:feature#stored/nx:s0:body/2"
+                }
+              ]
+            }
+          }
+        ],
         "evaluations": [],
-        "features": [],
+        "features": [
+          {
+            "definition": {
+              "operation": {
+                "kind": "stored",
+                "value": {
+                  "bodies": [
+                    "nx:s0:body#2"
+                  ],
+                  "origin": {
+                    "kind": "base"
+                  },
+                  "tessellations": []
+                }
+              }
+            },
+            "id": "nx:document:feature#stored/nx:s0:body/2"
+          }
+        ],
         "names": [],
         "parameters": [],
         "programs": [],
         "publications": [],
-        "scopes": [],
+        "scopes": [
+          {
+            "active_arrangements": [],
+            "current": [
+              {
+                "at": {
+                  "kind": "after",
+                  "value": {
+                    "kind": "feature",
+                    "value": "nx:document:feature#stored/nx:s0:body/2"
+                  }
+                },
+                "bodies": [
+                  "nx:s0:body#2"
+                ],
+                "poses": [],
+                "status": "current"
+              }
+            ],
+            "definition": "nx:document:product-definition#root",
+            "occurrences": {},
+            "roots": [
+              "nx:document:group#root"
+            ]
+          }
+        ],
         "sheet_metal_rules": [],
         "sketch_constraints": [],
         "sketch_entities": [],
@@ -215,7 +309,18 @@
         "point_clouds": [],
         "presentation_documents": [],
         "presentation_layers": [],
-        "product_definitions": [],
+        "product_definitions": [
+          {
+            "bodies": [
+              "nx:s0:body#2"
+            ],
+            "bom_properties": {},
+            "id": "nx:document:product-definition#root",
+            "kind": "part",
+            "sketches": [],
+            "tessellations": []
+          }
+        ],
         "rigid_bodies": [],
         "semantic_annotations": [],
         "sketch_constraints": [],
@@ -398,11 +503,36 @@
     "source_fidelity": {
       "annotations": {
         "exactness": {
+          "nx:arrangements:arrangement#0": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          },
+          "nx:arrangements:arrangement#1": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          },
           "nx:container:parasolid#0": {
             "entity": "derived",
             "fields": {
               "links": "derived"
             },
+            "kind": "entity"
+          },
+          "nx:document:feature#stored/nx:s0:body/2": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          },
+          "nx:document:group#root": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          },
+          "nx:document:product-definition#root": {
+            "entity": "derived",
+            "fields": {},
             "kind": "entity"
           },
           "nx:s0:crv#0": {

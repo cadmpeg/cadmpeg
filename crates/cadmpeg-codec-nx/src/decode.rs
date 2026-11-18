@@ -10,7 +10,7 @@
 //! selection and other loss.
 
 use cadmpeg_core::decode::ArenaClass;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -31,6 +31,7 @@ use crate::parasolid::{self, Stream, StreamKind};
 
 mod blend;
 mod build;
+mod design_v11;
 pub(crate) mod emit;
 pub(crate) mod feature_completeness;
 mod geometry_work;
@@ -199,6 +200,20 @@ fn decoded(
         admitted_entities,
         "admit NX entities",
     )?;
+    let annotations = if ctx.depth() >= DecodeDepth::Geometry {
+        let mut minted = Vec::new();
+        let definition = design_v11::root_definition(ctx, &mut ir, &mut minted)?;
+        if ctx.depth() >= DecodeDepth::Design {
+            minted.extend(design_v11::project(ctx, &mut ir, definition)?);
+        }
+        let mut builder = AnnotationBuilder::resume(annotations);
+        for id in minted {
+            builder.exactness_owned(id, Exactness::Derived);
+        }
+        builder.build()
+    } else {
+        annotations
+    };
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns, ctx)?;
