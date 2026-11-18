@@ -10,7 +10,6 @@ use super::records::{OwnerKey, ProcessRecords};
 use super::walk::Walked;
 use crate::design::dimension::{ParamRef, ParameterRef};
 use crate::design::selection::{Anchor, OccurrencePath, PickContext, StepRef};
-use crate::products::OccurrenceParent;
 use crate::report::check::Finding;
 use crate::validate::design::evaluations::check_position;
 use crate::validate::design::records::{MemberKey, PositionKey};
@@ -180,12 +179,8 @@ fn check_definition(
 }
 
 /// An occurrence path resolves from `from`: each step names an occurrence
-/// placed in the definition the path has reached, the first in `from`.
-///
-/// Until product definitions list their occurrences, an occurrence is placed
-/// in its parent occurrence's prototype, and a root occurrence in the
-/// document's top definition, which no occurrence places. A step past a
-/// native step or an occurrence with no local prototype is not checked.
+/// that the definition the path has reached lists, the first `from` (§8.1).
+/// A step past a native step is not checked.
 fn check_path(
     records: &ProcessRecords<'_>,
     from: &str,
@@ -201,23 +196,20 @@ fn check_path(
             return;
         };
         let occurrence = occurrence.as_str();
-        let Some(listed) = design.occurrences.get(occurrence) else {
+        if !design.occurrences.contains_key(occurrence) {
             super::error(
                 findings,
                 id,
                 format_args!("{what} path names {occurrence}, which is no occurrence of the model"),
             );
             return;
-        };
-        let placed = match &listed.parent {
-            OccurrenceParent::Occurrence { occurrence: parent } => {
-                design.prototype(parent.as_str()) == Some(at)
-            }
-            OccurrenceParent::Root {} => !design
+        }
+        let placed = design.definitions.get(at).is_some_and(|definition| {
+            definition
                 .occurrences
-                .keys()
-                .any(|&other| design.prototype(other) == Some(at)),
-        };
+                .iter()
+                .any(|listed| listed.as_str() == occurrence)
+        });
         if !placed {
             super::error(
                 findings,

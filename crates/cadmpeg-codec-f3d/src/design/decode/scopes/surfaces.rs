@@ -20,6 +20,7 @@ use crate::ids::native_stream;
 use crate::layout::compact_flag_record as flag_record;
 use crate::layout::surface_boundary_group_tail_87 as tail_87;
 use crate::layout::surface_boundary_group_tail_88 as tail_88;
+use crate::layout::surface_extend_scope_prologue as extend;
 use crate::layout::surface_untrim_prologue as untrim;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignRuledSurfaceCorner;
@@ -58,7 +59,10 @@ pub(super) fn exact_surface_extend_operation(
         operation.boundary_reference_record_index,
         losses,
     );
+    let method = surface_extend_method(bytes, scope, operation.distance_record_index);
     Some(DesignSurfaceExtendOperation {
+        method_code: method.map(|(code, _)| code),
+        method_code_offset: method.map(|(_, offset)| offset),
         distance: operation.distance,
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
@@ -69,6 +73,58 @@ pub(super) fn exact_surface_extend_operation(
         tolerance: operation.tolerance,
         tolerance_offset: operation.tolerance_offset,
     })
+}
+
+/// The loss of a `SurfaceExtend` operation that stays native or projects with an unresolved method.
+pub(super) fn surface_extend_loss(
+    scope_id: &str,
+    operation: &DesignSurfaceExtendOperation,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let distance = operation.distance.get();
+    if cadmpeg_ir::scalar::PositiveLength::new(distance * 10.0).is_none() {
+        return Some(
+            crate::loss::F3dLossCode::FeatureSurfaceExtendDistanceNonpositive.note(format!(
+                "SurfaceExtend scope {scope_id} stores extension distance {distance} cm and stays native (DR-312)."
+            )),
+        );
+    }
+    (operation.extension() == cadmpeg_ir::features::SurfaceExtension::Unresolved).then(|| {
+        crate::loss::F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
+            match operation.method_code {
+                Some(code) => format!(
+                    "SurfaceExtend scope {scope_id} stores extension method code {code} and projects with an unresolved method (DR-311)."
+                ),
+                None => format!(
+                    "SurfaceExtend scope {scope_id} has a prologue outside the fixed form and projects with an unresolved extension method (DR-311)."
+                ),
+            },
+        )
+    })
+}
+
+/// The method code of the fixed `SurfaceExtend` scope prologue and its byte offset.
+fn surface_extend_method(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    distance_record_index: u32,
+) -> Option<(u32, u64)> {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let frame_end = start.checked_add(usize::try_from(scope.frame_length()).ok()?)?;
+    let bytes = bytes.get(..frame_end)?;
+    let marker = start.checked_add(extend::PROLOGUE_MARKER)?;
+    let method = start.checked_add(extend::EXTENSION_METHOD)?;
+    let all_zero = |from: usize, to: usize| {
+        bytes
+            .get(from..to)
+            .is_some_and(|run| run.iter().all(|byte| *byte == 0))
+    };
+    (all_zero(start.checked_add(extend::ZERO_RUN_9)?, marker)
+        && bytes.get(marker) == Some(&1)
+        && all_zero(start.checked_add(extend::ZERO_RUN_8)?, method)
+        && marked_record_reference(bytes, start.checked_add(extend::DISTANCE_REFERENCE)?)
+            == Some(distance_record_index))
+    .then_some(())?;
+    Some((View::u32_le_at(bytes, method)?, u64_from_index(method)))
 }
 
 const MARKED_REFERENCE_LEN: usize = 11;

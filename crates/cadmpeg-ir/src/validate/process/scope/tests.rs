@@ -1,18 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
-
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::refs::{Member, Position};
 use crate::design::selection::{Anchor, OccurrencePath, PathStep, StepRef};
 use crate::design::units::{Quantity, ValueKind};
 use crate::process::groups::ProcessOwner;
 use crate::process::operation::{GeometryRole, GeometrySource, ProcessGeometry};
-use crate::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
-};
-use crate::scalar::FiniteReal;
-use crate::transform::Transform;
+use crate::products::Occurrence;
 use crate::validate::design::fixture as design;
 use crate::validate::process::fixture::{
     assert_error, assert_no_process_finding, document, id, workpiece_selection,
@@ -116,43 +110,25 @@ fn the_setups_that_use_a_record_machine_one_scope() {
 #[test]
 fn a_through_path_resolves_from_the_setups_scope() {
     let mut ir = document();
-    ir.model.product_definitions.push(ProductDefinition {
-        id: design::id("definition", "pin"),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
-        bodies: Vec::new(),
-        sketches: Vec::new(),
-        tessellations: Vec::new(),
-        native_ref: None,
-    });
-    let occurrence = |key: &str, parent: OccurrenceParent| Occurrence {
+    let mut pin = ir.model.product_definitions[0].clone();
+    pin.id = design::id("definition", "pin");
+    pin.bodies.clear();
+    pin.occurrences = vec![design::id("occurrence", "nested")];
+    ir.model.product_definitions[0].occurrences = vec![design::id("occurrence", "pin")];
+    ir.model.product_definitions.push(pin);
+    let occurrence = |key: &str| Occurrence {
         id: design::id("occurrence", key),
-        prototype: PrototypeReference::Local {
-            definition: design::id("definition", "pin"),
-        },
-        parent,
-        ordinal: 0,
-        transform: Transform::default(),
-        linked_prototype: None,
-        scale: [FiniteReal::new(1.0).unwrap(); 3],
-        name: None,
+        prototype: design::id("definition", "pin"),
+        transform: None,
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: None,
     };
-    ir.model.occurrences.push(occurrence(
-        "nested",
-        OccurrenceParent::Occurrence {
-            occurrence: design::id("occurrence", "pin"),
-        },
-    ));
-    ir.model
-        .occurrences
-        .push(occurrence("pin", OccurrenceParent::Root {}));
+    ir.model.occurrences.push(occurrence("nested"));
+    ir.model.occurrences.push(occurrence("pin"));
     ir.design.parameters.push(design::parameter(
         "width",
         ValueKind::Quantity(Quantity::LENGTH),
