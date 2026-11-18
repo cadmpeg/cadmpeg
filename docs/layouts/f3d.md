@@ -3762,6 +3762,21 @@ Spec §3.1 · layout: byte offsets · size: 29 B
 | 21 | 4 | `zero_u32` | `bytes[4]` | little | spec | bytes 21 through 24 are zero |
 | 25 | 4 | `body_count` | `u32` | little | spec | offset 25 stores u32 `N` |
 
+## `timeline_owned_base_feature_typed_body_entry`
+
+Spec §3.1 · layout: byte offsets · size: 55 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/base_feature/owned_body_runs.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | Each entry starts with marker 1 · value `1` |
+| 1 | 8 | `reference_value` | `u64` | little | spec | a u64 target at offset 1 |
+| 9 | 4 | `guid_length` | `u32` | little | spec | The u32 at offset 9 gives the 36-byte ASCII · value `36` |
+| 13 | 36 | `guid` | `bytes[36]` | little | spec | The GUID at offset 13 is the Body presentation type |
+| 49 | 6 | `reference_field` | `bytes[6]` | little | spec | The six-byte field at offset 49 |
+
 ## `timeline_owned_paste_source_pairs`
 
 Spec §3.1 · layout: byte offsets · size: 9 B

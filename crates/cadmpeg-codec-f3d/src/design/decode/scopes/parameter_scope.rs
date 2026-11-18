@@ -855,9 +855,17 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let owned = body_owners.get(&scope.record_index).and_then(|owners| {
-                    timeline_owned_base_feature(bytes, &scope, owners, &browser_nodes, &mut losses)
-                });
+                let owned = match body_owners.get(&scope.record_index) {
+                    Some(owners) => timeline_owned_base_feature(
+                        ctx,
+                        stream_view,
+                        &scope,
+                        owners,
+                        &browser_nodes,
+                        &mut losses,
+                    )?,
+                    None => None,
+                };
                 let construction = match owned {
                     Some(owned) => Some(owned),
                     None => exact_base_feature_construction(bytes, &scope)?,
