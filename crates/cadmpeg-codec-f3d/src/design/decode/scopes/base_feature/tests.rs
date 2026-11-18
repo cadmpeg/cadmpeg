@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{u64_from_index, View};
 
 use std::collections::HashMap;
 
@@ -305,8 +305,12 @@ fn owned_frames_with(
         bytes.extend_from_slice(&[0; 4]);
     }
     bytes.extend_from_slice(trailer);
-    let reference_count_offset = u64_from_index(bytes.len());
+    let reference_count = bytes.len();
     bytes.resize(bytes.len() + 128, 0);
+    (bytes, owned_scope(start, reference_count))
+}
+
+fn owned_scope(start: usize, reference_count: usize) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design1/BulkStream.dat:scope#owned",
         DesignFeatureKind::BaseFeature,
@@ -315,14 +319,14 @@ fn owned_frames_with(
     scope
         .try_edit(|draft| {
             draft.byte_offset = u64_from_index(start);
-            draft.reference_count_offset = reference_count_offset;
+            draft.reference_count_offset = u64_from_index(reference_count);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.kind_offset + 96;
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
         })
         .unwrap();
-    (bytes, scope)
+    scope
 }
 
 fn push_owner_reference(bytes: &mut Vec<u8>, target: u64) {
@@ -339,6 +343,26 @@ fn owner_types(guid: &str) -> Vec<crate::records::entity_header::SegmentType> {
     .unwrap()]
 }
 
+fn owned_body_runs(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owner: TimelineBodyOwner,
+) -> Option<(
+    DesignBaseFeatureConstruction,
+    Option<cadmpeg_ir::report::loss::LossNote>,
+)> {
+    crate::test_support::with_decode_context(|ctx| {
+        exact_timeline_owned_base_feature(
+            ctx,
+            View::over_retained(bytes),
+            scope,
+            owner,
+            &HashMap::new(),
+        )
+        .unwrap()
+    })
+}
+
 #[test]
 fn timeline_object_names_its_scope_after_the_counted_references() {
     let (bytes, scope) = owned_frames(&[(71, 61), (72, 62)], 4);
@@ -347,8 +371,7 @@ fn timeline_object_names_its_scope_after_the_counted_references() {
     let owners = timeline_body_owners(&bytes, &records, types.iter());
     assert_eq!(owners.keys().copied().collect::<Vec<_>>(), [51]);
     let (construction, loss) =
-        exact_timeline_owned_base_feature(&bytes, &scope, owners[&51][0], &HashMap::new())
-            .expect("owned two-body scope");
+        owned_body_runs(&bytes, &scope, owners[&51][0]).expect("owned two-body scope");
     assert!(loss.is_none());
     assert_eq!(construction.timeline_owner(), Some(50));
     assert_eq!(
@@ -368,6 +391,100 @@ fn timeline_object_names_its_scope_after_the_counted_references() {
             .collect::<Vec<_>>(),
         [71, 72]
     );
+}
+
+#[test]
+fn paired_body_to_component_owner_reads_typed_body_runs() {
+    fn typed_reference(bytes: &mut Vec<u8>, target: u64, guid: &str) {
+        bytes.push(1);
+        bytes.extend_from_slice(&target.to_le_bytes());
+        bytes.extend_from_slice(&36_u32.to_le_bytes());
+        bytes.extend_from_slice(guid.as_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+    }
+
+    let body_type = crate::design::presentation::BODY_PRESENTATION_TYPE_GUID;
+    let wide_parameter_body = u64::from(u32::MAX) + 72;
+    let mut bytes = Vec::new();
+    crate::test_support::indexed_header(&mut bytes, *b"300", 50);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    typed_reference(&mut bytes, 71, body_type);
+    typed_reference(&mut bytes, wide_parameter_body, body_type);
+    let owner_reference_offset = u64_from_index(bytes.len() + 1);
+    typed_reference(&mut bytes, 51, "D7015B81-AB4D-4C89-BED7-AA4411E1964A");
+    bytes.extend_from_slice(&owner_paired_header());
+    let start = bytes.len();
+    crate::test_support::indexed_header(&mut bytes, *b"301", 51);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&4_u32.to_le_bytes());
+    let mut offsets = Vec::new();
+    for (target, source_field) in [(71, 0_u32), (wide_parameter_body, 1), (61, 0), (62, 0)] {
+        offsets.push(u64_from_index(bytes.len() + 1));
+        typed_reference(&mut bytes, target, body_type);
+        bytes.extend_from_slice(&source_field.to_le_bytes());
+    }
+    let count_at = bytes.len();
+    bytes.resize(count_at + 128, 0);
+    let scope = owned_scope(start, count_at);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let owners = timeline_body_owners(
+        &bytes,
+        &records,
+        owner_types(BODY_TO_COMPONENT_OBJECT).iter(),
+    );
+    let owner = owners[&51][0];
+    let (construction, loss) = owned_body_runs(&bytes, &scope, owner).unwrap();
+    assert!(loss.is_none());
+    let DesignBaseFeatureConstruction::TimelineOwnedBodies {
+        owner_record,
+        owner_reference_offset: stored_owner_reference_offset,
+        parameter_bodies,
+        bodies,
+        ..
+    } = &construction
+    else {
+        panic!("expected timeline-owned bodies");
+    };
+    assert_eq!(*owner_record, 50);
+    assert_eq!(*stored_owner_reference_offset, owner_reference_offset);
+    assert!(parameter_bodies
+        .iter()
+        .map(|row| row.value)
+        .eq([71, wide_parameter_body]));
+    assert_eq!(parameter_bodies[1].field, [0, 0, 1, 0, 0, 0]);
+    assert!(bodies.iter().map(|row| row.value).eq([61, 62]));
+    assert!(parameter_bodies
+        .iter()
+        .chain(bodies)
+        .map(|row| row.offset)
+        .eq(offsets.iter().copied()));
+    assert_eq!(
+        serde_json::from_value::<DesignBaseFeatureConstruction>(
+            serde_json::to_value(&construction).unwrap()
+        )
+        .unwrap(),
+        construction
+    );
+
+    for offset in [count_at - 55 + 9, count_at - 55 + 13, count_at - 55 + 49] {
+        let mut malformed = bytes.clone();
+        malformed[offset] ^= 1;
+        assert!(
+            owned_body_runs(&malformed, &scope, owner).is_none(),
+            "{offset}"
+        );
+    }
+    let misplaced_count = owned_scope(start, count_at - 1);
+    assert!(owned_body_runs(&bytes, &misplaced_count, owner).is_none());
+    let unpaired_owner = TimelineBodyOwner {
+        paired: false,
+        ..owner
+    };
+    assert!(owned_body_runs(&bytes, &scope, unpaired_owner).is_none());
+    let paste_owners = timeline_body_owners(&bytes, &records, owner_types(PASTE_OBJECT).iter());
+    assert!(owned_body_runs(&bytes, &scope, paste_owners[&51][0]).is_none());
 }
 
 #[test]
@@ -391,10 +508,7 @@ fn owned_scope_requires_two_references_per_placed_body() {
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
     let types = owner_types(PASTE_OBJECT);
     let owners = timeline_body_owners(&bytes, &records, types.iter());
-    assert!(
-        exact_timeline_owned_base_feature(&bytes, &scope, owners[&51][0], &HashMap::new())
-            .is_none()
-    );
+    assert!(owned_body_runs(&bytes, &scope, owners[&51][0]).is_none());
 }
 
 #[test]
@@ -457,7 +571,17 @@ fn owned_with_losses(
     nodes: &HashMap<String, Option<u64>>,
 ) -> (Option<DesignBaseFeatureConstruction>, Vec<LossKind>) {
     let mut losses = Vec::new();
-    let construction = timeline_owned_base_feature(bytes, scope, owners, nodes, &mut losses);
+    let construction = crate::test_support::with_decode_context(|ctx| {
+        timeline_owned_base_feature(
+            ctx,
+            View::over_retained(bytes),
+            scope,
+            owners,
+            nodes,
+            &mut losses,
+        )
+        .unwrap()
+    });
     (
         construction,
         losses.into_iter().map(|loss| loss.code).collect(),
