@@ -218,6 +218,7 @@ fn capped_blend(cylinder: bool) -> (AsmHistoricalTopology, AsmHistoricalTopology
             edge,
             interior: Point3::new(0.0, 0.0, 0.0),
             tangent: Some(direction),
+            carrier: None,
         });
     }
     let mut result = state(&[(10, &[30]), (11, &[31]), (12, &[32]), (20, &[30, 31, 32])]);

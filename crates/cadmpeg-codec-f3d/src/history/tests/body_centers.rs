@@ -84,6 +84,7 @@ fn pillow(x: f64) -> AsmHistoricalTopology {
                 Point3::new(start.x.min(end.x), 0., start.z.min(end.z)),
                 Point3::new(start.x.max(end.x), 0., start.z.max(end.z)),
             ]),
+            carrier: None,
         },
     )
     .to_vec();

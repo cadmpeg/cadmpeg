@@ -4565,6 +4565,7 @@ fn project_input_edge_geometry(
                 faces: project_input_members(&faces, |face| {
                     crate::ids::history_input_face_id(prefix, face)
                 })?,
+                carrier: sample.carrier.clone(),
             })
         })
         .collect()
