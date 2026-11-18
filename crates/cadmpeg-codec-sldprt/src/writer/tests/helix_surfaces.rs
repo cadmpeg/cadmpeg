@@ -1397,18 +1397,14 @@ fn semantic_writer_round_trips_extend_surface() {
         FaceSelection, FeatureDefinition, FeatureOperation, SurfaceExtension,
     };
 
-    let base_bytes = sldprt_with_body(&triangle_body());
+    let mut source = sldprt_with_body(&triangle_body());
     let base = SldprtCodec
-        .decode(
-            &mut Cursor::new(base_bytes.clone()),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
     let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><ExtendSurface Name="Extend" Type="SurfaceExtend" id="38" Faces="{face}" Method="Natural" CornerMode="Merge"><Dimension Name="Distance">2mm</Dimension></ExtendSurface></Keywords>"#
     );
-    let mut source = base_bytes;
     source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1425,33 +1421,36 @@ fn semantic_writer_round_trips_extend_surface() {
     ));
 
     for distance_mm in [-4.5, 4.5] {
-        let mut ir_edit = decoded.ir_mut();
-        ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-                faces,
-                distance,
-                method,
-            }) = definition
-            else {
-                panic!("typed extended surface");
-            };
-            *faces = FaceSelection::Faces(vec![face_id.clone()]);
-            *distance = Some(cadmpeg_ir::scalar::NonZeroLength::new(distance_mm).unwrap());
-            *method = SurfaceExtension::Linear;
-        });
-        drop(ir_edit);
+        decoded.ir_mut().model.features[0]
+            .evaluation
+            .edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
+                    faces,
+                    distance,
+                    method,
+                }) = definition
+                else {
+                    panic!("typed extended surface");
+                };
+                *faces = FaceSelection::Faces(vec![face_id.clone()]);
+                *distance = Some(cadmpeg_ir::scalar::NonZeroLength::new(distance_mm).unwrap());
+                *method = SurfaceExtension::Linear;
+            });
+        if distance_mm < 0.0 {
+            let mut native = Some(sldprt_native(decoded.ir()));
+            assert!(matches!(
+                crate::history::write::prepare_features_for_write(decoded.ir(), &mut native),
+                Err(CodecError::NotImplemented(_))
+            ));
+            continue;
+        }
         let mut encoded = Vec::new();
-        let result = crate::test_support::serialize_history_in_native_envelope_after_refusal(
+        crate::test_support::serialize_history_in_native_envelope_after_refusal(
             decoded.ir(),
             decoded.source_fidelity(),
             &mut encoded,
-        );
-        if distance_mm < 0.0 {
-            assert!(matches!(result, Err(CodecError::NotImplemented(_))));
-            assert!(encoded.is_empty());
-            continue;
-        }
-        result.unwrap();
+        )
+        .unwrap();
         let regenerated = SldprtCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap();
