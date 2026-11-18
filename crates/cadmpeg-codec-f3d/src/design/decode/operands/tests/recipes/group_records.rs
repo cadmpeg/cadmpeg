@@ -495,94 +495,108 @@ fn a_pattern_face_seed_group_member_is_a_face_operand() {
 }
 
 #[test]
-fn surface_untrim_groups_retain_face_recipe_members() {
+fn surface_face_groups_retain_owned_face_recipe_members() {
     use crate::records::identity::{Located, ReferenceRun};
     use crate::records::topology::construction::DesignConstructionOperandRole;
 
-    let mut bytes = Vec::new();
-    for index in [100, 100, 101, 102, 103] {
-        indexed_header(&mut bytes, *b"777", index);
-    }
-    bytes.extend_from_slice(&16u32.to_le_bytes());
-    bytes.extend_from_slice(&16u32.to_le_bytes());
-    let recipe_at = bytes.len();
-    bytes.extend_from_slice(b"face_recipe_data");
-    for value in [0i32, -1] {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    indexed_header(&mut bytes, *b"777", 104);
-    let mut scope = DesignParameterScope::empty(
-        &format!("{STREAM}:design-parameter-scope#50"),
-        DesignFeatureKind::SurfaceUntrim,
-        50,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.reference_members = ReferenceRun::unlocated(vec![70, 90, 100]);
-            draft.layout_fixture_references();
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let mut selection = group(50, 90);
-    selection.scope_reference_ordinal = 1;
-    selection.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X9);
-    selection
-        .try_set_members(vec![Located {
-            value: 100,
-            offset: 1026,
-        }])
-        .unwrap();
-    let header = DesignRecordHeader {
-        id: format!("{STREAM}:design-record-header#0"),
-        record_index: 100,
-        class_tag: "777".to_owned().try_into().unwrap(),
-        byte_offset: 0,
-    };
-    let recipe = ConstructionRecipe {
-        id: format!("{STREAM}:construction-recipe#{recipe_at}"),
-        byte_offset: u64::try_from(recipe_at).unwrap(),
-        kind: ConstructionRecipeKind::Face,
-        design: None,
-        recipe_index: 0,
-        record_index: None,
-    };
-    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
-    crate::test_support::with_decode_context(|ctx| {
-        crate::test_support::zip_test::with_scan(&archive, |scan| {
-            let operands = crate::design::decode::operands::decode_face_operands(
-                ctx,
-                scan,
-                std::slice::from_ref(&scope),
-                std::slice::from_ref(&selection),
-                std::slice::from_ref(&header),
-                std::slice::from_ref(&recipe),
-                &[],
-            )
-            .unwrap()
-            .0;
-            assert_eq!(operands.len(), 1);
-            assert_eq!(operands[0].record_index(), 100);
-            assert_eq!(operands[0].scope_record_index, 50);
-            assert_eq!(operands[0].scope_reference_ordinal, 1);
-            assert_eq!(operands[0].group_record_index(), Some(90));
-            assert_eq!(operands[0].group_member_ordinal(), Some(0));
-            assert_eq!(operands[0].recipe_kind, ConstructionRecipeKind::Face);
-            selection.operand_role =
-                DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
-            let unrelated = crate::design::decode::operands::decode_face_operands(
-                ctx,
-                scan,
-                std::slice::from_ref(&scope),
-                std::slice::from_ref(&selection),
-                std::slice::from_ref(&header),
-                std::slice::from_ref(&recipe),
-                &[],
-            )
-            .unwrap()
-            .0;
-            assert!(unrelated.is_empty());
+    for (kind, role, refused_role) in [
+        (
+            DesignFeatureKind::SurfaceUntrim,
+            DesignOperandRole::ROLE_0X9,
+            DesignOperandRole::ROLE_0X10,
+        ),
+        (
+            DesignFeatureKind::ReplaceFace,
+            DesignOperandRole::ROLE_0X9,
+            DesignOperandRole::ROLE_0X21,
+        ),
+        (
+            DesignFeatureKind::ReplaceFace,
+            DesignOperandRole::ROLE_0X10,
+            DesignOperandRole::ROLE_0X21,
+        ),
+    ] {
+        let mut bytes = Vec::new();
+        for index in [100, 100, 101, 102, 103] {
+            indexed_header(&mut bytes, *b"777", index);
+        }
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        let recipe_at = bytes.len();
+        bytes.extend_from_slice(b"face_recipe_data");
+        for value in [0i32, -1] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        indexed_header(&mut bytes, *b"777", 104);
+        let mut scope =
+            DesignParameterScope::empty(&format!("{STREAM}:design-parameter-scope#50"), kind, 50);
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![70, 90, 100]);
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let mut selection = group(50, 90);
+        selection.scope_reference_ordinal = 1;
+        selection.operand_role = DesignConstructionOperandRole::Other(role);
+        selection
+            .try_set_members(vec![Located {
+                value: 100,
+                offset: 1026,
+            }])
+            .unwrap();
+        let header = DesignRecordHeader {
+            id: format!("{STREAM}:design-record-header#0"),
+            record_index: 100,
+            class_tag: "777".to_owned().try_into().unwrap(),
+            byte_offset: 0,
+        };
+        let recipe = ConstructionRecipe {
+            id: format!("{STREAM}:construction-recipe#{recipe_at}"),
+            byte_offset: u64::try_from(recipe_at).unwrap(),
+            kind: ConstructionRecipeKind::Face,
+            design: None,
+            recipe_index: 0,
+            record_index: None,
+        };
+        let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
+        crate::test_support::with_decode_context(|ctx| {
+            crate::test_support::zip_test::with_scan(&archive, |scan| {
+                let operands = crate::design::decode::operands::decode_face_operands(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&selection),
+                    std::slice::from_ref(&header),
+                    std::slice::from_ref(&recipe),
+                    &[],
+                )
+                .unwrap()
+                .0;
+                assert_eq!(operands.len(), 1);
+                assert_eq!(operands[0].record_index(), 100);
+                assert_eq!(operands[0].scope_record_index, 50);
+                assert_eq!(operands[0].scope_reference_ordinal, 1);
+                assert_eq!(operands[0].group_record_index(), Some(90));
+                assert_eq!(operands[0].group_member_ordinal(), Some(0));
+                assert_eq!(operands[0].recipe_kind, ConstructionRecipeKind::Face);
+                selection.operand_role = DesignConstructionOperandRole::Other(refused_role);
+                let unrelated = crate::design::decode::operands::decode_face_operands(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&selection),
+                    std::slice::from_ref(&header),
+                    std::slice::from_ref(&recipe),
+                    &[],
+                )
+                .unwrap()
+                .0;
+                assert!(unrelated.is_empty());
+            });
         });
-    });
+    }
 }
 
 #[test]

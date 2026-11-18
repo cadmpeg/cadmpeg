@@ -342,12 +342,15 @@ impl FaceAdmission<'_, '_> {
                     .map_err(CodecError::malformed)?;
             }
             FeatureOperation::ReplaceFace { operands, .. } if edit_pair => {
+                let tangent_chain = operands.tangent_chain();
                 let mut first = operands.targets().clone();
                 let mut second = operands.replacements().clone();
                 admit(&mut first, false)?;
                 admit(&mut second, false)?;
-                *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(first, second)
-                    .map_err(CodecError::malformed)?;
+                *operands =
+                    cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(first, second)
+                        .map_err(CodecError::malformed)?
+                        .with_tangent_chain(tangent_chain);
             }
             FeatureOperation::CosmeticThread { face, .. } => admit(face, false)?,
             FeatureOperation::Thicken { faces, .. }
