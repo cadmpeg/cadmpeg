@@ -17,6 +17,7 @@ fn prologue(extent: DesignExtrudeExtent) -> DesignExtrudePrologue {
         side_extent_discriminator_offsets: [77, 90],
         first_side_target_ordinal: None,
         distance_tail: None,
+        opaque_distance_word: None,
         extent,
         direction_face_extend_offsets: [32, 36],
         direction_reversed: true,
