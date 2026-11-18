@@ -45,6 +45,7 @@ use super::sheet_metal::edge::{DesignEdgeFlangeScope, DesignReferenceEdgeFlange}
 use super::sheet_metal::{
     DesignBaseFlangeOperation, DesignEdgeFlangeOperation, DesignHemOperation,
 };
+use super::split_face::DesignSplitFaceOperation;
 use super::surface_ops::{
     DesignReplaceFaceOperation, DesignRuledSurfaceOperation, DesignSurfaceExtendOperation,
     DesignSurfaceOffsetOperation, DesignSurfacePatchBoundary, DesignSurfacePatchNormalState,
@@ -160,6 +161,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_named_scope_closing,
     crate::records::identity::Located<u32>,
     "closing"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_split_face_operation,
+    DesignSplitFaceOperation,
+    "split_face_operation"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_component_insert_construction,
@@ -330,6 +336,11 @@ cadmpeg_core::named_optional_field!(
     "path_pattern_settings"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_linked_rotations,
+    super::motion_link::DesignLinkedRotations,
+    "linked_rotations"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_silhouette_split_operation,
     super::silhouette_split::DesignSilhouetteSplit,
     "silhouette_split_operation"
@@ -486,6 +497,25 @@ impl<T> ScopePayloadCompleteness for Vec<T> {
 impl ScopePayloadCompleteness for DesignEdgeFlangeScope {
     fn is_uninterpreted(&self) -> bool {
         matches!(self, Self::Unresolved)
+    }
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_split_tool_extension,
+    crate::records::identity::Located<bool>,
+    "split_tool_extension"
+);
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DesignSplitScope {
+    pub(crate) extend_tool: Option<crate::records::identity::Located<bool>>,
+}
+
+rewrite_native_record!(DesignSplitScope, []; {extend_tool});
+
+impl ScopePayloadCompleteness for DesignSplitScope {
+    fn is_uninterpreted(&self) -> bool {
+        false
     }
 }
 
@@ -795,6 +825,8 @@ design_feature_kinds! {
         Fillet => "Fillet": super::fillet_set::DesignFilletScope,
         Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
         Combine => "Combine": DesignCombineScope,
+        Split => "Split": DesignSplitScope,
+        SplitFace => "SplitFace": Option<DesignSplitFaceOperation>,
         BoundaryFill => "BoundaryFill": super::boundary_fill::DesignBoundaryFillScope,
         Draft => "Draft": Option<DesignDraftOperation>,
         ReplaceFace => "ReplaceFace": Option<DesignReplaceFaceOperation>,
@@ -820,6 +852,7 @@ design_feature_kinds! {
         SurfaceUntrim => "SurfaceUntrim": Option<DesignSurfaceUntrimOperation>,
         Hole => "Hole": crate::records::feature::hole::DesignHoleScope,
         Scale => "Scale": Option<DesignScaleOperation>,
+        MotionLink => "MotionLink": Option<super::motion_link::DesignLinkedRotations>,
         SilhouetteSplit => "SilhouetteSplit": Option<super::silhouette_split::DesignSilhouetteSplit>,
         Thread => "Thread": Option<DesignThreadConstruction>,
         Emboss => "Emboss": Option<DesignEmbossConstruction>,
@@ -854,13 +887,11 @@ design_feature_kinds! {
     }
     names {
         SurfaceTrim => "SurfaceTrim",
-        Split => "Split",
         Canvas => "Canvas",
         Decal => "Decal",
         BaseMeshFeature => "Base Mesh Feature",
         CustomFeature => "CustomFeature",
         Form => "Form",
-        SplitFace => "SplitFace",
         DeleteFace => "DeleteFace",
         SurfaceDeleteFace => "SurfaceDeleteFace",
         UnStitch => "UnStitch",
@@ -1170,6 +1201,12 @@ struct DesignParameterScopeSerde {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_linked_rotations"
+    )]
+    linked_rotations: Option<super::motion_link::DesignLinkedRotations>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_reverse_normal_operation"
     )]
     reverse_normal_operation: Option<DesignReverseNormalOperation>,
@@ -1204,6 +1241,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_mesh_face_groups"
     )]
     mesh_face_groups: Option<super::mesh_face_groups::DesignMeshFaceGroups>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_split_tool_extension"
+    )]
+    split_tool_extension: Option<crate::records::identity::Located<bool>>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(
         default,
@@ -1333,6 +1376,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_combine_named_tail"
     )]
     combine_named_tail: Option<DesignNamedScopeReferences>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_split_face_operation"
+    )]
+    split_face_operation: Option<DesignSplitFaceOperation>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -2039,6 +2088,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
+        if wire.linked_rotations.is_some() {
+            present.push("linked_rotations");
+        }
         if wire.silhouette_split_operation.is_some() {
             present.push("silhouette_split_operation");
         }
@@ -2050,6 +2102,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         if wire.path_pattern_settings.is_some() {
             present.push("path_pattern_settings");
+        }
+        if wire.split_tool_extension.is_some() {
+            present.push("split_tool_extension");
         }
         if wire.surface_stitch_operation.is_some() {
             present.push("surface_stitch_operation");
@@ -2094,6 +2149,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         if wire.combine_operation.is_some() || wire.combine_named_tail.is_some() {
             present.push("combine_operation");
+        }
+        if wire.split_face_operation.is_some() {
+            present.push("split_face_operation");
         }
         if wire.boundary_fill.is_some() || wire.boundary_fill_named_tail.is_some() {
             present.push("boundary_fill");
@@ -2180,6 +2238,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 operation: wire.combine_operation.take(),
                 named_tail: wire.combine_named_tail.take(),
             }),
+            DesignFeatureKind::SplitFace => {
+                DesignScopePayload::SplitFace(wire.split_face_operation.take())
+            }
             DesignFeatureKind::Draft => DesignScopePayload::Draft(wire.draft_operation.take()),
             DesignFeatureKind::ReplaceFace => {
                 DesignScopePayload::ReplaceFace(wire.replace_face_operation.take())
@@ -2335,8 +2396,13 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                     extent: wire.hole_extent.take(),
                 })
             }
-            DesignFeatureKind::Split => DesignScopePayload::Split,
+            DesignFeatureKind::Split => DesignScopePayload::Split(DesignSplitScope {
+                extend_tool: wire.split_tool_extension.take(),
+            }),
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
+            DesignFeatureKind::MotionLink => {
+                DesignScopePayload::MotionLink(wire.linked_rotations.take())
+            }
             DesignFeatureKind::SilhouetteSplit => {
                 DesignScopePayload::SilhouetteSplit(wire.silhouette_split_operation.take())
             }
@@ -2412,7 +2478,6 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::CopyPasteBodies => {
                 DesignScopePayload::CopyPasteBodies(wire.copy_paste_bodies_operation.take())
             }
-            DesignFeatureKind::SplitFace => DesignScopePayload::SplitFace,
             DesignFeatureKind::PathPattern => {
                 DesignScopePayload::PathPattern(wire.path_pattern_settings.take())
             }
@@ -2486,6 +2551,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.move_operation.is_some()
             || wire.modify_operation.is_some()
             || wire.scale_operation.is_some()
+            || wire.linked_rotations.is_some()
             || wire.silhouette_split_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
@@ -2493,6 +2559,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.unfold_operation.is_some()
             || wire.refold_operation.is_some()
             || wire.mesh_face_groups.is_some()
+            || wire.split_tool_extension.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
             || wire.surface_untrim_operation.is_some()
@@ -2510,6 +2577,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.chamfer_sets.is_some()
             || wire.combine_operation.is_some()
             || wire.combine_named_tail.is_some()
+            || wire.split_face_operation.is_some()
             || wire.boundary_fill.is_some()
             || wire.boundary_fill_named_tail.is_some()
             || wire.emboss_construction.is_some()
@@ -2697,6 +2765,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             move_operation: None,
             modify_operation: None,
             scale_operation: None,
+            linked_rotations: None,
             silhouette_split_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
@@ -2704,6 +2773,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             unfold_operation: None,
             refold_operation: None,
             mesh_face_groups: None,
+            split_tool_extension: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
             surface_untrim_operation: None,
@@ -2724,6 +2794,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             path_feature: None,
             combine_operation: None,
             combine_named_tail: None,
+            split_face_operation: None,
             boundary_fill: None,
             boundary_fill_named_tail: None,
             thread_construction: None,
@@ -2819,6 +2890,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
             }
+            DesignScopePayload::MotionLink(value) => wire.linked_rotations = value,
             DesignScopePayload::SilhouetteSplit(value) => {
                 wire.silhouette_split_operation = value;
             }
@@ -2863,6 +2935,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.combine_operation = value.operation;
                 wire.combine_named_tail = value.named_tail;
             }
+            DesignScopePayload::SplitFace(value) => {
+                wire.split_face_operation = value;
+            }
             DesignScopePayload::BoundaryFill(value) => {
                 wire.boundary_fill = value.prefix;
                 wire.boundary_fill_named_tail = value.named_tail;
@@ -2898,14 +2973,13 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.hole_construction = value.point;
                 wire.hole_extent = value.extent;
             }
+            DesignScopePayload::Split(value) => wire.split_tool_extension = value.extend_tool,
             DesignScopePayload::SurfaceTrim
-            | DesignScopePayload::Split
             | DesignScopePayload::Canvas
             | DesignScopePayload::Decal
             | DesignScopePayload::BaseMeshFeature
             | DesignScopePayload::CustomFeature
             | DesignScopePayload::Form
-            | DesignScopePayload::SplitFace
             | DesignScopePayload::DeleteFace
             | DesignScopePayload::SurfaceDeleteFace
             | DesignScopePayload::UnStitch
@@ -2958,6 +3032,32 @@ impl DesignParameterScope {
             DesignParameterScopePayloadError(format!("invalid parameter scope {field}"))
         };
         let kind = draft.payload.kind_name();
+        if let DesignScopePayload::MotionLink(Some(link)) = &draft.payload {
+            if !link.is_valid()
+                || draft.record_index == 0
+                || draft.byte_offset
+                    < u64_from_index(crate::layout::motion_link_rotation_relation::LEN)
+            {
+                return Err(fail("linked_rotations"));
+            }
+        }
+        if let DesignScopePayload::Split(DesignSplitScope {
+            extend_tool: Some(extension),
+        }) = &draft.payload
+        {
+            let without_properties =
+                u64_from_index(crate::layout::split_body_scope_prefix::LEN + 1);
+            let with_empty_properties = without_properties + u64_from_index(size_of::<u32>());
+            let relative = extension.offset.checked_sub(draft.byte_offset);
+            let reference = extension
+                .offset
+                .checked_add(u64_from_index(crate::layout::split_body_extension::LEN));
+            if (relative != Some(without_properties) && relative != Some(with_empty_properties))
+                || reference.is_none_or(|at| at >= draft.reference_count_offset)
+            {
+                return Err(fail("split_tool_extension"));
+            }
+        }
         if let DesignScopePayload::SurfacePatch(DesignSurfacePatchScope {
             normal: Some(DesignSurfacePatchNormalState::Explicit { reversed }),
             ..
@@ -3189,6 +3289,13 @@ impl DesignParameterScope {
         if let DesignScopePayload::Pipe(Some(pipe)) = &draft.payload {
             if !pipe.scope_offsets_are_valid(draft.byte_offset, draft.reference_count_offset) {
                 return Err(fail("Pipe prefix offsets"));
+            }
+        }
+        if let DesignScopePayload::SplitFace(value) = &draft.payload {
+            if value.as_ref().is_some_and(|operation| {
+                !operation.scope_offsets_valid(draft.byte_offset, draft.reference_count_offset)
+            }) {
+                return Err(fail("split_face_operation"));
             }
         }
         let scope = Self {
@@ -3610,6 +3717,13 @@ impl DesignParameterScope {
     pub(crate) fn combine_operation(&self) -> Option<&DesignCombineOperation> {
         match &self.payload {
             DesignScopePayload::Combine(value) => value.operation.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn split_face_operation(&self) -> Option<&DesignSplitFaceOperation> {
+        match &self.payload {
+            DesignScopePayload::SplitFace(value) => value.as_ref(),
             _ => None,
         }
     }
