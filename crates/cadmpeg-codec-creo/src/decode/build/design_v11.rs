@@ -24,14 +24,12 @@ use cadmpeg_ir::features::{
     FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, IdentityNamespace, ProductDefinitionId};
-use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 
 use crate::container::ContainerScan;
 
 mod parameters;
 
-const ROOT_DEFINITION: IdentityNamespace =
-    cadmpeg_ir::identity_namespace!("creo", "model", "product_definition");
 const TIMELINE: IdentityNamespace = cadmpeg_ir::identity_namespace!("creo", "model", "timeline");
 const GROUP: IdentityNamespace = cadmpeg_ir::identity_namespace!("creo", "model", "group");
 const STORED_BODY: IdentityNamespace =
@@ -57,13 +55,26 @@ pub(super) fn project(
     Ok(())
 }
 
+/// The kind of the model the archive's version line declares.
+pub(super) fn model_kind(scan: &ContainerScan) -> ProductDefinitionKind {
+    if crate::decode::assembly::declares_assembly(&scan.framing.version_line) {
+        ProductDefinitionKind::Assembly
+    } else {
+        ProductDefinitionKind::Part
+    }
+}
+
 /// The model's root definition. A model whose archive header names no model
 /// has none in the product layer; it is stated here, owning every body.
 pub(super) fn root_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    kind: ProductDefinitionKind,
 ) -> Result<ProductDefinitionId, CodecError> {
-    let id = crate::identity::compose_checked::<ProductDefinitionId>(&ROOT_DEFINITION, "root")?;
+    let id = crate::identity::compose_checked::<ProductDefinitionId>(
+        &crate::identity::MODEL_PRODUCT_DEFINITION,
+        "root",
+    )?;
     if ir
         .model
         .product_definitions
@@ -73,24 +84,15 @@ pub(super) fn root_definition(
         return Ok(id);
     }
     ctx.charge_entities(1, "admit Creo model product_definitions")?;
-    ir.model.product_definitions.push(ProductDefinition {
-        id: id.clone(),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
-        bodies: ir
-            .geometry
-            .bodies
-            .iter()
-            .map(|body| body.id.clone())
-            .collect(),
-        sketches: Vec::new(),
-        tessellations: Vec::new(),
-        native_ref: None,
-    });
+    let mut definition = ProductDefinition::root(id.clone(), ExternalDocument::default());
+    definition.kind = Some(kind);
+    definition.bodies = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect();
+    ir.model.product_definitions.push(definition);
     ir.model.product_definitions.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(id)
 }

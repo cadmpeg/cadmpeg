@@ -170,8 +170,15 @@
           "bodies": [],
           "bom_properties": {},
           "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
           "kind": "part",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],

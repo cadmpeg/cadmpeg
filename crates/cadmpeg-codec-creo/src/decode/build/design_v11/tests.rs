@@ -41,8 +41,10 @@ fn part(features: Vec<LegacyFeature>, bodies: &[&str]) -> (CadIr, ProductDefinit
     let mut ir = CadIr::empty();
     ir.model.features = features;
     ir.geometry.bodies = bodies.iter().map(|key| body(key)).collect();
-    let definition = crate::decode::with_service_context(|ctx| root_definition(ctx, &mut ir))
-        .expect("root definition");
+    let definition = crate::decode::with_service_context(|ctx| {
+        root_definition(ctx, &mut ir, ProductDefinitionKind::Part)
+    })
+    .expect("root definition");
     (ir, definition)
 }
 
@@ -150,12 +152,19 @@ fn a_model_with_no_feature_list_states_one_stored_feature_per_body() {
 fn the_root_definition_is_stated_once_and_owns_every_body() {
     let (mut ir, definition) = part(Vec::new(), &["1"]);
     assert_eq!(definition.as_str(), "creo:model:product_definition#root");
+    assert!(ir.model.product_definitions[0].is_root());
+    assert_eq!(
+        ir.model.product_definitions[0].kind,
+        Some(ProductDefinitionKind::Part)
+    );
     assert_eq!(
         ir.model.product_definitions[0].bodies,
         [ir.geometry.bodies[0].id.clone()]
     );
-    let again = crate::decode::with_service_context(|ctx| root_definition(ctx, &mut ir))
-        .expect("root definition");
+    let again = crate::decode::with_service_context(|ctx| {
+        root_definition(ctx, &mut ir, ProductDefinitionKind::Part)
+    })
+    .expect("root definition");
     assert_eq!(again, definition);
     assert_eq!(ir.model.product_definitions.len(), 1);
 }
