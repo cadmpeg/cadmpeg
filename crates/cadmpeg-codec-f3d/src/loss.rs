@@ -4452,6 +4452,7 @@ mod tests {
                 "feature.mesh-separate-membership-unresolved",
                 "feature.thread-live-face-unproven",
                 "feature.thread-modeled-flag-assumed",
+                "feature.thread-offset-native",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.history-body-bounded",

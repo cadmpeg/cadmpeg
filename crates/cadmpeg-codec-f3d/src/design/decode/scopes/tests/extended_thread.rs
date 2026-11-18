@@ -196,8 +196,9 @@ fn owned_hole_thread_reads_its_hole_length_and_offset_references() {
         let marker_at = trailer_at - scalar::STANDARD_TRAILER;
         bytes[marker_at + 1] = 2;
         bytes[trailer_at] = 1;
+        let hole_reference = trailer_at + 1;
         bytes.splice(
-            trailer_at + 1..trailer_at + 1,
+            hole_reference..hole_reference,
             94u32.to_le_bytes().into_iter().chain([0; 6]),
         );
         if fixture.compact_owned.is_some() {
