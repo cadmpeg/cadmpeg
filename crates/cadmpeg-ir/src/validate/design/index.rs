@@ -16,7 +16,6 @@ use crate::design::refs::{Member, Position};
 use crate::design::selection::{NativeOwner, OccurrencePath, PickTarget, StepRef};
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
-use crate::products::PrototypeReference;
 
 use super::names::mentioned_features;
 use super::records::{by_id, members, DesignRecords, MemberKey, PositionKey};
@@ -360,19 +359,13 @@ impl<'a> DesignIndex<'a> {
         Some(self.closure(BTreeSet::from([feature])))
     }
 
-    /// The local prototype definitions the occurrences of a path place.
+    /// The prototype definitions the occurrences of a path place.
     pub(super) fn path_prototypes(&self, path: &OccurrencePath) -> Vec<&'a str> {
         path.0
             .iter()
             .filter_map(|step| match &step.occurrence {
-                StepRef::Occurrence(occurrence) => {
-                    self.records.occurrences.get(occurrence.as_str())
-                }
+                StepRef::Occurrence(occurrence) => self.records.prototype(occurrence.as_str()),
                 StepRef::Native(_) => None,
-            })
-            .filter_map(|occurrence| match &occurrence.prototype {
-                PrototypeReference::Local { definition } => Some(definition.as_str()),
-                PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
             })
             .collect()
     }

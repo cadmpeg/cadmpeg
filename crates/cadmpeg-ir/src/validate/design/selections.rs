@@ -22,7 +22,7 @@ use crate::design::selection::{
 };
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
-use crate::products::{OccurrenceParent, PrototypeReference};
+use crate::products;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
@@ -206,17 +206,7 @@ fn resolving_definition<'a>(
 ) -> Option<&'a str> {
     let last = |path: &'a OccurrencePath| -> Option<&'a str> {
         match &path.0.last()?.occurrence {
-            StepRef::Occurrence(occurrence) => {
-                match &index
-                    .records
-                    .occurrences
-                    .get(occurrence.as_str())?
-                    .prototype
-                {
-                    PrototypeReference::Local { definition } => Some(definition.as_str()),
-                    PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
-                }
-            }
+            StepRef::Occurrence(occurrence) => index.records.prototype(occurrence.as_str()),
             StepRef::Native(_) => None,
         }
     };
@@ -763,7 +753,7 @@ fn check_path(
         super::error(findings, at, message);
     };
     let mut native = false;
-    let mut previous: Option<Option<&str>> = root.map(Some);
+    let mut previous = root;
     for step in &path.0 {
         let occurrence = match &step.occurrence {
             StepRef::Native(_) => {
@@ -786,20 +776,10 @@ fn check_path(
             ));
             return;
         };
-        if let (Some(Some(expected)), false) = (previous, moved.contains(occurrence.as_str())) {
-            let placed_in = match &record_.parent {
-                OccurrenceParent::Occurrence { occurrence: parent } => index
-                    .records
-                    .occurrences
-                    .get(parent.as_str())
-                    .and_then(|parent| match &parent.prototype {
-                        PrototypeReference::Local { definition } => Some(definition.as_str()),
-                        PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => {
-                            None
-                        }
-                    }),
-                OccurrenceParent::Root {} => None,
-            };
+        if let (Some(expected), false) = (previous, moved.contains(occurrence.as_str())) {
+            let placed_in =
+                products::owner(&index.records.ir.model.product_definitions, occurrence)
+                    .map(|owner| owner.id.as_str());
             if placed_in.is_some_and(|placed_in| placed_in != expected) {
                 record(format_args!(
                     "occurrence path step {} is not an occurrence of the previous step's prototype",
@@ -808,9 +788,6 @@ fn check_path(
                 return;
             }
         }
-        previous = Some(match &record_.prototype {
-            PrototypeReference::Local { definition } => Some(definition.as_str()),
-            PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
-        });
+        previous = Some(record_.prototype.as_str());
     }
 }
