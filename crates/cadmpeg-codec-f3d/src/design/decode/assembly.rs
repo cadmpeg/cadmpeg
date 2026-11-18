@@ -248,8 +248,15 @@ pub(super) fn exact_legacy_as_built_421_operands(
     stream_types: &HashMap<u64, (&str, u32)>,
     recipes: &[ConstructionRecipe],
     solved_frame: &DesignAssemblySolvedFrame,
-) -> Result<Option<DesignAssemblyLegacyOperands>, cadmpeg_core::CodecError> {
-    (|| {
+) -> Result<
+    (
+        Option<DesignAssemblyLegacyOperands>,
+        Option<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    cadmpeg_core::CodecError,
+> {
+    let mut input_loss = None;
+    let operands = (|| {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length(),
         scope.class_tag.as_str(),
@@ -271,11 +278,16 @@ pub(super) fn exact_legacy_as_built_421_operands(
     let hole_record_index = hole_reference.value;
     let second_selection_record_index = second_selection_reference.value;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
-    let hole = match exact_hole_construction(bytes, records, scope, stream_types, &crate::records::feature::scope::DesignFeatureKind::AsBuilt) {
+    let hole = match exact_hole_construction(ctx, bytes, records, scope, stream_types, &crate::records::feature::scope::DesignFeatureKind::AsBuilt) {
         Ok(Some(hole)) => hole,
         Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
+    input_loss = hole.input_loss;
+    if input_loss.is_some() {
+        return None;
+    }
+    let hole = hole.construction;
     if hole.point_record_index != hole_record_index
         || !hole
             .input_records
@@ -354,7 +366,8 @@ recipes,
             },
         ),
     ))
-    })().transpose()
+    })().transpose()?;
+    Ok((operands, input_loss))
 }
 
 fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {
@@ -422,6 +435,7 @@ fn exact_legacy_as_built_face_selection(
                 bytes,
                 records,
                 crate::design::decode::operands::FaceOperandFrame {
+                    registered_frame: None,
                     scope,
                     scope_reference_ordinal,
                     group_ownership: None,

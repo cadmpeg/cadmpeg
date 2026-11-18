@@ -965,7 +965,7 @@ Parsed by:
 
 Spec §13.5 · layout: byte offsets · size: 90 B
 
-Prefix of the segment-major-29 and segment-major-31 sheet-metal style record; the record continues after this prefix.
+Prefix of the segment-major-29, segment-major-30, and segment-major-31 sheet-metal style record; the record continues after this prefix.
 
 Parsed by:
 - `crates/cadmpeg-codec-inventor/src/feature/sheet_metal/style.rs`

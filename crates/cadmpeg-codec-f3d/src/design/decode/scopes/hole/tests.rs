@@ -4,8 +4,8 @@ use cadmpeg_core::decode::u64_from_index;
 use super::exact_hole_construction as exact_hole_construction_with_ctx;
 use super::exact_hole_face_selection;
 use super::HOLE_FACE_SELECTION_TYPE_GUID;
-use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use std::collections::HashMap;
@@ -18,14 +18,18 @@ fn exact_hole_construction(
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<crate::records::feature::hole::DesignHoleConstruction> {
-    exact_hole_construction_with_ctx(
-        bytes,
-        records,
-        scope,
-        stream_types,
-        &crate::records::feature::scope::DesignFeatureKind::Hole,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        exact_hole_construction_with_ctx(
+            ctx,
+            bytes,
+            records,
+            scope,
+            stream_types,
+            &crate::records::feature::scope::DesignFeatureKind::Hole,
+        )
+    })
     .unwrap()
+    .map(|hole| hole.construction)
 }
 
 #[test]
@@ -40,24 +44,97 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let types = HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]);
-    let construction = exact_hole_construction_with_ctx(
-        &bytes,
-        &records,
-        &scope,
-        &types,
-        &crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-    )
+    let construction = crate::test_support::with_decode_context(|ctx| {
+        exact_hole_construction_with_ctx(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            &types,
+            &crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+        )
+    })
     .unwrap();
-    assert_eq!(construction.unwrap().point_record_index, 55);
-    assert!(exact_hole_construction_with_ctx(
-        &bytes,
-        &records,
-        &scope,
-        &types,
-        &crate::records::feature::scope::DesignFeatureKind::Hole
-    )
-    .unwrap()
-    .is_none());
+    assert_eq!(construction.unwrap().construction.point_record_index, 55);
+    assert!(
+        crate::test_support::with_decode_context(|ctx| exact_hole_construction_with_ctx(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            &types,
+            &crate::records::feature::scope::DesignFeatureKind::Hole
+        ))
+        .unwrap()
+        .is_none()
+    );
+}
+
+#[test]
+fn qualified_inputs_preserve_the_hole_and_as_built_carrier() {
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    for version in [1, 2, 4] {
+        for keep_local in [false, true] {
+            let (mut bytes, scope, _, input_at) = hole_point_stream_version(version);
+            let mut inputs = Vec::new();
+            inputs.push(1);
+            inputs.extend_from_slice(&500u64.to_le_bytes());
+            inputs.extend_from_slice(&[0, 1]);
+            inputs.extend_from_slice(&7u32.to_le_bytes());
+            inputs.push(1);
+            inputs.extend_from_slice(&501u64.to_le_bytes());
+            inputs.push(1);
+            inputs.extend_from_slice(&8u32.to_le_bytes());
+            lp_utf16(&mut inputs, "00000000-0000-0000-0000-000000000001");
+            inputs.push(1);
+            let local_target_offset = u64_from_index(input_at + inputs.len() + 1);
+            let count = if keep_local {
+                inputs.extend_from_slice(&bytes[input_at..input_at + 11]);
+                3u32
+            } else {
+                2u32
+            };
+            bytes[input_at - 4..input_at].copy_from_slice(&count.to_le_bytes());
+            bytes.splice(input_at..input_at + 11, inputs);
+            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+            let types = HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, version))]);
+            for kind in [DesignFeatureKind::Hole, DesignFeatureKind::AsBuilt] {
+                let mut scope = scope.clone();
+                scope
+                    .try_edit(|draft| draft.payload = kind.clone().try_into().unwrap())
+                    .unwrap();
+                let hole = crate::test_support::with_decode_context(|ctx| {
+                    exact_hole_construction_with_ctx(ctx, &bytes, &records, &scope, &types, &kind)
+                })
+                .unwrap()
+                .expect("solved placement");
+                let point = hole.construction;
+                assert_eq!(point.reference_type, 19);
+                assert_f64_array(
+                    point.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+                    [1.25, -2.5, 3.75],
+                );
+                assert_f64_array(
+                    point.direction.map(cadmpeg_ir::scalar::FiniteReal::get),
+                    [0.0, 0.0, 1.0],
+                );
+                assert_eq!(point.tangent_point_data.is_some(), version != 1);
+                if keep_local {
+                    let [input] = point.input_records.as_slice() else {
+                        panic!("one local input");
+                    };
+                    assert_eq!((input.value, input.offset), (378, local_target_offset));
+                } else {
+                    assert!(point.input_records.is_empty());
+                }
+                assert_eq!(
+                    hole.input_loss.unwrap().code,
+                    crate::loss::F3dLossCode::FeaturePointDirectionInputsUnrepresented.kind(),
+                );
+            }
+        }
+    }
 }
 
 fn assert_f64_array<const N: usize>(actual: [f64; N], expected: [f64; N]) {
