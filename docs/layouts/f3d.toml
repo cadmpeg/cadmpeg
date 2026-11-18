@@ -15531,6 +15531,188 @@ size = 212
 note = "The generation-specific placement tail is retained as a named opaque carrier."
 
 [[record]]
+name = "joint_origin_scope_carrier_separation"
+kind = "byte"
+section = "3.1"
+anchor = "A version-2 `JointOrigin` scope can store its solved frame"
+size = 30
+note = "Offsets are relative to the paired JointOrigin scope header."
+
+[[record.field]]
+name = "paired_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header starts 30 bytes after the paired scope header"
+
+[[record.gap]]
+offset = 11
+size = 19
+note = "The paired scope suffix precedes the carrier header."
+
+[[record]]
+name = "joint_origin_direct_carrier_369"
+kind = "byte"
+section = "3.1"
+anchor = "A version-2 `JointOrigin` scope can store its solved frame"
+size = 369
+note = "Offsets are relative to the primary placement-carrier header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[34]"
+source = "spec"
+anchor = "carriers store 34 zero bytes"
+
+[[record.field]]
+name = "construction_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked construction-record reference at offset 45"
+
+[[record.field]]
+name = "zero_after_reference"
+offset = 56
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes after that reference"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 60
+type = "f64[16]"
+source = "spec"
+anchor = "The matrix columns give the axes and the origin in centimetres"
+
+[[record.gap]]
+offset = 188
+size = 170
+note = "Placement carrier payload before its scope backlink."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 358
+type = "bytes[11]"
+source = "spec"
+anchor = "The final eleven bytes of the carrier are a marked scope backlink"
+
+[[record]]
+name = "joint_origin_direct_carrier_391"
+kind = "byte"
+section = "3.1"
+anchor = "A version-2 `JointOrigin` scope can store its solved frame"
+size = 391
+note = "Offsets are relative to the primary placement-carrier header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[34]"
+source = "spec"
+anchor = "carriers store 34 zero bytes"
+
+[[record.field]]
+name = "construction_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked construction-record reference at offset 45"
+
+[[record.field]]
+name = "zero_after_reference"
+offset = 56
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes after that reference"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 60
+type = "f64[16]"
+source = "spec"
+anchor = "The matrix columns give the axes and the origin in centimetres"
+
+[[record.gap]]
+offset = 188
+size = 192
+note = "Placement carrier payload before its scope backlink."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 380
+type = "bytes[11]"
+source = "spec"
+anchor = "The final eleven bytes of the carrier are a marked scope backlink"
+
+[[record]]
+name = "joint_origin_direct_carrier_412"
+kind = "byte"
+section = "3.1"
+anchor = "A version-2 `JointOrigin` scope can store its solved frame"
+size = 412
+note = "Offsets are relative to the primary placement-carrier header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed placement header."
+
+[[record.field]]
+name = "zero_prefix"
+offset = 11
+type = "bytes[35]"
+source = "spec"
+anchor = "The 412-byte carrier stores 35 zero bytes"
+
+[[record.field]]
+name = "construction_reference"
+offset = 46
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked construction-record reference at offset 46"
+
+[[record.field]]
+name = "reference_suffix"
+offset = 57
+type = "bytes[4]"
+source = "spec"
+anchor = "the bytes `00 00 01 00` after that reference"
+value = [0, 0, 1, 0]
+
+[[record.field]]
+name = "matrix"
+offset = 61
+type = "f64[16]"
+source = "spec"
+anchor = "The matrix columns give the axes and the origin in centimetres"
+
+[[record.gap]]
+offset = 189
+size = 212
+note = "Placement carrier payload before its scope backlink."
+
+[[record.field]]
+name = "scope_backlink"
+offset = 401
+type = "bytes[11]"
+source = "spec"
+anchor = "The final eleven bytes of the carrier are a marked scope backlink"
+
+[[record]]
 name = "work_plane_legacy_321_opaque_matrix_frame"
 kind = "byte"
 section = "3.1"
@@ -40027,6 +40209,81 @@ anchor = "The Position suffix spans 83 bytes"
 value = [0, 0, 0]
 
 [[record]]
+name = "captured_position_v4"
+kind = "byte"
+section = "Captured component positions"
+anchor = "The version-4 prefix before the ordered-reference count spans 319 bytes"
+size = 319
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs"
+
+[[record.gap]]
+offset = 0
+size = 95
+note = "Indexed header and prefix fields."
+
+[[record.field]]
+name = "row_count"
+offset = 95
+type = "u32"
+value = 1
+source = "spec"
+anchor = "A u32 row count of one occurs at offset 95"
+
+[[record.field]]
+name = "row"
+offset = 99
+type = "bytes[141]"
+source = "spec"
+anchor = "The 141-byte row at offset 99 stores one matrix"
+
+[[record.field]]
+name = "identity_length"
+offset = 240
+type = "u32"
+source = "spec"
+anchor = "The version-4 suffix starts at offset 240 with the u32 GUID length"
+
+[[record.field]]
+name = "identity"
+offset = 244
+type = "bytes[72]"
+source = "spec"
+anchor = "followed by the same UTF-16LE null GUID and three zero bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 316
+type = "bytes[3]"
+source = "spec"
+anchor = "followed by the same UTF-16LE null GUID and three zero bytes"
+
+[[record]]
+name = "captured_position_v4_identity_locator"
+kind = "byte"
+section = "Captured component positions"
+anchor = "Its 62-byte identity locator stores u32 discriminator one at offset 56"
+size = 62
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "Shared identity-locator fields."
+
+[[record.field]]
+name = "discriminator"
+offset = 56
+type = "u32"
+value = 1
+source = "spec"
+anchor = "Its 62-byte identity locator stores u32 discriminator one at offset 56"
+
+[[record.gap]]
+offset = 60
+size = 2
+note = "Shared identity-locator tail."
+
+[[record]]
 name = "unmarked_sphere_local_frame"
 kind = "byte"
 section = "3.1"
@@ -40768,6 +41025,59 @@ source = "spec"
 anchor = "and a control byte"
 
 [[record]]
+name = "split_face_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A `SplitFace` scope begins with an eleven-byte indexed header and eight zero bytes"
+size = 19
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/split_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven-byte indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record]]
+name = "split_face_method_flags"
+kind = "byte"
+section = "3.1"
+anchor = "the method control has a little-endian u32 family, a u8 projection, and a u8 extension"
+size = 6
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/split_face.rs"
+
+[[record.field]]
+name = "family"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 family"
+
+[[record.field]]
+name = "projection"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "u8 projection"
+
+[[record.field]]
+name = "extension"
+offset = 5
+type = "u8"
+source = "spec"
+anchor = "u8 extension"
+
+[[record]]
 name = "boundary_fill_scope_prefix_plain"
 kind = "byte"
 section = "3.1"
@@ -41246,3 +41556,134 @@ offset = 11
 type = "u32"
 source = "spec"
 anchor = "followed by a u32"
+
+[[record]]
+name = "motion_link_rotation_scope"
+kind = "byte"
+section = "Assembly operands"
+anchor = "A 297-byte `MotionLink` scope"
+size = 297
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/motion_link.rs"
+
+[[record.gap]]
+offset = 0
+size = 43
+note = "Scope prefix before the relation reference."
+
+[[record.field]]
+name = "relation"
+offset = 43
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked relation reference at scope offset 43"
+
+[[record.gap]]
+offset = 54
+size = 243
+note = "Scope operands, ordered reference table, stored kind, and tail."
+
+[[record]]
+name = "motion_link_rotation_relation"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The 166-byte two-revolute relation"
+size = 166
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/motion_link.rs"
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "Indexed relation header and prefix."
+
+[[record.field]]
+name = "parent_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 parent count 2 at offset 20"
+
+[[record.field]]
+name = "first_parent"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "two 15-byte parent entries at offsets 24 and 39"
+
+[[record.gap]]
+offset = 35
+size = 4
+note = "First parent word."
+
+[[record.field]]
+name = "second_parent"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "two 15-byte parent entries at offsets 24 and 39"
+
+[[record.gap]]
+offset = 50
+size = 13
+note = "Second parent word and prefix of the repeated pair."
+
+[[record.field]]
+name = "first_joint"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 63 and 74"
+
+[[record.field]]
+name = "second_joint"
+offset = 74
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 63 and 74"
+
+[[record.field]]
+name = "first_axis"
+offset = 85
+type = "u32"
+source = "spec"
+anchor = "u32 freedom codes at offsets 85 and 89"
+
+[[record.field]]
+name = "second_axis"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "u32 freedom codes at offsets 85 and 89"
+
+[[record.field]]
+name = "phase"
+offset = 93
+type = "f64"
+source = "spec"
+anchor = "stores f64 zero at offset 93"
+
+[[record.field]]
+name = "flags"
+offset = 101
+type = "bytes[6]"
+value = [0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "six zero bytes at offset 101"
+
+[[record.field]]
+name = "first_angle"
+offset = 107
+type = "f64"
+source = "spec"
+anchor = "Evaluated f64 angles at offsets 107 and 115"
+
+[[record.field]]
+name = "second_angle"
+offset = 115
+type = "f64"
+source = "spec"
+anchor = "Evaluated f64 angles at offsets 107 and 115"
+
+[[record.gap]]
+offset = 123
+size = 43
+note = "Relation tail before the scope header."

@@ -238,18 +238,20 @@ consumer knows the emitted shell is not the complete neutral shell.
 **Question.** Which channel reports a linear uncertainty measure that does not
 resolve, when the document projection transfers a value?
 
-**Known.** `crates/cadmpeg-codec-step/src/reader/geometry.rs:3907-3965` counts
+**Known.** `crates/cadmpeg-codec-step/src/reader/geometry.rs:3979-4047` counts
 each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` measure that does not resolve. A
 measure does not resolve when its record is absent, when it holds no number,
 when it holds no unit reference, when its unit is not a length unit and not a
 plane-angle unit, or when its scaled value is not finite or is not more than
-zero. `crates/cadmpeg-codec-step/src/reader/geometry.rs:3983-4018` adds these
+zero. `crates/cadmpeg-codec-step/src/reader/geometry.rs:4064-4106` adds these
 counts across all contexts and gives `LinearUncertainty::Value`, `Empty`, or
 `Ambiguous`. Only `Empty` and `Ambiguous` keep the count.
-`crates/cadmpeg-codec-step/src/reader/geometry.rs:550-576` reports
-`geometry.uncertainty-length-unresolved` for `Empty`, and names the count in the
-`geometry.uncertainty-length-ambiguous` note for `Ambiguous`. The `Value` arm
-writes `ir.tolerances.linear` and reports nothing. `step.md` §8 "CADIR decision:
+`crates/cadmpeg-codec-step/src/reader/geometry.rs:571-595` reports
+`geometry.uncertainty-length-unresolved` for `Empty`.
+`crates/cadmpeg-codec-step/src/reader/topology/tolerances.rs` reports
+`geometry.uncertainty-length-ambiguous` for `Ambiguous` when the count is
+positive, and names the count in the note. The `Value`
+arm writes `ir.tolerances.linear` and reports nothing. `step.md` §8 "CADIR decision:
 `Tolerances.linear` is the document projection of the" gives the same rule: it
 asks for a note only when no candidate resolves.
 
