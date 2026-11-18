@@ -22,8 +22,8 @@ use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcRefer
 /// The largest generator array that a direct edge selector stores.
 const MAX_SELECTOR_GENERATORS: usize = 4;
 
-pub(super) struct StoredSelector {
-    pub(super) source: u32,
+pub(in crate::feature) struct StoredSelector {
+    pub(in crate::feature) source: u32,
     pub(super) generators: Vec<u32>,
     pub(super) secondary: Vec<u32>,
     pub(super) key: u32,
@@ -33,7 +33,7 @@ pub(super) struct StoredSelector {
     context: PmDcReference,
 }
 
-pub(super) fn parse(
+pub(in crate::feature) fn parse(
     ctx: &DecodeContext<'_>,
     payload: View<'_>,
     version: u8,
@@ -105,11 +105,11 @@ pub(super) fn secondary_names_known(selector: &StoredSelector, features: &HashSe
         .all(|name| features.contains(name))
 }
 
-pub(super) fn source(payload: View<'_>, version: u8) -> Result<u32, CodecError> {
+pub(in crate::feature) fn source(payload: View<'_>, version: u8) -> Result<u32, CodecError> {
     Ok(state_content_header(&mut Cursor::new(payload), version)?.source_index)
 }
 
-pub(super) fn links(
+pub(in crate::feature) fn links(
     selector: &StoredSelector,
     type_at: impl Fn(u32) -> Option<[u8; 16]>,
     body_source_at: impl Fn(u32) -> Option<u32>,
@@ -148,7 +148,7 @@ pub(crate) const fn supported_schema(schema: u32) -> bool {
     matches!(schema, 38 | 40 | 42 | 43 | 44)
 }
 
-pub(super) fn selected(
+pub(in crate::feature) fn selected(
     ctx: &DecodeContext<'_>,
     records: &[Record],
     selectors: &[StoredSelector],

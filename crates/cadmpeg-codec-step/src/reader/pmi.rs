@@ -311,19 +311,63 @@ pub(super) fn decode(
             };
         }
         let values = characteristic_values.get(&id);
-        let definition = PmiDimension::new(
-            kind,
-            values.and_then(|values| values.nominal),
-            values.and_then(|values| values.limits.clone()),
-        )
-        .and_then(|dimension| {
-            dimension.with_modifiers(
-                values
-                    .map(|values| values.modifiers.clone())
-                    .unwrap_or_default(),
+        let limits = values.and_then(|values| values.limits.clone());
+        let dimension = |kind: &DimensionKind, limits: Option<_>| {
+            PmiDimension::new(
+                kind.clone(),
+                values.and_then(|values| values.nominal),
+                limits,
             )
-        })
-        .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
+            .and_then(|dimension| {
+                dimension.with_modifiers(
+                    values
+                        .map(|values| values.modifiers.clone())
+                        .unwrap_or_default(),
+                )
+            })
+        };
+        let entity_kind = DimensionKind::Other(dimension_name.to_ascii_lowercase());
+        let replaceable = !matches!(kind, DimensionKind::Other(_));
+        let attempts = [
+            (&kind, limits.clone(), false, false),
+            (&entity_kind, limits.clone(), true, false),
+            (&kind, None, false, true),
+            (&entity_kind, None, true, true),
+        ];
+        let mut first_error = None;
+        let mut definition = None;
+        for (attempt_kind, attempt_limits, replaces_kind, omits_limits) in attempts {
+            if (replaces_kind && !replaceable) || (omits_limits && limits.is_none()) {
+                continue;
+            }
+            match dimension(attempt_kind, attempt_limits) {
+                Ok(built) => {
+                    let error = first_error.take().unwrap_or_default();
+                    if replaces_kind {
+                        losses.push(StepLossCode::PmiDimensionKindQuantityMismatch.note(format!(
+                            "dimension #{id}: {error}; the dimension keeps the kind {} in place of {kind:?}",
+                            dimension_name.to_ascii_lowercase()
+                        )));
+                    }
+                    if omits_limits {
+                        losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(
+                            "dimension #{id}: {error}; the dimension keeps no limits"
+                        )));
+                    }
+                    definition = Some(built);
+                    break;
+                }
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+        let Some(definition) = definition else {
+            return Err(CodecError::malformed(format_args!(
+                "dimension #{id}: {}",
+                first_error.unwrap_or_default()
+            )));
+        };
         let aspect_ids = record
             .partials
             .iter()
@@ -1778,17 +1822,7 @@ fn is_measure_record(record: &RawRecord) -> bool {
 }
 
 fn is_dimension_name(name: &str) -> bool {
-    name == "DIMENSIONAL_SIZE"
-        || name.starts_with("DIMENSIONAL_SIZE_")
-        || name == "DIMENSIONAL_LOCATION"
-        || name.starts_with("DIMENSIONAL_LOCATION_")
-        || name == "ANGULAR_SIZE"
-        || name.starts_with("ANGULAR_SIZE_")
-        || name == "ANGULAR_LOCATION"
-        || name.starts_with("ANGULAR_LOCATION_")
-        || matches!(name, "DIAMETER_SIZE" | "RADIUS_SIZE")
-        || name.ends_with("_SIZE")
-        || name.ends_with("_LOCATION")
+    dimension_kind(name).is_some()
 }
 
 fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
@@ -1799,6 +1833,9 @@ fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
         name if name == "DIMENSIONAL_LOCATION" || name.starts_with("DIMENSIONAL_LOCATION_") => {
             Some(DimensionKind::Location)
         }
+        "DIRECTED_DIMENSIONAL_LOCATION" => Some(DimensionKind::Other(
+            "directed_dimensional_location".to_owned(),
+        )),
         name if name == "ANGULAR_SIZE"
             || name.starts_with("ANGULAR_SIZE_")
             || name == "ANGULAR_LOCATION"
@@ -1808,11 +1845,6 @@ fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
         }
         "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
         "RADIUS_SIZE" => Some(DimensionKind::Radius),
-        name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
-            let mut name = name.to_owned();
-            name.make_ascii_lowercase();
-            Some(DimensionKind::Other(name))
-        }
         _ => None,
     }
 }

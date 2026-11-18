@@ -213,11 +213,18 @@ and box from the pcurve uses of its first coedge, mapped through that
 coedge's face surface.
 
 An inverted 3D curve interval that passes within the allowance of a cone
-apex or a sphere pole inside the interval is not split there: the face's
+apex, a sphere pole, or the point to which a whole `v` side of a NURBS pole
+grid collapses inside the interval is not split there: the face's
 bounded quantities are `boundary.inversion-failed`. The resolver detects the
 pass at a sample, or between two samples whose parameter image turns by a
 quarter period or more, by a golden-section search of the distance to the
 singular points.
+
+An inverted 3D curve interval whose end lies within the allowance of a cone
+apex, a sphere pole, or a collapsed `v` side of a NURBS patch keeps, from
+that end to the parameter where the curve enters the allowance, the `u` of
+the entry point, with `u' = 0`. The pole, apex, or collapsed-side segment of
+the loop starts or ends at that `u`.
 
 ## Regions
 
@@ -264,23 +271,30 @@ On a NURBS carrier's finite parameter domain:
 
 Loops on a periodic NURBS domain are `region.domain-unsupported`.
 
-On a sphere or a ring torus both regions that the loops bound are bounded,
-so the loops do not choose a side:
+On a sphere, a ring torus or a selected spindle-torus sheet both regions
+that the loops bound are bounded, so the loops do not choose a side:
 
 | Loops | Region |
 | --- | --- |
-| No ring loop, or ring loops of seam and synthesized pieces only | `whole_surface`: the face covers the whole carrier, `4πR²` or `4π²R\|r\|`, with the method `closed_form`. |
+| No ring loop, or ring loops of seam and synthesized pieces only | `whole_surface`: the face covers the whole carrier, `4πR²`, `4π²R\|r\|` or the sheet area `2π·∫ \|r\|·\|R + r cos v\| dv` over the sheet's `v` range, with the method `closed_form`. |
 | Other ring loops | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. |
 
-A loop that meets a sphere pole has a synthesized segment along the pole.
-The segment keeps the region on its left: it runs in `−u` at the pole
-`v = π/2` and in `+u` at the pole `v = −π/2`, after the loop reversal for a
-reversed declared normal, by an amount in `[0, 2π)`. When the amount is within the
+A spindle torus (`R < |r|`) whose `degenerate_torus` construction selects
+a sheet has the sheet as its domain. With `cos a = −R/|r|`, the outer
+(apple) sheet is `v ∈ [−a, a]` and the inner (lemon) sheet is
+`v ∈ [a, 2π − a]`. Both ends of the range are poles on the axis, where the
+sheet meets itself. Regions on a sheet follow the sphere rules on that `v`
+range.
+
+A loop that meets a pole of a sphere or a sheet has a synthesized segment
+along the pole. The segment keeps the region on its left: it runs in `−u`
+at the upper pole and in `+u` at the lower pole, after the loop reversal for
+a reversed declared normal, by an amount in `[0, 2π)`. When the amount is within the
 angular allowance of 0 or `2π`, the segment takes the nearest lift.
 
-On a torus the net shifts of the loops sum to zero, else the face is
-`boundary.nesting-invalid`. Horn and spindle tori are
-`region.domain-unsupported`.
+On a ring torus the net shifts of the loops sum to zero, else the face is
+`boundary.nesting-invalid`. A trimmed face on a horn torus (`R = |r|`), or
+on a spindle torus without a selected sheet, is `region.domain-unsupported`.
 
 Membership of a parameter point in such a region uses the region
 indicator. The indicator is 1 at a reference point just left of a loop
@@ -297,9 +311,10 @@ Area and flux on a sphere or torus use Green's theorem on the strip
 `u ∈ [0, 2π)` by `v ∈ [base, base + span]`. The parts of the upper edge in
 the region add to the loops' integrals; each `u` interval `I` of the edge
 adds `W·|I|`, where `W` is the area of one unit of `u`. On a sphere
-`base = −π/2`, and the upper edge is the north pole. The edge is in the
-region when the region indicator beyond every boundary point toward the
-north pole is 1. A torus is cut at a level `base` midway in the widest gap
+`base = −π/2`, and the upper edge is the north pole. On a spindle sheet
+`base` is the lower end of the sheet's `v` range, and the upper edge is the
+upper pole. The edge is in the region when the region indicator beyond
+every boundary point toward the upper pole is 1. A ring torus is cut at a level `base` midway in the widest gap
 between the loops' `v` values. Each piece is split where it crosses the cut,
 and its `v` is taken in `[base, base + 2π)`. An interval of the cut circle
 starts at each crossing in `−v` and ends at the next crossing in `+v`.

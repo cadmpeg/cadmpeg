@@ -59,6 +59,9 @@ pub(crate) enum StepLossCode {
     SourceDialectUnverified,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
+    /// The declared schema object identifier names a module edition that the
+    /// decoder reads as a published AP edition.
+    SourceSchemaEditionAssumed,
     /// An attribute string field failed to decode.
     AttributeStringInvalid,
     /// `AXIS2_PLACEMENT_3D` reference direction was parallel to its axis.
@@ -123,6 +126,9 @@ pub(crate) enum StepLossCode {
     PmiZoneUnresolved,
     /// A dimensional modifier has no complete semantic value.
     PmiDimensionModifierUnresolved,
+    /// A dimension's nominal or limit quantity disagrees with the kind of its
+    /// dimension entity, so the dimension keeps the entity name as its kind.
+    PmiDimensionKindQuantityMismatch,
     /// Dimensional limit measures do not form one lower and one upper limit.
     DimensionalLimitsOmitted,
     /// Independent styled items assign conflicting scalar colors.
@@ -394,6 +400,28 @@ pub(crate) enum StepLossCode {
     /// reported here instead, with its measured value, because the cost is
     /// continuous and a threshold cannot express it.
     EdgeVertexOffCarrier,
+    /// A plane-angle unit named degree states a radian factor other than
+    /// `π/180`; the reader reads it as `π/180`.
+    AngleUnitFactorCorrected,
+    /// The end-to-end lengths of a context's plant items agree on a length
+    /// unit other than the one the context declares.
+    LengthUnitContradicted,
+    /// A CSG item's attributes do not resolve; it has no feature and no body.
+    CsgItemUnresolved,
+    /// A plant CSG shape lists several plant item orientations, so its items
+    /// keep their own placements.
+    CsgPlantOrientationAmbiguous,
+    /// A CSG item has a design feature and no derived body.
+    CsgSolidUnsynthesized,
+    /// A CSG Boolean tree has design features and no derived body.
+    CsgBooleanUnevaluated,
+    /// A swept-area profile closed a gap between boundary segment ends.
+    CsgProfileGapClosed,
+    /// CSG items belong to no product definition, so no design scope files them.
+    CsgDesignUnscoped,
+    /// The faces on a spindle `TOROIDAL_SURFACE` do not select one sheet, so
+    /// the surface carries no sheet selection.
+    TorusSheetUnresolved,
 }
 
 impl StepLossCode {
@@ -415,6 +443,7 @@ impl StepLossCode {
         Self::HeaderMetadataNoncanonical,
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
+        Self::SourceSchemaEditionAssumed,
         Self::AttributeStringInvalid,
         Self::PlacementReferenceInferred,
         Self::ConflictingRepresentationUnits,
@@ -447,6 +476,7 @@ impl StepLossCode {
         Self::PmiDatumSystemInvalid,
         Self::PmiZoneUnresolved,
         Self::PmiDimensionModifierUnresolved,
+        Self::PmiDimensionKindQuantityMismatch,
         Self::DimensionalLimitsOmitted,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
@@ -575,6 +605,15 @@ impl StepLossCode {
         Self::OccurrenceExpansionDepthTruncated,
         Self::NonManifoldEdgeSplit,
         Self::EdgeVertexOffCarrier,
+        Self::AngleUnitFactorCorrected,
+        Self::LengthUnitContradicted,
+        Self::CsgItemUnresolved,
+        Self::CsgPlantOrientationAmbiguous,
+        Self::CsgSolidUnsynthesized,
+        Self::CsgBooleanUnevaluated,
+        Self::CsgProfileGapClosed,
+        Self::CsgDesignUnscoped,
+        Self::TorusSheetUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -598,6 +637,7 @@ impl StepLossCode {
             Self::HeaderMetadataNoncanonical => "parse.header-metadata-noncanonical",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::SourceSchemaEditionAssumed => "source.schema-edition-assumed",
             Self::AttributeStringInvalid => "attribute.string-invalid",
             Self::PlacementReferenceInferred => "geometry.placement-reference-inferred",
             Self::ConflictingRepresentationUnits => "geometry.conflicting-representation-units",
@@ -636,6 +676,7 @@ impl StepLossCode {
             Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::PmiZoneUnresolved => "pmi.zone-unresolved",
             Self::PmiDimensionModifierUnresolved => "pmi.dimension-modifier-unresolved",
+            Self::PmiDimensionKindQuantityMismatch => "pmi.dimension-kind-quantity-mismatch",
             Self::DimensionalLimitsOmitted => "pmi.dimensional-limits-omitted",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
@@ -778,6 +819,15 @@ impl StepLossCode {
             Self::OccurrenceExpansionDepthTruncated => "occurrence.expansion-depth-truncated",
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
+            Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
+            Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
+            Self::CsgItemUnresolved => "csg.item-unresolved",
+            Self::CsgPlantOrientationAmbiguous => "csg.plant-orientation-ambiguous",
+            Self::CsgSolidUnsynthesized => "csg.solid-unsynthesized",
+            Self::CsgBooleanUnevaluated => "csg.boolean-unevaluated",
+            Self::CsgProfileGapClosed => "csg.profile-gap-closed",
+            Self::CsgDesignUnscoped => "csg.design-unscoped",
+            Self::TorusSheetUnresolved => "geometry.torus-sheet-unresolved",
         }
     }
 
@@ -866,9 +916,9 @@ impl StepLossCode {
             | Self::DrawingRecordTooFewParameters
             | Self::DrawingOrderUnstatable
             | Self::ParseExpansionBounded => LossTaxonomy::RecordNotTyped,
-            Self::ImplementationLevelUnverified | Self::SourceDialectUnverified => {
-                LossTaxonomy::SourceDialectUnverified
-            }
+            Self::ImplementationLevelUnverified
+            | Self::SourceDialectUnverified
+            | Self::SourceSchemaEditionAssumed => LossTaxonomy::SourceDialectUnverified,
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::MetadataStringInvalid
             | Self::SchemaObjectIdentifierOutOfRange
@@ -982,6 +1032,15 @@ impl StepLossCode {
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
+            Self::CsgPlantOrientationAmbiguous => LossTaxonomy::BodyTransformNotApplied,
+            Self::CsgItemUnresolved | Self::CsgSolidUnsynthesized | Self::CsgBooleanUnevaluated => {
+                LossTaxonomy::GeometryNotTransferred
+            }
+            Self::CsgProfileGapClosed
+            | Self::AngleUnitFactorCorrected
+            | Self::LengthUnitContradicted
+            | Self::TorusSheetUnresolved => LossTaxonomy::DecodeDiagnostic,
+            Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
@@ -1017,6 +1076,7 @@ impl StepLossCode {
             | Self::PmiDatumSystemInvalid
             | Self::PmiZoneUnresolved
             | Self::PmiDimensionModifierUnresolved
+            | Self::PmiDimensionKindQuantityMismatch
             | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
@@ -1075,6 +1135,7 @@ mod tests {
                 "parse.header-metadata-noncanonical",
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
+                "source.schema-edition-assumed",
                 "attribute.string-invalid",
                 "geometry.placement-reference-inferred",
                 "geometry.conflicting-representation-units",
@@ -1107,6 +1168,7 @@ mod tests {
                 "pmi.datum-system-invalid",
                 "pmi.zone-unresolved",
                 "pmi.dimension-modifier-unresolved",
+                "pmi.dimension-kind-quantity-mismatch",
                 "pmi.dimensional-limits-omitted",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
@@ -1235,6 +1297,15 @@ mod tests {
                 "occurrence.expansion-depth-truncated",
                 "topology.non-manifold-edge-split",
                 "geometry.edge-vertex-off-carrier",
+                "geometry.angle-unit-factor-corrected",
+                "geometry.length-unit-contradicted",
+                "csg.item-unresolved",
+                "csg.plant-orientation-ambiguous",
+                "csg.solid-unsynthesized",
+                "csg.boolean-unevaluated",
+                "csg.profile-gap-closed",
+                "csg.design-unscoped",
+                "geometry.torus-sheet-unresolved",
             ]
         );
     }

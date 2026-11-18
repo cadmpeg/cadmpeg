@@ -7,6 +7,7 @@ use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::units::UnitVector3;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -99,6 +100,35 @@ impl TryFrom<SubdCageWire> for SubdCage {
 }
 
 impl SubdCage {
+    #[doc = "Scale control points, secondary grips and symmetry origins in document units."]
+    pub fn scale_lengths(&mut self, scale: PositiveReal) -> Result<(), SubdError> {
+        for vertex in &mut self.vertices {
+            vertex.point = vertex.point.scaled(scale).ok_or_else(|| {
+                SubdError::Admission("scaled subdivision vertex is not finite".into())
+            })?;
+            if let Some(layout) = &mut vertex.secondary_grips {
+                for wedge in &mut layout.wedges {
+                    if let SubdGripWedge::Slot {
+                        spokes, sectors, ..
+                    } = wedge
+                    {
+                        for grip in spokes.iter_mut().chain(sectors.iter_mut()).flatten() {
+                            grip.point = grip.point.scaled(scale).ok_or_else(|| {
+                                SubdError::Admission("scaled subdivision grip is not finite".into())
+                            })?;
+                        }
+                    }
+                }
+            }
+        }
+        for symmetry in &mut self.symmetries {
+            symmetry.plane.origin = symmetry.plane.origin.scaled(scale).ok_or_else(|| {
+                SubdError::Admission("scaled subdivision symmetry origin is not finite".into())
+            })?;
+        }
+        Ok(())
+    }
+
     /// Construct a cage with closed directed rings and valid local payloads.
     pub fn new(
         vertices: Vec<SubdVertex>,
@@ -284,7 +314,9 @@ impl SubdCage {
                         }
                     }
                     if !incident {
-                        return Err(SubdError::Admission(format!("vertices[{index}].secondary_grips sector_face is not incident to its owner")));
+                        return Err(SubdError::Admission(format!(
+                            "vertices[{index}].secondary_grips sector_face is not incident to its owner"
+                        )));
                     }
                 }
                 for grip in spokes.iter().chain(sectors) {
@@ -476,7 +508,7 @@ impl SubdSymmetryKind {
 }
 
 /// Selector of one native radial-symmetry map.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -589,7 +621,7 @@ impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
 }
 
 /// Subdivision scheme used by a control cage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -677,7 +709,7 @@ impl SubdVertex {
 }
 
 /// Compass direction of the root edge in a control-cage grid frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -844,7 +876,7 @@ impl SubdSecondaryGrip {
 }
 
 /// A control-cage vertex tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -1055,7 +1087,7 @@ pub enum SubdUserKnot {
 }
 
 /// A control-cage edge tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

@@ -564,3 +564,46 @@ fn corner_round_loss_requires_a_unique_class_owner_and_native_source() {
     ));
     assert!(native_kind_losses(&inventory, &[feature]).is_empty());
 }
+
+#[test]
+fn fold_mode_and_fold_list_records_use_the_enumeration_and_list_grammars() {
+    for kind in [UNFOLD_MODE_TYPE, REFOLD_MODE_TYPE] {
+        let mut bytes = header(31);
+        bytes.extend_from_slice(&5_i16.to_le_bytes());
+        bytes.extend_from_slice(&3_u16.to_le_bytes());
+        assert!(matches!(
+            exact_record(&bytes, kind, 31).kind,
+            PmDcFeaturePropertyKind::SheetMetal {
+                definition: SheetMetalProperty::Enumeration {
+                    type_value: 5,
+                    value: 3
+                }
+            }
+        ));
+        let mut invalid = header(31);
+        invalid.extend_from_slice(&9_i16.to_le_bytes());
+        invalid.extend_from_slice(&3_u16.to_le_bytes());
+        assert!(decode(&invalid, kind, 31).is_err());
+    }
+    let mut empty = header(31);
+    empty.extend_from_slice(&0x3000_0002_u32.to_le_bytes());
+    empty.extend_from_slice(&0_u32.to_le_bytes());
+    assert!(matches!(
+        exact_record(&empty, FOLD_LIST_TYPE, 31).kind,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::SheetMetalFoldList,
+            items
+        } if items.references().is_empty()
+    ));
+    let mut one = header(31);
+    for word in [0x3000_0002_u32, 1, 1, 16, 0x8000_0005] {
+        one.extend_from_slice(&word.to_le_bytes());
+    }
+    assert!(matches!(
+        exact_record(&one, FOLD_LIST_TYPE, 31).kind,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::SheetMetalFoldList,
+            items
+        } if items.references() == [PmDcReference::from_packed(0x8000_0005)]
+    ));
+}

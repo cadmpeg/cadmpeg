@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,19 @@ use crate::scalar::{Angle, FiniteReal, Length, PositiveLength, PositiveReal};
 
 /// Source options that Rule N leaves native, by key. A key is `codec:name`.
 pub type NativeOptions = BTreeMap<NonBlankString, NativeOption>;
+
+pub(crate) fn rewrite_options<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
+    options: NativeOptions,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    map: &mut crate::schema::rewrite::typed::IdentityMap<'_, F>,
+) -> Result<NativeOptions, cadmpeg_core::CodecError> {
+    use crate::schema::rewrite::typed::RewriteIdentities;
+    let _depth = ctx.enter_nested("native option values")?;
+    options
+        .into_iter()
+        .map(|(key, value)| Ok((key, value.rewrite_identities(ctx, map)?)))
+        .collect()
+}
 
 /// The value of a native option or a source setting. A value that a
 /// parameter can drive keeps its binding.
@@ -47,7 +61,7 @@ pub enum NativeOption {
 
 /// The turning sense of a helix, a thread, or a tool about its axis
 /// direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Hand {
@@ -65,7 +79,7 @@ pub type PathRef = OrderedSelection;
 
 /// The rule by which an extrude or revolve turns its profile's closed loops
 /// into regions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoopNesting {
@@ -336,7 +350,7 @@ pub struct SheetOutput {
 }
 
 /// Whether a closed sheet result becomes a solid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Solidify {
@@ -349,7 +363,7 @@ pub enum Solidify {
 }
 
 /// What the amount of a symmetric span measures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SymmetricMeasure {

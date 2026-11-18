@@ -337,6 +337,8 @@ pub(super) fn transfer_part_product(
     let part_number = model_name.to_owned();
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
+
+        tessellations: Vec::new(),
         id: product_ref,
         kind: ProductDefinitionKind::Part,
         source_name: Some(source_name),

@@ -11,7 +11,7 @@ use super::{
     decode_round_edge_coordinate, decode_saved_conic_local_system_prefix,
     decode_tabulated_cylinder_first_coordinate, decode_tabulated_cylinder_first_frame_coordinate,
     decode_tabulated_cylinder_frame_coordinate, decode_tabulated_cylinder_second_coordinate,
-    decode_two_chart_first_coordinate, plane_support_layout,
+    decode_two_chart_first_coordinate, dict_head, plane_support_layout, positive_dict_head,
     valid_equal_scale_orthogonal_directions, CompactFrameAxes, InlineNonPlaneLocalSystemPrefix,
     PlaneSupportFrameLayout, ScalarCache, POSITIONAL_SLOT_TABLE_WIDTH,
 };
@@ -338,7 +338,7 @@ fn round_edge_positive_dict_uses_the_extended_prefix_lattice() {
     assert_eq!(high_end, high.len());
     assert_eq!(
         low_value,
-        f64::from_be_bytes([0x3f, 0xc0, 0, 0, 0, 0, 0, 0])
+        f64::from_be_bytes([0x3f, 0xb0, 0, 0, 0, 0, 0, 0])
     );
     assert_eq!(
         high_value,
@@ -353,7 +353,7 @@ fn first_directrix_coordinate_uses_the_complete_positive_dict_lattice() {
     assert_eq!(
         decode_tabulated_cylinder_first_coordinate(&encoded, 0, &ScalarCache::default()),
         Some((
-            f64::from_be_bytes([0x3f, 0xc6, 0x20, 0xbb, 0xca, 0xab, 0x7c, 0x66]),
+            f64::from_be_bytes([0x3f, 0xc3, 0x20, 0xbb, 0xca, 0xab, 0x7c, 0x66]),
             encoded.len()
         ))
     );
@@ -380,7 +380,7 @@ fn two_chart_coordinates_use_their_bounded_lane_extensions() {
     assert_eq!(second_end, second.len());
     assert_eq!(first_value, f64::from_be_bytes([0xbc, 0, 0, 0, 0, 0, 0, 0]));
     assert!(
-        (second_value - f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0])).abs() <= f64::EPSILON
+        (second_value - f64::from_be_bytes([0x3f, 0xc9, 0, 0, 0, 0, 0, 0])).abs() <= f64::EPSILON
     );
 }
 
@@ -972,7 +972,8 @@ fn tabulated_first_coordinate_preserves_the_negative_subunit_boundary() {
         (0xaf, 0xbfdb),
         (0xb0, 0xbfdc),
         (0xb1, 0xbfdd),
-        (0xb2, 0xbfdf),
+        (0xb2, 0xbfde),
+        (0xb3, 0xbfe0),
     ] {
         let token = [head, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc];
         let [hi, lo] = ieee_head.to_be_bytes();
@@ -983,6 +984,24 @@ fn tabulated_first_coordinate_preserves_the_negative_subunit_boundary() {
         );
         assert_eq!(
             decode_tabulated_cylinder_first_frame_coordinate(&token, 0, &cache),
+            Some((expected, 7))
+        );
+    }
+}
+
+#[test]
+fn second_coordinate_and_datum_outline_lanes_share_the_negative_subunit_boundary() {
+    let cache = ScalarCache::default();
+    for (head, ieee_head) in [(0xb1, 0xbfdd_u16), (0xb2, 0xbfde), (0xb3, 0xbfe0)] {
+        let token = [head, 0x28, 0xc7, 0x31, 0xeb, 0x69, 0x50];
+        let [hi, lo] = ieee_head.to_be_bytes();
+        let expected = f64::from_be_bytes([hi, lo, 0x28, 0xc7, 0x31, 0xeb, 0x69, 0x50]);
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&token, 0, &cache),
+            Some((expected, 7))
+        );
+        assert_eq!(
+            super::decode_datum_outline_coordinate(&token, 0, &cache),
             Some((expected, 7))
         );
     }
@@ -1112,7 +1131,7 @@ fn decodes_tabulated_cylinder_coordinate_lanes() {
     assert_eq!(
         decode_tabulated_cylinder_first_coordinate(&first_negative_low, 0, &cache),
         Some((
-            f64::from_be_bytes([0xbf, 0xdf, 0x05, 0xe8, 0xa6, 0, 0, 0]),
+            f64::from_be_bytes([0xbf, 0xde, 0x05, 0xe8, 0xa6, 0, 0, 0]),
             7
         ))
     );
@@ -1743,4 +1762,48 @@ fn pcurve_chart_coordinates_read_negative_eight_byte_and_low_dict_forms() {
     )
     .expect("first-coordinate lane");
     assert_eq!(value.to_bits(), 0x3ffd_a019_1ef4_0b5f);
+}
+
+fn positive_dict_token(prefix: u8, value: f64) -> [u8; 7] {
+    let bytes = value.to_be_bytes();
+    [
+        prefix, bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ]
+}
+
+#[test]
+fn positive_dict_heads_follow_the_banded_prefix_table() {
+    for (prefix, head) in [
+        (0x4b, 0x3fb0),
+        (0x4c, 0x3fb1),
+        (0x4d, 0x3fb5),
+        (0x4e, 0x3fc0),
+        (0x53, 0x3fc5),
+        (0x54, 0x3fc7),
+        (0x57, 0x3fca),
+        (0x58, 0x3fcc),
+        (0x59, 0x3fcd),
+        (0x5a, 0x3fcf),
+        (0xa3, 0x4018),
+    ] {
+        assert_eq!(positive_dict_head(prefix), Some(head));
+        assert_eq!(dict_head(prefix), Some(head));
+    }
+    assert_eq!(positive_dict_head(0x4a), None);
+    assert_eq!(positive_dict_head(0xa4), None);
+    assert_eq!(dict_head(0xb1), Some(0xbfdd));
+    assert_eq!(dict_head(0xb2), Some(0xbfde));
+    assert_eq!(dict_head(0xb3), Some(0xbfe0));
+}
+
+#[test]
+fn round_edge_positive_dict_reads_the_banded_heads() {
+    let cache = ScalarCache::default();
+    for (prefix, value) in [(0x54, 0.18), (0x58, 0.22)] {
+        let token = positive_dict_token(prefix, value);
+        assert_eq!(
+            decode_round_edge_coordinate(&token, 0, &cache),
+            Some((value, 7))
+        );
+    }
 }

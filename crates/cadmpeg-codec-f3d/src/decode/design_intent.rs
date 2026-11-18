@@ -639,6 +639,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         ctx,
         &crate::design::feature_project::ProjectInputs {
             native: &projection_parameters,
+            source_parameters: &prereqs.design_parameters,
             owners: &prereqs.design_parameter_owners,
             scopes: &design.design_parameter_scopes,
             timelines,
@@ -651,6 +652,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             design_types: &prereqs.design_types,
             curve_identities: &design.sketch_curve_identities,
             face_operands: &design.design_face_operands,
+            face_source_groups: &design.design_face_source_groups,
             body_recipe_operands: &design.design_body_recipe_operands,
             placements: &design.design_sketch_placements,
             placement_constructions: &design.design_placement_constructions,
@@ -659,6 +661,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             histories: &design.asm_histories,
             face_boundaries: &design.asm_face_boundaries,
             sheet_metal_settings: &design.design_sheet_metal_settings,
+            construction_recipes: &prereqs.construction_recipes,
+            persistent_subentity_tags: geometry.persistent_subentity_tags,
         },
     )?;
     losses.extend(
@@ -762,7 +766,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: &design.design_edge_operands,
+            recipes: &prereqs.construction_recipes,
+            tags: geometry.persistent_subentity_tags,
+        },
         &design.asm_histories,
+        &mut losses,
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
         scan,
@@ -1629,6 +1639,10 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
         &mut design.design_record_headers,
     )?;
+    crate::design::decode::derived_base::mark_derived_base_owners(
+        scan,
+        &mut design.design_parameter_scopes,
+    )?;
     let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,
@@ -1926,11 +1940,30 @@ fn extend_related_design_records(
         &prereqs.design_body_bindings,
         &design.asm_histories,
     );
+    design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
+        ctx,
+        scan,
+        &design.design_parameter_scopes,
+        &design.design_construction_operand_groups,
+        &design.design_record_headers,
+        &prereqs.construction_recipes,
+    )?;
+    crate::design::decode::operands::bind_edge_operand_candidates(
+        &mut design.design_edge_operands,
+        &prereqs.construction_recipes,
+        geometry.persistent_subentity_tags,
+    );
     let mut scope_histories = crate::history::bind_scope_histories(
         &design.design_parameter_scopes,
         &prereqs.design_body_bindings,
         &design.design_body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: &design.design_edge_operands,
+            recipes: &prereqs.construction_recipes,
+            tags: geometry.persistent_subentity_tags,
+        },
         &design.asm_histories,
+        &mut Vec::new(),
     );
     let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
         scan,
@@ -1962,19 +1995,6 @@ fn extend_related_design_records(
         crate::history::BindingHistories::Release(&mut design.asm_histories),
         &scope_histories,
         &lineage_scopes,
-    );
-    design.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &prereqs.construction_recipes,
-    )?;
-    crate::design::decode::operands::bind_edge_operand_candidates(
-        &mut design.design_edge_operands,
-        &prereqs.construction_recipes,
-        geometry.persistent_subentity_tags,
     );
     let (face_boundaries, edge_selection_notes) =
         crate::history::bind_edge_operand_history_candidates_with_notes(

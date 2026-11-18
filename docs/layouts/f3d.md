@@ -25,7 +25,7 @@ Primary indexed-header prefixes use header-relative offsets.
 Shared record notes:
 Records `design_decal_scope_prefix`, `design_decal_scope_extended_prefix`, `design_decal_scope_typed_prefix`, `design_decal_scope_typed_extended_prefix`: Offsets are relative to the Decal scope's primary indexed header. The remaining scope payload follows this fixed prefix.
 Records `chamfer_set_equal`, `chamfer_set_two_distances`, `chamfer_set_distance_angle`, `chamfer_set_compact_equal`: Offsets are relative to the primary header of the set record; the frame ends at its paired indexed header.
-Records `fillet_set_constant`, `fillet_set_chordal`, `fillet_set_compact_constant`: Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+Records `fillet_set_constant`, `fillet_set_chordal`, `fillet_set_compact_constant`, `fillet_set_asymmetric`, `fillet_set_variable`: Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
 Records `design_draft_scope_class318_shifted`, `design_draft_scope_class372`, `design_draft_scope_class448`: Offsets are relative to the primary Draft indexed header. The paired indexed header begins at offset 340.
 Records `paramesh_flagged_mesh_body_join_prefix`, `paramesh_mesh_body_join_prefix`: Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
 Records `paramesh_mesh_collection_prefix`, `paramesh_flagged_mesh_collection_prefix`: Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix.
@@ -859,6 +859,59 @@ Parsed by:
 | 78 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+78: TangencyWeight owner reference` |
 | 89 | 4 | `tangency_weight_owner_padding` | `bytes[4]` | little | spec | `+89: four bytes` |
 
+## `fillet_set_asymmetric`
+
+Spec §3.1 · layout: byte offsets · size: 97 B
+
+Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
+| 21 | 1 | `form_marker` | `u8` | little | spec | `+21: u8 1` · value `1` |
+| 22 | 5 | `zero_run_5_at_22` | `bytes[5]` | little | spec | Every byte that the form does not name is zero |
+| 27 | 4 | `compatibility_word` | `u32` | little | spec | `+27: u32 1` · value `1` |
+| 31 | 11 | `offset_one_owner_reference` | `bytes[11]` | little | spec | `+31: EdgeOffset1 owner reference` |
+| 42 | 11 | `offset_two_owner_reference` | `bytes[11]` | little | spec | `+42: EdgeOffset2 owner reference` |
+| 53 | 19 | `zero_run_19_at_53` | `bytes[19]` | little | spec | Every byte that the form does not name is zero |
+| 72 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+72: edge-group reference` |
+| 83 | 1 | `zero_run_1_at_83` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 84 | 4 | `first_control_word` | `u32` | little | spec | `+84: u32 2` · value `2` |
+| 88 | 5 | `zero_run_5_at_88` | `bytes[5]` | little | spec | Every byte that the form does not name is zero |
+| 93 | 4 | `second_control_word` | `u32` | little | spec | `+93: u32 3` · value `3` |
+
+## `fillet_set_variable`
+
+Spec §3.1 · layout: byte offsets · size: 153 B
+
+Offsets are relative to the set record indexed header; the frame ends at the next indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 18 | `zero_run_18_at_11` | `bytes[18]` | little | spec | Every byte that the form does not name is zero |
+| 29 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+29: edge-group reference` |
+| 40 | 7 | `zero_run_7_at_40` | `bytes[7]` | little | spec | Every byte that the form does not name is zero |
+| 47 | 4 | `midpoint_parameter_count` | `u32` | little | spec | `+47: u32 2` · value `2` |
+| 51 | 11 | `midpoint_parameter_one_owner_reference` | `bytes[11]` | little | spec | `+51: first MidParams owner reference` |
+| 62 | 11 | `midpoint_parameter_two_owner_reference` | `bytes[11]` | little | spec | `+62: second MidParams owner reference` |
+| 73 | 4 | `zero_run_4_at_73` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+| 77 | 4 | `radius_count` | `u32` | little | spec | `+77: u32 4` · value `4` |
+| 81 | 11 | `start_radius_owner_reference` | `bytes[11]` | little | spec | `+81: StartRadius owner reference` |
+| 92 | 11 | `end_radius_owner_reference` | `bytes[11]` | little | spec | `+92: EndRadius owner reference` |
+| 103 | 11 | `middle_radius_one_owner_reference` | `bytes[11]` | little | spec | `+103: first MidRadius owner reference` |
+| 114 | 11 | `middle_radius_two_owner_reference` | `bytes[11]` | little | spec | `+114: second MidRadius owner reference` |
+| 125 | 13 | `zero_run_13_at_125` | `bytes[13]` | little | spec | Every byte that the form does not name is zero |
+| 138 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+138: TangencyWeight owner reference` |
+| 149 | 4 | `zero_run_4_at_149` | `bytes[4]` | little | spec | Every byte that the form does not name is zero |
+
 ## `thicken_scope_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 21 B
@@ -1310,6 +1363,34 @@ Parsed by:
 | 93 | 24 | `tangent_point_data` | `f64[3]` | little | spec | Version `2` stores a tangent triple at offset `93` |
 | 117 | 4 | `input_count` | `u32` | little | spec | the counted input-reference count at offset `117` |
 
+## `silhouette_split_scope_header`
+
+Spec §3.1 · layout: byte offsets · size: 21 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/silhouette_split.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The Silhouette Split scope starts with the indexed header |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | nine zero bytes through offset `19` |
+| 20 | 1 | `property_flag` | `u8` | little | spec | A property flag at offset `20` |
+
+## `silhouette_split_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 31 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/silhouette_split.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `zero_run` | `bytes[8]` | little | spec | Eight zero bytes follow the property block. |
+| 8 | 11 | `carrier` | `bytes[11]` | little | spec | The next plain local reference repeats the carrier |
+| 19 | 4 | `result_mode` | `u32` | little | spec | followed by the u32 result mode |
+| 23 | 4 | `zero_word` | `u32` | little | spec | a zero u32 and a u32 browser-reference count |
+| 27 | 4 | `browser_count` | `u32` | little | spec | a u32 browser-reference count |
+
 ## `design_hole_point_data_v4_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 122 B
@@ -1352,6 +1433,32 @@ Parsed by:
 | 26 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes at offsets `26` through `31` |
 | 32 | 4 | `asset_presence` | `u32` | little | spec | `u32 1` at offset `32` · value `1` |
 | 36 | 4 | `asset_uuid_code_unit_count` | `u32` | little | spec | the asset UUID code-unit count at offset `36` |
+
+## `design_hole_reconstructed_plane_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 126 B
+
+Offsets are relative to the reconstructed plane record indexed header; the record continues after the extent maxima.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Relative to that header, it stores |
+| 15 | 4 | `name_length` | `u32` | little | spec | a zero u32 name length at offset `15` · value `0` |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | a leading-block presence byte at offset `19` |
+| 20 | 1 | `property_block_presence` | `u8` | little | spec | a property-block presence byte at offset `20` |
+| 21 | 16 | `extent_minimum` | `f64[2]` | little | spec | two f64 minimum extents at offset `21` |
+| 37 | 1 | `zero_byte` | `u8` | little | spec | a zero byte at offset `37` · value `0` |
+| 38 | 24 | `origin` | `f64[3]` | little | spec | the plane origin at offset `38` |
+| 62 | 24 | `u_axis` | `f64[3]` | little | spec | the unit in-plane u axis at offset `62` |
+| 86 | 24 | `v_axis` | `f64[3]` | little | spec | the unit in-plane v axis at offset `86` |
+| 110 | 16 | `extent_maximum` | `f64[2]` | little | spec | two f64 maximum extents at offset `110` |
+
+Unstated regions:
+
+- `11..15` (4 B): The specification states no field in this range.
 
 ## `scale_modern_operation_prefix`
 
@@ -4244,6 +4351,25 @@ Unstated regions:
 
 - `0..45` (45 B): The coil_ten_reference_compact_prologue fields precede the flag bytes.
 
+## `coil_short_ten_reference_compact_scope`
+
+Spec §3.1 · layout: byte offsets · size: 454 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 56 | 2 | `control_bytes` | `bytes[2]` | little | spec | control bytes at offsets 56 and 57 are `1` and `1` · value `[1, 1]` |
+| 228 | 4 | `reference_count` | `u32` | little | spec | u32 reference count at offset 228 is ten · value `10` |
+| 232 | 110 | `reference_members` | `bytes[110]` | little | spec | ten marked references start at offset 232 |
+| 342 | 4 | `history_state_identity` | `u32` | little | spec | u32 history-state identity is at offset 342 |
+| 346 | 4 | `feature_kind_length` | `u32` | little | spec | u32 feature-kind length at offset 346 is thirteen · value `13` |
+| 350 | 26 | `feature_kind` | `bytes[26]` | little | spec | UTF-16LE kind text at offset 350 |
+| 376 | 78 | `scope_trailer` | `bytes[78]` | little | spec | 78-byte scope trailer at offset 376 |
+
+Unstated regions:
+
+- `0..56` (56 B): The shared compact prologue fields precede the control bytes.
+- `58..228` (170 B): The compact section lanes precede the reference table.
+
 ## `coil_long_scope_matrix`
 
 Spec §3.1 · layout: byte offsets · size: 128 B
@@ -4692,6 +4818,7 @@ Offsets are relative to the class-297 primary indexed axis carrier paired with c
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | Both carriers store ten zero bytes at offsets 11 through 20 |
 | 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 at offset 21 |
 | 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
 | 89 | 4 | `reference_count` | `u32` | little | spec | u32 reference count 6 at offset 89 |
@@ -4700,7 +4827,6 @@ Offsets are relative to the class-297 primary indexed axis carrier paired with c
 Unstated regions:
 
 - `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
-- `11..21` (10 B): Bytes 11 through 20 are zero.
 - `97..215` (118 B): The generation-specific construction/reference tail ends at the paired header.
 
 ## `work_axis_direct_carrier_class_335`
@@ -4711,6 +4837,7 @@ Offsets are relative to the class-335 primary indexed axis carrier paired with c
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | Both carriers store ten zero bytes at offsets 11 through 20 |
 | 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 at offset 21 |
 | 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
 | 89 | 4 | `reference_count` | `u32` | little | spec | u32 reference count 6 at offset 89 |
@@ -4719,8 +4846,40 @@ Offsets are relative to the class-335 primary indexed axis carrier paired with c
 Unstated regions:
 
 - `0..11` (11 B): The indexed carrier header occupies the first eleven bytes.
-- `11..21` (10 B): Bytes 11 through 20 are zero.
 - `97..195` (98 B): The generation-specific construction/reference tail ends at the paired header.
+
+## `work_axis_direct_scope_long`
+
+Spec §3.1 · layout: byte offsets · size: 268 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 268 | `frame` | `bytes[268]` | little | spec | \| 302 \| 262 \| 268 \| |
+
+## `work_axis_direct_scope_short`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 254 | `frame` | `bytes[254]` | little | spec | \| 361 \| 258 \| 254 \| |
+
+## `work_axis_direct_support`
+
+Spec §3.1 · layout: byte offsets · size: 293 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/work_axes/legacy.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 293 | `frame` | `bytes[293]` | little | spec | and is 293 bytes |
 
 ## `coil_compact_placement_matrix_frame`
 
@@ -5578,7 +5737,7 @@ Spec §3.1 · layout: byte offsets · size: 40 B
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | the five-byte construction marker is `00 01 00 00 00` |
 | 5 | 8 | `major_diameter` | `f64` | little | spec | Major diameter is at marker-relative offset 5 |
 | 13 | 8 | `minor_diameter` | `f64` | little | spec | minor diameter at 13 |
-| 21 | 1 | `pitch_marker` | `u8` | little | spec | the pitch marker at 21 |
+| 21 | 1 | `modeled_flag` | `u8` | little | spec | the modeled flag at 21 |
 | 22 | 8 | `pitch` | `f64` | little | spec | pitch at 22 |
 | 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
 | 38 | 2 | `standard_trailer` | `bytes[2]` | little | spec | The standard trailer at relative offset 38 is `00 01` |
@@ -5621,7 +5780,7 @@ Offsets are relative to the first byte after the third LP-UTF16 string. This cla
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | Its construction marker is `01 01 00 00 00` |
 | 5 | 8 | `major_diameter` | `f64` | little | spec | Major diameter is at marker-relative offset 5 |
 | 13 | 8 | `minor_diameter` | `f64` | little | spec | minor diameter at 13 |
-| 21 | 1 | `pitch_marker` | `u8` | little | spec | its scalar lanes use pitch marker `0` |
+| 21 | 1 | `modeled_flag` | `u8` | little | spec | its scalar lanes use the same offsets as the compact tail |
 | 22 | 8 | `pitch` | `f64` | little | spec | pitch at 22 |
 | 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
 | 38 | 4 | `legacy_trailer` | `bytes[4]` | little | spec | its no-reference trailer is `00 00 00 01` at relative offset 38 |
@@ -5637,7 +5796,7 @@ Offsets are relative to the first byte after the third LP-UTF16 string. This cla
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | Its construction marker is `01 01 00 00 00` |
 | 5 | 8 | `major_diameter` | `f64` | little | spec | Major diameter is at marker-relative offset 5 |
 | 13 | 8 | `minor_diameter` | `f64` | little | spec | minor diameter at 13 |
-| 21 | 1 | `pitch_marker` | `u8` | little | spec | its scalar lanes use pitch marker `0` |
+| 21 | 1 | `modeled_flag` | `u8` | little | spec | its scalar lanes use the same offsets as the compact tail |
 | 22 | 8 | `pitch` | `f64` | little | spec | pitch at 22 |
 | 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
 | 38 | 4 | `legacy_trailer` | `bytes[4]` | little | spec | its no-reference trailer is `00 00 00 01` at relative offset 38 |
@@ -6401,7 +6560,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Relative to its primary indexed header |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Relative to that header |
 | 20 | 1 | `prologue_marker` | `u8` | little | spec | `01 00 00 00 00` at offsets 20 through 24 |
 | 21 | 4 | `prologue_value` | `u32` | little | spec | `01 00 00 00 00` at offsets 20 through 24 |
 | 25 | 8 | `occurrence_identity` | `u64` | little | spec | an occurrence identity u64 at offset 25 |
@@ -6422,7 +6581,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 122 B
 
-Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122.
+Offsets are relative to the primary indexed header. The 256-, 257- and 267-byte identity forms share this prefix. The generation-specific scope tail begins at offset 122.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -8090,6 +8249,19 @@ Parsed by:
 Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
+
+## `sheet_metal_rule_v0_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sheet_metal_settings.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the indexed header and ten zero bytes |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | the indexed header and ten zero bytes |
+| 21 | 4 | `settings_count` | `u32` | little | spec | [u32 settings-reference count](../layouts/f3d.md) at offset 21 |
 
 ## `sheet_metal_rule_prefix`
 
@@ -9932,6 +10104,25 @@ Unstated regions:
 - `363..365` (2 B): The specification states no field in this range.
 - `434..438` (4 B): The specification states no field in this range.
 - `487..491` (4 B): The specification states no field in this range.
+
+## `derived_base_owner_reference`
+
+Spec §3.1 · layout: byte offsets · size: 70 B
+
+Offsets are relative to the primary indexed header of a derived base scope whose references use the eleven-byte form; the 711-, 707-, and 491-byte typed-reference forms store other fields here. The same eleven bytes repeat twelve bytes before the frame end, followed by u8 0.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 59 | 1 | `marker` | `u8` | little | spec | `01 + u64 owner_record_index + 00 00` at offset 59 · value `1` |
+| 60 | 8 | `record_index` | `u64` | little | spec | `01 + u64 owner_record_index + 00 00` at offset 59 |
+| 68 | 2 | `zero_run_2` | `bytes[2]` | little | spec | `01 + u64 owner_record_index + 00 00` at offset 59 |
+
+Unstated regions:
+
+- `0..59` (59 B): The specification states no field in this range.
 
 ## `entity_tracking_carrier_prefix`
 
@@ -11882,6 +12073,105 @@ Parsed by:
 Unstated regions:
 
 - `0..21` (21 B): Indexed header and mesh scope prefix.
+
+## `boundary_fill_scope_prefix_plain`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+This form uses property flag zero and operation at offset 21.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/boundary_fill.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | scope prefix begins with nine zero bytes. |
+| 20 | 1 | `property_flag` | `u8` | little | spec | The byte at scope offset 20 selects the operation word at offset 21 |
+| 21 | 4 | `operation` | `u32` | little | spec | the operation word at offset 21 when it is zero |
+
+## `boundary_fill_scope_prefix_property`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+This form uses property flag one, a zero word at offset 21, and operation at offset 25.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/boundary_fill.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | scope prefix begins with nine zero bytes. |
+| 20 | 1 | `property_flag` | `u8` | little | spec | The byte at scope offset 20 selects the operation word at offset 21 |
+| 21 | 4 | `optional_property_word` | `u32` | little | spec | When it is one, the u32 at offset 21 is zero · value `0` |
+| 25 | 4 | `operation` | `u32` | little | spec | the operation word is at offset 25 |
+
+## `replace_face_fixed_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Flag-00 fixed prefix. Flag 01 inserts a u32 word before the Boolean control; its fixed prefix is 30 bytes. Counted group references and the identifier follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ReplaceFace prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The ReplaceFace prologue |
+| 20 | 1 | `prefix_flag` | `u8` | little | spec | The ReplaceFace prologue |
+| 21 | 1 | `tangent_chain` | `u8` | little | spec | The ReplaceFace prologue |
+| 22 | 4 | `replacement_group_count` | `u32` | little | spec | The ReplaceFace prologue |
+
+## `replace_face_flagged_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Flag-01 fixed prefix. Flag 00 omits the u32 word and has a 26-byte fixed prefix. Counted group references and the identifier follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/replace_face.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The ReplaceFace prologue |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The ReplaceFace prologue |
+| 20 | 1 | `prefix_flag` | `u8` | little | spec | The ReplaceFace prologue |
+| 21 | 4 | `word` | `u32` | little | spec | The ReplaceFace prologue |
+| 25 | 1 | `tangent_chain` | `u8` | little | spec | The ReplaceFace prologue |
+| 26 | 4 | `replacement_group_count` | `u32` | little | spec | The ReplaceFace prologue |
+
+## `work_axis_two_point_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 232 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | After its indexed header it stores ten zero bytes |
+| 21 | 4 | `value_count` | `u32` | little | spec | u32 value count 8 |
+| 25 | 64 | `axis_values` | `f64[8]` | little | spec | eight f64 values at offset 25 |
+| 118 | 4 | `reference_count` | `u32` | little | spec | A u32 reference count of two at offset 118 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed record header precedes the fixed payload.
+- `89..118` (29 B): The fixed payload separates its values and reference count.
+- `122..232` (110 B): The two marked references and generation tail end at the paired header.
+
+## `work_axis_endpoint_carrier`
+
+Spec §3.1 · layout: byte offsets · size: 197 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 31 | `zero_run` | `bytes[31]` | little | spec | each stores 31 zero bytes after its indexed header |
+| 42 | 24 | `position` | `f64[3]` | little | spec | a three-coordinate point at offset 42 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed record header precedes the fixed point payload.
+- `66..197` (131 B): The generation tail ends at the paired indexed header.
 
 ## Not tabulated
 

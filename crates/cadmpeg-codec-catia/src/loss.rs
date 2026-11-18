@@ -71,6 +71,8 @@ pub(crate) enum CatiaLossCode {
     TopologyAffineVertexReconciled,
     /// A planar shared-edge lift uses a native parameter-map fit tolerance.
     GeometryParameterMapAccuracyInferred,
+    /// A witnessed conic branch exceeds the incident face bounds.
+    GeometryConicBranchBoundsInferred,
     /// A sheet face uses a fitted surface carrier.
     GeometrySheetSurfaceFitted,
     /// A transferred rolling-ball fit uses adjusted rail points.
@@ -157,6 +159,9 @@ pub(crate) enum CatiaLossCode {
     HistoryRelationDependenciesBounded,
     /// Typed two-definition value chains stay native without a neutral parameter.
     HistoryDefinitionChainsRetained,
+    /// Design parameters and `Range` nominals read stored `E7` and `E8` literals
+    /// as the values one and zero.
+    HistoryParameterLiteralAssumed,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -177,6 +182,7 @@ impl CatiaLossCode {
         Self::GeometryRollingSheetExtended,
         Self::TopologyAffineVertexReconciled,
         Self::GeometryParameterMapAccuracyInferred,
+        Self::GeometryConicBranchBoundsInferred,
         Self::GeometrySheetSurfaceFitted,
         Self::GeometryRollingBallRailsAdjusted,
         Self::GeometryUnresolvedCarriers,
@@ -220,6 +226,7 @@ impl CatiaLossCode {
         Self::HistoryConfigurationRowOrderBounded,
         Self::HistoryRelationDependenciesBounded,
         Self::HistoryDefinitionChainsRetained,
+        Self::HistoryParameterLiteralAssumed,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesVisualizationUnbound,
@@ -238,6 +245,7 @@ impl CatiaLossCode {
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryRollingSheetExtended => "geometry.rolling-sheet-extended",
             Self::TopologyAffineVertexReconciled => "topology.affine-vertex-reconciled",
+            Self::GeometryConicBranchBoundsInferred => "geometry.conic-branch-bounds-inferred",
             Self::GeometryParameterMapAccuracyInferred => {
                 "geometry.parameter-map-accuracy-inferred"
             }
@@ -288,6 +296,7 @@ impl CatiaLossCode {
             Self::HistoryConfigurationRowOrderBounded => "history.configuration-row-order-bounded",
             Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
             Self::HistoryDefinitionChainsRetained => "history.definition-chains-retained",
+            Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -328,10 +337,12 @@ impl CatiaLossCode {
             | Self::SourceAnnotationCollision
             | Self::SourceCatalogScanBounded
             | Self::GeometryVertexToleranceWidened
-            | Self::TopologySheetComponentsInferred => LossTaxonomy::DecodeDiagnostic,
+            | Self::TopologySheetComponentsInferred
+            | Self::HistoryParameterLiteralAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryRollingSheetExtended
             | Self::GeometryParameterMapAccuracyInferred
+            | Self::GeometryConicBranchBoundsInferred
             | Self::GeometrySheetSurfaceFitted
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
             Self::GeometryUnresolvedCarriers
@@ -425,6 +436,7 @@ mod tests {
                 "geometry.rolling-sheet-extended",
                 "topology.affine-vertex-reconciled",
                 "geometry.parameter-map-accuracy-inferred",
+                "geometry.conic-branch-bounds-inferred",
                 "geometry.sheet-surface-fitted",
                 "geometry.rolling-ball-rails-adjusted",
                 "geometry.unresolved-carriers",
@@ -468,6 +480,7 @@ mod tests {
                 "history.configuration-row-order-bounded",
                 "history.relation-dependencies-bounded",
                 "history.definition-chains-retained",
+                "history.parameter-literal-assumed",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.visualization-unbound",

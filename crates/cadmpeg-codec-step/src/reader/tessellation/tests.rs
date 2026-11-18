@@ -70,7 +70,14 @@ fn decode_tessellation_stage(
         .value;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)?;
-    let outcome = super::decode(&exchange, &geometry, &topology, &mut ir, &ctx)?;
+    let outcome = super::decode(
+        &exchange,
+        &geometry,
+        &topology,
+        &std::collections::BTreeMap::new(),
+        &mut ir,
+        &ctx,
+    )?;
     Ok((ir, outcome.losses))
 }
 
