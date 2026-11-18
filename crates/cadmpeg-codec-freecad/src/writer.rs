@@ -101,6 +101,7 @@ fn write_seekable(
         );
     }
     crate::persistence::resolve_side_entries(
+        &ctx,
         &mut written_graph.properties,
         &entry_views,
         &mut written_graph.losses,
