@@ -207,6 +207,33 @@ stand on `base` along `axis` with a `radius` (and a `top_radius`) and a
 `center`, a `major`, and a `minor` radius about +Z. The `operation` of each
 is `new_body`, `join`, `cut`, or `intersect`.
 
+A pick is a model point that snaps to the nearest edge or face on each
+evaluation. A `fillet` rounds the `edges` it picks by `radius` (a chord
+width when its `style` is `chord`); a `chamfer` cuts them by `distance`
+and `distance2` or `angle`. `edge_names` and `face_names` hold the
+persistent names of the picked topology. A `shell` opens the `faces` it
+picks and leaves a wall of `thickness` `inside`, `outside`, or `both`. An
+`offset_face` moves the picked faces along their normals by `distance`.
+
+A `move` translates its `bodies` by `translate` and turns them by `angle`
+about `rotate_axis` through `origin`, or copies them when `copy`. A
+`remove` deletes its `bodies`. A `combine` joins, cuts, or intersects its
+`tools` into its `target`. A `scale` scales its `bodies` about `origin` by
+`factor`, or by `factors` per axis.
+
+A `pattern` repeats its `features`, or its `bodies`: `rectangular` along
+`dir1` and `dir2` by `count` and `spacing`, `circular` about `axis` through
+`origin` over a total `angle` (a full turn spreads the copies evenly), or
+along a sketch `path`. An `alignment` of `right` places the copies along
+the direction, `left` against it, and `center` alternately on both sides;
+`reversed` turns the direction round. A `mirror` reflects its `features`
+or `bodies` in its `plane`. A `sweep` moves a profile of its `sketch`
+along the `path` curves of `path_sketch`; a `loft` blends the profiles of
+its `sections`. A `coil` sweeps a `circular` or `square` section of
+`section_size` along a helix of `diameter`, `pitch`, and `turns` about
+`axis` from `base`, right-handed unless `clockwise`. Every model parameter
+that a feature made is listed in its `param_names`.
+
 ### 3.6 Sketch constraints
 
 The `constraints` of a sketch record refer to points by index (`p`, `q`)

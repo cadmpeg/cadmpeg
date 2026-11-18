@@ -230,7 +230,7 @@ fn primitives_carry_their_evaluated_dimensions_and_placement() {
     assert_eq!(hole["solid"]["radius"], 2.0);
     assert_eq!(hole["op"], "cut");
     assert_eq!(hole["placement"][2][3], -1.0);
-    assert_eq!(features[2]["definition"]["value"]["kind"], "native");
+    assert_eq!(features[2]["definition"]["value"]["kind"], "fillet");
     assert_eq!(features[2]["source_tag"], "fillet");
 }
 
@@ -388,6 +388,120 @@ fn sketch_constraints_and_dimensions_drive_the_design_parameters() {
     let codes = loss_codes(&bytes);
     assert!(codes.contains(&"solidcraft/history.sketch-constraint-native".to_owned()));
     assert!(!codes.contains(&"solidcraft/history.parameters-undecoded".to_owned()));
+}
+
+#[test]
+fn the_operation_families_carry_their_semantics() {
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Families",
+        "units": "mm",
+        "params": [{"name": "r", "expr": "2", "unit": "mm", "model": true}],
+        "features": [
+            {"id": 1, "name": "Base", "suppressed": false, "type": "box",
+             "corner": [0, 0, 0], "length": "40", "width": "20", "height": "10", "operation": "new_body"},
+            {"id": 2, "name": "Fillet1", "suppressed": false, "type": "fillet", "param_names": ["r"],
+             "edges": [[20.0, 0.0, 10.0]], "edge_names": ["F1:top|F1:front"], "radius": "r"},
+            {"id": 3, "name": "Chamfer1", "suppressed": false, "type": "chamfer",
+             "edges": [[20.0, 20.0, 10.0]], "distance": "1", "angle": "30 deg", "flip": true},
+            {"id": 4, "name": "Shell1", "suppressed": false, "type": "shell", "body": "Body1",
+             "faces": [[20.0, 10.0, 10.0]], "thickness": "1.5", "direction": "outside"},
+            {"id": 5, "name": "Pattern1", "suppressed": false, "type": "pattern", "features": [2],
+             "pattern": {"type": "rectangular", "dir1": [1.0, 0.0, 0.0], "count1": "3", "spacing1": "5",
+                         "dir2": [0.0, 1.0, 0.0], "count2": "2", "spacing2": "4", "alignment2": "center"}},
+            {"id": 6, "name": "Pattern2", "suppressed": false, "type": "pattern", "features": [],
+             "bodies": ["Body1"],
+             "pattern": {"type": "circular", "origin": [0, 0, 0], "axis": [0.0, 0.0, 1.0],
+                         "count": "4", "angle": "360 deg"}},
+            {"id": 7, "name": "Plane1", "suppressed": false, "type": "construction_plane",
+             "plane": {"type": "offset", "base": {"type": "origin", "name": "YZ"}, "distance": "20"}},
+            {"id": 8, "name": "Mirror1", "suppressed": false, "type": "mirror", "features": [1],
+             "plane": {"type": "construction", "feature": 7}},
+            {"id": 9, "name": "Move1", "suppressed": false, "type": "move", "bodies": ["Body1"],
+             "translate": ["1", "2", "3"], "rotate_axis": [0.0, 0.0, 1.0], "origin": [0, 0, 0],
+             "angle": "90 deg", "copy": true},
+            {"id": 10, "name": "Scale1", "suppressed": false, "type": "scale", "bodies": ["Body1"],
+             "origin": [1.0, 2.0, 3.0], "factor": "2"},
+            {"id": 11, "name": "Combine1", "suppressed": false, "type": "combine", "target": "Body1",
+             "tools": ["Body2"], "operation": "cut", "keep_tools": true},
+            {"id": 12, "name": "Remove1", "suppressed": false, "type": "remove", "bodies": ["Body2"]},
+            {"id": 13, "name": "Path", "suppressed": false, "type": "sketch",
+             "plane": {"type": "origin", "name": "XZ"},
+             "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                                   {"id": "p1", "pos": [0.0, 0.0]}, {"id": "p2", "pos": [0.0, 30.0]}],
+                        "curves": [{"id": "l1", "type": "line", "a": 1, "b": 2}], "constraints": []}},
+            {"id": 14, "name": "Section", "suppressed": false, "type": "sketch",
+             "plane": {"type": "origin", "name": "XY"},
+             "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                                   {"id": "c", "pos": [0.0, 0.0]}],
+                        "curves": [{"id": "c1", "type": "circle", "c": 1, "r": 2.0}], "constraints": []}},
+            {"id": 15, "name": "Sweep1", "suppressed": false, "type": "sweep", "sketch": 14,
+             "profiles": {"type": "all"}, "path_sketch": 13, "path": ["l1"], "operation": "new_body"},
+            {"id": 16, "name": "Loft1", "suppressed": false, "type": "loft", "operation": "join",
+             "sections": [{"sketch": 14, "profiles": {"type": "all"}}, {"sketch": 13, "profiles": {"type": "all"}}]},
+            {"id": 17, "name": "Coil1", "suppressed": false, "type": "coil", "axis": [0.0, 0.0, 1.0],
+             "base": [0, 0, 0], "diameter": "10", "pitch": "3", "turns": "5", "section": "square",
+             "section_size": "1", "start_angle": "90 deg", "operation": "new_body"},
+            {"id": 19, "name": "PathPattern", "suppressed": false, "type": "pattern", "features": [1],
+             "pattern": {"type": "path", "path_sketch": 13, "path": ["l1"], "count": "4", "spacing": "30", "extent": true}},
+            {"id": 18, "name": "Raise", "suppressed": false, "type": "offset_face",
+             "faces": [[7.0, 15.0, 10.0]], "face_names": ["F1:top"], "distance": "2"}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let mut features = features(&bytes);
+    features.sort_by_key(|feature| feature["ordinal"].as_u64());
+    let kinds: Vec<&str> = features
+        .iter()
+        .map(|feature| feature["definition"]["value"]["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "primitive",
+            "fillet",
+            "chamfer",
+            "shell",
+            "pattern",
+            "pattern",
+            "datum_plane",
+            "pattern",
+            "move_body",
+            "scale",
+            "combine",
+            "delete_body",
+            "sketch",
+            "sketch",
+            "sweep",
+            "loft",
+            "coil",
+            "pattern",
+            "move_face"
+        ]
+    );
+    let operation = |index: usize| features[index]["definition"]["value"]["value"].clone();
+    assert_eq!(
+        operation(1)["groups"][0]["radius"],
+        json!({"kind": "constant", "radius": 2.0})
+    );
+    assert_eq!(operation(4)["pattern"]["second"]["symmetric"], true);
+    assert_eq!(
+        operation(5)["pattern"]["angle"].as_f64().unwrap(),
+        3.0 * std::f64::consts::TAU / 4.0
+    );
+    assert_eq!(
+        operation(7)["pattern"]["plane_origin"],
+        json!({"x": 20.0, "y": 0.0, "z": 0.0})
+    );
+    assert_eq!(
+        features[7]["dependencies"],
+        json!(["solidcraft:design:feature#1", "solidcraft:design:feature#7"])
+    );
+    assert_eq!(operation(8)["copies"], 1);
+    let coil = operation(16)["construction"].clone();
+    assert_eq!(coil["clockwise"], true);
+    assert_eq!(coil["placement"]["radial"]["y"], 1.0);
+    assert_eq!(operation(17)["pattern"]["spacing"], 10.0);
 }
 
 #[test]

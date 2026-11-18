@@ -2936,12 +2936,20 @@
           "definition": {
             "kind": "operation",
             "value": {
-              "kind": "native",
+              "kind": "fillet",
               "value": {
-                "kind": "solidcraft:fillet",
-                "parameters": {
-                  "radius": "1"
-                }
+                "groups": [
+                  {
+                    "edges": {
+                      "kind": "native",
+                      "value": "{\"names\":[\"F1:+z|F1:-y\"],\"picks\":[[10.0,0.0,5.0]]}"
+                    },
+                    "radius": {
+                      "kind": "constant",
+                      "radius": 1.0
+                    }
+                  }
+                ]
               }
             }
           },
@@ -3110,18 +3118,6 @@
         },
         "message": "8 cached pcurves are in the parameters of a NURBS form that the neutral carrier does not use, and are omitted",
         "severity": "info"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "history.features-undecoded",
-            "kind": "feature_history_retained",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "1 feature records are native operations without neutral semantics: 1 fillet",
-        "severity": "warning"
       }
     ],
     "notes": [],

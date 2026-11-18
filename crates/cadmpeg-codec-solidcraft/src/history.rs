@@ -14,6 +14,7 @@
 
 mod constraints;
 mod expr;
+mod operations;
 mod sketch;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -74,6 +75,8 @@ struct SketchUse {
     frame: Frame,
     points: Vec<Option<sketch::SketchPoint>>,
     body: Value,
+    /// The ids of the curves that are neutral entities.
+    entities: BTreeSet<String>,
 }
 
 /// The state of one walk over the feature records.
@@ -193,7 +196,28 @@ const FULL_TURN_ROUNDING: f64 = 1.0e-12;
 
 /// The operation kinds this decoder gives neutral semantics.
 const TYPED: &[&str] = &[
-    "sketch", "extrude", "revolve", "box", "cylinder", "cone", "sphere", "torus",
+    "sketch",
+    "extrude",
+    "revolve",
+    "box",
+    "cylinder",
+    "cone",
+    "sphere",
+    "torus",
+    "fillet",
+    "chamfer",
+    "shell",
+    "move",
+    "remove",
+    "combine",
+    "scale",
+    "pattern",
+    "mirror",
+    "sweep",
+    "loft",
+    "construction_plane",
+    "coil",
+    "offset_face",
 ];
 
 impl Walk<'_, '_> {
@@ -210,6 +234,15 @@ impl Walk<'_, '_> {
             .unwrap_or("unknown");
         let key = feature_id.to_string();
         let mut dependencies = BTreeSet::new();
+        for name in record
+            .get("param_names")
+            .and_then(Value::as_array)
+            .map_or(&[][..], Vec::as_slice)
+        {
+            if let Some(name) = name.as_str() {
+                self.owners.entry(name.to_owned()).or_insert(feature_id);
+            }
+        }
         if let Some(object) = record.as_object() {
             for (field, value) in object {
                 if field != "sketch" {
@@ -232,7 +265,12 @@ impl Walk<'_, '_> {
             "box" | "cylinder" | "cone" | "sphere" | "torus" => {
                 primitive(kind, record, &self.scope)
             }
-            _ => None,
+            _ => operations::Inputs {
+                scope: &self.scope,
+                planes: &self.planes,
+                sketches: &self.sketches,
+            }
+            .operation(kind, record, &mut dependencies),
         };
         let neutral = operation.is_some();
         let fields = Fields {
@@ -305,6 +343,7 @@ impl Walk<'_, '_> {
         self.ir.model.sketches.push(neutral);
         let mut used = BTreeSet::new();
         let mut loci = constraints::Loci::default();
+        let mut typed = BTreeSet::new();
         let point_ids: Vec<Option<String>> = points
             .iter()
             .map(|point| point.as_ref().map(|point| point.id.clone()))
@@ -340,6 +379,7 @@ impl Walk<'_, '_> {
                 &geometry,
             ) {
                 loci.curve(index, &id("entity", &entity_key), curve);
+                typed.insert(curve_id.to_owned());
             } else {
                 self.tally.curves += 1;
             }
@@ -395,6 +435,7 @@ impl Walk<'_, '_> {
                     frame,
                     points,
                     body: body.clone(),
+                    entities: typed,
                 },
             );
         }
@@ -741,6 +782,7 @@ fn revolve(
         frame,
         points,
         body,
+        ..
     } = sketches.get(&sketch)?;
     if record.get("to").is_some_and(|to| !to.is_null()) {
         return None;
