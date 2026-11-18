@@ -1142,7 +1142,6 @@ fn project_feature_dependencies(
     Ok(dependencies)
 }
 
-/// Project decoded native configurations into neutral design configurations.
 /// The neutral identity of the native configuration record `native_id`.
 pub(crate) fn neutral_configuration_id(native_id: &str) -> Result<ConfigurationId, CodecError> {
     let key = native_id
@@ -1155,6 +1154,7 @@ pub(crate) fn neutral_configuration_id(native_id: &str) -> Result<ConfigurationI
     .map_err(|_| CodecError::malformed("invalid SLDPRT configuration ID"))
 }
 
+/// Project decoded native configurations into neutral design configurations.
 pub(crate) fn project_configurations(
     histories: &[FeatureHistory],
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
