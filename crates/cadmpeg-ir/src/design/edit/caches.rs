@@ -14,7 +14,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::eval::{
-    cache_value, check_types, evaluate, kind_type, kind_value, EvalError, Type, Value,
+    cache_value, check_types, evaluate, kind_type, kind_value, EvalError, ExpressionSite, Type,
+    Value,
 };
 use super::history::{currents, Context, Currents, Dependents, Graph, History, Node};
 use super::wire::{clear_measures, reads, rewrite};
@@ -126,7 +127,7 @@ fn kind_refusal(
         parameter: parameter.clone(),
         reason,
     };
-    check_types(node, type_of)
+    check_types(node, ExpressionSite::Parameter, type_of)
         .and_then(|found| kind_type(kind, found))
         .map_err(refusal)?;
     let result = evaluate(

@@ -43,6 +43,7 @@ use crate::design::refs::Member;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::ProductDefinitionId;
 
+pub(crate) use eval::{cache_value, check_types, kind_type, unit_factor, ExpressionSite, Type};
 pub use eval::{evaluate, EvalError, Value};
 
 /// Why an edit helper or a resolver refuses.

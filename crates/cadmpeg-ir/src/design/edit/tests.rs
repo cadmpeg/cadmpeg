@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use cadmpeg_core::text::NonBlankString;
 use serde_json::json;
 
-use super::eval::{check_types, Type};
+use super::eval::{check_types, ExpressionSite, Type};
 use super::wire::{exchange_constructions, retarget};
 use super::{evaluate, EditError, EvalError, Literal, ParameterDrivers, Value};
 use crate::design::configuration::{
@@ -382,7 +382,7 @@ fn a_deep_tree_evaluates_on_a_small_thread() {
     let handle = std::thread::Builder::new()
         .stack_size(256 * 1024)
         .spawn(move || {
-            let checked = check_types(&node, &|_| Ok(Type::Unknown));
+            let checked = check_types(&node, ExpressionSite::Parameter, &|_| Ok(Type::Unknown));
             let result = evaluate(&node, &mut |_| None);
             drop(node);
             (checked, result)
