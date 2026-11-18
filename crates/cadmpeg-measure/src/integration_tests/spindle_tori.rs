@@ -86,7 +86,8 @@ fn half_chord_integral(z: f64) -> f64 {
 /// `π·∫_c^h (√(r² − z²) − R)² dz`.
 fn lemon_volume_above(c: f64) -> f64 {
     let h = height();
-    PI * ((MINOR * MINOR + MAJOR * MAJOR) * (h - c) - (h.powi(3) - c.powi(3)) / 3.0
+    PI * ((MINOR * MINOR + MAJOR * MAJOR) * (h - c)
+        - (h.powi(3) - c.powi(3)) / 3.0
         - 2.0 * MAJOR * (half_chord_integral(h) - half_chord_integral(c)))
 }
 
@@ -124,10 +125,7 @@ fn flip(sense: Sense) -> Sense {
 #[test]
 fn whole_spindle_sheets_have_their_closed_form_areas() {
     let a = pole_angle();
-    for (outer, expected) in [
-        (true, apple_area(-a, a)),
-        (false, lemon_area(a, TAU - a)),
-    ] {
+    for (outer, expected) in [(true, apple_area(-a, a)), (false, lemon_area(a, TAU - a))] {
         let mut builder = Builder::new();
         let surface = sheet(&mut builder, outer);
         builder.face(&surface, Sense::Forward, &[], false);
@@ -304,7 +302,12 @@ fn lemon_solids_enclose_their_solids_of_revolution() {
         false,
     );
     let floor = builder.plane([0.0, 0.0, c], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
-    builder.face(&floor, Sense::Reversed, &[vec![(circle, Sense::Reversed)]], false);
+    builder.face(
+        &floor,
+        Sense::Reversed,
+        &[vec![(circle, Sense::Reversed)]],
+        false,
+    );
     let report = measure(&builder.finish(BodyKind::Solid), &Selection::default());
     let [body] = report.bodies().as_slice() else {
         panic!("one body row");
@@ -320,7 +323,11 @@ fn lemon_solids_enclose_their_solids_of_revolution() {
 /// sheet has no region.
 fn unselected_band(major: f64) -> CadIr {
     let mut builder = Builder::new();
-    let lower = parallel(&mut builder, -1.0, major + MINOR.mul_add(MINOR, -1.0).sqrt());
+    let lower = parallel(
+        &mut builder,
+        -1.0,
+        major + MINOR.mul_add(MINOR, -1.0).sqrt(),
+    );
     let upper = parallel(&mut builder, 1.0, major + MINOR.mul_add(MINOR, -1.0).sqrt());
     let surface = builder.torus(Frame::z_up([0.0; 3]), major, MINOR);
     builder.face(

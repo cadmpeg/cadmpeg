@@ -588,11 +588,14 @@ impl Builder {
         let n = self.serial();
         let surface = id(SurfaceId::mint, "surface", n);
         let construction = id(ProceduralSurfaceId::mint, "degenerate-torus", n);
-        self.ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
-            construction.clone(),
-            ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
-            None,
-        ));
+        self.ir
+            .geometry
+            .procedural_surfaces
+            .push(ProceduralSurface::new(
+                construction.clone(),
+                ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
+                None,
+            ));
         self.ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
