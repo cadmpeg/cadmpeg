@@ -23,7 +23,9 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
     use crate::records::feature::scope::DesignScopePayloadMut;
     use crate::records::identity::Located;
     use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
+    use cadmpeg_ir::ids::ProductDefinitionId;
     use cadmpeg_ir::products::{JointOperands, Occurrence, OperandContainer, PairedJointKind};
+    use cadmpeg_ir::transform::Transform;
 
     let mut bytes = Vec::new();
     push_header(&mut bytes, b"405", 10);
@@ -181,16 +183,13 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         }),
     };
     let model_occurrences: [Occurrence; 2] = occurrences.each_ref().map(|carrier| {
-        serde_json::from_value(serde_json::json!({
-            "id": crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
-            "prototype": {"kind": "local", "definition": "f3d:model:product_definition#1"},
-            "parent": {"kind": "root"},
-            "ordinal": 0,
-            "transform": [[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.]],
-            "scale": [1., 1., 1.],
-            "native_ref": carrier.id,
-        }))
-        .unwrap()
+        let mut occurrence = Occurrence::new(
+            crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
+            ProductDefinitionId::mint("f3d:model:product-definition#1").unwrap(),
+            Some(Transform::identity()),
+        );
+        occurrence.native_ref = Some(carrier.id.clone());
+        occurrence
     });
     let project = |motions: &[DesignJointMotion], projected: &[Occurrence]| {
         let scopes = std::slice::from_ref(&scope);
@@ -199,7 +198,7 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
             &occurrences,
             &ComponentInserts::default(),
             motions,
-            &LocalOccurrencePaths::new(&occurrences, &[], projected, scopes),
+            &LocalOccurrencePaths::new(&occurrences, &[], &[], projected, scopes),
         )
     };
     let refused = project(std::slice::from_ref(&motion), &model_occurrences[..1]);

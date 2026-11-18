@@ -66,28 +66,29 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
 }
 
 #[test]
-fn part_product_occurrence_refuses_before_model_insertion() {
+fn part_product_definition_refuses_before_model_insertion() {
     use cadmpeg_core::decode::ResourceDimension;
 
     let data = include_bytes!("../../../tests/golden/fixtures/native_model_name.prt");
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_entities = 1;
+    options.policy.limits.max_entities = 0;
     let error = CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect_err("a product definition and occurrence require two entity slots");
+        .expect_err("the root product definition requires one entity slot");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Creo model occurrences"
+                && limit.operation == "admit Creo model product_definitions"
     ));
 
-    options.policy.limits.max_entities = 2;
+    // §8.1: the part is the root definition, which no occurrence places.
+    options.policy.limits.max_entities = 1;
     let decoded = CreoCodec
         .decode(&mut Cursor::new(data), &options)
         .expect("the exact model entity limit admits the part product");
     assert_eq!(decoded.ir().model.product_definitions.len(), 1);
-    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert!(decoded.ir().model.occurrences.is_empty());
 }
 
 fn sketch_admission_prt() -> Vec<u8> {

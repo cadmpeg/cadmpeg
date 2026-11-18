@@ -7011,6 +7011,22 @@ Class members follow this 21-byte prefix. Version 4 admits marked and unmarked m
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is |
 | 11 | 10 | `zero_prefix` | `bytes[10]` | little | spec | The bytes from indexed-header offset 11 through 20 are zero |
 
+## `surface_extend_scope_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 44 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The `SurfaceExtend` scope prologue |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `prologue_marker` | `u8` | little | spec | byte `01` at offset 20 |
+| 21 | 8 | `zero_run_8` | `bytes[8]` | little | spec | eight zero bytes at offsets 21 through 28 |
+| 29 | 4 | `extension_method` | `u32` | little | spec | the u32 extension method at offset 29 |
+| 33 | 11 | `distance_reference` | `bytes[11]` | little | spec | the marked reference to the distance owner at offset 33 |
+
 ## `surface_untrim_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 25 B

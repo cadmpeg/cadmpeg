@@ -6189,6 +6189,22 @@ pub(crate) mod placement_indexed_prefix {
     pub(crate) const ZERO_PREFIX: usize = 11;
 }
 
+/// Byte offsets for the `surface_extend_scope_prologue` record.
+///
+/// Spec §3.1. Record length 44 B.
+pub(crate) mod surface_extend_scope_prologue {
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `prologue_marker` (`u8`). Spec §3.1.
+    pub(crate) const PROLOGUE_MARKER: usize = 20;
+    /// Offset of `zero_run_8` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_8: usize = 21;
+    /// Offset of `extension_method` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENSION_METHOD: usize = 29;
+    /// Offset of `distance_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const DISTANCE_REFERENCE: usize = 33;
+}
+
 /// Byte offsets for the `surface_untrim_prologue` record.
 ///
 /// Spec §3.1. Record length 25 B.
