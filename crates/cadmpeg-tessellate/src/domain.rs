@@ -293,12 +293,50 @@ fn assign(
             }
         }
         if !placed {
+            placed = place_by_periods(&mut regions, hole, probe, frame);
+        }
+        if !placed {
             return Err(Refusal::misoriented(
                 "an inner loop lies outside every outer loop",
             ));
         }
     }
     Ok(regions)
+}
+
+/// Gives `hole` to the first region that contains `probe` after a move by
+/// whole periods to the low side of the region's extent in each periodic
+/// parameter, or one period above it.
+fn place_by_periods(regions: &mut [Region], hole: Vec<Node>, probe: Uv, frame: &Frame) -> bool {
+    for region in regions.iter_mut() {
+        let outer = uvs(&region.outer);
+        let shifts = |axis: usize| -> Vec<f64> {
+            frame.periods[axis].map_or_else(
+                || vec![0.0],
+                |period| {
+                    let low = outer
+                        .iter()
+                        .map(|uv| uv[axis])
+                        .fold(f64::INFINITY, f64::min);
+                    let base = ((low - probe[axis]) / period).ceil() * period;
+                    vec![base, base + period]
+                },
+            )
+        };
+        for du in shifts(0) {
+            for dv in shifts(1) {
+                if contains(&outer, [probe[0] + du, probe[1] + dv]) {
+                    let mut hole = hole;
+                    for node in &mut hole {
+                        node.uv = [node.uv[0] + du, node.uv[1] + dv];
+                    }
+                    region.holes.push(hole);
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The strips between wrapping rings that run along `axis`.
