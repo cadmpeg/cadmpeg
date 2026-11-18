@@ -127,6 +127,7 @@ pub(crate) struct DesignIntentFailure {
 /// Native Design records that phase 2 produces.
 #[derive(Debug, Default)]
 pub(super) struct DesignNative {
+    pub(super) history_body_consumers: crate::history::history_bodies::ConsumerContext,
     asm_histories: Vec<AsmHistory>,
     asm_face_boundaries: Vec<AsmFaceBoundary>,
     persistent_references: Vec<PersistentReference>,
@@ -186,6 +187,7 @@ impl DesignNative {
     /// Record headers join the phase-1 headers.
     pub(super) fn store(self, native: &mut F3dNative) {
         let Self {
+            history_body_consumers: _,
             asm_histories,
             asm_face_boundaries,
             persistent_references,
@@ -863,7 +865,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             }
         }
     }
-    model.history_bodies = crate::history::history_bodies::fill(
+    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
         scan,
         crate::history::history_bodies::Inputs {
@@ -876,6 +878,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         derived_snapshots,
         &mut losses,
     )?;
+    model.history_bodies = history_bodies;
+    design.history_body_consumers.remaining_work = remaining_work;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
@@ -1471,6 +1475,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design
         .design_record_headers
         .retain(|header| !phase_one_headers.contains(header.id.as_str()));
+    design.history_body_consumers.bindings = scope_histories;
     Ok(DesignOutputs {
         native: design,
         model,
