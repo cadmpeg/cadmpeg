@@ -966,6 +966,7 @@ pub(crate) fn inventory(
         }
     }
     mirror::admit_operands(ctx, document, &mut inventory)?;
+    sheet_metal::contour::read_attachments(ctx, document, &mut inventory)?;
     Ok(inventory)
 }
 
