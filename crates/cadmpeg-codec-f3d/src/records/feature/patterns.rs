@@ -508,6 +508,15 @@ pub(crate) struct DesignRectangularPatternDistribution {
     pub(crate) symmetric: Located<bool>,
     /// Each distance owner stores the seed-to-final-instance extent; adjacent spacing otherwise.
     pub(crate) total_extent: Located<bool>,
+    /// Compute option: `0` Optimized, `1` Identical, `2` Adjust.
+    pub(crate) compute_option: Located<u32>,
+    /// Seed kind: `0` face, `1` feature, `2` body.
+    pub(crate) seed_kind: Located<u32>,
+    /// Count of the marked body references before the fixed fields.
+    pub(crate) body_references: Located<u32>,
+    /// Body references whose record the stream does not register as a body
+    /// browser node.
+    pub(crate) untyped_body_references: u32,
 }
 
 /// Direction record of one active rectangular-pattern direction.
@@ -519,7 +528,8 @@ pub(crate) struct DesignRectangularPatternDirection {
     pub(crate) selection_record_index: u32,
     /// Selection kind `8` or `16`.
     pub(crate) selection_kind: u32,
-    /// Distance representation: 7 is adjacent spacing; 8 is total span.
+    /// Distance representation: 7 is adjacent spacing; 8 is total span; 10 is the flagged
+    /// compact form, whose payload distribution block states the distance form.
     pub(crate) distance_type: u32,
     /// Origin in source centimetres.
     pub(crate) origin: [FiniteReal; 3],
@@ -534,7 +544,7 @@ pub(crate) struct DesignRectangularPatternDirection {
 impl DesignRectangularPatternDirection {
     /// The unit direction of the displacement, before the extent sign applies.
     pub(crate) fn direction(&self) -> Option<UnitVector3> {
-        if !matches!(self.selection_kind, 8 | 16) || !matches!(self.distance_type, 7 | 8) {
+        if !matches!(self.selection_kind, 8 | 16) || !matches!(self.distance_type, 7 | 8 | 10) {
             return None;
         }
         let vector = Vector3::from(self.displacement.map(FiniteReal::get));
@@ -662,13 +672,11 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
     fn try_from(wire: DesignRectangularPatternConstructionWire) -> Result<Self, Self::Error> {
         let u_count = NonZeroU32::new(wire.u_count).ok_or("u_count must be nonzero")?;
         let v_count = NonZeroU32::new(wire.v_count).ok_or("v_count must be nonzero")?;
-        if !wire.u_extent.is_finite() || (u_count.get() == 1 && wire.u_extent != 0.0) {
-            return Err("u_extent must be finite and zero when u_count is one");
+        if !wire.u_extent.is_finite() || !wire.v_extent.is_finite() {
+            return Err("pattern extents must be finite");
         }
-        if !wire.v_extent.is_finite() || (v_count.get() == 1 && wire.v_extent != 0.0) {
-            return Err("v_extent must be finite and zero when v_count is one");
-        }
-        if wire.u_extent == 0.0 && wire.v_extent == 0.0 {
+        if !(u_count.get() > 1 && wire.u_extent != 0.0 || v_count.get() > 1 && wire.v_extent != 0.0)
+        {
             return Err("one direction must repeat over a nonzero distance");
         }
         let mut record = Self {
@@ -1334,7 +1342,11 @@ mod tests {
         assert_eq!(wire(3, 2, 2.0, -1.0).unwrap().active_direction_count(), 2);
         assert!(wire(3, 3, 0.0, 0.0).is_err());
         assert!(wire(1, 1, 0.0, 0.0).is_err());
-        assert!(wire(3, 1, 2.0, 1.0).is_err());
+        // A count-one direction can keep a distance; it places only the seed.
+        assert_eq!(wire(3, 1, 2.0, 1.0).unwrap().active_direction_count(), 1);
+        assert!(wire(1, 1, 2.0, 1.0).is_err());
+        assert!(wire(1, 3, 2.0, 0.0).is_err());
+        assert!(wire(3, 1, f64::INFINITY, 0.0).is_err());
 
         let mut wire = DesignRectangularPatternConstructionWire::from(coincident);
         wire.distribution = Some(DesignRectangularPatternDistribution {
@@ -1347,6 +1359,19 @@ mod tests {
                 value: false,
                 offset: 158,
             },
+            compute_option: Located {
+                value: 2,
+                offset: 146,
+            },
+            seed_kind: Located {
+                value: 1,
+                offset: 150,
+            },
+            body_references: Located {
+                value: 1,
+                offset: 134,
+            },
+            untyped_body_references: 0,
         });
         let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
         assert_eq!(record.distribution(), wire.distribution.as_ref());

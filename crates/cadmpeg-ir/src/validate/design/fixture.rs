@@ -20,7 +20,7 @@ use crate::design::units::ValueKind;
 use crate::document::CadIr;
 use crate::features::FeatureId;
 use crate::ids::BodyId;
-use crate::products::{ProductDefinition, ProductDefinitionKind};
+use crate::products::{ProductDefinition, ProductDefinitionKind, Storage};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
@@ -151,17 +151,9 @@ pub(super) fn document() -> CadIr {
     ir.set_scope(ContentScope::full()).unwrap();
     let body = body(&ir);
     ir.model.product_definitions.push(ProductDefinition {
-        id: id("definition", "part"),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
+        kind: Some(ProductDefinitionKind::Part),
         bodies: vec![body.clone()],
-        sketches: Vec::new(),
-        tessellations: Vec::new(),
-        native_ref: None,
+        ..ProductDefinition::new(id("definition", "part"), Storage::Embedded)
     });
     let design = &mut ir.design;
     design.scopes.push(DesignScope {
