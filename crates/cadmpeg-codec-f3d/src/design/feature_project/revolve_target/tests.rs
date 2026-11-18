@@ -498,7 +498,7 @@ fn a_face_recipe_member_outranks_the_plane_reading_of_the_same_group() {
             one_sided(),
             &[face_operand(vec![14])],
             &[],
-            &[selection.clone()],
+            std::slice::from_ref(&selection),
             &scopes,
             1,
         );
@@ -524,6 +524,43 @@ fn a_face_recipe_member_outranks_the_plane_reading_of_the_same_group() {
         );
         assert_eq!(unresolved, one_sided());
         assert!(losses.is_empty(), "{losses:?}");
+    }
+}
+
+#[test]
+fn a_face_recipe_member_of_another_group_or_scope_leaves_the_plane_reading() {
+    let other_group = {
+        let mut draft = face_operand(vec![14]).into_draft();
+        draft.group = Some(crate::records::topology::body_recipe::DesignOperandGroup {
+            group_record_index: GROUP + 1,
+            group_member_ordinal: 0,
+        });
+        DesignFaceOperand::try_new(draft).unwrap()
+    };
+    let other_scope = {
+        let mut draft = face_operand(vec![14]).into_draft();
+        draft.scope_record_index = SCOPE + 1;
+        DesignFaceOperand::try_new(draft).unwrap()
+    };
+    let other_stream = {
+        let mut draft = face_operand(vec![14]).into_draft();
+        draft.id = "f3d:Other/BulkStream.dat:face-operand#200".into();
+        DesignFaceOperand::try_new(draft).unwrap()
+    };
+    for face in [other_group, other_scope, other_stream] {
+        let (extent, losses) = bound_plane_with_losses(
+            one_sided(),
+            &[face],
+            &[],
+            &[plane_selection(44, false)],
+            &[],
+            1,
+        );
+        assert!(losses.is_empty(), "{losses:?}");
+        assert!(matches!(
+            plane_termination(extent),
+            AngularTermination::ToPlane { source: None, .. }
+        ));
     }
 }
 
