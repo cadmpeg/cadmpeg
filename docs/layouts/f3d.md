@@ -1363,6 +1363,34 @@ Parsed by:
 | 93 | 24 | `tangent_point_data` | `f64[3]` | little | spec | Version `2` stores a tangent triple at offset `93` |
 | 117 | 4 | `input_count` | `u32` | little | spec | the counted input-reference count at offset `117` |
 
+## `silhouette_split_scope_header`
+
+Spec §3.1 · layout: byte offsets · size: 21 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/silhouette_split.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The Silhouette Split scope starts with the indexed header |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | nine zero bytes through offset `19` |
+| 20 | 1 | `property_flag` | `u8` | little | spec | A property flag at offset `20` |
+
+## `silhouette_split_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 31 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/silhouette_split.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `zero_run` | `bytes[8]` | little | spec | Eight zero bytes follow the property block. |
+| 8 | 11 | `carrier` | `bytes[11]` | little | spec | The next plain local reference repeats the carrier |
+| 19 | 4 | `result_mode` | `u32` | little | spec | followed by the u32 result mode |
+| 23 | 4 | `zero_word` | `u32` | little | spec | a zero u32 and a u32 browser-reference count |
+| 27 | 4 | `browser_count` | `u32` | little | spec | a u32 browser-reference count |
+
 ## `design_hole_point_data_v4_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 122 B

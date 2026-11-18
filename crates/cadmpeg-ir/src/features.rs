@@ -44,6 +44,10 @@ mod operation;
 mod selection_overlap;
 mod source_literals;
 
+/// Boundary fill cell selections.
+pub mod boundary_fill;
+use boundary_fill::BoundaryFillCell;
+
 #[doc = "Checked datum geometry and construction inputs."]
 pub mod datums;
 pub mod edge_treatments;
@@ -71,6 +75,7 @@ use replace_face::ReplaceFaceOperands;
 
 #[doc = "Surface operation settings and constructors."]
 pub mod surfaces;
+use surfaces::SilhouetteSplitMode;
 use surfaces::UntrimLoops;
 
 macro_rules! checked_feature_geometry {
@@ -3883,6 +3888,20 @@ pub enum FeatureOperation {
         targets: FaceSelection,
         /// Geometry or datum plane that partitions the target faces.
         tool: SplitFaceTool,
+    },
+    /// Partitions a body's faces or volume along its silhouette in a given direction.
+    SilhouetteSplit {
+        /// Body selected before the split.
+        target: BodySelection,
+        /// Saved model-space silhouette direction.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_direction"
+        )]
+        direction: Option<FeatureDirection3>,
+        /// Result of the partition.
+        mode: SilhouetteSplitMode,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
@@ -7937,31 +7956,6 @@ pub enum SurfaceProjectionMode {
     Edges,
 }
 
-/// A selected region of a boundary fill.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum BoundaryFillCell {
-    /// Cell selected through a body region.
-    BodyRegion(BodySelection),
-    /// Cell selected through a source record.
-    Recorded {
-        /// Source cell identity. Omitted for an empty source slot.
-        #[serde(
-            default,
-            skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_cell_record"
-        )]
-        record: Option<SelectionReference>,
-    },
-}
-
-cadmpeg_core::named_optional_field!(deserialize_cell_record, SelectionReference, "record");
 cadmpeg_core::named_optional_field!(deserialize_boundary_fill_operation, BooleanOp, "operation");
 cadmpeg_core::named_optional_field!(deserialize_boundary_fill_remove_tools, bool, "remove_tools");
 

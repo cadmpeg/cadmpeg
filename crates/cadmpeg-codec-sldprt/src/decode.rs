@@ -25,6 +25,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
@@ -1926,10 +1927,10 @@ pub(crate) fn append_design_losses(
                     incomplete_body_selection(tools)
                         || !plane_tools.is_empty()
                         || cells.iter().any(|cell| match cell {
-                            cadmpeg_ir::features::BoundaryFillCell::BodyRegion(body) => {
+                            BoundaryFillCell::BodyRegion(body) => {
                                 incomplete_body_selection(body)
                             }
-                            cadmpeg_ir::features::BoundaryFillCell::Recorded { .. } => true,
+                            BoundaryFillCell::Recorded { .. } => true,
                         })
                 }
                 FeatureOperation::CutWithSurface { targets, tools, .. } => {
@@ -1945,6 +1946,11 @@ pub(crate) fn append_design_losses(
                 FeatureOperation::TrimBodiesAtPlane { targets, keep, .. } => {
                     incomplete_body_selection(targets)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
+                }
+                FeatureOperation::SilhouetteSplit { target, direction, mode } => {
+                    incomplete_body_selection(target)
+                        || direction.is_none()
+                        || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
                 }
                 FeatureOperation::SplitBody { targets, tool } => {
                     incomplete_body_selection(targets)

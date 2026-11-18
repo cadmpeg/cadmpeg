@@ -1059,6 +1059,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             let replacements = operands.replacements();
             !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements)
         }
+        FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit {
+            target, direction, mode,
+        }) => {
+            !body_selection_is_resolved(target)
+                || direction.is_none()
+                || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
+        }
         FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
             !body_selection_is_resolved(targets)
                 || match tool {
@@ -1742,6 +1749,9 @@ fn design_projection_gaps(
             }
             FeatureDefinition::Operation(FeatureOperation::InsertBodies { bodies }) => {
                 gaps.body_selections += usize::from(!bodies.is_resolved());
+            }
+            FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit { target, .. }) => {
+                gaps.body_selections += native_body_selection_count(target);
             }
             FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) => {
                 let target = operands.target();

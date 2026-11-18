@@ -59,6 +59,7 @@ mod pattern_seeds;
 mod reverse_normal;
 mod revolve_target;
 pub(crate) mod shell_fallback;
+mod silhouette_split;
 mod surface_offset;
 mod surface_patch;
 mod surface_untrim;
@@ -1000,6 +1001,10 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                     })
                 }),
+                Some(DesignFeatureFamily::SilhouetteSplit) => {
+                    silhouette_split::project(scope, construction_groups, &mut projection_losses)
+                        .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
+                }
                 Some(DesignFeatureFamily::BoundaryFill) => {
                     boundary_fill::project(scope, construction_groups, ctx, &mut projection_losses)?.unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {

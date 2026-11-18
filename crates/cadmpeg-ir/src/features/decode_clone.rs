@@ -1,30 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity rewrite implementations for feature records.
 
-use super::surfaces::UntrimLoops;
+use super::boundary_fill::BoundaryFillCell;
+use super::surfaces::{SilhouetteSplitMode, UntrimLoops};
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
-    BodyMembers, BodySelection, BoundaryFillCell, CapturedComponentPosition,
-    CapturedPositionTransform, CoilConstruction, CoilPlacement, CombineDestination,
-    CombineOperands, ComponentTransferMode, DatumPlaneReference, DatumPointConstruction,
-    DistinctMembers, DraftAnchor, DraftPull, DraftSecondSide, EdgeSelection, ExtrudeDirection,
-    ExtrudeExtent, ExtrudeSide, ExtrudeStart, ExtrusionDirectionSource, FaceBlendOperands,
-    FaceMaker, FaceMotion, FaceSelection, FeatureDefinition, FeatureEquationCurve,
-    FeatureOperation, FeaturePolyline, FilledSurfaceContinuity, FilledSurfaceContinuityState,
-    GeneratedBodyRef, GeneratedCurveRef, GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection,
-    GeneratedVertexRef, GeometryImportPath, HelicalSweepConstruction, InsertedBodies,
-    InsertedComponents, LinearTermination, LoftGuidance, LoftPointSection, LoftSection,
-    NativeFeatureKind, NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef,
-    PlanarProfileRef, PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RevolutionAxis,
-    RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter,
-    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
-    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
-    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
-    SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
-    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
-    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
-    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    VertexSelection,
+    BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
+    CoilConstruction, CoilPlacement, CombineDestination, CombineOperands, ComponentTransferMode,
+    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
+    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
+    FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
+    GeneratedEdgeRef, GeneratedFaceRef, GeneratedSweepSection, GeneratedVertexRef,
+    GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
+    LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
+    NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
+    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolveConstruction,
+    RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands,
+    SelectionMembers, SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths,
+    SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth,
+    SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection,
+    SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions,
+    SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
+    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
+    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -306,6 +306,7 @@ Thicken { faces, thickness, side, result, tangent_chain },
     TrimBodiesAtPlane { targets, plane, keep },
     SplitBody { targets, tool },
     SplitFace { targets, tool },
+    SilhouetteSplit { target, direction, mode },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
     ReplaceFace { operands },
@@ -545,6 +546,8 @@ rewrite_enum!(SketchProfileRegion, []; {
 rewrite_record!(SketchProfileRegions, []; (field0));
 
 rewrite_record!(SplitFacePlanes, []; (field0));
+
+rewrite_enum!(SilhouetteSplitMode, []; { Unresolved, FacesOnly, ShelledBody, SolidBody });
 
 rewrite_enum!(SplitBodyTool, []; {
     Faces(field0),

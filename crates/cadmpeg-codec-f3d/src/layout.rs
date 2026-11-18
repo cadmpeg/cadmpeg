@@ -1218,6 +1218,36 @@ pub(crate) mod design_mirror_scope_class441_count_owner {
     pub(crate) const OWNED_ORDINAL_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `silhouette_split_scope_header` record.
+///
+/// Spec §3.1. Record length 21 B.
+pub(crate) mod silhouette_split_scope_header {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `property_flag` (`u8`). Spec §3.1.
+    pub(crate) const PROPERTY_FLAG: usize = 20;
+}
+
+/// Byte offsets for the `silhouette_split_selection_prefix` record.
+///
+/// Spec §3.1. Record length 31 B.
+pub(crate) mod silhouette_split_selection_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 31;
+    /// Offset of `zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 0;
+    /// Offset of `carrier` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CARRIER: usize = 8;
+    /// Offset of `result_mode` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RESULT_MODE: usize = 19;
+    /// Offset of `zero_word` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 23;
+    /// Offset of `browser_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const BROWSER_COUNT: usize = 27;
+}
+
 /// Byte offsets for the `scale_legacy_uniform_tail` record.
 ///
 /// Spec §3.1. Record length 78 B.

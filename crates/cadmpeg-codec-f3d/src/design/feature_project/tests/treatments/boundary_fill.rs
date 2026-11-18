@@ -43,7 +43,7 @@ fn boundary_fill_projects_body_region_groups() {
             cells: ref cell_selections,
             ..
         })) if tool_selection == &tools.id
-            && cell_selections.as_slice() == [cadmpeg_ir::features::BoundaryFillCell::BodyRegion(
+            && cell_selections.as_slice() == [cadmpeg_ir::features::boundary_fill::BoundaryFillCell::BodyRegion(
                 cadmpeg_ir::features::BodySelection::Native(cell.id.clone())
             )]
     ));

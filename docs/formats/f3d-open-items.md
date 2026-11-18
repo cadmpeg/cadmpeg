@@ -20,6 +20,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-817. Silhouette Split direction selection
+
+**Question.** How does the direction selector bind to the datum or topology in the state before the split?
+
+**Known.** `f3d.md` §3.1 "A version-0 `SilhouetteSplit` scope has four ordered plain local references" identifies the selector in the scope and in the point-direction carrier. The carrier stores a solved position and vector in model space. The direction selector can name an axis, plane, edge, or face.
+
+**Need.** A join from the selector record to the source feature or topology in the preceding state.
+
 ### DR-502. Micron compact profile members and descendant selection
 
 **Question.** Which replacement curve closes a compact profile hole after a curve edit, and which descendant regions of the compact group form the selected material?

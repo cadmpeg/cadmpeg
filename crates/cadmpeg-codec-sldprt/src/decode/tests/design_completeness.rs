@@ -381,7 +381,9 @@ fn design_completeness_audits_typed_construction_families() {
                     .expect("distinct bodies"),
             ),
             cells: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::BoundaryFillCell::BodyRegion(BodySelection::Unresolved),
+                cadmpeg_ir::features::boundary_fill::BoundaryFillCell::BodyRegion(
+                    BodySelection::Unresolved,
+                ),
             ),
             plane_tools: Vec::new(),
             operation: None,
