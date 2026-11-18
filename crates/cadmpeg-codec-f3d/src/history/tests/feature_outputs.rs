@@ -136,6 +136,7 @@ fn split_outputs_bind_across_complete_transition_chains() {
     feature
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Unresolved,
             tool: SplitBodyTool::Faces(FaceSelection::Unresolved),
         }));

@@ -193,10 +193,10 @@ fn as_built_operand_frame_link(
         .byte_offset()
         .checked_sub(locator)
         .and_then(|length| usize::try_from(length).ok());
-    let rigid = design::assembly::rigid_as_built_scope(scope);
-    let layout = rigid_group_locator_layout(path, stream_types);
-    if rigid {
-        let Some(layout) = layout else {
+    if design::assembly::rigid_as_built_scope(scope)
+        || design::assembly::compact_placement_as_built_scope(scope)
+    {
+        let Some(layout) = as_built_locator_layout(scope, path, stream_types) else {
             return false;
         };
         let reference = if layout.null_construction {
@@ -243,17 +243,21 @@ fn as_built_operand_frame_link(
         && frame.reference_record_index != 0
 }
 
-fn rigid_group_locator_layout(
+fn as_built_locator_layout(
+    scope: &records::feature::scope::DesignParameterScope,
     path: &records::feature::assembly::DesignAssemblyOperandPath,
     stream_types: &std::collections::HashMap<u64, (&str, u32)>,
 ) -> Option<design::assembly::RigidGroupLocatorLayout> {
     let link = path.link();
-    design::assembly::RigidGroupLocatorLayout::admit(
-        stream_types
-            .get(&u64::from(link.locator_record_index))
-            .copied(),
-        usize::try_from(path.byte_offset().checked_sub(link.locator_byte_offset)?).ok()?,
-    )
+    let registered = stream_types
+        .get(&u64::from(link.locator_record_index))
+        .copied();
+    let length = usize::try_from(path.byte_offset().checked_sub(link.locator_byte_offset)?).ok()?;
+    if design::assembly::compact_placement_as_built_scope(scope) {
+        design::assembly::RigidGroupLocatorLayout::admit_compact_as_built(registered, length)
+    } else {
+        design::assembly::RigidGroupLocatorLayout::admit(registered, length)
+    }
 }
 
 fn valid_assembly_operand_path_link(
@@ -273,7 +277,9 @@ fn valid_assembly_operand_path_link(
     else {
         return false;
     };
-    let variable_reference = !design::assembly::rigid_as_built_scope(scope)
+    let compact_as_built = design::assembly::compact_placement_as_built_scope(scope);
+    let variable_reference = !compact_as_built
+        && !design::assembly::rigid_as_built_scope(scope)
         && design::assembly::variable_reference_assembly_generation(
             scope.class_tag.as_str(),
             scope.paired_class_tag.as_str(),
@@ -283,10 +289,13 @@ fn valid_assembly_operand_path_link(
         .is_some_and(design::assembly::AssemblyOperandFrameVariant::is_wide_family)
         || design::assembly::wide_as_built_scope(scope);
     let (locator_length, scope_backlink, wrapper_reference) =
-        if design::assembly::rigid_as_built_scope(scope) {
-            let Some(layout) = rigid_group_locator_layout(path, stream_types) else {
+        if compact_as_built || design::assembly::rigid_as_built_scope(scope) {
+            let Some(layout) = as_built_locator_layout(scope, path, stream_types) else {
                 return false;
             };
+            if compact_as_built && !path.admitted_by_type() {
+                return false;
+            }
             let (length, backlink, wrapper, _, _) = layout.offsets();
             (
                 u64_from_index(length),
@@ -349,7 +358,7 @@ fn valid_assembly_operand_path_link(
         && link.locator_record_index.checked_add(1) == Some(path.record_index)
         // A variable-reference or wide locator's path can continue over
         // further records before its wrapper.
-        && if variable_reference || wide {
+        && if variable_reference || wide || compact_as_built {
             link.locator_record_index
                 .checked_add(2)
                 .zip(link.locator_record_index.checked_add(65))
@@ -2124,8 +2133,7 @@ fn placement_ordered_references_hold(
     owners: &[(u32, u32)],
 ) -> bool {
     use crate::layout::assembly_as_built_scope_owner_run as layout;
-    let Some(count) = design::assembly::as_built_additional_owner_count(scope.frame_length())
-    else {
+    let Some(count) = design::assembly::as_built_additional_owner_count(scope) else {
         return false;
     };
     let Some(run) = &alignment.additional_owner_run else {
@@ -2146,11 +2154,12 @@ fn placement_ordered_references_hold(
             .iter()
             .zip(owners)
             .all(|(reference, (_, index))| reference.value == *index)
-        && table.len() == 9 + count
-        && (count != 0
-            || table
-                .values_in(5..9)
-                .is_some_and(|values| values.eq(alignment.owners.iter().map(|owner| &owner.value))))
+        && (design::assembly::compact_placement_as_built_scope(scope)
+            || (table.len() == 9 + count
+                && (count != 0
+                    || table.values_in(5..9).is_some_and(|values| {
+                        values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                    }))))
         && run
             .references
             .iter()
@@ -2649,7 +2658,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 };
                 let generation = design::assembly::AssemblyScopeGeneration::for_scope(scope);
                 let operand_frame_variant = generation.operand_frame_variant();
-                let variable_reference = !design::assembly::rigid_as_built_scope(scope)
+                let compact_as_built = design::assembly::compact_placement_as_built_scope(scope);
+                let variable_reference = !compact_as_built
+                    && !design::assembly::rigid_as_built_scope(scope)
                     && design::assembly::variable_reference_assembly_generation(
                         scope.class_tag.as_str(),
                         scope.paired_class_tag.as_str(),
@@ -2674,7 +2685,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 let rigid_as_built = design::assembly::rigid_as_built_scope(scope);
                 let as_built_frames = scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-                    && (scope.frame_length() == 399 || wide_as_built);
+                    && (scope.frame_length() == 399 || wide_as_built || compact_as_built);
                 let as_built_421_generation = design::assembly::legacy_as_built_421_generation(
                     scope.frame_length(),
                     scope.class_tag.as_str(),
@@ -2823,7 +2834,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
                                 let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference || wide_as_built
+                                    let continuation_count = if variable_reference || wide_as_built || compact_as_built
                                         || operand_frame_variant.is_some_and(
                                             design::assembly::AssemblyOperandFrameVariant::is_wide_family,
                                         ) {
@@ -2834,8 +2845,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     } else {
                                         0
                                     };
-                                    let stride = if rigid_as_built {
-                                        rigid_group_locator_layout(path, stream_types)?.reference_stride()
+                                    let stride = if rigid_as_built || compact_as_built {
+                                        as_built_locator_layout(scope, path, stream_types)?.reference_stride()
                                     } else { 11 };
                                     u64::try_from(path_wrapper::PATH_REFERENCE + stride)
                                         .ok()?
@@ -3047,12 +3058,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .values()
                         .take(alignment.owners.len())
                         .eq(alignment.owners.iter().map(|owner| &owner.value))
-                } else if !design::assembly::rigid_as_built_scope(scope)
-                    && design::assembly::variable_reference_assembly_generation(
-                        scope.class_tag.as_str(),
-                        scope.paired_class_tag.as_str(),
-                    )
-                {
+                } else if variable_reference {
                     (0..scope.reference_members().len())
                         .filter(|&start| {
                             scope
@@ -3105,7 +3111,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         scope.canonical_name_frame_length(),
                         placement.matrix.as_ref(),
                     ) {
-                        (Some(256 | 257 | 261 | 267 | 272 | 276), None) => true,
+                        (Some(256 | 257 | 261 | 267 | 271 | 272 | 275 | 276), None) => true,
                         (Some(385), Some(matrix)) => {
                             scope.byte_offset().checked_add(u64_from_index(
                                 crate::layout::component_insert_scope_283_262_385::TRANSFORM,
@@ -3135,7 +3141,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     scope.paired_class_tag.as_str(),
                     construction.placement.as_ref(),
                 ) {
-                    (272 | 276, _, None) => true,
+                    (271 | 272 | 275 | 276, _, None) => true,
                     (261, "263", None) if scope.class_tag.as_str() == "296" => true,
                     (261, "261", None) if scope.class_tag.as_str() == "410" => true,
                     (261, "258", None) if scope.class_tag.as_str() == "426" => true,
@@ -3788,11 +3794,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 side_extent_discriminators,
                 side_extent_discriminator_offsets,
                 first_side_target_ordinal,
+                opaque_distance_word,
                 extent,
                 direction_face_extend_offsets,
                 direction_reversed_offset,
                 solid_operation_offset,
+                solid_operation,
                 start_offset,
+                start,
                 ..
             }) => {
                 let typed_references = scope_has_typed_references(scope);
@@ -3949,6 +3958,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .is_some_and(|slot_expansion| {
                         extent_slot_expansion_valid(typed_references, slot_expansion)
                     });
+                let opaque_distance_word_valid = opaque_distance_word.is_none_or(|word| {
+                    typed_references
+                        && scope.byte_offset().checked_add(u64_from_index(
+                            crate::layout::typed_reference_extrude_prologue::OPERATION,
+                        )) == Some(operation_offset)
+                        && direction_face_extend_values == [1, 2]
+                        && side_extent_discriminators == [1, 0]
+                        && solid_operation
+                        && start == records::feature::extrude::DesignExtrudeStart::ProfilePlane
+                        && side_extent_discriminator_offsets[0].checked_add(u64_from_index(
+                            crate::layout::current_extrude_non_target_extent_pair::TARGET_OPTION,
+                        )) == Some(word.byte_offset)
+                });
                 let second_side_offset_valid = (if side_extent_discriminators == [2, 2]
                     || (side_extent_discriminators == [2, 1]
                         && extent == records::feature::extrude::DesignExtrudeExtent::TwoSidedTargetToDistanceOptionZero)
@@ -3992,6 +4014,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         || dual_lane_symmetric_extent)
                     && first_side_target_ordinal.is_none_or(|_| side_extent_discriminators[0] == 2)
                     && target_ordinal_valid
+                    && opaque_distance_word_valid
                     && first_side_offset_valid
                     && second_side_offset_valid
                     && operation_offset
@@ -5246,6 +5269,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     .map(records::feature::extrude::DesignExtrudePrologue::start)
                                     == Some(records::feature::extrude::DesignExtrudeStart::FromFace)
                                     || design::decode::operands::extrude_has_selected_termination(scope)
+                                    || (group.extrude_face_role()
+                                        == Some(records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
+                                        && group.members().len() == 1
+                                        && design::decode::operands::allows_slotted_extrude_face_targets(scope))
                             }
                         },
                         records::topology::construction::DesignConstructionOperandRole::Other(role) => {
