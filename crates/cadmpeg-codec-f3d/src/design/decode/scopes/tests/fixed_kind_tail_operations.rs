@@ -258,8 +258,7 @@ pub(super) fn fixed_kind_tail_operations(
             &scale_scope,
             &HashMap::new(),
             &mut Vec::new()
-        )
-        .unwrap(),
+        ),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
             center_record_index: 105,

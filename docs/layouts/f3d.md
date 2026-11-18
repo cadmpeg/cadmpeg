@@ -1528,6 +1528,43 @@ Parsed by:
 | 213 | 4 | `history_state_id` | `u32` | little | spec | The current history-state identity is at offset 213 |
 | 217 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind code-unit count is at offset 217 |
 
+## `scale_counted_group_head`
+
+Spec §3.1 · layout: byte offsets · size: 56 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 51 | `legacy_scale_fields` | `bytes[51]` | little | spec | the marked center and factor-owner references at offsets 21, 29, and 40 |
+| 51 | 1 | `marker` | `u8` | little | spec | Byte 51 is one · value `1` |
+| 52 | 4 | `group_count` | `u32` | little | spec | The u32 group count at offset 52 is one or two |
+
+## `scale_counted_group_suffix`
+
+Spec §3.1 · layout: byte offsets · size: 8 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `one` | `u32` | little | spec | They are followed by u32 one and u32 zero · value `1` |
+| 4 | 4 | `zero` | `u32` | little | spec | They are followed by u32 one and u32 zero · value `0` |
+
+## `scale_axis_owner_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 95 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An owner-backed per-axis Scale stores zero bytes at offsets 11 through 28 |
+| 11 | 18 | `zero_run_18` | `bytes[18]` | little | spec | zero bytes at offsets 11 through 28 |
+| 29 | 11 | `center_reference` | `bytes[11]` | little | spec | The marked center reference is at offset 29 |
+| 40 | 1 | `zero_byte` | `u8` | little | spec | Byte 40 is zero · value `0` |
+| 41 | 4 | `one` | `u32` | little | spec | u32 at offset 41 is one · value `1` |
+| 45 | 2 | `zero_word` | `u16` | little | spec | offsets 45 through 46 are zero · value `0` |
+| 47 | 11 | `x_owner` | `bytes[11]` | little | spec | references start at offsets 47, 58, and 69 |
+| 58 | 11 | `y_owner` | `bytes[11]` | little | spec | references start at offsets 47, 58, and 69 |
+| 69 | 11 | `z_owner` | `bytes[11]` | little | spec | references start at offsets 47, 58, and 69 |
+| 80 | 4 | `group_count` | `u32` | little | spec | Offset 80 stores u32 one · value `1` |
+| 84 | 11 | `group_reference` | `bytes[11]` | little | spec | offset 84 stores the marked body-group reference |
+
 ## `scale_legacy_uniform_tail`
 
 Spec §3.1 · layout: byte offsets · size: 78 B
