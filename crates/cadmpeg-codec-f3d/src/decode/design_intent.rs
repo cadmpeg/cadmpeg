@@ -661,6 +661,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             histories: &design.asm_histories,
             face_boundaries: &design.asm_face_boundaries,
             sheet_metal_settings: &design.design_sheet_metal_settings,
+            construction_recipes: &prereqs.construction_recipes,
+            persistent_subentity_tags: geometry.persistent_subentity_tags,
         },
     )?;
     losses.extend(

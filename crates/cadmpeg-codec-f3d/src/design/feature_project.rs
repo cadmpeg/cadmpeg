@@ -147,6 +147,9 @@ pub(crate) struct ProjectInputs<'a> {
         &'a [crate::records::topology::historical_context::AsmFaceBoundary],
     pub(crate) sheet_metal_settings:
         &'a [crate::records::sheet_metal_settings::DesignSheetMetalSettings],
+    pub(crate) construction_recipes: &'a [crate::records::recipes::ConstructionRecipe],
+    pub(crate) persistent_subentity_tags:
+        &'a [crate::records::sketch_links::PersistentSubentityTag],
 }
 
 /// Authored construction ordinal of every parameter scope represented by a
@@ -426,6 +429,7 @@ impl<'a> ScopeHistoryGraph<'a> {
         scopes: &'a [DesignParameterScope],
         body_bindings: &[DesignBodyBinding],
         body_recipe_operands: &[DesignBodyRecipeOperand],
+        edge_recipes: crate::history::edge_recipe_scope::Sources<'_>,
         component_naming_spaces: &[crate::records::recipes::DesignComponentNamingSpace],
         histories: &[crate::history_records::AsmHistory],
     ) -> Self {
@@ -436,7 +440,7 @@ impl<'a> ScopeHistoryGraph<'a> {
                 scopes,
                 body_bindings,
                 body_recipe_operands,
-                crate::history::edge_recipe_scope::Sources::default(),
+                edge_recipes,
                 histories,
                 &mut Vec::new(),
             ))
@@ -695,6 +699,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         histories,
         face_boundaries,
         sheet_metal_settings,
+        construction_recipes,
+        persistent_subentity_tags,
         ..
     } = inputs;
     let mut projection_losses = Vec::new();
@@ -1753,6 +1759,11 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         scopes,
         body_bindings,
         body_recipe_operands,
+        crate::history::edge_recipe_scope::Sources {
+            operands: edge_operands,
+            recipes: construction_recipes,
+            tags: persistent_subentity_tags,
+        },
         component_naming_spaces,
         histories,
     );
