@@ -113,11 +113,11 @@ fn check_operation(
         FeatureOperation::Revolve(revolve) => swept::check_revolve(index, site, revolve, findings),
         FeatureOperation::Sweep(sweep) => swept::check_sweep(index, site, sweep, findings),
         FeatureOperation::HelicalSweep(sweep) => {
-            swept::check_helical_sweep(index, site, sweep, findings)
+            swept::check_helical_sweep(index, site, sweep, findings);
         }
         FeatureOperation::Rib(rib) => swept::check_rib(index, site, rib, findings),
         FeatureOperation::Primitive(primitive) => {
-            swept::check_primitive(index, site, primitive, findings)
+            swept::check_primitive(index, site, primitive, findings);
         }
         FeatureOperation::Loft(loft) => swept::check_loft(index, site, loft, findings),
         FeatureOperation::Fillet(fillet) => dressup::check_fillet(site, fillet, findings),
@@ -125,7 +125,7 @@ fn check_operation(
         FeatureOperation::Shell(shell) => dressup::check_shell(site, shell, findings),
         FeatureOperation::Draft(draft) => dressup::check_draft(site, draft, findings),
         FeatureOperation::Thicken(thicken) => {
-            dressup::check_thicken(index, site, thicken, findings)
+            dressup::check_thicken(index, site, thicken, findings);
         }
         FeatureOperation::Offset(offset) => dressup::check_offset(index, site, offset, findings),
         FeatureOperation::Hole(hole) => dressup::check_hole(index, site, hole, findings),
@@ -140,7 +140,7 @@ fn check_operation(
         FeatureOperation::Combine(combine) => body::check_combine(site, combine, findings),
         FeatureOperation::Split(split) => body::check_split(site, split, findings),
         FeatureOperation::TransformBodies(transform) => {
-            body::check_transform_bodies(site, transform, findings)
+            body::check_transform_bodies(site, transform, findings);
         }
         FeatureOperation::Flex(flex) => body::check_flex(site, flex, findings),
         FeatureOperation::MoveFaces(faces) => body::check_move_faces(site, faces, findings),
@@ -152,28 +152,28 @@ fn check_operation(
         FeatureOperation::Unsew(unsew) => surface::check_unsew(site, unsew, findings),
         FeatureOperation::Extend(extend) => surface::check_extend(index, site, extend, findings),
         FeatureOperation::ImplicitSweep(sweep) => {
-            surface::check_implicit_sweep(index, site, sweep, findings)
+            surface::check_implicit_sweep(index, site, sweep, findings);
         }
         FeatureOperation::BoundaryFill(fill) => {
-            surface::check_boundary_fill(index, site, fill, findings)
+            surface::check_boundary_fill(index, site, fill, findings);
         }
         FeatureOperation::Curve(curve) => surface::check_curve(site, curve, findings),
         FeatureOperation::Form(form) => surface::check_form(site, form, findings),
         FeatureOperation::SheetMetal(sheet) => {
-            sheet_metal::check_sheet_metal(index, site, sheet, findings)
+            sheet_metal::check_sheet_metal(index, site, sheet, findings);
         }
         FeatureOperation::Mesh(mesh) => surface::check_mesh(index, site, mesh, findings),
         FeatureOperation::Place(place) => assembly::check_place(index, site, place, findings),
         FeatureOperation::PlaceSet(set) => assembly::check_place_set(index, site, set, findings),
         FeatureOperation::Joint(joint) => assembly::check_joint(site, joint, findings),
         FeatureOperation::RigidGroup(group) => {
-            assembly::check_rigid_group(index, site, group, findings)
+            assembly::check_rigid_group(index, site, group, findings);
         }
         FeatureOperation::ComponentPattern(pattern) => {
             assembly::check_component_pattern(index, site, pattern, findings);
         }
         FeatureOperation::MirrorComponents(mirror) => {
-            assembly::check_mirror(index, site, mirror, findings)
+            assembly::check_mirror(index, site, mirror, findings);
         }
         FeatureOperation::AssemblyFeature(feature) => {
             assembly::check_assembly_feature(site, feature, findings);
