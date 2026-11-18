@@ -49,6 +49,7 @@ pub(super) fn project(
     let definition = definition.clone();
     parameters::project(ctx, ir, &definition)?;
     let sketches = sketches::project(ctx, scan, ir)?;
+    parameters::omit_measured_display(ir);
     project_timeline(ctx, ir, &definition, &sketches)?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));

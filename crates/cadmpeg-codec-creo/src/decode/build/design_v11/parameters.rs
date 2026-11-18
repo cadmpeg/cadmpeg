@@ -12,10 +12,11 @@ use std::num::NonZeroI8;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
+use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
+use cadmpeg_ir::design::ops::sketch::{RadialMeasure, SketchRelation};
 use cadmpeg_ir::design::parameter::{
     DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
@@ -58,6 +59,37 @@ pub(super) fn project(
     ir.design.parameters.extend(projected);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
+}
+
+/// Clears the presentation of a parameter whose binding radial dimension
+/// already measures it (§5.12): a parameter a diameter binds has no
+/// `display`, and one a radius binds states only a diameter presentation.
+pub(super) fn omit_measured_display(ir: &mut CadIr) {
+    let mut measured = BTreeMap::<&ParameterId, RadialMeasure>::new();
+    for constraint in &ir.design.sketch_constraints {
+        let SketchRelation::Radial {
+            measure,
+            value: Dimension::Parameter(parameter) | Dimension::Negated(parameter),
+            ..
+        } = &constraint.relation
+        else {
+            continue;
+        };
+        let entry = measured.entry(parameter).or_insert(*measure);
+        if *measure == RadialMeasure::Diameter {
+            *entry = RadialMeasure::Diameter;
+        }
+    }
+    for parameter in &mut ir.design.parameters {
+        let omitted = match measured.get(&parameter.id) {
+            Some(RadialMeasure::Diameter) => true,
+            Some(RadialMeasure::Radius) => parameter.display == Some(DimensionDisplay::Radius),
+            _ => false,
+        };
+        if omitted {
+            parameter.display = None;
+        }
+    }
 }
 
 fn project_parameter(

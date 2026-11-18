@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_ir::design::ops::sketch::{Planar, SketchConstraint};
 use cadmpeg_ir::features::{DistinctMembers, FeatureId};
 use cadmpeg_ir::scalar::{Angle, Length};
+use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 
 use super::*;
 
@@ -189,4 +191,65 @@ fn an_evaluated_quantity_states_its_exponents_and_a_temperature_is_native() {
         projected.definition,
         ParameterDefinition::Expression(Expression::Source { .. })
     ));
+}
+
+fn radial(key: &str, measure: RadialMeasure, parameter: &ParameterId) -> SketchConstraint<Planar> {
+    SketchConstraint {
+        id: SketchConstraintId::mint(format!("creo:model:sketch_constraint#917:{key}"))
+            .expect("constraint id"),
+        sketch: SketchId::mint("creo:model:sketch#917").expect("sketch id"),
+        relation: SketchRelation::Radial {
+            of: SketchEntityId::mint("creo:model:sketch_entity#917:arc").expect("entity id"),
+            measure,
+            value: Dimension::Parameter(parameter.clone()),
+        },
+        name: None,
+        active: None,
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+
+#[test]
+fn a_radial_dimension_presentation_is_stated_only_where_the_dimension_differs() {
+    let displayed = |key: &str, display| {
+        let mut parameter = parameter(key, &format!("d{key}"), "5", Some(length(5.0)));
+        parameter.display = Some(display);
+        project_one(&parameter)
+    };
+    let mut ir = CadIr::empty();
+    ir.design.parameters = vec![
+        displayed("1", LegacyDisplay::Radius),
+        displayed("2", LegacyDisplay::Diameter),
+        displayed("3", LegacyDisplay::Diameter),
+        displayed("4", LegacyDisplay::Radius),
+    ];
+    let ids = ir
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<Vec<_>>();
+    ir.design.sketch_constraints = vec![
+        radial("1", RadialMeasure::Radius, &ids[0]),
+        radial("2", RadialMeasure::Diameter, &ids[1]),
+        radial("3", RadialMeasure::Radius, &ids[2]),
+    ];
+    omit_measured_display(&mut ir);
+    let displays = ir
+        .design
+        .parameters
+        .iter()
+        .map(|parameter| parameter.display)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        displays,
+        [
+            None,
+            None,
+            Some(DimensionDisplay::Diameter),
+            Some(DimensionDisplay::Radius)
+        ]
+    );
 }
