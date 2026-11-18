@@ -208,9 +208,8 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
             cadmpeg_ir::OperandContainer::Occurrence { occurrence, .. } => {
                 named.insert(occurrence);
             }
-            cadmpeg_ir::OperandContainer::External {
-                external_document: ExternalDocument::Missing {},
-            } => {}
+            cadmpeg_ir::OperandContainer::External { external_document }
+                if *external_document == ExternalDocument::default() => {}
             cadmpeg_ir::OperandContainer::External { external_document } => {
                 if !documents.contains(&external_document) {
                     documents.push(external_document);
@@ -222,10 +221,9 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
     let (direct, unnamed) = occurrences
         .iter()
         .filter(|occurrence| {
-            matches!(
-                occurrence.prototype,
-                cadmpeg_ir::products::PrototypeReference::External { .. }
-            ) && occurrence.transform.rows() == cadmpeg_ir::transform::Transform::identity().rows()
+            crate::xref::is_document_definition(&occurrence.prototype)
+                && occurrence.transform.unwrap_or_default().rows()
+                    == cadmpeg_ir::transform::Transform::identity().rows()
         })
         .fold((0_usize, 0_usize), |(direct, unnamed), occurrence| {
             if named.contains(&occurrence.id) {
@@ -1246,7 +1244,7 @@ fn project_assembly_joint(
                 frames.clone(),
                 frames.each_ref().map(|frame| {
                     JointOperand::external(
-                        ExternalDocument::Missing {},
+                        ExternalDocument::default(),
                         scope.id.clone(),
                         vec![format!(
                             "construction-record#{}",
@@ -2040,19 +2038,24 @@ mod tests {
             ..Default::default()
         };
         let instances = |references: &[crate::records::xref::XrefReference]| {
-            references.iter().map(|reference| {
-                serde_json::from_value::<cadmpeg_ir::products::Occurrence>(serde_json::json!({
-                    "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
-                    "prototype": {"kind":"unresolved"}, "parent": {"kind":"root"},
-                    "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
-                    "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
-                })).unwrap()
-            }).collect::<Vec<_>>()
+            references
+                .iter()
+                .map(|reference| {
+                    let mut occurrence = cadmpeg_ir::products::Occurrence::new(
+                        crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
+                        crate::xref::document_definition_id(reference.relative_path.as_str()),
+                        Some(cadmpeg_ir::transform::Transform::identity()),
+                    );
+                    occurrence.native_ref = Some(reference.id.clone());
+                    occurrence
+                })
+                .collect::<Vec<_>>()
         };
         let occurrences = instances(&table.references);
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &table.references,
+            &[],
             &occurrences,
             &[],
         );
@@ -2163,6 +2166,7 @@ mod tests {
         let kept_bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &restored.xref_references,
+            &[],
             &kept,
             &[],
         );
@@ -2182,6 +2186,7 @@ mod tests {
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &restored.xref_references,
+            &[],
             &[],
             &[],
         );
@@ -2207,6 +2212,7 @@ mod tests {
         let partial_bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &with_child,
+            &[],
             &ancestor,
             &[],
         );
@@ -2261,6 +2267,7 @@ mod tests {
             &[other_document],
             &[],
             &[],
+            &[],
         );
         let independent = super::project_assembly_joints_with_paths(
             &restored.design_parameter_scopes,
@@ -2285,6 +2292,7 @@ mod tests {
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &table.references,
+            &[],
             &occurrences,
             &[],
         );
@@ -2335,7 +2343,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
             &[],
             &inserts,
-            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[], &[], &[]),
+            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[], &[], &[], &[]),
         )
         .unwrap();
         assert!(matches!(
@@ -2524,6 +2532,7 @@ mod tests {
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &table.references[..1],
+            &[],
             &occurrences,
             &[],
         );
@@ -2620,19 +2629,16 @@ mod tests {
     fn joint_placed_identity_occurrences_count_each_inserted_design_once() {
         let occurrence = |id: &str, scope: &str| -> cadmpeg_ir::products::Occurrence {
             let prototype = if scope == "external" {
-                serde_json::json!({"kind": "external", "document": {"kind": "path", "path": format!("{id}.f3d")}})
+                crate::xref::document_definition_id(&format!("{id}.f3d"))
             } else {
-                serde_json::json!({"kind": "local", "definition": "f3d:model:product_definition#1"})
+                cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product_definition#1")
+                    .unwrap()
             };
-            serde_json::from_value(serde_json::json!({
-                "id": format!("f3d:model:occurrence#{id}"),
-                "prototype": prototype,
-                "parent": {"kind": "root"},
-                "ordinal": 0,
-                "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
-                "scale": [1.0, 1.0, 1.0],
-            }))
-            .unwrap()
+            cadmpeg_ir::products::Occurrence::new(
+                cadmpeg_ir::ids::OccurrenceId::mint(format!("f3d:model:occurrence#{id}")).unwrap(),
+                prototype,
+                Some(cadmpeg_ir::transform::Transform::identity()),
+            )
         };
         let occurrences = [
             occurrence("xref-0-0", "external"),
@@ -2644,7 +2650,7 @@ mod tests {
         };
         let external = container(serde_json::json!({
             "kind": "external",
-            "external_document": {"kind": "document_id", "document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
+            "external_document": {"document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
         }));
         let named = container(serde_json::json!({
             "kind": "occurrence",
@@ -2653,7 +2659,7 @@ mod tests {
         }));
         let missing = container(serde_json::json!({
             "kind": "external",
-            "external_document": {"kind": "missing"},
+            "external_document": {},
         }));
         assert_eq!(
             super::joint_placed_identity_occurrences(&occurrences, [&missing, &missing]),

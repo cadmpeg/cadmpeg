@@ -1066,19 +1066,8 @@
           "id": "usd:stage:occurrence#/Scene",
           "name": "Scene",
           "native_ref": "/Scene",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Scene",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Scene",
           "transform": [
             [
               1.0,
@@ -1104,20 +1093,8 @@
           "id": "usd:stage:occurrence#/Scene/Box",
           "name": "Box",
           "native_ref": "/Scene/Box",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Scene"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Scene/Box",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Scene/Box",
           "transform": [
             [
               1.0,
@@ -1143,20 +1120,8 @@
           "id": "usd:stage:occurrence#/Scene/Robot",
           "name": "Robot",
           "native_ref": "/Scene/Robot",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Scene"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Scene/Robot",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Scene/Robot",
           "transform": [
             [
               1.0,
@@ -1182,24 +1147,8 @@
           "id": "usd:stage:occurrence#/Scene/Robot:arc0",
           "name": "./robot/payload.usd",
           "native_ref": "/Scene/Robot payload @./robot/payload.usd@",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Scene/Robot"
-          },
-          "prototype": {
-            "document": {
-              "kind": "path",
-              "path": "./robot/payload.usd"
-            },
-            "kind": "external",
-            "object": "/Robot"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:external#%40./robot/payload.usd%40/Robot",
           "transform": [
             [
               1.0,
@@ -1225,20 +1174,8 @@
           "id": "usd:stage:occurrence#/Scene/Shelf",
           "name": "Shelf",
           "native_ref": "/Scene/Shelf",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Scene"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Scene/Shelf",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Scene/Shelf",
           "transform": [
             [
               1.0,
@@ -1264,23 +1201,8 @@
           "id": "usd:stage:occurrence#/Scene/Shelf:arc0",
           "name": "shelf.usda",
           "native_ref": "/Scene/Shelf reference @shelf.usda@",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Scene/Shelf"
-          },
-          "prototype": {
-            "document": {
-              "kind": "path",
-              "path": "shelf.usda"
-            },
-            "kind": "external"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:external#%40shelf.usda%40",
           "transform": [
             [
               1.0,
@@ -1315,10 +1237,20 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Scene",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Scene",
+          "occurrences": [
+            "usd:stage:occurrence#/Scene/Robot",
+            "usd:stage:occurrence#/Scene/Shelf",
+            "usd:stage:occurrence#/Scene/Box"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Scene",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -1327,30 +1259,99 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Scene/Box",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Scene/Box",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Box",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Scene/Robot",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Scene/Robot",
+          "occurrences": [
+            "usd:stage:occurrence#/Scene/Robot:arc0"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Robot",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Scene/Shelf",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Scene/Shelf",
+          "occurrences": [
+            "usd:stage:occurrence#/Scene/Shelf:arc0"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Shelf",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:external#%40./robot/payload.usd%40/Robot",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "source_name": "./robot/payload.usd",
+          "storage": {
+            "kind": "external",
+            "object": "/Robot",
+            "path": "./robot/payload.usd"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:external#%40shelf.usda%40",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "source_name": "shelf.usda",
+          "storage": {
+            "kind": "external",
+            "path": "shelf.usda"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Scene"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],

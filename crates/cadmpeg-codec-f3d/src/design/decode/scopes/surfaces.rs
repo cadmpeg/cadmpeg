@@ -20,6 +20,7 @@ use crate::ids::native_stream;
 use crate::layout::compact_flag_record as flag_record;
 use crate::layout::surface_boundary_group_tail_87 as tail_87;
 use crate::layout::surface_boundary_group_tail_88 as tail_88;
+use crate::layout::surface_extend_scope_prologue as extend;
 use crate::layout::surface_untrim_prologue as untrim;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignRuledSurfaceCorner;
@@ -58,17 +59,72 @@ pub(super) fn exact_surface_extend_operation(
         operation.boundary_reference_record_index,
         losses,
     );
+    let method = surface_extend_method(bytes, scope, operation.distance_record_index);
     Some(DesignSurfaceExtendOperation {
+        method_code: method.map(|(code, _)| code),
+        method_code_offset: method.map(|(_, offset)| offset),
         distance: operation.distance,
         distance_offset: operation.distance_offset,
         distance_record_index: operation.distance_record_index,
         boundary_record_index: operation.boundary_record_index,
         boundary_reference_record_index: operation.boundary_reference_record_index,
         boundary_reference_offset: operation.boundary_reference_offset,
-        edge_record_indices: operation.edge_record_indices,
+        edge_record_indices: operation.member_record_indices,
         tolerance: operation.tolerance,
         tolerance_offset: operation.tolerance_offset,
     })
+}
+
+/// The loss of a `SurfaceExtend` operation that stays native or projects with an unresolved method.
+pub(super) fn surface_extend_loss(
+    scope_id: &str,
+    operation: &DesignSurfaceExtendOperation,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let distance = operation.distance.get();
+    if cadmpeg_ir::scalar::PositiveLength::new(distance * 10.0).is_none() {
+        return Some(
+            crate::loss::F3dLossCode::FeatureSurfaceExtendDistanceNonpositive.note(format!(
+                "SurfaceExtend scope {scope_id} stores extension distance {distance} cm and stays native (DR-312)."
+            )),
+        );
+    }
+    (operation.extension() == cadmpeg_ir::features::SurfaceExtension::Unresolved).then(|| {
+        crate::loss::F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
+            match operation.method_code {
+                Some(code) => format!(
+                    "SurfaceExtend scope {scope_id} stores extension method code {code} and projects with an unresolved method (DR-311)."
+                ),
+                None => format!(
+                    "SurfaceExtend scope {scope_id} has a prologue outside the fixed form and projects with an unresolved extension method (DR-311)."
+                ),
+            },
+        )
+    })
+}
+
+/// The method code of the fixed `SurfaceExtend` scope prologue and its byte offset.
+fn surface_extend_method(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    distance_record_index: u32,
+) -> Option<(u32, u64)> {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let frame_end = start.checked_add(usize::try_from(scope.frame_length()).ok()?)?;
+    let bytes = bytes.get(..frame_end)?;
+    let marker = start.checked_add(extend::PROLOGUE_MARKER)?;
+    let method = start.checked_add(extend::EXTENSION_METHOD)?;
+    let all_zero = |from: usize, to: usize| {
+        bytes
+            .get(from..to)
+            .is_some_and(|run| run.iter().all(|byte| *byte == 0))
+    };
+    (all_zero(start.checked_add(extend::ZERO_RUN_9)?, marker)
+        && bytes.get(marker) == Some(&1)
+        && all_zero(start.checked_add(extend::ZERO_RUN_8)?, method)
+        && marked_record_reference(bytes, start.checked_add(extend::DISTANCE_REFERENCE)?)
+            == Some(distance_record_index))
+    .then_some(())?;
+    Some((View::u32_le_at(bytes, method)?, u64_from_index(method)))
 }
 
 const MARKED_REFERENCE_LEN: usize = 11;
@@ -276,40 +332,69 @@ pub(super) fn exact_surface_offset_operation(
     let Some(stream) = native_stream(&scope.id) else {
         return Ok(None);
     };
-    let operation = exact_surface_boundary_operation(
+    let Some(ExactSurfaceBoundaryOperation {
+        distance,
+        distance_offset,
+        distance_record_index,
+        boundary_record_index,
+        boundary_reference_record_index,
+        boundary_reference_offset,
+        member_record_indices,
+        tolerance,
+        tolerance_offset,
+    }) = exact_surface_boundary_operation(
         bytes,
         records,
         scope,
         DesignFeatureFamily::SurfaceOffset,
         DesignOperandRole::PROFILE,
     )
-    .filter(|operation| {
-        operation.edge_record_indices.iter().all(|member| {
-            member_recipe_kind(records, recipes, stream, *member)
-                == Some(ConstructionRecipeKind::Edge)
-        })
-    });
-    if let Some(operation) = &operation {
-        surface_boundary_flag_loss(
-            bytes,
-            records,
-            scope,
-            operation.boundary_reference_record_index,
-            losses,
-        );
-    }
-    Ok(operation.map(|operation| DesignSurfaceOffsetOperation {
-        distance: operation.distance,
-        distance_offset: operation.distance_offset,
-        distance_record_index: operation.distance_record_index,
-        support: DesignSurfaceOffsetSupport::BoundaryCarrier {
-            boundary_record_index: operation.boundary_record_index,
-            boundary_reference_record_index: operation.boundary_reference_record_index,
-            boundary_reference_offset: operation.boundary_reference_offset,
-            edge_record_indices: operation.edge_record_indices,
-            tolerance: operation.tolerance,
-            tolerance_offset: operation.tolerance_offset,
-        },
+    else {
+        return Ok(None);
+    };
+    let recipe_kind = |member| member_recipe_kind(records, recipes, stream, member);
+    let support = match member_record_indices.as_slice() {
+        [body_record_index]
+            if distance.get() == 0.0
+                && recipe_kind(*body_record_index) == Some(ConstructionRecipeKind::Body) =>
+        {
+            DesignSurfaceOffsetSupport::BodyCarrier {
+                boundary_record_index,
+                boundary_reference_record_index,
+                boundary_reference_offset,
+                body_record_index: *body_record_index,
+                tolerance,
+                tolerance_offset,
+            }
+        }
+        members
+            if members
+                .iter()
+                .all(|member| recipe_kind(*member) == Some(ConstructionRecipeKind::Edge)) =>
+        {
+            DesignSurfaceOffsetSupport::BoundaryCarrier {
+                boundary_record_index,
+                boundary_reference_record_index,
+                boundary_reference_offset,
+                edge_record_indices: member_record_indices,
+                tolerance,
+                tolerance_offset,
+            }
+        }
+        _ => return Ok(None),
+    };
+    surface_boundary_flag_loss(
+        bytes,
+        records,
+        scope,
+        boundary_reference_record_index,
+        losses,
+    );
+    Ok(Some(DesignSurfaceOffsetOperation {
+        distance,
+        distance_offset,
+        distance_record_index,
+        support,
     }))
 }
 
@@ -503,7 +588,7 @@ struct ExactSurfaceBoundaryOperation {
     boundary_record_index: u32,
     boundary_reference_record_index: u32,
     boundary_reference_offset: u64,
-    edge_record_indices: Vec<u32>,
+    member_record_indices: Vec<u32>,
     tolerance: cadmpeg_ir::scalar::PositiveReal,
     tolerance_offset: u64,
 }
@@ -579,8 +664,8 @@ fn exact_surface_boundary_operation(
     let mut references = scope.reference_members().values().copied();
     let distance_record_index = references.next()?;
     let boundary_record_index = references.next()?;
-    let edge_record_indices: Vec<u32> = references.collect();
-    if edge_record_indices.is_empty() {
+    let member_record_indices: Vec<u32> = references.collect();
+    if member_record_indices.is_empty() {
         return None;
     }
     let mut owners = records
@@ -608,7 +693,7 @@ fn exact_surface_boundary_operation(
                 start,
                 end,
                 boundary_record_index,
-                &edge_record_indices,
+                &member_record_indices,
                 role,
                 scope.record_index,
             )
@@ -625,7 +710,7 @@ fn exact_surface_boundary_operation(
         boundary_record_index,
         boundary_reference_record_index,
         boundary_reference_offset,
-        edge_record_indices,
+        member_record_indices,
         tolerance,
         tolerance_offset,
     })
@@ -636,13 +721,13 @@ fn exact_surface_boundary_group(
     start: usize,
     end: usize,
     record_index: u32,
-    edge_record_indices: &[u32],
+    member_record_indices: &[u32],
     role: DesignOperandRole,
     scope_record_index: u32,
 ) -> Option<(u32, u64, cadmpeg_ir::scalar::PositiveReal, u64)> {
     let tail = start
         .checked_add(25)?
-        .checked_add(edge_record_indices.len().checked_mul(11)?)?;
+        .checked_add(member_record_indices.len().checked_mul(11)?)?;
     let layout = SURFACE_BOUNDARY_TAILS
         .iter()
         .find(|layout| tail.checked_add(layout.len) == Some(end))?;
@@ -653,8 +738,9 @@ fn exact_surface_boundary_group(
         && class_tag.len() == 3
         && class_tag.bytes().all(|byte| byte.is_ascii_digit())
         && bytes.get(start + 11..start + 21)? == [0; 10]
-        && View::u32_le_at(bytes, start + 21)? == u32::try_from(edge_record_indices.len()).ok()?
-        && edge_record_indices
+        && View::u32_le_at(bytes, start + 21)?
+            == u32::try_from(member_record_indices.len()).ok()?
+        && member_record_indices
             .iter()
             .enumerate()
             .all(|(position, record_index)| {
