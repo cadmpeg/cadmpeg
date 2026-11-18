@@ -782,6 +782,7 @@ fn append_containers(target: &mut AsmHistoricalTopology, source: AsmHistoricalTo
     target.shell_faces = source.shell_faces;
     target.shell_wire_edges = source.shell_wire_edges;
     target.shell_free_vertices = source.shell_free_vertices;
+    target.body_design_links = source.body_design_links;
 }
 
 fn container_rows(
