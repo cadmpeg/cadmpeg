@@ -46,9 +46,9 @@ fn scope() -> ProductDefinitionId {
     ProductDefinitionId::mint("creo:model:product_definition#root").expect("scope id")
 }
 
-fn project_one(parameter: &LegacyParameter, length: Option<UnitSymbol>) -> DesignParameter {
+fn project_one(parameter: &LegacyParameter) -> DesignParameter {
     let names = BTreeMap::from([(parameter.id.clone(), parameter.name.as_str())]);
-    project_parameter(parameter, &scope(), &names, length)
+    project_parameter(parameter, &scope(), &names)
 }
 
 fn neutral_text(parameter: &DesignParameter) -> String {
@@ -74,12 +74,12 @@ fn source_tokens(parameter: &DesignParameter) -> &[ExpressionToken<ParameterRef>
 }
 
 #[test]
-fn a_section_dimension_is_a_literal_in_the_authoring_unit() {
-    let projected = project_one(
-        &parameter("1", "d1", "1", Some(length(25.4))),
-        Some(UnitSymbol::In),
+fn a_bare_literal_with_no_declared_unit_stays_source_text() {
+    let projected = project_one(&parameter("1", "d1", "1", Some(length(25.4))));
+    assert_eq!(
+        source_tokens(&projected),
+        [ExpressionToken::Text("1".to_owned())]
     );
-    assert_eq!(neutral_text(&projected), "1[in]");
     assert_eq!(projected.kind, ValueKind::Quantity(Quantity::LENGTH));
     assert_eq!(
         projected.value,
@@ -94,50 +94,36 @@ fn a_section_dimension_is_a_literal_in_the_authoring_unit() {
             FeatureId::mint("creo:model:feature#40").expect("owner")
         ))
     );
-}
-
-#[test]
-fn a_literal_falls_back_to_the_stored_unit_only_where_the_value_agrees() {
-    let projected = project_one(
-        &parameter("1", "d1", "-2.5", Some(length(-2.5))),
-        Some(UnitSymbol::In),
-    );
-    assert_eq!(neutral_text(&projected), "-2.5[mm]");
-    let projected = project_one(&parameter("2", "d2", "1.5", Some(angle(1.5))), None);
-    assert_eq!(neutral_text(&projected), "1.5[rad]");
-    let degrees = 30f64.to_radians();
-    let projected = project_one(&parameter("3", "d3", "30", Some(angle(degrees))), None);
-    assert_eq!(neutral_text(&projected), "30[deg]");
-    let projected = project_one(
-        &parameter("4", "d4", "3", Some(length(5.0))),
-        Some(UnitSymbol::In),
-    );
+    let projected = project_one(&parameter("2", "d2", "30", Some(angle(30f64.to_radians()))));
     assert_eq!(
         source_tokens(&projected),
-        [ExpressionToken::Text("3".to_owned())]
+        [ExpressionToken::Text("30".to_owned())]
     );
 }
 
 #[test]
 fn a_bracketed_unit_and_a_declared_unit_name_the_literal_unit() {
-    let projected = project_one(
-        &parameter("1", "copy", "25.4[mm]", Some(length(25.4))),
-        Some(UnitSymbol::In),
-    );
+    let projected = project_one(&parameter("1", "copy", "25.4[mm]", Some(length(25.4))));
     assert_eq!(neutral_text(&projected), "25.4[mm]");
+    let projected = project_one(&parameter("3", "copy", "1[in]", Some(length(25.0))));
+    assert_eq!(
+        source_tokens(&projected),
+        [ExpressionToken::Text("1[in]".to_owned())],
+        "a written unit the stored value does not confirm stays source text"
+    );
     let declared = with_property(
         parameter("2", "span", "2", Some(length(50.8))),
         "declared_unit",
         "inch",
     );
-    let projected = project_one(&declared, Some(UnitSymbol::Mm));
+    let projected = project_one(&declared);
     assert_eq!(neutral_text(&projected), "2[in]");
     assert_eq!(projected.unit, Some(single(UnitSymbol::In)));
 }
 
 #[test]
 fn an_unread_value_keeps_its_empty_text_and_states_no_cache() {
-    let projected = project_one(&parameter("1", "d1", "", None), Some(UnitSymbol::Mm));
+    let projected = project_one(&parameter("1", "d1", "", None));
     assert!(source_tokens(&projected).is_empty());
     assert_eq!(projected.value, None);
 }
@@ -151,7 +137,7 @@ fn resolved_dependencies_are_references_matched_without_case() {
         (target.id.clone(), target.name.as_str()),
         (relation.id.clone(), relation.name.as_str()),
     ]);
-    let projected = project_parameter(&relation, &scope(), &names, Some(UnitSymbol::Mm));
+    let projected = project_parameter(&relation, &scope(), &names);
     assert_eq!(
         source_tokens(&projected),
         [
@@ -175,7 +161,7 @@ fn an_evaluated_quantity_states_its_exponents_and_a_temperature_is_native() {
         "evaluated_canonical_value",
         "2000",
     );
-    let projected = project_one(&stress, Some(UnitSymbol::Mm));
+    let projected = project_one(&stress);
     assert_eq!(
         projected.kind,
         ValueKind::Quantity(Quantity {
@@ -196,33 +182,11 @@ fn an_evaluated_quantity_states_its_exponents_and_a_temperature_is_native() {
         "evaluated_dimension",
         "length:0,mass:0,time:0,angle:0,temperature:1",
     );
-    let projected = project_one(&freezing, Some(UnitSymbol::Mm));
+    let projected = project_one(&freezing);
     assert!(matches!(projected.kind, ValueKind::Native(_)));
     assert_eq!(projected.value, None);
     assert!(matches!(
         projected.definition,
         ParameterDefinition::Expression(Expression::Source { .. })
     ));
-}
-
-#[test]
-fn the_authoring_length_follows_the_principal_unit_system() {
-    assert_eq!(
-        authoring_length(PrincipalUnitSystem::InchPoundMassSecond),
-        Some(UnitSymbol::In)
-    );
-    assert_eq!(
-        authoring_length(PrincipalUnitSystem::CentimeterGramSecond),
-        Some(UnitSymbol::Cm)
-    );
-    let scale = cadmpeg_ir::scalar::PositiveReal::new(304.8).expect("scale");
-    assert_eq!(
-        authoring_length(PrincipalUnitSystem::LegacyLengthScale(scale)),
-        Some(UnitSymbol::Ft)
-    );
-    let odd = cadmpeg_ir::scalar::PositiveReal::new(3.0).expect("scale");
-    assert_eq!(
-        authoring_length(PrincipalUnitSystem::LegacyLengthScale(odd)),
-        None
-    );
 }

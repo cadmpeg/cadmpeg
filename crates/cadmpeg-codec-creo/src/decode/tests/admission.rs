@@ -115,24 +115,14 @@ fn part_product_definition_refuses_before_model_insertion() {
     ));
 
     // §8.1: the part is the root definition, which no occurrence places. Its
-    // design scope and the scope's root group take two more slots.
+    // feature list is not read, so it states no design records.
     options.policy.limits.max_entities = 1;
-    let error = CreoCodec
-        .decode(&mut Cursor::new(data), &options)
-        .expect_err("the design scope requires two more entity slots");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "project Creo v11 group"
-    ));
-    options.policy.limits.max_entities = 3;
     let decoded = CreoCodec
         .decode(&mut Cursor::new(data), &options)
-        .expect("the exact model entity limit admits the part product and its scope");
+        .expect("the exact model entity limit admits the part product");
     assert_eq!(decoded.ir().model.product_definitions.len(), 1);
     assert!(decoded.ir().model.occurrences.is_empty());
-    assert_eq!(decoded.ir().design.scopes.len(), 1);
+    assert!(decoded.ir().design.scopes.is_empty());
 }
 
 fn sketch_admission_prt() -> Vec<u8> {

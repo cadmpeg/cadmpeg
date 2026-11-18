@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The v11 design layer of a Creo model: its scope, its regeneration timeline,
-//! one feature per model feature, and its parameters.
+//! one feature per model feature, its parameters, and its sketches.
 //!
 //! The projection reads the records the decoder has already built and leaves
-//! them unchanged.
+//! them unchanged. A model whose feature list the decoder does not read
+//! states no design records: whether its bodies belong to members minted for
+//! them is under review (interim, errata A1).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
-use cadmpeg_ir::design::feature::{
-    Feature, FeatureDefinition, FeatureOperation, OperationFamily, StoredOrigin,
-};
+use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature as LegacyFeature, FeatureDefinition as LegacyDefinition, FeatureId,
+    Feature as LegacyFeature, FeatureDefinition as LegacyDefinition,
     FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, IdentityNamespace, ProductDefinitionId};
@@ -33,26 +33,23 @@ mod parameters;
 mod sketches;
 
 const TIMELINE: IdentityNamespace = cadmpeg_ir::identity_namespace!("creo", "model", "timeline");
-const GROUP: IdentityNamespace = cadmpeg_ir::identity_namespace!("creo", "model", "group");
-const STORED_BODY: IdentityNamespace =
-    cadmpeg_ir::identity_namespace!("creo", "model", "stored_body");
 
-/// States the design scope of the model's root definition, its timeline or
-/// root group, its features, and its parameters.
+/// States the design scope of the model's root definition, its timeline,
+/// its features, its parameters, and its sketches, where the decoder reads a
+/// feature list.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
 ) -> Result<(), CodecError> {
-    let definition = definition.clone();
-    parameters::project(ctx, scan, ir, &definition)?;
-    let sketches = sketches::project(ctx, scan, ir)?;
     if ir.model.features.is_empty() {
-        project_stored_bodies(ctx, ir, &definition)?;
-    } else {
-        project_timeline(ctx, ir, &definition, &sketches)?;
+        return Ok(());
     }
+    let definition = definition.clone();
+    parameters::project(ctx, ir, &definition)?;
+    let sketches = sketches::project(ctx, scan, ir)?;
+    project_timeline(ctx, ir, &definition, &sketches)?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(())
@@ -166,68 +163,6 @@ fn project_timeline(
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: vec![current],
-    });
-    Ok(())
-}
-
-/// A model with no readable feature list: one root group whose members are
-/// one stored-geometry feature per body, each body the current state after
-/// its feature.
-fn project_stored_bodies(
-    ctx: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    definition: &ProductDefinitionId,
-) -> Result<(), CodecError> {
-    let group = crate::identity::compose_checked::<ContainerId>(&GROUP, "root")?;
-    let mut members = BTreeSet::new();
-    let mut current = Vec::new();
-    for body in definition_bodies(ir, definition) {
-        ctx.charge_entities(1, "project Creo v11 stored body")?;
-        let id = crate::identity::compose_checked::<FeatureId>(
-            &STORED_BODY,
-            body.as_str().replace('#', "/"),
-        )?;
-        ir.design.features.push(Feature {
-            id: id.clone(),
-            name: None,
-            suppressed: None,
-            definition: FeatureDefinition {
-                operation: FeatureOperation::Stored {
-                    bodies: Some(vec![body.clone()]),
-                    tessellations: Vec::new(),
-                    origin: StoredOrigin::Base {},
-                },
-                refine: None,
-                fuzzy_tolerance: None,
-            },
-            placement: None,
-            component: None,
-            driven_by: None,
-            native_ref: None,
-        });
-        members.insert(Member::Feature(id.clone()));
-        current.push(CurrentState {
-            at: Position::After(Member::Feature(id)),
-            bodies: vec![body],
-            poses: BTreeMap::new(),
-            status: EvaluationStatus::Current,
-            native_ref: None,
-        });
-    }
-    ctx.charge_entities(1, "project Creo v11 group")?;
-    ctx.charge_entities(1, "project Creo v11 scope")?;
-    ir.design.containers.push(Container::Unordered {
-        id: group.clone(),
-        kind: UnorderedKind::Group,
-        members,
-    });
-    ir.design.scopes.push(DesignScope {
-        definition: definition.clone(),
-        roots: vec![group],
-        active_configuration: None,
-        active_arrangements: BTreeSet::new(),
-        occurrences: BTreeMap::new(),
-        current,
     });
     Ok(())
 }

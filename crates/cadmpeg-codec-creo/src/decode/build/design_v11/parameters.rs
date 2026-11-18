@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model parameters: section dimensions and relation assignments.
 //!
-//! A section dimension's stored value is a one-literal expression. A relation
-//! assignment keeps its Creo text, with each parameter the decoder resolved
-//! as a reference, except a bare literal that the stored value confirms.
+//! A section dimension or a relation assignment keeps its Creo text, with
+//! each parameter the decoder resolved as a reference, except a literal in a
+//! unit the file states that the stored value confirms, which is a
+//! one-literal expression.
 
 use std::collections::BTreeMap;
 use std::num::NonZeroI8;
@@ -27,9 +28,6 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
-use crate::container::ContainerScan;
-use crate::legacy::PrincipalUnitSystem;
-
 const FIRST_POWER: NonZeroI8 = match NonZeroI8::new(1) {
     Some(power) => power,
     None => NonZeroI8::MAX,
@@ -40,11 +38,9 @@ const LITERAL_AGREEMENT: f64 = 1e-12;
 
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan,
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
 ) -> Result<(), CodecError> {
-    let length = scan.framing.principal_unit.and_then(authoring_length);
     let names = ir
         .model
         .parameters
@@ -54,7 +50,7 @@ pub(super) fn project(
     let mut projected = Vec::new();
     for parameter in &ir.model.parameters {
         ctx.charge_entities(1, "project Creo v11 parameter")?;
-        projected.push(project_parameter(parameter, definition, &names, length));
+        projected.push(project_parameter(parameter, definition, &names));
     }
     ir.design.parameters.extend(projected);
     ir.design.parameters.sort_by(|a, b| a.id.cmp(&b.id));
@@ -65,7 +61,6 @@ fn project_parameter(
     parameter: &LegacyParameter,
     scope: &ProductDefinitionId,
     names: &BTreeMap<ParameterId, &str>,
-    length: Option<UnitSymbol>,
 ) -> DesignParameter {
     let (kind, value) = kind_and_value(parameter);
     let unit = declared_unit(parameter).filter(|unit| quantity(unit) == quantity_of(&kind));
@@ -75,7 +70,6 @@ fn project_parameter(
         &kind,
         value.as_ref(),
         unit.as_ref(),
-        length,
     ));
     DesignParameter {
         id: parameter.id.clone(),
@@ -96,25 +90,6 @@ fn project_parameter(
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),
         native_ref: parameter.native_ref.clone(),
-    }
-}
-
-/// The length unit a model is authored in.
-fn authoring_length(unit: PrincipalUnitSystem) -> Option<UnitSymbol> {
-    match unit {
-        PrincipalUnitSystem::CentimeterGramSecond => Some(UnitSymbol::Cm),
-        PrincipalUnitSystem::MillimeterNewtonSecond
-        | PrincipalUnitSystem::MillimeterKilogramSecond => Some(UnitSymbol::Mm),
-        PrincipalUnitSystem::InchPoundMassSecond => Some(UnitSymbol::In),
-        PrincipalUnitSystem::LegacyLengthScale(scale) => [
-            UnitSymbol::Mm,
-            UnitSymbol::Cm,
-            UnitSymbol::M,
-            UnitSymbol::In,
-            UnitSymbol::Ft,
-        ]
-        .into_iter()
-        .find(|symbol| canonical_factor(*symbol) == Some(scale.get())),
     }
 }
 
@@ -290,10 +265,9 @@ fn expression(
     kind: &ValueKind,
     value: Option<&ParameterValue>,
     declared: Option<&Unit>,
-    length: Option<UnitSymbol>,
 ) -> Expression {
     let text = parameter.expression.trim();
-    if let Some(literal) = literal(text, kind, value, declared, length) {
+    if let Some(literal) = literal(text, kind, value, declared) {
         return Expression::Neutral(Neutral(literal));
     }
     Expression::Source {
@@ -302,16 +276,15 @@ fn expression(
     }
 }
 
-/// A bare literal, or a literal with one bracketed unit, whose value in that
-/// unit is the stored value. A bare literal takes the unit the target
-/// declares, else the model's authoring unit of its quantity, else the
-/// canonical unit in which the decoder stores a section dimension.
+/// A literal whose unit the file states, written in brackets or declared
+/// for the relation's target, and whose value in that unit is the stored
+/// value. A bare literal with no declared unit stays source text: which
+/// unit Creo reads it in is under review (interim, errata H3).
 fn literal(
     text: &str,
     kind: &ValueKind,
     value: Option<&ParameterValue>,
     declared: Option<&Unit>,
-    length: Option<UnitSymbol>,
 ) -> Option<Node<ParameterRef>> {
     let Some(ParameterValue::Number(stored)) = value else {
         return None;
@@ -340,31 +313,15 @@ fn literal(
     }
     let magnitude = number.parse::<f64>().ok()?;
     let signed = if negative { -magnitude } else { magnitude };
-    let candidates = match written {
-        Some(symbol) => vec![single(symbol)],
-        None if quantity == Quantity::REAL => vec![Unit::default()],
-        None if quantity == Quantity::LENGTH => [
-            declared.cloned(),
-            length.map(single),
-            Some(single(UnitSymbol::Mm)),
-        ]
-        .into_iter()
-        .flatten()
-        .collect(),
-        None if quantity == Quantity::ANGLE => [
-            declared.cloned(),
-            Some(single(UnitSymbol::Deg)),
-            Some(single(UnitSymbol::Rad)),
-        ]
-        .into_iter()
-        .flatten()
-        .collect(),
-        None => return None,
+    let unit = match written {
+        Some(symbol) => single(symbol),
+        None => declared?.clone(),
     };
-    let unit = candidates.into_iter().find(|unit| {
-        self::quantity(unit) == Some(quantity)
-            && canonical(signed, unit).is_some_and(|canonical| agrees(canonical, stored.get()))
-    })?;
+    if self::quantity(&unit) != Some(quantity)
+        || !canonical(signed, &unit).is_some_and(|canonical| agrees(canonical, stored.get()))
+    {
+        return None;
+    }
     let node = Node::Number {
         value: NonNegativeReal::new(magnitude)?,
         unit,

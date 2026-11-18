@@ -119,11 +119,17 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "neutral",
+              "kind": "source",
               "value": {
-                "measures": [],
-                "refs": [],
-                "text": "1[rad]"
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "1"
+                  }
+                ]
               }
             }
           },
@@ -155,11 +161,17 @@
           "definition": {
             "kind": "expression",
             "value": {
-              "kind": "neutral",
+              "kind": "source",
               "value": {
-                "measures": [],
-                "refs": [],
-                "text": "1[rad]"
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "1"
+                  }
+                ]
               }
             }
           },

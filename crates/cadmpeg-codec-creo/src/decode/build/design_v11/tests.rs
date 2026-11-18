@@ -2,7 +2,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation};
+use cadmpeg_ir::features::{DistinctMembers, FeatureContent, FeatureEvaluation, FeatureId};
 use cadmpeg_ir::report::check::Check;
 use cadmpeg_test_support::EditableDecodeResult;
 
@@ -115,41 +115,12 @@ fn an_empty_timeline_holds_its_current_state_at_its_start() {
 }
 
 #[test]
-fn a_model_with_no_feature_list_states_one_stored_feature_per_body() {
+fn a_model_with_no_feature_list_states_no_design_records() {
     let (mut ir, definition) = part(Vec::new(), &["1", "2"]);
-    crate::decode::with_service_context(|ctx| project_stored_bodies(ctx, &mut ir, &definition))
-        .expect("stored bodies");
-    let scope = &ir.design.scopes[0];
-    let Some(Container::Unordered {
-        kind: UnorderedKind::Group,
-        members,
-        ..
-    }) = ir.design.containers.first()
-    else {
-        panic!("the scope root is no group");
-    };
-    assert_eq!(members.len(), 2);
-    assert_eq!(scope.current.len(), 2);
-    for (current, body) in scope.current.iter().zip(&ir.geometry.bodies) {
-        assert_eq!(current.bodies, std::slice::from_ref(&body.id));
-        let Position::After(Member::Feature(stored)) = &current.at else {
-            panic!("a body's current state is after its stored feature");
-        };
-        let feature = ir
-            .design
-            .features
-            .iter()
-            .find(|feature| &feature.id == stored)
-            .expect("stored feature");
-        assert_eq!(
-            feature.definition.operation,
-            FeatureOperation::Stored {
-                bodies: Some(vec![body.id.clone()]),
-                tessellations: Vec::new(),
-                origin: StoredOrigin::Base {},
-            }
-        );
-    }
+    let scan = crate::test_support::empty_container_scan();
+    crate::decode::with_service_context(|ctx| project(ctx, &scan, &mut ir, &definition))
+        .expect("projection");
+    assert_eq!(ir.design, CadIr::empty().design);
 }
 
 #[test]
@@ -216,8 +187,9 @@ fn a_sketch_feature_names_its_sketch_only_where_the_sketch_is_stated() {
     );
 }
 
-/// Every committed fixture decodes to one scope over the root definition
-/// whose design records pass the part 10 design checks.
+/// Every committed fixture with a feature list decodes to one scope over the
+/// root definition, a fixture with none to no design records, and the design
+/// records pass the part 10 design checks.
 #[test]
 fn fixture_decodes_state_a_scope_that_passes_the_design_checks() {
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/fixtures");
@@ -235,18 +207,16 @@ fn fixture_decodes_state_a_scope_that_passes_the_design_checks() {
             .expect("fixture decode");
         let result = EditableDecodeResult::from(result);
         let ir = result.ir();
+        if ir.model.features.is_empty() {
+            assert_eq!(ir.design, CadIr::empty().design, "{}", path.display());
+            continue;
+        }
         assert_eq!(ir.design.scopes.len(), 1, "{}", path.display());
         assert_eq!(
             ir.design.scopes[0].definition.as_str(),
             "creo:model:product_definition#root"
         );
-        assert_eq!(
-            ir.design.features.len(),
-            ir.model
-                .features
-                .len()
-                .max(ir.geometry.bodies.len() * usize::from(ir.model.features.is_empty()))
-        );
+        assert_eq!(ir.design.features.len(), ir.model.features.len());
         assert_eq!(ir.design.parameters.len(), ir.model.parameters.len());
         assert_eq!(ir.design.sketches.len(), ir.model.sketches.len());
         let findings = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())

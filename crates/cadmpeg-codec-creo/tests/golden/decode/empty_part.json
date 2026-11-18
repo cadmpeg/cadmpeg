@@ -3,33 +3,14 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [
-        {
-          "kind": "unordered",
-          "value": {
-            "id": "creo:model:group#root",
-            "kind": "group",
-            "members": []
-          }
-        }
-      ],
+      "containers": [],
       "evaluations": [],
       "features": [],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [
-        {
-          "active_arrangements": [],
-          "current": [],
-          "definition": "creo:model:product_definition#root",
-          "occurrences": {},
-          "roots": [
-            "creo:model:group#root"
-          ]
-        }
-      ],
+      "scopes": [],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
