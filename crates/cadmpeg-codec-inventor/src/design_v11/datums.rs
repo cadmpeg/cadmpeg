@@ -33,7 +33,11 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             continue;
         };
         let operation = feature.evaluation.definition().operation();
-        if let Some(datum) = datum(operation) {
+        if let Some(datum) = datum(
+            operation,
+            &ir.design.sketch_entities,
+            &ir.design.spatial_sketch_entities,
+        ) {
             ctx.charge_entities(1, "project Inventor v11 datum")?;
             target.definition.operation = FeatureOperation::Datum(Box::new(datum));
         } else if matches!(operation, LegacyOperation::Native { kind, .. } if kind.as_str() == crate::feature::work_plane::NATIVE_KIND)
@@ -96,7 +100,15 @@ fn plane_reference(reference: &DatumPlaneReference) -> Option<InputReference> {
     })
 }
 
-fn point_inputs(rule: &DatumPointConstruction) -> Option<Vec<ConstructionInput>> {
+fn point_inputs(
+    rule: &DatumPointConstruction,
+    planar: &[cadmpeg_ir::design::ops::sketch::SketchEntity<
+        cadmpeg_ir::design::ops::sketch::Planar,
+    >],
+    spatial: &[cadmpeg_ir::design::ops::sketch::SketchEntity<
+        cadmpeg_ir::design::ops::sketch::Spatial,
+    >],
+) -> Option<Vec<ConstructionInput>> {
     let edge_input = |edge, relation| {
         Some(input(
             InputReference::Picks(selections::edge(edge)?),
@@ -131,11 +143,42 @@ fn point_inputs(rule: &DatumPointConstruction) -> Option<Vec<ConstructionInput>>
             )));
             vec![at]
         }
-        DatumPointConstruction::SketchPoint { .. } => return None,
+        DatumPointConstruction::SketchPoint { point } => {
+            use cadmpeg_ir::features::SketchPointSelection;
+            let target = match point {
+                SketchPointSelection::Planar { sketch, point, .. }
+                    if planar
+                        .iter()
+                        .any(|entity| &entity.sketch == sketch && &entity.id == point) =>
+                {
+                    PickTarget::SketchEntity(point.clone())
+                }
+                SketchPointSelection::Spatial { sketch, point, .. }
+                    if spatial
+                        .iter()
+                        .any(|entity| &entity.sketch == sketch && &entity.id == point) =>
+                {
+                    PickTarget::SpatialSketchEntity(point.clone())
+                }
+                _ => return None,
+            };
+            vec![input(
+                InputReference::Picks(selections::target(target)?),
+                Relation::Coincident,
+            )]
+        }
     })
 }
 
-fn datum(operation: &LegacyOperation) -> Option<Datum> {
+fn datum(
+    operation: &LegacyOperation,
+    planar: &[cadmpeg_ir::design::ops::sketch::SketchEntity<
+        cadmpeg_ir::design::ops::sketch::Planar,
+    >],
+    spatial: &[cadmpeg_ir::design::ops::sketch::SketchEntity<
+        cadmpeg_ir::design::ops::sketch::Spatial,
+    >],
+) -> Option<Datum> {
     let element = match operation {
         LegacyOperation::DatumPrincipalPlane { plane } => {
             let entity = match plane {
@@ -192,7 +235,7 @@ fn datum(operation: &LegacyOperation) -> Option<Datum> {
         } => {
             let mut value = construction(Some(*position));
             if let Some(rule) = rule {
-                value.inputs = point_inputs(rule)?;
+                value.inputs = point_inputs(rule, planar, spatial)?;
             }
             DatumElement::Points(vec![value])
         }
