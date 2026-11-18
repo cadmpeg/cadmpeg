@@ -26,6 +26,9 @@ use cadmpeg_ir::report::{
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
     SceneOverrideRefused,
+    DraftPartingControlsPartial,
+    DraftNeutralAnchorAssumed,
+    DraftSlopeOutOfRange,
     BaseFaceRegionsNative,
     BaseFaceSourceCarrierUnresolved,
     BaseFaceThicknessUnresolved,
@@ -1103,6 +1106,9 @@ impl F3dLossCode {
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
         Self::SceneOverrideRefused,
+        Self::DraftPartingControlsPartial,
+        Self::DraftNeutralAnchorAssumed,
+        Self::DraftSlopeOutOfRange,
         Self::BaseFaceRegionsNative,
         Self::BaseFaceSourceCarrierUnresolved,
         Self::BaseFaceThicknessUnresolved,
@@ -1797,6 +1803,9 @@ impl F3dLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::SceneOverrideRefused => "scene.override-refused",
+            Self::DraftPartingControlsPartial => "feature.draft-parting-controls-partial",
+            Self::DraftNeutralAnchorAssumed => "feature.draft-neutral-anchor-assumed",
+            Self::DraftSlopeOutOfRange => "feature.draft-slope-out-of-range",
             Self::ContourVectorOwnerDistanceRoleAssumed => {
                 "feature.contour-vector-owner-distance-role-assumed"
             }
@@ -2838,6 +2847,9 @@ impl F3dLossCode {
             | Self::EdgeWidthUnresolved
             | Self::EdgeHeightTargetNative
             | Self::EdgeHeightTargetScopeAssumed
+            | Self::DraftPartingControlsPartial
+            | Self::DraftNeutralAnchorAssumed
+            | Self::DraftSlopeOutOfRange
             | Self::BaseFaceRegionsNative
             | Self::BaseFaceSourceCarrierUnresolved
             | Self::BaseFaceThicknessUnresolved
@@ -3530,6 +3542,9 @@ impl F3dLossCode {
             | Self::EdgeWidthUnresolved
             | Self::EdgeHeightTargetNative
             | Self::EdgeHeightTargetScopeAssumed
+            | Self::DraftPartingControlsPartial
+            | Self::DraftNeutralAnchorAssumed
+            | Self::DraftSlopeOutOfRange
             | Self::BaseFaceRegionsNative
             | Self::BaseFaceSourceCarrierUnresolved
             | Self::BaseFaceThicknessUnresolved
@@ -4245,6 +4260,9 @@ mod tests {
             codes,
             [
                 "scene.override-refused",
+                "feature.draft-parting-controls-partial",
+                "feature.draft-neutral-anchor-assumed",
+                "feature.draft-slope-out-of-range",
                 "feature.base-face-regions-native",
                 "feature.base-face-source-carrier-unresolved",
                 "feature.base-face-thickness-unresolved",
