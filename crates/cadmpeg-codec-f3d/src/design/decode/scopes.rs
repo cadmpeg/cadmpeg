@@ -51,6 +51,7 @@ mod silhouette_split;
 mod solid_primitive;
 mod sphere;
 mod split;
+mod split_face;
 mod surfaces;
 mod thicken_shell;
 mod thread;

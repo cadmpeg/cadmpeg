@@ -3,23 +3,42 @@
 //! parameter domain of a face that has no edge boundary.
 
 use cadmpeg_ir::math::portable::Portable;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::f64::consts::{FRAC_PI_2, TAU};
 
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters_solved, finite_or_refusal, model_surface_partials_by_id,
-    model_surface_point_by_id, nurbs_surface_parameter_near_point, SurfacePartials,
+    analytic_surface_parameters_solved, finite_or_refusal, model_curve_point_by_id,
+    model_surface_partials_by_id, model_surface_point_by_id, nurbs_surface_parameter_near_point,
+    SurfacePartials,
 };
-use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedSurfaceGeometry, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::geometry::{
+    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedSurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
-use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::face::Refusal;
-use crate::plane::{angle, cross, distance, dot, length, sub, Uv};
+use crate::plane::{angle, cross, distance, dot, length, scaled, sub, Uv};
 
+/// Ratio of a parameter's distance from a periodic domain end to the domain
+/// span within which a projection stopped at the seam.
+const SEAM_RATIO: f64 = 1e-9;
+/// Ratio of an unseeded NURBS projection's distance from its point to the
+/// surface size above which the projection missed.
+const MISS_RATIO: f64 = 1e-6;
+/// Ratio of a seeded NURBS projection's distance from its point to the
+/// surface size above which the projection stopped short. A seed on the
+/// right turn of a wound surface keeps a smaller gap from an edge that lies
+/// off the surface.
+const SEEDED_MISS_RATIO: f64 = 1e-3;
+/// Grid steps per parameter of the search that restarts a missed
+/// projection.
+const DENSE_GRID: u16 = 64;
 /// Gauss-Newton steps of one point projection.
 const PROJECTION_STEPS: usize = 32;
 /// Relative step size at which a projection stops.
@@ -51,6 +70,47 @@ pub(crate) struct Carrier<'t, 'ir> {
     pub(crate) normal_sign: f64,
     /// The `v` of a cone apex.
     pub(crate) apex: Option<f64>,
+    /// The `v` of each pole circle, where a self-intersecting torus meets
+    /// its axis and the whole `u` circle collapses to one point.
+    pub(crate) pole_circles: Vec<f64>,
+    /// The swept directrix of a procedural carrier with no bounded domain.
+    sweep: Option<Sweep<'ir>>,
+    /// Surface points already evaluated, by the bits of their parameters.
+    points: RefCell<HashMap<[u64; 2], Option<Point3>>>,
+    /// Surface partials already evaluated, by the bits of their parameters.
+    partials: RefCell<HashMap<[u64; 2], Option<SurfacePartials>>>,
+}
+
+/// The cache key of the parameters `uv`.
+fn bits(uv: Uv) -> [u64; 2] {
+    uv.map(f64::to_bits)
+}
+
+impl Sweep<'_> {
+    /// The surface parameter that runs along the directrix.
+    const fn directrix_axis(&self) -> usize {
+        match self.motion {
+            Motion::Linear { .. } => 0,
+            Motion::Revolution { .. } => 1,
+        }
+    }
+}
+
+/// How a procedural carrier moves its directrix `C`.
+#[derive(Clone, Copy)]
+enum Motion {
+    /// `S(u, v) = C(u) + v·direction`.
+    Linear { direction: Vector3 },
+    /// `S(u, v)` turns `C(v)` by the angle `u` about the axis.
+    Revolution { origin: Point3, axis: Vector3 },
+}
+
+/// A directrix, its parameter domain, and its motion.
+#[derive(Clone, Copy)]
+struct Sweep<'ir> {
+    directrix: &'ir CurveId,
+    domain: [f64; 2],
+    motion: Motion,
 }
 
 fn resource(limit: impl std::fmt::Debug) -> Refusal {
@@ -76,10 +136,10 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         let surface = index
             .surfaces(id.as_str(), StandardIndex)
             .ok_or_else(|| Refusal::new(format!("the surface {id} is not in the model")))?;
-        let solved = match &surface.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => None,
-            geometry => geometry.solved(),
-        };
+        let solved = surface
+            .geometry
+            .solved()
+            .filter(|solved| !matches!(solved, SolvedSurfaceGeometry::Unknown { .. }));
         let mut carrier = Self {
             index,
             work,
@@ -90,6 +150,10 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
             size: 1.0,
             normal_sign: 1.0,
             apex: None,
+            pole_circles: Vec::new(),
+            sweep: None,
+            points: RefCell::new(HashMap::new()),
+            partials: RefCell::new(HashMap::new()),
         };
         match solved.map(basis) {
             Some(SolvedSurfaceGeometry::Cylinder(cylinder)) => {
@@ -113,6 +177,11 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
                 carrier.periods = [Some(TAU), Some(TAU)];
                 carrier.domain = Some([[0.0, TAU], [0.0, TAU]]);
                 carrier.size = torus.major_radius().get();
+                let (major, minor) = (torus.major_radius().get(), torus.minor_radius().get());
+                if major < minor.abs() {
+                    let pole = (-major / minor).portable_acos();
+                    carrier.pole_circles = vec![pole, TAU - pole];
+                }
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 if nurbs.normal_reversed() {
@@ -156,11 +225,52 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
             _ => {}
         }
         if solved.is_none() {
-            if let Some(ProceduralSurfaceDefinition::AxisRevolution(_)) = index
+            match index
                 .procedural_surface_for_surface(id.as_str(), StandardIndex)
                 .map(cadmpeg_ir::geometry::ProceduralSurface::definition)
             {
-                carrier.periods = [Some(TAU), None];
+                Some(ProceduralSurfaceDefinition::AxisRevolution(revolution)) => {
+                    carrier.periods = [Some(TAU), None];
+                    if let Some((domain, periodic)) =
+                        directrix_domain(index, revolution.directrix())
+                    {
+                        if periodic {
+                            carrier.periods[1] = Some(domain[1] - domain[0]);
+                        }
+                        carrier.sweep = Some(Sweep {
+                            directrix: revolution.directrix(),
+                            domain,
+                            motion: Motion::Revolution {
+                                origin: revolution.axis_origin().get(),
+                                axis: Vector3::from(revolution.axis_direction()),
+                            },
+                        });
+                    }
+                }
+                Some(ProceduralSurfaceDefinition::Subset(subset)) => {
+                    let spans = subset.parameter_ranges().map(|range| {
+                        let [start, end] = range
+                            .finite_endpoints()
+                            .map(cadmpeg_ir::scalar::FiniteReal::get);
+                        (end - start).abs()
+                    });
+                    carrier.domain = Some([[0.0, spans[0]], [0.0, spans[1]]]);
+                }
+                Some(ProceduralSurfaceDefinition::LinearSweep(linear)) => {
+                    if let Some((domain, periodic)) = directrix_domain(index, linear.directrix()) {
+                        if periodic {
+                            carrier.periods[0] = Some(domain[1] - domain[0]);
+                        }
+                        carrier.sweep = Some(Sweep {
+                            directrix: linear.directrix(),
+                            domain,
+                            motion: Motion::Linear {
+                                direction: linear.direction().get(),
+                            },
+                        });
+                    }
+                }
+                _ => {}
             }
         }
         if matches!(solved.map(basis), Some(SolvedSurfaceGeometry::Nurbs(_))) {
@@ -215,24 +325,59 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         )
     }
 
+    /// `uv` with each periodic parameter of a NURBS carrier moved by whole
+    /// periods into the knot domain, outside which the carrier extrapolates
+    /// instead of repeating. A trace past the seam lies on another branch.
+    fn in_domain(&self, uv: Uv) -> Uv {
+        let (Some(SolvedSurfaceGeometry::Nurbs(_)), Some(domain)) =
+            (self.solved.map(basis), self.domain)
+        else {
+            return uv;
+        };
+        let mut moved = uv;
+        for axis in 0..2 {
+            if let Some(period) = self.periods[axis] {
+                let [low, high] = domain[axis];
+                if moved[axis] < low || moved[axis] > high {
+                    moved[axis] = low + (moved[axis] - low).rem_euclid(period);
+                }
+            }
+        }
+        moved
+    }
+
     pub(crate) fn point(&self, uv: Uv) -> Result<Option<Point3>, Refusal> {
-        finite_or_refusal(
-            EvaluationAdmission::Standard.within_work_slice(self.work, |admission| {
-                model_surface_point_by_id(admission, self.index, self.id, uv[0], uv[1])
-            }),
-        )
+        if let Some(known) = self.points.borrow().get(&bits(uv)) {
+            return Ok(*known);
+        }
+        let point = finite_or_refusal(EvaluationAdmission::Standard.within_work_slice(
+            self.work,
+            |admission| {
+                let [u, v] = self.in_domain(uv);
+                model_surface_point_by_id(admission, self.index, self.id, u, v)
+            },
+        ))
         .map(|point| point.map(cadmpeg_ir::features::FinitePoint3::get))
-        .map_err(resource)
+        .map_err(resource)?;
+        self.points.borrow_mut().insert(bits(uv), point);
+        Ok(point)
     }
 
     pub(crate) fn partials(&self, uv: Uv) -> Result<Option<SurfacePartials>, Refusal> {
-        finite_or_refusal(
-            EvaluationAdmission::Standard.within_work_slice(self.work, |admission| {
-                model_surface_partials_by_id(admission, self.index, self.id, uv[0], uv[1])
-            }),
-        )
+        if let Some(known) = self.partials.borrow().get(&bits(uv)) {
+            return Ok(*known);
+        }
+        let partials = finite_or_refusal(EvaluationAdmission::Standard.within_work_slice(
+            self.work,
+            |admission| {
+                let [u, v] = self.in_domain(uv);
+                model_surface_partials_by_id(admission, self.index, self.id, u, v)
+            },
+        ))
         .map(|partials| partials.map(SurfacePartials::into_raw))
-        .map_err(resource)
+        .map_err(resource)?;
+        self.partials.borrow_mut().insert(bits(uv), partials);
+        Ok(partials)
     }
 
     /// The unnormalized surface normal `∂S/∂u × ∂S/∂v` at `uv`.
@@ -259,15 +404,13 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
     /// form of an analytic carrier, the NURBS projection, or a projection
     /// that starts at `seed`.
     pub(crate) fn invert(&self, point: Point3, seed: Option<Uv>) -> Result<Option<Uv>, Refusal> {
+        // A projection that starts on a pole cannot leave it.
+        let seed = match seed {
+            Some(uv) if self.at_pole(uv)? => None,
+            seed => seed,
+        };
         let found = match self.solved {
-            Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => nurbs_surface_parameter_near_point(
-                EvaluationAdmission::Standard,
-                nurbs,
-                point,
-                seed.map(|[u, v]| Point2::new(u, v)),
-            )
-            .map_err(resource)?
-            .map(|uv| [uv.get().u, uv.get().v]),
+            Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => self.invert_nurbs(nurbs, point, seed)?,
             Some(solved) => {
                 analytic_surface_parameters_solved(solved, point).map(|uv| [uv.get().u, uv.get().v])
             }
@@ -284,6 +427,128 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
         }
     }
 
+    /// The parameters of the NURBS point nearest `point` from the bounded
+    /// projection, on the branch of each periodic parameter nearest `seed`.
+    /// The projection stays inside the knot domain, so a projection that
+    /// stops at a periodic seam also starts from the other side, and the
+    /// nearer result stands.
+    fn invert_nurbs(
+        &self,
+        nurbs: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+        point: Point3,
+        seed: Option<Uv>,
+    ) -> Result<Option<Uv>, Refusal> {
+        let project = |seed: Option<Uv>| -> Result<Option<Uv>, Refusal> {
+            Ok(nurbs_surface_parameter_near_point(
+                EvaluationAdmission::Standard,
+                nurbs,
+                point,
+                seed.map(|[u, v]| Point2::new(u, v)),
+            )
+            .map_err(resource)?
+            .map(|uv| [uv.get().u, uv.get().v]))
+        };
+        let Some(domain) = self.domain else {
+            return project(seed);
+        };
+        let wrapped = seed.map(|seed| {
+            let mut wrapped = seed;
+            for axis in 0..2 {
+                if let Some(period) = self.periods[axis] {
+                    wrapped[axis] =
+                        domain[axis][0] + (seed[axis] - domain[axis][0]).rem_euclid(period);
+                }
+            }
+            wrapped
+        });
+        let Some(mut found) = project(wrapped)? else {
+            return Ok(None);
+        };
+        let gap = |uv: Uv| -> Result<f64, Refusal> {
+            Ok(self
+                .point(uv)?
+                .map_or(f64::INFINITY, |on| distance(on, point)))
+        };
+        // A projection can stop short of its point: from its seed in a local
+        // minimum, or with no seed from a coarse grid in the wrong turn of a
+        // surface wound many times. A miss starts again from the nearest
+        // point of a dense grid.
+        let miss = if seed.is_some() {
+            SEEDED_MISS_RATIO
+        } else {
+            MISS_RATIO
+        };
+        if gap(found)? > miss * self.size {
+            let mut best: Option<(f64, Uv)> = None;
+            let samples = f64::from(DENSE_GRID);
+            for i in 0..=DENSE_GRID {
+                for j in 0..=DENSE_GRID {
+                    let uv = [
+                        domain[0][0] + (domain[0][1] - domain[0][0]) * f64::from(i) / samples,
+                        domain[1][0] + (domain[1][1] - domain[1][0]) * f64::from(j) / samples,
+                    ];
+                    let distance = gap(uv)?;
+                    if best.is_none_or(|(nearest, _)| distance < nearest) {
+                        best = Some((distance, uv));
+                    }
+                }
+            }
+            if let Some((_, start)) = best {
+                if let Some(again) = project(Some(start))? {
+                    if gap(again)? < gap(found)? {
+                        found = again;
+                    }
+                }
+            }
+        }
+
+        for axis in 0..2 {
+            if self.periods[axis].is_none() {
+                continue;
+            }
+            let [low, high] = domain[axis];
+            let scale = (high - low).abs().max(1.0);
+            let at_end = |value: f64, end: f64| (value - end).abs() <= SEAM_RATIO * scale;
+            let opposite = if at_end(found[axis], high) {
+                Some(low)
+            } else if at_end(found[axis], low) {
+                Some(high)
+            } else {
+                None
+            };
+            let Some(opposite) = opposite else {
+                continue;
+            };
+            let mut restart = found;
+            restart[axis] = opposite;
+            if let Some(other) = project(Some(restart))? {
+                let gap = |uv: Uv| -> Result<f64, Refusal> {
+                    Ok(self
+                        .point(uv)?
+                        .map_or(f64::INFINITY, |on| distance(on, point)))
+                };
+                if gap(other)? < gap(found)? {
+                    found = other;
+                }
+            }
+        }
+        if let Some(seed) = seed {
+            for axis in 0..2 {
+                found[axis] = self.nearest_branch(axis, found[axis], seed[axis]);
+            }
+        }
+        Ok(Some(found))
+    }
+
+    /// Whether a partial derivative vanishes at `uv`.
+    fn at_pole(&self, uv: Uv) -> Result<bool, Refusal> {
+        let Some(partials) = self.partials(uv)? else {
+            return Ok(false);
+        };
+        let limit = self.size * SINGULAR_RATIO;
+        Ok(length(partials.du) <= limit || length(partials.dv) <= limit)
+    }
+
     /// Whether `point` is the apex of a cone carrier.
     fn at_apex(&self, point: Point3) -> Result<bool, Refusal> {
         let Some(apex) = self.apex else {
@@ -297,7 +562,10 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
     /// The grid point of the carrier domain nearest `point`.
     fn coarse_seed(&self, point: Point3) -> Result<Option<Uv>, Refusal> {
         let Some(domain) = self.domain else {
-            return Ok(None);
+            return match self.sweep {
+                Some(sweep) => self.sweep_seed(sweep, point),
+                None => Ok(None),
+            };
         };
         let mut best: Option<(f64, Uv)> = None;
         for i in 0..=SEED_GRID {
@@ -313,6 +581,51 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
                         best = Some((gap, uv));
                     }
                 }
+            }
+        }
+        Ok(best.map(|(_, uv)| uv))
+    }
+
+    /// The parameters nearest `point` among samples of the directrix of
+    /// `sweep`, each moved to the closest place its motion reaches.
+    fn sweep_seed(&self, sweep: Sweep<'_>, point: Point3) -> Result<Option<Uv>, Refusal> {
+        let mut best: Option<(f64, Uv)> = None;
+        let samples = u32::from(SEED_GRID) * u32::from(SEED_GRID);
+        for step in 0..=samples {
+            let t = sweep.domain[0]
+                + (sweep.domain[1] - sweep.domain[0]) * f64::from(step) / f64::from(samples);
+            let on = finite_or_refusal(
+                EvaluationAdmission::Standard.within_work_slice(self.work, |admission| {
+                    model_curve_point_by_id(admission, self.index, sweep.directrix, t)
+                }),
+            )
+            .map_err(resource)?;
+            let Some(on) = on.map(cadmpeg_ir::features::FinitePoint3::get) else {
+                continue;
+            };
+            let (gap, uv) = match sweep.motion {
+                Motion::Linear { direction } => {
+                    let v = dot(sub(point, on), direction) / dot(direction, direction);
+                    let reached = sub(point, on) - scaled(direction, v);
+                    (length(reached), [t, v])
+                }
+                Motion::Revolution { origin, axis } => {
+                    let split = |at: Point3| {
+                        let relative = sub(at, origin);
+                        let along = dot(relative, axis);
+                        (along, relative - scaled(axis, along))
+                    };
+                    let (point_along, point_radial) = split(point);
+                    let (on_along, on_radial) = split(on);
+                    let gap = (point_along - on_along)
+                        .portable_hypot(length(point_radial) - length(on_radial));
+                    let turn = dot(axis, cross(on_radial, point_radial))
+                        .portable_atan2(dot(on_radial, point_radial));
+                    (gap, [turn, t])
+                }
+            };
+            if gap.is_finite() && best.is_none_or(|(nearest, _)| gap < nearest) {
+                best = Some((gap, uv));
             }
         }
         Ok(best.map(|(_, uv)| uv))
@@ -347,6 +660,11 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
                     if self.periods[axis].is_none() {
                         uv[axis] = uv[axis].clamp(domain[axis][0], domain[axis][1]);
                     }
+                }
+            } else if let Some(sweep) = self.sweep {
+                let axis = sweep.directrix_axis();
+                if self.periods[axis].is_none() {
+                    uv[axis] = uv[axis].clamp(sweep.domain[0], sweep.domain[1]);
                 }
             }
             let scale = uv[0].abs().max(uv[1].abs()).max(1.0);
@@ -428,6 +746,26 @@ impl<'t, 'ir> Carrier<'t, 'ir> {
             None => value,
         }
     }
+}
+
+/// The parameter domain of a directrix and whether it is periodic. A
+/// trimmed curve runs from zero to its span; another curve has the natural
+/// domain of its form.
+fn directrix_domain(index: &ModelIndex<'_>, curve: &CurveId) -> Option<([f64; 2], bool)> {
+    if let Some(procedural) = index
+        .procedural_curves_for_curve(curve.as_str(), StandardIndex)
+        .and_then(|procedurals| procedurals.first().copied())
+    {
+        let ProceduralCurveDefinition::Subset(subset) = procedural.definition() else {
+            return None;
+        };
+        let [start, end] = subset.parameter_range().endpoints();
+        return Some(([0.0, (end - start).abs()], false));
+    }
+    let geometry = index
+        .curves(curve.as_str(), StandardIndex)
+        .and_then(|curve| curve.geometry.solved())?;
+    crate::boundary::natural_domain(geometry)
 }
 
 /// Closed-form normal curvature of a circular cone. The generatrix (`axis`
