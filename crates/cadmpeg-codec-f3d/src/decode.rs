@@ -2289,6 +2289,19 @@ fn report_design_projection_gaps(
                 format!("Extrude {} assumes the second-side control preserves the face termination (DR-329).", feature.id),
             ));
         }
+        if let Some(word) = prologue.opaque_distance_word().filter(|_| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                )
+            )
+        }) {
+            report.losses.push(F3dLossCode::FeatureExtrudeOpaqueDistanceWordAssumed.note(format!(
+                "Extrude {} reads the stored blind distance with an opaque word {:#010x} at offset {} (DR-811).",
+                feature.id, word.value, word.byte_offset
+            )));
+        }
         if prologue.start() == crate::records::feature::extrude::DesignExtrudeStart::FromFace
             && matches!(
                 feature.evaluation.definition(),

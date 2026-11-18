@@ -615,6 +615,7 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeFaceControlAssumed,
     FeatureExtrudeSketchPlacementNative,
     FeatureExtrudeTargetOptionAssumed,
+    FeatureExtrudeOpaqueDistanceWordAssumed,
     FeatureExtrudeStartFaceAbsentAssumed,
     FeatureExtrudeZeroSideTaperIgnored,
     /// An Extrude face profile's inferred face set lists unresolved members in face-slot order.
@@ -1452,6 +1453,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeFaceControlAssumed,
         Self::FeatureExtrudeSketchPlacementNative,
         Self::FeatureExtrudeTargetOptionAssumed,
+        Self::FeatureExtrudeOpaqueDistanceWordAssumed,
         Self::FeatureExtrudeStartFaceAbsentAssumed,
         Self::FeatureExtrudeZeroSideTaperIgnored,
         Self::FeatureExtrudeProfileFaceOrderAssumed,
@@ -2289,6 +2291,9 @@ impl F3dLossCode {
             Self::FeatureExtrudeFaceControlAssumed => "feature.extrude-face-control-assumed",
             Self::FeatureExtrudeSketchPlacementNative => "feature.extrude-sketch-placement-native",
             Self::FeatureExtrudeTargetOptionAssumed => "feature.extrude-target-option-assumed",
+            Self::FeatureExtrudeOpaqueDistanceWordAssumed => {
+                "feature.extrude-opaque-distance-word-assumed"
+            }
             Self::FeatureExtrudeStartFaceAbsentAssumed => {
                 "feature.extrude-start-face-absent-assumed"
             }
@@ -3097,6 +3102,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeFaceControlAssumed
             | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeTargetOptionAssumed
+            | Self::FeatureExtrudeOpaqueDistanceWordAssumed
             | Self::FeatureExtrudeStartFaceAbsentAssumed
             | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
@@ -3708,6 +3714,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeFaceControlAssumed
             | Self::FeatureExtrudeSketchPlacementNative
             | Self::FeatureExtrudeTargetOptionAssumed
+            | Self::FeatureExtrudeOpaqueDistanceWordAssumed
             | Self::FeatureExtrudeStartFaceAbsentAssumed
             | Self::FeatureExtrudeZeroSideTaperIgnored
             | Self::FeatureExtrudeProfileFaceOrderAssumed
@@ -4436,6 +4443,7 @@ mod tests {
                 "feature.extrude-face-control-assumed",
                 "feature.extrude-sketch-placement-native",
                 "feature.extrude-target-option-assumed",
+                "feature.extrude-opaque-distance-word-assumed",
                 "feature.extrude-start-face-absent-assumed",
                 "feature.extrude-zero-side-taper-ignored",
                 "feature.extrude-profile-face-order-assumed",

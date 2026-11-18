@@ -3413,3 +3413,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The decoder applies the compact discriminator meanings and reports `feature.coil-short-controls-assumed`. It retains signed driving dimensions and the checked solved placement. An unbound placement remains native. A missing or ambiguous target group retains the Coil with an unresolved Boolean selection and reports `feature.coil-target-unresolved`.
+
+### DR-811. Opaque word in a typed one-sided distance Extrude
+
+**Question.** What does a nonzero opaque distance word encode in the direct typed-reference scope?
+
+**Known.** Scopes with this word store a solid operation, a profile-plane start, and fixed distance and taper carriers. Two Join transitions insert end caps at the stored distances. One Cut opens the material between the start plane and the existing end cap within the stored travel.
+
+**Need.** Paired saves that vary this word and identify the Extrude setting or record that supplies it.
+
+**Note.** The decoder retains the word and its offset. Neutral projection uses the stored blind distance and reports `feature.extrude-opaque-distance-word-assumed`.
