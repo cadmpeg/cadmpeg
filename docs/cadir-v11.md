@@ -131,6 +131,7 @@ The JSON form of a document is the serde form of the types this document states,
 
 - Field and variant names are snake_case. Every struct and enum rejects unknown fields (§3.6).
 - An enum whose variants hold no data serializes as the variant's name (`"semi_finish"`).
+- An enum with no variant has no value and no spelling: a variant, field, or list element that would hold one cannot be written, and a document that states one does not read.
 - Every other enum writes each value's variant name under `kind`, and its form is chosen per enum, so every enum keeps a derived serde form. An enum whose variants that hold data all hold structs (struct variants, and newtype variants over a struct), none with a field named `kind`, writes each value's fields beside `kind` (`tag = "kind"`): `TransformMode::Copy` is `{"kind": "copy", "count": …, "divisions": …}` and `TransformMode::Move` is `{"kind": "move"}`. Every other enum writes each value's payload under `value` (`tag = "kind", content = "value"`): an enum with a variant that wraps a value that is not a struct (a number, a string, an id, a list, an enum, or a newtype struct over one value), which includes every enum with a `Native(NonBlankString)` arm, and an enum with a variant whose fields, its own or its struct's, include one named `kind` (`TopoName`, `SketchRelation`, `FeatureOperation`). There `Dimension::Literal` is `{"kind": "literal", "value": 2.5}`, `Spacing::Pitch` is `{"kind": "pitch", "value": {"count": …, "pitch": …}}`, and a unit variant is `{"kind": name}`. §9.2 lists the branch's per-type choices.
 - A newtype struct over one value (an id, `InstanceIndex`, `Unit`) serializes as that value, except `Uuid`, which serializes as its hyphenated string (§7.6), and `Neutral`, which serializes as canonical text with side lists (§5.13).
 - Each value has one spelling. Every `Option` field is omitted for `None` and refuses `null`. Every list, map, and set field is always written, `[]` or `{}` when empty, and refuses omission. No newtype variant wraps an `Option`, so every optional value of a struct or a variant is a field under this rule. An `Option` that is a list element, an array element, or a map value writes `null` for `None`, because its position or its key says which value is unstated.
@@ -4106,12 +4107,12 @@ pub struct Toolpath {
     pub configuration: Option<ConfigurationId>, pub status: EvaluationStatus, pub content: ToolpathContent,
 }
 pub enum ToolpathContent { Motions { frame: Transform, motions: Vec<Motion> }, Native(String) }
-pub enum Motion {
+pub enum Motion<C = Cycle> {
     Rapid { to: FinitePoint3, axis: Option<UnitVector3>, feed: Option<Feed> },
     Linear { to: FinitePoint3, axis: Option<UnitVector3>, feed: Option<Feed> },
     Arc { to: FinitePoint3, center: FinitePoint3, normal: UnitVector3, clockwise: bool, feed: Option<Feed> },
     Class(MotionClass),
-    Cycle(Cycle),
+    Cycle(C),
     ToolChange { number: Option<u32> },
     Spindle { direction: SpindleDirection, speed: Option<AngularSpeed> },
     Coolant(Coolant), Dwell(Duration), Comment(String),
@@ -4132,7 +4133,7 @@ pub struct Cycle {
     pub minimum_increment: Option<Length>, pub full_retract_after: Option<Length>, pub chip_break_retract: Option<Length>,
     pub return_to: Option<CycleReturn>, pub probe_clearance: Option<Length>, pub probe_overtravel: Option<Length>,
     pub parameters: BTreeMap<NonBlankString, MotionValue>,
-    pub expansion: Option<Vec<Motion>>,
+    pub expansion: Option<Vec<Motion<NoCycle>>>,
 }
 pub enum CycleKind { Drill, Deep, ChipBreak, Bore, Ream, Tap, Groove, Probe(ProbeTarget), Native(NonBlankString) }
 pub enum ProbeTarget {
@@ -4151,6 +4152,7 @@ pub enum ProbeTarget {
 }
 pub enum PlaneAxis { X, Y }
 pub enum CycleReturn { Initial, Retract }
+pub enum NoCycle {}
 ```
 
 A toolpath is the evaluation of an operation (ISO 14649 cutter-location trajectory).
@@ -4169,7 +4171,7 @@ A toolpath is the evaluation of an operation (ISO 14649 cutter-location trajecto
   - `depth` is the hole's depth below `stock`, a positive distance, where the source stores it beside the cycle point (Fusion `depth`). It equals `stock` minus the z of `at`, and is a cache (K2) of the two.
   - `increment` is a pecking cycle's peck depth, a distance (G-code `Q`; Fusion `peckingDepth`, §7.3, where the operation setting named `incrementalDepth` is not the peck), `dwell` the dwell at the bottom (G-code `P`), `feeds` the cycle's feeds by role (plunge, retract), and `parameters` every other value by the source's name (a probe's overtravel, which no stored geometry shows). Each peck after the first is shorter than the one before by `increment_reduction`, and none is shorter than `minimum_increment`; `full_retract_after` is the total plunging depth after which the tool retracts fully to the retract level, and `chip_break_retract` the distance a chip-breaking cycle retracts after each peck (Autodesk's post-processor cycle reference: `incrementalDepthReduction`, `minimumIncrementalDepth`, `accumulatedDepth`, `chipBreakDistance`). `return_to` is G98 (`Initial`) or G99 (`Retract`).
   - A FreeCAD Drilling path stores `G0 F16.666667 Z24`, `G98`, `G0 F50 X-15 Y-10`, `G0 F16.666667 Z22`, `G81 F3.333333 R22 X-15 Y-10 Z12`. The `G81` is a `Drill` cycle with `at: [-15, -10, 12]`, `retract: Some(22)`, `return_to: Some(Initial)`, and `clearance: None`. The motion before it, `G0 F16.666667 Z22`, is a `Rapid` to `[-15, -10, 22]` and holds the initial level 22; the `G0 F50 X-15 Y-10` before that is a `Rapid` to `[-15, -10, 24]`; and the path's first move, `G0 F16.666667 Z24`, is a `Motion::Native` because no earlier motion of the path states x and y. A Fusion drilling cycle at the hole (10, 20) with clearance 15, retract 5, stock 0, and depth 10 has `at: [10, 20, -10]`, `clearance: Some(15)`, `retract: Some(5)`, `stock: Some(0)`, and `depth: Some(10)`. These are cycle levels: the operation's `Retract` and `Feed` heights, not its `Clearance` and `Retract`.
-  - `expansion` is the expanded motion the source stores beside a cycle (Fusion), a cache (K2) of the cycle.
+  - `expansion` is the expanded motion the source stores beside a cycle (Fusion), a cache (K2) of the cycle. Its motions are `Motion<NoCycle>`, and `NoCycle` has no value, so an expansion holds no cycle.
 - `Native` names the native record of a toolpath whose encoding the decoder does not decode. The Fusion decoder fills `Motions` for every toolpath its opcode grammar parses and whose frame it can read: a cached chain with `version="2"` holds model-space curves that `toolpathToolView` maps, its matrix rows the WCS axes with the origin subtracted first, and an unversioned chain holds toolpath-frame curves; the multi-axis records are typed, carrier unread (part 11), and keeps the rest `Native`, as it does a toolpath with an unknown opcode. A FreeCAD ToolController's own path (tool change and spindle start) derives from the controller and stays native.
 
 ### 7.9 Process states
@@ -5166,7 +5168,7 @@ Validation uses reference lookup and in-IR arithmetic and never refuses a decode
 - A `RadiusFrom::SelectionMin`, `SelectionMax`, or `Positions` or a `HeightFrom::Selection` names by its `slot` only a `ProcessGeometry` of the same operation whose role is `Reference` and whose source is a `Selection`, or a `Points` for `Positions`, holding at least one selection, or for `Positions` at least one point (§7.3). The `slot`s of one operation's geometry are unique.
 - `Operation.configuration_states` keys name configurations of the setup's scope; there is no entry for an operation whose `suppressed` binds a parameter.
 - `Toolpath.configuration` and `ProcessState.configuration`, where present, name configurations of the setup's scope. For one operation, toolpaths keyed `None` and toolpaths keyed `Some` do not both occur; for one `of`, process states keyed `None` and keyed `Some` do not both occur.
-- `Motions.frame`, every motion coordinate, and every `Cycle` length and duration are finite (`InvalidInput`, §3.4). A `Cycle.expansion` holds no `Cycle`.
+- `Motions.frame`, every motion coordinate, and every `Cycle` length and duration are finite (`InvalidInput`, §3.4).
 - Every `native_kind` codec is a known codec id. Units named outside expressions are `UnitSymbol`s of the matching quantity.
 - Every `Operation.groups` entry resolves, and an operation lists at most one group of each `GroupKind` variant. Group `parent`s resolve and form no cycle, a group's parent is of its kind, and a `ProcessOwner::Group` names an existing group. `ProcessGeometry.combine` occurs only on an operation's own geometry, of an operation that lists a `Geometry` group.
 - A `MaterialRemoval` feature is named by the `feature` of at most one `Removal` process state, and of exactly one where `process` is in scope and that state exists.
