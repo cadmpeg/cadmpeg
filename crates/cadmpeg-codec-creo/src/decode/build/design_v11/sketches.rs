@@ -75,13 +75,14 @@ pub(super) fn project(
         };
         ctx.charge_entities(1, "project Creo v11 sketch")?;
         sketches.push(project_sketch(sketch, owner));
+        let record = |native_ref: &Option<String>| record(sketch, native_ref);
         let mut points = Points::new(
-            &sketch.id,
+            sketch,
             ir.model
                 .sketch_entities
                 .iter()
                 .filter(|entity| entity.sketch == sketch.id),
-        );
+        )?;
         for entity in ir
             .model
             .sketch_entities
@@ -89,7 +90,9 @@ pub(super) fn project(
             .filter(|entity| entity.sketch == sketch.id)
         {
             ctx.charge_entities(1, "project Creo v11 sketch entity")?;
-            entities.push(project_entity(entity)?);
+            let mut projected = project_entity(entity)?;
+            projected.native_ref = record(&entity.native_ref);
+            entities.push(projected);
         }
         for constraint in ir
             .model
@@ -110,7 +113,7 @@ pub(super) fn project(
                 active: constraint.active.map(Dimension::Literal),
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
-                native_ref: constraint.native_ref.clone(),
+                native_ref: record(&constraint.native_ref),
             });
         }
         ctx.charge_entities(
@@ -145,6 +148,22 @@ pub(super) fn sketch_of(operation: &LegacyOperation) -> Option<&SketchId> {
             ..
         } => Some(sketch),
         _ => None,
+    }
+}
+
+/// The native record a sketch record names: a saved entity is a part of its
+/// sketch's record, which is the record a v11 record names.
+fn record(sketch: &LegacySketch, native_ref: &Option<String>) -> Option<String> {
+    let native_ref = native_ref.as_ref()?;
+    match &sketch.native_ref {
+        Some(parent)
+            if native_ref
+                .strip_prefix(parent.as_str())
+                .is_some_and(|rest| rest.starts_with(':')) =>
+        {
+            Some(parent.clone())
+        }
+        _ => Some(native_ref.clone()),
     }
 }
 
@@ -223,10 +242,20 @@ fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
     }
 }
 
+/// A native kind in the Creo namespace; a kind the decoder already names
+/// there keeps its name.
+fn creo_kind(kind: &str) -> String {
+    if kind.starts_with("creo:") {
+        kind.to_owned()
+    } else {
+        format!("creo:{kind}")
+    }
+}
+
 fn native_form(kind: &str) -> Result<EntityDefinition<Planar>, CodecError> {
     Ok(EntityDefinition::Defined {
         form: Box::new(EntityForm::Native(
-            NonBlankString::new(format!("creo:{kind}"))
+            NonBlankString::new(creo_kind(kind))
                 .ok_or_else(|| CodecError::malformed("Creo v11 sketch entity kind is blank"))?,
         )),
         solved: None,
@@ -341,10 +370,14 @@ fn agree(a: FinitePoint2, b: FinitePoint2) -> bool {
 }
 
 /// The point entities of one sketch: its point records, the curve ends
-/// joined to them, and the centres its constraints name.
+/// joined to them, and the centres its constraints name. A point of a curve
+/// whose geometry the decoder does not read has no position.
 struct Points {
     sketch: SketchId,
+    native_ref: Option<String>,
+    unread_point: NonBlankString,
     curves: BTreeMap<SketchEntityId, Option<PlanarCurve>>,
+    unread: BTreeMap<SketchEntityId, String>,
     points: BTreeSet<SketchEntityId>,
     ends: BTreeMap<(SketchEntityId, usize), SketchEntityId>,
     centers: BTreeMap<SketchEntityId, SketchEntityId>,
@@ -354,12 +387,16 @@ struct Points {
 
 impl Points {
     fn new<'a>(
-        sketch: &SketchId,
+        sketch: &LegacySketch,
         entities: impl Iterator<Item = &'a LegacyEntity> + Clone,
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let mut points = Self {
-            sketch: sketch.clone(),
+            sketch: sketch.id.clone(),
+            native_ref: sketch.native_ref.clone(),
+            unread_point: NonBlankString::new("creo:point")
+                .ok_or_else(|| CodecError::malformed("Creo v11 point kind is blank"))?,
             curves: BTreeMap::new(),
+            unread: BTreeMap::new(),
             points: BTreeSet::new(),
             ends: BTreeMap::new(),
             centers: BTreeMap::new(),
@@ -375,41 +412,45 @@ impl Points {
                 records.insert(record.clone(), (entity.id().clone(), Some(*position)));
                 points.points.insert(entity.id().clone());
             }
+            if let Geometry::Native { native_kind } = entity.geometry.definition() {
+                points
+                    .unread
+                    .insert(entity.id().clone(), native_kind.as_str().to_owned());
+            }
             points.curves.insert(entity.id().clone(), geometry);
         }
         for entity in entities {
             let Some(geometry) = points.curves.get(entity.id()).cloned() else {
                 continue;
             };
-            if matches!(geometry, Some(PlanarCurve::Point(_))) {
-                continue;
-            }
             let [first, second] = entity.endpoint_refs.as_slice() else {
                 continue;
             };
-            let positions = geometry.as_ref().and_then(ends);
+            let positions = match &geometry {
+                Some(geometry) => match ends(geometry) {
+                    Some(positions) => Some(positions),
+                    None => continue,
+                },
+                None if points.unread.contains_key(entity.id()) => None,
+                None => continue,
+            };
             for (index, record) in [first, second].into_iter().enumerate() {
                 let position = positions.map(|positions| positions[index]);
                 let point = match records.get(record) {
                     Some((point, stored)) => {
-                        let agrees = match (stored, position) {
-                            (Some(stored), Some(position)) => agree(*stored, position),
-                            _ => true,
-                        };
-                        if !agrees {
-                            continue;
+                        if let (Some(stored), Some(position)) = (stored, position) {
+                            if !agree(*stored, position) {
+                                continue;
+                            }
                         }
                         point.clone()
                     }
                     None => {
-                        let Some(position) = position else {
-                            continue;
-                        };
                         let Some(point) = minted_point(record) else {
                             continue;
                         };
-                        records.insert(record.clone(), (point.clone(), Some(position)));
-                        points.mint(point.clone(), position, entity.native_ref.clone());
+                        records.insert(record.clone(), (point.clone(), position));
+                        points.mint(point.clone(), position);
                         point
                     }
                 };
@@ -425,24 +466,31 @@ impl Points {
                 points.ends.insert((entity.id().clone(), index), point);
             }
         }
-        points
+        Ok(points)
     }
 
-    fn mint(&mut self, id: SketchEntityId, position: FinitePoint2, native_ref: Option<String>) {
+    fn mint(&mut self, id: SketchEntityId, position: Option<FinitePoint2>) {
+        let definition = match position {
+            Some(position) => EntityDefinition::Free(PlanarCurve::Point(position)),
+            None => EntityDefinition::Defined {
+                form: Box::new(EntityForm::Native(self.unread_point.clone())),
+                solved: None,
+            },
+        };
         self.points.insert(id.clone());
         self.minted.insert(
             id.clone(),
             SketchEntity {
                 id,
                 sketch: self.sketch.clone(),
-                definition: EntityDefinition::Free(PlanarCurve::Point(position)),
+                definition,
                 roles: Vec::new(),
                 construction: None,
                 centerline: None,
                 native: None,
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
-                native_ref,
+                native_ref: self.native_ref.clone(),
             },
         );
     }
@@ -461,15 +509,24 @@ impl Points {
         if let Some(center) = self.centers.get(of) {
             return Some(center.clone());
         }
-        let position = match self.curves.get(of)?.as_ref()? {
-            PlanarCurve::Circle { center, .. }
-            | PlanarCurve::Arc { center, .. }
-            | PlanarCurve::Ellipse { center, .. } => *center,
+        let position = match self.curves.get(of)? {
+            Some(
+                PlanarCurve::Circle { center, .. }
+                | PlanarCurve::Arc { center, .. }
+                | PlanarCurve::Ellipse { center, .. },
+            ) => Some(*center),
+            None if matches!(
+                self.unread.get(of).map(String::as_str),
+                Some("circle" | "arc")
+            ) =>
+            {
+                None
+            }
             _ => return None,
         };
         let key = of.as_str().split_once('#')?.1;
         let id = crate::identity::compose_checked::<SketchEntityId>(&SKETCH_CENTER, key).ok()?;
-        self.mint(id.clone(), position, None);
+        self.mint(id.clone(), position);
         self.role(&id, of, DefiningRole::Center);
         self.centers.insert(of.clone(), id.clone());
         Some(id)
@@ -546,7 +603,7 @@ fn native(
     values: Vec<ScalarDimension>,
 ) -> Result<SketchRelation<Planar>, CodecError> {
     Ok(SketchRelation::Native {
-        kind: NonBlankString::new(format!("creo:{kind}"))
+        kind: NonBlankString::new(creo_kind(kind))
             .ok_or_else(|| CodecError::malformed("Creo v11 sketch relation kind is blank"))?,
         operands: operands.into_iter().flatten().collect(),
         values,

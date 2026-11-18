@@ -59,9 +59,19 @@ fn section() -> Vec<LegacyEntity> {
     ]
 }
 
+fn sketch() -> LegacySketch {
+    serde_json::from_value(json!({
+        "id": SKETCH,
+        "native_ref": "creo:featdefs:sketch#917",
+        "placement": {"kind": "unresolved"},
+        "profiles": [],
+    }))
+    .expect("v10 sketch")
+}
+
 fn section_points() -> Points {
     let section = section();
-    Points::new(&SketchId::mint(SKETCH).expect("sketch id"), section.iter())
+    Points::new(&sketch(), section.iter()).expect("points")
 }
 
 fn kinds() -> BTreeMap<ParameterId, ValueKind> {
@@ -291,4 +301,60 @@ fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_none() {
         panic!("a placed plane");
     };
     assert_eq!(plane.resolved, None);
+}
+
+#[test]
+fn the_ends_and_centre_of_an_unread_curve_are_points_with_no_position() {
+    let unread = [entity(
+        "native_arc",
+        json!({"kind": "native", "native_kind": "arc"}),
+        &[4, 5],
+    )];
+    let mut points = Points::new(&sketch(), unread.iter()).expect("points");
+    let start = points
+        .point(&SketchLocus::Start(id("native_arc")))
+        .expect("start");
+    let center = points
+        .point(&SketchLocus::Center(id("native_arc")))
+        .expect("centre");
+    for point in [&start, &center] {
+        assert_eq!(points.position(point), None);
+        assert_eq!(
+            points.minted[point].definition,
+            EntityDefinition::Defined {
+                form: Box::new(EntityForm::Native(
+                    NonBlankString::new("creo:point").expect("kind")
+                )),
+                solved: None,
+            }
+        );
+    }
+    assert_eq!(
+        points.roles[&center],
+        [EntityRole {
+            of: id("native_arc"),
+            role: DefiningRole::Center
+        }]
+    );
+}
+
+#[test]
+fn a_saved_entity_names_the_record_of_its_sketch() {
+    assert_eq!(
+        record(
+            &sketch(),
+            &Some("creo:featdefs:sketch#917:saved_entity#2".to_owned())
+        ),
+        Some("creo:featdefs:sketch#917".to_owned())
+    );
+    assert_eq!(
+        record(&sketch(), &Some("creo:featdefs:sketch#9170".to_owned())),
+        Some("creo:featdefs:sketch#9170".to_owned())
+    );
+}
+
+#[test]
+fn a_kind_the_decoder_names_in_the_creo_namespace_keeps_its_name() {
+    assert_eq!(creo_kind("creo:segtab:verhor"), "creo:segtab:verhor");
+    assert_eq!(creo_kind("radius"), "creo:radius");
 }
