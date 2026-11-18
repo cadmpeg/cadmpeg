@@ -171,7 +171,7 @@ mod tests {
             super::super::FeaturePatternTransformLane,
             super::super::FeaturePatternTransformLaneWire,
         >(
-            r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.5,4.0],"raw_values":["50200000","3010000000000000"],"selectors":[7,8],"raw_selectors":["07","08"],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
+            r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.0,1.0],"raw_values":["50200000","3010000000000000"],"selectors":[7,8],"raw_selectors":["07","08"],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
         );
     }
 
@@ -181,7 +181,7 @@ mod tests {
             super::super::FeaturePatternTransformLane,
             super::super::FeaturePatternTransformLaneWire,
         >(
-            r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":["3004000000000000","3010000000000000","3014000000000000","3018000000000000","01"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
+            r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[0.625,1.0,1.25,1.5,1.0],"raw_values":["3004000000000000","3010000000000000","3014000000000000","3018000000000000","01"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
         );
     }
 
@@ -231,18 +231,15 @@ impl Serialize for RawPatternScalar<'_> {
 }
 
 enum PatternScalarRef<'a> {
-    Shifted(&'a super::PatternValue<super::ShiftedScalar, u64>),
-    Binary64(&'a super::PatternValue<super::ShiftedBinary64, u64>),
+    Shifted(&'a super::PatternValue<super::PatternAtom, u64>),
+    Binary64(&'a super::PatternValue<super::PatternWide, u64>),
     Terminal(&'a super::PatternValue<super::PatternTerminal, u64>),
 }
 
 impl PatternScalarRef<'_> {
     fn encoding(&self) -> super::PatternScalarEncoding {
         match self {
-            Self::Shifted(value) => match value.scalar {
-                super::ShiftedScalar::Binary32(_) => super::PatternScalarEncoding::Binary32,
-                super::ShiftedScalar::Binary64(_) => super::PatternScalarEncoding::Binary64,
-            },
+            Self::Shifted(value) => value.scalar.encoding(),
             Self::Binary64(_) => super::PatternScalarEncoding::Binary64,
             Self::Terminal(value) => value.scalar.encoding(),
         }

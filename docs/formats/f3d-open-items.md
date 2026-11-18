@@ -136,7 +136,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which placement does a Hole carrier state when its `refType` is not `13`, `14`, or `19`?
 
-**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the three admitted forms. The point-data record `refType` values `5`, `6`, and `17` occur on carrier `refType` `19` and do not change its placement.
+**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the three admitted forms. The point-data record `refType` values `5` and `6` occur on carrier `refType` `19` and do not change its placement. A `refType` `17` record that names a reconstructed plane is the case of §3.1 "A point-data record with `refType` `17`".
 
 **Need.** A file with a Hole carrier of any further `refType`.
 
@@ -1221,9 +1221,9 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-400. Plane-frame record of a plane selection
 
-**Question.** Which fields of the record that an entity-selection member's trailing reference names state the selected plane's frame, and does every plane selection store one?
+**Question.** Which fields of the record that an entity-selection member's trailing reference names state the selected plane's frame, and does every plane selection store one? Which record binds the primary identity of a plane selection to its `WorkPlane` scope?
 
-**Known.** The trailing reference of an entity-selection member that selects a plane names a record with type GUID `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`. The record stores the plane origin in centimetres and the unit u and v axes, each as three f64 values. A selection of the XY, XZ, or YZ origin plane stores the canonical origin-plane frame, and a `WorkPlane` selection stores the columns of the `WorkPlane` matrix. The decoder takes an origin plane's frame from the canonical table by ordinal and does not read or compare the record.
+**Known.** The trailing reference of an entity-selection member that selects a plane names a record with type GUID `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`. The record stores the plane origin in centimetres and the unit u and v axes, each as three f64 values. A selection of the XY, XZ, or YZ origin plane stores the canonical origin-plane frame, and a `WorkPlane` selection stores the columns of the `WorkPlane` matrix. The decoder takes an origin plane's frame from the canonical table by ordinal and does not read or compare the record. It states the frame of a Draft origin plane, and of a Revolve origin-plane or `WorkPlane` target, only when the scope's Design stream binds one component. A Revolve target with no face-recipe member and one primary identity `p` that the Design type table rules out as an origin entity, and with exactly one `WorkPlane` scope at record `p + 1`, is read as that plane with `feature.revolve-plane-work-plane-assumed`.
 
 **Need.** Saves with an angled `WorkPlane`, a `WorkPlane` moved after the selecting feature, and an origin plane of a non-root component, to type the remaining bytes of the record and its refresh rule.
 
@@ -1397,7 +1397,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Conflict.** None.
 
-**Note.** A scope without proven result bodies remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
+**Note.** The decoder projects the derived base scopes that name one owner as one feature at the owner's timeline position when the owner is a timeline item that no scope occupies and no other feature claims, no scope of the group holds its own timeline position, the scopes' history states chain, and no derived base scope without an owner reference continues or precedes the chain. The feature lists the group's record indices in its `derived_base_scopes` source property. Every other derived base scope remains native with `feature.derived-base-unresolved`. A scope with proven result bodies is kept as a stored snapshot with the same code until source and frame have a complete binding. The public Voron Trident `z_mounts_front.f3d` has nine such scopes. Component context bindings identify their result owners. The source-body and source-frame joins require the derivation references independently of those owner bindings.
 
 ### DR-552. Sphere frame assumptions and unresolved placement references
 
@@ -2591,9 +2591,9 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** What operation does a negative `SurfaceExtend` extension distance select?
 
-**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive.
+**Known.** The distance owner's evaluated scalar is a finite signed value in centimetres. The linked parameter's expression states the same signed value, for example `-0.2 mm`. The neutral `ExtendSurface` distance is positive. A natural extension with a negative distance is a failed feature in Fusion: the scope keeps its frame, its signed distance and a history state, and the body keeps its unextended boundary.
 
-**Need.** Two saves that extend the same edge by a positive distance and by its negation, with the resulting body geometry of each.
+**Need.** Saves of a perpendicular extension and of a tangent extension of one edge by a positive distance and by its negation, with the resulting body geometry of each.
 
 **Conflict.** None.
 
@@ -2747,15 +2747,15 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-341. Chamfer distance reference face
 
-**Question.** Which stored field assigns the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
+**Question.** How do the set controls and ordered recipe references assign the first distance of a two-distance chamfer, or the distance of a distance-angle chamfer, to an input support face?
 
-**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false.
+**Known.** Chamfer sets reference their edge groups and dimensional owners independently. One scope can combine equal-distance, two-distance, and distance-angle sets. Chamfer parameter owners supply ordered dimensional specifications. Edge recipes retain ordered sides and prefix-reference ordinals. Exact ASM transitions retain support-face carriers and the inserted treatment carriers. The projector transfers the dimensional specification and the edge selection into `ChamferGroup`. That IR type carries the selection and specification. The projector sets `flip_direction` to false. A distance-angle set stores a distance-reversal byte at primary-relative offset 22. Chamfertestcube sets 312 and 327 store 0 and 1 there. Both store 1 mm and 30 degrees. Their selected edges are ASM slots 178 at `y=10, z=10` and 182 at `y=0, z=10`. The STEP treatment planes give top/side setbacks of `(1, 0.577350269189626)` mm and `(0.577350269189625, 1)` mm. Sets 342 and 357 store first/second distances `(1, 3)` mm and `(3, 1)` mm on slots 177 at `x=10, z=10` and 180 at `x=0, z=10`; their STEP top/side setbacks agree with that order. Testchamfer1 and Testchamfer2 select the front top edge and store first/second distances `(1, 3)` mm and `(3, 1)` mm, equal to their STEP top/front setbacks. Testchamfer3 and Testchamfer4 store 1 mm and 30 degrees and reversal bytes 0 and 1. Their STEP top/front setbacks are `(1, 0.577350269189626)` mm and `(0.577350269189625, 1)` mm. Each 30-degree treatment plane forms that angle with the face carrying the 1 mm setback.
 
 **Need.** A rule that binds each selected input edge to its distance reference face, with both face widths checked against the stored dimensional specification. The rule must cover reversed recipe-reference order, propagated edge chains, and support faces split by earlier operations.
 
 **Conflict.** None.
 
-**Note.** Projection keeps owner-slot order with forward direction and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
+**Note.** Projection retains each distance-reversal flag in its native set, keeps owner-slot order with forward neutral direction, and reports `feature.chamfer-reference-face-assumed`. The neutral representation needs a reference-face binding for each selected edge before it can retain a proven assignment.
 
 ### DR-342. Chamfer recipes with conflicting transition selections
 
@@ -2908,13 +2908,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** How do the persistent names of one counted recipe operand constrain the selected face fragments when their live candidate sets overlap or are disjoint?
 
-**Known.** Fillet 22's 29 members and Chamfer 12's 12 members in Voron 1.8 A/B Drives carry counted operands with several persistent names. Intersecting the live name sets resolves one edge per member; transitions `3769 → 3770` and `3866 → 3867` delete every resolved edge. Name union admits extra face fragments through `(2, 0, -420)`, `(2, 0, -421)`, `(1, 0, 328)`, and `(1, 0, 329)`, which makes singleton edge intersections ambiguous. In New XY Joints M3x8mm Chamfer, Fillet 20 member `206364` has a counted operand with `(1, 0, 530)` on faces `43973` and `48057` and `(7, 0, 375)` on face `49019`. Its other primary-side operand names face `49001` through `(6, 0, 375)`. The first operand's name sets are disjoint. Their union and the other operand share edge `49028` between faces `49019` and `49001`; the Fillet transition from state `9016` deletes that edge. In Front_Idler_Body_AB, Chamfer 2 from state `246` preserves main's selected edge `4713` and deletes all fourteen edges selected with the common-name constraint.
+**Known.** Fillet 22's 29 members and Chamfer 12's 12 members in Voron 1.8 A/B Drives carry counted operands with several persistent names. Intersecting the live name sets resolves one edge per member; transitions `3769 → 3770` and `3866 → 3867` delete every resolved edge. Name union admits extra face fragments through `(2, 0, -420)`, `(2, 0, -421)`, `(1, 0, 328)`, and `(1, 0, 329)`, which makes singleton edge intersections ambiguous. In New XY Joints M3x8mm Chamfer, Fillet 20 member `206364` has a counted operand with `(1, 0, 530)` on faces `43973` and `48057` and `(7, 0, 375)` on face `49019`. Its other primary-side operand names face `49001` through `(6, 0, 375)`. The first operand's name sets are disjoint. Their union and the other operand share edge `49028` between faces `49019` and `49001`; the Fillet transition from state `9016` deletes that edge. In Front_Idler_Body_AB, Chamfer 2 from state `246` preserves main's selected edge `4713` and deletes all fourteen edges selected with the common-name constraint. In the RailCore Foot design, Chamfer 1 from state `27` has ten counted operands whose names each carry two Design references; reference `934` is common to six fragments of token `1`. The faces that carry every reference of each name select the ten edges of one face loop; transition `27 → 28` deletes all ten and adds ten faces. The union of the references selected four edges outside that loop, two of which the transition keeps.
 
 **Need.** Determine the relation between name order, historical name validity, and face fragmentation. Compare paired saves with the same selected edge before and after a topology change that makes the live name sets disjoint. Retain the counted prefix, the input and result generic-tag groups, and the complete edge transition.
 
-**Conflict.** The common-name constraint removes aliases in A/B Drives and removes a transition-deleted edge in New XY Joints M3x8mm Chamfer.
+**Conflict.** The common-name constraint removes aliases in A/B Drives and removes a transition-deleted edge in New XY Joints M3x8mm Chamfer. In Voron Trident ptfe plate, Fillet 2 member `2795871` names token `6` with references `469` and `470`. The faces common to both references select no edge; the union selects edge `3969` on a face whose tag carries only `469`, and the Fillet transition deletes that edge. In Voron Trident xy joints, members `4782351` and `4786792` show the same pattern for edges `5396` and `5802`.
 
-**Note.** The decoder uses the nonempty name intersection. For disjoint live name sets it retains their union and requires a unique transition-deleted common boundary edge for the fragment fallback. The inferred-selection loss records this assumption.
+**Note.** Within one name of a Fillet or Chamfer edge recipe whose first side names at least two reference ordinals, the decoder first uses the faces common to all Design references. It uses their union when no face is common or the common faces select no transition-deleted edge. The decoder uses the nonempty name intersection. For disjoint live name sets it retains their union and requires a unique transition-deleted common boundary edge for the fragment fallback. The inferred-selection loss records this assumption.
 
 ### DR-362. Non-outer loops in Loft section selections
 
@@ -3381,6 +3381,38 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
 
+### DR-670. Carrier state of a Hole on a reconstructed plane
+
+**Question.** What do the carrier position and the carrier point parameters of a face-point Hole store when its point record names a reconstructed plane at another position?
+
+**Known.** The carrier has `refType` `19`. The point record has `refType` `17` and its position lies on the reconstructed plane. The carrier position differs from the point-record position, and the carrier point parameters share their first value with the point-record parameters. The drilled cylinder lies on the point-record position.
+
+**Need.** A second Hole whose carrier and point record disagree, with the Hole saved before and after the plane is moved.
+
+**Note.** The entry point is the point-record position. The carrier position is retained in the native carrier record.
+
+### DR-671. Second direct selection of a Hole on a reconstructed plane
+
+**Question.** What does the second direct support-face selection of the same Hole select, and how does it relate to the carrier input?
+
+**Known.** The Hole scope references two direct support-face selections after its point-data records. The first is the sole input of the point record. The carrier input names the second. The second selection owns a record with a sketch name and a sketch frame in place of a reconstructed plane record.
+
+**Need.** A second Hole whose carrier input names a sketch selection, and a save that moves the sketch.
+
+**Note.** The sketch frame is not used for placement.
+
+### DR-760. Structured Chamfer recipes on faces with several deleted boundary edges
+
+**Question.** Which input edge does a member of a counted Chamfer group select when its standard edge recipe has a two-sided recipe structure and its primary-reference faces own several boundary edges that the operation transition deletes?
+
+**Known.** The scope binds to one ASM history through the BREP of its edge-recipe faces, as DR-150 records. The member recipe then resolves against the input state of that history. Each side of the recipe structure lists boundary-edge counts and topology triplets of incident edges and vertices. A member whose primary-reference faces own exactly one candidate edge resolves to that edge. The other members name two faces, or a face set, whose boundaries hold eight or more edges of the transition-deleted set, and no recipe proof selects one of them. The projector retains the resolved edges and the unresolved operand identities in a partial historical selection.
+
+**Need.** A rule that maps the side entries and topology triplets of the recipe structure to one boundary edge of the input topology, or a group rule that assigns every transition-deleted edge to one member.
+
+**Conflict.** None.
+
+**Note.** DR-342 tracks chamfer recipes whose transition selections conflict.
+
 ### DR-705. Cut Extrude whose removed planes disagree with the sampled regions
 
 **Question.** Which rule selects the atomic regions of a Cut `Extrude` whose counted selection matches no arrangement face when the planes that the Cut changed select more regions than its transition certifies?
@@ -3504,3 +3536,41 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Conflict.** None.
 
 **Note.** The decoder applies the compact discriminator meanings and reports `feature.coil-short-controls-assumed`. It retains signed driving dimensions and the checked solved placement. An unbound placement remains native. A missing or ambiguous target group retains the Coil with an unresolved Boolean selection and reports `feature.coil-target-unresolved`.
+
+### DR-596. BoundaryFill cell geometry
+
+**Question.** Which boundaries define each selected-cell record?
+
+**Known.** The scope names the selected cells in an ordered reference list. The selected-cell type differs from the body-region group type.
+
+**Need.** A relationship between each selected-cell record and the set of body and plane boundaries that enclose it.
+
+**Note.** The decoder retains the cell identities and reports `feature.boundary-fill-cells-native`. An unavailable cell list and body-region partition report `feature.boundary-fill-cells-unresolved`.
+
+### DR-597. BoundaryFill tool bindings
+
+**Question.** How do the group and plane lists select neutral tools?
+
+**Known.** A role-4 group at the start of the scope reference table contains ordered body-recipe members. The prefix stores separate group and plane lists.
+
+**Need.** A same-state identity join for the plane selectors and an assignment for each body-group reference outside the role-4 group.
+
+**Note.** Unresolved neutral tool selections report `feature.boundary-fill-tools-unresolved`.
+
+### DR-598. BoundaryFill Boolean targets and control words
+
+**Question.** Which bodies receive the selected cell volumes for Join, Cut, and Intersect? What effects do additional operation words specify?
+
+**Known.** Operation words 1 through 4 specify Join, Cut, Intersect, and New Body respectively.
+
+**Need.** A stored target relationship for the three Boolean operations and controlled saves for any additional operation words.
+
+**Note.** The effects project with `feature.boundary-fill-targets-unresolved` when they require existing bodies. An unassigned operation word reports `feature.boundary-fill-operation-unresolved`.
+
+### DR-599. BoundaryFill auxiliary references
+
+**Question.** What roles do the settings fields, remaining prefix bytes, and named-tail references carry?
+
+**Known.** The selected-cell prefix contains a version-zero settings reference. The removal form contains two counted lists. The named scope tail supports associated references and optional middle and closing references.
+
+**Need.** Controlled saves that vary the auxiliary references and settings while keeping the selected cells and tools fixed.

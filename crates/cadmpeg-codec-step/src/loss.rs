@@ -126,6 +126,9 @@ pub(crate) enum StepLossCode {
     PmiZoneUnresolved,
     /// A dimensional modifier has no complete semantic value.
     PmiDimensionModifierUnresolved,
+    /// A dimension's nominal or limit quantity disagrees with the kind of its
+    /// dimension entity, so the dimension keeps the entity name as its kind.
+    PmiDimensionKindQuantityMismatch,
     /// Dimensional limit measures do not form one lower and one upper limit.
     DimensionalLimitsOmitted,
     /// Independent styled items assign conflicting scalar colors.
@@ -403,6 +406,9 @@ pub(crate) enum StepLossCode {
     /// The end-to-end lengths of a context's plant items agree on a length
     /// unit other than the one the context declares.
     LengthUnitContradicted,
+    /// A parent representation's `MAPPED_ITEM` placed an assembly occurrence
+    /// that no STEP relationship associates with that item.
+    OccurrencePlacementInferred,
     /// A CSG item's attributes do not resolve; it has no feature and no body.
     CsgItemUnresolved,
     /// A plant CSG shape lists several plant item orientations, so its items
@@ -416,6 +422,9 @@ pub(crate) enum StepLossCode {
     CsgProfileGapClosed,
     /// CSG items belong to no product definition, so no design scope files them.
     CsgDesignUnscoped,
+    /// The faces on a spindle `TOROIDAL_SURFACE` do not select one sheet, so
+    /// the surface carries no sheet selection.
+    TorusSheetUnresolved,
 }
 
 impl StepLossCode {
@@ -470,6 +479,7 @@ impl StepLossCode {
         Self::PmiDatumSystemInvalid,
         Self::PmiZoneUnresolved,
         Self::PmiDimensionModifierUnresolved,
+        Self::PmiDimensionKindQuantityMismatch,
         Self::DimensionalLimitsOmitted,
         Self::ConflictingScalarColors,
         Self::SurfaceSideInvalid,
@@ -600,12 +610,14 @@ impl StepLossCode {
         Self::EdgeVertexOffCarrier,
         Self::AngleUnitFactorCorrected,
         Self::LengthUnitContradicted,
+        Self::OccurrencePlacementInferred,
         Self::CsgItemUnresolved,
         Self::CsgPlantOrientationAmbiguous,
         Self::CsgSolidUnsynthesized,
         Self::CsgBooleanUnevaluated,
         Self::CsgProfileGapClosed,
         Self::CsgDesignUnscoped,
+        Self::TorusSheetUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -668,6 +680,7 @@ impl StepLossCode {
             Self::PmiDatumSystemInvalid => "pmi.datum-system-invalid",
             Self::PmiZoneUnresolved => "pmi.zone-unresolved",
             Self::PmiDimensionModifierUnresolved => "pmi.dimension-modifier-unresolved",
+            Self::PmiDimensionKindQuantityMismatch => "pmi.dimension-kind-quantity-mismatch",
             Self::DimensionalLimitsOmitted => "pmi.dimensional-limits-omitted",
             Self::ConflictingScalarColors => "presentation.conflicting-scalar-colors",
             Self::SurfaceSideInvalid => "presentation.surface-side-invalid",
@@ -812,12 +825,14 @@ impl StepLossCode {
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::AngleUnitFactorCorrected => "geometry.angle-unit-factor-corrected",
             Self::LengthUnitContradicted => "geometry.length-unit-contradicted",
+            Self::OccurrencePlacementInferred => "product.occurrence-placement-inferred",
             Self::CsgItemUnresolved => "csg.item-unresolved",
             Self::CsgPlantOrientationAmbiguous => "csg.plant-orientation-ambiguous",
             Self::CsgSolidUnsynthesized => "csg.solid-unsynthesized",
             Self::CsgBooleanUnevaluated => "csg.boolean-unevaluated",
             Self::CsgProfileGapClosed => "csg.profile-gap-closed",
             Self::CsgDesignUnscoped => "csg.design-unscoped",
+            Self::TorusSheetUnresolved => "geometry.torus-sheet-unresolved",
         }
     }
 
@@ -882,7 +897,8 @@ impl StepLossCode {
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
             | Self::SourceNativeRecordOmitted
-            | Self::NonManifoldEdgeSplit => Severity::Info,
+            | Self::NonManifoldEdgeSplit
+            | Self::OccurrencePlacementInferred => Severity::Info,
             _ => Severity::Warning,
         }
     }
@@ -1028,7 +1044,9 @@ impl StepLossCode {
             }
             Self::CsgProfileGapClosed
             | Self::AngleUnitFactorCorrected
-            | Self::LengthUnitContradicted => LossTaxonomy::DecodeDiagnostic,
+            | Self::LengthUnitContradicted
+            | Self::OccurrencePlacementInferred
+            | Self::TorusSheetUnresolved => LossTaxonomy::DecodeDiagnostic,
             Self::CsgDesignUnscoped => LossTaxonomy::MetadataNotTransferred,
             Self::NauoPlacementUnresolved
             | Self::NauoPlacementAmbiguous
@@ -1065,6 +1083,7 @@ impl StepLossCode {
             | Self::PmiDatumSystemInvalid
             | Self::PmiZoneUnresolved
             | Self::PmiDimensionModifierUnresolved
+            | Self::PmiDimensionKindQuantityMismatch
             | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
@@ -1156,6 +1175,7 @@ mod tests {
                 "pmi.datum-system-invalid",
                 "pmi.zone-unresolved",
                 "pmi.dimension-modifier-unresolved",
+                "pmi.dimension-kind-quantity-mismatch",
                 "pmi.dimensional-limits-omitted",
                 "presentation.conflicting-scalar-colors",
                 "presentation.surface-side-invalid",
@@ -1286,12 +1306,14 @@ mod tests {
                 "geometry.edge-vertex-off-carrier",
                 "geometry.angle-unit-factor-corrected",
                 "geometry.length-unit-contradicted",
+                "product.occurrence-placement-inferred",
                 "csg.item-unresolved",
                 "csg.plant-orientation-ambiguous",
                 "csg.solid-unsynthesized",
                 "csg.boolean-unevaluated",
                 "csg.profile-gap-closed",
                 "csg.design-unscoped",
+                "geometry.torus-sheet-unresolved",
             ]
         );
     }

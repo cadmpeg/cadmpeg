@@ -512,6 +512,113 @@ fn hole_locations_keep_the_sole_input_of_a_vertex_rule_record() {
     assert_eq!(inputs, [Some((90, true)), None]);
 }
 
+/// One reconstructed plane record, which has one indexed header: an empty
+/// record name, the extent minima, a zero byte, the origin, the u axis, the v
+/// axis, and the extent maxima.
+fn reconstructed_plane_frame(bytes: &mut Vec<u8>, record_index: u32, frame: [[f64; 3]; 3]) {
+    indexed_header(bytes, *b"385", record_index);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+    for value in [-5.0_f64, -5.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0);
+    for value in frame.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [5.0_f64, 5.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0; 9]);
+}
+
+const SELECTION_RECORD: u64 = 90;
+const PLANE_FRAME: [[f64; 3]; 3] = [[0.5, 0.25, 2.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]];
+
+fn plane_location_types(
+    plane_record: u64,
+    plane_version: u32,
+) -> HashMap<u64, (&'static str, u32)> {
+    HashMap::from([
+        (55_u64, (POINT_DIRECTION_TYPE_GUID, 4)),
+        (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+        (SELECTION_RECORD, (HOLE_FACE_SELECTION_TYPE_GUID, 1)),
+        (
+            plane_record,
+            (super::RECONSTRUCTED_PLANE_TYPE_GUID, plane_version),
+        ),
+    ])
+}
+
+fn plane_location(
+    types: &HashMap<u64, (&str, u32)>,
+    plane_records: &[u32],
+) -> Option<crate::records::feature::hole::DesignHolePlane> {
+    let (mut bytes, mut scope, _, _) = hole_point_stream();
+    with_point_records(&mut scope, &mut bytes, &[(70, [0.5, 1.0, 2.0], 17)]);
+    for record_index in plane_records {
+        reconstructed_plane_frame(&mut bytes, *record_index, PLANE_FRAME);
+    }
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(&bytes, &records, &scope, types)
+        .expect("hole carrier with its point record");
+    let [location] = construction.locations.as_slice() else {
+        panic!("one location");
+    };
+    if let Some(plane) = &location.plane {
+        let at = usize::try_from(plane.origin_offset).unwrap();
+        assert_eq!(
+            cadmpeg_core::decode::View::f64_le_at(&bytes, at),
+            Some(plane.origin[0].get())
+        );
+    }
+    location.plane.clone()
+}
+
+#[test]
+fn hole_location_reads_the_reconstructed_plane_of_its_selection() {
+    let plane = plane_location(&plane_location_types(93, 0), &[93]).expect("plane");
+    assert_eq!(plane.selection_record_index, 90);
+    assert_eq!(plane.record_index, 93);
+    assert_eq!(
+        plane.origin.map(cadmpeg_ir::scalar::FiniteReal::get),
+        PLANE_FRAME[0]
+    );
+    assert_eq!(
+        plane.u_axis.map(cadmpeg_ir::scalar::FiniteReal::get),
+        PLANE_FRAME[1]
+    );
+    assert_eq!(
+        plane.v_axis.map(cadmpeg_ir::scalar::FiniteReal::get),
+        PLANE_FRAME[2]
+    );
+}
+
+#[test]
+fn hole_location_reads_no_plane_for_another_plane_record_form() {
+    // Another type version is another record form.
+    assert_eq!(plane_location(&plane_location_types(93, 1), &[93]), None);
+    // A plane record beyond the selection chain belongs to no selection.
+    assert_eq!(
+        plane_location(&plane_location_types(91 + 16, 0), &[91 + 16]),
+        None
+    );
+    // A selection without a plane record in its chain reads no plane.
+    assert_eq!(plane_location(&plane_location_types(93, 0), &[]), None);
+    // Two plane records in one chain are ambiguous.
+    let mut types = plane_location_types(93, 0);
+    types.insert(94, (super::RECONSTRUCTED_PLANE_TYPE_GUID, 0));
+    assert_eq!(plane_location(&types, &[93, 94]), None);
+}
+
+#[test]
+fn hole_location_plane_stops_at_the_next_direct_selection() {
+    let mut types = plane_location_types(93, 0);
+    types.insert(91, (HOLE_FACE_SELECTION_TYPE_GUID, 1));
+    assert_eq!(plane_location(&types, &[93]), None);
+}
+
 #[test]
 fn hole_locations_drop_the_run_when_one_point_record_does_not_read() {
     let (mut bytes, mut scope, _, _) = hole_point_stream();
