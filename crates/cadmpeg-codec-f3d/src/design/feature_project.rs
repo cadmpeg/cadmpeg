@@ -1677,6 +1677,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     group.id == *tool && group.role() == DesignOperandRole::ROLE_0X9
                 })
             );
+            let retain_body_offset_references = scope.surface_offset_operation().is_some_and(|operation| {
+                matches!(operation.support, crate::records::feature::surface_ops::DesignSurfaceOffsetSupport::BodyCarrier { .. })
+            });
             let outputs = inserted_bodies;
             Ok(Feature {
                 product_definition: None,
@@ -1709,6 +1712,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
                     || retain_face_trim_references
+                    || retain_body_offset_references
                     || scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkAxis
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
