@@ -1040,7 +1040,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 2448,
+          "tag": "PRESENTATION_STYLE_ASSIGNMENT"
+        },
         "severity": "warning"
       },
       {
@@ -1052,7 +1058,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 STYLED_ITEM instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 2505,
+          "tag": "STYLED_ITEM"
+        },
         "severity": "warning"
       }
     ],

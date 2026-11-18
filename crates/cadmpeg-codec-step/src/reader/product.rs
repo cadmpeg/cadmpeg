@@ -153,6 +153,16 @@ pub(super) fn decode(
         }
     }
     let mut shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
+    // An assembly's shape representation places its components and holds
+    // no body of its own.
+    let mut assemblies = HashSet::new();
+    for (_, record) in exchange.entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
+        if let Some(parent) = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)
+            .and_then(ValueExt::reference)
+        {
+            assemblies.insert(parent);
+        }
+    }
     let mut definition_counts = BTreeMap::<u64, usize>::new();
     for product in definitions.values() {
         *definition_counts.entry(*product).or_default() += 1;
@@ -274,7 +284,10 @@ pub(super) fn decode(
                     "{owner} omitted uncommitted shape body reference(s): {missing}"
                 )));
             }
-            if has_shape_binding && bodies.is_empty() {
+            if has_shape_binding
+                && bodies.is_empty()
+                && !definition.is_some_and(|definition| assemblies.contains(&definition))
+            {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{owner} has a shape representation with no committed topology body"
                 )));

@@ -57,6 +57,7 @@ mod parameter_owner;
 mod parameter_scope;
 mod repro_fragments;
 mod revolve_target_roles;
+mod split_face;
 mod sweep_body_roles;
 mod thread_link;
 mod timeline;

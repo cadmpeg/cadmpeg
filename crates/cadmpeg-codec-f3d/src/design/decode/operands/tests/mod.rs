@@ -13,6 +13,7 @@ mod fixed_fillet_retention;
 mod hole_locations;
 mod recipe_structures;
 mod recipes;
+mod registered_split_face_bounds;
 mod selection;
 mod typed_profile;
 mod work_point;

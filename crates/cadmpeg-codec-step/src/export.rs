@@ -4006,11 +4006,24 @@ impl<'a> Builder<'a> {
                     }
                     _ => None,
                 };
-                Some((id, reference, chart))
+                // An offset or a replica keeps the normal side of its
+                // written support.
+                let reversed_normal = match &definition {
+                    ProceduralSurfaceDefinition::ParallelOffset(payload) => {
+                        self.surface_normal_reversed(payload.support().as_str())
+                    }
+                    ProceduralSurfaceDefinition::Replica { source, .. } => {
+                        self.surface_normal_reversed(source.as_str())
+                    }
+                    _ => false,
+                };
+                Some((id, reference, chart, reversed_normal))
             });
-            let (r, chart, reversed_normal) = if let Some((id, reference, chart)) = emitted {
+            let (r, chart, reversed_normal) = if let Some((id, reference, chart, reversed_normal)) =
+                emitted
+            {
                 self.written_procedural_surfaces.insert(id);
-                (reference, chart, false)
+                (reference, chart, reversed_normal)
             } else if let Some((id, helix)) = self.unsolved_helix_surface(surface_id) {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
@@ -4122,12 +4135,19 @@ impl<'a> Builder<'a> {
                 let distance = definition_payload.distance();
                 let self_intersect = definition_payload.self_intersect();
                 {
-                    let support = self.emit_surface(support.as_str())?;
+                    let support_id = support.as_str();
+                    let support = self.emit_surface(support_id)?;
+                    // The record offsets along the written support's normal.
+                    let distance = if self.surface_normal_reversed(support_id) {
+                        -distance.get()
+                    } else {
+                        distance.get()
+                    };
                     Some(self.emitter.emit(
                         "OFFSET_SURFACE",
                         &format!(
                             "'',{support},{},{}",
-                            self.emitter.real(distance.get()),
+                            self.emitter.real(distance),
                             logical(*self_intersect)
                         ),
                     ))
