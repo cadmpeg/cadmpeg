@@ -9,98 +9,22 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::evaluation::{CurrentState, Evaluation, StateBase};
-use crate::design::names::{NameEntry, NameKind};
-use crate::design::refs::{EntityRef, Position};
+use crate::design::names::NameEntry;
+use crate::design::refs::EntityRef;
 use crate::design::selection::OccurrencePath;
 use crate::document::{CadIr, Topology};
 use crate::topology::{EdgeCarrier, ShellMember};
 
-/// The arena of a nameable entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Arena {
-    Body,
-    Face,
-    Edge,
-    Vertex,
-    Surface,
-    Curve,
-    Subd,
-}
-
-impl Arena {
-    pub(super) const fn of(entity: &EntityRef) -> Self {
-        match entity {
-            EntityRef::Body(_) => Self::Body,
-            EntityRef::Face(_) => Self::Face,
-            EntityRef::Edge(_) => Self::Edge,
-            EntityRef::Vertex(_) => Self::Vertex,
-            EntityRef::Surface(_) => Self::Surface,
-            EntityRef::Curve(_) => Self::Curve,
-            EntityRef::Subd(_) => Self::Subd,
-        }
-    }
-
-    /// The name kind of an entity of this arena; a subdivision cage has
-    /// none.
-    pub(super) const fn name_kind(self) -> Option<NameKind> {
-        match self {
-            Self::Body => Some(NameKind::Body),
-            Self::Face => Some(NameKind::Face),
-            Self::Edge => Some(NameKind::Edge),
-            Self::Vertex => Some(NameKind::Vertex),
-            Self::Surface => Some(NameKind::Surface),
-            Self::Curve => Some(NameKind::Curve),
-            Self::Subd => None,
-        }
-    }
-}
+use super::records::PositionKey;
+use super::resolved::{records, Arena};
 
 /// The nameable entities of one `Topology`, by id.
 fn entities(topology: &Topology) -> BTreeMap<&str, Arena> {
-    let mut found = BTreeMap::new();
-    found.extend(
-        topology
-            .bodies
-            .iter()
-            .map(|record| (record.id.as_str(), Arena::Body)),
-    );
-    found.extend(
-        topology
-            .faces
-            .iter()
-            .map(|record| (record.id.as_str(), Arena::Face)),
-    );
-    found.extend(
-        topology
-            .edges
-            .iter()
-            .map(|record| (record.id.as_str(), Arena::Edge)),
-    );
-    found.extend(
-        topology
-            .vertices
-            .iter()
-            .map(|record| (record.id.as_str(), Arena::Vertex)),
-    );
-    found.extend(
-        topology
-            .surfaces
-            .iter()
-            .map(|record| (record.id.as_str(), Arena::Surface)),
-    );
-    found.extend(
-        topology
-            .curves
-            .iter()
-            .map(|record| (record.id.as_str(), Arena::Curve)),
-    );
-    found.extend(
-        topology
-            .subds
-            .iter()
-            .map(|record| (record.id.as_str(), Arena::Subd)),
-    );
-    found
+    records(topology)
+        .into_iter()
+        .filter(|(arena, ..)| arena.is_entity())
+        .map(|(arena, id, _)| (id, arena))
+        .collect()
 }
 
 /// One evaluation's own records and removals.
@@ -143,7 +67,12 @@ impl<'a> States<'a> {
                 .or_insert_with(|| Layer {
                     evaluation,
                     entities: entities(&content.delta.records),
-                    removed: content.delta.removed.iter().map(record_id).collect(),
+                    removed: content
+                        .delta
+                        .removed
+                        .iter()
+                        .map(|record| Arena::of_record(record).1)
+                        .collect(),
                 });
         }
         let reach = Reach::new(&ir.geometry);
@@ -170,10 +99,10 @@ impl<'a> States<'a> {
     }
 
     /// The extent of `scope`'s current state at `at`.
-    pub(super) fn extent(&self, scope: &str, at: &Position) -> Option<&Extent<'a>> {
+    pub(super) fn extent(&self, scope: &str, at: PositionKey<'_>) -> Option<&Extent<'a>> {
         self.extents
             .iter()
-            .find(|extent| extent.scope == scope && extent.state.at == *at)
+            .find(|extent| extent.scope == scope && PositionKey::of(&extent.state.at) == at)
     }
 
     /// Every entity of the current geometry within `extents` that
@@ -197,14 +126,14 @@ impl<'a> States<'a> {
 
     /// Whether the geometry holds the entity in its arena.
     pub(super) fn geometry_holds(&self, entity: &EntityRef) -> bool {
-        self.geometry.get(entity.id()) == Some(&Arena::of(entity))
+        self.geometry.get(entity.id()) == Some(&Arena::of_entity(entity).0)
     }
 
     /// Whether the resolved state of a stored evaluation holds the entity in
     /// its arena. `None` where the chain of bases does not resolve.
     pub(super) fn holds(&self, evaluation: &str, entity: &EntityRef) -> Option<bool> {
         let id = entity.id();
-        let arena = Arena::of(entity);
+        let arena = Arena::of_entity(entity).0;
         let mut at = self.layers.get(evaluation)?;
         for _ in 0..=self.layers.len() {
             if at.removed.contains(id) {
@@ -289,30 +218,9 @@ impl<'a> States<'a> {
             StateBase::Empty => Err(Bottom::Empty),
             StateBase::Evaluation(base) => Ok(self.layers.get(base.as_str())?),
             StateBase::Current(position) => Err(Bottom::Current(
-                self.extent(evaluation.scope.as_str(), position)?,
+                self.extent(evaluation.scope.as_str(), PositionKey::of(position))?,
             )),
         })
-    }
-}
-
-fn record_id(record: &crate::design::refs::RecordRef) -> &str {
-    use crate::design::refs::RecordRef;
-    match record {
-        RecordRef::Body(id) => id.as_str(),
-        RecordRef::Region(id) => id.as_str(),
-        RecordRef::Shell(id) => id.as_str(),
-        RecordRef::Face(id) => id.as_str(),
-        RecordRef::Loop(id) => id.as_str(),
-        RecordRef::Coedge(id) => id.as_str(),
-        RecordRef::Edge(id) => id.as_str(),
-        RecordRef::Vertex(id) => id.as_str(),
-        RecordRef::Point(id) => id.as_str(),
-        RecordRef::Surface(id) => id.as_str(),
-        RecordRef::Curve(id) => id.as_str(),
-        RecordRef::Subd(id) => id.as_str(),
-        RecordRef::Pcurve(id) => id.as_str(),
-        RecordRef::ProceduralSurface(id) => id.as_str(),
-        RecordRef::ProceduralCurve(id) => id.as_str(),
     }
 }
 

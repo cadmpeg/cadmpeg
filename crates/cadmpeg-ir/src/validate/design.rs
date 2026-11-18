@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Part 10 rules on the design layer: names (§5.7), selections (§5.8), and
-//! constructions (§5.9).
+//! Part 10 validation of the CADIR v11 design layer.
+//!
+//! The rules here are decided by reference lookup, counting, and in-IR
+//! arithmetic over the design records, the current geometry, and the product
+//! definitions. A rule about an operation's operands or names does not fire
+//! on an `Unresolved` or `Native` operation.
 //!
 //! Every selection and construction of the design arenas is reached by a
 //! typed walk of the record that holds it. A rule that reads a state checks
@@ -8,9 +12,18 @@
 //! pick, and an operation whose operands are not stated are legal partial
 //! statements that no rule about their operands checks.
 
+mod configurations;
 mod constructions;
+mod containers;
+mod evaluations;
+#[cfg(test)]
+mod fixture;
 mod index;
+mod linkage;
 mod names;
+mod parameters;
+mod records;
+mod resolved;
 mod selections;
 mod states;
 mod walk;
@@ -24,10 +37,15 @@ use cadmpeg_core::CodecError;
 use crate::design::feature::Feature;
 use crate::document::{CadIr, Topology};
 use crate::ids::ProductDefinitionId;
-use crate::report::check::{Check, Finding};
+use crate::index::ModelIndex;
+use crate::report::{
+    check::{Check, Finding},
+    Severity,
+};
 
 use super::record_finding;
-use index::{DesignIndex, Key};
+use index::DesignIndex;
+use records::MemberKey;
 use walk::{Collect, ConstructionView, SelectionView, Walk};
 
 /// Whether native text has the form `codec:name`.
@@ -100,14 +118,25 @@ struct Held<'a> {
     constructions: Vec<ConstructionView<'a>>,
 }
 
-/// Checks the names, selections, and constructions of `ir`'s design layer.
+/// Check the design layer of `ir` against part 10's scope-and-linkage,
+/// container, position, evaluation, current-geometry, configuration, name,
+/// selection, and construction rules.
 pub(super) fn check_design(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
+    ids: &ModelIndex<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let _depth = ctx.enter_nested("IR design validation")?;
     let mut index = DesignIndex::new(ir);
+    let records = &index.records;
+    linkage::check_linkage(records, ids, findings);
+    containers::check_containers(records, findings);
+    evaluations::check_evaluations(records, ctx.policy().limits.max_state_chain_depth, findings);
+    evaluations::check_current_geometry(records, findings);
+    resolved::check_resolved_states(ctx, records, ids, findings)?;
+    configurations::check_configurations(records, findings);
+
+    let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
     index.add_dependencies(&held);
     let states = states::States::new(ir);
@@ -244,7 +273,7 @@ fn collect<'a>(
         let id = container.id().as_str();
         let holder = Holder::Record {
             record: id,
-            scope: index.scope_of(Key::Container(id)),
+            scope: index.scope_of(MemberKey::Container(id)),
         };
         add(holder, container)?;
     }
@@ -256,4 +285,14 @@ fn collect<'a>(
         add(holder, scope)?;
     }
     Ok(held)
+}
+
+fn error(findings: &mut Vec<Finding>, entity: &str, message: std::fmt::Arguments<'_>) {
+    record_finding(
+        findings,
+        Check::Design,
+        Severity::Error,
+        Some(entity),
+        message,
+    );
 }

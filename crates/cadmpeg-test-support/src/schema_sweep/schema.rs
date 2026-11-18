@@ -110,6 +110,11 @@ impl<'a> Schema<'a> {
             .unwrap_or_else(|| panic!("schema location {location} names no node"))
     }
 
+    /// Whether `location` names a node.
+    pub(super) fn has_node(&self, location: &str) -> bool {
+        self.root.pointer(location).is_some()
+    }
+
     /// The definitions reachable from the root through `$ref`.
     pub(super) fn reachable_definitions(&self) -> BTreeSet<String> {
         let mut reached = BTreeSet::new();
@@ -228,6 +233,31 @@ impl<'a> Schema<'a> {
         (inhabited, uninhabited)
     }
 
+    /// Every location a value can reach whose array states each member
+    /// once (`uniqueItems`): a set, a pair-map, or a member list.
+    pub(super) fn distinct_arrays(&self) -> BTreeSet<String> {
+        let mut found = BTreeSet::new();
+        let mut seen = BTreeSet::new();
+        let mut pending = vec![String::new()];
+        while let Some(location) = pending.pop() {
+            if !seen.insert(location.clone()) {
+                continue;
+            }
+            let node = self.node(&location);
+            if !under_constraint(&location)
+                && types(node).contains(&"array")
+                && node.get("uniqueItems") == Some(&Value::Bool(true))
+                && self.inhabited(&location)
+            {
+                found.insert(location.clone());
+            }
+            for (_, child) in self.children(&location) {
+                pending.push(child);
+            }
+        }
+        found
+    }
+
     /// The structural children of `location`, without the constraint
     /// keywords.
     pub(super) fn children(&self, location: &str) -> Vec<(Edge, String)> {
@@ -328,8 +358,28 @@ impl<'a> Schema<'a> {
         foreign: &[String],
         visit: &mut Visit<'_>,
     ) {
+        self.walk_where(
+            location,
+            value,
+            path,
+            foreign,
+            &|location| self.is_target(location),
+            visit,
+        );
+    }
+
+    /// The walk of [`Schema::walk`], visiting the locations `keep` admits.
+    pub(super) fn walk_where(
+        &self,
+        location: &str,
+        value: &Value,
+        path: &mut Vec<Step>,
+        foreign: &[String],
+        keep: &dyn Fn(&str) -> bool,
+        visit: &mut Visit<'_>,
+    ) {
         let node = self.node(location);
-        if self.is_target(location) {
+        if keep(location) {
             visit(location, path, foreign);
         }
         if let Some(name) = reference(node) {
@@ -341,13 +391,13 @@ impl<'a> Schema<'a> {
                     .flat_map(Map::keys)
                     .cloned(),
             );
-            self.walk(&definition(name), value, path, &beside, visit);
+            self.walk_where(&definition(name), value, path, &beside, keep, visit);
         }
         for keyword in ["anyOf", "oneOf"] {
             if node.get(keyword).is_some() {
                 if let Some(index) = self.branch_of(node, keyword, value) {
                     let branch = format!("{location}/{keyword}/{index}");
-                    self.walk(&branch, value, path, foreign, visit);
+                    self.walk_where(&branch, value, path, foreign, keep, visit);
                 }
             }
         }
@@ -358,7 +408,7 @@ impl<'a> Schema<'a> {
                         continue;
                     };
                     path.push(Step::Key(key.clone()));
-                    self.walk(&child, field, path, &[], visit);
+                    self.walk_where(&child, field, path, &[], keep, visit);
                     path.pop();
                 }
             }
@@ -376,7 +426,7 @@ impl<'a> Schema<'a> {
                         continue;
                     };
                     path.push(Step::Index(index));
-                    self.walk(&child, item, path, &[], visit);
+                    self.walk_where(&child, item, path, &[], keep, visit);
                     path.pop();
                 }
             }
@@ -650,6 +700,54 @@ pub(super) fn stated_properties(node: &Value) -> impl Iterator<Item = (&str, &Va
         .into_iter()
         .filter(|(_, _, option)| !option)
         .map(|(name, property, _)| (name, property))
+}
+
+/// Whether `node` is the schema of an enum whose variants hold no data: a
+/// string that is one of the names it or each of its branches states.
+pub(super) fn is_name_enum(node: &Value) -> bool {
+    let named = |node: &Value| {
+        types(node) == ["string"]
+            && (node.get("const").is_some_and(Value::is_string)
+                || node
+                    .get("enum")
+                    .and_then(Value::as_array)
+                    .is_some_and(|names| !names.is_empty() && names.iter().all(Value::is_string)))
+    };
+    named(node)
+        || ["oneOf", "anyOf"].iter().any(|keyword| {
+            node.get(keyword)
+                .and_then(Value::as_array)
+                .is_some_and(|branches| !branches.is_empty() && branches.iter().all(named))
+        })
+}
+
+/// The names a data-free enum's schema `node` states, in schema order.
+pub(super) fn enum_names(node: &Value) -> Vec<Value> {
+    let own = |node: &Value| {
+        node.get("const")
+            .cloned()
+            .into_iter()
+            .chain(
+                node.get("enum")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .cloned(),
+            )
+            .collect::<Vec<_>>()
+    };
+    let mut names = own(node);
+    for keyword in ["oneOf", "anyOf"] {
+        for branch in node
+            .get(keyword)
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            names.extend(own(branch));
+        }
+    }
+    names
 }
 
 /// The location of definition `name`.

@@ -43,7 +43,10 @@ fn after_feature(name: &str) -> Value {
 /// `pick` at the end of `body`. One evaluation stores the state after `a`:
 /// the unit cube, its first face named by `a`.
 fn rolled_back(pick: &Value) -> CadIr {
-    let a = planes().remove(0);
+    let a = feature(
+        "a",
+        json!({"kind": "unresolved", "value": {"family": "extrude"}}),
+    );
     let b = feature(
         "b",
         plane_datum(construction(vec![input(

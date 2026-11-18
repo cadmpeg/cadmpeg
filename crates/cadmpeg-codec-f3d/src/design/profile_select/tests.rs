@@ -52,6 +52,7 @@ mod spatial_transition;
 mod sweep_paths;
 mod typed_regions;
 mod unprofiled_curves;
+mod whole_sketch;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
@@ -223,6 +224,7 @@ fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMemb
         kind_offset: 0,
         curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
         curve_primary_id_offset: 0,
+        curve_secondary_id: None,
         incidence_flag: false,
         incidence_values:
             [crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(1).unwrap();
@@ -511,7 +513,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                     },
                     DesignSketchProfileRegion {
                         member_count_offset: 0,
-                        region_ordinal: 0,
+                        region_ordinal: 1,
                         hole: false,
                         members: vec![
                             profile_region_member(200),
@@ -559,6 +561,18 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         Some(vec![0, 1])
     );
 
+    // The same loops as the outer and hole loop of one region select no
+    // profile set.
+    let mut annulus = profile_operand.clone();
+    annulus.region_selection.as_mut().unwrap().regions[1].region_ordinal = 0;
+    assert!(resolved_spatial_sketch_profile_regions(
+        "stream",
+        &annulus,
+        &spatial_sketches[0],
+        &resolution
+    )
+    .is_none());
+
     let mut partial = profile_operand.clone();
     partial.region_selection.as_mut().unwrap().regions[0].members[0].incidence_values = [
         crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(3).unwrap(),
@@ -581,6 +595,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         },
     )
     .unwrap();
+    // Two distinct profile regions do not prove a frame without a selection.
     assert_eq!(
         resolved_spatial_sketch_profile_regions(
             "stream",
@@ -588,7 +603,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             &spatial_sketches[0],
             &resolution
         ),
-        Some(vec![0, 1, 2])
+        None
     );
     assert_eq!(
         spatial_profile_containing_entity(&spatial_sketches[0], &entity_id(100)),

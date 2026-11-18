@@ -26,8 +26,9 @@ use crate::products::{OccurrenceParent, PrototypeReference};
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
-use super::index::{DesignIndex, Key, StateAt};
+use super::index::{DesignIndex, StateAt};
 use super::names::{derived_kinds, nested};
+use super::records::{MemberKey, PositionKey};
 use super::states::{Extent, States};
 use super::walk::{PicksView, SelectionView, TermView};
 use super::{native_text, record_finding, Held, Holder};
@@ -49,7 +50,7 @@ pub(super) fn check<'a>(
     held: &'a [Held<'a>],
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let moved = moved_occurrences(index.ir);
+    let moved = moved_occurrences(index.records.ir);
     for record in held {
         let owner = match record.holder {
             Holder::Definition(_) | Holder::Owned { .. } => record
@@ -71,7 +72,7 @@ pub(super) fn check<'a>(
             }
         }
     }
-    for publication in &index.ir.design.publications {
+    for publication in &index.records.ir.design.publications {
         let site = Site {
             holder: Holder::Record {
                 record: publication.id.as_str(),
@@ -90,7 +91,7 @@ pub(super) fn check<'a>(
             findings,
         )?;
     }
-    for evaluation in &index.ir.design.evaluations {
+    for evaluation in &index.records.ir.design.evaluations {
         for path in evaluation
             .content
             .iter()
@@ -98,11 +99,9 @@ pub(super) fn check<'a>(
         {
             let at = evaluation.id.as_str();
             if path.0.iter().any(|step| step.configuration.is_some()) {
-                record_finding(
+                super::error(
                     findings,
-                    Check::Design,
-                    Severity::Error,
-                    Some(at),
+                    at,
                     format_args!("an instance-body path states a step configuration"),
                 );
             }
@@ -123,14 +122,10 @@ fn check_anchor(
     let feature = site.holder.feature();
     match selection.at {
         Anchor::Input => {
-            let ordered = feature.is_some_and(|feature| index.in_ordered(Key::Feature(feature)));
+            let ordered =
+                feature.is_some_and(|feature| index.in_ordered(MemberKey::Feature(feature)));
             if !ordered {
-                record_finding(
-                    findings,
-                    Check::Design,
-                    Severity::Error,
-                    Some(at),
-                    format_args!(
+                super::error(findings, at, format_args!(
                         "a selection anchored Input is not in the definition, a sketch, or a parameter of a feature of an ordered container"
                     ),
                 );
@@ -138,11 +133,9 @@ fn check_anchor(
         }
         Anchor::Pinned(position) => {
             if !position_resolves(index, position) {
-                record_finding(
+                super::error(
                     findings,
-                    Check::Design,
-                    Severity::Error,
-                    Some(at),
+                    at,
                     format_args!("a selection is pinned to a position that does not resolve"),
                 );
             }
@@ -153,7 +146,7 @@ fn check_anchor(
         if let Some((
             container @ crate::design::container::Container::Unordered { members, .. },
             _,
-        )) = index.place(Key::Feature(feature))
+        )) = index.place(MemberKey::Feature(feature))
         {
             let admitted = match selection.at {
                 Anchor::Input | Anchor::Current | Anchor::Native(_) => true,
@@ -166,12 +159,7 @@ fn check_anchor(
                 Anchor::Pinned(_) => false,
             };
             if !admitted {
-                record_finding(
-                    findings,
-                    Check::Design,
-                    Severity::Error,
-                    Some(at),
-                    format_args!(
+                super::error(findings, at, format_args!(
                         "a selection of a member of unordered container {} is pinned to a state other than another member's result",
                         container.id().as_str()
                     ),
@@ -182,15 +170,10 @@ fn check_anchor(
     if let Anchor::Native(_) = selection.at {
         let scoped = selection.picks().into_iter().any(|pick| {
             resolving_definition(index, site.owner, pick)
-                .is_some_and(|definition| index.scopes.contains_key(definition))
+                .is_some_and(|definition| index.records.scopes.contains_key(definition))
         });
         if scoped {
-            record_finding(
-                findings,
-                Check::Design,
-                Severity::Error,
-                Some(at),
-                format_args!("a selection anchored Native picks in a definition that has a scope in this document"),
+            super::error(findings, at, format_args!("a selection anchored Native picks in a definition that has a scope in this document"),
             );
         }
     }
@@ -201,14 +184,14 @@ fn check_anchor(
 fn position_resolves(index: &DesignIndex<'_>, position: &Position) -> bool {
     match position {
         Position::Start(container) => matches!(
-            index.containers.get(container.as_str()),
+            index.records.containers.get(container.as_str()),
             Some(crate::design::container::Container::Ordered { .. })
         ),
         Position::After(Member::Feature(feature)) => {
-            index.place(Key::Feature(feature.as_str())).is_some()
+            index.place(MemberKey::Feature(feature.as_str())).is_some()
         }
         Position::After(Member::Container(container)) => {
-            index.containers.contains_key(container.as_str())
+            index.records.containers.contains_key(container.as_str())
         }
     }
 }
@@ -224,7 +207,12 @@ fn resolving_definition<'a>(
     let last = |path: &'a OccurrencePath| -> Option<&'a str> {
         match &path.0.last()?.occurrence {
             StepRef::Occurrence(occurrence) => {
-                match &index.occurrences.get(occurrence.as_str())?.prototype {
+                match &index
+                    .records
+                    .occurrences
+                    .get(occurrence.as_str())?
+                    .prototype
+                {
                     PrototypeReference::Local { definition } => Some(definition.as_str()),
                     PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
                 }
@@ -256,20 +244,15 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
         return;
     };
     let at = site.holder.record();
-    let mut record = |check, message: std::fmt::Arguments<'_>| {
-        record_finding(findings, check, Severity::Error, Some(at), message);
-    };
+    let mut record = |message: std::fmt::Arguments<'_>| super::error(findings, at, message);
     for term in terms.iter().chain(excluded) {
         let seeded = !term.seeds.is_empty();
         match term.rule {
             SelectionRule::All { .. } if seeded => {
-                record(Check::Design, format_args!("an All rule term has seeds"));
+                record(format_args!("an All rule term has seeds"));
             }
             SelectionRule::All { .. } => {}
-            _ if !seeded => record(
-                Check::Design,
-                format_args!("a rule term other than All has no seeds"),
-            ),
+            _ if !seeded => record(format_args!("a rule term other than All has no seeds")),
             _ => {}
         }
         if let SelectionRule::Region { boundary } = term.rule {
@@ -279,41 +262,31 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
                 .iter()
                 .any(|seed| matches!(seed.domain, Some(PickDomain::Containing(_))));
             if curves && !containing {
-                record(
-                    Check::Design,
-                    format_args!("a Region term whose boundary picks curves has no seed with a Containing domain"),
+                record(format_args!("a Region term whose boundary picks curves has no seed with a Containing domain"),
                 );
             }
         }
         if let SelectionRule::Native(text) = term.rule {
             if !native_text(text.as_str()) {
-                record(
-                    Check::Design,
-                    format_args!(
-                        "native selection rule {:?} is not written codec:name",
-                        text.as_str()
-                    ),
-                );
+                record(format_args!(
+                    "native selection rule {:?} is not written codec:name",
+                    text.as_str()
+                ));
             }
         }
         if let Some(Propagation::Native(text)) = term.propagation {
             if !native_text(text.as_str()) {
-                record(
-                    Check::Design,
-                    format_args!(
-                        "native propagation {:?} is not written codec:name",
-                        text.as_str()
-                    ),
-                );
+                record(format_args!(
+                    "native propagation {:?} is not written codec:name",
+                    text.as_str()
+                ));
             }
         }
     }
     let explicit = |term: &&TermView<'_>| matches!(term.rule, SelectionRule::Explicit);
     if let [only] = terms.as_slice() {
         if explicit(&only) && only.propagation.is_none() && excluded.is_empty() {
-            record(
-                Check::Design,
-                format_args!("a rule selection whose only term is Explicit, with no propagation and no exclusions, is Named"),
+            record(format_args!("a rule selection whose only term is Explicit, with no propagation and no exclusions, is Named"),
             );
         }
     }
@@ -323,10 +296,9 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             .iter()
             .any(|earlier| earlier.propagation == term.propagation)
         {
-            record(
-                Check::Design,
-                format_args!("two Explicit terms of one selection have equal propagation"),
-            );
+            record(format_args!(
+                "two Explicit terms of one selection have equal propagation"
+            ));
         }
     }
 }
@@ -355,11 +327,9 @@ fn check_pick<'a>(
 ) -> Result<(), CodecError> {
     let at = site.holder.record();
     if !target_exists(index, &pick.target) {
-        record_finding(
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!(
                 "a pick names a {} that does not exist",
                 target_kind(&pick.target)
@@ -370,11 +340,9 @@ fn check_pick<'a>(
     }
     if let PickTarget::Native { .. } = pick.target {
         if pick.native.is_none() && pick.witness.is_none() {
-            record_finding(
+            super::error(
                 findings,
-                Check::Design,
-                Severity::Error,
-                Some(at),
+                at,
                 format_args!("a Native pick carries neither a native name nor a witness"),
             );
         }
@@ -421,11 +389,9 @@ fn check_pick<'a>(
             _ => false,
         };
         if !named {
-            record_finding(
+            super::error(
                 findings,
-                Check::Design,
-                Severity::Error,
-                Some(at),
+                at,
                 format_args!("a Component pick's context names no occurrence"),
             );
         }
@@ -480,7 +446,7 @@ fn anchored_states<'a>(
             };
         }
         Anchor::Native(_) => return Vec::new(),
-        Anchor::Pinned(position) => position.clone(),
+        Anchor::Pinned(position) => PositionKey::of(position),
         Anchor::Input => match site
             .holder
             .feature()
@@ -490,13 +456,14 @@ fn anchored_states<'a>(
             None => return Vec::new(),
         },
     };
-    let Some(position) = index.rollback_position(&position) else {
+    let Some(position) = index.rollback_position(position) else {
         return Vec::new();
     };
-    if let Some(extent) = states.extent(scope, &position) {
+    if let Some(extent) = states.extent(scope, position) {
         return vec![Stored::Extents(vec![extent])];
     }
     index
+        .records
         .ir
         .design
         .evaluations
@@ -504,7 +471,7 @@ fn anchored_states<'a>(
         .filter(|evaluation| {
             evaluation.scope.as_str() == scope
                 && evaluation.content.is_some()
-                && matches!(&evaluation.of, Evaluated::State(of) if *of == position)
+                && matches!(&evaluation.of, Evaluated::State(of) if PositionKey::of(of) == position)
         })
         .map(|evaluation| Stored::Evaluation(evaluation.id.as_str()))
         .collect()
@@ -530,11 +497,9 @@ fn check_in_state(
     };
     for entity in pick.resolved.iter().flatten() {
         if !holds(entity) {
-            record_finding(
+            super::error(
                 findings,
-                Check::Design,
-                Severity::Error,
-                Some(at),
+                at,
                 format_args!(
                     "a pick's resolved entity {} is not a record of its anchored state",
                     entity.id()
@@ -560,11 +525,9 @@ fn check_in_state(
         }),
     };
     if !matched {
-        record_finding(
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!("an Entity pick's name matches no entity of its anchored state"),
         );
     }
@@ -619,7 +582,7 @@ fn target_exists(index: &DesignIndex<'_>, target: &PickTarget) -> bool {
         | PickTarget::FeatureResult(feature)
         | PickTarget::TemplateInput {
             instance: feature, ..
-        } => index.features.contains_key(feature.as_str()),
+        } => index.records.features.contains_key(feature.as_str()),
         PickTarget::Publication(publication) => index.publications.contains(publication.as_str()),
         PickTarget::Native { within } => match within {
             None => true,
@@ -627,11 +590,13 @@ fn target_exists(index: &DesignIndex<'_>, target: &PickTarget) -> bool {
             Some(NativeOwner::SpatialSketch(sketch)) => {
                 index.spatial_sketches.contains_key(sketch.as_str())
             }
-            Some(NativeOwner::Feature(feature)) => index.features.contains_key(feature.as_str()),
+            Some(NativeOwner::Feature(feature)) => {
+                index.records.features.contains_key(feature.as_str())
+            }
         },
         PickTarget::Principal { container, .. } => container
             .as_ref()
-            .is_none_or(|container| index.containers.contains_key(container.as_str())),
+            .is_none_or(|container| index.records.containers.contains_key(container.as_str())),
         PickTarget::Entity(_) | PickTarget::Component => true,
     }
 }
@@ -709,11 +674,9 @@ fn check_datum_part(index: &DesignIndex<'_>, pick: &Picked, at: &str, findings: 
         Some(_) => false,
     };
     if !admitted {
-        record_finding(
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!(
                 "a pick names a part that datum feature {} does not have",
                 feature.as_str()
@@ -737,20 +700,15 @@ fn check_principal(
     else {
         return;
     };
-    let Some(record) = index.containers.get(container.as_str()) else {
+    let Some(record) = index.records.containers.get(container.as_str()) else {
         return;
     };
     let ordered = matches!(record, crate::design::container::Container::Ordered { .. });
     let definition = resolving_definition(index, site.owner, pick);
-    let scope = index.scope_of(Key::Container(container.as_str()));
+    let scope = index.scope_of(MemberKey::Container(container.as_str()));
     let elsewhere = matches!((definition, scope), (Some(definition), Some(scope)) if definition != scope.as_str());
     if !ordered || elsewhere {
-        record_finding(
-            findings,
-            Check::Design,
-            Severity::Error,
-            Some(site.holder.record()),
-            format_args!("a Principal pick names container {}, which is not an ordered container of its definition", container.as_str()),
+        super::error(findings, site.holder.record(), format_args!("a Principal pick names container {}, which is not an ordered container of its definition", container.as_str()),
         );
     }
 }
@@ -761,12 +719,14 @@ fn check_definition(
     at: &str,
     findings: &mut Vec<Finding>,
 ) {
-    if !index.definitions.contains(definition.definition.as_str()) {
-        record_finding(
+    if !index
+        .records
+        .definitions
+        .contains_key(definition.definition.as_str())
+    {
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!(
                 "a pick context names definition {}, which does not exist",
                 definition.definition.as_str()
@@ -800,7 +760,7 @@ fn check_path(
     findings: &mut Vec<Finding>,
 ) {
     let mut record = |message: std::fmt::Arguments<'_>| {
-        record_finding(findings, Check::Design, Severity::Error, Some(at), message);
+        super::error(findings, at, message);
     };
     let mut native = false;
     let mut previous: Option<Option<&str>> = root.map(Some);
@@ -819,7 +779,7 @@ fn check_path(
             }
             StepRef::Occurrence(occurrence) => occurrence,
         };
-        let Some(record_) = index.occurrences.get(occurrence.as_str()) else {
+        let Some(record_) = index.records.occurrences.get(occurrence.as_str()) else {
             record(format_args!(
                 "an occurrence path names occurrence {}, which does not exist",
                 occurrence.as_str()
@@ -828,15 +788,16 @@ fn check_path(
         };
         if let (Some(Some(expected)), false) = (previous, moved.contains(occurrence.as_str())) {
             let placed_in = match &record_.parent {
-                OccurrenceParent::Occurrence { occurrence: parent } => {
-                    index.occurrences.get(parent.as_str()).and_then(|parent| {
-                        match &parent.prototype {
-                            PrototypeReference::Local { definition } => Some(definition.as_str()),
-                            PrototypeReference::External { .. }
-                            | PrototypeReference::Unresolved {} => None,
+                OccurrenceParent::Occurrence { occurrence: parent } => index
+                    .records
+                    .occurrences
+                    .get(parent.as_str())
+                    .and_then(|parent| match &parent.prototype {
+                        PrototypeReference::Local { definition } => Some(definition.as_str()),
+                        PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => {
+                            None
                         }
-                    })
-                }
+                    }),
                 OccurrenceParent::Root {} => None,
             };
             if placed_in.is_some_and(|placed_in| placed_in != expected) {

@@ -25,12 +25,12 @@ use crate::design::options::SymmetricMeasure;
 use crate::design::refs::{EntityRef, Evaluated};
 use crate::design::selection::{PickTarget, Picks};
 use crate::features::FeatureId;
-use crate::report::check::{Check, Finding};
-use crate::report::Severity;
+use crate::report::check::Finding;
 
 use super::index::{DesignIndex, StateAt};
-use super::states::{Arena, States};
-use super::{record_finding, Held};
+use super::resolved::Arena;
+use super::states::States;
+use super::Held;
 
 /// Every name nested in `name`, `name` first.
 pub(super) fn nested(name: &TopoName) -> Vec<&TopoName> {
@@ -116,7 +116,7 @@ pub(super) fn check(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let _depth = ctx.enter_nested("IR design name validation")?;
-    let ir = index.ir;
+    let ir = index.records.ir;
     for (entity, entry) in ir.design.names.entries() {
         let holds = states.geometry_holds(entity);
         check_entry(
@@ -230,11 +230,9 @@ fn check_entry(
     findings: &mut Vec<Finding>,
 ) {
     if !holds {
-        record_finding(
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!(
                 "name entry for {} names an entity that {state} does not hold",
                 entity.id()
@@ -242,11 +240,9 @@ fn check_entry(
         );
     }
     if entry.name.is_none() && entry.native.is_none() {
-        record_finding(
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!(
                 "name entry for {} holds neither a name nor a native name",
                 entity.id()
@@ -258,20 +254,16 @@ fn check_entry(
     };
     let kinds = derived_kinds(name);
     if kinds.len() > 1 {
-        record_finding(
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!("name of {} merges entities of different kinds", entity.id()),
         );
     } else if let Some(kind) = kinds.first() {
-        if Arena::of(entity).name_kind() != Some(*kind) {
-            record_finding(
+        if Arena::of_entity(entity).0.name_kind() != Some(*kind) {
+            super::error(
                 findings,
-                Check::Design,
-                Severity::Error,
-                Some(at),
+                at,
                 format_args!(
                     "name of {} derives kind {kind:?}, which is not the entity's kind",
                     entity.id()
@@ -292,11 +284,9 @@ fn check_order(
     };
     for feature in mentioned_features(name) {
         if !features.contains(feature.as_str()) {
-            record_finding(
+            super::error(
                 findings,
-                Check::Design,
-                Severity::Error,
-                Some(at),
+                at,
                 format_args!(
                     "name mentions feature {}, which the named state does not depend on",
                     feature.as_str()
@@ -336,11 +326,9 @@ fn check_instance(index: &DesignIndex<'_>, name: &TopoName, at: &str, findings: 
         Some(_) => Some(false),
     };
     if valid == Some(false) {
-        record_finding(
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!(
                 "instance name {:?} of feature {} names no implicit copy of that feature",
                 instance.0,
@@ -556,11 +544,9 @@ fn check_hole_role(
         Some(_) | None => false,
     };
     if *kind != NameKind::Face || !of_hole {
-        record_finding(
+        super::error(
             findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
+            at,
             format_args!(
                 "hole role on a {kind:?} name of feature {}, which is not a hole's face",
                 feature.as_str()

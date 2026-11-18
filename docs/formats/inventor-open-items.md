@@ -318,6 +318,30 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** The record that dates an unbound Split or Base feature must be found before a history state can be assigned. A state must not be assigned from a body key that appears or disappears without a tag. The join of the body reference of an edge selector to a history body, which selects the owner edge in the state of that body, needs a rule.
 
+### DE-18. Contour-flange thickness side
+
+**Question.** Which thickness distributions do other contour plate-side values and attachment modes select?
+
+**Known.** Section 13.5 defines the Right thickness side for plate-side enumeration `(2, 0)` with attachment modes `(9, 1)` and `(9, 4)`.
+
+**Need.** Thickness-side mappings for other plate-side values and attachment-mode pairs.
+
+### DE-19. Unfold and Refold controls
+
+**Question.** Which Unfold and Refold operands state the all-bends selection, the neutral factor, and the source Unfold of a Refold, and what do slot 3, slot 4, and the slot-7 enumeration select?
+
+**Known.** Section 13.5 defines the eight-property Unfold and Refold form. In the known records, slot 3 is Boolean true, the fold list is empty, the fold enumeration is `(5, 1)`, and the bend face collection selects every bend of the body. The Refold record and its operands contain no reference to an Unfold. The reader states no Refold source and reports `feature.sheet-metal-refold-source-unresolved`. The face selectors of the stationary and bend face items store selector state 3. The face-revision join of section 13 admits states 0 and 2, so the reader keeps both face operands as native face-item references.
+
+**Need.** Unfold and Refold records with slot 3 false, a nonempty fold list, another fold enumeration value, and a partial bend selection. A record or join that names the Unfold whose bends a Refold restores, including for several open Unfolds on one body. The face-revision join of state-3 face selectors.
+
+### DE-20. Contour-flange bend position
+
+**Question.** Which contour-attachment operands set the signed setback from the selected input boundary to the bend tangent line?
+
+**Known.** The slot-12 list selects a free boundary of the input sheet through an edge-selector source index and key. The bend tangent line can lie inside the input face at a setback from that boundary.
+
+**Need.** Identify the positioning control and its signed offset rule in terms of the sheet thickness, bend radius, and attachment directions.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

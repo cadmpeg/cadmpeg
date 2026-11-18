@@ -698,7 +698,7 @@ fn decode_transfers_a_typed_boolean_predicate_formula() {
 }
 
 #[test]
-fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
+fn decode_transfers_a_unit_literal_formula_input_and_keeps_the_output_driven() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(
@@ -720,12 +720,21 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     };
 
     assert_eq!(input.name, "Width");
-    assert_eq!(input.value, None);
-    assert!(input.expression.is_empty());
+    assert_eq!(
+        input.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(1.0).unwrap()
+        ))
+    );
     assert!(input.dependencies.is_empty());
     assert_eq!(input.properties["value_type"], "LENGTH");
     assert_eq!(input.properties["catia_binding"], "#1_ /2");
-    assert_eq!(output.value, None);
+    assert_eq!(
+        output.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(1.0).unwrap()
+        ))
+    );
     assert_eq!(output.expression, "#1_ /2+1mm");
     assert_eq!(
         output.dependencies.as_slice(),
@@ -733,6 +742,47 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     );
     assert_eq!(output.properties["value_type"], "LENGTH");
     assert_eq!(output.properties["catia_binding"], "#result_ /1");
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::HistoryParameterLiteralAssumed.kind()
+            && loss.message.contains("2 design parameter(s)")
+    }));
+}
+
+#[test]
+fn a_literal_input_keeps_an_unevaluable_formula_output_driven() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(
+                standard_catpart_with_typed_formula_inputs_and_object_payload(
+                    4,
+                    false,
+                    &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
+                    "LENGTH",
+                    None,
+                    "1mm*1mm/(#1_ /2-1mm)",
+                    (&[0xfe], Some(0)),
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("decode literal formula input");
+    let [input, output] = decoded.ir().model.parameters.as_slice() else {
+        panic!(
+            "literal formula parameters: {:?}",
+            decoded
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .map(|p| (&p.name, &p.expression, &p.value))
+                .collect::<Vec<_>>()
+        )
+    };
+    assert_eq!(output.expression, "1mm*1mm/(#1_ /2-1mm)");
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
 }
 
 #[test]
@@ -1223,6 +1273,37 @@ fn decode_transfers_a_chained_formula_definition_once() {
             .findings
             .is_empty()
     );
+}
+
+#[test]
+fn a_contradicted_literal_output_keeps_its_downstream_formula() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_formula_chain(
+                FormulaChainCase::LiteralOutputs,
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode literal formula chain");
+    let [input, intermediate, output] = decoded.ir().model.parameters.as_slice() else {
+        panic!("literal formula chain parameters")
+    };
+
+    assert_eq!(intermediate.expression, "#1_ /2+1mm");
+    assert_eq!(intermediate.value, None);
+    assert_eq!(
+        intermediate.dependencies.as_slice(),
+        std::slice::from_ref(&input.id)
+    );
+    assert_eq!(output.expression, "#2_ /3+1mm");
+    assert_eq!(
+        output.dependencies.as_slice(),
+        std::slice::from_ref(&intermediate.id)
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::HistoryParameterLiteralAssumed.kind()
+            && loss.message.contains("1 formula output(s) whose")
+    }));
 }
 
 #[test]

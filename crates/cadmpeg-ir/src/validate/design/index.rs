@@ -10,33 +10,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::container::{Container, Rollback};
-use crate::design::feature::{Feature, FeatureOperation};
+use crate::design::feature::FeatureOperation;
 use crate::design::ops::sketch::{Planar, Sketch, SketchEntity, Spatial, SpatialSketch};
 use crate::design::refs::{Member, Position};
-use crate::design::scope::DesignScope;
 use crate::design::selection::{NativeOwner, OccurrencePath, PickTarget, StepRef};
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
-use crate::products::{Occurrence, PrototypeReference};
+use crate::products::PrototypeReference;
 
 use super::names::mentioned_features;
+use super::records::{by_id, members, DesignRecords, MemberKey, PositionKey};
 use super::Held;
-
-/// A member of a container, by identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Key<'a> {
-    Feature(&'a str),
-    Container(&'a str),
-}
-
-impl<'a> From<&'a Member> for Key<'a> {
-    fn from(member: &'a Member) -> Self {
-        match member {
-            Member::Feature(id) => Self::Feature(id.as_str()),
-            Member::Container(id) => Self::Container(id.as_str()),
-        }
-    }
-}
 
 /// A state whose dependencies a rule reads.
 #[derive(Debug, Clone, Copy)]
@@ -49,23 +33,15 @@ pub(super) enum StateAt<'a> {
 
 /// The design records by identity, container membership, and dependencies.
 pub(super) struct DesignIndex<'a> {
-    pub(super) ir: &'a CadIr,
-    pub(super) features: BTreeMap<&'a str, &'a Feature>,
-    pub(super) containers: BTreeMap<&'a str, &'a Container>,
+    pub(super) records: DesignRecords<'a>,
     /// The container holding each member, and the member's index in an
     /// ordered container's list.
-    places: BTreeMap<Key<'a>, (&'a Container, usize)>,
-    /// The scope definition of each root container.
-    roots: BTreeMap<&'a str, &'a ProductDefinitionId>,
-    /// The scopes, by definition.
-    pub(super) scopes: BTreeMap<&'a str, &'a DesignScope>,
+    places: BTreeMap<MemberKey<'a>, (&'a Container, usize)>,
     pub(super) sketches: BTreeMap<&'a str, &'a Sketch>,
     pub(super) spatial_sketches: BTreeMap<&'a str, &'a SpatialSketch>,
     pub(super) sketch_entities: BTreeMap<&'a str, &'a SketchEntity<Planar>>,
     pub(super) spatial_sketch_entities: BTreeMap<&'a str, &'a SketchEntity<Spatial>>,
     pub(super) publications: BTreeSet<&'a str>,
-    pub(super) occurrences: BTreeMap<&'a str, &'a Occurrence>,
-    pub(super) definitions: BTreeSet<&'a str>,
     /// The features each feature's references name.
     dependencies: BTreeMap<&'a str, BTreeSet<&'a str>>,
 }
@@ -75,36 +51,15 @@ impl<'a> DesignIndex<'a> {
         let design = &ir.design;
         let mut places = BTreeMap::new();
         for container in &design.containers {
-            match container {
-                Container::Ordered { members, .. } => {
-                    for (index, member) in members.iter().enumerate() {
-                        places
-                            .entry(Key::from(member))
-                            .or_insert((container, index));
-                    }
-                }
-                Container::Unordered { members, .. } => {
-                    for (index, member) in members.iter().enumerate() {
-                        places
-                            .entry(Key::from(member))
-                            .or_insert((container, index));
-                    }
-                }
-            }
-        }
-        let mut roots = BTreeMap::new();
-        for scope in &design.scopes {
-            for root in &scope.roots {
-                roots.entry(root.as_str()).or_insert(&scope.definition);
+            for (index, member) in members(container).into_iter().enumerate() {
+                places
+                    .entry(MemberKey::of(member))
+                    .or_insert((container, index));
             }
         }
         Self {
-            ir,
-            features: by_id(&design.features, |feature| feature.id.as_str()),
-            containers: by_id(&design.containers, |container| container.id().as_str()),
+            records: DesignRecords::new(ir),
             places,
-            roots,
-            scopes: by_id(&design.scopes, |scope| scope.definition.as_str()),
             sketches: by_id(&design.sketches, |sketch| sketch.id.as_str()),
             spatial_sketches: by_id(&design.spatial_sketches, |sketch| sketch.id.as_str()),
             sketch_entities: design
@@ -121,13 +76,6 @@ impl<'a> DesignIndex<'a> {
                 .publications
                 .iter()
                 .map(|publication| publication.id.as_str())
-                .collect(),
-            occurrences: by_id(&ir.model.occurrences, |occurrence| occurrence.id.as_str()),
-            definitions: ir
-                .model
-                .product_definitions
-                .iter()
-                .map(|definition| definition.id.as_str())
                 .collect(),
             dependencies: BTreeMap::new(),
         }
@@ -160,39 +108,33 @@ impl<'a> DesignIndex<'a> {
     }
 
     /// The container holding a member and the member's index.
-    pub(super) fn place(&self, key: Key<'_>) -> Option<(&'a Container, usize)> {
+    pub(super) fn place(&self, key: MemberKey<'_>) -> Option<(&'a Container, usize)> {
         self.places.get(&key).copied()
     }
 
     /// Whether the member's container is ordered.
-    pub(super) fn in_ordered(&self, key: Key<'_>) -> bool {
+    pub(super) fn in_ordered(&self, key: MemberKey<'_>) -> bool {
         matches!(self.place(key), Some((Container::Ordered { .. }, _)))
     }
 
-    /// The scope a member belongs to, through its container chain.
-    pub(super) fn scope_of(&self, key: Key<'_>) -> Option<&'a ProductDefinitionId> {
-        let mut container = match key {
-            Key::Container(id) => self.containers.get(id).copied()?,
-            Key::Feature(_) => self.place(key)?.0,
-        };
-        for _ in 0..=self.containers.len() {
-            let id = container.id().as_str();
-            if let Some(scope) = self.roots.get(id) {
-                return Some(scope);
-            }
-            container = self.place(Key::Container(id))?.0;
-        }
-        None
+    /// The definition of the scope a member belongs to, through its
+    /// container chain.
+    pub(super) fn scope_of(&self, key: MemberKey<'a>) -> Option<&'a ProductDefinitionId> {
+        let scope = self.records.scope_of(key)?;
+        self.records
+            .scopes
+            .get(scope)
+            .map(|scope| &scope.definition)
     }
 
     /// The definition a feature's selections resolve in: its `component`
     /// where stated, else its scope's definition (§5.8).
     pub(super) fn owner_definition(&self, feature: &str) -> Option<&'a ProductDefinitionId> {
-        let record = self.features.get(feature)?;
+        let (&feature, record) = self.records.features.get_key_value(feature)?;
         record
             .component
             .as_ref()
-            .or_else(|| self.scope_of(Key::Feature(feature)))
+            .or_else(|| self.scope_of(MemberKey::Feature(feature)))
     }
 
     /// The feature a pick target depends on.
@@ -245,21 +187,22 @@ impl<'a> DesignIndex<'a> {
         let mut found = BTreeSet::new();
         let (container, upto) = match at {
             StateAt::Entering(feature) => {
-                let (container, index) = self.place(Key::Feature(feature))?;
+                let (container, index) = self.place(MemberKey::Feature(feature))?;
                 (container, Some(index))
             }
             StateAt::Position(Position::Start(container)) => {
-                let container = self.containers.get(container.as_str()).copied()?;
+                let container = self.records.containers.get(container.as_str()).copied()?;
                 (container, Some(0))
             }
             StateAt::Position(Position::After(member)) => {
-                let key = Key::from(member);
-                if let Key::Container(id) = key {
-                    let inner = self.containers.get(id).copied()?;
+                let key = MemberKey::of(member);
+                if let MemberKey::Container(id) = key {
+                    let inner = self.records.containers.get(id).copied()?;
                     self.add_subtree(inner, &mut found);
                 }
                 let (container, index) = self.place(key)?;
-                if let (Container::Unordered { .. }, Key::Feature(feature)) = (container, key) {
+                if let (Container::Unordered { .. }, MemberKey::Feature(feature)) = (container, key)
+                {
                     found.insert(feature);
                 }
                 (container, index.checked_add(1))
@@ -272,14 +215,14 @@ impl<'a> DesignIndex<'a> {
     /// The one spelling of the state entering a feature of an ordered
     /// container (§5.3): `Start` of the container before its first member,
     /// else the position after the member before it.
-    pub(super) fn entering(&self, feature: &str) -> Option<Position> {
-        let (container, index) = self.place(Key::Feature(feature))?;
+    pub(super) fn entering(&self, feature: &str) -> Option<PositionKey<'a>> {
+        let (container, index) = self.place(MemberKey::Feature(feature))?;
         let Container::Ordered { id, members, .. } = container else {
             return None;
         };
         Some(match index.checked_sub(1) {
-            None => Position::Start(id.clone()),
-            Some(before) => Position::After(members.get(before)?.clone()),
+            None => PositionKey::Start(id.as_str()),
+            Some(before) => PositionKey::After(MemberKey::of(members.get(before)?)),
         })
     }
 
@@ -287,29 +230,23 @@ impl<'a> DesignIndex<'a> {
     /// `After(Container(c))` of an ordered container `c`, the position at
     /// `c`'s rollback, which has no state of its own; any other position is
     /// itself. `None` where a rollback names no member of its container.
-    pub(super) fn rollback_position(&self, position: &Position) -> Option<Position> {
-        let mut position = position.clone();
-        for _ in 0..=self.containers.len() {
-            let Position::After(Member::Container(id)) = &position else {
+    pub(super) fn rollback_position<'p>(
+        &self,
+        mut position: PositionKey<'p>,
+    ) -> Option<PositionKey<'p>>
+    where
+        'a: 'p,
+    {
+        for _ in 0..=self.records.containers.len() {
+            let PositionKey::After(MemberKey::Container(id)) = position else {
                 return Some(position);
             };
-            let Some(Container::Ordered {
-                id,
-                members,
-                rollback,
-                ..
-            }) = self.containers.get(id.as_str()).copied()
+            let Some(container @ Container::Ordered { .. }) =
+                self.records.containers.get(id).copied()
             else {
                 return Some(position);
             };
-            let end = match rollback {
-                Rollback::End => members.len(),
-                Rollback::Before(at) => members.iter().position(|member| member == at)?,
-            };
-            position = match end.checked_sub(1) {
-                None => Position::Start(id.clone()),
-                Some(last) => Position::After(members.get(last)?.clone()),
-            };
+            position = DesignRecords::rollback_position(container)?;
         }
         None
     }
@@ -317,7 +254,7 @@ impl<'a> DesignIndex<'a> {
     /// The features the current geometry of a scope depends on: the union
     /// over its current states, or `None` where it lists none.
     pub(super) fn current_features(&self, scope: &str) -> Option<BTreeSet<&'a str>> {
-        let scope = self.scopes.get(scope)?;
+        let scope = self.records.scopes.get(scope)?;
         if scope.current.is_empty() {
             return None;
         }
@@ -336,13 +273,14 @@ impl<'a> DesignIndex<'a> {
         mut upto: Option<usize>,
         found: &mut BTreeSet<&'a str>,
     ) {
-        for _ in 0..=self.containers.len() {
+        for _ in 0..=self.records.containers.len() {
             if let (Container::Ordered { members, .. }, Some(upto)) = (container, upto) {
                 for member in members.iter().take(upto) {
                     self.add_member(member, found);
                 }
             }
-            let Some((parent, index)) = self.place(Key::Container(container.id().as_str())) else {
+            let Some((parent, index)) = self.place(MemberKey::Container(container.id().as_str()))
+            else {
                 return;
             };
             container = parent;
@@ -356,7 +294,7 @@ impl<'a> DesignIndex<'a> {
                 found.insert(feature.as_str());
             }
             Member::Container(container) => {
-                if let Some(container) = self.containers.get(container.as_str()) {
+                if let Some(container) = self.records.containers.get(container.as_str()) {
                     self.add_subtree(container, found);
                 }
             }
@@ -393,7 +331,7 @@ impl<'a> DesignIndex<'a> {
                         found.insert(feature.as_str());
                     }
                     Member::Container(inner) => {
-                        stack.extend(self.containers.get(inner.as_str()).copied());
+                        stack.extend(self.records.containers.get(inner.as_str()).copied());
                     }
                 }
             }
@@ -418,7 +356,7 @@ impl<'a> DesignIndex<'a> {
     /// its definition depends on (§5.3). `None` where the feature does not
     /// exist.
     pub(super) fn tool_features(&self, feature: &str) -> Option<BTreeSet<&'a str>> {
-        let (&feature, _) = self.features.get_key_value(feature)?;
+        let (&feature, _) = self.records.features.get_key_value(feature)?;
         Some(self.closure(BTreeSet::from([feature])))
     }
 
@@ -427,7 +365,9 @@ impl<'a> DesignIndex<'a> {
         path.0
             .iter()
             .filter_map(|step| match &step.occurrence {
-                StepRef::Occurrence(occurrence) => self.occurrences.get(occurrence.as_str()),
+                StepRef::Occurrence(occurrence) => {
+                    self.records.occurrences.get(occurrence.as_str())
+                }
                 StepRef::Native(_) => None,
             })
             .filter_map(|occurrence| match &occurrence.prototype {
@@ -439,11 +379,12 @@ impl<'a> DesignIndex<'a> {
 
     /// Every feature of the scope of a definition.
     pub(super) fn scope_features(&self, definition: &str) -> Vec<&'a str> {
-        self.features
+        self.records
+            .features
             .keys()
             .copied()
             .filter(|feature| {
-                self.scope_of(Key::Feature(feature))
+                self.scope_of(MemberKey::Feature(feature))
                     .is_some_and(|scope| scope.as_str() == definition)
             })
             .collect()
@@ -458,16 +399,9 @@ impl<'a> DesignIndex<'a> {
 
     /// Whether a feature's operation is the given family's.
     pub(super) fn operation(&self, feature: &str) -> Option<&'a FeatureOperation> {
-        self.features
+        self.records
+            .features
             .get(feature)
             .map(|feature| &feature.definition.operation)
     }
-}
-
-fn by_id<'a, T>(records: &'a [T], id: impl Fn(&'a T) -> &'a str) -> BTreeMap<&'a str, &'a T> {
-    let mut map = BTreeMap::new();
-    for record in records {
-        map.entry(id(record)).or_insert(record);
-    }
-    map
 }

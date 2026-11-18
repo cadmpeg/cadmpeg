@@ -24,18 +24,18 @@ use crate::design::selection::{
 };
 use crate::math::portable::Portable;
 use crate::math::{Point3, Vector3};
-use crate::report::check::{Check, Finding};
-use crate::report::Severity;
+use crate::report::check::Finding;
 use crate::units::UnitVector3;
 
-use super::index::{DesignIndex, Key};
+use super::index::DesignIndex;
 use super::names::derived_kinds;
+use super::records::MemberKey;
 use super::walk::{ConstructionView, Kind};
-use super::{native_text, record_finding, Held, Holder};
+use super::{native_text, Held, Holder};
 
 /// Checks every construction of the design.
 pub(super) fn check(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut Vec<Finding>) {
-    let tolerances = &index.ir.tolerances;
+    let tolerances = &index.records.ir.tolerances;
     let geometry = Geometry {
         linear: tolerances.linear.get(),
         angular: tolerances.angular.get(),
@@ -47,14 +47,14 @@ pub(super) fn check(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut V
             Holder::Definition(_) | Holder::Owned { .. } => record
                 .holder
                 .feature()
-                .and_then(|feature| index.scope_of(Key::Feature(feature)))
+                .and_then(|feature| index.scope_of(MemberKey::Feature(feature)))
                 .map(crate::ids::ProductDefinitionId::as_str),
         };
         for &construction in &record.constructions {
             check_construction(index, construction, scope, geometry, at, findings);
         }
     }
-    for feature in &index.ir.design.features {
+    for feature in &index.records.ir.design.features {
         let at = feature.id.as_str();
         let primitive = match &feature.definition.operation {
             FeatureOperation::Primitive(primitive) => primitive.placement.as_ref(),
@@ -65,12 +65,7 @@ pub(super) fn check(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut V
                 && placement.after.iter().all(literal_step)
                 && placement.resolved.as_ref().is_some_and(is_identity)
             {
-                record_finding(
-                    findings,
-                    Check::Design,
-                    Severity::Error,
-                    Some(at),
-                    format_args!("a placement with no inputs and no bound step resolves to the identity; it is absent"),
+                super::error(findings, at, format_args!("a placement with no inputs and no bound step resolves to the identity; it is absent"),
                 );
             }
         }
@@ -96,72 +91,59 @@ fn check_construction(
     findings: &mut Vec<Finding>,
 ) {
     let kind = construction.kind();
-    let mut error = |check, message: std::fmt::Arguments<'_>| {
-        record_finding(findings, check, Severity::Error, Some(at), message);
-    };
+    let mut error = |message: std::fmt::Arguments<'_>| super::error(findings, at, message);
     let inputs = construction.inputs();
     let after = construction.after();
     if inputs.is_empty() && after.is_empty() && !construction.has_resolved() {
-        error(
-            Check::Design,
-            format_args!(
-                "a {} construction has no input, no step, and no resolved value",
-                kind.name()
-            ),
-        );
+        error(format_args!(
+            "a {} construction has no input, no step, and no resolved value",
+            kind.name()
+        ));
     }
     if construction.solution() == Some(0) {
-        error(
-            Check::Design,
-            format_args!("a construction's solution is 0; it counts from 1"),
-        );
+        error(format_args!(
+            "a construction's solution is 0; it counts from 1"
+        ));
     }
     for step in after {
         match step {
             PostStep::Flip(Dimension::Literal(false)) => {
-                error(
-                    Check::Design,
-                    format_args!("a Flip step with a literal false is absent"),
-                );
+                error(format_args!("a Flip step with a literal false is absent"));
             }
             PostStep::AxisRotate { axis, .. }
                 if axis
                     .iter()
                     .all(|component| matches!(component, Dimension::Literal(_))) =>
             {
-                error(
-                    Check::Design,
-                    format_args!(
-                        "an AxisRotate step binds no axis component; it is a Fixed and a Rotate"
-                    ),
-                );
+                error(format_args!(
+                    "an AxisRotate step binds no axis component; it is a Fixed and a Rotate"
+                ));
             }
             _ => {}
         }
     }
     let resolved_in = construction.resolved_in();
     if inputs.is_empty() && after.is_empty() && !resolved_in.is_empty() {
-        error(
-            Check::Design,
-            format_args!("a construction with no inputs and no steps has resolved_in values"),
-        );
+        error(format_args!(
+            "a construction with no inputs and no steps has resolved_in values"
+        ));
     }
     if let Some(scope) = scope {
         let active = index
+            .records
             .scopes
             .get(scope)
             .and_then(|record| record.active_configuration.as_ref());
         for configuration in resolved_in {
             let other = index
+                .records
                 .ir
                 .design
                 .configurations
                 .iter()
                 .any(|record| record.id == *configuration && record.scope.as_str() == scope);
             if !other || active == Some(configuration) {
-                error(
-                    Check::Design,
-                    format_args!(
+                error(format_args!(
                         "resolved_in names {}, which is not a configuration of the construction's scope other than its active one",
                         configuration.as_str()
                     ),
@@ -175,10 +157,10 @@ fn check_construction(
         };
         let (subject, relation) = (role.subject, &role.relation);
         if !subject_admitted(kind, subject) {
-            error(
-                Check::Design,
-                format_args!("a {} construction has a {subject:?} subject", kind.name()),
-            );
+            error(format_args!(
+                "a {} construction has a {subject:?} subject",
+                kind.name()
+            ));
         }
         if subject == Subject::ZAxis
             && matches!(
@@ -186,22 +168,16 @@ fn check_construction(
                 Relation::Parallel | Relation::Perpendicular | Relation::Tangent
             )
         {
-            error(
-                Check::Design,
-                format_args!(
-                    "a ZAxis subject carries a {relation:?} relation; the whole carries it"
-                ),
-            );
+            error(format_args!(
+                "a ZAxis subject carries a {relation:?} relation; the whole carries it"
+            ));
         }
         if let Relation::Native(text) = relation {
             if !native_text(text.as_str()) {
-                error(
-                    Check::Design,
-                    format_args!(
-                        "native relation {:?} is not written codec:name",
-                        text.as_str()
-                    ),
-                );
+                error(format_args!(
+                    "native relation {:?} is not written codec:name",
+                    text.as_str()
+                ));
             }
         }
         if !value_admitted(
@@ -211,52 +187,39 @@ fn check_construction(
             input.value.as_ref(),
             input.reference.is_some(),
         ) {
-            error(
-                Check::Design,
-                format_args!(
-                    "a {relation:?} input of a {} construction has a value it does not take",
-                    kind.name()
-                ),
-            );
+            error(format_args!(
+                "a {relation:?} input of a {} construction has a value it does not take",
+                kind.name()
+            ));
         }
         if let Some(ScalarDimension::PlaneEquation { a, b, c, .. }) = &input.value {
             let zero = |value: &Dimension<crate::scalar::FiniteReal>| matches!(value, Dimension::Literal(value) if value.get() == 0.0);
             if zero(a) && zero(b) && zero(c) {
-                error(
-                    Check::Design,
-                    format_args!("a PlaneEquation's literal a, b, and c are all zero"),
-                );
+                error(format_args!(
+                    "a PlaneEquation's literal a, b, and c are all zero"
+                ));
             }
         }
         if matches!(relation, Relation::Radius | Relation::Limit) && kind != Kind::Curve {
-            error(
-                Check::Design,
-                format_args!(
-                    "a {relation:?} input occurs on a {} construction",
-                    kind.name()
-                ),
-            );
+            error(format_args!(
+                "a {relation:?} input occurs on a {} construction",
+                kind.name()
+            ));
         }
         if matches!(relation, Relation::Fold)
             && (!matches!(kind, Kind::Plane | Kind::Frame) || subject != Subject::Whole)
         {
-            error(
-                Check::Design,
-                format_args!("a Fold input is not the Whole of a plane or frame"),
-            );
+            error(format_args!(
+                "a Fold input is not the Whole of a plane or frame"
+            ));
         }
         if input.reversed.is_some() && !reversible(construction, subject, relation) {
-            error(
-                Check::Design,
-                format_args!("a {relation:?} input states reversed"),
-            );
+            error(format_args!("a {relation:?} input states reversed"));
         }
         if matches!(input.value, Some(ScalarDimension::ParameterRatio(_)))
             && !parameter_ratio_admitted(index, relation, input.reference.as_ref())
         {
-            error(
-                Check::Design,
-                format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
+            error(format_args!("a ParameterRatio value is not on an AtParameter input that picks one edge or curve"),
             );
         }
         match &input.reference {
@@ -264,60 +227,47 @@ fn check_construction(
                 if let Picks::Named(picks) = &selection.picks {
                     let picks = picks.as_slice();
                     if !pick_count_admitted(relation, picks.len()) {
-                        error(
-                            Check::Design,
-                            format_args!(
-                                "a {relation:?} input's reference holds {} picks",
-                                picks.len()
-                            ),
-                        );
+                        error(format_args!(
+                            "a {relation:?} input's reference holds {} picks",
+                            picks.len()
+                        ));
                     }
                     if matches!(relation, Relation::Coordinates)
                         && picks
                             .first()
                             .is_some_and(|first| !picks_frame(index, first))
                     {
-                        error(
-                            Check::Design,
-                            format_args!("a Coordinates reference does not pick a frame first"),
-                        );
+                        error(format_args!(
+                            "a Coordinates reference does not pick a frame first"
+                        ));
                     }
                     if subject == Subject::Whole
                         && matches!(relation, Relation::Coincident)
                         && kind != Kind::Frame
                         && matches!(picks, [one] if picks_whole_frame(index, one))
                     {
-                        error(
-                            Check::Design,
-                            format_args!(
-                                "a Whole Coincident input on a whole frame is on a {} construction",
-                                kind.name()
-                            ),
-                        );
+                        error(format_args!(
+                            "a Whole Coincident input on a whole frame is on a {} construction",
+                            kind.name()
+                        ));
                     }
                 }
             }
             Some(InputReference::Built(built)) => {
                 if matches!(relation, Relation::Fold | Relation::Centroid) {
-                    error(
-                        Check::Design,
-                        format_args!(
-                            "a nested construction is the reference of a {relation:?} input"
-                        ),
-                    );
+                    error(format_args!(
+                        "a nested construction is the reference of a {relation:?} input"
+                    ));
                 }
                 if subject == Subject::Whole
                     && matches!(relation, Relation::Coincident)
                     && kind != Kind::Frame
                 {
                     if let crate::design::construction::AnyConstruction::Frame(_) = built.as_ref() {
-                        error(
-                            Check::Design,
-                            format_args!(
-                                "a Whole Coincident input on a whole frame is on a {} construction",
-                                kind.name()
-                            ),
-                        );
+                        error(format_args!(
+                            "a Whole Coincident input on a whole frame is on a {} construction",
+                            kind.name()
+                        ));
                     }
                 }
             }
@@ -325,9 +275,7 @@ fn check_construction(
         }
     }
     if matches!(kind, Kind::Plane | Kind::Frame) && leading_offset(index, construction) {
-        error(
-            Check::Design,
-            format_args!("a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
+        error(format_args!("a plane or frame Coincident with one planar reference begins its steps with a Z translation; it is an Offset input"),
         );
     }
     check_values(construction, geometry, at, findings);
@@ -692,7 +640,7 @@ fn check_datum_link(datum: &Datum, at: &str, findings: &mut Vec<Finding>) {
         DatumElement::Frame(frame) => coincident(&frame.inputs),
     };
     let mut error = |message: std::fmt::Arguments<'_>| {
-        record_finding(findings, Check::Design, Severity::Error, Some(at), message);
+        super::error(findings, at, message);
     };
     if !shapes {
         error(format_args!(
@@ -717,11 +665,11 @@ fn check_datum_link(datum: &Datum, at: &str, findings: &mut Vec<Finding>) {
 /// the feature as `Datum` (§6.1, §6.2).
 fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: &mut Vec<Finding>) {
     let mut restating: BTreeMap<(&str, PrincipalEntity, Option<&str>), Vec<&str>> = BTreeMap::new();
-    for feature in &index.ir.design.features {
+    for feature in &index.records.ir.design.features {
         let FeatureOperation::Datum(datum) = &feature.definition.operation else {
             continue;
         };
-        let Some(scope) = index.scope_of(Key::Feature(feature.id.as_str())) else {
+        let Some(scope) = index.scope_of(MemberKey::Feature(feature.id.as_str())) else {
             continue;
         };
         if let Some((entity, container)) = principal_restatement(datum) {
@@ -734,12 +682,7 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
     for ((_, entity, _), features) in &restating {
         if let [first, others @ ..] = features.as_slice() {
             for other in others {
-                record_finding(
-                    findings,
-                    Check::Design,
-                    Severity::Error,
-                    Some(other),
-                    format_args!("datum feature restates principal {entity:?}, which datum feature {first} already restates"),
+                super::error(findings, other, format_args!("datum feature restates principal {entity:?}, which datum feature {first} already restates"),
                 );
             }
         }
@@ -780,12 +723,7 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
                         .map(crate::design::ids::ContainerId::as_str),
                 );
                 if restated.contains(&key) {
-                    record_finding(
-                        findings,
-                        Check::Design,
-                        Severity::Error,
-                        Some(record.holder.record()),
-                        format_args!("a pick names principal {entity:?}, which a datum feature restates; it picks that feature as Datum"),
+                    super::error(findings, record.holder.record(), format_args!("a pick names principal {entity:?}, which a datum feature restates; it picks that feature as Datum"),
                     );
                 }
             }
@@ -872,13 +810,7 @@ fn check_values(
         }
     }
     for message in bad {
-        record_finding(
-            findings,
-            Check::Design,
-            Severity::Error,
-            Some(at),
-            format_args!("{message}"),
-        );
+        super::error(findings, at, format_args!("{message}"));
     }
 }
 
