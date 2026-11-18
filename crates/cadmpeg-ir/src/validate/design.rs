@@ -8,13 +8,13 @@
 
 mod configurations;
 mod containers;
-mod evaluations;
+pub(super) mod evaluations;
 #[cfg(test)]
-mod fixture;
+pub(super) mod fixture;
 mod linkage;
 mod parameters;
-mod records;
-mod resolved;
+pub(super) mod records;
+pub(super) mod resolved;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
