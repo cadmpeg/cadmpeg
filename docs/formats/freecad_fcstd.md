@@ -100,6 +100,12 @@ Each provider has one direct `Properties` container, and direct property names a
 that container. Registered GUI property types define the cardinality of their value elements;
 unregistered properties retain their ordered values without semantic dispatch.
 
+An `Expand` element in `GuiDocument.xml` records the saved expansion of the document tree. Each
+child `Expand` element names one expanded tree item by object name in its `name` attribute and
+nests the expanded items beneath that item. An empty `Expand` element records that no item is
+expanded. A `ViewProvider` may also
+carry its own `expanded` attribute.
+
 Each `ObjectData` object has at most one direct `Extensions` container and at most one direct
 `Properties` container. When both are present, `Extensions` precedes `Properties`. An extension
 container's `Count` equals its `Extension` records. Extension names and runtime types are unique
