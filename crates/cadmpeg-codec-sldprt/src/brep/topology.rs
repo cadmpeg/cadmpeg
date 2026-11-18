@@ -26,6 +26,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_parasolid::topology::fin::{FinForm, FinLinks};
 
 use crate::layout::edge_bare as edge_body;
 use crate::layout::edge_tripled as edge_delta;
@@ -150,21 +151,6 @@ pub(super) struct VertexLoopFin {
     pub(super) offset: usize,
 }
 
-impl VertexLoopFin {
-    /// The vertex-loop FIN that the coedge cells `refs` and `marker` of
-    /// `attr` state: marker `?`, both ring links to `attr`, and null partner
-    /// and edge.
-    pub(super) fn read(attr: u32, refs: &[u32; 9], marker: u8, offset: usize) -> Option<Self> {
-        (marker == b'?' && refs[2] == attr && refs[3] == attr && refs[5] <= 1 && refs[6] <= 1)
-            .then_some(Self {
-                attr,
-                loop_attr: refs[1],
-                vertex: refs[4],
-                offset,
-            })
-    }
-}
-
 /// A FIN record: an edge coedge or the FIN of a vertex loop.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Fin {
@@ -175,15 +161,28 @@ pub(super) enum Fin {
 impl Fin {
     /// The FIN of `attr` that the coedge cells `refs` and `marker` state.
     pub(super) fn read(attr: u32, refs: [u32; 9], marker: u8, offset: usize) -> Option<Self> {
-        match parse_sense(marker) {
-            Some(sense) => Some(Self::Edge(Coedge {
+        let non_null = |reference: u32| (reference > 1).then_some(reference);
+        let links = FinLinks {
+            fin: attr,
+            forward_fin: refs[2],
+            backward_fin: refs[3],
+            other_fin: non_null(refs[5]),
+            edge: non_null(refs[6]),
+        };
+        Some(match FinForm::classify(&links, marker)? {
+            FinForm::Edge(sense) => Self::Edge(Coedge {
                 attr,
                 refs,
                 sense,
                 offset,
-            })),
-            None => VertexLoopFin::read(attr, &refs, marker, offset).map(Self::Vertex),
-        }
+            }),
+            FinForm::VertexLoop => Self::Vertex(VertexLoopFin {
+                attr,
+                loop_attr: refs[1],
+                vertex: refs[4],
+                offset,
+            }),
+        })
     }
 
     pub(super) fn attr(&self) -> u32 {

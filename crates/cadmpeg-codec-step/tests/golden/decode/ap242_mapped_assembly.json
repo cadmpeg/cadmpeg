@@ -250,6 +250,18 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "product.occurrence-placement-inferred",
+            "kind": "decode_diagnostic",
+            "namespace": "step"
+          }
+        },
+        "message": "1 NEXT_ASSEMBLY_USAGE_OCCURRENCE record(s) take their placement from a parent representation's MAPPED_ITEM that no STEP relationship associates with them: #12",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "geometry.document-angle-unit-unresolved",
             "kind": "geometry_not_transferred",
             "namespace": "step",

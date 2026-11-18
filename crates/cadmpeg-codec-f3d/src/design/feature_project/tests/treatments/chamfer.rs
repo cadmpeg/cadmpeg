@@ -23,6 +23,9 @@ use cadmpeg_ir::features::EdgeSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 
+const EPS_CHAMFER_DISTANCE_MM: f64 = 1e-12;
+const EPS_CHAMFER_ANGLE_RAD: f64 = 1e-12;
+
 fn localized_chamfer_scope() -> DesignParameterScope {
     DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {
@@ -760,4 +763,51 @@ fn unresolved_chamfer_does_not_charge_resolved_orientation() {
         .all(|group| group.spec.is_unresolved()));
     assert_eq!(loss_count(&projected, ChamferReferenceFaceAssumed), 0);
     assert_eq!(loss_count(&projected, ChamferAngleReferenceAssumed), 0);
+}
+
+#[test]
+fn reversed_distance_angle_keeps_dimensions_and_native_side_control() {
+    let mut scope = localized_chamfer_scope();
+    if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
+        payload.sets = Some(
+            serde_json::from_value(serde_json::json!({
+                "form":"current", "corner_type":"chamfer", "entry_count":1,
+                "sets":[{
+                    "record_index":500, "byte_offset":2000, "frame_length":93,
+                    "group_record_index":100,
+                    "spec":{"kind":"distance_angle", "distance_owner_record_index":10,
+                        "angle_owner_record_index":20},
+                    "auxiliary_record_index":600, "entry_count":1,
+                    "tangent_chain":false, "distance_reversed":true
+                }]
+            }))
+            .unwrap(),
+        );
+    }
+    let parameters = [
+        localized_fillet_parameter(10, 11, "Distance", Some("mm"), 0.1),
+        localized_fillet_parameter(
+            20,
+            21,
+            "Rotate Angle",
+            Some("deg"),
+            std::f64::consts::FRAC_PI_6,
+        ),
+    ];
+    let owners = [
+        localized_fillet_owner(10, 11, 0),
+        localized_fillet_owner(20, 21, 1),
+    ];
+    let groups = [localized_fillet_group(100, 0, vec![200])];
+    let projected = project_scope(&scope, &parameters, &owners, &groups);
+    assert!(matches!(projected_groups(&projected)[0].spec,
+        ChamferSpec::DistanceAngle { distance, angle }
+        if (distance.get() - 1.0).abs() < EPS_CHAMFER_DISTANCE_MM
+            && (angle.get() - std::f64::consts::FRAC_PI_6).abs() < EPS_CHAMFER_ANGLE_RAD));
+    let sets: DesignChamferSetList =
+        serde_json::from_str(&projected.features[0].source_properties["chamfer:sets"]).unwrap();
+    assert!(sets.sets[0].distance_reversed);
+    assert_eq!(loss_count(&projected, ChamferDefinitionUnresolved), 0);
+    assert_eq!(loss_count(&projected, ChamferReferenceFaceAssumed), 1);
+    assert_eq!(loss_count(&projected, ChamferAngleReferenceAssumed), 1);
 }

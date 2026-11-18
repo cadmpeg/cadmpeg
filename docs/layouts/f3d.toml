@@ -2226,11 +2226,11 @@ source = "spec"
 anchor = "`+21: u8 flag`"
 
 [[record.field]]
-name = "zero_run_1_at_22"
+name = "distance_reversed"
 offset = 22
-type = "bytes[1]"
+type = "u8"
 source = "spec"
-anchor = "Every byte that the form does not name is zero"
+anchor = "`+22: u8 distance reversal`"
 
 [[record.field]]
 name = "angle_owner_reference"
@@ -4630,6 +4630,92 @@ offset = 36
 type = "u32"
 source = "spec"
 anchor = "the asset UUID code-unit count at offset `36`"
+
+[[record]]
+name = "design_hole_reconstructed_plane_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A point-data record with `refType` `17` can name a reconstructed plane."
+size = 126
+note = "Offsets are relative to the reconstructed plane record indexed header; the record continues after the extent maxima."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Relative to that header, it stores"
+
+[[record.gap]]
+offset = 11
+size = 4
+note = "The specification states no field in this range."
+
+[[record.field]]
+name = "name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "a zero u32 name length at offset `15`"
+value = 0
+
+[[record.field]]
+name = "leading_block_presence"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "a leading-block presence byte at offset `19`"
+
+[[record.field]]
+name = "property_block_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "a property-block presence byte at offset `20`"
+
+[[record.field]]
+name = "extent_minimum"
+offset = 21
+type = "f64[2]"
+source = "spec"
+anchor = "two f64 minimum extents at offset `21`"
+
+[[record.field]]
+name = "zero_byte"
+offset = 37
+type = "u8"
+source = "spec"
+anchor = "a zero byte at offset `37`"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 38
+type = "f64[3]"
+source = "spec"
+anchor = "the plane origin at offset `38`"
+
+[[record.field]]
+name = "u_axis"
+offset = 62
+type = "f64[3]"
+source = "spec"
+anchor = "the unit in-plane u axis at offset `62`"
+
+[[record.field]]
+name = "v_axis"
+offset = 86
+type = "f64[3]"
+source = "spec"
+anchor = "the unit in-plane v axis at offset `86`"
+
+[[record.field]]
+name = "extent_maximum"
+offset = 110
+type = "f64[2]"
+source = "spec"
+anchor = "two f64 maximum extents at offset `110`"
 
 [[record]]
 name = "scale_modern_operation_prefix"
@@ -21121,7 +21207,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "Relative to its primary indexed header"
+anchor = "Relative to that header"
 
 [[record.gap]]
 offset = 11
@@ -22660,6 +22746,57 @@ offset = 11
 type = "bytes[10]"
 source = "spec"
 anchor = "The bytes from indexed-header offset 11 through 20 are zero"
+
+[[record]]
+name = "surface_extend_scope_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The `SurfaceExtend` scope prologue"
+size = 44
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/surfaces.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The `SurfaceExtend` scope prologue"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "prologue_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "byte `01` at offset 20"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 21
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets 21 through 28"
+
+[[record.field]]
+name = "extension_method"
+offset = 29
+type = "u32"
+endianness = "little"
+source = "spec"
+anchor = "the u32 extension method at offset 29"
+
+[[record.field]]
+name = "distance_reference"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked reference to the distance owner at offset 33"
 
 [[record]]
 name = "surface_untrim_prologue"
