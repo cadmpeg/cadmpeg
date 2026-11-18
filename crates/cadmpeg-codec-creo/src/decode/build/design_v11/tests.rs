@@ -48,6 +48,13 @@ fn part(features: Vec<LegacyFeature>, bodies: &[&str]) -> (CadIr, ProductDefinit
     (ir, definition)
 }
 
+fn no_names(ir: &CadIr) -> names::Names {
+    names::Names::new(
+        &crate::test_support::empty_container_scan(),
+        regeneration_order(ir).map(|feature| &feature.id),
+    )
+}
+
 fn timeline(ir: &CadIr) -> (&[Member], &Rollback) {
     let root = &ir.design.scopes[0].roots[0];
     match ir.design.containers.iter().find(|c| c.id() == root) {
@@ -67,8 +74,9 @@ fn timeline_follows_regeneration_order_and_leaves_the_model_unchanged() {
     let plane = feature("1", 0, unresolved(UnresolvedFamily::DatumPlane));
     let (mut ir, definition) = part(vec![extrude.clone(), plane.clone()], &["1"]);
     let model = ir.model.clone();
+    let names = no_names(&ir);
     crate::decode::with_service_context(|ctx| {
-        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new())
+        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new(), &names)
     })
     .expect("timeline");
     let (members, rollback) = timeline(&ir);
@@ -106,8 +114,9 @@ fn timeline_follows_regeneration_order_and_leaves_the_model_unchanged() {
 #[test]
 fn an_empty_timeline_holds_its_current_state_at_its_start() {
     let (mut ir, definition) = part(Vec::new(), &[]);
+    let names = no_names(&ir);
     crate::decode::with_service_context(|ctx| {
-        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new())
+        project_timeline(ctx, &mut ir, &definition, &BTreeSet::new(), &names)
     })
     .expect("timeline");
     let root = ir.design.scopes[0].roots[0].clone();
