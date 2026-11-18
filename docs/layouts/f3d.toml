@@ -40027,6 +40027,81 @@ anchor = "The Position suffix spans 83 bytes"
 value = [0, 0, 0]
 
 [[record]]
+name = "captured_position_v4"
+kind = "byte"
+section = "Captured component positions"
+anchor = "The version-4 prefix before the ordered-reference count spans 319 bytes"
+size = 319
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/position.rs"
+
+[[record.gap]]
+offset = 0
+size = 95
+note = "Indexed header and prefix fields."
+
+[[record.field]]
+name = "row_count"
+offset = 95
+type = "u32"
+value = 1
+source = "spec"
+anchor = "A u32 row count of one occurs at offset 95"
+
+[[record.field]]
+name = "row"
+offset = 99
+type = "bytes[141]"
+source = "spec"
+anchor = "The 141-byte row at offset 99 stores one matrix"
+
+[[record.field]]
+name = "identity_length"
+offset = 240
+type = "u32"
+source = "spec"
+anchor = "The version-4 suffix starts at offset 240 with the u32 GUID length"
+
+[[record.field]]
+name = "identity"
+offset = 244
+type = "bytes[72]"
+source = "spec"
+anchor = "followed by the same UTF-16LE null GUID and three zero bytes"
+
+[[record.field]]
+name = "zero_tail"
+offset = 316
+type = "bytes[3]"
+source = "spec"
+anchor = "followed by the same UTF-16LE null GUID and three zero bytes"
+
+[[record]]
+name = "captured_position_v4_identity_locator"
+kind = "byte"
+section = "Captured component positions"
+anchor = "Its 62-byte identity locator stores u32 discriminator one at offset 56"
+size = 62
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs"
+
+[[record.gap]]
+offset = 0
+size = 56
+note = "Shared identity-locator fields."
+
+[[record.field]]
+name = "discriminator"
+offset = 56
+type = "u32"
+value = 1
+source = "spec"
+anchor = "Its 62-byte identity locator stores u32 discriminator one at offset 56"
+
+[[record.gap]]
+offset = 60
+size = 2
+note = "Shared identity-locator tail."
+
+[[record]]
 name = "unmarked_sphere_local_frame"
 kind = "byte"
 section = "3.1"
