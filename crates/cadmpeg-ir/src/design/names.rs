@@ -169,7 +169,14 @@ pub struct InstanceIndex(pub Vec<i32>);
 /// coordinate and no source allocation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "TopoNameWire", into = "TopoNameWire")]
+#[cfg_attr(feature = "schema", schemars(with = "TopoNameWire"))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields,
+    try_from = "TopoNameWire"
+)]
 pub enum TopoName {
     /// An entity that a feature generates.
     Generated {
@@ -179,11 +186,14 @@ pub enum TopoName {
         feature: FeatureId,
         /// The entity's role in the feature. `None` where the source names
         /// the producing feature and no role.
+        #[serde(skip_serializing_if = "Option::is_none")]
         role: Option<GenerationRole>,
         /// The entity that generated this one.
+        #[serde(skip_serializing_if = "Option::is_none")]
         generator: Option<Generator>,
         /// The source's own discriminator among entities of equal meaning,
         /// stated only where the source stores one.
+        #[serde(skip_serializing_if = "Option::is_none")]
         index: Option<u32>,
     },
     /// A copy that a feature made, by its instance coordinates.
@@ -203,6 +213,7 @@ pub enum TopoName {
         /// the name.
         between: Vec<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
+        #[serde(skip_serializing_if = "Option::is_none")]
         index: Option<u32>,
     },
     /// An edge, by the faces beside it and the faces at its ends.
@@ -212,6 +223,7 @@ pub enum TopoName {
         /// The faces at the edge's ends, where the source records them.
         ends: BTreeSet<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
+        #[serde(skip_serializing_if = "Option::is_none")]
         index: Option<u32>,
     },
     /// A vertex, by the faces that meet at it.
@@ -219,6 +231,7 @@ pub enum TopoName {
         /// The faces that meet at the vertex.
         faces: BTreeSet<TopoName>,
         /// The source's own discriminator among entities of equal meaning.
+        #[serde(skip_serializing_if = "Option::is_none")]
         index: Option<u32>,
     },
     /// An entity that a feature modified.
@@ -231,15 +244,18 @@ pub enum TopoName {
     /// A piece of a split entity.
     Split {
         /// The feature that split the entity, where the source stores it.
+        #[serde(skip_serializing_if = "Option::is_none")]
         feature: Option<FeatureId>,
         /// The name of the entity that was split.
         from: Box<TopoName>,
         /// The piece, where the source states one.
+        #[serde(skip_serializing_if = "Option::is_none")]
         piece: Option<u32>,
     },
     /// An entity merged from others of one kind.
     Merged {
         /// The feature that merged the entities, where the source stores it.
+        #[serde(skip_serializing_if = "Option::is_none")]
         feature: Option<FeatureId>,
         /// The names of the merged entities.
         from: BTreeSet<TopoName>,
@@ -253,7 +269,7 @@ pub enum TopoName {
 
 /// The wire form of [`TopoName`]. Each nested name has passed the name
 /// ceiling; reading admits this one level above the deepest of them.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -367,7 +383,7 @@ enum TopoNameWire {
 }
 
 /// The fields of [`TopoName::Split`] on the wire.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SplitName {
@@ -390,7 +406,7 @@ struct SplitName {
 }
 
 /// The fields of [`TopoName::Merged`] on the wire.
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct MergedName {
@@ -461,58 +477,6 @@ impl TryFrom<TopoNameWire> for TopoName {
         };
         read::within(Ceiling::Name, name.depth())?;
         Ok(name)
-    }
-}
-
-impl From<TopoName> for TopoNameWire {
-    fn from(name: TopoName) -> Self {
-        match name {
-            TopoName::Generated {
-                kind,
-                feature,
-                role,
-                generator,
-                index,
-            } => Self::Generated {
-                kind,
-                feature,
-                role,
-                generator,
-                index,
-            },
-            TopoName::Instance {
-                feature,
-                instance,
-                of,
-            } => Self::Instance {
-                feature,
-                instance,
-                of,
-            },
-            TopoName::Blend {
-                feature,
-                between,
-                index,
-            } => Self::Blend {
-                feature,
-                between,
-                index,
-            },
-            TopoName::Bounded { faces, ends, index } => Self::Bounded { faces, ends, index },
-            TopoName::Meeting { faces, index } => Self::Meeting { faces, index },
-            TopoName::Modified { feature, from } => Self::Modified { feature, from },
-            TopoName::Split {
-                feature,
-                from,
-                piece,
-            } => Self::Split(SplitName {
-                feature,
-                from,
-                piece,
-            }),
-            TopoName::Merged { feature, from } => Self::Merged(MergedName { feature, from }),
-            TopoName::Root { container } => Self::Root { container },
-        }
     }
 }
 

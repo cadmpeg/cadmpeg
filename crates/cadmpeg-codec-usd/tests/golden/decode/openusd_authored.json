@@ -604,7 +604,8 @@
           "kind": "part",
           "native_ref": "/Plant",
           "sketches": [],
-          "source_name": "Plant"
+          "source_name": "Plant",
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -613,7 +614,8 @@
           "kind": "group",
           "native_ref": "/Plant/Frame",
           "sketches": [],
-          "source_name": "Frame"
+          "source_name": "Frame",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -624,7 +626,8 @@
           "kind": "object",
           "native_ref": "/Plant/Frame/Rail",
           "sketches": [],
-          "source_name": "Rail"
+          "source_name": "Rail",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -635,7 +638,8 @@
           "kind": "object",
           "native_ref": "/Plant/Frame/Tube",
           "sketches": [],
-          "source_name": "Tube"
+          "source_name": "Tube",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -646,7 +650,8 @@
           "kind": "object",
           "native_ref": "/Plant/Roof",
           "sketches": [],
-          "source_name": "Roof"
+          "source_name": "Roof",
+          "tessellations": []
         },
         {
           "bodies": [
@@ -657,7 +662,8 @@
           "kind": "object",
           "native_ref": "/Plant/Leg0",
           "sketches": [],
-          "source_name": "Leg"
+          "source_name": "Leg",
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

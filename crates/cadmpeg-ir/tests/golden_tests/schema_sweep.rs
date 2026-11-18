@@ -153,7 +153,41 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
             "distance": {"kind": distance, "parameter": "test:sweep:parameter#0"},
         })
     };
+    let axis = |name: &'static str, axis: Value| {
+        (
+            name,
+            document(
+                "features",
+                feature(&json!({"kind": "datum_axis", "value": {"axis": axis}})),
+            ),
+        )
+    };
     vec![
+        axis(
+            "input-only datum axis",
+            json!({
+                "inputs": [{"reference": {"kind": "built", "value": {
+                    "kind": "point", "inputs": [], "after": [], "resolved_in": {},
+                    "resolved": {"x": 0.0, "y": 0.0, "z": 0.0}
+                }}}],
+                "native_options": {}, "source_settings": {}
+            }),
+        ),
+        axis(
+            "option-only datum axis",
+            json!({
+                "inputs": [],
+                "native_options": {"test:flag": {"kind": "bool", "value": {"kind": "literal", "value": true}}},
+                "source_settings": {}
+            }),
+        ),
+        axis(
+            "setting-only datum axis",
+            json!({
+                "inputs": [], "native_options": {},
+                "source_settings": {"test:flag": {"kind": "bool", "value": {"kind": "literal", "value": true}}}
+            }),
+        ),
         hole(
             "chamfer and counterdrill exit",
             json!({

@@ -62,9 +62,7 @@ use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
 use super::thread::thread_modeled_flag_loss;
 use super::work_geometry::exact_joint_origin_frame;
-use super::work_geometry::exact_work_axis_construction;
 use super::work_geometry::exact_work_plane_frame;
-use super::work_geometry::work_axis_loss_notes;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -105,6 +103,7 @@ pub(crate) struct ParameterScopeSources<'a> {
 
 #[derive(Debug, Default)]
 pub(crate) struct DecodedParameterScopes {
+    pub(crate) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     pub(crate) scopes: Vec<DesignParameterScope>,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(crate) work_plane_inferred_axes: HashMap<String, (u64, [u8; 2])>,
@@ -125,6 +124,7 @@ pub(crate) fn decode_parameter_scopes(
         component_occurrences,
         recipes,
     } = sources;
+    let mut given_up = Vec::new();
     let mut out = Vec::new();
     let mut losses = Vec::new();
     let mut work_plane_inferred_axes = HashMap::new();
@@ -133,12 +133,19 @@ pub(crate) fn decode_parameter_scopes(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("WorkAxis source stream is unavailable"))?;
+        let bytes = source.window();
         let stream = crate::ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
+        let axis_classes = class_types
+            .iter()
+            .map(|(code, row)| (*code, (row.type_guid.as_str(), row.version)))
+            .collect::<HashMap<_, _>>();
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
         let needs_browser_metadata = body_owners
             .values()
@@ -352,12 +359,21 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if let Some(axis) =
-                exact_work_axis_construction(ctx, bytes, &records, &scope, &stream_types)?
-            {
-                losses.extend(work_axis_loss_notes(&scope, &axis));
+            if scope.kind() == scope::DesignFeatureKind::WorkAxis {
+                let evidence = super::work_axes::decode_work_axis(
+                    ctx,
+                    source,
+                    &records,
+                    &scope,
+                    &entry.name,
+                    super::work_axes::WorkAxisRegistrations {
+                        entities: &stream_types,
+                        classes: &axis_classes,
+                    },
+                    &mut given_up,
+                )?;
                 if let scope::DesignScopePayloadMut::WorkAxis(slot) = scope.payload_mut() {
-                    *slot = Some(axis.construction);
+                    *slot = Some(evidence);
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
@@ -908,6 +924,7 @@ pub(crate) fn decode_parameter_scopes(
         ));
     }
     Ok(DecodedParameterScopes {
+        given_up: cadmpeg_ir::unknown::part::GivenUpPart::coalesce(given_up)?,
         scopes: out,
         losses,
         work_plane_inferred_axes,
@@ -1530,7 +1547,7 @@ fn parameter_scope_previous_history_offset_for_form(
     match tail_form {
         ScopeTailForm::Named => return None,
         ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => {
-            return typed_scope_previous_history_offset(kind, tail_length)
+            return typed_scope_previous_history_offset(kind, tail_length);
         }
         ScopeTailForm::Fixed => {}
     }

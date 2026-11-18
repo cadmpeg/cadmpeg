@@ -78,7 +78,7 @@ rewrite_enum!(TangentContact, []; {
     Outside,
     Inside,
 });
-rewrite_record!(ProductDefinition, []; {id, kind, source_name, label, description, part_number, bom_properties, bodies, sketches, native_ref});
+rewrite_record!(ProductDefinition, []; {id, kind, source_name, label, description, part_number, bom_properties, bodies, sketches, tessellations, native_ref});
 rewrite_enum!(ProductDefinitionKind, []; {
     Part,
     Group,

@@ -225,7 +225,7 @@ rewrite_enum!(FeatureOperation, []; {
     DatumPlane { frame },
     DatumThreePointPlane { frame, points },
     DatumOffsetPlane { reference, distance },
-    DatumAxis { origin, direction },
+    DatumAxis { axis },
     DatumPoint { position, construction },
     PointGeometry { position },
     LineSegment { segment },
@@ -622,7 +622,6 @@ rewrite_enum!(VertexSelection, []; {
 rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
 rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
-rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });

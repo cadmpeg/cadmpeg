@@ -1885,3 +1885,42 @@ fn partial_wrap_mode_retains_optional_signed_depth_in_json() {
     }
     assert!(serde_json::from_str::<WrapMode>(r#"{"kind":"unresolved","depth":null}"#).is_err());
 }
+
+#[test]
+fn base_flange_omits_unknown_thickness_and_side() {
+    use crate::features::{FeatureOperation, PlanarProfileRef, SheetMetalThicknessSide};
+    use crate::scalar::PositiveLength;
+
+    let profile = PlanarProfileRef::Native("test:native:source#1".into());
+    let partial = FeatureOperation::SheetMetalBaseFlange {
+        profile: profile.clone(),
+        thickness: None,
+        side: None,
+    };
+    let wire = serde_json::to_value(&partial).unwrap();
+    assert_eq!(
+        wire,
+        serde_json::json!({"kind": "sheet_metal_base_flange", "value": {"profile": profile}})
+    );
+    assert_eq!(
+        serde_json::from_value::<FeatureOperation>(wire.clone()).unwrap(),
+        partial
+    );
+    for field in ["thickness", "side"] {
+        let mut invalid = wire.clone();
+        invalid["value"][field] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
+    }
+    let complete = FeatureOperation::SheetMetalBaseFlange {
+        profile,
+        thickness: PositiveLength::new(1.5),
+        side: Some(SheetMetalThicknessSide::Reverse),
+    };
+    let complete_wire = serde_json::to_value(&complete).unwrap();
+    assert_eq!(complete_wire["value"]["thickness"], 1.5);
+    assert_eq!(complete_wire["value"]["side"], "reverse");
+    assert_eq!(
+        serde_json::from_value::<FeatureOperation>(complete_wire).unwrap(),
+        complete
+    );
+}
