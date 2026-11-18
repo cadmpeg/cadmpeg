@@ -64,7 +64,7 @@ fn placement_admission_preserves_existing_identity_and_omits_only_new_mixed_rows
         );
         if merged {
             assert!(result.ir().model.occurrences.iter().all(|occurrence| {
-                occurrence.transform == cadmpeg_ir::transform::Transform::identity()
+                occurrence.transform == Some(cadmpeg_ir::transform::Transform::identity())
             }));
         } else {
             assert_eq!(
