@@ -1719,6 +1719,8 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     ir.model.product_definitions.extend([
         ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: parent_product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Parent assembly".into()),
@@ -1731,6 +1733,8 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         },
         ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: child_product.clone(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Child part".into()),

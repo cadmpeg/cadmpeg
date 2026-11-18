@@ -189,6 +189,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::SpherePrimitive,
     ),
     (
+        super::super::silhouette_split::TYPE_GUID,
+        DesignFeatureKind::SilhouetteSplit,
+    ),
+    (
         "65CA3206-E33A-471E-8E40-2C72B57C6181",
         DesignFeatureKind::Split,
     ),

@@ -243,6 +243,7 @@ pub(super) fn attach(
         bom_properties: BTreeMap::new(),
         bodies: Vec::new(),
         sketches: Vec::new(),
+        tessellations: Vec::new(),
         native_ref: None,
     });
     ir.model.occurrences.push(Occurrence {

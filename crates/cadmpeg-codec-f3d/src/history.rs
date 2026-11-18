@@ -1891,6 +1891,13 @@ pub(crate) fn bind_feature_outputs(
             )));
             continue;
         };
+        let outputs = crate::records::feature::derived_base::derived_base_output_order(
+            feature,
+            scopes,
+            history_index,
+            &state_outputs,
+            outputs,
+        );
         if stored_bodies::bound_result_bodies(feature).is_some()
             || stored_bodies::is_base_feature_copy(feature, scopes)
         {
@@ -1979,6 +1986,11 @@ fn feature_history_states(
         .native_ref
         .as_deref()
         .and_then(|id| scopes.iter().find(|scope| scope.id == id))?;
+    if let Some(group) =
+        crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
+    {
+        return crate::records::feature::derived_base::group_history_states(&group);
+    }
     let state_id = scope.history_state_id()?;
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
     Some((state_id, previous_state_id))
@@ -2113,6 +2125,7 @@ pub(crate) fn bind_feature_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
     use cadmpeg_ir::features::{BodyMember, BodySelection, FeatureDefinition, FeatureOperation};
 
     let mut losses = Vec::new();
@@ -2203,7 +2216,24 @@ pub(crate) fn bind_feature_body_selections(
             ) {
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells }) =
+            if let FeatureDefinition::Operation(FeatureOperation::SilhouetteSplit { target, .. }) =
+                definition
+            {
+                if let Some(previous_state_id) =
+                    effective_scope_previous_history_state_id(scope, histories)
+                {
+                    bind_body_recipe_body_selection(
+                        target,
+                        feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+                break 'feature_edit;
+            }
+            if let FeatureDefinition::Operation(FeatureOperation::BoundaryFill { tools, cells, .. }) =
                 definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
@@ -2216,6 +2246,9 @@ pub(crate) fn bind_feature_body_selections(
                         body_recipe_operands,
                     );
                     for cell in cells {
+                        let BoundaryFillCell::BodyRegion(cell) = cell else {
+                            continue;
+                        };
                         bind_body_recipe_body_selection(
                             cell,
                             feature_id,
@@ -2228,6 +2261,9 @@ pub(crate) fn bind_feature_body_selections(
                 } else {
                     bind_direct_body_recipe_body_selection(tools, scope, inputs, &mut body_candidates);
                     for cell in cells {
+                        let BoundaryFillCell::BodyRegion(cell) = cell else {
+                            continue;
+                        };
                         bind_direct_body_recipe_body_selection(cell, scope, inputs, &mut body_candidates);
                     }
                 }
