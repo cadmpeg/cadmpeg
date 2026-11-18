@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent};
+use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -11,19 +11,7 @@ const EPS_F30_POSE: f64 = 1.0e-9;
 const EPS_F30_FUSION_DISTANCE_MM: f64 = 1.0e-3;
 
 fn world(ir: &CadIr, occurrence: &Occurrence) -> Transform {
-    match &occurrence.parent {
-        OccurrenceParent::Root {} => occurrence.transform,
-        OccurrenceParent::Occurrence { occurrence: parent } => world(
-            ir,
-            ir.model
-                .occurrences
-                .iter()
-                .find(|o| o.id == *parent)
-                .unwrap(),
-        )
-        .compose(occurrence.transform)
-        .unwrap(),
-    }
+    cadmpeg_test_support::assembly::resolved_transform(ir, &occurrence.id).unwrap()
 }
 
 #[test]
@@ -39,7 +27,9 @@ fn f30_insertions_follow_the_captured_owner_subtree_move() {
         let result = decode(bytes.to_vec());
         let ir = result.ir();
         assert_eq!(ir.geometry.bodies.len(), 1);
-        assert_eq!(ir.model.occurrences.len(), 5);
+        // §8.1: the root component is the root definition, with no
+        // occurrence of its own.
+        assert_eq!(ir.model.occurrences.len(), 4);
         for code in [
             F3dLossCode::XrefPlacementUndecoded,
             F3dLossCode::XrefPlacementIdentityAssumed,
@@ -67,7 +57,7 @@ fn f30_insertions_follow_the_captured_owner_subtree_move() {
                 .iter()
                 .find(|o| o.native_ref.as_deref() == Some(reference.id.as_str()))
                 .unwrap();
-            let local = occurrence.transform.rows();
+            let local = occurrence.transform.unwrap().rows();
             assert!((local[0][3] - 10.0).abs() < EPS_F30_POSE);
             let placement = world(ir, occurrence);
             poses.push(placement.rows());

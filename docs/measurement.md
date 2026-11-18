@@ -132,9 +132,9 @@ cites.
 | `length.derivative-unavailable` | unsupported | A procedural curve without a solved cache has no derivative evaluator. |
 | `placement.carrier-shared` | placement | A surface row's surface is used by faces of bodies with different placements. |
 | `mass.principal-axes-degenerate` | undefined | A principal moment agrees with another within their separation, so its principal axis is not determined. |
-| `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain or of its subtree has a scale other than `(1, 1, 1)`. |
-| `placement.prototype-unresolved` | placement | The prototype of the `--occurrence` occurrence or of an occurrence of its subtree is external or unresolved, or its definition does not resolve. |
-| `placement.occurrence-chain-broken` | input | The `--occurrence` parent chain does not reach a root occurrence: a parent is missing or the chain repeats. |
+| `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain or of its subtree has a transform that scales an axis. |
+| `placement.prototype-unresolved` | placement | The prototype of the `--occurrence` occurrence or of an occurrence of its subtree is a definition of `External` storage, or does not resolve. |
+| `placement.occurrence-chain-broken` | input | The `--occurrence` chain does not reach the root definition: a definition on the way is placed by no occurrence or by more than one, or the chain repeats. |
 | `placement.occurrence-body-repeated` | placement | Two occurrences of the `--occurrence` subtree place the same body; a pass has one row per body. |
 | `placement.occurrence-empty` | undefined | Neither the `--occurrence` prototype nor a prototype of its subtree lists a body. |
 | `boundary.period-unresolved` | input | A loop's parameter values are so large that a shift by one period does not change them. |
@@ -212,13 +212,28 @@ names the source of each coedge. An edge with no 3D curve takes its length
 and box from the pcurve uses of its first coedge, mapped through that
 coedge's face surface.
 
+A `v` side of a NURBS pole grid collapses to a point when all its control
+points lie within the model tolerance of its first control point. Along
+such a side `u` is not defined.
+
 An inverted 3D curve interval that passes within the allowance of a cone
-apex, a sphere pole, or the point to which a whole `v` side of a NURBS pole
-grid collapses inside the interval is not split there: the face's
-bounded quantities are `boundary.inversion-failed`. The resolver detects the
-pass at a sample, or between two samples whose parameter image turns by a
-quarter period or more, by a golden-section search of the distance to the
-singular points.
+apex, a sphere pole, a torus sheet pole, or the point to which a whole `v`
+side of a NURBS pole grid collapses inside the interval splits there into
+two pieces that meet at the singular point. The resolver detects the pass at
+a sample, or between two samples whose parameter image turns by a quarter
+period or more. A golden-section search of the distance to the singular
+points between the two regular samples that bracket the pass gives the
+split parameter. Each part is inverted again, so an interval that passes
+several singular points splits at each of them, up to 4 times; a fifth pass
+makes the face's bounded quantities `evaluation.work-exhausted`. The loop
+then meets the singular point between the two pieces as at a vertex, and the
+pole or apex segment below applies. The face's area, flux and region
+quantities integrate over the two pieces; the coedge's length and box are
+those of the whole edge. The face's bounded quantities are `boundary.inversion-failed`
+when the minimum distance exceeds the allowance, when its parameter is an
+end of the interval, or when the samples that bracket a pass through a cone
+apex lie on opposite sides of the apex, where the curve continues onto the
+opposite nappe.
 
 An inverted 3D curve interval whose end lies within the allowance of a cone
 apex, a sphere pole, or a collapsed `v` side of a NURBS patch keeps, from
@@ -271,23 +286,30 @@ On a NURBS carrier's finite parameter domain:
 
 Loops on a periodic NURBS domain are `region.domain-unsupported`.
 
-On a sphere or a ring torus both regions that the loops bound are bounded,
-so the loops do not choose a side:
+On a sphere, a ring torus or a selected spindle-torus sheet both regions
+that the loops bound are bounded, so the loops do not choose a side:
 
 | Loops | Region |
 | --- | --- |
-| No ring loop, or ring loops of seam and synthesized pieces only | `whole_surface`: the face covers the whole carrier, `4πR²` or `4π²R\|r\|`, with the method `closed_form`. |
+| No ring loop, or ring loops of seam and synthesized pieces only | `whole_surface`: the face covers the whole carrier, `4πR²`, `4π²R\|r\|` or the sheet area `2π·∫ \|r\|·\|R + r cos v\| dv` over the sheet's `v` range, with the method `closed_form`. |
 | Other ring loops | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. |
 
-A loop that meets a sphere pole has a synthesized segment along the pole.
-The segment keeps the region on its left: it runs in `−u` at the pole
-`v = π/2` and in `+u` at the pole `v = −π/2`, after the loop reversal for a
-reversed declared normal, by an amount in `[0, 2π)`. When the amount is within the
+A spindle torus (`R < |r|`) whose `degenerate_torus` construction selects
+a sheet has the sheet as its domain. With `cos a = −R/|r|`, the outer
+(apple) sheet is `v ∈ [−a, a]` and the inner (lemon) sheet is
+`v ∈ [a, 2π − a]`. Both ends of the range are poles on the axis, where the
+sheet meets itself. Regions on a sheet follow the sphere rules on that `v`
+range.
+
+A loop that meets a pole of a sphere or a sheet has a synthesized segment
+along the pole. The segment keeps the region on its left: it runs in `−u`
+at the upper pole and in `+u` at the lower pole, after the loop reversal for
+a reversed declared normal, by an amount in `[0, 2π)`. When the amount is within the
 angular allowance of 0 or `2π`, the segment takes the nearest lift.
 
-On a torus the net shifts of the loops sum to zero, else the face is
-`boundary.nesting-invalid`. Horn and spindle tori are
-`region.domain-unsupported`.
+On a ring torus the net shifts of the loops sum to zero, else the face is
+`boundary.nesting-invalid`. A trimmed face on a horn torus (`R = |r|`), or
+on a spindle torus without a selected sheet, is `region.domain-unsupported`.
 
 Membership of a parameter point in such a region uses the region
 indicator. The indicator is 1 at a reference point just left of a loop
@@ -304,9 +326,10 @@ Area and flux on a sphere or torus use Green's theorem on the strip
 `u ∈ [0, 2π)` by `v ∈ [base, base + span]`. The parts of the upper edge in
 the region add to the loops' integrals; each `u` interval `I` of the edge
 adds `W·|I|`, where `W` is the area of one unit of `u`. On a sphere
-`base = −π/2`, and the upper edge is the north pole. The edge is in the
-region when the region indicator beyond every boundary point toward the
-north pole is 1. A torus is cut at a level `base` midway in the widest gap
+`base = −π/2`, and the upper edge is the north pole. On a spindle sheet
+`base` is the lower end of the sheet's `v` range, and the upper edge is the
+upper pole. The edge is in the region when the region indicator beyond
+every boundary point toward the upper pole is 1. A ring torus is cut at a level `base` midway in the widest gap
 between the loops' `v` values. Each piece is split where it crosses the cut,
 and its `v` is taken in `[base, base + 2π)`. An interval of the cut circle
 starts at each crossing in `−v` and ends at the next crossing in `+v`.
@@ -522,28 +545,35 @@ Every body, face, edge and surface row has a `placement` member:
 uses (see Surface rows). In model space each body is placed by its own
 `Body.transform`. In the instance space of an occurrence, each body of the
 occurrence's prototype is placed by its own transform first and then by the
-occurrence chain: `E(root) ∘ … ∘ E(ID) ∘ Body.transform`, where `E` is the
-occurrence's effective transform (its transform composed with its linked
-prototype contribution) and each occurrence applies inside its parent. The
-subtree of the occurrence is in the same space: a child `C` of an
-occurrence `O` places the bodies of its prototype by `P(O) ∘ E(C)`, where
-`P(O)` is the composed placement of `O`. The scope is the bodies of the
+occurrence chain: `T(top) ∘ … ∘ T(ID) ∘ Body.transform`. The chain climbs
+from the occurrence to the definition that owns it, then to the one
+occurrence that places that definition, until it reaches the root
+definition (`docs/cadir-v11.md` §8.1); each occurrence applies inside the
+one above it. `T` is an occurrence's transform, the identity where it
+states none; for an instance below the chain's top-level occurrence it is
+the transform an override of that occurrence states for the instance's
+path, where one does. The subtree of the occurrence is in the same space:
+an occurrence `C` that the prototype of an occurrence `O` owns places the
+bodies of its prototype by `P(O) ∘ T(C)`, where `P(O)` is the composed
+placement of `O`. The scope is the bodies of the
 prototypes of the occurrence and of its subtree; a `--body`, `--face`,
 `--edge` or `--surface` selector outside it is refused.
 
 The report then has an `occurrence` member: `occurrence`, `prototype` (the
 local product definition), `chain` (root first), `transform` (the composed
 chain as three rows of a 3 × 4 affine map), `bodies` (the bodies of the
-scope) and `descendants`, breadth first, each with `occurrence`, `parent`,
-`prototype`, `transform` (its composed placement from the root) and
+scope) and `descendants`, breadth first, each with `occurrence`, `parent`
+(the occurrence it sits in), `prototype`, `transform` (its composed
+placement from the root) and
 `bodies` (the bodies its prototype lists). When the space cannot place its
 bodies, the report has no row, every document quantity that applies to the
 selection is unavailable with the same reason, `transform` is absent, and
 `occurrence.unavailable` states why: `placement.occurrence-chain-broken`
-(a parent is missing or the chain repeats), `placement.occurrence-scale`
-(an occurrence of the chain or of the subtree has a scale other than
-`(1, 1, 1)`; `entity` names it), `placement.prototype-unresolved` (an
-external or unresolved prototype, or a definition that does not resolve),
+(a definition on the chain is placed by no occurrence or by several, or the
+chain repeats), `placement.occurrence-scale` (an occurrence of the chain or
+of the subtree has a transform that scales an axis; `entity` names it),
+`placement.prototype-unresolved` (a prototype of `External` storage, or a
+definition that does not resolve),
 `placement.non-finite`, `placement.occurrence-body-repeated` (two
 occurrences of the subtree place one body; `entity` names it) or
 `placement.occurrence-empty` (the scope has no body). The first failure in
@@ -703,10 +733,11 @@ An ID-free comparison measures every body of two documents in model space
 and matches bodies by their measured geometry, not by their IDs.
 
 - Placement. A document's placement is `trivial` when it has no
-  occurrences, or when every occurrence has a local prototype, unit scale and
-  an effective transform whose linear part is the identity within `1e-8` and
-  whose translation is within `tolerances.linear` of zero, every product
-  definition that lists bodies is the prototype of exactly one occurrence,
+  occurrences, or when every occurrence places a definition the document
+  holds (not of `External` storage) at a transform whose linear part is the
+  identity within `1e-8` and whose translation is within
+  `tolerances.linear` of zero, every product definition that lists bodies,
+  other than a root definition, is the prototype of exactly one occurrence,
   and no body is listed by two definitions. Otherwise it is `occurrences`:
   the document row `occurrences` is not compared
   (`compare.occurrence-placement`), and the bodies are still compared.

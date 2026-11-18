@@ -2519,9 +2519,7 @@ pub(crate) fn decode_fillet_radius_groups(
         owned_parameters.sort_by_key(|(ordinal, _)| *ordinal);
         let radii = owned_parameters
             .iter()
-            .filter_map(|(_, parameter)| {
-                (parameter.source_kind() == "Radius").then_some(*parameter)
-            })
+            .filter_map(|(_, parameter)| parameter.is_fillet_radius().then_some(*parameter))
             .collect::<Vec<_>>();
         let weights = owned_parameters
             .iter()

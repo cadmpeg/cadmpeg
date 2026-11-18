@@ -736,6 +736,7 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
                 auxiliary_record_index: 5,
                 entry_count: 1,
                 tangent_chain: true,
+                distance_reversed: false,
             }],
         });
     }

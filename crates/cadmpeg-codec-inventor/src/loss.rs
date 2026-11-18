@@ -161,6 +161,14 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalBendControlsRetained,
     /// Projected sheet-metal relief and transition forms remain in native style records.
     FeatureSheetMetalStyleFormsNative,
+    /// The active unfold rule states no decimal K-factor; sheet-metal rules keep no allowance.
+    FeatureSheetMetalUnfoldFactorNative,
+    /// A style `KFactor` parameter differs from the active unfold-rule K-factor; the rule keeps no allowance.
+    FeatureSheetMetalStyleFactorConflict,
+    /// No active unfold rule resolves in a part with sheet-metal styles.
+    FeatureSheetMetalUnfoldRuleUnresolved,
+    /// A sheet-metal rule takes its K-factor from the style `KFactor` parameter without an active unfold rule.
+    FeatureSheetMetalStyleFactorAssumed,
     /// An attached plate stays native; the note names the first refused admission check.
     FeatureSheetMetalPlateRefused,
     /// Projected contour flanges retain construction controls and their bend and corner records natively.
@@ -403,6 +411,10 @@ impl InventorLossCode {
         Self::FeatureSheetMetalAttachmentControlsRetained,
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
+        Self::FeatureSheetMetalUnfoldFactorNative,
+        Self::FeatureSheetMetalStyleFactorConflict,
+        Self::FeatureSheetMetalUnfoldRuleUnresolved,
+        Self::FeatureSheetMetalStyleFactorAssumed,
         Self::FeatureSheetMetalPlateRefused,
         Self::FeatureSheetMetalContourControlsRetained,
         Self::FeatureSheetMetalContourFlangeRefused,
@@ -580,6 +592,14 @@ impl InventorLossCode {
                 "feature.sheet-metal-bend-controls-retained"
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
+            Self::FeatureSheetMetalUnfoldFactorNative => "feature.sheet-metal-unfold-factor-native",
+            Self::FeatureSheetMetalStyleFactorConflict => {
+                "feature.sheet-metal-style-factor-conflict"
+            }
+            Self::FeatureSheetMetalUnfoldRuleUnresolved => {
+                "feature.sheet-metal-unfold-rule-unresolved"
+            }
+            Self::FeatureSheetMetalStyleFactorAssumed => "feature.sheet-metal-style-factor-assumed",
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
             Self::FeatureSheetMetalContourControlsRetained => {
                 "feature.sheet-metal-contour-controls-retained"
@@ -747,6 +767,10 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
+            | Self::FeatureSheetMetalUnfoldFactorNative
+            | Self::FeatureSheetMetalStyleFactorConflict
+            | Self::FeatureSheetMetalUnfoldRuleUnresolved
+            | Self::FeatureSheetMetalStyleFactorAssumed
             | Self::FeatureSheetMetalPlateRefused
             | Self::FeatureSheetMetalContourControlsRetained
             | Self::FeatureSheetMetalContourFlangeRefused
@@ -939,6 +963,10 @@ mod tests {
                 "feature.sheet-metal-attachment-controls-retained",
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
+                "feature.sheet-metal-unfold-factor-native",
+                "feature.sheet-metal-style-factor-conflict",
+                "feature.sheet-metal-unfold-rule-unresolved",
+                "feature.sheet-metal-style-factor-assumed",
                 "feature.sheet-metal-plate-refused",
                 "feature.sheet-metal-contour-controls-retained",
                 "feature.sheet-metal-contour-flange-refused",

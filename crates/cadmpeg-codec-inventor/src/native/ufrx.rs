@@ -730,14 +730,20 @@ impl ExternalReferenceRecord {
         }
     }
 
+    /// Every identity the reference records for its document.
     pub(crate) fn document(&self) -> cadmpeg_ir::products::ExternalDocument {
         use cadmpeg_ir::products::ExternalDocument;
         match &self.identity {
-            ExternalReferenceIdentity::Path { path, .. } => {
-                ExternalDocument::Path { path: path.clone() }
-            }
-            ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument::DocumentId {
-                document_id: document_id.0 .0.clone(),
+            ExternalReferenceIdentity::Path { path, .. } => ExternalDocument {
+                path: Some(path.clone()),
+                document_id: self
+                    .document_id()
+                    .and_then(cadmpeg_core::text::NonBlankString::new),
+                ..ExternalDocument::default()
+            },
+            ExternalReferenceIdentity::DocumentId(document_id) => ExternalDocument {
+                document_id: Some(document_id.0 .0.clone()),
+                ..ExternalDocument::default()
             },
         }
     }

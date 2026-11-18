@@ -191,6 +191,8 @@ pub(crate) struct FeatureInventory {
     pub(crate) pattern_operands: pattern::Operands,
     pub(crate) terminators: Vec<PmDcFeatureTerminator>,
     pub(crate) properties: Vec<PmDcFeatureProperty>,
+    pub(crate) sheet_metal_unfold_rules: Vec<sheet_metal::unfold::Rule>,
+    pub(crate) sheet_metal_unfold_selections: Vec<sheet_metal::unfold::Selection>,
     pub(crate) sheet_metal_styles: Vec<sheet_metal::style::Style>,
     pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
     /// Segment major versions of sheet-metal style records without a field layout.
@@ -970,6 +972,13 @@ pub(crate) fn inventory(
             }
         }
     }
+    sheet_metal::unfold::admit(
+        ctx,
+        document,
+        &mut inventory.sheet_metal_unfold_rules,
+        &mut inventory.sheet_metal_unfold_selections,
+        &mut inventory.issues,
+    )?;
     mirror::admit_operands(ctx, document, &mut inventory)?;
     sheet_metal::contour::read_attachments(ctx, document, &mut inventory)?;
     Ok(inventory)
