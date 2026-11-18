@@ -5389,7 +5389,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::SurfaceTrim) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::ROLE_0X21
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::ROLE_0X9
+                            | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Split) => {
@@ -7895,6 +7897,12 @@ fn validate_face_operands<'a>(
                                     .is_some_and(|group| group.role() == DesignOperandRole::PROFILE)
                                     && operand.recipe_kind
                                         == records::recipes::ConstructionRecipeKind::BoundedFace
+                            }
+                            Some(design::DesignFeatureFamily::SurfaceTrim) => {
+                                group.is_some_and(|group| {
+                                    group.role() == DesignOperandRole::ROLE_0X9
+                                        && group.members().len() == 1
+                                }) && operand.is_terminal_face_recipe()
                             }
                             Some(design::DesignFeatureFamily::Draft) => {
                                 group.is_some_and(|group| match group.role() {
