@@ -816,6 +816,7 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
         feature.id = crate::feature::history_feature_id(&split.identity)?;
         feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::SplitBody {
+                extend_tool: None,
                 targets: target.clone(),
                 tool,
             },
