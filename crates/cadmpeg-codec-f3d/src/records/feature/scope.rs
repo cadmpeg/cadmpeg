@@ -102,6 +102,11 @@ cadmpeg_core::named_optional_field!(
     "derived_base_owner"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_derived_base_source,
+    super::derived_base::DesignDerivedBaseSource,
+    "derived_base_source"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_assembly_alignment,
     DesignAssemblyAlignment,
     "assembly_alignment"
@@ -963,6 +968,8 @@ pub(crate) struct DesignParameterScope {
     /// Owner record that a derived base frame names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) derived_base_owner: Option<super::derived_base::DesignDerivedBaseOwner>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) derived_base_source: Option<super::derived_base::DesignDerivedBaseSource>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -1472,6 +1479,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_derived_base_owner"
     )]
     derived_base_owner: Option<super::derived_base::DesignDerivedBaseOwner>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_derived_base_source"
+    )]
+    derived_base_source: Option<super::derived_base::DesignDerivedBaseSource>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(
         default,
@@ -2634,6 +2647,15 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             ));
         }
         admitted.derived_base_owner = wire.derived_base_owner;
+        if wire.derived_base_source.as_ref().is_some_and(|source| {
+            !super::derived_base::is_derived_base(&admitted)
+                || !source.frame_holds(admitted.byte_offset(), admitted.kind_offset)
+        }) {
+            return Err(DesignParameterScopePayloadError(
+                "derived_base_source disagrees with scope".into(),
+            ));
+        }
+        admitted.derived_base_source = wire.derived_base_source;
         Ok(admitted)
     }
 }
@@ -2724,6 +2746,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
             deleted_members: scope.deleted_members,
             derived_base_owner: scope.derived_base_owner,
+            derived_base_source: scope.derived_base_source,
             hole_construction: None,
             hole_extent: None,
             sketch_entity: None,
@@ -3195,6 +3218,7 @@ impl DesignParameterScope {
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             deleted_members: draft.deleted_members,
             derived_base_owner: None,
+            derived_base_source: None,
             paired_class_tag: draft.paired_class_tag,
             paired_byte_offset: draft.paired_byte_offset,
         };
