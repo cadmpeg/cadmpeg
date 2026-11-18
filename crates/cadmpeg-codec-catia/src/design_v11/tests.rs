@@ -111,8 +111,10 @@ fn a_part_with_no_history_states_no_design_record() {
 
 #[test]
 fn a_geometry_decode_states_no_design_record() {
-    let mut options = DecodeOptions::default();
-    options.depth = cadmpeg_core::decode::DecodeDepth::Geometry;
+    let options = DecodeOptions {
+        depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+        ..DecodeOptions::default()
+    };
     let result = decode(standard_catpart_with_formula_relation(4, false), &options);
     let ir = result.ir();
     assert!(ir.design.scopes.is_empty());

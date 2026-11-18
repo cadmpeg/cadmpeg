@@ -37,7 +37,13 @@ fn parameter<'a>(result: &'a EditableDecodeResult, name: &str) -> &'a DesignPara
         .design
         .parameters
         .iter()
-        .find(|parameter| parameter.name.as_ref().map(|name| name.as_str()) == Some(name))
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some(name)
+        })
         .unwrap()
 }
 

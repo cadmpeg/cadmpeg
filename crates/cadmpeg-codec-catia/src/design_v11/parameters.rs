@@ -21,6 +21,10 @@ use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::CadIr;
 
+/// The relative difference within which a formula's tree reproduces the
+/// value the source stores for the formula.
+const STORED_VALUE_AGREEMENT: f64 = 1e-9;
+
 /// Restate every user parameter the decoder transferred as a parameter of
 /// `scope`. The decoder files no CATIA parameter under a feature; one it did
 /// would need its owner stated, and is left out.
@@ -411,7 +415,7 @@ fn agrees(
     }
     match value(parameter.value.as_ref(), kind) {
         Some(ParameterValue::Number(stored)) if complete => {
-            (result - stored.get()).abs() <= 1e-9 * stored.get().abs().max(1.0)
+            (result - stored.get()).abs() <= STORED_VALUE_AGREEMENT * stored.get().abs().max(1.0)
         }
         _ => true,
     }
