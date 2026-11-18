@@ -14,7 +14,7 @@ use super::evaluations::check_path_steps;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use crate::design::evaluation::{Evaluation, StateBase, StateDelta};
 use crate::design::feature::FeatureOperation;
-use crate::design::names::NameEntry;
+use crate::design::names::{NameEntry, NameKind};
 use crate::design::refs::{EntityRef, RecordRef};
 use crate::design::selection::OccurrencePath;
 use crate::document::Topology;
@@ -52,7 +52,7 @@ macro_rules! declare_arenas {
     ($($field:ident: $arena:ident,)*) => {
         /// A `Topology` arena.
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        enum Arena {
+        pub(super) enum Arena {
             $($arena,)*
         }
 
@@ -63,7 +63,7 @@ macro_rules! declare_arenas {
                 }
             }
 
-            fn of_record(record: &RecordRef) -> (Self, &str) {
+            pub(super) fn of_record(record: &RecordRef) -> (Self, &str) {
                 match record {
                     $(RecordRef::$arena(id) => (Self::$arena, id.as_str()),)*
                 }
@@ -71,7 +71,7 @@ macro_rules! declare_arenas {
         }
 
         /// Each record of `topology`: its arena, identity, and index.
-        fn records(topology: &Topology) -> Vec<(Arena, &str, usize)> {
+        pub(super) fn records(topology: &Topology) -> Vec<(Arena, &str, usize)> {
             let mut records = Vec::new();
             $(for (at, record) in topology.$field.iter().enumerate() {
                 records.push((Arena::$arena, EntitySchema::identity(record), at));
@@ -98,7 +98,7 @@ macro_rules! declare_arenas {
 topology_arenas!(declare_arenas);
 
 impl Arena {
-    fn of_entity(entity: &EntityRef) -> (Self, &str) {
+    pub(super) fn of_entity(entity: &EntityRef) -> (Self, &str) {
         match entity {
             EntityRef::Body(id) => (Self::Body, id.as_str()),
             EntityRef::Face(id) => (Self::Face, id.as_str()),
@@ -107,6 +107,35 @@ impl Arena {
             EntityRef::Surface(id) => (Self::Surface, id.as_str()),
             EntityRef::Curve(id) => (Self::Curve, id.as_str()),
             EntityRef::Subd(id) => (Self::Subd, id.as_str()),
+        }
+    }
+
+    /// Whether the arena holds nameable entities: an `EntityRef` names its
+    /// records.
+    pub(super) const fn is_entity(self) -> bool {
+        matches!(
+            self,
+            Self::Body
+                | Self::Face
+                | Self::Edge
+                | Self::Vertex
+                | Self::Surface
+                | Self::Curve
+                | Self::Subd
+        )
+    }
+
+    /// The name kind of an entity of this arena; a subdivision cage and a
+    /// record no `EntityRef` names have none.
+    pub(super) const fn name_kind(self) -> Option<NameKind> {
+        match self {
+            Self::Body => Some(NameKind::Body),
+            Self::Face => Some(NameKind::Face),
+            Self::Edge => Some(NameKind::Edge),
+            Self::Vertex => Some(NameKind::Vertex),
+            Self::Surface => Some(NameKind::Surface),
+            Self::Curve => Some(NameKind::Curve),
+            _ => None,
         }
     }
 }

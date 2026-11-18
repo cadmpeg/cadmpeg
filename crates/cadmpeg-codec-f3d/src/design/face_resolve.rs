@@ -2526,6 +2526,7 @@ pub(crate) fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
         | DesignSketchFrameForm::ScopeExplicit(_)
         | DesignSketchFrameForm::MemberCompact { .. }
         | DesignSketchFrameForm::MemberTypedCompact { .. }
+        | DesignSketchFrameForm::MemberNullExplicit { .. }
         | DesignSketchFrameForm::MemberExplicit { .. } => 10.0,
         DesignSketchFrameForm::ScopeCompact
         | DesignSketchFrameForm::ScopeLegacy305(_)

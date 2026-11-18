@@ -271,6 +271,11 @@ cadmpeg_core::named_optional_field!(
     "hole_construction"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_joint_origin_carrier,
+    super::work_geometry::joint_origin::DesignJointOriginCarrierEvidence,
+    "joint_origin_carrier"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_joint_origin_reference,
     u32,
     "joint_origin_reference"
@@ -1635,6 +1640,9 @@ impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
 #[derive(Deserialize)]
 // Field names are the native record serialized keys.
 struct JointOriginFrameWire {
+    #[serde(default, deserialize_with = "deserialize_joint_origin_carrier")]
+    #[serde(rename = "joint_origin_carrier")]
+    carrier: Option<super::work_geometry::joint_origin::DesignJointOriginCarrierEvidence>,
     #[serde(default, deserialize_with = "deserialize_joint_origin_transform")]
     #[serde(rename = "joint_origin_transform")]
     transform: Option<SketchPlacementMatrix>,
@@ -1677,12 +1685,13 @@ where
         }
     };
     match (wire.transform, wire.transform_offset) {
-        (None, None) if reference.is_none() => Ok(None),
+        (None, None) if reference.is_none() && wire.carrier.is_none() => Ok(None),
         (Some(joint_origin_transform), Some(joint_origin_transform_offset)) => {
             Ok(Some(DesignJointOriginTransform {
                 joint_origin_transform,
                 joint_origin_transform_offset,
                 reference,
+                carrier: wire.carrier,
             }))
         }
         _ => Err(serde::de::Error::custom(
@@ -1997,6 +2006,12 @@ pub(crate) struct DesignJointOriginTransform {
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) reference: Option<DesignJointOriginReference>,
+    #[serde(
+        rename = "joint_origin_carrier",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) carrier:
+        Option<super::work_geometry::joint_origin::DesignJointOriginCarrierEvidence>,
 }
 
 /// Construction record named by a `JointOrigin` frame.
@@ -4156,12 +4171,12 @@ impl DesignParameterScope {
             .map(|frame| frame.joint_origin_transform)
     }
 
+    #[cfg(test)]
     pub(crate) fn joint_origin_transform_offset(&self) -> Option<u64> {
         self.joint_origin_frame()
             .map(|frame| frame.joint_origin_transform_offset)
     }
 
-    #[cfg(test)]
     pub(crate) fn joint_origin_reference(&self) -> Option<u32> {
         self.joint_origin_frame().and_then(|frame| {
             frame
@@ -4208,6 +4223,7 @@ impl DesignParameterScope {
             joint_origin_transform: transform,
             joint_origin_transform_offset: 0,
             reference: None,
+            carrier: None,
         }));
     }
 
