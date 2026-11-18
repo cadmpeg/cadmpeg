@@ -264,12 +264,18 @@ pub(super) fn exact_as_built_operand_frame(
     )
     .ok()?;
     let wide = crate::design::assembly::wide_as_built_scope(scope);
-    let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) {
+    let registered = stream_types
+        .get(&u64::from(path.link().locator_record_index))
+        .copied();
+    let group_layout = if crate::design::assembly::compact_placement_as_built_scope(scope) {
+        Some(
+            crate::design::assembly::RigidGroupLocatorLayout::admit_compact_as_built(
+                registered, length,
+            )?,
+        )
+    } else if crate::design::assembly::rigid_as_built_scope(scope) {
         Some(crate::design::assembly::RigidGroupLocatorLayout::admit(
-            stream_types
-                .get(&u64::from(path.link().locator_record_index))
-                .copied(),
-            length,
+            registered, length,
         )?)
     } else {
         None
