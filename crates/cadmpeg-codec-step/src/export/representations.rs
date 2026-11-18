@@ -21,6 +21,12 @@ impl Builder<'_> {
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION",
             &format!("{},{},{context}", string(name), refs(&sets)),
         );
+        // `representation.items` is SET [1:?]: with nothing left beside the
+        // sets, the bounded-surface representation is the representation
+        // itself (a legal `map_usage` of a body placement's map).
+        if items.is_empty() && placements.is_empty() {
+            return sets;
+        }
         let representation = self.emit_topology_representation(name, items, placements, context);
         self.emitter.emit(
             "SHAPE_REPRESENTATION_RELATIONSHIP",

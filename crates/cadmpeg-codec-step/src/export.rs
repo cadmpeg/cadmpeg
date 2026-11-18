@@ -2169,9 +2169,12 @@ impl<'a> Builder<'a> {
             .push(item);
     }
 
-    /// A `GEOMETRIC_SET` of the surfaces of a sheet region whose faces are
-    /// whole bounded surfaces: forward faces with no loops on B-spline
-    /// surfaces or rectangular trims.
+    /// A `GEOMETRIC_SET` of the surfaces of a region whose faces are whole
+    /// bounded surfaces: forward faces with no loops on a surface with no
+    /// procedural construction whose solved geometry is NURBS, or on a
+    /// rectangular parameter subset. An exact NURBS can be written wider than
+    /// its face, and a sub-surface is written by its solved carrier, not a
+    /// trim to its ranges, so neither qualifies.
     fn emit_surface_set_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
         let children = &self.children;
         let faces = region
@@ -2254,9 +2257,8 @@ impl<'a> Builder<'a> {
         if self.advanced_brep_items.contains(&item) {
             self.advanced_brep_items.insert(mapped);
         }
-        if self.surface_set_items.contains(&item) {
-            self.surface_set_items.insert(mapped);
-        }
+        // A placed set's mapped item stays in the product's plain shape
+        // representation: its map already names the bounded-surface one.
         mapped
     }
 
