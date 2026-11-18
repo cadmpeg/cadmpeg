@@ -737,6 +737,7 @@ pub(crate) fn decode_parameter_scopes(
                     &records,
                     &scope,
                     parameter_owners,
+                    &stream_types,
                 )?;
                 if let scope::DesignScopePayloadMut::RPattern(slot)
                 | scope::DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut()
