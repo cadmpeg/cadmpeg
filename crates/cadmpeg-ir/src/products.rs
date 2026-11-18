@@ -435,9 +435,10 @@ impl crate::document::CadIr {
     /// the identities `document` the root file records about itself. The
     /// root then owns every body that no definition owns or shows for an
     /// instance, and every tessellation that represents no body and that no
-    /// definition owns: what the file holds at its top. A container decode
-    /// holds no model records, so it states none and returns `None`. The
-    /// decoder's entity admission counts the root with its other records.
+    /// definition owns: what the file holds at its top. A new root is charged
+    /// to `ctx` as one entity, so a decoder that admits its entity total calls
+    /// this after its last admission. A container decode holds no model
+    /// records, so it states none and returns `None`.
     pub fn state_root_definition(
         &mut self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -484,6 +485,7 @@ impl crate::document::CadIr {
         let index = match definitions.iter().position(ProductDefinition::is_root) {
             Some(index) => index,
             None => {
+                ctx.charge_entities(1, "root product definition")?;
                 self.model
                     .product_definitions
                     .push(ProductDefinition::root(id, document));

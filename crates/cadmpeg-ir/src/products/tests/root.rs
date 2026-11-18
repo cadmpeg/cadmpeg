@@ -127,6 +127,33 @@ fn a_stated_root_is_kept_and_owns_only_what_no_definition_holds() {
 }
 
 #[test]
+fn a_new_root_is_charged_as_one_entity() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_entities = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = CadIr::empty();
+    let refused = ir
+        .state_root_definition(&ctx, root_id(), ExternalDocument::default())
+        .unwrap_err();
+    assert!(
+        matches!(&refused, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities),
+        "{refused:?}"
+    );
+    assert!(ir.model.product_definitions.is_empty());
+
+    ir.model.product_definitions.push(ProductDefinition::root(
+        root_id(),
+        ExternalDocument::default(),
+    ));
+    ir.state_root_definition(&ctx, root_id(), ExternalDocument::default())
+        .unwrap();
+    assert_eq!(ir.model.product_definitions.len(), 1);
+}
+
+#[test]
 fn only_a_bare_root_is_the_document_itself() {
     let mut root = ProductDefinition::root(root_id(), ExternalDocument::default());
     root.kind = Some(crate::products::ProductDefinitionKind::Part);

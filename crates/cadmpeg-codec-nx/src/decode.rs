@@ -194,6 +194,11 @@ fn decoded(
     unknowns: Vec<UnknownRecord>,
     admitted_entities: &mut u64,
 ) -> Result<Decoded, CodecError> {
+    ctx.admit_entities(
+        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
+        admitted_entities,
+        "admit NX entities",
+    )?;
     ir.state_root_definition(
         ctx,
         cadmpeg_ir::ids::ProductDefinitionId::compose(
@@ -201,11 +206,6 @@ fn decoded(
             cadmpeg_ir::identity_key!("root"),
         ),
         cadmpeg_ir::products::ExternalDocument::default(),
-    )?;
-    ctx.admit_entities(
-        cadmpeg_core::decode::u64_from_index(ir.entity_count()),
-        admitted_entities,
-        "admit NX entities",
     )?;
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::with_annotations(annotations, decode_digest);

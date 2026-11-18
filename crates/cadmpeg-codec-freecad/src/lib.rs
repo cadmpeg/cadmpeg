@@ -1278,6 +1278,11 @@ impl CodecBackend for FcstdCodec {
             .as_ref()
             .and_then(|dialects| dialect::FcstdDialect::dialect_loss(dialects.primary()));
         losses.extend(dialect_losses);
+        ctx.admit_entities(
+            cadmpeg_core::decode::u64_from_index(ir.entity_count()),
+            &mut admitted_entities,
+            "admit FCStd entities",
+        )?;
         if let Some(root) = ir.state_root_definition(
             ctx,
             product::document_definition_id()?,
@@ -1298,11 +1303,6 @@ impl CodecBackend for FcstdCodec {
                 );
             }
         }
-        ctx.admit_entities(
-            cadmpeg_core::decode::u64_from_index(ir.entity_count()),
-            &mut admitted_entities,
-            "admit FCStd entities",
-        )?;
         Ok(Decoded {
             ir,
             body: DecodeBody {
