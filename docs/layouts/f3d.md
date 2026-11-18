@@ -6494,7 +6494,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 122 B
 
-Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122.
+Offsets are relative to the primary indexed header. The 256-, 257- and 267-byte identity forms share this prefix. The generation-specific scope tail begins at offset 122.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
