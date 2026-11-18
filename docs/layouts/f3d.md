@@ -891,6 +891,24 @@ Parsed by:
 | 78 | 11 | `tangency_weight_owner_reference` | `bytes[11]` | little | spec | `+78: TangencyWeight owner reference` |
 | 89 | 4 | `tangency_weight_owner_padding` | `bytes[4]` | little | spec | `+89: four bytes` |
 
+## `fillet_set_short_constant`
+
+Spec §3.1 · layout: byte offsets · size: 80 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/fillet_set.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A fillet set is one indexed record |
+| 11 | 11 | `zero_run_at_11` | `bytes[11]` | little | spec | Every byte that the form does not name is zero |
+| 22 | 1 | `form_marker` | `u8` | little | spec | `+22: u8 1` · value `1` |
+| 23 | 3 | `zero_run_at_23` | `bytes[3]` | little | spec | Every byte that the form does not name is zero |
+| 26 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | `+26: edge-group reference` |
+| 37 | 20 | `zero_run_at_37` | `bytes[20]` | little | spec | Every byte that the form does not name is zero |
+| 57 | 11 | `radius_owner_reference` | `bytes[11]` | little | spec | `+57: Radius owner reference` |
+| 68 | 12 | `zero_run_at_68` | `bytes[12]` | little | spec | Every byte that the form does not name is zero |
+
 ## `fillet_set_asymmetric`
 
 Spec §3.1 · layout: byte offsets · size: 97 B
@@ -3870,6 +3888,21 @@ Spec §3.1 · layout: byte offsets · size: 29 B
 | 20 | 1 | `marker` | `u8` | little | spec | byte 20 is `0x01` |
 | 21 | 4 | `zero_u32` | `bytes[4]` | little | spec | bytes 21 through 24 are zero |
 | 25 | 4 | `body_count` | `u32` | little | spec | offset 25 stores u32 `N` |
+
+## `timeline_owned_base_feature_typed_body_entry`
+
+Spec §3.1 · layout: byte offsets · size: 55 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/base_feature/owned_body_runs.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | Each entry starts with marker 1 · value `1` |
+| 1 | 8 | `reference_value` | `u64` | little | spec | a u64 target at offset 1 |
+| 9 | 4 | `guid_length` | `u32` | little | spec | The u32 at offset 9 gives the 36-byte ASCII · value `36` |
+| 13 | 36 | `guid` | `bytes[36]` | little | spec | The GUID at offset 13 is the Body presentation type |
+| 49 | 6 | `reference_field` | `bytes[6]` | little | spec | The six-byte field at offset 49 |
 
 ## `timeline_owned_paste_source_pairs`
 
@@ -10293,8 +10326,8 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 20 | 4 | `body_reference_count` | `u32` | little | spec | The body reference count at offset 20 is u32 2 · value `2` |
-| 24 | 11 | `first_body_reference` | `bytes[11]` | little | spec | Two plain local body references begin at offsets 24 and 41 |
-| 41 | 11 | `result_body_reference` | `bytes[11]` | little | spec | The second names the saved result body entity |
+| 24 | 15 | `first_body_reference` | `bytes[15]` | little | spec | Two marked 15-byte local body entries begin at offsets 24 and 39 |
+| 39 | 15 | `result_body_reference` | `bytes[15]` | little | spec | The second names the saved result body entity |
 | 621 | 11 | `companion_reference` | `bytes[11]` | little | spec | A plain local companion reference begins at offset 621 |
 | 632 | 2 | `closing_zeroes` | `bytes[2]` | little | spec | two zero bytes begin at offset 632 |
 | 634 | 30 | `paired_header` | `bytes[30]` | little | spec | the 30-byte paired header begins at offset 634 |
@@ -10302,8 +10335,7 @@ Parsed by:
 Unstated regions:
 
 - `0..20` (20 B): Indexed header and prologue.
-- `35..41` (6 B): Body-reference trailer.
-- `52..621` (569 B): The owner reference is in derived_base_owner_reference.
+- `54..621` (567 B): The owner reference is in derived_base_owner_reference.
 
 ## `derived_base_mirror_companion`
 
@@ -12253,6 +12285,35 @@ Parsed by:
 | 4 | 1 | `zero` | `u8` | little | spec | Immediately before the carrier reference |
 | 5 | 51 | `carrier_reference` | `bytes[51]` | little | spec | Immediately before the carrier reference |
 | 56 | 8 | `thickness` | `f64` | little | spec | Immediately before the carrier reference |
+
+## `split_body_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 20 B
+
+The common parameter-scope prologue begins at the leading-block presence byte.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/split.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | indexed header and eight zero bytes |
+| 11 | 8 | `zero_run` | `bytes[8]` | little | spec | eight zero bytes |
+| 19 | 1 | `leading_block_presence` | `u8` | little | spec | The leading-block presence byte is zero. · value `0` |
+
+## `split_body_extension`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+Offsets start at the end of the parameter-scope prologue. A nullable local record reference follows this control.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/split.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `extend_tool` | `u8` | little | spec | Zero disables extension and one enables extension. |
+| 1 | 4 | `following_word` | `u32` | little | spec | A u32 with value one and a nullable local record reference follow the Boolean. · value `1` |
 
 ## `mesh_plane_cut_scope_prefix`
 

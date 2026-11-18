@@ -170,13 +170,17 @@ fn mirror_derived_base_owner_requires_registered_reciprocal_references() {
     ];
     let mut bytes = [0; 779];
     bytes[20..24].copy_from_slice(&2_u32.to_le_bytes());
+    let mut body_rows = Vec::new();
+    for target in [9, 10] {
+        crate::test_support::push_marked_reference(&mut body_rows, target);
+        body_rows.extend_from_slice(&[0; 4]);
+    }
+    bytes[24..54].copy_from_slice(&body_rows);
     let reference = |bytes: &mut [u8], at: usize, index: u64| {
         bytes[at] = 1;
         bytes[at + 1..at + 9].copy_from_slice(&index.to_le_bytes());
     };
     for (at, index) in [
-        (mirror::FIRST_BODY_REFERENCE, 9),
-        (mirror::RESULT_BODY_REFERENCE, 10),
         (owner::MARKER, 4),
         (mirror::COMPANION_REFERENCE, 7),
         (664 + companion::OWNER_REFERENCE, 4),
@@ -195,14 +199,14 @@ fn mirror_derived_base_owner_requires_registered_reciprocal_references() {
     assert_eq!(binding.repeat_offset, 695);
     let result = binding.result_body.unwrap();
     assert_eq!(result.value, 10);
-    assert_eq!(result.offset, 42);
+    assert_eq!(result.offset, 40);
     let mut bound_scope = scope.clone();
     bound_scope.derived_base_owner = Some(binding);
     let wire = serde_json::to_value(&bound_scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(wire).unwrap();
     assert_eq!(decoded.derived_base_owner, Some(binding));
     let mut missing_result = bytes;
-    missing_result[mirror::RESULT_BODY_REFERENCE] = 0;
+    missing_result[39] = 0;
     let owner_only = read(&missing_result, &frames, &owners).unwrap();
     assert_eq!(owner_only.record_index, binding.record_index);
     assert_eq!(owner_only.result_body, None);
