@@ -3555,15 +3555,3 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Paired saves that vary this word and identify the Extrude setting or record that supplies it.
 
 **Note.** The decoder retains the word and its offset. Neutral projection uses the stored blind distance and reports `feature.extrude-opaque-distance-word-assumed`.
-
-### DR-821. Connector GUIDs in version-four Assemble scopes
-
-**Question.** What identity does each connector GUID select in a version-four `Assemble` scope, and how does that identity affect its operand context and joint relation?
-
-**Known.** One local corpus file has two 810-byte version-four scopes with four ordered references. Each connector has an explicit matrix followed by an LP-UTF16 GUID of 36 code units. The version-four reader expects the next connector or alignment-owner reference after the matrix. These scopes retain their source records with `assembly.joint-unprojected`.
-
-**Need.** Public controlled version-four saves that change each connector GUID independently of its matrix, occurrence path, joint motion, and alignment owners. Establish the complete frame grammar and compare the selected occurrence poses with final geometry.
-
-**Conflict.** The connector suffix matches the version-five GUID spelling, while the scope registration and prologue select version four.
-
-**Note.** A final geometry snapshot constrains occurrence poses. Controlled motion states must establish the joint freedoms and identity roles.

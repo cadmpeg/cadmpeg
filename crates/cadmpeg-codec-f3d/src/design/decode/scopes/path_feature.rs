@@ -135,30 +135,44 @@ pub(super) fn tail_second_reference(bytes: &[u8], scope: &DesignParameterScope) 
     let tail = scope
         .paired_byte_offset()
         .checked_sub(SECOND_REFERENCE_TAIL)?;
-    if scope.previous_history_state_id_offset() != tail.checked_add(SECOND_REFERENCE_PREVIOUS_STATE)
+    if scope.feature_ordinal_offset() != tail
+        || scope.previous_history_state_id_offset()
+            != tail.checked_add(SECOND_REFERENCE_PREVIOUS_STATE)
     {
         return None;
     }
     let marker = usize::try_from(tail)
         .ok()?
         .checked_add(super::parameter_scope::FIXED_TAIL_SECOND_REFERENCE)?;
-    if bytes.get(marker) != Some(&1) {
+    if bytes.get(marker) != Some(&1)
+        || bytes.get(marker.checked_add(9)?..marker.checked_add(11)?) != Some(&[0; 2])
+    {
         return None;
     }
-    View::u64_le_at(bytes, marker.checked_add(1)?)
+    let target = View::u64_le_at(bytes, marker.checked_add(1)?)?;
+    (!scope
+        .reference_members()
+        .values()
+        .any(|&member| u64::from(member) == target))
+    .then_some(target)
 }
 
 pub(super) fn referenced_revolve_reference_loss(
     bytes: &[u8],
     scope: &DesignParameterScope,
+    construction: &path_features::DesignRevolveConstruction,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve {
         return None;
     }
     let length = parameter_scope_payload_length(scope)?;
-    let base_length = match length {
-        361 => 351,
-        379 => 369,
+    construction.solid?;
+    let operation = construction
+        .operation_offset
+        .checked_sub(scope.byte_offset())?;
+    let base_length = match (length, usize::try_from(operation).ok()?) {
+        (361, referenced_revolve::OPERATION) => 351,
+        (379, unmarked_revolve::OPERATION) => 369,
         _ => return None,
     };
     let target = tail_second_reference(bytes, scope)?;

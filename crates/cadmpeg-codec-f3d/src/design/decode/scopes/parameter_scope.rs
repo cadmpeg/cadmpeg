@@ -679,13 +679,18 @@ pub(crate) fn decode_parameter_scopes(
                     losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
                     losses.extend(loft_lists_loss(&scope, value));
                 }
+                if let crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(
+                    value,
+                ) = &construction
+                {
+                    losses.extend(referenced_revolve_reference_loss(bytes, &scope, value));
+                }
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::Revolve(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
                     ) => {
                         *slot = Some(value);
-                        losses.extend(referenced_revolve_reference_loss(bytes, &scope));
                         if let Some(length) = marker_one_revolve_assumed_length(bytes, &scope) {
                             losses.push(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(
                                 format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-269).", scope.id),
