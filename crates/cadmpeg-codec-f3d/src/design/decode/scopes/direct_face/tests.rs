@@ -146,7 +146,7 @@ fn a_legacy_scale_form_is_selected_by_payload_length_under_any_kind_spelling() {
 
 #[test]
 fn modern_scale_projects_the_short_fixed_tail() {
-    let (mut bytes, _) = scale_fixture(5, 87, 0);
+    let (mut bytes, _) = scale_fixture(5, 77, 0);
     let prefix = legacy_uniform_prefix();
     let modern = [&[1, 0, 0, 0][..], &prefix[20..]].concat();
     bytes.splice(20..prefix.len(), modern);
