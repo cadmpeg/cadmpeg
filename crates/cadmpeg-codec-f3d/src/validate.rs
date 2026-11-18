@@ -5356,7 +5356,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 Some(design::DesignFeatureFamily::SurfacePatch) => {
                     matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::PROFILE
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::PROFILE
+                            | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::SurfaceOffset) => {
@@ -5826,7 +5828,7 @@ fn validate_fillet_radius_groups<'a>(
                     radius_parameter_record_index,
                 } => {
                     assignment_parameter(*radius_parameter_record_index).is_some_and(|parameter| {
-                        parameter.source_kind() == "Radius"
+                        parameter.is_fillet_radius()
                             && parameter
                                 .unit()
                                 .map(|field| field.value.as_str())
