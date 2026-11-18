@@ -73,7 +73,7 @@ impl<'ir> Measurer<'ir> {
     ) -> Result<Vec<Finding>, ResourceLimit> {
         let geometry = &self.input.ir.geometry;
         let items = geometry.faces.len() + geometry.edges.len();
-        let Some(allowance) = self.options.work.findings_allowance(items) else {
+        let Some(allowance) = self.options.work.pass_allowance(items) else {
             return Err(ResourceLimit {
                 scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
                 dimension: ResourceDimension::Entities,
@@ -84,7 +84,7 @@ impl<'ir> Measurer<'ir> {
                 operation: "measurement findings allowance",
             });
         };
-        self.findings_under(ctx, &PassAllowance::findings(allowance))
+        self.findings_under(ctx, &PassAllowance::new(allowance))
     }
 
     /// The findings under `pass`. A face or edge whose slice refused a
@@ -467,7 +467,7 @@ mod tests {
             geometry_transferred: true,
         };
         Measurer::new(input, MeasureOptions::default())
-            .findings_under(&ctx, &PassAllowance::findings(allowance))
+            .findings_under(&ctx, &PassAllowance::new(allowance))
             .expect("findings")
     }
 

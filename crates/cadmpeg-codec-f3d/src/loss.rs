@@ -239,6 +239,8 @@ pub(crate) enum F3dLossCode {
     AssemblyJointUnprojected,
     /// Partial assembly alignments with unresolved motion binding or operand paths.
     AssemblyAlignmentPartial,
+    /// An `Assemble` copy differs from the solved `JointOrigin` carrier matrix.
+    AssemblyJointOriginEnvelopeMatrixDiscarded,
     /// An ordinary rigid-group frame has no admitted grammar.
     AssemblyRigidGroupFrameUnparsed,
     /// Design assembly joints projected as fixed because their freedom codes or
@@ -479,6 +481,7 @@ pub(crate) enum F3dLossCode {
     HoleExtentUnproven,
     /// A Hole carrier and its point-data records do not define an admitted placement.
     HolePlacementUnproven,
+    FeaturePointDirectionInputsUnrepresented,
     HoleReferenceDimensionsNative,
     HoleParametersIndependentAssumed,
     HoleShapePartialAssumed,
@@ -495,7 +498,7 @@ pub(crate) enum F3dLossCode {
     FeatureFilletPaddingAssumed,
     /// Stored variable Fillet midpoint pairs are read in increasing edge position.
     FeatureFilletMidpointOrderAssumed,
-    /// An explicit Fillet set retains a saved law input outside the neutral dimension domain.
+    /// A Fillet set uses an inferred input assignment or retains an unresolved input.
     FeatureFilletSetInputUnresolved,
     /// An explicit Fillet set references an unresolved edge operand group.
     FeatureFilletSetGroupUnresolved,
@@ -797,6 +800,13 @@ pub(crate) enum F3dLossCode {
     /// removed, though the companion body selections do not name exactly the
     /// tools.
     FeatureCombineToolConsumptionAssumed,
+    FeatureSplitFaceMethodUnresolved,
+    FeatureSplitFaceDirectionUnresolved,
+    FeatureSplitFaceGroupsUnresolved,
+    FeatureSplitFaceSelectionUnresolved,
+    FeatureSplitFaceSelectionProjectionFailed,
+    FeatureSplitFaceCarrierTypeAssumed,
+    FeatureSplitFaceIndexedOperandAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
     #[doc = "A Fillet selection has no decoded radius law or dimension."]
@@ -1259,6 +1269,7 @@ impl F3dLossCode {
         Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
         Self::AssemblyAlignmentPartial,
+        Self::AssemblyJointOriginEnvelopeMatrixDiscarded,
         Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
@@ -1437,6 +1448,7 @@ impl F3dLossCode {
         Self::ModifyUnprojected,
         Self::HoleExtentUnproven,
         Self::HolePlacementUnproven,
+        Self::FeaturePointDirectionInputsUnrepresented,
         Self::HoleReferenceDimensionsNative,
         Self::HoleParametersIndependentAssumed,
         Self::HoleShapePartialAssumed,
@@ -1637,6 +1649,13 @@ impl F3dLossCode {
         Self::FeatureCombineKeptToolsCutAssumed,
         Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineToolConsumptionAssumed,
+        Self::FeatureSplitFaceMethodUnresolved,
+        Self::FeatureSplitFaceDirectionUnresolved,
+        Self::FeatureSplitFaceGroupsUnresolved,
+        Self::FeatureSplitFaceSelectionUnresolved,
+        Self::FeatureSplitFaceSelectionProjectionFailed,
+        Self::FeatureSplitFaceCarrierTypeAssumed,
+        Self::FeatureSplitFaceIndexedOperandAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureFilletRadiusUnresolved,
         Self::FeatureFilletReferencesUnresolved,
@@ -2011,6 +2030,9 @@ impl F3dLossCode {
                 "assembly.local-occurrence-first-matrix-refused"
             }
             Self::AssemblyAlignmentPartial => "assembly.alignment-partial",
+            Self::AssemblyJointOriginEnvelopeMatrixDiscarded => {
+                "assembly.joint-origin-envelope-matrix-discarded"
+            }
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyRigidGroupFrameUnparsed => "assembly.rigid-group-frame-unparsed",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
@@ -2323,6 +2345,9 @@ impl F3dLossCode {
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::HolePlacementUnproven => "feature.hole-placement-unproven",
+            Self::FeaturePointDirectionInputsUnrepresented => {
+                "feature.point-direction-inputs-unrepresented"
+            }
             Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
             Self::HoleParametersIndependentAssumed => "feature.hole-parameters-independent-assumed",
             Self::HoleShapePartialAssumed => "feature.hole-shape-partial-assumed",
@@ -2622,6 +2647,17 @@ impl F3dLossCode {
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
             Self::FeatureCombineToolConsumptionAssumed => {
                 "feature.combine-tool-consumption-assumed"
+            }
+            Self::FeatureSplitFaceMethodUnresolved => "feature.split-face-method-unresolved",
+            Self::FeatureSplitFaceDirectionUnresolved => "feature.split-face-direction-unresolved",
+            Self::FeatureSplitFaceGroupsUnresolved => "feature.split-face-groups-unresolved",
+            Self::FeatureSplitFaceSelectionUnresolved => "feature.split-face-selection-unresolved",
+            Self::FeatureSplitFaceSelectionProjectionFailed => {
+                "feature.split-face-selection-projection-failed"
+            }
+            Self::FeatureSplitFaceCarrierTypeAssumed => "feature.split-face-carrier-type-assumed",
+            Self::FeatureSplitFaceIndexedOperandAssumed => {
+                "feature.split-face-indexed-operand-assumed"
             }
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureFilletRadiusUnresolved => "feature.fillet-radius-unresolved",
@@ -3029,6 +3065,7 @@ impl F3dLossCode {
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound
             | Self::AssemblyAlignmentPartial
+            | Self::AssemblyJointOriginEnvelopeMatrixDiscarded
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -3195,6 +3232,7 @@ impl F3dLossCode {
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
+            | Self::FeaturePointDirectionInputsUnrepresented
             | Self::HoleReferenceDimensionsNative
             | Self::HoleParametersIndependentAssumed
             | Self::HoleShapePartialAssumed
@@ -3399,6 +3437,13 @@ impl F3dLossCode {
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
+            | Self::FeatureSplitFaceMethodUnresolved
+            | Self::FeatureSplitFaceDirectionUnresolved
+            | Self::FeatureSplitFaceGroupsUnresolved
+            | Self::FeatureSplitFaceSelectionUnresolved
+            | Self::FeatureSplitFaceSelectionProjectionFailed
+            | Self::FeatureSplitFaceCarrierTypeAssumed
+            | Self::FeatureSplitFaceIndexedOperandAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureFilletRadiusUnresolved
             | Self::FeatureFilletReferencesUnresolved
@@ -3852,6 +3897,7 @@ impl F3dLossCode {
             | Self::SphereDiameterSourceAssumed
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
+            | Self::FeaturePointDirectionInputsUnrepresented
             | Self::HoleReferenceDimensionsNative
             | Self::HoleParametersIndependentAssumed
             | Self::HoleShapePartialAssumed
@@ -4051,6 +4097,13 @@ impl F3dLossCode {
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineToolConsumptionAssumed
+            | Self::FeatureSplitFaceMethodUnresolved
+            | Self::FeatureSplitFaceDirectionUnresolved
+            | Self::FeatureSplitFaceGroupsUnresolved
+            | Self::FeatureSplitFaceSelectionUnresolved
+            | Self::FeatureSplitFaceSelectionProjectionFailed
+            | Self::FeatureSplitFaceCarrierTypeAssumed
+            | Self::FeatureSplitFaceIndexedOperandAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureFilletRadiusUnresolved
             | Self::FeatureFilletReferencesUnresolved
@@ -4137,6 +4190,7 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::FeaturePatternInstanceSearchCapped
             | Self::AssemblyAlignmentPartial
+            | Self::AssemblyJointOriginEnvelopeMatrixDiscarded
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -4441,6 +4495,7 @@ mod tests {
                 "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
                 "assembly.alignment-partial",
+                "assembly.joint-origin-envelope-matrix-discarded",
                 "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
@@ -4619,6 +4674,7 @@ mod tests {
                 "feature.modify-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.hole-placement-unproven",
+                "feature.point-direction-inputs-unrepresented",
                 "feature.hole-reference-dimensions-native",
                 "feature.hole-parameters-independent-assumed",
                 "feature.hole-shape-partial-assumed",
@@ -4819,6 +4875,13 @@ mod tests {
                 "feature.combine-kept-tools-cut-assumed",
                 "feature.combine-operand-list-refused",
                 "feature.combine-tool-consumption-assumed",
+                "feature.split-face-method-unresolved",
+                "feature.split-face-direction-unresolved",
+                "feature.split-face-groups-unresolved",
+                "feature.split-face-selection-unresolved",
+                "feature.split-face-selection-projection-failed",
+                "feature.split-face-carrier-type-assumed",
+                "feature.split-face-indexed-operand-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.fillet-radius-unresolved",
                 "feature.fillet-references-unresolved",

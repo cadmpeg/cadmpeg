@@ -646,6 +646,11 @@ instance. An unknown standard or user-defined entity name produces a named
 opaque record that retains its complete token span, byte span, and links to
 resolved source records.
 
+An entity instance can name its entity by the short name that the schema
+assigns to it, for example `CRTPNT` for `CARTESIAN_POINT`. The reader resolves
+each short name in a simple or complex instance to its standard entity name
+before it reads the parameters.
+
 ISO 10303-21:2016 §11.2 defines a user-defined entity instance as an entity
 that is not part of the EXPRESS schema named by the header. It uses the same
 entity-instance syntax as a schema entity, with `USER_DEFINED_KEYWORD` in its
@@ -1211,10 +1216,22 @@ candidate. The projection removes duplicate candidates by exact numeric
 equality, and no tolerance window applies to that comparison. One distinct
 value becomes `Tolerances.linear`; equal values from different contexts agree
 and are not ambiguous. More than one distinct value keeps the default linear
-tolerance and produces one `geometry.uncertainty-length-ambiguous` note. That
-note names each distinct candidate value and the kept default. No candidate
-with an unresolved measure produces `geometry.uncertainty-length-unresolved`.
-An empty candidate set leaves the default without a selection.
+tolerance. No candidate with an unresolved measure produces
+`geometry.uncertainty-length-unresolved`. An empty candidate set leaves the
+default without a selection.
+CADIR decision: the uncertainty of a context is the largest of its candidates.
+A body belongs to a context when a representation in that context lists the
+body's topology root as an item, or is itself that root. Each face, edge, and
+vertex of the body takes the uncertainty of that context as its `tolerance`;
+an entity of bodies in several contexts takes the largest. An entity keeps a
+larger `tolerance` it already carries. A `tolerance` equal to
+`Tolerances.linear` is omitted, and a context without a resolvable candidate
+gives its entities no `tolerance`. When more than one distinct value exists, a
+value is carried when it is the value some body keeps; a value that a body
+under several contexts gives up for a larger one is not carried. One
+`geometry.uncertainty-length-ambiguous` note follows when a value is not
+carried or a measure is unresolved. That note names each distinct candidate
+value, the kept default, and each value that is not carried.
 Representation-scoped and qualified-item uncertainties remain retained as
 source-native records because one document baseline cannot encode their scopes;
 they do not replace `Tolerances.linear`.
@@ -1505,7 +1522,9 @@ shells, coincident portions of shells shall reference the same source faces,
 edges, and vertices, and a shell may exist independently of the model.
 `FACE_BASED_SURFACE_MODEL` has a nonempty SET of connected face sets, with the
 same common-face, common-edge, or common-vertex reference semantics for
-connected sets. `MANIFOLD_SOLID_BREP` is a `solid_model` with one
+connected sets. `OPEN_SHELL` and `CLOSED_SHELL` are subtypes of
+`CONNECTED_FACE_SET`, so either can be a member of that SET.
+`MANIFOLD_SOLID_BREP` is a `solid_model` with one
 `outer : CLOSED_SHELL`; the outer shell normal points away from the solid
 interior. `BREP_WITH_VOIDS` is a
 `MANIFOLD_SOLID_BREP` with a nonempty SET of oriented closed-shell voids. Each
@@ -1710,6 +1729,10 @@ not select an implicit plane carrier. A `FACE` with an implicit surface must
 not mix loop types: if any bound is a `POLY_LOOP`, every bound is a
 `POLY_LOOP`.
 
+CADIR decision: each segment of a `POLY_LOOP` is an edge whose carrier is a
+`LINE` from the segment's first point to its second point, bounded on
+`[0, segment length]`.
+
 CADIR decision: for a face without an explicit `FACE_SURFACE` geometry, the
 decoder applies `FACE_BOUND.orientation` to every bound and derives one plane
 from the complete set of `POLY_LOOP` points. No bound order, outer-bound
@@ -1735,13 +1758,28 @@ absent point carrier is mandatory and unrepresentable. Sheet and wire
 representations omit only the failed independent member and retain complete
 members. A solid-root transaction rejects the root. CADIR has no tolerant-point
 or partial-solid carrier and does not infer coordinates. A geometric set with
-surface members forms a sheet carrier. Curve-only and point-only sets remain
+surface members forms a sheet carrier. Each surface member is a face in its own
+shell of the one sheet region. Curve-only and point-only sets remain
 standalone geometry. The writer states a sheet region whose faces are all
 forward faces with no loops on B-spline surfaces or rectangular trims as a
 `GEOMETRIC_SET` of those surfaces in a
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION`, which a
 `SHAPE_REPRESENTATION_RELATIONSHIP` links to the product's shape
 representation.
+
+CADIR decision: a `CURVE_BOUNDED_SURFACE` member has one ring loop for each
+boundary composite curve and one edge for each composite segment. A trimmed
+segment curve bounds its edge on `[0, span]`, a B-spline segment on its knot
+domain, and a circle or ellipse segment on one turn. Consecutive segments
+share the vertex where one ends and the next starts. The
+`OUTER_BOUNDARY_CURVE` boundary is the outer loop. With no outer boundary curve
+and `implicit_outer` false, a sole boundary is the outer loop. Of several such
+boundaries, the boundary that encloses the largest area in the support
+parameter plane is the outer loop when the area of each boundary resolves in
+that plane. When an area does not resolve, the loops are unclassified and the
+decoder emits `decode.warning`. In the parameter plane of an
+analytic support, the outer loop runs counterclockwise and each other loop
+clockwise.
 
 ISO 10303-42:2021 §5.5.18 defines `FACE_OUTER_BOUND` as a `FACE_BOUND` carrying
 the outer-boundary semantics and states that no more than one boundary of a
@@ -1804,6 +1842,12 @@ select both sheets, when a face has only pole samples, or when two faces select
 different sheets, the surface carries no selection and the decoder reports
 `geometry.torus-sheet-unresolved` once for the surface. A surface that already
 carries a degenerate-torus record keeps it.
+
+CADIR decision: a `TOROIDAL_SURFACE` with a negative major radius `-R` is the
+torus of major radius `R` with its normal reversed: its point at `(u, v)` is
+the point of that torus at `(u + π, π - v)`. The decoder reads the torus of
+radius `R`, reverses the sense of each face on it, and gives it the inner
+sheet of a `DEGENERATE_TOROIDAL_SURFACE` when `R < r`.
 
 Section §5.5.17 defines the inherited `FACE_BOUND` attributes `bound` and
 `orientation`. Section §5.5.18 declares `FACE_OUTER_BOUND` as a subtype with
@@ -2300,6 +2344,13 @@ CADIR decision: if a malformed rendering record contains multiple finite
 omits transparency for that rendering, and records
 `presentation.surface-transparency-conflict`. It never selects a value from
 the SET serialization order.
+
+ISO 10303-46 lists the members of `surface_style_element_select`; a
+transparency enters a surface side style as a `rendering_properties_select`
+value of a `SURFACE_STYLE_RENDERING_WITH_PROPERTIES`. CADIR decision: a
+`SURFACE_STYLE_TRANSPARENT` listed directly in `surface_side_style.styles`
+leaves the resolved color opaque, and the decoder records
+`presentation.surface-transparency-misplaced`.
 
 ISO 10303-46 §6.3.35 defines `surface_side` as `.POSITIVE.`, `.NEGATIVE.`,
 and `.BOTH.`. `.POSITIVE.` is the side in the surface-normal direction,

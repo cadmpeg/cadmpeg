@@ -866,13 +866,12 @@ constant, so the volume flux is `h A / 3` and the closure flux `n̂ A` for
 the face area `A`, with the area's numeric error scaled into each. The
 pass computes edge boxes when an owned-pole witness needs boundary clearance.
 
-The pass has its own allowance,
-`max(FINDINGS_PASS_WORK_FLOOR, k × (faces + edges of the document))` units,
-with the floor and `k` set by the `--limits` profile of the command
-([decode-resource-caps.md](decode-resource-caps.md)). It is much smaller
-than the allowance of a measurement pass. Each face draws a slice of at
-most `MAX_FINDINGS_FACE_WORK` units and each edge a slice of at most
-`MAX_FINDINGS_EDGE_WORK`. A face or an edge whose slice runs out is not
+The pass has the allowance of a measurement pass,
+`max(MEASURE_PASS_WORK_FLOOR, k × (faces + edges of the document))` units,
+with `k` set by the `--limits` profile of the command
+([decode-resource-caps.md](decode-resource-caps.md)). Each face draws a
+slice of at most `MAX_FACE_MEASURE_WORK` units and each edge a slice of at
+most `MAX_EDGE_MEASURE_WORK`. A face or an edge whose slice runs out is not
 checked, and neither is a body that owns it; the pass then adds the
 `measurement_incomplete` finding. A session resource refusal refuses the
 check at the `check` stage.

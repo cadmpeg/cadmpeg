@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work axes, work points, work planes and the vertex recipes they resolve through.
 
+pub(crate) mod joint_origin;
+
 use crate::records::topology::entity_selection::SelectionSerializationForm;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
@@ -11,6 +13,8 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
+
+pub(crate) const POINT_DIRECTION_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
 
 #[cfg(test)]
 std::thread_local! {
