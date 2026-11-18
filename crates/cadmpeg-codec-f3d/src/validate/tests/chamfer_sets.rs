@@ -51,6 +51,7 @@ fn chamfer_sets_name_scope_members_and_owners_of_their_namespace() {
                     auxiliary_record_index: 12,
                     entry_count: 1,
                     tangent_chain: true,
+                    distance_reversed: false,
                 };
                 sets
             ],

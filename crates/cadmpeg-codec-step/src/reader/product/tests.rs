@@ -806,6 +806,11 @@ fn decode_builds_repeated_occurrence_placements_from_their_shape_representations
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::OccurrencePlacementInferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -872,6 +877,19 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
+    let inferred = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::OccurrencePlacementInferred.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(inferred.len(), 1);
+    assert_eq!(inferred[0].severity, cadmpeg_ir::report::Severity::Info);
+    assert!(
+        inferred[0].message.contains("#16, #17"),
+        "{}",
+        inferred[0].message
+    );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
