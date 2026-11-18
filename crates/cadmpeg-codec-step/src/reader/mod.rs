@@ -388,13 +388,6 @@ fn decode_exchange_mode(
     session.charge_pending_ir_entities("step_topology_decode")?;
 
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
-    topology::tolerances::carry_context_uncertainties(
-        exchange,
-        &mut session.ir,
-        &geometry.value.uncertainties,
-        &topology.value,
-        &mut geometry.losses,
-    );
     geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx, &mut geometry.losses)?;
     session.charge_pending_ir_entities("step_torus_sheet_selection")?;
     torus_sheet::select_spindle_sheets(&mut session.ir, session.ctx, &mut geometry.losses)?;
@@ -453,6 +446,15 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
     )?;
+    // After `csg::decode`, so the bodies derived from CSG solids are in
+    // `body_by_root` and take their context's uncertainty too.
+    topology::tolerances::carry_context_uncertainties(
+        exchange,
+        &mut session.ir,
+        &geometry.value.uncertainties,
+        &topology.value,
+        &mut geometry.losses,
+    );
     session.charge_pending_ir_entities("step_product_decode")?;
     let mut product = product::decode(
         exchange,

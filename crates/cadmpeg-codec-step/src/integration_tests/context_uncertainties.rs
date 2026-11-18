@@ -534,3 +534,172 @@ fn a_body_in_two_contexts_reports_each_value_below_the_one_it_keeps() {
         "{message}"
     );
 }
+
+/// A 2 x 3 x 4 mm `BLOCK` at `(x, 0, 0)` listed by a
+/// `CSG_SHAPE_REPRESENTATION` in the context `context`, numbered from
+/// `first`. With `wrapped`, the representation lists a `CSG_SOLID` of the
+/// block rather than the block itself. Gives the records and the first free
+/// instance number.
+fn csg_block(first: u64, x: f64, context: u64, wrapped: bool) -> (String, u64) {
+    let n = |index: u64| first + index;
+    let item = if wrapped { n(5) } else { n(4) };
+    let records = format!(
+        "#{}=CARTESIAN_POINT('',({x:?},0.,0.));\n\
+         #{}=DIRECTION('',(0.,0.,1.));\n\
+         #{}=DIRECTION('',(1.,0.,0.));\n\
+         #{}=AXIS2_PLACEMENT_3D('',#{},#{},#{});\n\
+         #{}=BLOCK('block',#{},2.,3.,4.);\n\
+         #{}=CSG_SOLID('',#{});\n\
+         #{}=CSG_SHAPE_REPRESENTATION('',(#{item}),#{context});\n",
+        n(0),
+        n(1),
+        n(2),
+        n(3),
+        n(0),
+        n(1),
+        n(2),
+        n(4),
+        n(3),
+        n(5),
+        n(4),
+        n(6),
+    );
+    (records, n(7))
+}
+
+/// The x coordinate of the start vertex of `edge`.
+fn edge_x(ir: &CadIr, edge: &cadmpeg_ir::ids::EdgeId) -> f64 {
+    let start = &ir
+        .geometry
+        .edges
+        .iter()
+        .find(|candidate| &candidate.id == edge)
+        .and_then(|edge| edge.ends.as_ref())
+        .expect("bounded edge")
+        .start;
+    vertex_x(ir, start)
+}
+
+/// The x coordinate of `vertex`.
+fn vertex_x(ir: &CadIr, vertex: &cadmpeg_ir::ids::VertexId) -> f64 {
+    let vertex = ir
+        .geometry
+        .vertices
+        .iter()
+        .find(|candidate| &candidate.id == vertex)
+        .expect("vertex");
+    ir.geometry
+        .points
+        .iter()
+        .find(|point| point.id == vertex.point)
+        .expect("vertex point")
+        .position()
+        .get()
+        .x
+}
+
+/// The x coordinate of a vertex on the boundary of `face`.
+fn face_x(ir: &CadIr, face: &cadmpeg_ir::topology::Face) -> f64 {
+    let edge = ir
+        .geometry
+        .loops
+        .iter()
+        .filter(|loop_| loop_.face == face.id)
+        .flat_map(cadmpeg_ir::topology::Loop::coedges)
+        .find_map(|coedge| {
+            ir.geometry
+                .coedges
+                .iter()
+                .find(|candidate| &candidate.id == coedge)
+        })
+        .expect("face coedge")
+        .edge
+        .clone();
+    edge_x(ir, &edge)
+}
+
+/// Check every face, edge, and vertex of `ir` carries `expected` of the x
+/// coordinate of one of its vertices.
+fn assert_tolerances_by_x(ir: &CadIr, expected: impl Fn(f64) -> f64) {
+    for face in &ir.geometry.faces {
+        assert_tolerance(
+            face.id.as_str(),
+            face.tolerance.map(PositiveReal::get),
+            expected(face_x(ir, face)),
+        );
+    }
+    for edge in &ir.geometry.edges {
+        assert_tolerance(
+            edge.id.as_str(),
+            edge.tolerance.map(PositiveReal::get),
+            expected(edge_x(ir, &edge.id)),
+        );
+    }
+    for vertex in &ir.geometry.vertices {
+        assert_tolerance(
+            vertex.id.as_str(),
+            vertex.tolerance.map(PositiveReal::get),
+            expected(vertex_x(ir, &vertex.id)),
+        );
+    }
+}
+
+#[test]
+fn a_csg_body_carries_its_context_uncertainty_beside_a_brep_body() {
+    let brep_uncertainty = 5.0e-2;
+    let csg_uncertainty = 1.0e-3;
+    let (brep, next) = box_part(
+        100,
+        [0.0; 3],
+        [10.0; 3],
+        Length::Millimetre,
+        brep_uncertainty,
+    );
+    let (context_records, context) = context(next, Length::Millimetre, csg_uncertainty);
+    let (block, _) = csg_block(context + 1, 20.0, context, false);
+    let result = decode_inline(&format!("{brep}{context_records}{block}"));
+    let ir = result.ir();
+
+    assert_eq!(
+        ir.tolerances.linear,
+        Tolerances::default().linear,
+        "the disagreeing contexts keep the document default"
+    );
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert_eq!(ir.geometry.faces.len(), 12);
+    // The block spans x = 20..22 mm; the box x = 0..10 mm.
+    assert_tolerances_by_x(ir, |x| {
+        if x > 15.0 {
+            csg_uncertainty
+        } else {
+            brep_uncertainty
+        }
+    });
+    assert_no_ambiguity(&result.report().losses);
+}
+
+#[test]
+fn a_csg_body_in_a_context_of_two_uncertainties_keeps_the_larger() {
+    let fine = 0.1;
+    let coarse = 0.2;
+    let records = format!(
+        "#10=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n\
+         #11=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({fine:?}),#10,'manufacturing_accuracy','');\n\
+         #12=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({coarse:?}),#10,'other_accuracy','');\n\
+         #13=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n\
+         #14=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#11,#12)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#10,#13)) REPRESENTATION_CONTEXT('model','3D'));\n\
+         {}",
+        csg_block(100, 0.0, 14, true).0,
+    );
+    let message = kept_and_ambiguity(&records, coarse);
+    assert!(
+        message.contains(&format!("values in millimetres ({fine:?}, {coarse:?})")),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!(
+            "1 value(s) ({fine:?}) reach no decoded face, edge, or vertex"
+        )),
+        "{message}"
+    );
+}
