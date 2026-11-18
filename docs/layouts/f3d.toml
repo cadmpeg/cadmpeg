@@ -33955,6 +33955,121 @@ type = "bytes[2]"
 source = "spec"
 anchor = "`01 + u64 owner_record_index + 00 00` at offset 59"
 [[record]]
+name = "derived_base_mirror_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 634-byte mirror-derived scope"
+size = 664
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "Indexed header and prologue."
+
+[[record.field]]
+name = "body_reference_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The body reference count at offset 20 is u32 2"
+value = 2
+
+[[record.field]]
+name = "first_body_reference"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "Two plain local body references begin at offsets 24 and 41"
+
+[[record.gap]]
+offset = 35
+size = 6
+note = "Body-reference trailer."
+
+[[record.field]]
+name = "result_body_reference"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "The second names the saved result body entity"
+
+[[record.gap]]
+offset = 52
+size = 569
+note = "The owner reference is in derived_base_owner_reference."
+
+[[record.field]]
+name = "companion_reference"
+offset = 621
+type = "bytes[11]"
+source = "spec"
+anchor = "A plain local companion reference begins at offset 621"
+
+[[record.field]]
+name = "closing_zeroes"
+offset = 632
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes begin at offset 632"
+
+[[record.field]]
+name = "paired_header"
+offset = 634
+type = "bytes[30]"
+source = "spec"
+anchor = "the 30-byte paired header begins at offset 634"
+
+[[record]]
+name = "derived_base_mirror_companion"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/derived_base.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The referenced 115-byte presentation record immediately follows the paired header"
+size = 115
+
+[[record.gap]]
+offset = 0
+size = 31
+note = "Header and presentation fields."
+
+[[record.field]]
+name = "owner_reference"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "plain local owner reference at offset 31"
+
+[[record.gap]]
+offset = 42
+size = 27
+note = "Presentation fields."
+
+[[record.field]]
+name = "scope_reference"
+offset = 69
+type = "bytes[11]"
+source = "spec"
+anchor = "plain local references at offsets 69 and 88"
+
+[[record.gap]]
+offset = 80
+size = 8
+note = "Presentation field."
+
+[[record.field]]
+name = "repeated_scope_reference"
+offset = 88
+type = "bytes[11]"
+source = "spec"
+anchor = "plain local references at offsets 69 and 88"
+
+[[record.gap]]
+offset = 99
+size = 16
+note = "Presentation fields."
+
+[[record]]
 name = "entity_tracking_carrier_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
 kind = "byte"

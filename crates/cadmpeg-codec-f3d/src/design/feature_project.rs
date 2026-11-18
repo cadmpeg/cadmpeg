@@ -1805,6 +1805,24 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         else {
             continue;
         };
+        if let Some(results) =
+            crate::records::feature::derived_base::feature_derived_base_scopes(feature, scopes)
+                .and_then(|group| {
+                    group
+                        .into_iter()
+                        .map(|scope| Some(u64::from(scope.derived_base_owner?.result_body?.value)))
+                        .collect::<Option<Vec<_>>>()
+                })
+        {
+            let bodies = design_body_selection(scope, results.into_iter(), body_bindings);
+            if matches!(bodies, cadmpeg_ir::features::BodySelection::Resolved { .. }) {
+                feature
+                    .evaluation
+                    .set_definition(FeatureDefinition::Operation(
+                        FeatureOperation::BaseFeature { bodies },
+                    ));
+            }
+        }
         let ScopeHistoryPredecessor::Scope(predecessor_scope) =
             scope_history.predecessor(scope, |candidate| {
                 let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
