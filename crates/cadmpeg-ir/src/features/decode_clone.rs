@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity rewrite implementations for feature records.
 
-use super::surfaces::UntrimLoops;
+use super::boundary_fill::BoundaryFillCell;
+use super::surfaces::{SilhouetteSplitMode, UntrimLoops};
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
@@ -36,10 +37,15 @@ rewrite_enum!(AngularTermination, []; {
     ToVertex { vertex },
     OffsetFromFace { face, offset },
     ToShape { target },
+    ToPlane { plane, native, source },
     Angle { angle },
 });
 
 rewrite_record!(AxisAngle, []; { origin, direction, angle });
+rewrite_enum!(BoundaryFillCell, []; {
+    BodyRegion(selection),
+    Recorded { record },
+});
 rewrite_record!(CapturedComponentPosition, []; { selector, occurrence, transform });
 rewrite_enum!(CapturedPositionTransform, []; {
     Affine { transform },
@@ -295,12 +301,13 @@ Thicken { faces, thickness, side, result, tangent_chain },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
     Combine { operands, op, keep_tools, destination },
-    BoundaryFill { tools, cells },
+    BoundaryFill { tools, cells, plane_tools, operation, remove_tools },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
     TrimBodiesAtPlane { targets, plane, keep },
     SplitBody { targets, tool },
     SplitFace { targets, tool },
+    SilhouetteSplit { target, direction, mode },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
     ReplaceFace { operands },
@@ -540,6 +547,8 @@ rewrite_enum!(SketchProfileRegion, []; {
 rewrite_record!(SketchProfileRegions, []; (field0));
 
 rewrite_record!(SplitFacePlanes, []; (field0));
+
+rewrite_enum!(SilhouetteSplitMode, []; { Unresolved, FacesOnly, ShelledBody, SolidBody });
 
 rewrite_enum!(SplitBodyTool, []; {
     Faces(field0),
