@@ -1350,12 +1350,18 @@ pub(super) fn fixed_kind_tail_operations(
     let [feature] = projected.features.as_slice() else {
         panic!("expected one offset feature")
     };
-    assert!(
-        matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+    let FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
         faces: FaceSelection::Native(native),
         distance: Some(distance),
-    }) if native == &format!("native/BulkStream.dat:design-record#{grouped_record_index}") && distance.get().abs() < f64::EPSILON)
+    }) = feature.evaluation.definition()
+    else {
+        panic!("expected an offset surface with native support and a distance");
+    };
+    assert_eq!(
+        native,
+        &format!("f3d:native/BulkStream.dat:design-record#{grouped_record_index}")
     );
+    assert!(distance.get().abs() < f64::EPSILON);
     for (ordinal, reference) in grouped_scope.reference_members().values().enumerate() {
         assert!(feature.source_properties.iter().any(|(key, value)| {
             key.as_str() == format!("reference:{ordinal}") && value == &reference.to_string()
