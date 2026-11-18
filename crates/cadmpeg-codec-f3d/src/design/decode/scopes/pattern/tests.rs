@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use std::collections::HashSet;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use super::exact_pattern_identity_wrapper;
@@ -1097,7 +1099,7 @@ fn run_pattern_constructions_fixture() {
     }
     let mut linked_scopes = [linked_assembly, first_joint_origin, second_joint_origin];
     let bind_legacy_origins = |bytes: &[u8], scopes: &mut [DesignParameterScope]| {
-        bind_joint_origin_frames_from_assemblies(bytes, scopes, &Default::default());
+        bind_joint_origin_frames_from_assemblies(bytes, scopes, &HashSet::new());
     };
     bind_legacy_origins(&axial_assembly_bytes, &mut linked_scopes);
     assert_eq!(linked_scopes[1].joint_origin_transform_offset(), Some(39));
