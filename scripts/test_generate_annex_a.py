@@ -24,7 +24,7 @@ DOCUMENT = """\
 # Spec
 
 ```rust
-pub struct Face { pub id: FaceId, pub surface: SolvedSurfaceGeometry, pub spans: Members<Span, Ordered> }
+pub struct Face { pub id: FaceId, pub surface: SolvedSurfaceGeometry, pub spans: Members<Span, Ordered>, pub line: LineCurve }
 pub enum Span { Line(FinitePoint3), Native(NonBlankString) }
 pub struct Wrapper<T: Clone + Debug>(Vec<T>);
 ```
@@ -42,8 +42,8 @@ The opening paragraph, which the generator keeps.
 
 SCHEMA = {
     "$defs": {
-        "SolvedSurfaceGeometry": {"oneOf": [{"$ref": "#/$defs/PlaneSurface"}, {"$ref": "#/$defs/Span"}]},
-        "PlaneSurface": {"type": "object", "properties": {"origin": {"$ref": "#/$defs/FinitePoint3"},
+        "SolvedSurfaceGeometry": {"oneOf": [{"$ref": "#/$defs/PolygonalSurface"}, {"$ref": "#/$defs/Span"}]},
+        "PolygonalSurface": {"type": "object", "properties": {"origin": {"$ref": "#/$defs/FinitePoint3"},
                                                           "id": {"$ref": "#/$defs/FaceId"}}},
         "FinitePoint3": {"type": "array", "items": {"type": "number"}},
         "Span": {"type": "string"},
@@ -58,12 +58,19 @@ class GenerateAnnexA(unittest.TestCase):
         stated, named = annex.stated_and_named(DOCUMENT)
         self.assertEqual(stated, {"Face", "Span", "Wrapper", "Sheet"})
         self.assertEqual(named, {"FaceId", "SolvedSurfaceGeometry", "Members", "Span", "Ordered", "FinitePoint3",
-                                 "NonBlankString", "CellAddress", "PositiveLength"})
+                                 "NonBlankString", "CellAddress", "PositiveLength", "LineCurve"})
 
     def test_the_annex_holds_unstated_types_and_the_unstated_types_they_reach(self):
         names = annex.annex_types(DOCUMENT.replace("NonBlankString", "String")
                                   .replace("PositiveLength", "u32"), SCHEMA["$defs"])
-        self.assertEqual(names, ["FinitePoint3", "PlaneSurface", "SolvedSurfaceGeometry"])
+        self.assertEqual(names, ["FinitePoint3", "PolygonalSurface", "SolvedSurfaceGeometry"])
+
+    def test_a_type_awaiting_the_implementation_is_left_out_until_the_schema_defines_it(self):
+        document = DOCUMENT.replace("NonBlankString", "String").replace("PositiveLength", "u32")
+        self.assertNotIn("LineCurve", annex.annex_types(document, SCHEMA["$defs"]))
+        defined = {**SCHEMA["$defs"], "LineCurve": {"type": "object"}}
+        with self.assertRaisesRegex(annex.ShapeError, "now defines LineCurve; remove them from AWAITING"):
+            annex.annex_types(document, defined)
 
     def test_a_named_type_nothing_defines_is_an_error(self):
         with self.assertRaisesRegex(annex.ShapeError, "NonBlankString, PositiveLength"):
@@ -75,7 +82,7 @@ class GenerateAnnexA(unittest.TestCase):
         head = document[: document.index("### `Stale`")]
         self.assertTrue(generated.startswith(head))
         self.assertNotIn("Stale", generated)
-        self.assertIn('### `PlaneSurface`\n\n```json\n{\n  "type": "object"', generated)
+        self.assertIn('### `PolygonalSurface`\n\n```json\n{\n  "type": "object"', generated)
         self.assertEqual(annex.generate(generated, SCHEMA), generated)
 
     def test_check_and_write(self):
