@@ -328,9 +328,6 @@ fn authored_scope_ordinals_for_stream<'a>(
     for timeline in stream_timelines {
         items.extend(timeline.frame().items().iter().map(|item| item.value));
     }
-    // A linked feature is one timeline item stored as one scope per
-    // component; only the first scope is a timeline item. The others take
-    // the positions after it, in record order.
     let mut linked_scopes = reverse_normal::linked_scopes_outside(scopes, &items);
     let mut item_ordinals = HashMap::<u64, u64>::new();
     let mut next_ordinal = 0_u64;

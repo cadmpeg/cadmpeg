@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! CC0 Fusion saves of Reverse Normal: surface Revolves whose bodies it
-//! selects, and surface bodies of one component and of several components.
+//! Reverse Normal of surface Revolve bodies, and over surface bodies of one
+//! component and of several components.
 
 use std::io::Cursor;
 
@@ -80,49 +80,8 @@ fn a_reverse_normal_of_two_revolved_bodies_selects_both_bodies() {
     assert_reverse_selects_revolve_bodies(&ir, 2);
 }
 
-/// The IR as JSON and the loss codes of a corpus file, after checking that
-/// the neutral model validates.
-fn decoded_with_loss_codes(bytes: &[u8]) -> (serde_json::Value, Vec<String>) {
-    let result = F3dCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode the corpus file");
-    let validation =
-        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).unwrap();
-    assert!(validation.is_ok(), "{validation:#?}");
-    let mut codes = Vec::new();
-    loss_codes(
-        &serde_json::to_value(&result.report().losses).expect("serialize the losses"),
-        &mut codes,
-    );
-    assert!(!codes.is_empty(), "the report names loss codes");
-    (
-        serde_json::to_value(result.ir()).expect("serialize the IR"),
-        codes,
-    )
-}
-
-/// Every `code` string in a serialized loss list.
-fn loss_codes(value: &serde_json::Value, codes: &mut Vec<String>) {
-    match value {
-        serde_json::Value::Object(map) => {
-            for (key, value) in map {
-                match value.as_str() {
-                    Some(code) if key == "code" => codes.push(code.to_owned()),
-                    _ => loss_codes(value, codes),
-                }
-            }
-        }
-        serde_json::Value::Array(items) => {
-            for item in items {
-                loss_codes(item, codes);
-            }
-        }
-        _ => {}
-    }
-}
-
 /// The features named `Reverse Normal 1`, in timeline order.
-fn reverse_normals(ir: &serde_json::Value) -> Vec<&serde_json::Value> {
+fn reverse_normals(ir: &Value) -> Vec<&Value> {
     let mut features = ir["model"]["features"]
         .as_array()
         .expect("feature list")
@@ -134,7 +93,7 @@ fn reverse_normals(ir: &serde_json::Value) -> Vec<&serde_json::Value> {
 }
 
 /// The historical bodies that a Reverse Normal feature reverses.
-fn reversed_bodies(feature: &serde_json::Value) -> Vec<&str> {
+fn reversed_bodies(feature: &Value) -> Vec<&str> {
     let definition = &feature["definition"]["value"];
     assert_eq!(definition["kind"], "reverse_shape", "{definition}");
     let source = &definition["value"]["source"];
@@ -143,15 +102,24 @@ fn reversed_bodies(feature: &serde_json::Value) -> Vec<&str> {
         .as_array()
         .expect("historical bodies")
         .iter()
-        .filter_map(serde_json::Value::as_str)
+        .filter_map(Value::as_str)
         .collect()
 }
 
 #[test]
 fn a_reverse_normal_of_one_component_reverses_both_of_its_bodies() {
-    let (ir, _) = decoded_with_loss_codes(include_bytes!(
+    let ir = decoded(include_bytes!(
         "../../../../corpus/f3d/reverse_normal_two_bodies.f3d"
     ));
+    let operations = ir["native"]["f3d"]["design_parameter_scopes"]
+        .as_array()
+        .expect("scopes")
+        .iter()
+        .map(|scope| &scope["reverse_normal_operation"])
+        .filter(|operation| !operation.is_null())
+        .collect::<Vec<_>>();
+    assert_eq!(operations.len(), 1);
+    assert!(operations[0]["link"].is_null(), "{}", operations[0]);
     let features = reverse_normals(&ir);
     assert_eq!(features.len(), 1);
     assert_eq!(reversed_bodies(features[0]).len(), 2);
@@ -159,24 +127,26 @@ fn a_reverse_normal_of_one_component_reverses_both_of_its_bodies() {
 
 #[test]
 fn each_linked_scope_of_a_two_component_reverse_normal_reverses_its_own_body() {
-    // Fusion stores one linked Reverse Normal per component for one timeline
-    // item; the timeline names only the first.
-    let (ir, _) = decoded_with_loss_codes(include_bytes!(
+    let ir = decoded(include_bytes!(
         "../../../../corpus/f3d/reverse_normal_two_components.f3d"
     ));
-    let links = ir["native"]["f3d"]["design_parameter_scopes"]
+    let linked = ir["native"]["f3d"]["design_parameter_scopes"]
         .as_array()
         .expect("scopes")
         .iter()
+        .filter(|scope| scope["reverse_normal_operation"]["link"].is_object())
+        .collect::<Vec<_>>();
+    let links = linked
+        .iter()
         .filter_map(|scope| scope["reverse_normal_operation"]["link"]["value"].as_str())
         .collect::<Vec<_>>();
-    assert_eq!(
-        links,
-        [
-            "180f14e0-154e-434b-acff-8bfbd101803c",
-            "180f14e0-154e-434b-acff-8bfbd101803c"
-        ]
-    );
+    assert_eq!(links.len(), 2);
+    assert_eq!(links[0], links[1]);
+    for field in ["history_state_id", "previous_history_state_id"] {
+        assert!(linked[0][field].is_i64(), "{field}");
+        assert_eq!(linked[0][field], linked[1][field], "{field}");
+    }
+    assert_ne!(links[0], "00000000-0000-0000-0000-000000000000");
     let features = reverse_normals(&ir);
     assert_eq!(features.len(), 2);
     assert_eq!(
@@ -215,7 +185,20 @@ fn each_component_of_a_linked_reverse_normal_reverses_its_own_bodies() {
             &[1, 1, 1],
         ),
     ] {
-        let (ir, _) = decoded_with_loss_codes(bytes);
+        let ir = decoded(bytes);
+        let linked = ir["native"]["f3d"]["design_parameter_scopes"]
+            .as_array()
+            .expect("scopes")
+            .iter()
+            .filter(|scope| scope["reverse_normal_operation"]["link"].is_object())
+            .collect::<Vec<_>>();
+        assert_eq!(linked.len(), counts.len());
+        for scope in &linked[1..] {
+            assert_eq!(
+                scope["reverse_normal_operation"]["link"]["value"],
+                linked[0]["reverse_normal_operation"]["link"]["value"]
+            );
+        }
         let features = reverse_normals(&ir);
         assert_eq!(
             features

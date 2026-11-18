@@ -4,9 +4,7 @@
 use crate::history_records::{AsmDeltaState, AsmHistory};
 
 /// The state pair of the one history whose BREP holds every candidate face of
-/// `operand`, when several histories store the pair. The linked scopes of one
-/// timeline item store the same state identities, each in the history of its
-/// own component.
+/// `operand`, when several histories store the pair.
 pub(super) fn operand_brep_history_state_pair<'a>(
     operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
     histories: &'a [AsmHistory],
@@ -42,3 +40,6 @@ pub(super) fn operand_brep_history_state_pair<'a>(
     }
     None
 }
+
+#[cfg(test)]
+mod tests;

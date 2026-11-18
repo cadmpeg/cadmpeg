@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::design::feature_project::authored_scope_ordinals;
 use crate::design::feature_project::reverse_normal::project_reverse_normal;
 use crate::loss::F3dLossCode;
-use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
+use crate::records::entity_header::{
+    BaseTypeGuid, DesignFeatureTimeline, SegmentType, SegmentTypeData,
+};
 use crate::records::feature::body_ops::DesignReverseNormalOperation;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
@@ -184,4 +187,65 @@ fn body_group_outside_the_prefix_and_reference_table_stays_native() {
         assert_eq!(definition, None);
         assert!(losses.is_empty());
     }
+}
+
+/// A Reverse Normal scope at `record_index` whose prefix stores `link`.
+fn linked(record_index: u32, link: Option<&str>) -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#{record_index}"),
+        DesignFeatureKind::ReverseNormal,
+        record_index,
+    );
+    if let DesignScopePayloadMut::ReverseNormal(slot) = scope.payload_mut() {
+        *slot = Some(DesignReverseNormalOperation {
+            body_group: Located {
+                value: GROUP,
+                offset: 26,
+            },
+            link: link.map(|guid| Located {
+                value: crate::records::mesh::DesignRelaxedGuidText::try_from(guid.to_owned())
+                    .unwrap(),
+                offset: 40,
+            }),
+        });
+    }
+    scope
+}
+
+fn timeline(items: &[u64]) -> DesignFeatureTimeline {
+    DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(STREAM, 10),
+        crate::records::entity_header::DesignTimelineFrame::test_items(
+            10,
+            items
+                .iter()
+                .map(|&value| Located { value, offset: 0 })
+                .collect(),
+        ),
+        DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(35).unwrap(),
+        0,
+        std::num::NonZeroU64::new(17).unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn linked_scopes_take_the_timeline_positions_after_their_timeline_item() {
+    const LINK: &str = "180f14e0-154e-434b-acff-8bfbd101803c";
+    const OTHER_LINK: &str = "2a6b1c7d-0e3f-4a5b-9c8d-7e6f5a4b3c2d";
+    let scopes = [
+        linked(100, Some(LINK)),
+        linked(200, None),
+        linked(250, Some(LINK)),
+        linked(300, Some(LINK)),
+        linked(400, Some(OTHER_LINK)),
+    ];
+    let mut ordinals = authored_scope_ordinals(&scopes, &[timeline(&[100, 200])])
+        .unwrap()
+        .into_iter()
+        .map(|((_, record_index), ordinal)| (record_index, ordinal))
+        .collect::<Vec<_>>();
+    ordinals.sort_unstable();
+    assert_eq!(ordinals, [(100, 0), (200, 3), (250, 1), (300, 2)]);
 }

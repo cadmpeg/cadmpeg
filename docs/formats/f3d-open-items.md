@@ -751,17 +751,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record. The native `sketch_geometry_groups` record keeps the member run in `members` and the owning sketch reference in `sketch_reference`. A member reference that names a record without a decoded backlink to the group assigns no owner, and the decoder emits `sketch.geometry-group-member-unbacklinked`.
 
-### DR-303. GUID field of a Reverse Normal scope
-
-**Question.** What does the LP-UTF16 GUID after the body-group reference of a `Reverse Normal` scope identify?
-
-**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives the null GUID at offset 36 of the compact prefix and offset 40 of the shifted prefix. The `CopyPaste` prefix stores the null GUID at the occurrence-key position when it has no removal operand. The decoder keeps a scope with another GUID as a native feature.
-
-**Need.** A `Reverse Normal` scope with a GUID other than the null GUID, and the selected bodies and their component occurrence as the application shows them.
-
-**Conflict.** None.
-
-**Note.** None.
 ### DR-308. Canvas flag byte before the second boundary
 
 **Question.** What does the flag byte before the second boundary segment of a Canvas geometry record select, and does a zero value change the image placement or display?

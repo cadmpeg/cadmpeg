@@ -19,8 +19,6 @@ pub(super) fn project_reverse_normal(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
 
-    // A linked scope reverses the bodies of its own component, as Fusion's
-    // linked feature in that component does.
     let operation = scope.reverse_normal_operation()?;
     let group = single_operand_group(groups, scope, DesignOperandRole::BODIES_A)?;
     let mut references = scope.reference_members().values().copied();

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::shared_frames::marked_record_reference;
-use crate::design::decode::text::fixed_guid_ascii;
+use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::layout::reverse_normal_prefix as compact;
 use crate::layout::shifted_reverse_normal_prefix as shifted;
 use crate::records::feature::body_ops::DesignReverseNormalOperation;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::{u64_from_index, View};
+
+const NULL_LINK_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
 struct PrefixFields {
     group_count: usize,
@@ -58,7 +60,7 @@ pub(super) fn reverse_normal_operation(
         _ => return None,
     };
     let group = marked_record_reference(bytes, at(fields.group_reference)?)?;
-    let (guid, guid_end) = fixed_guid_ascii(bytes, at(fields.link_guid)?)?;
+    let (guid, guid_end) = fixed_relaxed_guid_text(bytes, at(fields.link_guid)?).ok()??;
     if View::u32_le_at(bytes, at(fields.group_count)?)? != fields.group_count_value
         || references.first() != Some(&group)
         || guid_end != at(fields.zero_tail)?
@@ -69,12 +71,11 @@ pub(super) fn reverse_normal_operation(
     {
         return None;
     }
-    let link = if guid == *b"00000000-0000-0000-0000-000000000000" {
+    let link = if guid.as_str() == NULL_LINK_GUID {
         None
     } else {
-        let text = std::str::from_utf8(&guid).ok()?.to_owned();
         Some(Located {
-            value: crate::records::mesh::DesignRelaxedGuidText::try_from(text).ok()?,
+            value: guid,
             offset: u64_from_index(at(fields.link_guid)?.checked_add(4)?),
         })
     };
