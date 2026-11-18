@@ -74,14 +74,52 @@ fn fixture(captured: bool) -> (Feature, DesignParameterScope) {
 }
 
 #[test]
-fn captured_result_is_the_base_feature_payload_in_its_committed_state() {
-    let (mut feature, scope) = fixture(true);
-    project(
-        std::slice::from_mut(&mut feature),
-        std::slice::from_ref(&scope),
-        &[],
+fn captured_source_pair_projects_at_its_owner_timeline_position() {
+    use crate::design::feature_project::{
+        project_parameter_design_with_edge_identities, ProjectInputs,
+    };
+    use crate::records::entity_header::{DesignFeatureTimeline, DesignTimelineFrame};
+
+    let (_, scope) = fixture(true);
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
+        DesignTimelineFrame::test_items(
+            0,
+            vec![
+                Located {
+                    value: 40,
+                    offset: 0,
+                },
+                Located {
+                    value: 51,
+                    offset: 0,
+                },
+            ],
+        ),
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
+    let projected = crate::test_support::with_decode_context(|ctx| {
+        project_parameter_design_with_edge_identities(
+            ctx,
+            &ProjectInputs {
+                scopes: std::slice::from_ref(&scope),
+                timelines: &[timeline],
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    });
+    assert_eq!(projected.features.len(), 1);
+    let feature = &projected.features[0];
+    assert_eq!(feature.ordinal, 1);
+    assert_eq!(
+        feature.source_properties[&derived_base_scopes_property()],
+        "100"
+    );
     let FeatureDefinition::Operation(FeatureOperation::BaseFeature {
         bodies:
             BodySelection::Historical {
@@ -98,7 +136,7 @@ fn captured_result_is_the_base_feature_payload_in_its_committed_state() {
     assert!(bodies[0].as_str().ends_with(":92:7"));
     assert_eq!(native.as_str(), scope.id);
     assert!(feature.evaluation.outputs().is_empty());
-    let losses = crate::history::stored_bodies::losses(&[feature], &[scope]);
+    let losses = crate::history::stored_bodies::losses(&projected.features, &[scope]);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
