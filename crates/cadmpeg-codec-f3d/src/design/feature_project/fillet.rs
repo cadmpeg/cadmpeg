@@ -164,7 +164,8 @@ pub(super) fn project<'a>(
     let [(_, parameter)] = parameters else {
         return project_partial(ctx, inputs, scope, parameters, native_scope, losses);
     };
-    let Some(radius) = (parameter.source_kind() == "Radius")
+    let Some(radius) = parameter
+        .is_fillet_radius()
         .then(|| design_positive_length(parameter))
         .flatten()
     else {

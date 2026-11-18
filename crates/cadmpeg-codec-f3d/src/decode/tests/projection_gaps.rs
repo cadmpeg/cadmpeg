@@ -463,6 +463,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             profile_selections: 2,
             path_selections: 1,
             face_selections: 1,
+            unresolved_extrude_start_faces: 0,
             active_face_substitutions: 0,
             body_selections: 0,
             partially_resolved_face_members: 0,

@@ -215,8 +215,11 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     let native = |features: &[cadmpeg_ir::features::Feature]| {
         matches!(
             features[0].evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+            FeatureDefinition::Operation(FeatureOperation::Draft {
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: FaceSelection::Native(_),
+                    pull: None
+                },
                 ..
             })
         )
@@ -276,8 +279,12 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         project(&selection);
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+        FeatureDefinition::Operation(FeatureOperation::Draft {
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native(_),
+                pull: None
+            },
+            angle: Some(_),
             ..
         })
     ));
@@ -864,7 +871,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let parameter = localized_fillet_parameter;
     let owner = localized_fillet_owner;
     let parameters = [
-        parameter(10, 11, "Radius", Some("mm"), 0.5),
+        parameter(10, 11, "radius", Some("mm"), 0.5),
         parameter(20, 21, "Radius", Some("mm"), 0.3),
         parameter(30, 31, "TangencyWeight", None, 1.0),
         parameter(40, 41, "TangencyWeight", None, 0.75),

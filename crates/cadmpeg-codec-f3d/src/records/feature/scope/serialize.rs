@@ -350,6 +350,7 @@ impl Serialize for DesignParameterScope {
         if let Some(derived_base_owner) = &self.derived_base_owner {
             emit!("derived_base_owner", derived_base_owner);
         }
+        emit_opt!("derived_base_source", self.derived_base_source.as_ref());
         emit_opt!("hole_construction", self.hole_construction());
         emit_opt!("hole_extent", self.hole_extent());
         if let Some(sketch) = self.sketch_entity() {
