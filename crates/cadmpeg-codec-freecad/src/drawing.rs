@@ -9,15 +9,14 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
 use cadmpeg_ir::document::Model;
 use cadmpeg_ir::drawings::{
-    Drawing, DrawingId, DrawingKind, EdgeClasses, HiddenLineMethod, ProjectionAngle, ScaleFrom,
+    Drawing, DrawingId, DrawingKind, HiddenLineMethod, ProjectionAngle, ScaleFrom,
 };
 use cadmpeg_ir::scalar::{Angle, FiniteReal, PositiveLength, PositiveReal};
 use cadmpeg_ir::units::{FiniteVector, NonzeroVector};
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
 use crate::annotation::{
-    bool_property, enumeration_entry, enumeration_property, integer_property,
-    optional_scalar_property,
+    bool_property, enumeration_entry, enumeration_property, optional_scalar_property,
 };
 use crate::native::{
     sole_named_property, DrawingRecord, ObjectRecord, PropertyRecord, TechDrawKind, ValueRecord,
@@ -275,7 +274,6 @@ pub(crate) fn transfer_neutral(
             scale_from: projection.scale_from,
             projection: projection.projection,
             perspective: projection.perspective,
-            edge_classes: projection.edge_classes,
             hidden_line: projection.hidden_line,
             parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
@@ -308,7 +306,6 @@ struct ViewProjection {
     scale_from: Option<ScaleFrom>,
     projection: Option<ProjectionAngle>,
     perspective: Option<PositiveLength>,
-    edge_classes: Option<EdgeClasses>,
     hidden_line: Option<HiddenLineMethod>,
 }
 
@@ -351,41 +348,6 @@ fn view_projection(
     } else {
         None
     };
-    let mut classes = [false; 7];
-    let mut stated = false;
-    for (slot, name) in classes.iter_mut().zip([
-        "SmoothVisible",
-        "SeamVisible",
-        "IsoVisible",
-        "HardHidden",
-        "SmoothHidden",
-        "SeamHidden",
-        "IsoHidden",
-    ]) {
-        if let Some(value) = bool_property(ctx, owned, name)? {
-            *slot = value;
-            stated = true;
-        }
-    }
-    let iso_count = integer_property(
-        ctx,
-        owned,
-        "IsoCount",
-        &["App::PropertyIntegerConstraint", "App::PropertyInteger"],
-    )?
-    .and_then(|count| u32::try_from(count).ok());
-    let [visible_smooth, visible_seam, visible_iso, hidden_hard, hidden_smooth, hidden_seam, hidden_iso] =
-        classes;
-    let edge_classes = (stated || iso_count.is_some()).then_some(EdgeClasses {
-        visible_smooth,
-        visible_seam,
-        visible_iso,
-        hidden_hard,
-        hidden_smooth,
-        hidden_seam,
-        hidden_iso,
-        iso_count,
-    });
     let hidden_line = bool_property(ctx, owned, "CoarseView")?.map(|coarse| {
         if coarse {
             HiddenLineMethod::Polygonal
@@ -397,7 +359,6 @@ fn view_projection(
         scale_from,
         projection,
         perspective,
-        edge_classes,
         hidden_line,
     })
 }

@@ -428,27 +428,6 @@ fn string_property(
         })
 }
 
-/// The value of an integer property.
-pub(crate) fn integer_property(
-    ctx: &DecodeContext<'_>,
-    properties: &[&PropertyRecord],
-    name: &str,
-    type_names: &[&str],
-) -> Result<Option<i64>, CodecError> {
-    let Some(property) = typed_property(properties, name, type_names)? else {
-        return Ok(None);
-    };
-    let attributes =
-        direct_value_attributes(ctx, property, "Integer", &["value", "min", "max", "step"])?;
-    attributes
-        .get("value")
-        .and_then(|value| value.parse::<i64>().ok())
-        .map(Some)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!("property {} is not an integer", property.id))
-        })
-}
-
 /// The value of a Boolean property.
 pub(crate) fn bool_property(
     ctx: &DecodeContext<'_>,

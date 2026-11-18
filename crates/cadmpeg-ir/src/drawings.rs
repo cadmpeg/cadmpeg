@@ -142,13 +142,6 @@ pub struct Drawing {
         deserialize_with = "deserialize_perspective"
     )]
     pub perspective: Option<crate::scalar::PositiveLength>,
-    /// The edge classes a view's hidden-line projection draws.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_edge_classes"
-    )]
-    pub edge_classes: Option<EdgeClasses>,
     /// How a view's hidden-line projection computes its curves.
     #[serde(
         default,
@@ -200,7 +193,6 @@ impl Drawing {
             scale_from: None,
             projection: None,
             perspective: None,
-            edge_classes: None,
             hidden_line: None,
             sheet: None,
             curves: Vec::new(),
@@ -232,11 +224,8 @@ cadmpeg_core::named_optional_field!(
     crate::scalar::PositiveLength,
     "perspective"
 );
-cadmpeg_core::named_optional_field!(deserialize_edge_classes, EdgeClasses, "edge_classes");
 cadmpeg_core::named_optional_field!(deserialize_hidden_line, HiddenLineMethod, "hidden_line");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
-cadmpeg_core::named_optional_field!(deserialize_iso_count, u32, "iso_count");
-
 /// Where a view's scale comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -271,35 +260,6 @@ pub enum HiddenLineMethod {
     /// From the shape's triangulation: every curve is a chain of line
     /// segments.
     Polygonal,
-}
-
-/// The edge classes a view's hidden-line projection draws.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-#[allow(clippy::struct_excessive_bools)]
-pub struct EdgeClasses {
-    /// Visible smooth edges.
-    pub visible_smooth: bool,
-    /// Visible seam edges.
-    pub visible_seam: bool,
-    /// Visible iso-parameter lines.
-    pub visible_iso: bool,
-    /// Hidden hard edges.
-    pub hidden_hard: bool,
-    /// Hidden smooth edges.
-    pub hidden_smooth: bool,
-    /// Hidden seam edges.
-    pub hidden_seam: bool,
-    /// Hidden iso-parameter lines.
-    pub hidden_iso: bool,
-    /// The number of iso-parameter lines.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_iso_count"
-    )]
-    pub iso_count: Option<u32>,
 }
 
 #[cfg(test)]
@@ -399,8 +359,6 @@ mod tests {
     fn view_projection_fields_round_trip_and_name_their_fields() {
         let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0,
             "scale_from": "fit", "projection": "third", "perspective": 250.0, "hidden_line": "polygonal",
-            "edge_classes": {"visible_smooth": true, "visible_seam": false, "visible_iso": false, "hidden_hard": true,
-                "hidden_smooth": false, "hidden_seam": false, "hidden_iso": false, "iso_count": 4},
             "relationships": {}, "curves": [], "parameters": {}, "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
         assert!(drawing.native_ref.is_none());
@@ -411,7 +369,6 @@ mod tests {
             ("projection", serde_json::json!("second")),
             ("perspective", serde_json::json!(0.0)),
             ("hidden_line", serde_json::Value::Null),
-            ("edge_classes", serde_json::json!({"visible_smooth": true})),
             ("native_ref", serde_json::Value::Null),
         ] {
             let mut rejected = wire.clone();
