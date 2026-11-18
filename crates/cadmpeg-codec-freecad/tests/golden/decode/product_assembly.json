@@ -2783,19 +2783,8 @@
           "id": "fcstd:model:occurrence#Assembly:container",
           "name": "fcstd:native:object#Assembly",
           "native_ref": "fcstd:native:object#Assembly",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#Assembly:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#Assembly:definition",
           "transform": [
             [
               1.0,
@@ -2819,59 +2808,10 @@
         },
         {
           "id": "fcstd:model:occurrence#BracketOccurrence:instance",
-          "link": {
-            "members": [
-              {
-                "claim": false,
-                "kind": "claim_child"
-              },
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "kind": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
           "name": "fcstd:native:object#BracketOccurrence",
           "native_ref": "fcstd:native:object#BracketOccurrence",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Assembly:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#BracketPrototype:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#BracketPrototype:definition",
           "transform": [
             [
               1.0,
@@ -2897,19 +2837,8 @@
           "id": "fcstd:model:occurrence#BracketPrototype:container",
           "name": "fcstd:native:object#BracketPrototype",
           "native_ref": "fcstd:native:object#BracketPrototype",
-          "ordinal": 1,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#BracketPrototype:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#BracketPrototype:definition",
           "transform": [
             [
               1.0,
@@ -2933,63 +2862,10 @@
         },
         {
           "id": "fcstd:model:occurrence#ExternalOccurrence:instance",
-          "link": {
-            "members": [
-              {
-                "claim": false,
-                "kind": "claim_child"
-              },
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "kind": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
           "name": "fcstd:native:object#ExternalOccurrence",
           "native_ref": "fcstd:native:object#ExternalOccurrence",
-          "ordinal": 4,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#OccurrenceGroup:container"
-          },
-          "prototype": {
-            "document": {
-              "kind": "path",
-              "path": "external_component.FCStd"
-            },
-            "kind": "external",
-            "object": "ExternalPrototype"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#external:%7B%22path%22%3A%22external_component.FCStd%22%2C%22object%22%3A%22ExternalPrototype%22%7D",
           "transform": [
             [
               1.0,
@@ -3013,65 +2889,16 @@
         },
         {
           "id": "fcstd:model:occurrence#NestedBracketOccurrence:instance",
-          "link": {
-            "members": [
-              {
-                "claim": false,
-                "kind": "claim_child"
-              },
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "kind": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              10.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
           "name": "fcstd:native:object#NestedBracketOccurrence",
           "native_ref": "fcstd:native:object#NestedBracketOccurrence",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#OccurrenceGroup:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#BracketOccurrence:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#BracketOccurrence:definition",
           "transform": [
             [
               1.0,
               0.0,
               0.0,
-              0.0
+              10.0
             ],
             [
               0.0,
@@ -3091,20 +2918,8 @@
           "id": "fcstd:model:occurrence#OccurrenceGroup:container",
           "name": "fcstd:native:object#OccurrenceGroup",
           "native_ref": "fcstd:native:object#OccurrenceGroup",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Assembly:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#OccurrenceGroup:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#OccurrenceGroup:definition",
           "transform": [
             [
               1.0,
@@ -3128,63 +2943,10 @@
         },
         {
           "id": "fcstd:model:occurrence#PinArray:0",
-          "link": {
-            "members": [
-              {
-                "component": "fcstd:model:product_definition#PinArray_i0:definition",
-                "kind": "element_component"
-              },
-              {
-                "claim": false,
-                "kind": "claim_child"
-              },
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "kind": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
           "name": "fcstd:native:object#PinArray",
           "native_ref": "fcstd:native:object#PinArray",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#OccurrenceGroup:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#PinPrototype:definition",
           "transform": [
             [
               1.0,
@@ -3208,63 +2970,10 @@
         },
         {
           "id": "fcstd:model:occurrence#PinArray:1",
-          "link": {
-            "members": [
-              {
-                "component": "fcstd:model:product_definition#PinArray_i1:definition",
-                "kind": "element_component"
-              },
-              {
-                "claim": false,
-                "kind": "claim_child"
-              },
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "kind": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
           "name": "fcstd:native:object#PinArray",
           "native_ref": "fcstd:native:object#PinArray",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#OccurrenceGroup:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#PinPrototype:definition",
           "transform": [
             [
               1.0,
@@ -3288,63 +2997,10 @@
         },
         {
           "id": "fcstd:model:occurrence#PinArray:2",
-          "link": {
-            "members": [
-              {
-                "component": "fcstd:model:product_definition#PinArray_i2:definition",
-                "kind": "element_component"
-              },
-              {
-                "claim": false,
-                "kind": "claim_child"
-              },
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "kind": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
           "name": "fcstd:native:object#PinArray",
           "native_ref": "fcstd:native:object#PinArray",
-          "ordinal": 3,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#OccurrenceGroup:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#PinPrototype:definition",
           "transform": [
             [
               1.0,
@@ -3368,59 +3024,10 @@
         },
         {
           "id": "fcstd:model:occurrence#PinOccurrence:instance",
-          "link": {
-            "members": [
-              {
-                "claim": false,
-                "kind": "claim_child"
-              },
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "kind": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
           "name": "fcstd:native:object#PinOccurrence",
           "native_ref": "fcstd:native:object#PinOccurrence",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Assembly:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#PinPrototype:definition",
           "transform": [
             [
               2.220446049250313e-16,
@@ -3446,19 +3053,8 @@
           "id": "fcstd:model:occurrence#PinPrototype:container",
           "name": "fcstd:native:object#PinPrototype",
           "native_ref": "fcstd:native:object#PinPrototype",
-          "ordinal": 2,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PinPrototype:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#PinPrototype:definition",
           "transform": [
             [
               1.0,
@@ -3484,19 +3080,8 @@
           "id": "fcstd:model:occurrence#PrototypeGroup:container",
           "name": "fcstd:native:object#PrototypeGroup",
           "native_ref": "fcstd:native:object#PrototypeGroup",
-          "ordinal": 3,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#PrototypeGroup:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#PrototypeGroup:definition",
           "transform": [
             [
               1.0,
@@ -3533,11 +3118,21 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#Assembly:definition",
+          "instance_bodies": [],
           "kind": "part",
           "label": "CC0 linkage assembly",
           "native_ref": "fcstd:native:object#Assembly",
+          "occurrences": [
+            "fcstd:model:occurrence#BracketOccurrence:instance",
+            "fcstd:model:occurrence#PinOccurrence:instance",
+            "fcstd:model:occurrence#OccurrenceGroup:container"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Assembly",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3546,11 +3141,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#BracketOccurrence:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "BracketOccurrence",
           "native_ref": "fcstd:native:object#BracketOccurrence",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "BracketOccurrence",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3561,12 +3162,18 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#BracketPrototype:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "Bracket",
           "native_ref": "fcstd:native:object#BracketPrototype",
+          "occurrences": [],
           "part_number": "CC0-BRACKET-01",
+          "representations": [],
           "sketches": [],
           "source_name": "BracketPrototype",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3575,11 +3182,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#ExternalOccurrence:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "ExternalOccurrence",
           "native_ref": "fcstd:native:object#ExternalOccurrence",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "ExternalOccurrence",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3588,11 +3201,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "NestedBracketOccurrence",
           "native_ref": "fcstd:native:object#NestedBracketOccurrence",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "NestedBracketOccurrence",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3601,11 +3220,23 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#OccurrenceGroup:definition",
+          "instance_bodies": [],
           "kind": "link_group",
           "label": "Nested, array, and external occurrences",
           "native_ref": "fcstd:native:object#OccurrenceGroup",
+          "occurrences": [
+            "fcstd:model:occurrence#NestedBracketOccurrence:instance",
+            "fcstd:model:occurrence#PinArray:0",
+            "fcstd:model:occurrence#PinArray:1",
+            "fcstd:model:occurrence#PinArray:2",
+            "fcstd:model:occurrence#ExternalOccurrence:instance"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "OccurrenceGroup",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3614,11 +3245,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#PinArray:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "PinArray",
           "native_ref": "fcstd:native:object#PinArray",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "PinArray",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3627,11 +3264,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#PinArray_i0:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "PinArray_i0",
           "native_ref": "fcstd:native:object#PinArray_i0",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "PinArray_i0",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3640,11 +3283,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#PinArray_i1:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "PinArray_i1",
           "native_ref": "fcstd:native:object#PinArray_i1",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "PinArray_i1",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3653,11 +3302,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#PinArray_i2:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "PinArray_i2",
           "native_ref": "fcstd:native:object#PinArray_i2",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "PinArray_i2",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3668,12 +3323,18 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#PinPrototype:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "Pin",
           "native_ref": "fcstd:native:object#PinPrototype",
+          "occurrences": [],
           "part_number": "CC0-PIN-01",
+          "representations": [],
           "sketches": [],
           "source_name": "PinPrototype",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -3682,11 +3343,52 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#PrototypeGroup:definition",
+          "instance_bodies": [],
           "kind": "group",
           "label": "Reusable prototypes",
           "native_ref": "fcstd:native:object#PrototypeGroup",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "PrototypeGroup",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [
+            "fcstd:model:occurrence#Assembly:container",
+            "fcstd:model:occurrence#BracketPrototype:container",
+            "fcstd:model:occurrence#PinPrototype:container",
+            "fcstd:model:occurrence#PrototypeGroup:container"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#external:%7B%22path%22%3A%22external_component.FCStd%22%2C%22object%22%3A%22ExternalPrototype%22%7D",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "source_name": "ExternalPrototype",
+          "storage": {
+            "kind": "external",
+            "object": "ExternalPrototype",
+            "path": "external_component.FCStd"
+          },
           "tessellations": []
         }
       ],

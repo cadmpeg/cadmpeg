@@ -1366,6 +1366,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         prereqs
             .xref_table()
             .map_or(&[], |table| table.references.as_slice()),
+        products.definitions,
         products.occurrences,
         &design.design_parameter_scopes,
     );

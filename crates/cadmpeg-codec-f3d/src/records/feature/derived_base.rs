@@ -2,6 +2,7 @@
 //! The timeline record that owns a `Derived Base Feature` scope.
 
 use crate::records::identity::Located;
+use cadmpeg_core::decode::u64_from_index;
 use serde::{Deserialize, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_snapshot, DesignDerivedBaseSnapshot, "snapshot");
@@ -66,8 +67,7 @@ fn owner_record(scope: &super::scope::DesignParameterScope) -> Option<u32> {
         })
 }
 
-/// The owner record that a derived base frame names at its owner-reference
-/// offset and again twelve bytes before its end.
+/// A timeline owner confirmed by the repeated owner reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DesignDerivedBaseOwner {
@@ -75,17 +75,45 @@ pub(crate) struct DesignDerivedBaseOwner {
     pub(crate) record_index: Located<u32>,
     /// Byte offset of the repeated reference.
     pub(crate) repeat_offset: u64,
+    /// Saved result body named by the mirror-derived scope.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_result_body",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) result_body: Option<Located<u32>>,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_result_body, Located<u32>, "result_body");
+
 impl DesignDerivedBaseOwner {
-    /// Whether the two references sit at their offsets in the frame from
-    /// `byte_offset` to `paired_byte_offset`.
+    /// Whether the references are at the positions of an admitted owner form.
     pub(crate) fn frame_holds(&self, byte_offset: u64, paired_byte_offset: u64) -> bool {
-        byte_offset.checked_add(cadmpeg_core::decode::u64_from_index(
+        use crate::layout::{
+            derived_base_mirror_companion as companion, derived_base_mirror_scope as mirror,
+        };
+
+        let first = byte_offset.checked_add(u64_from_index(
             crate::layout::derived_base_owner_reference::RECORD_INDEX,
-        )) == Some(self.record_index.offset)
-            && paired_byte_offset.checked_sub(cadmpeg_core::decode::u64_from_index(REPEAT_FROM_END))
-                == Some(self.repeat_offset)
+        ));
+        let in_frame = paired_byte_offset.checked_sub(u64_from_index(REPEAT_FROM_END))
+            == Some(self.repeat_offset);
+        let in_companion = self.record_index.value != 0
+            && byte_offset.checked_add(u64_from_index(mirror::PAIRED_HEADER))
+                == Some(paired_byte_offset)
+            && byte_offset.checked_add(u64_from_index(mirror::LEN + companion::OWNER_REFERENCE))
+                == Some(self.repeat_offset);
+        first == Some(self.record_index.offset)
+            && match self.result_body {
+                Some(body) => {
+                    in_companion
+                        && body.value != 0
+                        && byte_offset
+                            .checked_add(u64_from_index(mirror::RESULT_BODY_REFERENCE + 1))
+                            == Some(body.offset)
+                }
+                None => in_frame || in_companion,
+            }
     }
 }
 
@@ -101,7 +129,7 @@ pub(crate) fn is_derived_base(scope: &super::scope::DesignParameterScope) -> boo
     )
 }
 
-rewrite_native_record!(DesignDerivedBaseOwner, []; {record_index, repeat_offset});
+rewrite_native_record!(DesignDerivedBaseOwner, []; {record_index, repeat_offset, result_body});
 
 /// The derived base scopes among `scopes` that name one owner, keyed by
 /// stream and owner record index, in record-index order. A group holds only
