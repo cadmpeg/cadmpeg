@@ -24,6 +24,7 @@ use super::component_constructions::exact_component_insert_construction;
 use super::component_constructions::exact_copy_paste_component_operation;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::derived_instance;
+use super::direct_face::exact_axis_owner_scale;
 use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
@@ -564,7 +565,17 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
-                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)?;
+                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)
+                        .or_else(|| {
+                            exact_axis_owner_scale(
+                                bytes,
+                                &records,
+                                &scope,
+                                &stream_types,
+                                parameters,
+                                parameter_owners,
+                            )
+                        });
                 if let scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut() {
                     *slot = construction;
                 }

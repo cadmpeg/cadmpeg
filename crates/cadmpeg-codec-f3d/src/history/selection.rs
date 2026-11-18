@@ -2584,6 +2584,11 @@ pub(super) fn feature_selected_input_state_id(
         FeatureDefinition::PostProcess { operation, .. } => operation,
     };
     match op {
+        FeatureOperation::BaseFeature {
+            bodies: BodySelection::Historical { state, .. },
+        } => {
+            return parse_state(state);
+        }
         FeatureOperation::Fillet { groups } => {
             for g in groups {
                 if let EdgeSelection::Historical { state, .. }

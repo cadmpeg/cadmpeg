@@ -984,6 +984,9 @@ fn decode_container<'a>(
             &ir.model.features,
         ));
         losses.extend(composite_losses);
+        losses.extend(crate::feature::unrecognized_class_losses(
+            &ir.model.features,
+        ));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
             &ir.model.features,
