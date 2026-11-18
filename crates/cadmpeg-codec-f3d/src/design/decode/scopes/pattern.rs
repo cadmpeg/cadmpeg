@@ -25,7 +25,7 @@ use crate::records::feature::patterns::{
 };
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
-use cadmpeg_core::decode::{View, WorkBudget};
+use cadmpeg_core::decode::{bounded_len, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::HashMap;
@@ -439,11 +439,12 @@ fn exact_rectangular_pattern_distribution(
         }
         _ => return None,
     };
-    // A u32 body count and that many marked body references precede the
-    // fixed fields; `at` places the fixed fields after the references.
-    let bodies = usize::try_from(View::u32_le_at(bytes, head + block::BODY_COUNT)?).ok()?;
-    // The references start where the zero run starts in a block without them.
     let references_at = head + block::ZERO_RUN;
+    let bodies = bounded_len(
+        u64::from(View::u32_le_at(bytes, head + block::BODY_COUNT)?),
+        MARKED_REFERENCE_LEN,
+        end.checked_sub(references_at)?,
+    )?;
     let eight_zero_at = head.checked_add(bodies.checked_mul(MARKED_REFERENCE_LEN)?)?;
     if eight_zero_at.checked_add(block::LEN)? > *end {
         return None;
@@ -460,8 +461,6 @@ fn exact_rectangular_pattern_distribution(
             untyped_body_references = untyped_body_references.checked_add(1)?;
         }
     }
-    // After a leading byte `0`, one body reference can be followed by four
-    // zero bytes in place of the eight.
     let zero_runs: &[usize] = if head == after_prefix + 1 && bodies == 1 {
         &[0, FOUR_ZERO_SHIFT]
     } else {
