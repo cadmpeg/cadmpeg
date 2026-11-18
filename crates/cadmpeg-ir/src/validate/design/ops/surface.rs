@@ -14,7 +14,7 @@ use crate::design::ops::surface::{
 use crate::design::options::{BooleanOp, SectionCondition, Solidify};
 use crate::design::selection::SetSelection;
 use crate::report::check::Finding;
-use crate::scalar::Fraction;
+use crate::scalar::{Fraction, PositiveReal};
 use crate::subd::SubdScheme;
 
 use super::super::records::DesignRecords;
@@ -340,7 +340,7 @@ pub(super) fn check_form(site: Site<'_>, form: &Form, findings: &mut Vec<Finding
             .cage
             .edges()
             .iter()
-            .filter_map(|edge| edge.knot_interval().map(|interval| interval.get()));
+            .filter_map(|edge| edge.knot_interval().map(PositiveReal::get));
         if let Some(first) = intervals.next() {
             if intervals.any(|interval| interval != first) {
                 error(
@@ -378,23 +378,22 @@ pub(super) fn check_mesh(
                 );
             }
         }
-        MeshKind::Section { sketch } => {
+        MeshKind::Section { sketch }
             if !index
                 .ir
                 .design
                 .sketches
                 .iter()
-                .any(|record| &record.id == sketch)
-            {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!(
-                        "MeshKind::Section names sketch {}, which is no sketch record",
-                        sketch.as_str()
-                    ),
-                );
-            }
+                .any(|record| &record.id == sketch) =>
+        {
+            error(
+                findings,
+                site.entity,
+                format_args!(
+                    "MeshKind::Section names sketch {}, which is no sketch record",
+                    sketch.as_str()
+                ),
+            );
         }
         _ => {}
     }

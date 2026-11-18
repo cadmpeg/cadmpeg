@@ -3,6 +3,8 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::text::NonBlankString;
+
 use super::picks::{self, Class};
 use super::{assembly, error, Site};
 use crate::design::container::Container;
@@ -19,6 +21,7 @@ use crate::design::ops::shared::{
 };
 use crate::design::options::{BooleanOp, ProjectionDirection};
 use crate::design::selection::{OrderedSelection, PickDomain, PickTarget};
+use crate::features::{FeatureId, ParameterId};
 use crate::report::check::Finding;
 
 use super::super::records::{DesignRecords, MemberKey};
@@ -238,7 +241,7 @@ pub(super) fn check_pattern(
             let listed: Vec<&str> = members
                 .iter()
                 .flat_map(|member| &member.features)
-                .map(|feature| feature.as_str())
+                .map(FeatureId::as_str)
                 .collect();
             if listed
                 .iter()
@@ -468,7 +471,8 @@ pub(super) fn check_layout(
             }
         }
         PatternLayout::Table(table) => {
-            let distinct: BTreeSet<&str> = table.parameters.iter().map(|p| p.as_str()).collect();
+            let distinct: BTreeSet<&str> =
+                table.parameters.iter().map(ParameterId::as_str).collect();
             if table.parameters.is_empty() || distinct.len() != table.parameters.len() {
                 error(
                     findings,
@@ -770,13 +774,13 @@ pub(super) fn check_template_instance(
         instance
             .inputs
             .iter()
-            .filter_map(|input| input.role.as_ref().map(|role| role.as_str()))
+            .filter_map(|input| input.role.as_ref().map(NonBlankString::as_str))
             .collect(),
     ) || repeated(
         instance
             .parameters
             .iter()
-            .filter_map(|parameter| parameter.role.as_ref().map(|role| role.as_str()))
+            .filter_map(|parameter| parameter.role.as_ref().map(NonBlankString::as_str))
             .collect(),
     ) {
         error(
@@ -801,7 +805,7 @@ pub(super) fn check_template_instance(
             );
         }
     }
-    let listed: Vec<&str> = instance.members.iter().map(|m| m.as_str()).collect();
+    let listed: Vec<&str> = instance.members.iter().map(FeatureId::as_str).collect();
     check_generated_members(index, site, "template member", &listed, findings);
 }
 

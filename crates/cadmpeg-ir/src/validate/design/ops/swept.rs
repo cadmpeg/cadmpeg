@@ -415,14 +415,14 @@ pub(super) fn check_primitive(
             format_args!("PrimitiveShape::Prism has {sides} sides; a literal count is at least 3"),
         ),
         PrimitiveShape::Wedge { y, base, top } => check_wedge(site, y, base, top, findings),
-        PrimitiveShape::Plane { .. } => {
-            if !matches!(primitive.output.body, None | Some(BodyForm::Sheet)) {
-                error(
-                    findings,
-                    site.entity,
-                    format_args!("a Plane primitive's output body is other than Sheet or None"),
-                );
-            }
+        PrimitiveShape::Plane { .. }
+            if !matches!(primitive.output.body, None | Some(BodyForm::Sheet)) =>
+        {
+            error(
+                findings,
+                site.entity,
+                format_args!("a Plane primitive's output body is other than Sheet or None"),
+            );
         }
         _ => {}
     }

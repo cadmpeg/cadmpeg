@@ -22,8 +22,10 @@ use crate::design::ops::shared::{
     PathRollControl,
 };
 use crate::design::selection::{PickContext, PickTarget, StepRef};
+use crate::ids::OccurrenceId;
 use crate::products::OccurrenceParent;
 use crate::report::check::Finding;
+use crate::scalar::{Angle, Length};
 
 use super::super::records::{DesignRecords, MemberKey};
 
@@ -101,7 +103,7 @@ pub(super) fn check_place_set(
     set: &PlaceSet,
     findings: &mut Vec<Finding>,
 ) {
-    let distinct: BTreeSet<&str> = set.occurrences.iter().map(|o| o.as_str()).collect();
+    let distinct: BTreeSet<&str> = set.occurrences.iter().map(OccurrenceId::as_str).collect();
     let least = if set.native_options.is_empty() { 2 } else { 1 };
     if set.occurrences.len() < least || distinct.len() != set.occurrences.len() {
         error(
@@ -186,13 +188,13 @@ pub(super) fn check_joint(site: Site<'_>, joint: &Joint, findings: &mut Vec<Find
                 let (rotation, axis) = match limit {
                     AxisLimits::Rotation { axis, limits, .. } => {
                         if let Some(bounds) = limits {
-                            check_bounds(site, bounds, |angle| angle.get(), findings);
+                            check_bounds(site, bounds, Angle::get, findings);
                         }
                         (true, *axis)
                     }
                     AxisLimits::Translation { axis, limits, .. } => {
                         if let Some(bounds) = limits {
-                            check_bounds(site, bounds, |length| length.get(), findings);
+                            check_bounds(site, bounds, Length::get, findings);
                         }
                         (false, *axis)
                     }
@@ -221,11 +223,11 @@ pub(super) fn check_joint(site: Site<'_>, joint: &Joint, findings: &mut Vec<Find
         JointKind::Distance {
             limits: Some(bounds),
             ..
-        } => check_bounds(site, bounds, |length| length.get(), findings),
+        } => check_bounds(site, bounds, Length::get, findings),
         JointKind::Angle {
             limits: Some(bounds),
             ..
-        } => check_bounds(site, bounds, |angle| angle.get(), findings),
+        } => check_bounds(site, bounds, Angle::get, findings),
         JointKind::Path {
             pitch_yaw: Some(PathAxisControl::FollowPath { axis: pitch, .. }),
             roll: Some(PathRollControl::UpVector { axis: roll, .. }),

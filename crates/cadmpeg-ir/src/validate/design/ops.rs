@@ -160,11 +160,13 @@ fn check_operation(
         Op::MirrorComponents(mirror) => assembly::check_mirror(index, site, mirror, findings),
         Op::AssemblyFeature(feature) => {
             assembly::check_assembly_feature(site, feature, findings);
-            let nested = Site {
-                in_assembly_feature: true,
-                ..site
-            };
-            check_operation(index, nested, &feature.operation, findings);
+            if !matches!(*feature.operation, Op::AssemblyFeature(_)) {
+                let nested = Site {
+                    in_assembly_feature: true,
+                    ..site
+                };
+                check_operation(index, nested, &feature.operation, findings);
+            }
         }
         Op::Sketch(_)
         | Op::SpatialSketch(_)
