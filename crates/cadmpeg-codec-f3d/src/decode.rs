@@ -393,6 +393,7 @@ struct DesignProjectionGaps {
     profile_selections: usize,
     path_selections: usize,
     face_selections: usize,
+    unresolved_extrude_start_faces: usize,
     active_face_substitutions: usize,
     body_selections: usize,
     partially_resolved_face_members: usize,
@@ -1791,8 +1792,13 @@ fn design_projection_gaps(
                 ) {
                     gaps.profile_selections += 1;
                 }
-                if let ExtrudeStart::FromFace { face, .. } = start {
-                    face_selection(face);
+                match start {
+                    ExtrudeStart::FromFace {
+                        face: FaceSelection::Unresolved,
+                        ..
+                    } => gaps.unresolved_extrude_start_faces += 1,
+                    ExtrudeStart::FromFace { face, .. } => face_selection(face),
+                    _ => {}
                 }
                 let (first, second) = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
@@ -2869,6 +2875,14 @@ fn report_design_projection_gaps(
         format_args!(
             "{} feature face selection(s) retain native candidates because no unique topological face was resolved.",
             gaps.face_selections
+        ),
+    )?;
+    push(
+        F3dLossCode::FeatureExtrudeStartFaceUnresolved,
+        gaps.unresolved_extrude_start_faces,
+        format_args!(
+            "{} Extrude start face selection(s) have no decoded face reference (DR-322).",
+            gaps.unresolved_extrude_start_faces
         ),
     )?;
     push(

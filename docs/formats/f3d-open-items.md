@@ -2655,7 +2655,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** A one-sided distance New Body scope with a `ProfileOffset` and no face or shape target group projects with an unresolved start face. The neutral feature retains the signed start offset and blind distance.
+**Note.** A one-sided distance New Body scope with a `ProfileOffset` and no face or shape target group projects with an unresolved start face. The neutral feature retains the signed start offset and blind distance. The decoder reports `feature.extrude-start-face-unresolved`.
 
 ### DR-326. Extrude start face on another component's body
 
