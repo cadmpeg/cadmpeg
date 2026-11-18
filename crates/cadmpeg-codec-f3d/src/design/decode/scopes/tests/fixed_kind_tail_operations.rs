@@ -1015,6 +1015,8 @@ pub(super) fn fixed_kind_tail_operations(
             tolerance: cadmpeg_ir::scalar::PositiveReal::new(1.0e-6)
                 .expect("checked fixture value"),
             tolerance_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 39),
+            method_code: None,
+            method_code_offset: None,
         }
     );
     if let crate::records::feature::scope::DesignScopePayloadMut::SurfaceExtend(slot) =

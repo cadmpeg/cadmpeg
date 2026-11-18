@@ -786,7 +786,7 @@ fn singular_jump(
     samples: &[(f64, [f64; 2], bool)],
     alpha: f64,
 ) -> Measure<Option<Bracket>> {
-    let singular: Vec<Point3> = chart.singular_points(alpha).collect();
+    let singular: Vec<Point3> = chart.singular_points().collect();
     if singular.is_empty() {
         return Ok(None);
     }
@@ -847,7 +847,7 @@ fn crossing(
             ));
         }
     }
-    let singular: Vec<Point3> = chart.singular_points(alpha).collect();
+    let singular: Vec<Point3> = chart.singular_points().collect();
     let distance = |t: f64| singular_distance(eval, curve, &singular, t);
     let (t, distance) = golden_minimum(eval, &distance, [ta, tb])?;
     let inside = t0.min(t1) < t && t < t0.max(t1);

@@ -228,6 +228,47 @@ fn a_patch_with_a_collapsed_side_measures_its_whole_area() {
     }
 }
 
+/// The strip `0 ≤ x ≤ 1`, `0 ≤ y ≤ 0.005` as a bilinear patch whose `v`
+/// sides are 0.005 long: shorter than the coincidence allowance and longer
+/// than the model tolerance, so `u` is defined along them. The patch is the
+/// whole face, of area 0.005.
+#[test]
+fn a_strip_narrower_than_the_allowance_measures_its_whole_area() {
+    let width = 0.005;
+    assert!(width < cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
+    let corners = [
+        [0.0, 0.0, 0.0],
+        [0.0, width, 0.0],
+        [1.0, width, 0.0],
+        [1.0, 0.0, 0.0],
+    ];
+    let mut builder = Builder::new();
+    let surface = builder.nurbs(
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        (1, vec![0.0, 0.0, 1.0, 1.0]),
+        &[
+            vec![(corners[0], 1.0), (corners[3], 1.0)],
+            vec![(corners[1], 1.0), (corners[2], 1.0)],
+        ],
+    );
+    let vertices: Vec<_> = corners
+        .iter()
+        .map(|corner| builder.vertex(*corner))
+        .collect();
+    let ring: Vec<_> = (0..4)
+        .map(|from| {
+            (
+                builder.line(&vertices[from], &vertices[(from + 1) % 4]),
+                Sense::Forward,
+            )
+        })
+        .collect();
+    builder.face(&surface, Sense::Forward, &[ring], true);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    assert_measured(&report.faces[0].measures.area, width, 1.0);
+}
+
 /// The disk `r ≤ 50` at `z = 0` as a `u`-periodic rational quadratic by
 /// linear patch whose `v = 1` side collapses to the centre, bounded by a
 /// triangle whose first side runs along `y = 0.005` from `x = -24` to

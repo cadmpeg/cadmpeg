@@ -128,7 +128,23 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     const ENDPOINT_TOLERANCE_MM: f64 = 2.0e-5;
     const STEP_SAMPLE_TOLERANCE_MM: f64 = 1.0e-4;
     const PLANE_JET_EDGES: [usize; 8] = [418, 425, 436, 443, 700, 728, 753, 761];
-    const STEP_BOUNDARY_MIDPOINTS_MM: [(usize, [f64; 3]); 64] = [
+    // Archived CATIA measurements: ftc07-native-edges.tsv, columns xm, ym, zm.
+    const NATIVE_BOUNDARY_SAMPLES_MM: [(usize, [f64; 3]); 8] = [
+        (418, [-94.612_545_562, -103.517_572_058, -96.624_369_478]),
+        (425, [141.074_369_346, -103.517_579_625, -69.212_551_771]),
+        (436, [-94.612_198_362, -103.517_913_248, 96.624_363_522]),
+        (443, [-141.074_363_413, -103.517_919_495, 69.212_205_915]),
+        (700, [94.612_198_458, -103.517_913_155, 96.624_363_524]),
+        (728, [-141.074_363_412, -103.517_919_588, -69.212_205_819]),
+        (753, [94.612_198_362, -103.517_913_248, -96.624_363_522]),
+        (761, [141.074_363_413, -103.517_919_495, 69.212_205_915]),
+    ];
+    // Preserve independent STEP witnesses alongside the native CATIA samples.
+    // Source: corpus/nist-pmi/step/nist_ftc_07_asme1_ap242-e2.stp; inches × 25.4.
+    // These eight plane-jet rows are unchanged from upstream 9c4e34b5d.
+    // Edge → STEP spline: 418→#6008, 425→#9996, 436→#1581, 443→#1533,
+    // 700→#2798, 728→#4038, 753→#5867, 761→#6073.
+    const STEP_BOUNDARY_SAMPLES_MM: [(usize, [f64; 3]); 64] = [
         (418, [-94.611_231_844, -103.516_638_909, -96.624_385_766]),
         (425, [141.074_385_766, -103.516_638_905, -69.211_231_846]),
         (436, [-94.611_234_209, -103.516_636_583, 96.624_385_806]),
@@ -260,7 +276,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         "unresolved freeform boundary curves: {unresolved:?}"
     );
     assert_eq!(circle_count, 48);
-    assert_eq!(nurbs_count, STEP_BOUNDARY_MIDPOINTS_MM.len());
+    assert_eq!(nurbs_count, STEP_BOUNDARY_SAMPLES_MM.len());
     let points: HashMap<_, _> = geometry
         .points
         .iter()
@@ -285,7 +301,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     let mut freeform_pcurve_uses = 0;
     let mut plane_pcurve_uses = 0;
     let admission = cadmpeg_ir::eval::admission::EvaluationAdmission::Standard;
-    for (ordinal, [x, y, z]) in STEP_BOUNDARY_MIDPOINTS_MM {
+    for (ordinal, [x, y, z]) in STEP_BOUNDARY_SAMPLES_MM {
         let id = format!("catia:standard:edge#{ordinal}");
         let edge = edges[id.as_str()];
         assert!(boundary_edges.contains(&edge.id));
@@ -317,11 +333,38 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
                     )
                 })
                 .get();
-        let midpoint_error = midpoint.distance(Point3::new(x, y, z));
-        assert!(
-            midpoint_error < STEP_SAMPLE_TOLERANCE_MM,
-            "{id}: STEP midpoint error {midpoint_error} mm"
-        );
+        let expected = Point3::new(x, y, z);
+        let midpoint_error = midpoint.distance(expected);
+        if PLANE_JET_EDGES.contains(&ordinal) {
+            let Some(SolvedCurveGeometry::Nurbs(spline)) = curve.geometry.solved() else {
+                panic!("NURBS boundary");
+            };
+            let native = NATIVE_BOUNDARY_SAMPLES_MM
+                .iter()
+                .find(|(edge, _)| *edge == ordinal)
+                .expect("native CATIA SPA witness")
+                .1;
+            let native = Point3::new(native[0], native[1], native[2]);
+            let witness = crate::test_support::with_service_context(|ctx| {
+                cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                    ctx,
+                    spline,
+                    native,
+                    STEP_SAMPLE_TOLERANCE_MM,
+                    first.midpoint(last),
+                )
+            })
+            .expect("native curve witness search");
+            assert!(
+                witness.is_some_and(|t| (first..=last).contains(&t.get())),
+                "{id}: native SPA sample must lie on the model curve"
+            );
+        } else {
+            assert!(
+                midpoint_error < STEP_SAMPLE_TOLERANCE_MM,
+                "{id}: STEP midpoint error {midpoint_error} mm"
+            );
+        }
         for coedge in geometry
             .coedges
             .iter()
@@ -389,25 +432,70 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
             }
             if plane_jet {
                 plane_pcurve_uses += 1;
-                let [cfirst, clast] = if direct <= reverse {
-                    [first, last]
-                } else {
-                    [last, first]
+                let tolerance = pcurve
+                    .metadata
+                    .fit_tolerance()
+                    .expect("class-25 fitted accuracy")
+                    .get();
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+                    &surface.geometry
+                else {
+                    panic!("planar carrier");
                 };
-                for (point, fraction) in lifted.iter().zip([0.0, 0.25, 0.5, 0.75, 1.0]) {
-                    let parameter = cfirst * (1.0 - fraction) + clast * fraction;
-                    let expected = cadmpeg_ir::eval::decode::curve_point(
+                let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
+                    &pcurve.geometry
+                else {
+                    panic!("stored plane jet");
+                };
+                assert_eq!(nurbs.degree(), 5, "stored quintic jet");
+                let u = *plane.frame().reference().as_raw();
+                let v = plane.frame().axis().as_raw().cross(u);
+                let stored = nurbs
+                    .lift(|uv| plane.origin().get().translated(u, uv.u).translated(v, uv.v))
+                    .expect("stored plane curve lift");
+                let witness = crate::test_support::with_service_context(|ctx| {
+                    cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                        ctx,
+                        &stored,
+                        expected,
+                        STEP_SAMPLE_TOLERANCE_MM,
+                        pfirst.midpoint(plast),
+                    )
+                })
+                .expect("original STEP witness search");
+                assert!(
+                    witness.is_some_and(|t| (pfirst.min(plast)..=pfirst.max(plast)).contains(&t.get())),
+                    "{id}: original STEP witness must remain on the stored plane pcurve"
+                );
+                let Some(SolvedCurveGeometry::Nurbs(model)) = curve.geometry.solved() else {
+                    panic!("model spline");
+                };
+                for point in lifted.iter().copied().chain([expected]) {
+                    let witness = crate::test_support::with_service_context(|ctx| {
+                        cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                            ctx,
+                            model,
+                            point,
+                            tolerance,
+                            first.midpoint(last),
+                        )
+                    })
+                    .expect("fitted model witness search");
+                    let parameter = witness
+                        .expect("model curve fit witness")
+                        .get()
+                        .clamp(first, last);
+                    let fitted = cadmpeg_ir::eval::decode::curve_point(
                         admission,
                         &curve.geometry,
                         parameter,
                     )
-                    .expect("plane-jet curve point")
+                    .expect("active model curve point")
                     .get();
-                    let miss = point.distance(expected);
                     assert!(
-                        miss < ENDPOINT_TOLERANCE_MM,
-                        "{id}: {} plane rechart misses the edge by {miss} mm",
-                        pcurve.id
+                        fitted.distance(point) <= tolerance,
+                        "{id}: stored-plane-to-model gap {} exceeds class-25 bound {tolerance} mm",
+                        fitted.distance(point)
                     );
                 }
             }
@@ -415,6 +503,18 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     }
     assert_eq!(freeform_pcurve_uses, 72);
     assert_eq!(plane_pcurve_uses, PLANE_JET_EDGES.len());
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code.local_code() == "geometry.parameter-map-accuracy-inferred"
+                    && loss.message.contains("stored plane pcurve")
+            })
+            .count(),
+        PLANE_JET_EDGES.len()
+    );
 }
 
 #[test]
