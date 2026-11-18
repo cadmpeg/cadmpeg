@@ -367,6 +367,8 @@ pub(crate) enum F3dLossCode {
     ThreadLiveFaceUnproven,
     /// A Thread scope without the extended prefix stores modeled flag `0`, which is read as a cosmetic thread.
     ThreadModeledFlagAssumed,
+    /// A Thread start offset is retained by its native parameter owner.
+    ThreadOffsetNative,
     /// A stored-body operation has an empty proven body set.
     FeatureStoredBodiesEmpty,
     /// A decoded body snapshot supplies no construction recipe.
@@ -1344,6 +1346,7 @@ impl F3dLossCode {
         Self::FeatureMeshSeparateMembershipUnresolved,
         Self::ThreadLiveFaceUnproven,
         Self::ThreadModeledFlagAssumed,
+        Self::ThreadOffsetNative,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureHistoryBodyBounded,
@@ -2223,6 +2226,7 @@ impl F3dLossCode {
             }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::ThreadModeledFlagAssumed => "feature.thread-modeled-flag-assumed",
+            Self::ThreadOffsetNative => "feature.thread-offset-native",
             Self::FeatureMeshSeparateScopeUnparsed => "feature.mesh-separate-scope-unparsed",
             Self::FeatureMeshSeparateTailPartial => "feature.mesh-separate-tail-partial",
             Self::FeatureMeshSeparateReferenceUnresolved => {
@@ -3164,6 +3168,7 @@ impl F3dLossCode {
             | Self::FeatureFilletSetInputUnresolved
             | Self::FeatureFilletSetGroupUnresolved
             | Self::ThreadModeledFlagAssumed
+            | Self::ThreadOffsetNative
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3811,6 +3816,7 @@ impl F3dLossCode {
             | Self::FeatureFilletSetInputUnresolved
             | Self::FeatureFilletSetGroupUnresolved
             | Self::ThreadModeledFlagAssumed
+            | Self::ThreadOffsetNative
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -4478,6 +4484,7 @@ mod tests {
                 "feature.mesh-separate-membership-unresolved",
                 "feature.thread-live-face-unproven",
                 "feature.thread-modeled-flag-assumed",
+                "feature.thread-offset-native",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.history-body-bounded",
