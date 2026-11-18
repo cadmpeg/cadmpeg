@@ -34,7 +34,9 @@ pub(super) fn prefix(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Confiden
 pub(super) fn whole(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Confidence, CodecError> {
     let manifest = match crate::archive::manifest(ctx, root) {
         Ok(value) => value,
-        Err(crate::error::Error::Codec(error @ CodecError::ResourceLimit(_))) => return Err(error),
+        Err(crate::error::Error::Codec(
+            error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_)),
+        )) => return Err(error),
         Err(_) => return prefix(ctx, root),
     };
     Ok(if manifest["schema"] == crate::archive::SCHEMA {

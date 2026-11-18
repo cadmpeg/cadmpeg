@@ -10,6 +10,7 @@ pub(super) enum OnshapeLossCode {
     ConstraintNotSupported,
     ThinNotSupported,
     EmptyMember,
+    SketchGeometryNotSupported,
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
@@ -20,6 +21,7 @@ impl OnshapeLossCode {
             Self::ConstraintNotSupported => "sketch.constraint-not-supported",
             Self::ThinNotSupported => "extrude.thin-not-supported",
             Self::EmptyMember => "container.empty-member",
+            Self::SketchGeometryNotSupported => "sketch.geometry-not-supported",
         }
     }
     pub(super) fn note(self, message: impl Into<String>) -> LossNote {

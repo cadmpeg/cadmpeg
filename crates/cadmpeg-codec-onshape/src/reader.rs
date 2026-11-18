@@ -7,7 +7,6 @@ mod features;
 pub(super) mod query;
 mod regions;
 mod sketch;
-mod thin;
 pub(super) mod topology;
 
 use serde_json::{json, Value};
@@ -19,7 +18,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::codec::Decoded;
 
 type Mapping<T> = Result<T, String>;
-const ROWS: usize = 10_000;
+pub(super) const ROWS: usize = 10_000;
 
 fn text<'a>(row: &'a Value, key: &str) -> Mapping<&'a str> {
     row.get(key)
@@ -58,7 +57,7 @@ fn optional_rows<'a>(row: &'a Value, key: &str) -> Mapping<&'a [Value]> {
     }
 }
 
-fn microversion(row: &Value, key: &str, expected: &str) -> Mapping<()> {
+pub(super) fn microversion(row: &Value, key: &str, expected: &str) -> Mapping<()> {
     if let Some(value) = row.get(key) {
         let actual = value
             .as_str()
@@ -243,6 +242,63 @@ pub(super) fn part_bodies(
         .collect()
 }
 
+fn boolean_field(row: &Value, key: &str) -> Mapping<bool> {
+    match row.get(key) {
+        None => Ok(false),
+        Some(Value::Bool(value)) => Ok(*value),
+        Some(_) => Err(format!("{key} must be Boolean")),
+    }
+}
+fn suppression(feature: &Value) -> Mapping<bool> {
+    Ok(boolean_field(feature, "suppressed")? | boolean_field(feature, "parentSuppressed")?)
+}
+fn reserve_history<T>(rows: &mut Vec<T>, count: usize) -> Result<(), Error> {
+    rows.try_reserve(count)
+        .map_err(|_| Error::Decode("Onshape history allocation failed".into()))
+}
+fn admit_history(
+    ctx: &DecodeContext<'_>,
+    feature: &Value,
+    model: &mut cadmpeg_ir::document::Model,
+) -> Result<(), Error> {
+    let count = |key| {
+        optional_rows(feature, key)
+            .map(<[Value]>::len)
+            .map_err(Error::Decode)
+    };
+    let entities = count("entities")?;
+    let constraints = count("constraints")?;
+    let parameters = count("parameters")?;
+    let auxiliary = constraints
+        .checked_mul(3)
+        .ok_or_else(|| Error::Decode("history count overflow".into()))?;
+    let total = entities
+        .checked_add(auxiliary)
+        .and_then(|n| n.checked_add(parameters))
+        .and_then(|n| n.checked_add(2))
+        .ok_or_else(|| Error::Decode("history count overflow".into()))?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(total),
+        "Onshape history admission",
+    )?;
+    reserve_history(&mut model.features, 1)?;
+    reserve_history(&mut model.sketches, 1)?;
+    reserve_history(
+        &mut model.sketch_entities,
+        entities
+            .checked_add(constraints)
+            .ok_or_else(|| Error::Decode("history count overflow".into()))?,
+    )?;
+    reserve_history(&mut model.sketch_constraints, constraints)?;
+    reserve_history(
+        &mut model.parameters,
+        parameters
+            .checked_add(constraints)
+            .ok_or_else(|| Error::Decode("history count overflow".into()))?,
+    )?;
+    Ok(())
+}
+
 pub(super) fn read(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -270,7 +326,8 @@ pub(super) fn read(
     }
     let document = manifest.get("document").unwrap_or(&Value::Null);
     let mid = text(document, "microversion").map_err(Error::Decode)?;
-    let elements = rows(&manifest, "elements").map_err(Error::Decode)?;
+    bundle.validate_microversions(mid)?;
+    let elements = rows(manifest, "elements").map_err(Error::Decode)?;
     if elements.len() != 1
         || elements
             .first()
@@ -294,8 +351,9 @@ pub(super) fn read(
     }
     let prefix = format!("partstudios/{eid}");
     let response = bundle.json(&format!("{prefix}/features.json"))?;
-    microversion(&response, "sourceMicroversion", mid).map_err(Error::Decode)?;
-    let features = rows(&response, "features").map_err(Error::Decode)?;
+    microversion(response, "sourceMicroversion", mid).map_err(Error::Decode)?;
+    let features = rows(response, "features").map_err(Error::Decode)?;
+    bundle.admit_topology(ctx)?;
     let inputs = topology::Inputs::new(&bundle, &prefix, mid, features).map_err(Error::Decode)?;
     let step_path = format!("{prefix}/export.step");
     let mut model = if bundle.contains(&step_path) {
@@ -312,8 +370,7 @@ pub(super) fn read(
         model
     } else if !features.is_empty()
         && features.iter().all(|feature| {
-            feature.get("suppressed").and_then(Value::as_bool) == Some(true)
-                || feature.get("parentSuppressed").and_then(Value::as_bool) == Some(true)
+            suppression(feature) == Ok(true)
                 || matches!(
                     feature.get("featureType").and_then(Value::as_str),
                     Some("newSketch" | "assignVariable")
@@ -341,8 +398,7 @@ pub(super) fn read(
                 feature.get("featureType").and_then(Value::as_str),
                 Some("extrude" | "revolve")
             ) && features::value(feature, "operationType") == Some("NEW")
-                && feature.get("suppressed").and_then(Value::as_bool) != Some(true)
-                && feature.get("parentSuppressed").and_then(Value::as_bool) != Some(true)
+                && suppression(feature) == Ok(false)
         })
         .map(|(ordinal, _)| ordinal)
         .collect();
@@ -371,8 +427,7 @@ pub(super) fn read(
         std::collections::BTreeMap::new()
     };
     let mut seen = std::collections::BTreeSet::new();
-    let mut previous = None;
-    let mut admitted = cadmpeg_core::decode::u64_from_index(model.ir.entity_count());
+    let mut unresolved_variables = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
         let native = text(feature, "featureId").map_err(Error::Decode)?;
         if !seen.insert(native) {
@@ -385,14 +440,32 @@ pub(super) fn read(
             .get("name")
             .and_then(Value::as_str)
             .unwrap_or(native);
-        let suppressed = feature
-            .get("suppressed")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-            || feature
-                .get("parentSuppressed")
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
+        let suppressed = suppression(feature);
+        let bindings: Vec<_> =
+            if feature.get("featureType").and_then(Value::as_str) == Some("assignVariable") {
+                optional_rows(feature, "parameters")
+                    .map_err(Error::Decode)?
+                    .iter()
+                    .filter(|p| p.get("parameterId").and_then(Value::as_str) == Some("name"))
+                    .filter_map(|p| p.get("value").and_then(Value::as_str))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+        if suppressed.as_ref().is_ok_and(|s| !s) {
+            for name in &bindings {
+                if model
+                    .ir
+                    .model
+                    .parameters
+                    .iter()
+                    .any(|p| p.owner.is_none() && p.name == *name)
+                {
+                    unresolved_variables.insert((*name).to_owned());
+                }
+            }
+        }
+        admit_history(ctx, feature, &mut model.ir.model)?;
         let sizes = (
             model.ir.model.sketches.len(),
             model.ir.model.sketch_entities.len(),
@@ -401,7 +474,10 @@ pub(super) fn read(
             model.ir.model.feature_input_topologies.len(),
             model.ir.design.features.len(),
         );
-        let mapped = if suppressed {
+        let mut dependencies = Vec::new();
+        let mapped = if let Err(reason) = &suppressed {
+            Err(reason.clone())
+        } else if suppressed == Ok(true) {
             Ok(definition(
                 "native",
                 json!({"kind": "Suppressed Onshape feature", "parameters": {}}),
@@ -412,26 +488,28 @@ pub(super) fn read(
                 ordinal,
                 &inputs,
                 &mut model.ir.model,
-                &mut model.ir.design,
                 report,
+                &unresolved_variables,
             )
             .and_then(|definition| {
                 serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(
                     definition.clone(),
                 )
                 .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?;
+                dependencies = features::dependencies(feature, &definition, &model.ir.model)?;
                 Ok(definition)
             })
         };
         let definition = match mapped {
             Ok(definition) => {
-                if !suppressed
+                if suppressed != Ok(true)
                     && !matches!(
                         feature.get("featureType").and_then(Value::as_str),
                         Some("newSketch" | "assignVariable")
                     )
                 {
-                    features::report_evaluated_variables(feature, &model.ir.model, report);
+                    features::report_evaluated_variables(feature, &model.ir.model, report)
+                        .map_err(Error::Decode)?;
                 }
                 definition
             }
@@ -442,7 +520,7 @@ pub(super) fn read(
                 model.ir.model.parameters.truncate(sizes.3);
                 model.ir.model.feature_input_topologies.truncate(sizes.4);
                 model.ir.design.features.truncate(sizes.5);
-                if !suppressed {
+                if suppressed != Ok(true) {
                     let region_budget_exhausted = inputs
                         .regions
                         .try_borrow()
@@ -463,7 +541,36 @@ pub(super) fn read(
                 )
             }
         };
-        let mut source_properties = features::source_properties(feature, &definition);
+        if definition.pointer("/value/kind").and_then(Value::as_str) == Some("native")
+            && suppressed != Ok(true)
+        {
+            if bindings.is_empty()
+                && feature.get("featureType").and_then(Value::as_str) == Some("assignVariable")
+            {
+                unresolved_variables.extend(
+                    model
+                        .ir
+                        .model
+                        .parameters
+                        .iter()
+                        .filter(|p| p.owner.is_none())
+                        .map(|p| p.name.clone()),
+                );
+            }
+            for name in &bindings {
+                unresolved_variables.insert((*name).to_owned());
+            }
+        }
+        if suppressed == Ok(false)
+            && definition.pointer("/value/kind").and_then(Value::as_str) == Some("tree_node")
+            && feature.get("featureType").and_then(Value::as_str) == Some("assignVariable")
+        {
+            for name in &bindings {
+                unresolved_variables.remove(*name);
+            }
+        }
+        let mut source_properties =
+            features::source_properties(feature, &definition).map_err(Error::Decode)?;
         if definition.pointer("/value/kind").and_then(Value::as_str) == Some("extrude")
             && definition
                 .pointer("/value/value/extent/kind")
@@ -474,7 +581,6 @@ pub(super) fn read(
                 properties.insert("symmetric_distance_parameter".into(), json!("total"));
             }
         }
-        let dependencies: Vec<_> = previous.iter().cloned().collect();
         let outputs: Vec<_> = single_body
             .iter()
             .chain(part_bodies.get(&ordinal))
@@ -490,15 +596,11 @@ pub(super) fn read(
             })
             .cloned()
             .collect();
-        push(&mut model.ir.model.features, json!({"id": feature_id, "ordinal": ordinal, "name": name, "suppressed": suppressed, "dependencies": dependencies, "source_properties": source_properties, "source_content": [], "outputs": outputs, "definition": definition})).map_err(Error::Decode)?;
-        ctx.admit_entities(
-            cadmpeg_core::decode::u64_from_index(model.ir.entity_count()),
-            &mut admitted,
-            "Onshape history",
-        )?;
-        if !suppressed {
-            previous = Some(feature_id);
+        let mut row = json!({"id": feature_id, "ordinal": ordinal, "name": name, "dependencies": dependencies, "source_properties": source_properties, "source_content": [], "outputs": outputs, "definition": definition});
+        if let Ok(suppressed) = suppressed {
+            row["suppressed"] = json!(suppressed);
         }
+        push(&mut model.ir.model.features, row).map_err(Error::Decode)?;
     }
     annotate(&mut model, features)?;
     report

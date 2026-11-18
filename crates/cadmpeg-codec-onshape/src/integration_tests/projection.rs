@@ -4,8 +4,7 @@ use std::io::{Cursor, Read, Write};
 
 use serde_json::{json, Value};
 
-use crate::archive;
-use crate::reader::{self, id, part_bodies, query, topology};
+use crate::reader::{self, id, query, topology};
 use crate::test_support::projection::{base_fixture, changed, changed_fixture, selected};
 use crate::test_support::{fixture, Report};
 
@@ -254,6 +253,7 @@ fn a_region_can_keep_an_outer_circle_and_an_inner_hole() {
         boundary[0]["derivedFrom"]["sketchEntityId"] = json!("outer");
         let mut hole = boundary.clone();
         hole[0]["derivedFrom"]["sketchEntityId"] = json!("inner");
+        hole[1] = json!(-1);
         value["disambiguationData"][0]["entities"] = json!([hole, boundary]);
         replace_query(query, &value);
     });
@@ -305,6 +305,9 @@ fn adjacent_regions_keep_the_shared_edge_in_each_directed_boundary() {
                     .map(|name| {
                         let mut edge = edge.clone();
                         edge[0]["derivedFrom"]["sketchEntityId"] = json!(name);
+                        if i == 1 && *name == "divider" {
+                            edge[1] = json!(-1);
+                        }
                         edge
                     })
                     .collect(),
@@ -402,7 +405,7 @@ fn sketch_dimension_ordinals_restart_for_each_owner() {
 }
 
 #[test]
-fn zlib_cap_queries_keep_face_sketches_in_the_source_frame() {
+fn zlib_cap_queries_refuse_unresolved_attachment_frames() {
     use base64::Engine;
     let bytes = changed(|response| {
         let mut face_sketch = response["features"][0].clone();
@@ -426,22 +429,12 @@ fn zlib_cap_queries_keep_face_sketches_in_the_source_frame() {
             .push(face_sketch);
     });
     let (wire, report) = read(&bytes);
-    assert_eq!(
-        kinds(&wire),
-        ["sketch", "extrude", "sketch"],
-        "{:?}",
-        report.losses()
-    );
-    let sketch = wire["sketches"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["id"] == id("sketch", "cap-sketch"))
-        .unwrap();
-    assert_eq!(
-        sketch["placement"]["frame"]["origin"],
-        topology::point([0.0, 0.0, 5.0])
-    );
+    assert_eq!(kinds(&wire), ["sketch", "extrude", "native"]);
+    assert_eq!(wire["sketches"].as_array().unwrap().len(), 1);
+    assert!(report.losses().iter().any(|l| l.code.as_deref()
+        == Some("onshape/history.not-supported")
+        && l.detail
+            .contains("attachment translation and rotation unresolved")));
 }
 
 // A sketch on a side face: the zlib query names the face by its deterministic id
@@ -503,40 +496,17 @@ fn face_sketch_bundle(normal: [f64; 3], orientation: bool) -> Vec<u8> {
 }
 
 #[test]
-fn zlib_face_queries_take_the_outward_face_plane_before_the_sketch() {
-    // The surface normal points into the body; the face's orientation flips it.
-    let (wire, report) = read(&face_sketch_bundle([0.0, 1.0, 0.0], false));
-    assert_eq!(
-        kinds(&wire),
-        ["sketch", "extrude", "sketch"],
-        "{:?}",
-        report.losses()
-    );
-    let sketch = wire["sketches"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["id"] == id("sketch", "side-sketch"))
-        .unwrap();
-    assert_eq!(
-        sketch["placement"]["frame"],
-        json!({"origin": topology::point([0.0, -20.0, 0.0]),
-            "normal": topology::point([0.0, -1.0, 0.0]),
-            "u_axis": topology::point([1.0, 0.0, 0.0])})
-    );
-    let (wire, _) = read(&face_sketch_bundle([0.0, 0.0, 1.0], true));
-    let sketch = wire["sketches"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|s| s["id"] == id("sketch", "side-sketch"))
-        .unwrap();
-    assert_eq!(
-        sketch["placement"]["frame"],
-        json!({"origin": topology::point([0.0, 0.0, 5.0]),
-            "normal": topology::point([0.0, 0.0, 1.0]),
-            "u_axis": topology::point([1.0, 0.0, 0.0])})
-    );
+fn zlib_face_queries_refuse_plane_only_attachment_frames() {
+    for normal in [[0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] {
+        for orientation in [false, true] {
+            let (wire, report) = read(&face_sketch_bundle(normal, orientation));
+            assert_eq!(kinds(&wire), ["sketch", "extrude", "native"]);
+            assert_eq!(wire["sketches"].as_array().unwrap().len(), 1);
+            assert!(report.losses().iter().any(|l| l
+                .detail
+                .contains("attachment translation and rotation unresolved")));
+        }
+    }
 }
 
 #[test]
@@ -546,7 +516,7 @@ fn face_sketches_on_unmeasured_orientations_are_refused_by_name() {
     assert!(
         report.losses().iter().any(|loss| loss
             .detail
-            .contains("not parallel to a default plane are not supported yet")),
+            .contains("attachment translation and rotation unresolved")),
         "{:?}",
         report.losses()
     );
@@ -820,6 +790,7 @@ fn ellipse_regions_keep_exact_angular_boundaries_and_holes() {
         outer[0]["derivedFrom"]["sketchEntityId"] = json!("outer");
         let mut inner = outer.clone();
         inner[0]["derivedFrom"]["sketchEntityId"] = json!("inner");
+        inner[1] = json!(-1);
         value["disambiguationData"][0]["entities"] = json!([inner, outer]);
         replace_query(query, &value);
     });
@@ -1046,107 +1017,6 @@ fn outside_region_witnesses_recover_the_outline_and_unlisted_holes() {
             && h[0]["parameter_range"] == json!([0.0, std::f64::consts::TAU])));
 }
 
-/// The revolve fixture's bundle with `states` as its bodydetails, each a list of
-/// (part id, part name).
-fn with_parts(states: &[(usize, &[(&str, &str)])]) -> Vec<u8> {
-    let fixture: &[u8] = &fixture("revolve");
-    let mut archive = zip::ZipArchive::new(Cursor::new(fixture)).unwrap();
-    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default();
-    for i in 0..archive.len() {
-        let mut member = archive.by_index(i).unwrap();
-        let name = member.name().unwrap().into_owned();
-        if name.contains("/bodydetails/") {
-            continue;
-        }
-        let mut bytes = Vec::new();
-        member.read_to_end(&mut bytes).unwrap();
-        output.start_file(name.as_str(), options).unwrap();
-        output.write_all(&bytes).unwrap();
-    }
-    for (ordinal, parts) in states {
-        let bodies: Vec<Value> = parts
-            .iter()
-            .map(|(id, name)| json!({"id": id, "type": "SOLID", "properties": {"name": name}}))
-            .collect();
-        output
-            .start_file(
-                format!("partstudios/studio/bodydetails/{ordinal}.json"),
-                options,
-            )
-            .unwrap();
-        output
-            .write_all(
-                json!({"bodies": bodies, "microversionId": {"theId": "synthetic-microversion"}})
-                    .to_string()
-                    .as_bytes(),
-            )
-            .unwrap();
-    }
-    let indices: Vec<usize> = states.iter().map(|(ordinal, _)| *ordinal).collect();
-    output
-        .start_file("partstudios/studio/bodydetails/index.json", options)
-        .unwrap();
-    output
-        .write_all(json!(indices).to_string().as_bytes())
-        .unwrap();
-    output.finish().unwrap().into_inner()
-}
-
-fn bound_parts(states: &[(usize, &[(&str, &str)])], creators: &[usize]) -> Vec<usize> {
-    let mut report = Report::default();
-    let mut model = crate::test_support::read_bytes(
-        std::path::Path::new("synthetic.onshape-bundle"),
-        &fixture("revolve"),
-        &mut report,
-    )
-    .unwrap();
-    model.ir.geometry.bodies[0].name = Some("Part B".to_owned());
-    let bytes = with_parts(states);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, view) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes,
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .unwrap();
-    let bundle = archive::Bundle::open(&ctx, view).unwrap();
-    let inputs =
-        topology::Inputs::new(&bundle, "partstudios/studio", "synthetic-microversion", &[])
-            .unwrap();
-    let bound = part_bodies(creators, &inputs, &model);
-    assert!(bound
-        .values()
-        .all(|body| *body == model.ir.geometry.bodies[0].id));
-    bound.into_keys().collect()
-}
-
-#[test]
-fn a_part_binds_to_the_feature_that_made_it_by_its_unique_name() {
-    // The first feature makes a part the STEP export does not hold; the second makes the
-    // STEP body's part.
-    let states: [(usize, &[(&str, &str)]); 4] = [
-        (0, &[]),
-        (1, &[("a", "Part A")]),
-        (2, &[("a", "Part A")]),
-        (3, &[("a", "Part A"), ("b", "Part B")]),
-    ];
-    assert_eq!(bound_parts(&states, &[0, 2]), [2]);
-    // Without the state after a feature, its part is not guessed.
-    assert!(bound_parts(&states[..3], &[0, 2]).is_empty());
-    // Two features claiming the one body of that name bind neither.
-    let claimed: [(usize, &[(&str, &str)]); 4] = [
-        (0, &[]),
-        (1, &[("b", "Part B")]),
-        (2, &[]),
-        (3, &[("c", "Part B")]),
-    ];
-    assert!(bound_parts(&claimed, &[0, 2]).is_empty());
-    // A feature making two parts binds neither.
-    let two: [(usize, &[(&str, &str)]); 2] = [(0, &[]), (1, &[("b", "Part B"), ("c", "Part C")])];
-    assert!(bound_parts(&two, &[0]).is_empty());
-}
-
 #[test]
 fn a_spline_segment_maps_only_over_its_whole_knot_domain() {
     for (end, whole) in [(2.0, true), (1.5, false)] {
@@ -1167,7 +1037,21 @@ fn a_spline_segment_maps_only_over_its_whole_knot_domain() {
                 .iter()
                 .any(|e| e["geometry"]["kind"] == "nurbs"));
         } else {
-            assert_eq!(kinds(&wire)[0], "native");
+            assert_eq!(kinds(&wire), ["sketch", "extrude"]);
+            assert!(wire["sketch_entities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["geometry"]["kind"] == "line"));
+            assert!(wire["sketch_entities"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["geometry"]["kind"] == "native"));
+            assert!(report
+                .losses()
+                .iter()
+                .any(|l| l.code.as_deref() == Some("onshape/sketch.geometry-not-supported")));
             assert!(report.losses().iter().any(|l| l
                 .detail
                 .contains("trimmed sketch splines are not supported yet")));
@@ -1451,4 +1335,136 @@ fn a_variable_value_no_parameter_drives_is_a_named_loss() {
     assert!(losses[0]
         .detail
         .starts_with("radius uses Part Studio variables"));
+}
+
+#[test]
+fn directed_regions_reject_open_separated_crossing_and_reversed_boundaries() {
+    for case in ["open", "gap", "disjoint", "nested", "reversed", "crossing"] {
+        let bytes = changed(|response| {
+            response["features"][0]["constraints"] = json!([]);
+            let query_template = query::resolved(selected(response)).unwrap();
+            let edge = query_template["disambiguationData"][0]["entities"][0][0].clone();
+            let mut resolved = query_template;
+            let mut boundaries = Vec::new();
+            if matches!(case, "disjoint" | "nested") {
+                response["features"][0]["entities"] = json!([
+                    {"btType":"BTMSketchCurve-4","entityId":"outer","geometry":{"btType":"BTCurveGeometryCircle-115","radius":0.01}},
+                    {"btType":"BTMSketchCurve-4","entityId":"inner","geometry":{"btType":"BTCurveGeometryCircle-115","radius":0.003,"xCenter":if case == "disjoint" {0.03} else {0.0}}}]);
+                for (name, side) in [("outer", 1), ("inner", -1)] {
+                    let mut edge = edge.clone();
+                    edge["derivedFrom"]["sketchEntityId"] = json!(name);
+                    boundaries.push(json!([edge, side]));
+                }
+            } else if case == "open" {
+                response["features"][0]["entities"] = json!([{"btType":"BTMSketchCurveSegment-155","entityId":"open","startParam":0.0,"endParam":1.0,
+                    "geometry":{"btType":"BTCurveGeometryLine-117","pntX":1.0,"dirY":1.0}}]);
+                let mut edge = edge.clone();
+                edge["derivedFrom"]["sketchEntityId"] = json!("open");
+                boundaries.push(json!([edge, 1]));
+            } else {
+                boundaries = resolved["disambiguationData"][0]["entities"]
+                    .as_array()
+                    .unwrap()
+                    .clone();
+                if case == "gap" {
+                    response["features"][0]["entities"][0]["geometry"]["pntX"] = json!(0.001);
+                }
+                if case == "reversed" {
+                    boundaries[0][1] = json!(-1);
+                }
+                if case == "crossing" {
+                    let points = [[0.0, 0.0], [0.02, 0.02], [0.0, 0.02], [0.02, 0.0]];
+                    for (i, entity) in response["features"][0]["entities"]
+                        .as_array_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .take(4)
+                        .enumerate()
+                    {
+                        let a = points[i];
+                        let b = points[(i + 1) % 4];
+                        entity["startParam"] = json!(0.0);
+                        entity["endParam"] = json!(1.0);
+                        entity["geometry"] = json!({"btType":"BTCurveGeometryLine-117","pntX":a[0],"pntY":a[1],"dirX":b[0]-a[0],"dirY":b[1]-a[1]});
+                    }
+                }
+            }
+            resolved["disambiguationData"][0]["entities"] = json!(boundaries);
+            replace_query(selected(response), &resolved);
+        });
+        let result = crate::test_support::review::decode(&bytes);
+        let wire = crate::test_support::review::wire(&result);
+        let feature = &wire["model"]["features"][1]["definition"]["value"];
+        assert_eq!(
+            feature["kind"],
+            if case == "nested" {
+                "extrude"
+            } else {
+                "native"
+            },
+            "{case}: {:?}",
+            result.report().losses
+        );
+        if case == "nested" {
+            assert_eq!(
+                feature["value"]["profile"]["value"]["value"]["regions"][0]["hole_boundaries"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                1
+            );
+        } else {
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|l| l.code.to_string() == "onshape/history.not-supported"));
+        }
+        crate::test_support::review::validate(result);
+    }
+}
+
+#[test]
+fn face_plane_tangential_origins_and_rotated_local_geometry_keep_attachment_native() {
+    for sense in [false, true] {
+        for rotated in [false, true] {
+            let bytes = crate::test_support::review::edit(
+                &face_sketch_bundle([0.0, 0.0, 1.0], sense),
+                |path, response| {
+                    if path.ends_with("bodydetails/2.json") {
+                        response["bodies"][0]["faces"][0]["surface"]["origin"] =
+                            topology::point([0.04, 0.07, 0.005]);
+                    }
+                    if path.ends_with("features.json") && rotated {
+                        for entity in response["features"][2]["entities"].as_array_mut().unwrap() {
+                            if entity["geometry"]["btType"] != "BTCurveGeometryLine-117" {
+                                continue;
+                            }
+                            let geometry = &mut entity["geometry"];
+                            let x = geometry["pntX"].as_f64().unwrap_or(0.0);
+                            let y = geometry["pntY"].as_f64().unwrap_or(0.0);
+                            let dx = geometry["dirX"].as_f64().unwrap_or(0.0);
+                            let dy = geometry["dirY"].as_f64().unwrap_or(0.0);
+                            geometry["pntX"] = json!(-y);
+                            geometry["pntY"] = json!(x);
+                            geometry["dirX"] = json!(-dy);
+                            geometry["dirY"] = json!(dx);
+                        }
+                    }
+                },
+            );
+            let result = crate::test_support::review::decode(&bytes);
+            let wire = crate::test_support::review::wire(&result);
+            assert_eq!(
+                wire["model"]["features"][2]["definition"]["value"]["kind"],
+                "native"
+            );
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|l| l.code.to_string() == "onshape/history.not-supported"));
+            crate::test_support::review::validate(result);
+        }
+    }
 }

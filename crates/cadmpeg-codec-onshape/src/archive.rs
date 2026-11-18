@@ -16,6 +16,7 @@ const DIRECTORY_BYTES: u64 = 16 << 20;
 pub(super) struct Bundle<'a> {
     pub(super) snapshot: ArchiveSnapshot<'a>,
     members: BTreeMap<String, View<'a>>,
+    json: BTreeMap<String, Value>,
 }
 fn failure(detail: impl std::fmt::Display) -> Error {
     Error::Decode(format!("Onshape bundle: {detail}"))
@@ -29,7 +30,28 @@ impl<'a> Bundle<'a> {
         if snapshot.recovery_reason().is_some() || snapshot.entries().len() > MEMBERS {
             return Err(failure("the ZIP directory is invalid"));
         }
+        let manifest_entry = snapshot
+            .entry("manifest.json")
+            .ok_or_else(|| failure("manifest.json is missing"))?;
+        if manifest_entry.uncompressed_size > JSON_BYTES {
+            return Err(failure("the expanded data exceeds the bundle limit"));
+        }
+        if !matches!(
+            manifest_entry.compression,
+            ZipCompression::Stored | ZipCompression::Deflate
+        ) {
+            return Err(failure("the manifest compression method is unsupported"));
+        }
+        let manifest_view = snapshot.open(ctx, "manifest.json")?;
+        let manifest_text = std::str::from_utf8(manifest_view.window())
+            .map_err(|e| failure(format!("manifest.json: {e}")))?;
+        let manifest = ctx.parse_json_value(manifest_text, "Onshape manifest")?;
+        let prefix = manifest
+            .pointer("/elements/0/id")
+            .and_then(Value::as_str)
+            .map(|id| format!("partstudios/{id}/"));
         let mut members = BTreeMap::new();
+        let mut json = BTreeMap::from([("manifest.json".to_owned(), manifest)]);
         let mut remaining = EXPANDED_BYTES;
         for entry in snapshot.entries() {
             let name = &entry.name;
@@ -55,19 +77,38 @@ impl<'a> Bundle<'a> {
             if entry.uncompressed_size > limit {
                 return Err(failure("the expanded data exceeds the bundle limit"));
             }
-            let data = snapshot.open(ctx, name)?;
+            let data = if name == "manifest.json" {
+                manifest_view
+            } else {
+                snapshot.open(ctx, name)?
+            };
             let length = cadmpeg_core::decode::u64_from_index(data.window().len());
             remaining = remaining
                 .checked_sub(length)
                 .ok_or_else(|| failure("expanded data exceeds the bundle limit"))?;
-            if length > limit || members.insert(name.clone(), data).is_some() {
+            if length > limit {
+                return Err(failure("a member exceeds its expanded limit"));
+            }
+            if prefix
+                .as_deref()
+                .is_some_and(|prefix| schema_response(name, prefix))
+            {
+                let text = std::str::from_utf8(data.window())
+                    .map_err(|e| failure(format!("{name}: {e}")))?;
+                json.insert(
+                    name.clone(),
+                    ctx.parse_json_value(text, "Onshape JSON member")?,
+                );
+            }
+            if members.insert(name.clone(), data).is_some() {
                 return Err(failure("a member repeats or exceeds its expanded limit"));
             }
         }
-        Ok(Self { snapshot, members })
-    }
-    pub(super) fn bytes(&self, path: &str) -> Result<&[u8], Error> {
-        Ok(self.view(path)?.window())
+        Ok(Self {
+            snapshot,
+            members,
+            json,
+        })
     }
     pub(super) fn view(&self, path: &str) -> Result<View<'a>, Error> {
         self.members
@@ -78,8 +119,64 @@ impl<'a> Bundle<'a> {
     pub(super) fn contains(&self, path: &str) -> bool {
         self.members.contains_key(path)
     }
-    pub(super) fn json(&self, path: &str) -> Result<Value, Error> {
-        serde_json::from_slice(self.bytes(path)?).map_err(|e| failure(format!("{path}: {e}")))
+    pub(super) fn json(&self, path: &str) -> Result<&Value, Error> {
+        self.json
+            .get(path)
+            .ok_or_else(|| failure(format!("{path} is missing")))
+    }
+    pub(super) fn validate_microversions(&self, expected: &str) -> Result<(), Error> {
+        for value in self.json.values() {
+            for key in ["sourceMicroversion", "microversionId"] {
+                super::reader::microversion(value, key, expected).map_err(Error::Decode)?;
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn admit_topology(&self, ctx: &DecodeContext<'_>) -> Result<(), Error> {
+        let mut count = 0usize;
+        for (path, response) in &self.json {
+            if !path.contains("/bodydetails/") {
+                continue;
+            }
+            let Some(bodies) = response.get("bodies").and_then(Value::as_array) else {
+                continue;
+            };
+            let mut add = |length: usize| -> Result<(), Error> {
+                if length > super::reader::ROWS {
+                    return Err(failure("topology exceeds the row limit"));
+                }
+                count = count
+                    .checked_add(length)
+                    .ok_or_else(|| failure("topology count overflow"))?;
+                Ok(())
+            };
+            add(bodies.len())?;
+            for body in bodies {
+                for key in ["faces", "edges", "vertices"] {
+                    if let Some(rows) = body.get(key).and_then(Value::as_array) {
+                        add(rows.len())?;
+                    }
+                }
+                if let Some(faces) = body.get("faces").and_then(Value::as_array) {
+                    for face in faces {
+                        if let Some(loops) = face.get("loops").and_then(Value::as_array) {
+                            add(loops.len())?;
+                            for boundary in loops {
+                                if let Some(coedges) =
+                                    boundary.get("coedges").and_then(Value::as_array)
+                                {
+                                    add(coedges.len())?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(ctx.charge_entities(
+            cadmpeg_core::decode::u64_from_index(count),
+            "Onshape topology admission",
+        )?)
     }
     pub(super) fn retain_assets(
         &self,
@@ -126,68 +223,11 @@ impl<'a> Bundle<'a> {
     }
 }
 pub(super) fn directory(root: View<'_>) -> Option<()> {
-    let bytes = root.window();
-    if !bytes.starts_with(b"PK\x03\x04") {
-        return None;
-    }
-    let start = bytes.len() - bytes.len().min(65_633);
-    let tail = bytes.get(start..)?;
-    let offset = tail.windows(4).rposition(|w| w == b"PK\x05\x06")?;
-    let end = root.child(start.checked_add(offset)?, bytes.len())?;
-    let word = |at| View::u16_le_at(end.window(), at);
-    let dword = |at| View::u32_le_at(end.window(), at);
-    if end.window().len() != 22usize.checked_add(usize::from(word(20)?))?
-        || word(4)? != 0
-        || word(6)? != 0
-    {
-        return None;
-    }
-    let locator = offset
-        .checked_sub(20)
-        .and_then(|at| root.child(start + at, start + offset));
-    let (members, size, position) = if let Some(locator) =
-        locator.filter(|l| l.window().starts_with(b"PK\x06\x07"))
-    {
-        let disk = View::u32_le_at(locator.window(), 4)?;
-        let at = View::u64_le_at(locator.window(), 8)?;
-        let disks = View::u32_le_at(locator.window(), 16)?;
-        if disk != 0 || disks != 1 {
-            return None;
-        }
-        let at = usize::try_from(at).ok()?;
-        let record = root.child(at, at.checked_add(56)?)?;
-        if !record.window().starts_with(b"PK\x06\x06") || record.window().get(16..24)? != [0; 8] {
-            return None;
-        }
-        let value = |at| View::u64_le_at(record.window(), at);
-        let size = value(4)?;
-        if !(44..=DIRECTORY_BYTES).contains(&size)
-            || at
-                .checked_add(12)?
-                .checked_add(usize::try_from(size).ok()?)?
-                > bytes.len()
-            || value(24)? != value(32)?
-        {
-            return None;
-        }
-        (value(32)?, value(40)?, value(48)?)
-    } else {
-        if word(8)? != word(10)? {
-            return None;
-        }
-        (
-            u64::from(word(10)?),
-            u64::from(dword(12)?),
-            u64::from(dword(16)?),
-        )
-    };
-    if members > cadmpeg_core::decode::u64_from_index(MEMBERS)
-        || size > DIRECTORY_BYTES
-        || position.checked_add(size)? > cadmpeg_core::decode::u64_from_index(bytes.len())
-    {
-        return None;
-    }
-    Some(())
+    ArchiveSnapshot::admit_directory(
+        root,
+        cadmpeg_core::decode::u64_from_index(MEMBERS),
+        DIRECTORY_BYTES,
+    )
 }
 
 pub(super) fn manifest(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Value, Error> {
@@ -206,10 +246,32 @@ pub(super) fn manifest(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Value,
         return Err(failure("manifest.json exceeds its admission limit"));
     }
     let view = snapshot.open(ctx, "manifest.json")?;
-    serde_json::from_slice(view.window()).map_err(|e| failure(format!("manifest.json: {e}")))
+    let text =
+        std::str::from_utf8(view.window()).map_err(|e| failure(format!("manifest.json: {e}")))?;
+    Ok(ctx.parse_json_value(text, "Onshape manifest")?)
 }
 
 fn has_extension(name: &str, suffix: &str) -> bool {
     name.rsplit_once('.')
         .is_some_and(|(_, extension)| extension == suffix)
+}
+
+fn schema_response(name: &str, prefix: &str) -> bool {
+    let Some(member) = name.strip_prefix(prefix) else {
+        return false;
+    };
+    if matches!(
+        member,
+        "features.json" | "configuration.json" | "variables.json" | "bodydetails/index.json"
+    ) {
+        return true;
+    }
+    member
+        .strip_prefix("bodydetails/")
+        .and_then(|name| name.rsplit_once('.'))
+        .is_some_and(|(ordinal, extension)| {
+            extension == "json"
+                && !ordinal.is_empty()
+                && ordinal.bytes().all(|b| b.is_ascii_digit())
+        })
 }

@@ -49,12 +49,15 @@ selection text. The canonical member paths above bind the Part Studio.
 The feature response has a `features` array in timeline order and can have
 a `defaultFeatures` array. Each feature has a unique nonblank `featureId`.
 `featureType` selects the operation. `name` carries its display label.
-`parameters` is an array keyed by `parameterId`; `btType` names each REST
-record class. `suppressed` and `parentSuppressed` mark inactive features.
+`parameters` is an array with unique `parameterId` keys; `btType` names each
+REST record class. `suppressed` and `parentSuppressed` are Boolean fields
+that mark inactive features.
 
 A declared `sourceMicroversion` equals `document.microversion`. A
 microversion declaration is either the string or an object with string
-`theId`. The same rule applies to `microversionId` in rollback responses.
+`theId`. The same rule applies to `microversionId` in rollback responses
+and to both declaration fields in configuration and variable responses.
+Every response declaration uses the pinned snapshot.
 
 The rollback index is an array, or an object with that array in `indices`.
 An entry is a nonnegative integer or a decimal filename `<ordinal>.json`.
@@ -83,7 +86,9 @@ value empty. Present fields keep their declared JSON types.
 
 Sketch plane queries can name built-in planes, created geometry or a
 historical face. A built-in plane has a conventional frame. A selected
-region carries directed boundary edges; nested boundaries identify holes.
+region carries connected, closed, directed boundary loops. A hole lies
+inside its outer loop. Boundary interiors are disjoint. Directed sides
+select the material side of each boundary.
 Region selections can restrict the parameter interval of an exact curve.
 
 A query can carry explicit deterministic IDs or a literal
@@ -118,7 +123,10 @@ with semicolons.
 
 Quantity expressions support bounded arithmetic, parentheses, unit suffixes
 and references to earlier variable assignments. Variable dependencies
-follow timeline order. Expressions represent literal computation.
+name the bindings in scope at the consuming feature. Expressions represent
+literal computation. A numeric quantity with a supported explicit `units`
+string uses that unit. A feature dependency identifies a consumed earlier
+feature in source operand order. Feature ordinals give timeline order.
 
 ## 5. Admission bounds
 

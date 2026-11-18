@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-const CLOSED_EDGE_RELATIVE_TOLERANCE: f64 = 1e-6;
-const PARALLEL_PLANE_TOLERANCE: f64 = 1e-9;
-const AXIS_UNIT_TOLERANCE: f64 = 1e-12;
-const AXIS_ZERO_TOLERANCE: f64 = 1e-12;
-const NEXT_FACE_CLEARANCE: f64 = 1e-3;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Value};
@@ -55,123 +50,6 @@ pub(crate) fn unit(v: [f64; 3]) -> Mapping<[f64; 3]> {
     } else {
         Err("geometry has no finite direction".into())
     }
-}
-
-fn dot([first_x, first_y, first_z]: [f64; 3], [second_x, second_y, second_z]: [f64; 3]) -> f64 {
-    first_x * second_x + first_y * second_y + first_z * second_z
-}
-
-fn along(
-    [first_x, first_y, first_z]: [f64; 3],
-    parameter: f64,
-    [second_x, second_y, second_z]: [f64; 3],
-) -> [f64; 3] {
-    [
-        first_x + parameter * second_x,
-        first_y + parameter * second_y,
-        first_z + parameter * second_z,
-    ]
-}
-fn polyline(edge: &Value) -> Mapping<Vec<[f64; 3]>> {
-    let curve = edge
-        .get("curve")
-        .ok_or("the input edge has no analytic curve")?;
-    let geometry = edge
-        .get("geometry")
-        .ok_or("the input edge has no geometric data")?;
-    let at = |key: &str| -> Mapping<[f64; 3]> {
-        vector(
-            geometry.get(key).ok_or("an input edge point is missing")?,
-            1000.0,
-        )
-    };
-    let (start, mid, end) = (at("startPoint")?, at("midPoint")?, at("endPoint")?);
-    match text(curve, "type")? {
-        "LINE" => Ok(vec![start, end]),
-        "CIRCLE" => {
-            let center = vector(
-                curve.get("origin").ok_or("circle center is missing")?,
-                1000.0,
-            )?;
-            let axis = unit(vector(
-                curve
-                    .get("normal")
-                    .or_else(|| curve.get("direction"))
-                    .ok_or("circle axis is missing")?,
-                1.0,
-            )?)?;
-            let offset = sub(start, center);
-            let radial = sub(offset, axis.map(|n| n * dot(offset, axis)));
-            let radius = dot(radial, radial).sqrt();
-            let x = unit(radial)?;
-            let y = cross(axis, x);
-            let angle = |p: [f64; 3]| {
-                let q = sub(p, center);
-                dot(q, y).atan2(dot(q, x)).rem_euclid(std::f64::consts::TAU)
-            };
-            let closed = dot(sub(end, start), sub(end, start)).sqrt()
-                <= CLOSED_EDGE_RELATIVE_TOLERANCE * radius.max(1.0);
-            let sweep = if closed {
-                std::f64::consts::TAU
-            } else {
-                let to = angle(end);
-                if angle(mid) < to {
-                    to
-                } else {
-                    to - std::f64::consts::TAU
-                }
-            };
-            Ok((0..=32)
-                .map(|step| {
-                    let t = sweep * f64::from(step) / 32.0;
-                    along(along(center, radius * t.cos(), x), radius * t.sin(), y)
-                })
-                .collect())
-        }
-        other => Err(format!("{other} input edges are not supported yet")),
-    }
-}
-fn within(
-    point: [f64; 3],
-    origin: [f64; 3],
-    normal: [f64; 3],
-    boundary: &[Vec<[f64; 3]>],
-    on: f64,
-) -> Option<bool> {
-    let [nx, _, _] = normal;
-    let helper = if nx.abs() < 0.9 {
-        [1.0, 0.0, 0.0]
-    } else {
-        [0.0, 1.0, 0.0]
-    };
-    let axis_x = unit(cross(normal, helper)).ok()?;
-    let axis_y = cross(normal, axis_x);
-    let flat = |p: [f64; 3]| {
-        let q = sub(p, origin);
-        [dot(q, axis_x), dot(q, axis_y)]
-    };
-    let [px, py] = flat(point);
-    let mut inside = false;
-    for points in boundary {
-        for pair in points.windows(2) {
-            let [a, b] = pair else { continue };
-            let ([ax, ay], [bx, by]) = (flat(*a), flat(*b));
-            let (dx, dy) = (bx - ax, by - ay);
-            let length = dx * dx + dy * dy;
-            let t = if length > 0.0 {
-                (((px - ax) * dx + (py - ay) * dy) / length).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            if (px - ax - t * dx).hypot(py - ay - t * dy) <= on {
-                return Some(false);
-            }
-            if (ay > py) != (by > py) && px < ax + (py - ay) * dx / dy {
-                inside = !inside;
-            }
-        }
-    }
-    inside.then_some(true)
 }
 
 pub(crate) struct State {
@@ -262,9 +140,9 @@ impl<'a> Inputs<'a> {
             .map_err(|_| {
                 format!("bodydetails for rollback index {ordinal} is missing or unreadable")
             })?;
-        super::microversion(&response, "microversionId", self.mid)?;
+        super::microversion(response, "microversionId", self.mid)?;
         let mut parts = BTreeMap::new();
-        for body in rows(&response, "bodies")? {
+        for body in rows(response, "bodies")? {
             if body.get("type").and_then(Value::as_str) != Some("SOLID")
                 || body.get("consumedByComposite").and_then(Value::as_bool) == Some(true)
             {
@@ -295,14 +173,14 @@ fn load(
         .map_err(|_| {
             format!("bodydetails for rollback index {ordinal} is missing or unreadable")
         })?;
-    super::microversion(&response, "microversionId", mid)?;
+    super::microversion(response, "microversionId", mid)?;
     let mut faces = BTreeMap::new();
     let mut edges = BTreeMap::new();
     let mut bodies = BTreeSet::new();
     let mut vertices = BTreeSet::new();
     let mut complete_vertices = true;
     let mut samples = Vec::new();
-    for body in rows(&response, "bodies")? {
+    for body in rows(response, "bodies")? {
         if !bodies.insert(text(body, "id")?.to_owned()) {
             return Err("bodydetails repeats a body id".into());
         }
@@ -575,153 +453,8 @@ impl State {
         }
         Ok(())
     }
-    pub(crate) fn next_face(
-        &self,
-        samples: &[[f64; 3]],
-        travel: [f64; 3],
-        cut: bool,
-    ) -> Mapping<Value> {
-        const ON: f64 = 1e-4;
-        let travel = unit(travel)?;
-        let mut segments = 0usize;
-        let mut planes = Vec::new();
-        for (face_id, face) in &self.faces {
-            if face.pointer("/surface/type").and_then(Value::as_str) != Some("PLANE") {
-                continue;
-            }
-            let surface = face.get("surface").ok_or("input face surface is missing")?;
-            let origin = vector(
-                surface.get("origin").ok_or("plane origin is missing")?,
-                1000.0,
-            )?;
-            let normal = unit(vector(
-                surface.get("normal").ok_or("plane normal is missing")?,
-                1.0,
-            )?)?;
-            let across = dot(normal, travel);
-            if across.abs() < PARALLEL_PLANE_TOLERANCE {
-                continue;
-            }
-            let mut boundary = Vec::new();
-            for lp in rows(face, "loops")? {
-                for coedge in rows(lp, "coedges")? {
-                    let edge = self
-                        .edges
-                        .get(text(coedge, "edgeId")?)
-                        .ok_or("face boundary edge is missing")?;
-                    let points = polyline(edge)?;
-                    segments = segments
-                        .checked_add(points.len())
-                        .ok_or("next-face segment count overflows")?;
-                    boundary.push(points);
-                }
-            }
-            planes.push((face_id.as_str(), origin, normal, across, boundary));
-        }
-        if samples
-            .len()
-            .checked_mul(segments)
-            .ok_or("next-face work count overflows")?
-            > 50_000_000
-        {
-            return Err(
-                "an up-to-next extrude over this many input faces is not supported yet".into(),
-            );
-        }
-        let mut first = Vec::new();
-        for p in samples {
-            let mut best: Option<(f64, bool, &str)> = None;
-            for (face_id, origin, normal, across, boundary) in &planes {
-                let t = dot(sub(*origin, *p), *normal) / across;
-                if !t.is_finite() || t <= ON {
-                    continue;
-                }
-                let hit = along(*p, t, travel);
-                let Some(inside) = within(hit, *origin, *normal, boundary, ON) else {
-                    continue;
-                };
-                let better = match best {
-                    None => true,
-                    Some((d, strict, _)) => t < d - ON || (t <= d + ON && inside && !strict),
-                };
-                if better {
-                    best = Some((t, inside, *face_id));
-                }
-            }
-            first.push(best.ok_or(
-                "an up-to-next extrude whose profile does not meet one input face everywhere is not supported yet",
-            )?);
-        }
-        let face_id = first
-            .first()
-            .map(|hit| hit.2)
-            .ok_or("the up-to-next profile is empty")?;
-        if first.iter().any(|hit| hit.2 != face_id) {
-            return Err(
-                "an up-to-next extrude that ends on several input faces is not supported yet"
-                    .into(),
-            );
-        }
-        let face = self.faces.get(face_id).ok_or("input face is missing")?;
-        let normal = unit(vector(
-            face.pointer("/surface/normal")
-                .ok_or("plane normal is missing")?,
-            1.0,
-        )?)?;
-        let outward = match face.get("orientation").and_then(Value::as_bool) {
-            Some(true) => dot(normal, travel),
-            Some(false) => -dot(normal, travel),
-            None => return Err("the up-to-next face has no resolved orientation".into()),
-        };
-        if cut != (outward > 0.0) {
-            return Err(if cut {
-                "an up-to-next cut that starts outside the material is not supported yet"
-            } else {
-                "an up-to-next extrude that starts inside the material is not supported yet"
-            }
-            .into());
-        }
-        let mut low = [f64::INFINITY; 3];
-        let mut high = [f64::NEG_INFINITY; 3];
-        for (p, (t, _, _)) in samples.iter().zip(&first) {
-            for point in [*p, along(*p, *t, travel)] {
-                for ((l, h), n) in low.iter_mut().zip(high.iter_mut()).zip(point) {
-                    *l = l.min(n);
-                    *h = h.max(n);
-                }
-            }
-        }
-        for (other_id, other) in &self.faces {
-            if other_id.as_str() == face_id {
-                continue;
-            }
-            let corner = |key: &str| -> Mapping<[f64; 3]> {
-                vector(
-                    other
-                        .get("box")
-                        .and_then(|b| b.get(key))
-                        .ok_or("an input face has no bounding box")?,
-                    1000.0,
-                )
-            };
-            let (min, max) = (corner("minCorner")?, corner("maxCorner")?);
-            let overlaps = min
-                .iter()
-                .zip(max)
-                .zip(low.iter().zip(high))
-                .all(|((a, b), (l, h))| {
-                    *a < h - NEXT_FACE_CLEARANCE && b > l + NEXT_FACE_CLEARANCE
-                });
-            if overlaps {
-                return Err("an up-to-next extrude with other input geometry in its path is not supported yet".into());
-            }
-        }
-        let mut value = json!({"state": self.row.get("id"), "native": "Onshape up-to-next face"});
-        value
-            .as_object_mut()
-            .ok_or("selection is missing")?
-            .insert("faces".into(), json!([face_id]));
-        Ok(json!({"kind": "historical", "value": value}))
+    pub(crate) fn next_face(&self) -> Mapping<Value> {
+        Err(format!("UP_TO_NEXT needs exact coverage and first intersection over the complete profile; input state {}", text(&self.row,"id")?))
     }
 
     pub(crate) fn require_planes(&self, selection: &Value) -> Mapping<()> {
@@ -753,57 +486,13 @@ impl State {
         Ok(())
     }
     pub(crate) fn face_frame(&self, face_id: &str) -> Mapping<Value> {
-        let face = self
-            .faces
-            .get(face_id)
-            .ok_or("the sketch face is absent at this feature's rollback index")?;
-        let surface = face
-            .get("surface")
-            .ok_or("the sketch face has no surface")?;
-        if surface.get("type").and_then(Value::as_str) != Some("PLANE") {
-            return Err("sketches on non-planar faces are not supported yet".into());
+        if !self.faces.contains_key(face_id) {
+            return Err("the sketch face is absent at this feature's rollback index".into());
         }
-        let sense = match face.get("orientation").and_then(Value::as_bool) {
-            Some(true) => 1.0,
-            Some(false) => -1.0,
-            None => return Err("the sketch face has no orientation".into()),
-        };
-        let normal = unit(vector(
-            surface
-                .get("normal")
-                .ok_or("the sketch face normal is missing")?,
-            sense,
-        )?)?;
-        let origin = vector(
-            surface
-                .get("origin")
-                .ok_or("the sketch face origin is missing")?,
-            1000.0,
-        )?;
-        let ones = normal
-            .iter()
-            .filter(|n| n.abs() > 1.0 - AXIS_UNIT_TOLERANCE)
-            .count();
-        let zeros = normal
-            .iter()
-            .filter(|n| n.abs() < AXIS_ZERO_TOLERANCE)
-            .count();
-        if ones != 1 || zeros != 2 {
-            return Err(
-                "sketches on faces that are not parallel to a default plane are not supported yet"
-                    .into(),
-            );
-        }
-        let normal = normal.map(f64::round);
-        let [_, _, nz] = normal;
-        let u_axis = if nz == 0.0 {
-            cross([0.0, 0.0, 1.0], normal)
-        } else {
-            [1.0, 0.0, 0.0]
-        };
-        let offset = origin.iter().zip(normal).map(|(o, n)| o * n).sum::<f64>();
-        Ok(json!({"origin": point(normal.map(|n| n * offset + 0.0)),
-            "normal": point(normal.map(|n| n + 0.0)), "u_axis": point(u_axis.map(|n| n + 0.0))}))
+        Err(
+            "the face plane leaves the sketch attachment translation and rotation unresolved"
+                .into(),
+        )
     }
 
     pub(crate) fn axis(&self, feature: &Value, key: &str) -> Mapping<Value> {

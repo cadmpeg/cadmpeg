@@ -58,8 +58,11 @@ pub(crate) mod local_header {
 pub(crate) mod end_record {
     /// Record length in bytes. Spec §3.
     pub(crate) const LEN: usize = 22;
+    /// Offset of `disk` (`u16`, little-endian). Spec §3.
+    pub(crate) const DISK: usize = 4;
+    /// Offset of `directory_disk` (`u16`, little-endian). Spec §3.
+    pub(crate) const DIRECTORY_DISK: usize = 6;
     /// Offset of `disk_entries` (`u16`, little-endian). Spec §3.
-    #[cfg(test)]
     pub(crate) const DISK_ENTRIES: usize = 8;
     /// Offset of `entries` (`u16`, little-endian). Spec §3.
     pub(crate) const ENTRIES: usize = 10;
@@ -80,13 +83,15 @@ pub(crate) mod zip64_end {
     /// Offset of `record_size` (`u64`, little-endian). Spec §3.
     pub(crate) const RECORD_SIZE: usize = 4;
     /// Offset of `producer_version` (`u16`, little-endian). Spec §3.
-    #[cfg(test)]
     pub(crate) const PRODUCER_VERSION: usize = 12;
     /// Offset of `extraction_version` (`u16`, little-endian). Spec §3.
     #[cfg(test)]
     pub(crate) const EXTRACTION_VERSION: usize = 14;
+    /// Offset of `disk` (`u32`, little-endian). Spec §3.
+    pub(crate) const DISK: usize = 16;
+    /// Offset of `directory_disk` (`u32`, little-endian). Spec §3.
+    pub(crate) const DIRECTORY_DISK: usize = 20;
     /// Offset of `disk_entries` (`u64`, little-endian). Spec §3.
-    #[cfg(test)]
     pub(crate) const DISK_ENTRIES: usize = 24;
     /// Offset of `entries` (`u64`, little-endian). Spec §3.
     pub(crate) const ENTRIES: usize = 32;
@@ -102,9 +107,10 @@ pub(crate) mod zip64_end {
 pub(crate) mod zip64_locator {
     /// Record length in bytes. Spec §3.
     pub(crate) const LEN: usize = 20;
+    /// Offset of `end_record_disk` (`u32`, little-endian). Spec §3.
+    pub(crate) const END_RECORD_DISK: usize = 4;
     /// Offset of `end_record_position` (`u64`, little-endian). Spec §3.
     pub(crate) const END_RECORD_POSITION: usize = 8;
     /// Offset of `disks` (`u32`, little-endian). Spec §3.
-    #[cfg(test)]
     pub(crate) const DISKS: usize = 16;
 }

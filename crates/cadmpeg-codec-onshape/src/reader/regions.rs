@@ -237,7 +237,16 @@ pub(super) fn profile(
                     .ok_or("the sketch-region ellipse geometry is missing")?
                     .insert("bounds".to_owned(), json!(range));
             }
-            let resolved = Edge::new(entity_id.clone(), &entity)?;
+            let mut resolved = Edge::new(entity_id.clone(), &entity)?;
+            let clockwise = super::boolean_field(
+                inputs
+                    .sketch_entity(native, source_id)?
+                    .get("geometry")
+                    .unwrap_or(&Value::Null),
+                "clockwise",
+            )?;
+            resolved.side =
+                side.as_i64().ok_or("boundary side is missing")? * if clockwise { -1 } else { 1 };
             let key = (entity_id, resolved.range.map(f64::to_bits));
             if !selected.insert(key) {
                 return Err("a sketch-region boundary repeats a source curve; its trimmed intervals are ambiguous".into());
@@ -388,6 +397,7 @@ struct Edge {
     area: f64,
     closed: bool,
     geometry: Value,
+    side: i64,
 }
 
 impl Edge {
@@ -482,6 +492,7 @@ impl Edge {
             area,
             closed,
             geometry: geometry.clone(),
+            side: 1,
         })
     }
 
@@ -720,56 +731,208 @@ fn distance([a, b]: [f64; 2], [c, d]: [f64; 2]) -> f64 {
     (a - c).hypot(b - d)
 }
 
+const BOUNDARY_ROUNDOFF_FACTOR: f64 = 64.0;
+fn boundary_roundoff(edges: &[Edge]) -> f64 {
+    BOUNDARY_ROUNDOFF_FACTOR
+        * f64::EPSILON
+        * edges
+            .iter()
+            .flat_map(|e| e.a.into_iter().chain(e.b))
+            .map(f64::abs)
+            .fold(1.0_f64, f64::max)
+}
 fn region(mut edges: Vec<Edge>) -> Mapping<Value> {
+    let roundoff = boundary_roundoff(&edges);
     let mut rings = Vec::new();
     while let Some(first) = edges.pop() {
-        let start = first.a;
-        let mut end = first.b;
-        let mut area = first.area;
-        let mut boundary = vec![first.boundary(false)];
-        while !first.closed && !edges.is_empty() {
-            let mut candidates = edges
+        let reverse = first.side < 0;
+        let start = if reverse { first.b } else { first.a };
+        let mut end = if reverse { first.a } else { first.b };
+        let mut area = if reverse { -first.area } else { first.area };
+        let mut closed = first.closed;
+        let mut boundary = vec![(first, reverse)];
+        while !closed {
+            let candidates: Vec<_> = edges
                 .iter()
                 .enumerate()
                 .filter(|(_, e)| !e.closed)
-                .flat_map(|(i, e)| {
-                    [
-                        (distance(end, e.a), i, false),
-                        (distance(end, e.b), i, true),
-                    ]
-                })
-                .collect::<Vec<_>>();
-            candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let Some(&(gap, index, reverse)) = candidates.first() else {
-                break;
+                .filter(|(_, e)| distance(end, if e.side < 0 { e.b } else { e.a }) <= roundoff)
+                .map(|(i, _)| i)
+                .collect();
+            let [index] = candidates.as_slice() else {
+                return Err("the directed sketch-region boundary is open or ambiguous".into());
             };
-            if distance(end, start) < gap {
-                break;
-            }
-            if !gap.is_finite() || candidates.get(1).is_some_and(|other| other.0 == gap) {
-                return Err(
-                    "the sketch-region boundary does not form unambiguous closed loops".into(),
-                );
-            }
-            let edge = edges.remove(index);
+            let edge = edges.remove(*index);
+            let reverse = edge.side < 0;
             end = if reverse { edge.a } else { edge.b };
             area += if reverse { -edge.area } else { edge.area };
-            boundary.push(edge.boundary(reverse));
+            boundary.push((edge, reverse));
+            closed = distance(start, end) <= roundoff;
         }
-        if !area.is_finite() || area == 0.0 {
+        if !area.is_finite() || area.abs() <= roundoff * roundoff {
             return Err("the sketch-region boundary has no resolved enclosed area".into());
         }
-        rings.push((area.abs(), boundary));
+        let ring = Ring {
+            edges: boundary,
+            area,
+        };
+        admit_ring(&ring, roundoff)?;
+        rings.push(ring);
     }
-    rings.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let (_, outer) = rings
-        .pop()
-        .ok_or("the sketch region has no resolved boundary edges")?;
-    let holes = rings
-        .into_iter()
-        .map(|(_, boundary)| boundary)
-        .collect::<Vec<_>>();
-    Ok(json!({"kind": "trimmed", "outer_boundary": outer, "hole_boundaries": holes}))
+    let outer_indices: Vec<_> = rings
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.area > 0.0)
+        .map(|(i, _)| i)
+        .collect();
+    let [outer_index] = outer_indices.as_slice() else {
+        return Err("the directed sketch region needs one outer loop".into());
+    };
+    let outer = rings.remove(*outer_index);
+    for (i, hole) in rings.iter().enumerate() {
+        admit_separate_rings(&outer, hole)?;
+        if !outer.contains(hole.edges.first().ok_or("empty hole")?.0.a)? {
+            return Err("the sketch-region hole lies outside its outer boundary".into());
+        }
+        for other in &rings[..i] {
+            admit_separate_rings(other, hole)?;
+            if other.contains(hole.edges.first().ok_or("empty hole")?.0.a)?
+                || hole.contains(other.edges.first().ok_or("empty hole")?.0.a)?
+            {
+                return Err("the selected sketch-region holes are nested".into());
+            }
+        }
+    }
+    Ok(
+        json!({"kind":"trimmed", "outer_boundary":outer.boundary(), "hole_boundaries":rings.iter().map(Ring::boundary).collect::<Vec<_>>()}),
+    )
+}
+fn admit_separate_rings(a: &Ring, b: &Ring) -> Mapping<()> {
+    for (first, _) in &a.edges {
+        for (second, _) in &b.edges {
+            if !separated(first, second)? {
+                return Err(
+                    "the sketch-region loops intersect or their separation is unresolved".into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+fn admit_ring(ring: &Ring, roundoff: f64) -> Mapping<()> {
+    for (i, (edge, _)) in ring.edges.iter().enumerate() {
+        if !edge.closed && distance(edge.a, edge.b) <= roundoff {
+            return Err("the sketch-region boundary contains a degenerate edge".into());
+        }
+        for (j, (other, _)) in ring.edges[..i].iter().enumerate() {
+            let adjacent = i == j + 1 || j == 0 && i + 1 == ring.edges.len();
+            if separated(edge, other)? {
+                continue;
+            }
+            if !adjacent || !endpoint_contact(edge, other, roundoff)? {
+                return Err(
+                    "the sketch-region boundary intersects or its intersection is unresolved"
+                        .into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+fn endpoint_contact(first: &Edge, second: &Edge, roundoff: f64) -> Mapping<bool> {
+    let endpoint = |point| {
+        [first.a, first.b]
+            .iter()
+            .any(|first| distance(*first, point) <= roundoff)
+            && [second.a, second.b]
+                .iter()
+                .any(|second| distance(*second, point) <= roundoff)
+    };
+    match (first.conic()?, second.conic()?) {
+        (None, None) => {
+            let first_delta = [first.b[0] - first.a[0], first.b[1] - first.a[1]];
+            let second_delta = [second.b[0] - second.a[0], second.b[1] - second.a[1]];
+            let determinant = cross(first_delta, second_delta);
+            if determinant.abs()
+                <= roundoff
+                    * first_delta[0]
+                        .hypot(first_delta[1])
+                        .max(second_delta[0].hypot(second_delta[1]))
+            {
+                let shared = [first.a, first.b].into_iter().any(endpoint);
+                let axis = usize::from(first_delta[0].abs() < first_delta[1].abs());
+                let low = first.a[axis]
+                    .min(first.b[axis])
+                    .max(second.a[axis].min(second.b[axis]));
+                let high = first.a[axis]
+                    .max(first.b[axis])
+                    .min(second.a[axis].max(second.b[axis]));
+                return Ok(shared && high - low <= roundoff);
+            }
+            let offset = [second.a[0] - first.a[0], second.a[1] - first.a[1]];
+            let parameter = cross(offset, second_delta) / determinant;
+            Ok(endpoint([
+                first.a[0] + parameter * first_delta[0],
+                first.a[1] + parameter * first_delta[1],
+            ]))
+        }
+        (Some(conic), None) | (None, Some(conic)) => {
+            let (curve, line) = if first.conic()?.is_some() {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            let offset =
+                conic.normalize([line.a[0] - conic.center[0], line.a[1] - conic.center[1]]);
+            let delta = conic.normalize([line.b[0] - line.a[0], line.b[1] - line.a[1]]);
+            let qa = dot(delta, delta);
+            let qb = 2.0 * dot(offset, delta);
+            let qc = dot(offset, offset) - 1.0;
+            let discriminant = qb * qb - 4.0 * qa * qc;
+            if !discriminant.is_finite() || discriminant < 0.0 || qa == 0.0 {
+                return Ok(false);
+            }
+            for parameter in [
+                (-qb - discriminant.sqrt()) / (2.0 * qa),
+                (-qb + discriminant.sqrt()) / (2.0 * qa),
+            ] {
+                if !(0.0..=1.0).contains(&parameter) {
+                    continue;
+                }
+                let point = [
+                    line.a[0] + parameter * (line.b[0] - line.a[0]),
+                    line.a[1] + parameter * (line.b[1] - line.a[1]),
+                ];
+                let [local_u, local_v] =
+                    conic.normalize([point[0] - conic.center[0], point[1] - conic.center[1]]);
+                let angle = local_v.atan2(local_u);
+                if (curve.closed
+                    || (angle - curve.range[0]).rem_euclid(std::f64::consts::TAU)
+                        < curve.range[1] - curve.range[0])
+                    && !endpoint(point)
+                {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
+        (Some(ca), Some(cb)) => {
+            if ca.center != cb.center
+                || ca.radii != cb.radii
+                || ca.axis != cb.axis
+                || first.closed
+                || second.closed
+            {
+                return Ok(false);
+            }
+            let tau = std::f64::consts::TAU;
+            let a_span = first.range[1] - first.range[0];
+            let b_span = second.range[1] - second.range[0];
+            let offset = (second.range[0] - first.range[0]).rem_euclid(tau);
+            let tolerance = BOUNDARY_ROUNDOFF_FACTOR * f64::EPSILON * tau;
+            Ok(offset >= a_span - tolerance && offset + b_span <= tau + tolerance)
+        }
+    }
 }
 fn ray_heights(y: f64, ay: f64, by: f64) -> (f64, f64) {
     let tolerance = 64.0 * f64::EPSILON * ay.abs().max(by.abs()).max(y.abs()).max(1.0);
@@ -1041,6 +1204,36 @@ fn exterior_region(
         }
         if !excluded && !isolated(edge, topology, budget)? {
             return Err("the outside sketch region has an open divider whose effect on the selected face is not supported yet".into());
+        }
+    }
+    let boundary_count = std::iter::once(outer)
+        .chain(holes.iter().copied())
+        .try_fold(0usize, |count, ring| {
+            count.checked_add(ring.edges.len()).ok_or(BUDGET_LOSS)
+        })?;
+    budget.work(
+        boundary_count
+            .checked_mul(boundary_count)
+            .ok_or(BUDGET_LOSS)?,
+    )?;
+    budget.work(topology.rings.iter().try_fold(0usize, |count, ring| {
+        count.checked_add(ring.edges.len()).ok_or(BUDGET_LOSS)
+    })?)?;
+    let roundoff = BOUNDARY_ROUNDOFF_FACTOR
+        * f64::EPSILON
+        * topology
+            .rings
+            .iter()
+            .flat_map(|r| &r.edges)
+            .flat_map(|(e, _)| e.a.into_iter().chain(e.b))
+            .map(f64::abs)
+            .fold(1.0_f64, f64::max);
+    admit_ring(outer, roundoff)?;
+    for (i, hole) in holes.iter().enumerate() {
+        admit_ring(hole, roundoff)?;
+        admit_separate_rings(outer, hole)?;
+        for other in &holes[..i] {
+            admit_separate_rings(other, hole)?;
         }
     }
     for ring in std::iter::once(outer).chain(holes.iter().copied()) {

@@ -6,6 +6,7 @@ use std::io::Read;
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
+mod admission;
 mod entry;
 mod index;
 mod local;

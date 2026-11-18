@@ -7,6 +7,7 @@ use std::path::Path;
 
 use crate::reader::Model;
 use crate::test_support::*;
+use cadmpeg_ir::codec::Codec;
 use serde_json::{json, Value};
 
 fn read(bytes: &[u8]) -> Result<(Model, Report), cadmpeg_core::CodecError> {
@@ -192,6 +193,13 @@ fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
                 *value = json!([1]);
             }
         });
+        if failure == "microversion" {
+            assert!(read(&bytes)
+                .unwrap_err()
+                .to_string()
+                .contains("pinned microversion"));
+            continue;
+        }
         let (model, report) = read(&bytes).unwrap();
         assert_eq!(kinds(&model), ["sketch", "extrude", "native"]);
         assert!(model.ir.model.feature_input_topologies.is_empty());
@@ -476,45 +484,21 @@ fn up_to_next(operation: &str, extra: Option<([f64; 3], [f64; 3])>) -> Vec<u8> {
 
 #[test]
 fn up_to_next_ends_on_the_first_face_every_profile_ray_meets() {
-    let (model, report) = read(&up_to_next("REMOVE", None)).unwrap();
-    assert_eq!(
-        kinds(&model),
-        ["sketch", "extrude", "extrude"],
-        "{:?}",
-        report.losses()
-    );
-    let wire = timeline(&model);
-    let termination = &wire["model"]["features"][2]["definition"]["value"]["value"]["extent"]
-        ["side"]["termination"];
-    assert_eq!(termination["kind"], "to_face");
-    assert_eq!(termination["face"]["value"]["faces"], json!(["high2"]));
-    assert_eq!(
-        termination["face"]["value"]["state"],
-        "onshape:model:input#toNext"
-    );
-
-    for (bytes, expected) in [
-        (
-            up_to_next("NEW", None),
-            "up-to-next extrude that starts inside the material",
-        ),
-        (
-            up_to_next(
-                "REMOVE",
-                Some(([0.005, 0.002, 0.0005], [0.008, 0.004, 0.001])),
-            ),
-            "other input geometry in its path",
+    for bytes in [
+        up_to_next("REMOVE", None),
+        up_to_next("NEW", None),
+        up_to_next(
+            "REMOVE",
+            Some(([0.005, 0.002, 0.0005], [0.008, 0.004, 0.001])),
         ),
     ] {
         let (model, report) = read(&bytes).unwrap();
         assert_eq!(kinds(&model), ["sketch", "extrude", "native"]);
-        assert!(
-            report.losses().iter().any(|loss| loss.code.as_deref()
-                == Some("onshape/history.not-supported")
-                && loss.detail.contains(expected)),
-            "{expected}: {:?}",
-            report.losses()
-        );
+        assert!(report.losses().iter().any(|loss| loss.code.as_deref()
+            == Some("onshape/history.not-supported")
+            && loss
+                .detail
+                .contains("exact coverage and first intersection")));
     }
 }
 
@@ -555,16 +539,13 @@ fn up_to_next_retains_a_slanted_planar_end_for_the_writer_to_gate() {
     let (model, report) = read(&bytes).unwrap();
     assert_eq!(
         kinds(&model),
-        ["sketch", "extrude", "extrude"],
+        ["sketch", "extrude", "native"],
         "{:?}",
         report.losses()
     );
-    let wire = timeline(&model);
-    assert_eq!(
-        wire["model"]["features"][2]["definition"]["value"]["value"]["extent"]["side"]
-            ["termination"]["face"]["value"]["faces"],
-        json!(["high2"])
-    );
+    assert!(report.losses().iter().any(|loss| loss
+        .detail
+        .contains("exact coverage and first intersection")));
 }
 
 #[test]
@@ -924,10 +905,9 @@ fn hole_standards_and_drill_points_outside_the_mapping_name_their_loss() {
     // A flat-bottomed blind hole states a 180 degree tip.
     let bytes = changed(&fixture("hole-forms"), |path, value| {
         if path.ends_with("features.json") {
-            value["features"][5]["parameters"]
-                .as_array_mut()
-                .unwrap()
-                .push(json!({"parameterId": "tipAngle", "expression": "180 deg"}));
+            let parameters = value["features"][5]["parameters"].as_array_mut().unwrap();
+            parameters.retain(|p| p["parameterId"] != "tipAngle");
+            parameters.push(json!({"parameterId": "tipAngle", "expression": "180 deg"}));
         }
     });
     let (model, report) = read(&bytes).unwrap();
@@ -1080,7 +1060,7 @@ fn ellipses_and_elliptical_arcs_keep_axes_units_bounds_and_endpoint_loci() {
 }
 
 #[test]
-fn thin_extrusions_keep_typed_wall_thickness_and_side() {
+fn thin_extrusions_refuse_unscoped_design_construction() {
     for midplane in [false, true] {
         for flip in [false, true] {
             for second in [0.0, 0.2] {
@@ -1103,31 +1083,33 @@ fn thin_extrusions_keep_typed_wall_thickness_and_side() {
                         json!({"parameterId":"thickness2","expression":format!("{second} mm")}),
                     ]);
                 });
-                let (model, report) = read(&bytes).unwrap();
-                assert_eq!(kinds(&model)[1], "extrude", "{:?}", report.losses());
-                let wire = timeline(&model);
-                let thickness = &wire["design"]["features"][0]["definition"]["operation"]["value"]
-                    ["output"]["body"]["thickness"];
-                let literal = |value| json!({"kind":"literal","value":value});
-                let expected = if midplane {
-                    json!({"kind":"symmetric","value":literal(0.3)})
-                } else if second == 0.0 {
-                    json!({"kind":"one_side","value":{"value":literal(0.1),"side":{"kind":if flip {"inside"} else {"outside"}}}})
-                } else {
-                    json!({"kind":"offsets","value":{"outside":literal(if flip {0.2} else {0.1}),"inside":literal(if flip {0.1} else {0.2})}})
-                };
-                assert_eq!(thickness, &expected);
-                assert_eq!(
-                    wire["design"]["features"][0]["id"],
-                    wire["model"]["features"][1]["id"]
-                );
-                let roundtrip: cadmpeg_ir::CadIr =
-                    serde_json::from_value(serde_json::to_value(&model.ir).unwrap()).unwrap();
-                assert_eq!(roundtrip, model.ir);
-                assert!(!report
-                    .losses()
+                let result = codec()
+                    .decode(
+                        &mut Cursor::new(bytes),
+                        &cadmpeg_ir::codec::DecodeOptions::default(),
+                    )
+                    .unwrap();
+                let (ir, report, fidelity) = result.into_parts();
+                assert!(ir.design.features.is_empty());
+                let wire = serde_json::to_value(&ir).unwrap();
+                let feature = wire["model"]["features"]
+                    .as_array()
+                    .unwrap()
                     .iter()
-                    .any(|l| l.code.as_deref() == Some("onshape/extrude.thin-not-supported")));
+                    .find(|f| f["ordinal"] == 1)
+                    .unwrap();
+                assert_eq!(feature["definition"]["value"]["kind"], "native");
+                assert!(report
+                    .losses
+                    .iter()
+                    .any(|l| l.code.to_string() == "onshape/extrude.thin-not-supported"));
+                assert!(cadmpeg_ir::validate_neutral_with_source_fidelity(
+                    &ir,
+                    &fidelity,
+                    report.losses
+                )
+                .unwrap()
+                .is_ok());
             }
         }
     }
@@ -1279,15 +1261,21 @@ fn elliptical_curves_with_unresolved_axes_or_bounds_leave_a_named_loss() {
                 .push(curve);
         });
         let (model, report) = read(&bytes).unwrap();
-        assert_eq!(kinds(&model)[0], "native");
+        assert_eq!(kinds(&model)[0], "sketch");
         assert!(report
             .losses()
             .iter()
-            .any(|l| l.code.as_deref() == Some("onshape/history.not-supported")));
-        assert!(timeline(&model)["model"]["sketch_entities"]
-            .as_array()
-            .unwrap()
-            .is_empty());
+            .any(|l| l.code.as_deref() == Some("onshape/sketch.geometry-not-supported")));
+        let wire = timeline(&model);
+        let entities = wire["model"]["sketch_entities"].as_array().unwrap();
+        assert_eq!(
+            entities
+                .iter()
+                .filter(|e| e["geometry"]["kind"] == "line")
+                .count(),
+            4
+        );
+        assert!(entities.iter().any(|e| e["geometry"]["kind"] == "native"));
         assert!(model.source_step.is_some());
     }
 }
@@ -1464,4 +1452,58 @@ fn overlapping_dividers_are_not_lost_as_a_zero_area_ring() {
         .losses()
         .iter()
         .any(|l| l.detail.contains("open divider")));
+}
+
+#[test]
+fn up_to_next_refuses_a_narrow_recess_and_an_uncovered_profile_interior() {
+    for interior in [false, true] {
+        let bytes = changed(&up_to_next("REMOVE", None), |path, response| {
+            if !path.ends_with("bodydetails/2.json") {
+                return;
+            }
+            let low = if interior {
+                [0.007, 0.004, 0.002]
+            } else {
+                [0.001, 0.0, 0.002]
+            };
+            let high = if interior {
+                [0.008, 0.006, 0.004]
+            } else {
+                [0.002, 0.001, 0.004]
+            };
+            let (edges, faces) = box_body(low, high, "recess");
+            let body = &mut response["bodies"][0];
+            let boundary = faces.iter().find(|f| f["id"] == "recesslow2").unwrap()["loops"][0]
+                ["coedges"]
+                .clone();
+            let first_face = body["faces"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .find(|f| f["id"] == "high2")
+                .unwrap();
+            first_face["loops"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"isOuter":false,"coedges":boundary}));
+            body["edges"].as_array_mut().unwrap().extend(edges);
+            body["faces"]
+                .as_array_mut()
+                .unwrap()
+                .extend(faces.into_iter().filter(|f| f["id"] != "recesslow2"));
+        });
+        let result = crate::test_support::review::decode(&bytes);
+        let wire = crate::test_support::review::wire(&result);
+        assert_eq!(
+            wire["model"]["features"][2]["definition"]["value"]["kind"],
+            "native"
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|l| l.code.to_string() == "onshape/history.not-supported"
+                && l.message.contains("exact coverage and first intersection")));
+        crate::test_support::review::validate(result);
+    }
 }

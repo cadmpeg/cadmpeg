@@ -2,7 +2,7 @@
 const SPLINE_DOMAIN_TOLERANCE: f64 = 1e-9;
 const POINT_U_TOLERANCE: f64 = 1e-6;
 const POINT_V_TOLERANCE: f64 = 1e-6;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::Model;
 use serde_json::{json, Value};
@@ -94,79 +94,8 @@ fn frame(feature: &Value, model: &Model, face: &dyn Fn(&str) -> Mapping<Value>) 
         json!({"origin": topology::point([0.0; 3]), "normal": topology::point(normal), "u_axis": topology::point(u_axis)}),
     )
 }
-fn cap_frame(query: &Value, model: &Model) -> Mapping<Value> {
-    let reason = "this cap-face sketch attachment is not supported yet";
-    let [operation] = rows(query, "operationId")? else {
-        return Err(reason.into());
-    };
-    let native = operation
-        .as_str()
-        .and_then(|s| s.strip_suffix(".opExtrude"))
-        .ok_or(reason)?;
-    if text(query, "entityType")? != "FACE" || text(query, "historyType")? != "CREATION" {
-        return Err(reason.into());
-    }
-    let is_start = query
-        .get("isStart")
-        .and_then(Value::as_bool)
-        .ok_or(reason)?;
-    let feature = model
-        .features
-        .iter()
-        .find(|f| f.id.as_str() == id("feature", native))
-        .ok_or(reason)?;
-    let wire = serde_json::to_value(feature).map_err(|_| reason)?;
-    let extrude = wire.pointer("/definition/value/value").ok_or(reason)?;
-    if wire
-        .pointer("/definition/value/kind")
-        .and_then(Value::as_str)
-        != Some("extrude")
-    {
-        return Err(reason.into());
-    }
-    let profile = extrude.pointer("/profile/value").ok_or(reason)?;
-    let sketch_id = match profile.get("kind").and_then(Value::as_str) {
-        Some("sketch") => profile.get("value").and_then(Value::as_str),
-        Some("sketch_regions") => profile.pointer("/value/sketch").and_then(Value::as_str),
-        _ => None,
-    }
-    .ok_or(reason)?;
-    let sketch = model
-        .sketches
-        .iter()
-        .find(|s| s.id.as_str() == sketch_id)
-        .ok_or(reason)?;
-    let sketch = serde_json::to_value(sketch).map_err(|_| reason)?;
-    let frame = sketch.pointer("/placement/frame").ok_or(reason)?;
-    let origin = topology::vector(frame.get("origin").ok_or(reason)?, 1.0)?;
-    let normal = topology::unit(topology::vector(frame.get("normal").ok_or(reason)?, 1.0)?)?;
-    let sign = match extrude.pointer("/direction/kind").and_then(Value::as_str) {
-        Some("profile_normal") => 1.0,
-        Some("reversed_profile_normal") => -1.0,
-        _ => return Err(reason.into()),
-    };
-    if extrude.pointer("/extent/kind").and_then(Value::as_str) != Some("one_sided")
-        || extrude
-            .pointer("/extent/side/termination/kind")
-            .and_then(Value::as_str)
-            != Some("blind")
-    {
-        return Err(reason.into());
-    }
-    let depth = extrude
-        .pointer("/extent/side/termination/length")
-        .and_then(Value::as_f64)
-        .ok_or(reason)?;
-    if is_start || sign < 0.0 {
-        return Err("sketches on reversed or start extrusion caps need an explicit source frame; this attachment is not supported yet".into());
-    }
-    let distance = depth;
-    let [ox, oy, oz] = origin;
-    let [nx, ny, nz] = normal;
-    Ok(
-        json!({"origin": topology::point([ox + nx * distance, oy + ny * distance, oz + nz * distance]),
-        "normal": topology::point(normal), "u_axis": frame.get("u_axis")}),
-    )
+fn cap_frame(_query: &Value, _model: &Model) -> Mapping<Value> {
+    Err("the cap face leaves the sketch attachment translation and rotation unresolved".into())
 }
 
 fn point(u: f64, v: f64) -> Value {
@@ -208,7 +137,7 @@ pub(super) fn geometry(entity: &Value) -> Mapping<Value> {
                 return Ok(json!({"kind": "circle", "center": center, "radius": radius}));
             }
             let direction = coordinate(geometry, "yDir")?.atan2(coordinate(geometry, "xDir")?);
-            let sign = if geometry.get("clockwise").and_then(Value::as_bool) == Some(true) {
+            let sign = if super::boolean_field(geometry, "clockwise")? {
                 -1.0
             } else {
                 1.0
@@ -239,12 +168,11 @@ pub(super) fn geometry(entity: &Value) -> Mapping<Value> {
                 }
                 let start = coordinate(entity, "startParam")?;
                 let end = coordinate(entity, "endParam")?;
-                let (start, end) =
-                    if geometry.get("clockwise").and_then(Value::as_bool) == Some(true) {
-                        (-end, -start)
-                    } else {
-                        (start, end)
-                    };
+                let (start, end) = if super::boolean_field(geometry, "clockwise")? {
+                    (-end, -start)
+                } else {
+                    (start, end)
+                };
                 if end <= start || end - start > std::f64::consts::TAU {
                     return Err(
                         "the elliptical arc must span a positive interval of at most one turn"
@@ -277,8 +205,8 @@ pub(super) fn geometry(entity: &Value) -> Mapping<Value> {
                 }
                 _ => return Err("trimmed sketch splines are not supported yet".into()),
             }
-            if geometry.get("isRational").and_then(Value::as_bool) == Some(true)
-                || geometry.get("isPeriodic").and_then(Value::as_bool) == Some(true)
+            if super::boolean_field(geometry, "isRational")?
+                || super::boolean_field(geometry, "isPeriodic")?
                 || geometry.get("dimension").and_then(Value::as_u64) != Some(2)
             {
                 return Err(
@@ -314,6 +242,7 @@ pub(super) fn map(
     inputs: &topology::Inputs<'_>,
     model: &mut Model,
     report: &mut Report,
+    unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
     if feature.get("btType").and_then(Value::as_str) != Some("BTMSketch-151") {
         return Err("only planar sketches are supported yet".into());
@@ -336,10 +265,8 @@ pub(super) fn map(
         {
             return Err("sketch entity ids repeat".into());
         }
-        let clockwise = entity
-            .pointer("/geometry/clockwise")
-            .and_then(Value::as_bool)
-            == Some(true);
+        let clockwise =
+            super::boolean_field(entity.get("geometry").unwrap_or(&Value::Null), "clockwise")?;
         for (key, kind) in [
             ("startPointId", if clockwise { "end" } else { "start" }),
             ("endPointId", if clockwise { "start" } else { "end" }),
@@ -364,7 +291,16 @@ pub(super) fn map(
         push(
             &mut model.sketch_entities,
             json!({"id": entity_id, "sketch": sketch_id,
-            "endpoint_refs": [], "construction": entity.get("isConstruction").and_then(Value::as_bool).unwrap_or(false), "geometry": geometry(entity)?}),
+            "endpoint_refs": [], "construction": super::boolean_field(entity,"isConstruction")?, "geometry": match geometry(entity).and_then(|geometry| {
+                serde_json::from_value::<cadmpeg_ir::sketches::SketchGeometry>(geometry.clone()).map_err(|e| format!("sketch geometry admission failed ({e})"))?;
+                Ok(geometry)
+            }) {
+                Ok(geometry) => geometry,
+                Err(reason) => {
+                    report.push_coded(native, crate::loss::OnshapeLossCode::SketchGeometryNotSupported, reason.clone());
+                    json!({"kind":"native", "native_kind":format!("Onshape {reason}")})
+                }
+            }}),
         )?;
     }
     let mut sketch =
@@ -380,8 +316,10 @@ pub(super) fn map(
         let parameter_count = model.parameters.len();
         let entity_count = model.sketch_entities.len();
         let constraint_count = model.sketch_constraints.len();
-        let result = constraint_row(constraint, native, &sketch_id, &plane, &loci, model)
-            .and_then(|row| push(&mut model.sketch_constraints, row));
+        let result = constraint_row(
+            constraint, native, &sketch_id, &plane, &loci, model, unresolved,
+        )
+        .and_then(|row| push(&mut model.sketch_constraints, row));
         if let Err(reason) = result {
             model.parameters.truncate(parameter_count);
             model.sketch_entities.truncate(entity_count);
@@ -492,6 +430,7 @@ fn constraint_row(
     plane: &Value,
     loci: &BTreeMap<String, Value>,
     model: &mut Model,
+    unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
     let kind = text(constraint, "constraintType")?;
     let cid = id(
@@ -572,7 +511,7 @@ fn constraint_row(
             json!({"kind":"midpoint","point":midpoint,"entity":carrier})
         }
         "LENGTH" | "DISTANCE" | "RADIUS" | "DIAMETER" | "ANGLE" => {
-            if constraint.get("drivenDimension").and_then(Value::as_bool) == Some(true) {
+            if super::boolean_field(constraint, "drivenDimension")? {
                 return Err("driven sketch dimensions are not supported yet".into());
             }
             let key = match kind {
@@ -594,7 +533,7 @@ fn constraint_row(
                     Err(reason)
                 }
             })?;
-            let value = quantity(dimension, kind == "ANGLE", model)?;
+            let value = quantity(dimension, kind == "ANGLE", model, unresolved)?;
             let pid = id(
                 "parameter",
                 &format!("{native}/{}", text(constraint, "entityId")?),
@@ -624,6 +563,7 @@ fn constraint_row(
                             super::expression::Dimension::Length
                         },
                         model,
+                        unresolved,
                     )
                 })
                 .transpose()?;

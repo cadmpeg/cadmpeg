@@ -52,7 +52,7 @@ impl CodecBackend for OnshapeCodec {
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bundle = archive::Bundle::open(ctx, root)?;
-        dialect::validate(&bundle.json("manifest.json")?)?;
+        dialect::validate(bundle.json("manifest.json")?)?;
         Ok(ContainerSummary::classified(
             dialect::layers(),
             ContainerKind::Zip,
