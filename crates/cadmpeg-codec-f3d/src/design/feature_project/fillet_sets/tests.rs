@@ -52,6 +52,60 @@ fn scope_with_sets(sets: Vec<DesignFilletSet>) -> DesignParameterScope {
 }
 
 #[test]
+fn short_fillet_sets_project_each_explicit_radius_with_unresolved_edges() {
+    let set = |group_record_index, radius_owner_record_index| DesignFilletSet {
+        record_index: group_record_index - 1,
+        byte_offset: u64::from(group_record_index) * 100,
+        frame_length: 80,
+        group_record_index,
+        tangency_weight_owner_record_index: None,
+        tangent_chain: None,
+        curvature_continuity: None,
+        law: DesignFilletSetLaw::Constant {
+            radius_owner_record_index,
+        },
+    };
+    let mut scope = scope_with_sets(vec![set(92, 108), set(95, 102)]);
+    crate::design::test_support::name_scope_references(&mut scope, [92, 95, 102, 108]);
+    let sets = scope.fillet_sets().unwrap();
+    assert!(sets.projects_short_sets([95, 92]));
+    assert!(!sets.projects_short_sets([95, 92, 99]));
+    let radii = [
+        parameter(102, "Radius", Some("cm"), 0.2),
+        parameter(108, "Radius", Some("cm"), 0.3),
+    ];
+    let parameters = radii.each_ref().map(|parameter| (0, parameter));
+    crate::test_support::with_decode_context(|ctx| {
+        let mut losses = Vec::new();
+        let Some(FeatureOperation::Fillet { groups }) = project(
+            &scope,
+            &parameters,
+            &ProjectInputs::default(),
+            ctx,
+            &mut losses,
+        )
+        .unwrap() else {
+            panic!("short constant Fillet");
+        };
+        let [first, second] = groups.as_slice() else {
+            panic!("two Fillet groups");
+        };
+        for (group, expected) in [(first, 3.0), (second, 2.0)] {
+            let RadiusSpec::Constant { radius } = group.radius else {
+                panic!("constant radius");
+            };
+            assert!((radius.get() - expected).abs() < TOLERANCE);
+            assert_eq!(group.edges, EdgeSelection::Unresolved);
+            assert!(group.tangency_weight.is_none());
+        }
+        assert_eq!(losses.len(), 2);
+        assert!(losses
+            .iter()
+            .all(|loss| loss.code == F3dLossCode::FeatureFilletSetGroupUnresolved.kind()));
+    });
+}
+
+#[test]
 fn asymmetric_fillet_reports_an_undecoded_edge_group() {
     let group_record_index = 92;
     let mut scope = scope_with_sets(vec![DesignFilletSet {
