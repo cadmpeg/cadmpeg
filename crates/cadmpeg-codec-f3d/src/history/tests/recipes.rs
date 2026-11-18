@@ -14,7 +14,8 @@
 use crate::history_records::AsmHistory;
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::{bind_body_recipe_operand_history_candidates, BindingHistories};
+use crate::history::body_recipe_operands::bind_body_recipe_operand_history_candidates;
+use crate::history::BindingHistories;
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
 };
@@ -1555,6 +1556,233 @@ fn a_body_operand_keeps_an_open_slot_in_a_state_of_two_bodies_or_of_another_brep
     );
 }
 
+/// The fixture operand bound against a preceding state of bodies 7 and 8,
+/// whose last persistent design links are `links`. Each face clause names
+/// face 70 of body 7 and face 80 of body 8, or face 99 outside the state
+/// when `in_state` is false. The operand's body recipe stores design id
+/// `design_id` and `selector`.
+fn design_linked_case(
+    design_id: &str,
+    selector: u32,
+    links: &[(i64, i64)],
+    in_state: bool,
+) -> Option<i64> {
+    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+        owner_ref,
+        member_refs,
+    };
+    let (scope, _, mut operands, _) = body_recipe_history_fixture();
+    let faces: &[&str] = if in_state {
+        &["f3d:brep:entity#70", "f3d:brep:entity#80"]
+    } else {
+        &["f3d:brep:entity#99"]
+    };
+    for reference in operands[0].reference_bindings_mut() {
+        *reference.candidate_faces = faces
+            .iter()
+            .map(|face| cadmpeg_ir::ids::FaceId::mint(*face).expect("identity grammar"))
+            .collect();
+    }
+    let topology = AsmHistoricalTopology {
+        bodies: vec![7, 8],
+        regions: vec![71, 81],
+        shells: vec![72, 82],
+        faces: vec![70, 80],
+        surfaces: vec![170, 180],
+        body_regions: vec![relation(7, vec![71]), relation(8, vec![81])],
+        region_shells: vec![relation(71, vec![72]), relation(81, vec![82])],
+        shell_faces: vec![relation(72, vec![70]), relation(82, vec![80])],
+        shell_wire_edges: vec![relation(72, Vec::new()), relation(82, Vec::new())],
+        shell_free_vertices: vec![relation(72, Vec::new()), relation(82, Vec::new())],
+        face_loops: vec![relation(70, Vec::new()), relation(80, Vec::new())],
+        face_surfaces: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 70,
+                carrier: 170,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 80,
+                carrier: 180,
+            },
+        ],
+        body_design_links: links
+            .iter()
+            .map(
+                |&(body, design_reference)| crate::history_records::AsmHistoricalBodyDesignLink {
+                    body,
+                    design_id: "308".into(),
+                    design_reference,
+                },
+            )
+            .collect(),
+        ..AsmHistoricalTopology::default()
+    };
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![
+            recipe_state(2, topology.clone(), Some(1)),
+            recipe_state(1, topology, None),
+        ],
+    );
+    let recipe = crate::records::recipes::ConstructionRecipe {
+        id: operands[0].recipe_id.clone(),
+        byte_offset: 0,
+        kind: crate::records::recipes::ConstructionRecipeKind::Body,
+        design: Some(crate::records::recipes::ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
+                value: design_id.into(),
+                offset: 0,
+            },
+            selector: Some(crate::records::recipes::ConstructionRecipeSelector {
+                value: selector,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: None,
+    };
+    bind_body_recipe_operand_history_candidates(
+        &mut operands,
+        std::slice::from_ref(&recipe),
+        std::slice::from_ref(&scope),
+        BindingHistories::Shared(std::slice::from_ref(&history)),
+    )
+    .unwrap();
+    operands[0].resolved_body_slot
+}
+
+#[test]
+fn a_body_recipe_selects_the_input_body_whose_last_design_link_it_stores() {
+    let links = [(7, 5), (8, 6)];
+    assert_eq!(design_linked_case("308", 6, &links, true), Some(8));
+    assert_eq!(design_linked_case("308", 5, &links, true), Some(7));
+}
+
+#[test]
+fn body_recipes_resolve_design_link_307_8_before_body_deletion() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipeSelector,
+    };
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let (fixture_scope, mut history, operands, _) = body_recipe_history_fixture();
+    let (_, _, _, _, mut body, _, _, _) = direct_body_fixture();
+    body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:body#4").unwrap();
+    let attribute = SourceAttribute {
+        id: "f3d:brep:attribute#1".try_into().unwrap(),
+        target: AttributeTarget::Body(body.id.clone()).into(),
+        name: "ATTRIB_CUSTOM-attrib".into(),
+        values: vec![
+            AttributeValue::String("generic_tag_attrib_def".into()),
+            AttributeValue::Integer(3),
+            AttributeValue::Integer(3),
+            AttributeValue::Integer(-1),
+            AttributeValue::String("generic_tag_attrib_def ".into()),
+            AttributeValue::Integer(1),
+            AttributeValue::Integer(3),
+            AttributeValue::String("307".into()),
+            AttributeValue::Integer(8),
+            AttributeValue::Integer(0),
+            AttributeValue::Integer(0),
+        ],
+    };
+    let brep = cadmpeg_asm::brep::AsmBrep {
+        bodies: vec![body],
+        attributes: vec![attribute],
+        ..Default::default()
+    };
+    let tagged = super::super::historical_topology(&brep).unwrap().unwrap();
+    crate::test_support::history::edit(&mut history, 1, |topology, _| {
+        topology.body_design_links = tagged.body_design_links;
+    });
+    crate::test_support::history::edit(&mut history, 0, |topology, _| {
+        topology.bodies.retain(|body| *body != 4);
+        topology.regions.retain(|region| *region != 5);
+        topology.shells.retain(|shell| *shell != 6);
+        topology.faces.retain(|face| *face != 20);
+        topology.surfaces.retain(|surface| *surface != 200);
+        topology.body_regions.retain(|row| row.owner_ref != 4);
+        topology.region_shells.retain(|row| row.owner_ref != 5);
+        topology.shell_faces.retain(|row| row.owner_ref != 6);
+        topology.shell_wire_edges.retain(|row| row.owner_ref != 6);
+        topology
+            .shell_free_vertices
+            .retain(|row| row.owner_ref != 6);
+        topology.face_loops.retain(|row| row.owner_ref != 20);
+        topology.face_surfaces.retain(|row| row.entity != 20);
+    });
+    let current = &history.states()[0];
+    assert_eq!(history.topology(current).unwrap().bodies, [1]);
+    assert_eq!(history.topology(current).unwrap().faces, [10, 11, 12]);
+    assert_eq!(
+        current.transition.as_ref().unwrap().topology.bodies.deleted,
+        [4]
+    );
+    let recipe = ConstructionRecipe {
+        id: operands[0].recipe_id.clone(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: crate::records::identity::RecordedValue {
+                value: "307".into(),
+                offset: 0,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 8,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: None,
+    };
+    for kind in [
+        DesignFeatureKind::Mirror,
+        DesignFeatureKind::RemoveBody,
+        DesignFeatureKind::Extrude,
+    ] {
+        let mut scope = DesignParameterScope::empty(&fixture_scope.id, kind, 10);
+        scope
+            .try_edit(|draft| draft.history_state_id = Some(2))
+            .unwrap();
+        let mut operands = operands.clone();
+        for reference in operands[0].reference_bindings_mut() {
+            *reference.candidate_faces = [10, 20]
+                .map(|slot| {
+                    cadmpeg_ir::ids::FaceId::mint(format!("f3d:brep:entity#{slot}")).unwrap()
+                })
+                .to_vec();
+        }
+        bind_body_recipe_operand_history_candidates(
+            &mut operands,
+            std::slice::from_ref(&recipe),
+            std::slice::from_ref(&scope),
+            BindingHistories::Shared(std::slice::from_ref(&history)),
+        )
+        .unwrap();
+        assert_eq!(operands[0].references()[0].preceding_body_slots, [1, 4]);
+        assert_eq!(operands[0].resolved_body_state_id, Some(1));
+        assert_eq!(operands[0].resolved_body_slot, Some(4));
+        assert_eq!(operands[0].resolved_body_face_slots, [20]);
+    }
+}
+
+#[test]
+fn a_body_recipe_design_link_shared_by_two_bodies_or_by_none_selects_no_body() {
+    assert_eq!(design_linked_case("308", 6, &[(7, 6), (8, 6)], true), None);
+    assert_eq!(design_linked_case("308", 7, &[(7, 5), (8, 6)], true), None);
+    assert_eq!(design_linked_case("301", 6, &[(7, 5), (8, 6)], true), None);
+}
+
+#[test]
+fn a_body_recipe_whose_face_clauses_miss_the_state_ignores_its_design_link() {
+    assert_eq!(design_linked_case("308", 6, &[(7, 5), (8, 6)], false), None);
+}
+
 /// A `RemoveBody` in the coil fixture's scope whose operand resolved body
 /// slot `slot` through its recipe identity. Its face match selects the
 /// displayed fixture body, slot 1.
@@ -1704,4 +1932,116 @@ fn a_pattern_seed_stays_native_when_the_face_match_contradicts_the_recipe_slot()
         BodySelection::Native(native)
             if native == "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
     ));
+}
+
+#[test]
+fn a_combine_keeps_its_direct_binding_where_its_header_predecessor_binds_no_body() {
+    use crate::history_records::AsmDeltaState;
+    use cadmpeg_ir::features::{
+        BodySelection, BooleanKind, CombineOperands, Feature, FeatureDefinition, FeatureId,
+        FeatureOperation,
+    };
+
+    let (scope, group_id, group, operand, body, region, shell, face) = direct_body_fixture();
+    let mut scope = scope;
+    scope
+        .try_edit(|draft| {
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Combine
+                .try_into()
+                .unwrap();
+            draft.history_state_id = Some(42);
+            draft.previous_history_state_id = None;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    // State 42 stores no predecessor; its header link names state 41. Neither
+    // state stores a topology, so the historical binding finds no body.
+    let state = |state_id: i64, next_ref: Option<i64>| -> crate::test_support::history::State {
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:asm-delta-state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            None,
+            Vec::new(),
+        )
+    };
+    let history = crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(42, Some(41)), state(41, None)],
+    );
+    assert_eq!(
+        crate::history::effective_scope_previous_history_state_id(
+            &scope,
+            std::slice::from_ref(&history)
+        ),
+        Some(41)
+    );
+    let combine = |histories: &[crate::history_records::AsmHistory]| {
+        let inputs = super::super::FeatureBodySelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: std::slice::from_ref(&group),
+            body_recipe_operands: std::slice::from_ref(&operand),
+            construction_recipes: &[],
+            persistent_design_links: &[],
+            histories,
+            bodies: std::slice::from_ref(&body),
+            regions: std::slice::from_ref(&region),
+            shells: std::slice::from_ref(&shell),
+            faces: std::slice::from_ref(&face),
+        };
+        let mut feature = Feature {
+            product_definition: None,
+            id: FeatureId::mint("f3d:test:feature#combine").expect("identity grammar"),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: Default::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Default::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Combine {
+                    operands: CombineOperands::new(
+                        BodySelection::Native(group_id.into()),
+                        BodySelection::Native("tool".into()),
+                    )
+                    .unwrap(),
+                    op: BooleanKind::Join,
+                    keep_tools: false,
+                    destination: Default::default(),
+                }),
+            ),
+            native_ref: Some(scope.id.clone()),
+        };
+        super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+            feature.evaluation.definition()
+        else {
+            panic!("Combine feature");
+        };
+        (operands.target().clone(), operands.tools().clone())
+    };
+    let direct = combine(&[]);
+    assert!(matches!(
+        &direct.0,
+        BodySelection::Resolved { bodies, .. } if bodies.as_slice() == [body.id.clone()]
+    ));
+    assert_eq!(combine(std::slice::from_ref(&history)), direct);
 }

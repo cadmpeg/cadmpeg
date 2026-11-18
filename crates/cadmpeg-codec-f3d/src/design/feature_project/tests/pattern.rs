@@ -883,6 +883,19 @@ fn an_unprojected_pattern_keeps_its_seeds() {
 }
 
 fn coincident_direction_scope(symmetric: bool, total_extent: bool) -> DesignParameterScope {
+    coincident_direction_scope_with_seed_words(symmetric, total_extent, 0, 0, 0)
+}
+
+/// `coincident_direction_scope` whose distribution block stores `seed_kind`,
+/// `body_references` body references, and `untyped` references to records of
+/// another type.
+fn coincident_direction_scope_with_seed_words(
+    symmetric: bool,
+    total_extent: bool,
+    seed_kind: u32,
+    body_references: u32,
+    untyped: u32,
+) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:parameter-scope#10",
         crate::records::feature::scope::DesignFeatureKind::RPattern,
@@ -918,6 +931,19 @@ fn coincident_direction_scope(symmetric: bool, total_extent: bool) -> DesignPara
                                 value: total_extent,
                                 offset: 158,
                             },
+                            compute_option: crate::records::identity::Located {
+                                value: 2,
+                                offset: 146,
+                            },
+                            seed_kind: crate::records::identity::Located {
+                                value: seed_kind,
+                                offset: 150,
+                            },
+                            body_references: crate::records::identity::Located {
+                                value: body_references,
+                                offset: 134,
+                            },
+                            untyped_body_references: untyped,
                         },
                     ),
                 },
@@ -1034,4 +1060,197 @@ fn rectangular_pattern_carries_a_symmetric_spacing_direction() {
     )
     .is_none());
     assert!(losses.is_empty());
+}
+
+#[test]
+fn a_payload_seed_kind_or_body_reference_that_disagrees_with_the_seed_group_is_charged() {
+    use crate::design::feature_project::pattern_seeds::distribution_seed_conflict;
+    use crate::records::{
+        feature::patterns::DesignRectangularPatternDistribution, identity::Located,
+    };
+
+    let scope = rectangular_scope();
+    let distribution =
+        |seed_kind: u32, bodies: u32, untyped: u32| DesignRectangularPatternDistribution {
+            record_index: 40,
+            symmetric: Located {
+                value: false,
+                offset: 109,
+            },
+            total_extent: Located {
+                value: false,
+                offset: 158,
+            },
+            compute_option: Located {
+                value: 1,
+                offset: 146,
+            },
+            seed_kind: Located {
+                value: seed_kind,
+                offset: 150,
+            },
+            body_references: Located {
+                value: bodies,
+                offset: 134,
+            },
+            untyped_body_references: untyped,
+        };
+    let faces = [PatternSeed::Faces(FaceSelection::Native(
+        "faces".to_owned(),
+    ))];
+    let bodies = [PatternSeed::Bodies(BodySelection::Native(
+        "bodies".to_owned(),
+    ))];
+    let features = [PatternSeed::Feature(crate::ids::neutral_feature_id(&scope))];
+    let code = |seeds: &[PatternSeed], distribution: &DesignRectangularPatternDistribution| {
+        distribution_seed_conflict(&scope, distribution, seeds).map(|note| note.code)
+    };
+    let charged = Some(crate::loss::F3dLossCode::FeaturePatternPayloadSeedUnconfirmed.kind());
+    // Agreeing words charge nothing; a feature seed can store body references.
+    assert_eq!(code(&faces, &distribution(0, 0, 0)), None);
+    assert_eq!(code(&features, &distribution(1, 2, 0)), None);
+    assert_eq!(code(&features, &distribution(1, 0, 0)), None);
+    assert_eq!(code(&bodies, &distribution(2, 0, 0)), None);
+    // A seed kind that names another kind of seed.
+    assert_eq!(code(&faces, &distribution(1, 0, 0)), charged);
+    assert_eq!(code(&bodies, &distribution(0, 0, 0)), charged);
+    // Body references with a face or body seed.
+    assert_eq!(code(&faces, &distribution(0, 1, 0)), charged);
+    assert_eq!(code(&bodies, &distribution(2, 1, 0)), charged);
+    // A body reference that names no body browser node.
+    assert_eq!(code(&features, &distribution(1, 2, 1)), charged);
+    // Unresolved seeds settle no seed kind.
+    let native = [PatternSeed::Native("seed".to_owned())];
+    assert_eq!(code(&native, &distribution(1, 0, 0)), None);
+    assert_eq!(code(&[], &distribution(1, 0, 0)), None);
+    let note = distribution_seed_conflict(&scope, &distribution(1, 1, 0), &faces).unwrap();
+    assert!(note
+        .message
+        .contains("seed kind 1 at byte 150 where its seeds are faces"));
+    assert!(note
+        .message
+        .contains("1 body references at byte 134 with a face or body seed"));
+    // Block-internal words charge without resolved seeds.
+    assert_eq!(code(&[], &distribution(3, 0, 0)), charged);
+    assert_eq!(code(&native, &distribution(3, 0, 0)), charged);
+    assert_eq!(code(&[], &distribution(0, 1, 0)), charged);
+    assert_eq!(code(&[], &distribution(2, 1, 0)), charged);
+    assert_eq!(code(&[], &distribution(1, 1, 1)), charged);
+    assert_eq!(code(&[], &distribution(1, 1, 0)), None);
+    let note = distribution_seed_conflict(&scope, &distribution(3, 0, 0), &[]).unwrap();
+    assert!(note
+        .message
+        .contains("seed kind 3 at byte 150, above the last seed kind 2"));
+}
+
+#[test]
+fn a_symmetric_extent_pattern_charges_a_disagreeing_payload_seed() {
+    let charged = crate::loss::F3dLossCode::FeaturePatternPayloadSeedUnconfirmed.kind();
+    let project = |scope: &DesignParameterScope, groups: &[DesignConstructionOperandGroup]| {
+        let mut losses = Vec::new();
+        let definition =
+            project_rectangular_pattern_scalars(scope, groups, &[], &[], &[], &mut losses);
+        (definition, losses)
+    };
+    let body_group = [group(10, 30, DesignOperandRole::BODIES_B)];
+    // Seed kind 0 against a body seed group.
+    let (definition, losses) = project(
+        &coincident_direction_scope_with_seed_words(true, true, 0, 0, 0),
+        &body_group,
+    );
+    assert!(definition.is_none());
+    let [loss] = losses.as_slice() else {
+        panic!("one seed loss: {losses:?}");
+    };
+    assert_eq!(loss.code, charged);
+    assert!(loss
+        .message
+        .contains("seed kind 0 at byte 150 where its seeds are bodies"));
+    // A seed kind above 2, and a body reference to a record of another type.
+    for (seed_kind, bodies, untyped) in [(3, 0, 0), (1, 1, 1)] {
+        let (definition, losses) = project(
+            &coincident_direction_scope_with_seed_words(true, true, seed_kind, bodies, untyped),
+            &[],
+        );
+        assert!(definition.is_none());
+        assert_eq!(
+            losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [charged.clone()],
+            "{seed_kind} {bodies} {untyped}"
+        );
+    }
+    // The agreeing body seed charges nothing.
+    let (definition, losses) = project(
+        &coincident_direction_scope_with_seed_words(true, true, 2, 0, 0),
+        &body_group,
+    );
+    assert!(definition.is_none());
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn a_flagged_direction_without_a_distribution_block_reads_an_extent_and_charges_it() {
+    let scope = |distance_type: u32| {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:parameter-scope#10",
+            crate::records::feature::scope::DesignFeatureKind::RPattern,
+            10,
+        );
+        let mut direction = direction_record(20, [2.0, 0.0, 0.0]);
+        direction.distance_type = distance_type;
+        if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(slot)
+        | crate::records::feature::scope::DesignScopePayloadMut::RectangularPattern(slot) =
+            scope.payload_mut()
+        {
+            *slot = Some(
+                DesignRectangularPatternConstruction::try_from(
+                    crate::records::feature::patterns::DesignRectangularPatternConstructionWire {
+                        u_count: 3,
+                        v_count: 1,
+                        u_extent: 10.0,
+                        v_extent: 0.0,
+                        owner_record_indices: [11, 12, 13, 14],
+                        value_offsets: [101, 102, 103, 104],
+                        instances: None,
+                        instance_search_cap: None,
+                        directions: vec![direction],
+                        secondary_direction: None,
+                        distribution: None,
+                    },
+                )
+                .unwrap(),
+            );
+        }
+        scope
+    };
+    for (distance_type, charged) in [(10, true), (8, false)] {
+        let mut losses = Vec::new();
+        let definition = project_rectangular_pattern_scalars(
+            &scope(distance_type),
+            &[],
+            &[],
+            &[],
+            &[],
+            &mut losses,
+        )
+        .expect("extent direction");
+        let (spacing, count) = single_direction(definition);
+        assert!((spacing - 50.0).abs() < EPS_SPACING);
+        assert_eq!(count, 3);
+        assert_eq!(
+            losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            if charged {
+                vec![crate::loss::F3dLossCode::FeatureRectangularPatternDistanceFormAssumed.kind()]
+            } else {
+                Vec::new()
+            },
+            "distance type {distance_type}"
+        );
+    }
 }
