@@ -977,6 +977,19 @@ pub(crate) fn paramesh_entries<'s>(
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
 }
 
+/// Binary and text BREP entries inside the manifest-selected Design asset,
+/// including entries whose payload did not open.
+pub(crate) fn brep_entries<'s>(
+    scan: &'s ContainerScan<'_>,
+) -> impl Iterator<Item = &'s ContainerEntry> + 's {
+    scan.entries.iter().filter(|entry| {
+        matches!(
+            entry.role,
+            ContainerRole::BrepSmb | ContainerRole::BrepSmbh | ContainerRole::BrepText
+        ) && scan.belongs_to_design_asset(&entry.name)
+    })
+}
+
 /// Names of the text-encoded ASM BREP entries, in archive order.
 ///
 /// [`ContainerScan::breps`] holds binary BREP candidate facts. Text streams are

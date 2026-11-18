@@ -3906,7 +3906,9 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     &DesignCarriers {
                         decoded_meshes: mesh_projection.count,
+                        unjoined_mesh_containers: mesh_projection.unjoined,
                         paramesh_entries: container::paramesh_entries(scan).count(),
+                        brep_entries: container::brep_entries(scan).count(),
                         brep_streams,
                         selected_brep_streams: if inputs.model_body_maps_empty {
                             0
@@ -4348,6 +4350,8 @@ fn decode_scanned_document<'a>(
 struct MeshProjection {
     /// Number of joined mesh-body containers.
     count: usize,
+    /// Number of decoded mesh geometry containers that no Design mesh body joins.
+    unjoined: usize,
     /// Tessellation identities grouped by their Design stream and feature scope record.
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
 }
@@ -4514,6 +4518,7 @@ fn project_mesh_bodies(
             );
             return Ok(MeshProjection {
                 count: 0,
+                unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
             });
         }
@@ -4612,12 +4617,23 @@ fn project_mesh_bodies(
         }
     }
     let mut bodies = Vec::new();
+    let unjoined = decoded
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            matches!(
+                outcome,
+                crate::design::decode::mesh::MeshContainerOutcome::Unjoined { .. }
+            )
+        })
+        .count();
     for outcome in decoded.outcomes {
         collect_mesh_outcome(&mut bodies, report, outcome)?;
     }
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
         count: bodies.len(),
+        unjoined,
         tessellations_by_scope: std::collections::HashMap::new(),
     };
     for mut body in bodies {
@@ -5002,7 +5018,10 @@ fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref:
 /// Geometry carriers a design stores, counted before its transfer is classified.
 pub(crate) struct DesignCarriers {
     pub(crate) decoded_meshes: usize,
+    pub(crate) unjoined_mesh_containers: usize,
     pub(crate) paramesh_entries: usize,
+    /// Binary and text BREP entries, whether or not their payload opened.
+    pub(crate) brep_entries: usize,
     pub(crate) brep_streams: usize,
     /// BREP streams that the model-body maps select.
     pub(crate) selected_brep_streams: usize,
@@ -5018,29 +5037,30 @@ pub(crate) fn apply_carrier_classification(
     carriers: &DesignCarriers,
     assembly: bool,
 ) {
+    let untransferred_mesh_containers = carriers
+        .paramesh_entries
+        .saturating_sub(carriers.unjoined_mesh_containers);
     if carriers.decoded_meshes > 0 {
         apply_mesh_body_classification(report, carriers.brep_streams, carriers.decoded_meshes);
-    } else if carriers.paramesh_entries > 0
-        && carriers.brep_streams == 0
-        && carriers.text_brep_streams == 0
-    {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::MeshOnlyDesignUntransferred,
-            format_args!(
-                "mesh-only design: the archive stores {} mesh geometry container(s) and no BREP stream, and no mesh body transferred",
-                carriers.paramesh_entries
-            ),
-        );
     } else if !assembly {
-        apply_bodyless_design_classification(
-            report,
-            carriers.selected_brep_streams,
-            carriers.text_brep_streams,
-            carriers.declared_bodies,
-            carriers.sketch_entities,
-            carriers.reference_images,
-        );
+        if untransferred_mesh_containers > 0 && carriers.brep_entries == 0 {
+            push_loss_vec(
+                &mut report.losses,
+                F3dLossCode::MeshOnlyDesignUntransferred,
+                format_args!(
+                    "mesh-only design: the Design asset stores no BREP entry, and {untransferred_mesh_containers} of its mesh geometry container(s) transferred no mesh body"
+                ),
+            );
+        } else {
+            apply_bodyless_design_classification(
+                report,
+                carriers.selected_brep_streams,
+                carriers.text_brep_streams,
+                carriers.declared_bodies,
+                carriers.sketch_entities,
+                carriers.reference_images,
+            );
+        }
     }
 }
 

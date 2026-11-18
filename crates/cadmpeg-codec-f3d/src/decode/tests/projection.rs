@@ -359,6 +359,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     }];
     let projection = MeshProjection {
         count: 2,
+        unjoined: 0,
         tessellations_by_scope: std::collections::HashMap::from([(
             ("f3d:Design/BulkStream.dat".into(), 10),
             vec![

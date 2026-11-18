@@ -1018,7 +1018,7 @@ pub(crate) enum F3dLossCode {
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
     BodylessDesignCarrier,
-    /// A design stores mesh geometry containers and no BREP stream, and no mesh body transferred.
+    /// A part design stores mesh geometry containers and no BREP entry, and no mesh body transferred.
     MeshOnlyDesignUntransferred,
     /// An assembly document's geometry lives in external references.
     AssemblyComponentsExternal,
