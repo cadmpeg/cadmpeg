@@ -2880,14 +2880,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     generation.operand_path_locator_offsets();
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
+                                let counted_wrapper = variable_reference || wide_as_built || compact_as_built
+                                    || operand_frame_variant.is_some_and(
+                                        design::assembly::AssemblyOperandFrameVariant::is_wide_family,
+                                    );
                                 let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference || wide_as_built || compact_as_built
-                                        || operand_frame_variant.is_some_and(
-                                            design::assembly::AssemblyOperandFrameVariant::is_wide_family,
-                                        ) {
-                                        path.link()
-                                            .wrapper_record_index
-                                            .checked_sub(path.link().locator_record_index)?
+                                    let link = path.link();
+                                    let skipped_index = (rigid_as_built || compact_as_built)
+                                        && design::assembly::typed_as_built_path_wrapper_gap(
+                                            link.locator_record_index,
+                                            path.record_index,
+                                            link.wrapper_record_index,
+                                            stream_types,
+                                        )
+                                        && path.two_keys_in_one_typed_record();
+                                    let continuation_count = if counted_wrapper && !skipped_index {
+                                        link.wrapper_record_index
+                                            .checked_sub(link.locator_record_index)?
                                             .checked_sub(2)?
                                     } else {
                                         0

@@ -543,7 +543,7 @@ impl RigidGroupLocatorLayout {
         use crate::layout::assembly_wide_operand_path_locator as wide;
         use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
         let (guid, version) = registered?;
-        if !guid.eq_ignore_ascii_case("2E3AC990-483D-4A55-8662-C064B976A957") {
+        if !guid.eq_ignore_ascii_case(OPERAND_PATH_LOCATOR_TYPE_GUID) {
             return None;
         }
         let (
@@ -735,7 +735,32 @@ pub(crate) fn compact_placement_as_built_scope(scope: &DesignParameterScope) -> 
             == Some(u64_from_index(layout::REFERENCE_COUNT))
 }
 
+const OPERAND_PATH_LOCATOR_TYPE_GUID: &str = "2E3AC990-483D-4A55-8662-C064B976A957";
+
 pub(crate) const AS_BUILT_SCOPE_TYPE_GUID: &str = "AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0";
+
+pub(crate) fn typed_as_built_path_wrapper_gap(
+    locator: u32,
+    path: u32,
+    wrapper: u32,
+    types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> bool {
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    const PATH_WRAPPER_TYPE_GUID: &str = "FF415D89-A1DB-44AC-B824-E9A772B86ED4";
+
+    locator.checked_add(3) == Some(wrapper)
+        && [
+            (locator, OPERAND_PATH_LOCATOR_TYPE_GUID, 3),
+            (path, TYPED_OCCURRENCE_PATH_TYPE_GUID, 4),
+            (wrapper, PATH_WRAPPER_TYPE_GUID, 1),
+        ]
+        .into_iter()
+        .all(|(index, guid, version)| {
+            types.get(&u64::from(index)).is_some_and(|(registered, v)| {
+                *v == version && guid.eq_ignore_ascii_case(registered)
+            })
+        })
+}
 
 pub(crate) fn as_built_additional_owner_count(scope: &DesignParameterScope) -> Option<usize> {
     if compact_placement_as_built_scope(scope) {
