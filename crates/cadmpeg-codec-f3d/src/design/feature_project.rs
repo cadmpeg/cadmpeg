@@ -1012,6 +1012,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     body_recipe_operands,
                     entity_selection_operands,
+                    face_operands,
                     &mut projection_losses,
                 )
                 .unwrap_or_else(|| {
@@ -1667,6 +1668,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             });
             let retain_base_face_records = matches!(family, Some(DesignFeatureFamily::SheetMetalBaseFace))
                 && matches!(&definition, FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { .. }));
+            let retain_face_trim_references = matches!(
+                &definition,
+                FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                    tool: cadmpeg_ir::features::PathRef::Native(tool),
+                    ..
+                }) if construction_groups.iter().any(|group| {
+                    group.id == *tool && group.role() == DesignOperandRole::ROLE_0X9
+                })
+            );
             let outputs = inserted_bodies;
             Ok(Feature {
                 product_definition: None,
@@ -1698,6 +1708,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     || retain_chamfer_records
                     || shell_has_independent_walls(scope)
                     || extended_joint_origin
+                    || retain_face_trim_references
                     || scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkAxis
                 {
                     let mut properties = scope_properties(scope, native_scope, placements, &parameters)?;
@@ -8803,18 +8814,12 @@ fn hole_clearance_specification(
     })
 }
 
-/// Project the source selections of a `SurfaceTrim` scope.
-///
-/// Fusion stores the surface targets as a role-`0x04` body-recipe group and
-/// the trimming tools as a role-`0x21` group of entity-selection or
-/// body-recipe operands. The cell table that selects the cells to remove is
-/// decoded separately and bound to the projected operation after the source
-/// selections have been resolved.
 fn project_surface_trim(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     body_recipe_operands: &[DesignBodyRecipeOperand],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    face_operands: &[DesignFaceOperand],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -8856,7 +8861,6 @@ fn project_surface_trim(
             .map(|member| member.value)
             .eq(target_members.iter().copied())
         || references.get(tool_ordinal) != Some(&tool_group.record_index)
-        || tool_group.role() != DesignOperandRole::ROLE_0X21
         || !tool_group
             .members()
             .iter()
@@ -8894,13 +8898,32 @@ fn project_surface_trim(
         }
         untyped_members += 1;
     }
-    for (ordinal, member) in tool_group.members().iter().enumerate() {
-        let ordinal = u32::try_from(ordinal).ok()?;
-        if !entity_selection_member(tool_group, ordinal, member.value)
-            && !body_recipe_member(tool_group, ordinal, member.value)
-        {
-            untyped_members += 1;
+    match tool_group.role() {
+        DesignOperandRole::ROLE_0X9 => {
+            let [record_index] = tool_members else {
+                return None;
+            };
+            unique_feature_match(face_operands.iter().filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == scope.record_index
+                    && operand.scope_reference_ordinal == tool_group.scope_reference_ordinal
+                    && operand.group_record_index() == Some(tool_group.record_index)
+                    && operand.group_member_ordinal() == Some(0)
+                    && operand.record_index() == *record_index
+            }))
+            .filter(|operand| operand.is_terminal_face_recipe())?;
         }
+        DesignOperandRole::ROLE_0X21 => {
+            for (ordinal, member) in tool_group.members().iter().enumerate() {
+                let ordinal = u32::try_from(ordinal).ok()?;
+                if !entity_selection_member(tool_group, ordinal, member.value)
+                    && !body_recipe_member(tool_group, ordinal, member.value)
+                {
+                    untyped_members += 1;
+                }
+            }
+        }
+        _ => return None,
     }
     let faces = resolved_body_recipe_selection(scope, target_group, body_recipe_operands)
         .unwrap_or_else(|| FaceSelection::Native(target_group.id.clone()));
