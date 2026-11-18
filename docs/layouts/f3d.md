@@ -737,7 +737,7 @@ Parsed by:
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A chamfer set is one indexed record |
 | 11 | 10 | `zero_run_10_at_11` | `bytes[10]` | little | spec | Every byte that the form does not name is zero |
 | 21 | 1 | `flag` | `u8` | little | spec | `+21: u8 flag` |
-| 22 | 1 | `zero_run_1_at_22` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
+| 22 | 1 | `distance_reversed` | `u8` | little | spec | `+22: u8 distance reversal` |
 | 23 | 11 | `angle_owner_reference` | `bytes[11]` | little | spec | `+23: angle owner reference` |
 | 34 | 11 | `distance_owner_reference` | `bytes[11]` | little | spec | `+34: distance owner reference` |
 | 45 | 1 | `zero_run_1_at_45` | `bytes[1]` | little | spec | Every byte that the form does not name is zero |
