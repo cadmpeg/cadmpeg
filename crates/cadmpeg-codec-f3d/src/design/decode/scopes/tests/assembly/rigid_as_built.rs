@@ -4,6 +4,133 @@
 
 use super::compact_wide::{push_header, push_lp_utf16, push_marked, push_wide_operand_path};
 
+#[test]
+fn compact_placement_as_built_resolves_two_typed_locator_paths() {
+    use crate::design::assembly::AS_BUILT_SCOPE_TYPE_GUID;
+    use crate::design::decode::joint_motion::JOINT_TYPE_GUID;
+    use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment_with_types;
+    use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+    use crate::design::decode::sketch::IndexedRecordOffsets;
+    use crate::layout::assembly_wide_operand_path_identity_locator as wide;
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
+
+    let mut bytes = Vec::new();
+    push_header(&mut bytes, b"405", 10);
+    bytes.extend_from_slice(&[0; 10]);
+    push_marked(&mut bytes, 70);
+    push_marked(&mut bytes, 71);
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    push_marked(&mut bytes, 64);
+    push_marked(&mut bytes, 67);
+    push_marked(&mut bytes, 9);
+    push_lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
+    bytes.extend_from_slice(&[0; 3]);
+    let members = [70, 72, 73, 50, 53, 56, 59];
+    bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for member in members {
+        push_marked(&mut bytes, member);
+    }
+    bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+    push_lp_utf16(&mut bytes, "As-built");
+    push_ordinary_tail(&mut bytes, true, false);
+    let scope_length = bytes.len();
+    push_header(&mut bytes, b"262", 10);
+    bytes.extend_from_slice(&[0; 19]);
+
+    for (index, guid) in [
+        (64, "11111111-1111-1111-1111-111111111111"),
+        (67, "66666666-6666-6666-6666-666666666666"),
+    ] {
+        push_header(&mut bytes, b"283", index);
+        bytes.extend_from_slice(&[0; 11]);
+        bytes.push(1);
+        bytes.push(0);
+        push_marked(&mut bytes, 10);
+        push_marked(&mut bytes, index + 2);
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        let mut envelope = Vec::new();
+        push_wide_operand_path(&mut envelope, index, 10, guid);
+        bytes.extend_from_slice(&envelope[wide::LEN..]);
+    }
+    push_header(&mut bytes, b"300", 74);
+    let records = IndexedRecordOffsets::build(&bytes);
+    let mut scope = parse_parameter_scope(
+        &bytes,
+        &records,
+        10,
+        &"405".to_owned().try_into().unwrap(),
+        0,
+    )
+    .unwrap()
+    .expect("As-built scope");
+    scope.id = "f3d:Design/BulkStream.dat:design-parameter-scope#0".into();
+    assert_eq!(
+        scope.paired_byte_offset(),
+        u64::try_from(scope_length).unwrap()
+    );
+
+    let owners: Vec<_> = [(50, 1.0), (53, 2.0), (56, 3.0), (59, 0.25)]
+        .into_iter()
+        .zip(0_u32..)
+        .map(|((index, value), ordinal)| {
+            let byte_offset = 1000 + u64::from(ordinal) * 200;
+            DesignParameterOwner::try_from(DesignParameterOwnerWire {
+                id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{byte_offset}"),
+                byte_offset,
+                frame_length: 103,
+                class_tag: "321".to_owned().try_into().unwrap(),
+                record_index: index,
+                scope_record_index: 10,
+                local_ordinal: ordinal,
+                evaluated_value: value,
+                evaluated_value_offset: byte_offset + 40,
+                parameter_record_index: index + 1,
+                owned_ordinal: ordinal,
+                variant: None,
+                companion_record_index: index + 2,
+            })
+            .unwrap()
+        })
+        .collect();
+    let locator_type = "2E3AC990-483D-4A55-8662-C064B976A957";
+    let mut types = std::collections::HashMap::from([
+        (9, (JOINT_TYPE_GUID, 5)),
+        (10, (AS_BUILT_SCOPE_TYPE_GUID, 1)),
+        (64, (locator_type, 3)),
+        (65, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+        (67, (locator_type, 3)),
+        (68, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
+    ]);
+    let read = |types: &std::collections::HashMap<u64, (&str, u32)>| {
+        crate::test_support::with_decode_context(|ctx| {
+            exact_assembly_alignment_with_types(ctx, &bytes, &records, &scope, &owners, types)
+                .unwrap()
+        })
+    };
+    let alignment = read(&types).expect("compact placement alignment");
+    assert!((alignment.angle() - 0.25).abs() < f64::EPSILON);
+    assert!(alignment
+        .offset()
+        .into_iter()
+        .zip([1.0, 2.0, 3.0])
+        .all(|(actual, expected)| (actual - expected).abs() < f64::EPSILON));
+    let paths = alignment.operand_path_refs().unwrap();
+    assert_eq!(paths.map(|path| path.record_index), [65, 68]);
+    assert_eq!(
+        alignment
+            .operand_frames()
+            .unwrap()
+            .map(|frame| frame.reference_record_index),
+        [64, 67]
+    );
+
+    types.remove(&9);
+    assert!(read(&types).is_none());
+}
+
 fn push_ordinary_tail(bytes: &mut Vec<u8>, additional_reference: bool, wide_field: bool) {
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 15]);
