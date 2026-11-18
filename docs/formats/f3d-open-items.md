@@ -2906,7 +2906,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Conflict.** The common-name constraint removes aliases in A/B Drives and removes a transition-deleted edge in New XY Joints M3x8mm Chamfer. In Voron Trident ptfe plate, Fillet 2 member `2795871` names token `6` with references `469` and `470`. The faces common to both references select no edge; the union selects edge `3969` on a face whose tag carries only `469`, and the Fillet transition deletes that edge. In Voron Trident xy joints, members `4782351` and `4786792` show the same pattern for edges `5396` and `5802`.
 
-**Note.** Within one name of a Fillet or Chamfer edge recipe, the decoder first uses the faces common to all Design references. It uses their union when no face is common or the common faces select no transition-deleted edge. The decoder uses the nonempty name intersection. For disjoint live name sets it retains their union and requires a unique transition-deleted common boundary edge for the fragment fallback. The inferred-selection loss records this assumption.
+**Note.** Within one name of a Fillet or Chamfer edge recipe whose first side names at least two reference ordinals, the decoder first uses the faces common to all Design references. It uses their union when no face is common or the common faces select no transition-deleted edge. The decoder uses the nonempty name intersection. For disjoint live name sets it retains their union and requires a unique transition-deleted common boundary edge for the fragment fallback. The inferred-selection loss records this assumption.
 
 ### DR-362. Non-outer loops in Loft section selections
 
