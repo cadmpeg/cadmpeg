@@ -27,7 +27,7 @@ use cadmpeg_ir::pmi::{
     PmiDefinition, PmiDimensionKind, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::presentation::PresentationItem;
-use cadmpeg_ir::products::{AssemblyGraph, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::Storage;
 #[cfg(test)]
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::loss::LossNote;
@@ -110,9 +110,12 @@ pub(crate) fn write_step_outcome(
         .iter()
         .map(|product| &product.id)
         .collect::<BTreeSet<_>>();
-    let missing_definitions = ir.model.occurrences.iter().filter(|occurrence| {
-        matches!(&occurrence.prototype, PrototypeReference::Local { definition } if !definitions.contains(definition))
-    }).count();
+    let missing_definitions = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| !definitions.contains(&occurrence.prototype))
+        .count();
     if missing_definitions != 0 {
         return Err(cadmpeg_core::CodecError::malformed(format_args!(
             "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
@@ -1436,102 +1439,45 @@ impl<'a> Builder<'a> {
         );
 
         let ir = self.ir;
-        let products = &ir.model.product_definitions;
+        // A definition of a document that was not read has no product here.
+        let (external_products, products): (Vec<_>, Vec<_>) = ir
+            .model
+            .product_definitions
+            .iter()
+            .partition(|product| matches!(product.storage, Storage::External(_)));
+        let external_products = external_products
+            .into_iter()
+            .map(|product| &product.id)
+            .collect::<HashSet<_>>();
         let occurrences = &ir.model.occurrences;
-        let Ok(graph) = AssemblyGraph::new(occurrences) else {
-            self.loss(
-                StepLossCode::AssemblyGraphInvalid,
-                "assembly occurrence graph is invalid".into(),
-            );
-            return;
-        };
-        let occurrence_products = occurrences
-            .iter()
-            .filter_map(|occurrence| match &occurrence.prototype {
-                PrototypeReference::Local { definition } => {
-                    Some((occurrence.id.clone(), definition.clone()))
-                }
-                PrototypeReference::External { .. } | PrototypeReference::Unresolved {} => None,
-            })
-            .collect::<HashMap<OccurrenceId, ProductDefinitionId>>();
-        let mut root_products = occurrences
-            .iter()
-            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
-            .filter_map(|occurrence| occurrence_products.get(&occurrence.id))
-            .collect::<BTreeSet<_>>();
-        let root_product_count = root_products.len();
-        let root_product = match root_products.len() {
-            1 => root_products.pop_first(),
-            _ => None,
-        };
         let emitted_product_definitions = products
             .iter()
             .map(|product| product.id.clone())
             .collect::<HashSet<_>>();
-        let mut root_definition_counts = BTreeMap::<ProductDefinitionId, usize>::new();
-        for occurrence in occurrences
+        let occurrence_products = occurrences
             .iter()
-            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
-        {
-            if let Some(definition) = occurrence_products
-                .get(&occurrence.id)
-                .filter(|definition| emitted_product_definitions.contains(*definition))
-            {
-                *root_definition_counts
-                    .entry(definition.clone())
-                    .or_default() += 1;
+            .filter(|occurrence| emitted_product_definitions.contains(&occurrence.prototype))
+            .map(|occurrence| (occurrence.id.clone(), occurrence.prototype.clone()))
+            .collect::<HashMap<OccurrenceId, ProductDefinitionId>>();
+        // Each occurrence's owning definition and its place among the
+        // definition's occurrences.
+        let mut owners = HashMap::<OccurrenceId, (ProductDefinitionId, usize)>::new();
+        for product in &ir.model.product_definitions {
+            for (position, occurrence) in product.occurrences.iter().enumerate() {
+                owners
+                    .entry(occurrence.clone())
+                    .or_insert_with(|| (product.id.clone(), position));
             }
         }
-        let repeated_root_occurrence_ids = occurrences
+        let mut root_products = products
             .iter()
-            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
-            .filter_map(|occurrence| {
-                let definition = occurrence_products.get(&occurrence.id)?;
-                (root_definition_counts
-                    .get(definition)
-                    .copied()
-                    .unwrap_or_default()
-                    > 1)
-                .then(|| occurrence.id.clone())
-            })
-            .collect::<HashSet<_>>();
-        let repeated_root_definition_has_children = occurrences.iter().any(|occurrence| {
-            matches!(
-                &occurrence.parent,
-                OccurrenceParent::Occurrence { occurrence: parent }
-                    if repeated_root_occurrence_ids.contains(parent)
-            ) && occurrence_products
-                .get(&occurrence.id)
-                .is_some_and(|definition| emitted_product_definitions.contains(definition))
-                && occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) == [1.0; 3]
-                && occurrence
-                    .effective_transform()
-                    .is_ok_and(|transform| transform.is_proper_rigid())
-        });
-        // A rigid root placement of a local product needs a parent product to carry it.
-        let placed_root = |occurrence: &cadmpeg_ir::products::Occurrence| {
-            matches!(occurrence.parent, OccurrenceParent::Root {})
-                && occurrence_products.contains_key(&occurrence.id)
-                && occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) == [1.0; 3]
-                && occurrence
-                    .effective_transform()
-                    .is_ok_and(|transform| transform.is_proper_rigid())
+            .filter(|product| product.is_root())
+            .map(|product| &product.id)
+            .collect::<BTreeSet<_>>();
+        let root_product = match root_products.len() {
+            1 => root_products.pop_first(),
+            _ => None,
         };
-        let mut has_placed_root = false;
-        let mut has_non_identity_placed_root = false;
-        for occurrence in occurrences
-            .iter()
-            .filter(|occurrence| placed_root(occurrence))
-        {
-            has_placed_root = true;
-            has_non_identity_placed_root |= occurrence
-                .effective_transform()
-                .is_ok_and(|transform| !is_identity(&transform.rows()));
-        }
-        let assembly_root = has_non_identity_placed_root
-            || (has_placed_root
-                && root_product_count > 1
-                && !repeated_root_definition_has_children);
         let product_names = distinct_names(
             &products
                 .iter()
@@ -1541,10 +1487,7 @@ impl<'a> Builder<'a> {
                         .as_deref()
                         .or(product.source_name.as_deref())
                         .or(product.part_number.as_deref())
-                        .or_else(|| {
-                            (!assembly_root && root_product == Some(&product.id))
-                                .then_some(self.model_name)
-                        });
+                        .or_else(|| (root_product == Some(&product.id)).then_some(self.model_name));
                     (product.id.as_str(), name)
                 })
                 .collect::<Vec<_>>(),
@@ -1556,7 +1499,7 @@ impl<'a> Builder<'a> {
                 .collect::<Vec<_>>(),
         );
         let mut product_origins = HashMap::<ProductDefinitionId, Ref>::new();
-        for product in products {
+        for product in &products {
             product_origins.insert(
                 product.id.clone(),
                 geometry::placement(
@@ -1568,18 +1511,14 @@ impl<'a> Builder<'a> {
             );
         }
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
-        let mut assembly_root_placements = Vec::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
         for occurrence in occurrences {
-            let parent_product = match &occurrence.parent {
-                OccurrenceParent::Occurrence { occurrence: parent } => {
-                    let Some(parent_product) = occurrence_products.get(parent) else {
-                        continue;
-                    };
-                    Some(parent_product)
-                }
-                OccurrenceParent::Root {} if assembly_root && placed_root(occurrence) => None,
-                OccurrenceParent::Root {} => continue,
+            let Some(parent_product) = owners
+                .get(&occurrence.id)
+                .map(|(owner, _)| owner)
+                .filter(|owner| emitted_product_definitions.contains(*owner))
+            else {
+                continue;
             };
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 continue;
@@ -1587,22 +1526,10 @@ impl<'a> Builder<'a> {
             let Some(&from) = product_origins.get(child_product) else {
                 continue;
             };
-            let transform = match occurrence.effective_transform() {
-                Ok(transform) => transform,
-                Err(error) => {
-                    self.loss(
-                        StepLossCode::AssemblyGraphInvalid,
-                        format!("occurrence '{}': {error}", occurrence.id),
-                    );
-                    return;
-                }
-            };
+            let transform = occurrence.transform.unwrap_or_default();
             let Some(frame) = transform.proper_rigid_frame() else {
                 continue;
             };
-            if occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3] {
-                continue;
-            }
             let rows = transform.rows();
             let to = geometry::placement(
                 &mut self.emitter,
@@ -1610,18 +1537,15 @@ impl<'a> Builder<'a> {
                 *frame.axis(),
                 *frame.reference(),
             );
-            match parent_product {
-                Some(parent_product) => representation_placements
-                    .entry(parent_product.clone())
-                    .or_default()
-                    .push(to),
-                None => assembly_root_placements.push(to),
-            }
+            representation_placements
+                .entry(parent_product.clone())
+                .or_default()
+                .push(to);
             occurrence_placements.insert(occurrence.id.clone(), (from, to));
         }
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
         let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
-        for (product, &name) in products.iter().zip(&product_names) {
+        for (&product, &name) in products.iter().zip(&product_names) {
             let product_id = product
                 .part_number
                 .as_deref()
@@ -1684,87 +1608,46 @@ impl<'a> Builder<'a> {
             representations.insert(product.id.clone(), representation);
         }
 
-        let assembly_root = assembly_root.then(|| {
-            self.emit_assembly_root(
-                context,
-                product_context,
-                definition_context,
-                assembly_root_placements,
-            )
-        });
-        let root_representation = assembly_root
-            .map(|(_, representation)| representation)
-            .or_else(|| {
-                root_product
-                    .or_else(|| {
-                        (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id)
-                    })
-                    .and_then(|product| representations.get(product))
-                    .copied()
-            });
+        let root_representation = root_product
+            .or_else(|| (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id))
+            .and_then(|product| representations.get(product))
+            .copied();
         self.emit_unclaimed_body_representation(context, root_representation);
 
         let mut emission_order = occurrences
             .iter()
             .zip(&occurrence_names)
             .collect::<Vec<_>>();
-        emission_order.sort_by_key(|(occurrence, _)| occurrence.ordinal);
+        emission_order.sort_by_key(|(occurrence, _)| {
+            owners
+                .get(&occurrence.id)
+                .map_or(0, |(_, position)| *position)
+        });
         for (occurrence, &occurrence_name) in emission_order {
-            let parent = match (&occurrence.parent, assembly_root) {
-                (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
-                    let Some(parent_occurrence) = graph.occurrence(parent) else {
-                        self.loss(
-                            StepLossCode::OccurrenceUnresolvedParent,
-                            format!("occurrence '{}' has an unresolved parent", occurrence.id),
-                        );
-                        continue;
-                    };
-                    let Some(parent_product) = occurrence_products.get(&parent_occurrence.id)
-                    else {
-                        self.missing_parent_products
-                            .insert(occurrence.id.as_str().to_owned());
-                        continue;
-                    };
-                    let Some(parent) = definitions
-                        .get(parent_product)
-                        .copied()
-                        .zip(representations.get(parent_product).copied())
-                    else {
-                        continue;
-                    };
-                    parent
-                }
-                (OccurrenceParent::Root {}, Some(assembly_root)) if placed_root(occurrence) => {
-                    assembly_root
-                }
-                (OccurrenceParent::Root {}, _) => {
-                    let transform = match occurrence.effective_transform() {
-                        Ok(transform) => transform,
-                        Err(error) => {
-                            self.loss(
-                                StepLossCode::AssemblyGraphInvalid,
-                                format!("occurrence '{}': {error}", occurrence.id),
-                            );
-                            return;
-                        }
-                    };
-                    if occurrence_products.contains_key(&occurrence.id)
-                        && (!is_identity(&transform.rows())
-                            || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get)
-                                != [1.0; 3])
-                    {
-                        self.loss(
-                            StepLossCode::RootOccurrencePlacementNotRepresentable,
-                            format!(
-                                "root occurrence '{}' has a placement or scale that is not representable",
-                                occurrence.id
-                            ),
-                        );
-                    }
-                    continue;
-                }
+            let Some((parent_product, _)) = owners.get(&occurrence.id) else {
+                self.loss(
+                    StepLossCode::OccurrenceUnresolvedParent,
+                    format!("occurrence '{}' has no owning definition", occurrence.id),
+                );
+                continue;
+            };
+            if !emitted_product_definitions.contains(parent_product) {
+                self.missing_parent_products
+                    .insert(occurrence.id.as_str().to_owned());
+                continue;
+            }
+            let Some(parent) = definitions
+                .get(parent_product)
+                .copied()
+                .zip(representations.get(parent_product).copied())
+            else {
+                continue;
             };
             let (parent_definition, parent_representation) = parent;
+            if external_products.contains(&occurrence.prototype) {
+                // Charged once, by the external-product summary.
+                continue;
+            }
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
                 self.loss(
                     StepLossCode::OccurrenceNoLocalProduct,
@@ -1781,19 +1664,8 @@ impl<'a> Builder<'a> {
             else {
                 continue;
             };
-            let transform = match occurrence.effective_transform() {
-                Ok(transform) => transform,
-                Err(error) => {
-                    self.loss(
-                        StepLossCode::AssemblyGraphInvalid,
-                        format!("occurrence '{}': {error}", occurrence.id),
-                    );
-                    return;
-                }
-            };
-            if !transform.is_proper_rigid()
-                || occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get) != [1.0; 3]
-            {
+            let transform = occurrence.transform.unwrap_or_default();
+            if !transform.is_proper_rigid() {
                 self.loss(
                     StepLossCode::OccurrencePlacementNotRigid,
                     format!("occurrence '{}' placement is not rigid", occurrence.id),
@@ -1830,47 +1702,6 @@ impl<'a> Builder<'a> {
                 &format!("{relationship},{usage_shape}"),
             );
         }
-    }
-
-    /// Emits the model product that places the root occurrences. Returns its
-    /// product definition and shape representation.
-    fn emit_assembly_root(
-        &mut self,
-        context: Ref,
-        product_context: Ref,
-        definition_context: Ref,
-        placements: Vec<Ref>,
-    ) -> (Ref, Ref) {
-        let name = string(self.model_name);
-        let product = self
-            .emitter
-            .emit("PRODUCT", &format!("{name},{name},'',({product_context})"));
-        let formation = self
-            .emitter
-            .emit("PRODUCT_DEFINITION_FORMATION", &format!("'','',{product}"));
-        let definition = self.emitter.emit(
-            "PRODUCT_DEFINITION",
-            &format!("{name},'',{formation},{definition_context}"),
-        );
-        let shape = self
-            .emitter
-            .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
-        let mut items = vec![geometry::placement(
-            &mut self.emitter,
-            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            cadmpeg_ir::units::UnitVector3::Z_AXIS,
-            cadmpeg_ir::units::UnitVector3::X_AXIS,
-        )];
-        items.extend(placements);
-        let representation = self.emitter.emit(
-            "SHAPE_REPRESENTATION",
-            &format!("{name},{},{context}", refs(&items)),
-        );
-        self.emitter.emit(
-            "SHAPE_DEFINITION_REPRESENTATION",
-            &format!("{shape},{representation}"),
-        );
-        (definition, representation)
     }
 
     fn emit_unclaimed_body_representation(&mut self, context: Ref, root: Option<Ref>) {
@@ -6296,7 +6127,10 @@ impl<'a> Builder<'a> {
             .filter(|product| {
                 !matches!(
                     &product.kind,
-                    cadmpeg_ir::products::ProductDefinitionKind::Part
+                    None | Some(
+                        cadmpeg_ir::products::ProductDefinitionKind::Part
+                            | cadmpeg_ir::products::ProductDefinitionKind::Assembly
+                    )
                 )
             })
             .count();
@@ -6323,16 +6157,26 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let external_document = |occurrence: &cadmpeg_ir::products::Occurrence| {
+            self.ir
+                .model
+                .product_definitions
+                .iter()
+                .find(|product| product.id == occurrence.prototype)
+                .and_then(|product| match &product.storage {
+                    Storage::External(document) => Some(document),
+                    Storage::Embedded | Storage::File { .. } => None,
+                })
+        };
         let external_occurrences = self
             .ir
             .model
             .occurrences
             .iter()
             .filter(|occurrence| {
-                matches!(
-                    &occurrence.prototype,
-                    cadmpeg_ir::products::PrototypeReference::External { .. }
-                )
+                external_document(occurrence).is_some_and(|document| {
+                    *document != cadmpeg_ir::products::ExternalDocument::default()
+                })
             })
             .count();
         if external_occurrences > 0 {
@@ -6349,10 +6193,9 @@ impl<'a> Builder<'a> {
             .occurrences
             .iter()
             .filter(|occurrence| {
-                matches!(
-                    &occurrence.prototype,
-                    cadmpeg_ir::products::PrototypeReference::Unresolved {}
-                )
+                external_document(occurrence).is_some_and(|document| {
+                    *document == cadmpeg_ir::products::ExternalDocument::default()
+                })
             })
             .count();
         if unresolved_occurrences > 0 {
@@ -6369,17 +6212,10 @@ impl<'a> Builder<'a> {
             .occurrences
             .iter()
             .map(|occurrence| {
-                let link_metadata = occurrence.link.as_ref().map_or(0, |link| {
-                    usize::from(!link.linked_subelements().is_empty())
-                        + usize::from(link.element_component().is_some())
-                        + usize::from(link.claim_child().is_some())
-                        + link.copy_on_change().map_or(0, |copy| {
-                            1 + usize::from(copy.source.is_some())
-                                + usize::from(copy.group.is_some())
-                                + usize::from(copy.touched.is_some())
-                        })
-                });
-                usize::from(occurrence.visible.is_some()) + link_metadata
+                usize::from(occurrence.visible.is_some())
+                    + usize::from(occurrence.suppressed.is_some())
+                    + usize::from(occurrence.representation.is_some())
+                    + occurrence.overrides.len()
             })
             .sum::<usize>();
         if occurrence_metadata > 0 {

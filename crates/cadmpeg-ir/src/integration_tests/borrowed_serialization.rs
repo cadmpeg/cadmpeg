@@ -100,9 +100,9 @@ wire_case!(
     json!({"dimension":{"kind":"other","value":"native-dimension"},"modifiers":[]})
 );
 wire_case!(
-    borrowed_link_state_wire,
-    crate::products::LinkState,
-    json!({"members":[{"kind":"linked_subelement","subelement":"Face1"},{"kind":"element_component","component":"test:model:product#p"},{"kind":"claim_child","claim":true},{"kind":"copy_on_change","state":{"policy":{"kind":"native","value":"source-policy"}}}]})
+    borrowed_storage_wire,
+    crate::products::Storage,
+    json!({"kind":"external","path":"parts/widget.FCStd","object":"Body"})
 );
 wire_case!(
     borrowed_reference_target_wire,

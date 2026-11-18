@@ -2,15 +2,15 @@
 //! STEP product prototypes, occurrence identity, and relative placement.
 
 use crate::ids::{key_word, kind};
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{btree_map, BTreeMap, BTreeSet, HashSet};
 
 use super::{named_parameter, RecordExt, ValueExt};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{BodyId, IdentityKey, IdentityKeyTail, OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{BodyId, IdentityKey, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::{Transform, TransformError};
@@ -57,26 +57,12 @@ pub(super) struct ProductData {
     pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
-/// One expanded occurrence's place on its assembly path.
-struct PathLink {
-    /// The occurrence's product definition.
-    definition: u64,
-    /// The parent occurrence's link, or `None` for a root occurrence.
-    parent: Option<usize>,
-    /// Product definitions on the path from the root through this one.
-    length: usize,
-}
-
-/// Whether `definition` lies on the path that ends at link `at`.
-fn path_contains(links: &[PathLink], at: usize, definition: u64) -> bool {
-    let mut next = Some(at);
-    while let Some(link) = next.and_then(|at| links.get(at)) {
-        if link.definition == definition {
-            return true;
-        }
-        next = link.parent;
-    }
-    false
+/// How far the walk from the roots has reached a product definition.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reached {
+    /// On the path from a root to the definition being walked.
+    OnPath,
+    Done,
 }
 
 fn join_product_references(ids: impl IntoIterator<Item = u64>) -> String {
@@ -299,7 +285,7 @@ pub(super) fn decode(
 
                 tessellations: Vec::new(),
                 id: product_definition_id.clone(),
-                kind: ProductDefinitionKind::Part,
+                kind: Some(ProductDefinitionKind::Part),
                 source_name: name.as_deref().map(std::borrow::ToOwned::to_owned),
                 label: name.as_deref().map(std::borrow::ToOwned::to_owned),
                 description,
@@ -309,6 +295,14 @@ pub(super) fn decode(
                 native_ref: Some(
                     definition.map_or_else(|| format!("#{step_id}"), |id| format!("#{id}")),
                 ),
+                generated_from: None,
+                storage: cadmpeg_ir::products::Storage::Embedded,
+                occurrences: Vec::new(),
+                instance_bodies: Vec::new(),
+                representations: Vec::new(),
+                units: None,
+                general_tolerance: None,
+                active: None,
             });
 
             let grouped = product_definition_ids_by_source.entry(step_id).or_default();
@@ -368,10 +362,7 @@ pub(super) fn decode(
         child_definitions.insert(usage.child_definition);
     }
 
-    let mut path_links = Vec::<PathLink>::new();
-    let mut pending_occurrences = VecDeque::new();
-    let mut root_ordinal = 0_u32;
-    let mut output_truncated_at = None;
+    let mut roots = Vec::new();
     for &definition in definitions.keys() {
         if child_definitions.contains(&definition) {
             continue;
@@ -382,45 +373,58 @@ pub(super) fn decode(
             )));
             continue;
         };
-        let id = OccurrenceId::from(ids::product(
-            kind!("occurrence"),
-            key_word!("definition").dash(definition),
-        ));
-        if ir.model.occurrences.len() >= MAX_OCCURRENCES {
-            output_truncated_at = Some(format!("root PRODUCT_DEFINITION #{definition}"));
-            break;
+        roots.push((definition, prototype));
+    }
+    let mut output_truncated_at = None;
+    let mut owned = BTreeMap::<ProductDefinitionId, Vec<OccurrenceId>>::new();
+    match roots.as_slice() {
+        [] => {}
+        [(_, prototype)] => {
+            owned.entry(prototype.clone()).or_default();
         }
-
-        ir.model.occurrences.push(Occurrence {
-            id: id.clone(),
-            prototype: PrototypeReference::Local {
-                definition: prototype,
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: root_ordinal,
-            transform: Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        });
-        ctx.admit_entities(
-            u64_from_index(ir.entity_count()),
-            admitted_ir_entities,
-            "step_assembly_occurrence",
-        )?;
-        root_ordinal = root_ordinal
-            .checked_add(1)
-            .ok_or_else(|| CodecError::malformed("STEP root occurrence ordinal exceeds u32"))?;
-
-        pending_occurrences.push_back((definition, id, path_links.len()));
-        path_links.push(PathLink {
-            definition,
-            parent: None,
-            length: 1,
-        });
+        _ => {
+            // Several top-level definitions: the file itself is the root, and
+            // it places each of them.
+            let document =
+                ProductDefinitionId::from(ids::product(kind!("product"), key_word!("document")));
+            let mut root = ProductDefinition::root(document.clone(), ExternalDocument::default());
+            for (definition, prototype) in &roots {
+                if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+                    output_truncated_at = Some(format!("root PRODUCT_DEFINITION #{definition}"));
+                    break;
+                }
+                let id = OccurrenceId::from(ids::product(
+                    kind!("occurrence"),
+                    key_word!("definition").dash(*definition),
+                ));
+                ir.model.occurrences.push(Occurrence::new(
+                    id.clone(),
+                    prototype.clone(),
+                    Some(Transform::identity()),
+                ));
+                root.occurrences.push(id);
+                ctx.admit_entities(
+                    u64_from_index(ir.entity_count()),
+                    admitted_ir_entities,
+                    "step_assembly_occurrence",
+                )?;
+            }
+            ir.model.product_definitions.push(root);
+            owned.entry(document).or_default();
+        }
+    }
+    if let [(_, prototype)] = roots.as_slice() {
+        if let Some(definition) = ir
+            .model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| &definition.id == prototype)
+        {
+            definition.storage = Storage::File {
+                document: ExternalDocument::default(),
+                source: None,
+            };
+        }
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -457,31 +461,37 @@ pub(super) fn decode(
 
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque")));
     }
-    let mut usage_instances = BTreeMap::<u64, usize>::new();
-    let mut missing_placement_reports = BTreeSet::new();
-    let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
         let grouped = usages_by_parent.entry(usage.parent_definition).or_default();
         grouped.push(usage_id);
     }
-    let had_roots = !pending_occurrences.is_empty();
-    // The expansion is iterative, so the session depth ceiling bounds the
-    // occurrence path length directly.
+    let had_roots = !roots.is_empty();
+    // The walk is iterative, so the session depth ceiling bounds the
+    // definition path length directly.
     let depth_limit = ctx.policy().limits.max_recursion_depth;
     let mut depth_truncated = None::<(u64, usize)>;
-    'expansion: while let Some((parent_definition, parent, parent_link)) =
-        pending_occurrences.pop_front()
-    {
+    let mut reached = BTreeMap::<u64, Reached>::new();
+    'roots: for (root, _) in &roots {
         if output_truncated_at.is_some() {
             break;
         }
-        let parent_length = path_links.get(parent_link).map_or(0, |link| link.length);
-        for &usage_id in usages_by_parent
-            .get(&parent_definition)
-            .into_iter()
-            .flatten()
-        {
+        // Each frame is a definition, the length of its path, and its next
+        // usage.
+        let mut stack = vec![(*root, 1_usize, 0_usize)];
+        reached.insert(*root, Reached::OnPath);
+        while let Some(frame) = stack.last_mut() {
+            let (parent_definition, parent_length, next) = *frame;
+            let children = usages_by_parent
+                .get(&parent_definition)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let Some(&usage_id) = children.get(next) else {
+                reached.insert(parent_definition, Reached::Done);
+                stack.pop();
+                continue;
+            };
+            frame.2 += 1;
             if ambiguous_placements.contains_key(&usage_id) {
                 continue;
             }
@@ -498,89 +508,67 @@ pub(super) fn decode(
                 *skipped += 1;
                 continue;
             }
-            if path_contains(&path_links, parent_link, usage.child_definition) {
+            if reached.get(&usage.child_definition) == Some(&Reached::OnPath) {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "NAUO #{usage_id} closes an assembly definition cycle"
                 )));
                 continue;
             }
-            let instance = usage_instances.entry(usage_id).or_default();
-            *instance += 1;
-            let suffix = if *instance == 1 {
-                IdentityKeyTail::empty()
-            } else {
-                IdentityKeyTail::empty()
-                    .dash(key_word!("instance"))
-                    .dash(*instance)
+            let Some(owner) = definition_prototypes.get(&parent_definition).cloned() else {
+                continue;
             };
             let id = OccurrenceId::from(ids::product(
                 kind!("occurrence"),
-                IdentityKey::from(usage_id).with_tail(&suffix),
+                IdentityKey::from(usage_id),
             ));
             if ir.model.occurrences.len() >= MAX_OCCURRENCES {
                 output_truncated_at = Some(format!("NAUO #{usage_id}"));
-                break 'expansion;
+                break 'roots;
             }
-            let ordinal = child_ordinals.entry(parent.clone()).or_default();
             let transform = if let Some(transform) = placements.get(&usage_id).copied() {
                 transform
             } else {
-                if missing_placement_reports.insert(usage_id) {
-                    losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
-                        "NAUO #{usage_id} has no resolved occurrence transform; \
-                             identity placement was used"
-                    )));
-                }
+                losses.push(StepLossCode::NauoPlacementUnresolved.note(format!(
+                    "NAUO #{usage_id} has no resolved occurrence transform; \
+                     identity placement was used"
+                )));
                 Transform::identity()
             };
-
-            ir.model.occurrences.push(Occurrence {
-                id: id.clone(),
-                prototype: PrototypeReference::Local {
-                    definition: prototype,
-                },
-                parent: OccurrenceParent::Occurrence {
-                    occurrence: parent.clone(),
-                },
-                ordinal: *ordinal,
-                transform,
-                linked_prototype: None,
-                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                name: usage.name.as_deref().map(std::borrow::ToOwned::to_owned),
-                visible: None,
-                link: None,
-                native_ref: Some(format!("#{usage_id}")),
-            });
+            let mut occurrence = Occurrence::new(id.clone(), prototype, Some(transform));
+            occurrence.name = usage.name.as_deref().map(std::borrow::ToOwned::to_owned);
+            occurrence.native_ref = Some(format!("#{usage_id}"));
+            ir.model.occurrences.push(occurrence);
+            owned.entry(owner).or_default().push(id);
             ctx.admit_entities(
                 u64_from_index(ir.entity_count()),
                 admitted_ir_entities,
                 "step_assembly_occurrence",
             )?;
-            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                CodecError::malformed("STEP child occurrence ordinal exceeds u32")
-            })?;
-            pending_occurrences.push_back((usage.child_definition, id, path_links.len()));
-            path_links.push(PathLink {
-                definition: usage.child_definition,
-                parent: Some(parent_link),
-                length: parent_length + 1,
-            });
+            if let btree_map::Entry::Vacant(entry) = reached.entry(usage.child_definition) {
+                entry.insert(Reached::OnPath);
+                stack.push((usage.child_definition, parent_length + 1, 0));
+            }
             typed.insert(usage_id);
+        }
+    }
+    for definition in &mut ir.model.product_definitions {
+        if let Some(occurrences) = owned.remove(&definition.id) {
+            definition.occurrences.extend(occurrences);
         }
     }
     if let Some(start) = output_truncated_at {
         losses.push(
             StepLossCode::OccurrenceExpansionOutputTruncated.note(format!(
-            "product occurrence expansion stopped at its limit of {MAX_OCCURRENCES} occurrences; \
-             {start} and the usages after it are not expanded"
+            "product occurrence decoding stopped at its limit of {MAX_OCCURRENCES} occurrences; \
+             {start} and the usages after it are not decoded"
         )),
         );
     }
     if let Some((first, skipped)) = depth_truncated {
         losses.push(
             StepLossCode::OccurrenceExpansionDepthTruncated.note(format!(
-            "product occurrence paths stop at the recursion depth limit of {depth_limit} levels; \
-             {skipped} usage(s) from NAUO #{first} are not expanded"
+            "product definition paths stop at the recursion depth limit of {depth_limit} levels; \
+             {skipped} usage(s) from NAUO #{first} are not decoded"
         )),
         );
     }
@@ -1101,6 +1089,7 @@ fn occurrence_placements(
             }
         }
     }
+    let mut inferred = Vec::new();
     let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
     for usage in usages.values() {
         let pair = (usage.parent_definition, usage.child_definition);
@@ -1165,11 +1154,23 @@ fn occurrence_placements(
             sibling_usage_counts[&(usage.parent_definition, usage.child_definition)];
         if sibling_usage_count == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);
+            inferred.push(usage_id);
         } else if !placements.is_empty() {
             losses.push(StepLossCode::DecodeWarning.note(format!(
                 "NAUO #{usage_id} has an ambiguous mapped-item placement"
             )));
         }
+    }
+    if !inferred.is_empty() {
+        let listed = inferred
+            .iter()
+            .map(|usage_id| format!("#{usage_id}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(StepLossCode::OccurrencePlacementInferred.note(format!(
+            "{} NEXT_ASSEMBLY_USAGE_OCCURRENCE record(s) take their placement from a parent representation's MAPPED_ITEM that no STEP relationship associates with them: {listed}",
+            inferred.len()
+        )));
     }
     Ok(result)
 }

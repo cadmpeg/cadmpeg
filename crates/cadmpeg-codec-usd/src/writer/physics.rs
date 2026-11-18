@@ -208,11 +208,7 @@ impl Plan {
                     let placements: Vec<OccurrenceId> = model
                         .occurrences
                         .iter()
-                        .filter(|occurrence| {
-                            matches!(&occurrence.prototype,
-                                cadmpeg_ir::products::PrototypeReference::Local { definition: local }
-                                    if local == definition)
-                        })
+                        .filter(|occurrence| &occurrence.prototype == definition)
                         .map(|occurrence| occurrence.id.clone())
                         .collect();
                     for occurrence in placements {
@@ -481,17 +477,19 @@ impl Writer<'_> {
             .occurrences
             .iter()
             .find(|candidate| &candidate.id == occurrence)?;
-        let mut transform = current.transform;
-        while let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent } =
-            &current.parent
-        {
-            current = model
-                .occurrences
-                .iter()
-                .find(|candidate| &candidate.id == parent)?;
-            transform = current.transform.compose(transform).ok()?;
+        let mut transform = current.transform?;
+        for _ in 0..model.occurrences.len() {
+            let Some(owner) = cadmpeg_ir::products::owner(&model.product_definitions, &current.id)
+            else {
+                return Some(transform);
+            };
+            if owner.is_root() {
+                return Some(transform);
+            }
+            current = cadmpeg_ir::products::sole_placement(&model.occurrences, &owner.id)?;
+            transform = current.transform?.compose(transform).ok()?;
         }
-        Some(transform)
+        None
     }
 
     fn frame_lines(&mut self, side: usize, frame: &Transform) {

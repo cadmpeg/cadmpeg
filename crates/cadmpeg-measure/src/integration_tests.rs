@@ -19,6 +19,7 @@ mod nurbs;
 mod occurrences;
 mod offsets;
 mod pcurves;
+mod pole_crossings;
 mod pole_witness;
 mod serialization;
 mod spheres;
