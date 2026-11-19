@@ -1,4 +1,6 @@
+use super::super::assembly_operand_paths::POSITION_PATH_WRAPPER_TYPE_GUID;
 use super::*;
+use crate::layout::{captured_position_v4_path_wrapper as wrapper, indexed_design_record_header};
 use crate::test_support::position::{append_locator, fixture, OCCURRENCE_KEY};
 
 fn read(
@@ -165,10 +167,40 @@ fn version_four_position_preserves_its_single_matrix_row() {
         positions.paths[0].occurrence_guids()[0].value.as_str(),
         OCCURRENCE_KEY
     );
-    scope.captured_positions = Some(positions);
+    let wrapper_start = bytes.len() - indexed_design_record_header::LEN - wrapper::LEN;
+    bytes[wrapper_start + wrapper::MARKER] = wrapper::MARKER_VALUE;
+    let unregistered = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(unregistered.rows[0].path_index, None);
+    assert_eq!(unregistered.rows[0].matrix, positions.rows[0].matrix);
+
+    types.insert(702, (POSITION_PATH_WRAPPER_TYPE_GUID, 2));
+    let other_version = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(other_version, unregistered);
+
+    types.insert(702, (POSITION_PATH_WRAPPER_TYPE_GUID, 1));
+    let legacy = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(legacy, positions);
+    scope.captured_positions = Some(legacy);
     let decoded: DesignParameterScope =
         serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
     assert_eq!(decoded.captured_positions, scope.captured_positions);
+}
+
+#[test]
+fn version_six_position_keeps_matrix_when_wrapper_marker_is_zero() {
+    let (mut bytes, scope, mut types) =
+        fixture(&[Some(cadmpeg_ir::transform::Transform::identity().rows())]);
+    append_locator(&mut bytes, &mut types, 500);
+    types.insert(702, (POSITION_PATH_WRAPPER_TYPE_GUID, 1));
+    let ordinary = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(ordinary.rows[0].path_index, Some(0));
+
+    let wrapper_start = bytes.len() - indexed_design_record_header::LEN - wrapper::LEN;
+    bytes[wrapper_start + wrapper::MARKER] = wrapper::MARKER_VALUE;
+    let alternate = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(alternate.rows[0].path_index, None);
+    assert_eq!(alternate.rows[0].target, ordinary.rows[0].target);
+    assert_eq!(alternate.rows[0].matrix, ordinary.rows[0].matrix);
 }
 
 #[test]

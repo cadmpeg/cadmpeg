@@ -11,7 +11,7 @@ import tempfile
 import tomllib
 from unittest.mock import patch
 
-from scripts.ci_scope import lock_dependents, select
+from scripts.ci_scope import ANNEX_INPUTS, lock_dependents, select
 from scripts.ci_cargo import command, main as cargo_main
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -285,6 +285,15 @@ class ScopeTests(unittest.TestCase):
                 self.assertFalse(scope['full'])
                 self.assertEqual(scope['packages'], [])
                 self.assertTrue(scope['layout'])
+
+    def test_the_specification_and_its_annex_generator_select_the_schema_gate(self):
+        for path in sorted(ANNEX_INPUTS):
+            with self.subTest(path=path):
+                scope = select(ROOT, [path])
+                self.assertFalse(scope['full'])
+                self.assertFalse(scope['rust'])
+                self.assertTrue(scope['schema'])
+        self.assertFalse(select(ROOT, ['docs/cad-ir.md'])['schema'])
 
     def test_embedded_document_selects_its_reader(self):
         scope = select(ROOT, ['docs/dialect-id-conformance.toml'])

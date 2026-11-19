@@ -8,8 +8,10 @@ use std::io::Cursor;
 use std::path::Path;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::design::parameter::{FitDeviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::pmi::{
-    DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
+    DimensionModifier, FitZone, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
+    PmiDimensionKind as DimensionKind,
 };
 use cadmpeg_ir::CadIr;
 
@@ -148,20 +150,51 @@ fn dimensions(ir: &CadIr) -> Vec<Dimension> {
         .pmi
         .iter()
         .filter_map(|annotation| match &annotation.definition {
-            PmiDefinition::Dimension(dimension) => Some(Dimension {
-                kind: dimension.kind().clone(),
-                modifiers: dimension.modifiers().to_vec(),
-                nominal: dimension.nominal().map(|value| value.value.get()),
-                range: dimension.tolerance().map(|tolerance| match tolerance {
-                    DimensionTolerance::PlusMinus { lower, upper } => {
-                        Range::Deviations(lower.value.get(), upper.value.get())
+            PmiDefinition::Dimension(dimension) => {
+                let nominal = dimension.literal_nominal().map(|value| value.value.get());
+                let limits = annotation
+                    .source_settings
+                    .contains_key("step:tolerance_display");
+                let mut modifiers = dimension
+                    .modifiers
+                    .iter()
+                    .map(|modifier| {
+                        match modifier {
+                            DimensionModifier::Reference => "auxiliary",
+                            DimensionModifier::Statistical => "statistical",
+                            DimensionModifier::ControlledRadius => "controlled radius",
+                            DimensionModifier::Other(text) => text.as_str(),
+                        }
+                        .to_owned()
+                    })
+                    .collect::<Vec<_>>();
+                let range = match &dimension.tolerance {
+                    None => None,
+                    Some(DimensionTolerance::Basic) => {
+                        modifiers.push("theoretical".to_owned());
+                        None
                     }
-                    DimensionTolerance::Limits { lower, upper } => {
-                        Range::Limits(lower.value.get(), upper.value.get())
+                    Some(DimensionTolerance::Deviations(deviations)) if limits => {
+                        let nominal = nominal.expect("limits about a nominal");
+                        Some(Range::Limits(
+                            nominal + deviations.lower.get(),
+                            nominal + deviations.upper.get(),
+                        ))
                     }
-                    other => panic!("NIST CTC tolerance form {other:?}"),
-                }),
-            }),
+                    Some(DimensionTolerance::Deviations(deviations)) => Some(Range::Deviations(
+                        deviations.lower.get(),
+                        deviations.upper.get(),
+                    )),
+                    Some(other) => panic!("NIST CTC tolerance form {other:?}"),
+                };
+                modifiers.sort();
+                Some(Dimension {
+                    kind: dimension.dimension.clone(),
+                    modifiers,
+                    nominal,
+                    range,
+                })
+            }
             _ => None,
         })
         .collect()
@@ -351,13 +384,16 @@ fn nist_ctc_04_semantic_pmi_matches_the_nist_definition() {
         .iter()
         .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#18891")
         .expect("projected position tolerance");
-    let PmiDefinition::GeometricTolerance { constraints, .. } = &projected.definition else {
+    let PmiDefinition::GeometricTolerance { zones, .. } = &projected.definition else {
         panic!("geometric tolerance")
     };
-    let [zone] = constraints.zones.as_slice() else {
+    let [zone] = zones.as_slice() else {
         panic!("one projected zone")
     };
-    assert_eq!(zone.form.as_str(), "cylindrical or circular");
+    assert_eq!(
+        zone.form,
+        cadmpeg_ir::pmi::zones::ToleranceZoneForm::CylindricalOrCircular
+    );
     let [projection] = zone.projections.as_slice() else {
         panic!("one projection")
     };
@@ -478,16 +514,15 @@ fn nist_ctc_02_datum_material_conditions_preserve_the_serialized_pmi() {
                 annotation.id.as_str() == format!("step:presentation:pmi#{source_id}")
             })
             .expect("source tolerance");
-        let PmiDefinition::GeometricTolerance { constraints, .. } = &annotation.definition else {
+        let PmiDefinition::GeometricTolerance {
+            displacement: stated,
+            ..
+        } = &annotation.definition
+        else {
             panic!("geometric tolerance")
         };
         assert!(
-            (constraints
-                .displacement
-                .expect("unequal displacement")
-                .get()
-                - displacement)
-                .abs()
+            (stated.expect("unequal displacement").get() - displacement).abs()
                 < NIST_VALUE_TOLERANCE
         );
     }
@@ -673,7 +708,7 @@ fn nist_ftc_06_preserves_the_spherical_position_tolerance_zone() {
         .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#135")
         .expect("spherical position tolerance");
     let PmiDefinition::GeometricTolerance {
-        constraints,
+        zones,
         magnitude,
         tolerance: kind,
         ..
@@ -683,10 +718,13 @@ fn nist_ftc_06_preserves_the_spherical_position_tolerance_zone() {
     };
     assert_eq!(*kind, GeometricToleranceKind::Position);
     assert!((magnitude.get().value.get() - 0.025 * MM_PER_INCH).abs() < NIST_VALUE_TOLERANCE);
-    let [zone] = constraints.zones.as_slice() else {
+    let [zone] = zones.as_slice() else {
         panic!("one spherical zone")
     };
-    assert_eq!(zone.form.as_str(), "spherical");
+    assert_eq!(
+        zone.form,
+        cadmpeg_ir::pmi::zones::ToleranceZoneForm::Spherical
+    );
 }
 
 #[test]
@@ -735,14 +773,25 @@ fn nist_ftc_10_fit_and_zero_material_tolerances_match_the_nist_definition() {
     let mut fits = 0;
     for annotation in &result.ir().model.pmi {
         if let PmiDefinition::Dimension(dimension) = &annotation.definition {
-            if let Some(DimensionTolerance::Fit { fit }) = dimension.tolerance() {
-                assert_eq!(dimension.kind(), &DimensionKind::Diameter);
+            if let Some(DimensionTolerance::Fit {
+                fit, deviations, ..
+            }) = dimension.tolerance.as_ref()
+            {
+                assert_eq!(dimension.dimension, DimensionKind::Diameter);
+                assert!(!matches!(deviations, Some(FitDeviations::Cell(_))));
                 assert!(
-                    (dimension.nominal().expect("fit nominal").value.get() - 3.5).abs()
+                    (dimension
+                        .literal_nominal()
+                        .expect("fit nominal")
+                        .value
+                        .get()
+                        - 3.5)
+                        .abs()
                         < NIST_VALUE_TOLERANCE
                 );
-                assert_eq!(fit.form_variance, "G6");
-                assert_eq!(fit.zone_variance, "hole");
+                assert_eq!(fit.form_variance, "G");
+                assert_eq!(fit.grade, "6");
+                assert_eq!(fit.zone, FitZone::Hole);
                 fits += 1;
             }
         }

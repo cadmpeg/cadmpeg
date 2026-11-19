@@ -436,7 +436,10 @@ fn paired_body_to_component_owner_reads_typed_body_runs() {
     );
     let owner = owners[&51][0];
     let (construction, loss) = owned_body_runs(&bytes, &scope, owner).unwrap();
-    assert!(loss.is_none());
+    assert_eq!(
+        loss.unwrap().code,
+        F3dLossCode::FeatureOwnedBodyPairingAssumed.kind()
+    );
     let DesignBaseFeatureConstruction::TimelineOwnedBodies {
         owner_record,
         owner_reference_offset: stored_owner_reference_offset,
