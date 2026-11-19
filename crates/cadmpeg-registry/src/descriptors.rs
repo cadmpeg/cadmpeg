@@ -8,6 +8,71 @@ use crate::{ForcedInput, Format};
 
 type DecoderConstructor = fn() -> Box<dyn Codec>;
 type EncoderConstructor = fn() -> Box<dyn Encoder>;
+type ScanConstructor = fn(
+    cadmpeg_core::decode::View<'_>,
+    &cadmpeg_core::scan::ScanBudget<'_>,
+) -> cadmpeg_core::scan::DesignScan;
+type CompoundScanProbe = fn(
+    &[cadmpeg_container::compound::scan::ScanCompoundEntry],
+    &cadmpeg_core::scan::ScanBudget<'_>,
+) -> Result<bool, cadmpeg_core::scan::StopReason>;
+
+#[cfg(any(
+    feature = "fcstd",
+    feature = "f3d",
+    feature = "inventor",
+    feature = "sldprt",
+    feature = "catia",
+    feature = "creo",
+    feature = "nx",
+    feature = "rhino",
+    feature = "step",
+    feature = "iges",
+    feature = "sat",
+    feature = "pvz",
+    feature = "usd"
+))]
+macro_rules! scan_backend {
+    (F3D) => {
+        Some(cadmpeg_codec_f3d::F3dCodec::scan_design_with_budget)
+    };
+    (SLDPRT) => {
+        Some(cadmpeg_codec_sldprt::SldprtCodec::scan_design_with_budget)
+    };
+    (INVENTOR) => {
+        Some(cadmpeg_codec_inventor::InventorCodec::scan_design_with_budget)
+    };
+    ($name:ident) => {
+        None
+    };
+}
+
+#[cfg(any(
+    feature = "fcstd",
+    feature = "f3d",
+    feature = "inventor",
+    feature = "sldprt",
+    feature = "catia",
+    feature = "creo",
+    feature = "nx",
+    feature = "rhino",
+    feature = "step",
+    feature = "iges",
+    feature = "sat",
+    feature = "pvz",
+    feature = "usd"
+))]
+macro_rules! compound_scan_probe {
+    (SLDPRT) => {
+        Some(cadmpeg_codec_sldprt::SldprtCodec::scan_detect_compound)
+    };
+    (INVENTOR) => {
+        Some(cadmpeg_codec_inventor::InventorCodec::scan_detect_compound)
+    };
+    ($name:ident) => {
+        None
+    };
+}
 
 /// Opaque witness that a compiled format has a native decoder.
 #[derive(Debug, Clone, Copy)]
@@ -15,6 +80,8 @@ pub struct NativeDescriptor {
     id: FormatId,
     input_extensions: &'static [&'static str],
     pub(crate) decoder: DecoderConstructor,
+    pub(crate) scanner: Option<ScanConstructor>,
+    pub(crate) compound_scan_probe: Option<CompoundScanProbe>,
 }
 
 impl NativeDescriptor {
@@ -187,6 +254,8 @@ macro_rules! reader {
                 id: $id,
                 input_extensions: $input_exts,
                 decoder: $decoder,
+                scanner: scan_backend!($name),
+                compound_scan_probe: compound_scan_probe!($name),
             }),
         };
     };
@@ -227,6 +296,8 @@ macro_rules! writable {
                 id: $id,
                 input_extensions: $input_exts,
                 decoder: $decoder,
+                scanner: scan_backend!($name),
+                compound_scan_probe: compound_scan_probe!($name),
             }),
         };
     };

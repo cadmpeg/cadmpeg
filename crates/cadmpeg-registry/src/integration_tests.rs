@@ -7,3 +7,5 @@ mod registry_golden_admissions;
 mod container_summaries;
 
 mod repro;
+
+mod scan;

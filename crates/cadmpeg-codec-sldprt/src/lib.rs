@@ -129,6 +129,7 @@ mod pmi;
 mod records;
 mod resolved_features;
 mod rollback;
+mod scan;
 mod swift;
 mod tessellation;
 mod writer;

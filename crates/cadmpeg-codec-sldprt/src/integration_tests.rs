@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+mod scan;
+
 mod extrude_direction;
 mod mesh_bodies;
 mod profile_data;

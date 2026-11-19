@@ -68,6 +68,19 @@ pub(crate) mod composite;
 
 const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
+pub(crate) fn scan_kind(id: [u8; 16]) -> Option<&'static str> {
+    match id {
+        FEATURE_TYPE => Some("feature"),
+        crate::sketch::SKETCH_TYPE => Some("sketch"),
+        RECTANGULAR_PATTERN_FEATURE_TYPE => Some("rectangular_pattern"),
+        MIRROR_FEATURE_TYPE => Some("mirror"),
+        WORK_PLANE_TYPE => Some("work_plane"),
+        WORK_AXIS_TYPE => Some("work_axis"),
+        WORK_POINT_TYPE => Some("work_point"),
+        _ => None,
+    }
+}
+
 pub(crate) const FEATURE_TYPE: [u8; 16] = [
     0x91, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63, 0xdc, 0x09,
 ];
