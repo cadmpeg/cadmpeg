@@ -24,7 +24,7 @@ This document uses ASD-STE100 Simplified Technical English. Attribute names and 
 
 **Question.** Which part of the `(u, v)` domain of a `NurbsPatch` do the trim loops keep: the region inside an odd number of loops, or the region that the loop orientations select?
 
-**Known.** `usd.md` §14.1 gives the trim-curve encoding. The UsdGeom schema states that the encoding follows the RenderMan `RiTrimCurve` call, and gives no region rule or loop orientation.
+**Known.** `usd.md` §14.1 gives the trim-curve encoding. The UsdGeom schema states that the encoding follows the RenderMan `RiTrimCurve` call, and gives no region rule or loop orientation. The RenderMan attribute `trimcurve:sense` selects whether the inside or the outside of the trim region is removed. The decoder keeps the region inside an odd number of loops: a loop at an even nesting depth is the outer loop of a face, and a loop at an odd depth is an inner loop of the face of the loop that holds it. It charges `nurbs.trim-region-assumed` when an outer loop runs clockwise or an inner loop counterclockwise in `(u, v)`, where the two rules can disagree. The encoder writes each outer loop counterclockwise and each inner loop clockwise in `(u, v)`, where the two rules agree.
 
 **Need.** We must know the rule to map trim loops to outer and inner face loops, and to write face loops as trim loops that other applications read with the same region.
 

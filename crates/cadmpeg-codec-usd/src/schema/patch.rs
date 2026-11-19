@@ -26,8 +26,8 @@ pub(crate) struct PatchData {
     pub(crate) rows: Vec<Vec<[f64; 3]>>,
     pub(crate) weights: Option<Vec<Vec<f64>>>,
     pub(crate) left_handed: bool,
-    /// An authored range is narrower than the knot domain.
-    pub(crate) range_narrowed: bool,
+    /// The authored `uRange` and `vRange`.
+    pub(crate) ranges: [Option<[f64; 2]>; 2],
     /// Trim loops, each a list of curves.
     pub(crate) trims: Vec<Vec<TrimCurve>>,
     /// The trim attributes do not describe their curves.
@@ -67,16 +67,10 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Option<PatchData> {
             .map(|u| (0..v_count).map(|v| weights[v * u_count + u]).collect())
             .collect()
     });
-    let mut range_narrowed = false;
-    for (name, knots, order, vertex_count) in [
-        ("uRange", &u_knots, u_order, u_count),
-        ("vRange", &v_knots, v_order, v_count),
-    ] {
-        if let Some(range) = vector(prim, name, 2, issues) {
-            let domain = [knots[order - 1], knots[vertex_count]];
-            range_narrowed |= range.as_slice() != domain.as_slice();
-        }
-    }
+    let range = |name: &str, issues: &mut Issues| {
+        vector(prim, name, 2, issues).map(|range| [range[0], range[1]])
+    };
+    let ranges = [range("uRange", issues), range("vRange", issues)];
     let (trims, trims_malformed) = trims(prim, issues);
     Some(PatchData {
         u_degree: u32::try_from(u_order - 1).ok()?,
@@ -86,7 +80,7 @@ pub(crate) fn read(prim: &Prim<'_>, issues: &mut Issues) -> Option<PatchData> {
         rows,
         weights,
         left_handed: token(prim, "orientation", issues).as_deref() == Some("leftHanded"),
-        range_narrowed,
+        ranges,
         trims,
         trims_malformed,
     })

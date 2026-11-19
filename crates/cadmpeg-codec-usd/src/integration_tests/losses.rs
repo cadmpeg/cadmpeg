@@ -127,7 +127,7 @@ fn curve_and_patch_losses_are_emitted() {
         UsdLossCode::NurbsPatchRejected,
     );
     assert_decode_emits(
-        &format!("#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{PATCH}\ndouble2 uRange = (0, 0.5)\n}}\n"),
+        &format!("#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{PATCH}\ndouble2 uRange = (0, 2)\n}}\n"),
         UsdLossCode::NurbsRangeNotTransferred,
     );
 }

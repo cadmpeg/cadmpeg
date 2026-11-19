@@ -257,6 +257,10 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-usd`      | `src/brep/convert.rs`                              | `MAX_ARC_SEGMENT`                         | `π / 2`                                                | N    | Encoder: the largest sweep of one rational quadratic arc segment of a written NURBS carrier. Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/brep/convert.rs`                              | `MAX_TRACE_DEPTH`                         | `12`                                                   | N    | Encoder: the deepest bisection of a traced trim curve; a span at this depth is written as it is. Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_CHUNK_OUTPUT`                        | `0x7E00_0000`                                         | 1    | Bytes one chunk of the USDC compressed-buffer framing expands to (spec §9.3). A chunk that yields more is refused as malformed. |
+| `cadmpeg-codec-usd`      | `src/brep/patch.rs`                                | `MAX_TRIM_CURVES`                         | `4096`                                                 | 2    | Trim curves of one `NurbsPatch`. A patch with more is bounded by the sides of its parameter range and reported as `nurbs.trim-not-transferred`. |
+| `cadmpeg-codec-usd`      | `src/brep/lift.rs`                                 | `MAX_DEGREE`                              | `30`                                                   | 4    | Degree of the space curve of a patch boundary curve. A curve whose composition needs more has no space curve; a trim loop with one is reported as `nurbs.trim-not-transferred`, a natural boundary as `nurbs.boundary-not-transferred`. |
+| `cadmpeg-codec-usd`      | `src/brep/lift.rs`                                 | `MAX_PIECES`                              | `4096`                                                 | 4    | Polynomial pieces of the space curve of one patch boundary curve. At the bound the curve has no space curve, with the losses of `MAX_DEGREE`. |
+| `cadmpeg-codec-usd`      | `src/brep/lift.rs`                                 | `MAX_FITS`                                | `100_000`                                              | 4    | Piece fits over all degrees and weight powers for one patch boundary curve. At the bound the curve has no space curve, with the losses of `MAX_DEGREE`. |
 | `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_RATIO`                               | `255`                                                 | 1    | Output bytes one input byte of an LZ4 block yields at most. A buffer of unknown expanded size is charged against the expansion allowance at this ratio before it is decoded. |
 | `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_SEEDS`                               | `256`                                                   | N    | Seed segments of one edge when the export tessellator samples a face boundary. A larger count is clamped to the bound. |
 | `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_DEPTH`                               | `18`                                                    | N    | Bisection depth of one edge segment while the export tessellator refines a face boundary to its chord tolerance. |
@@ -567,16 +571,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 345.
+Production `MAX_*` constants: 349.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
-| 2    | Per-input bound            | 77    |
+| 2    | Per-input bound            | 78    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 172   |
+| 4    | Local work cap             | 175   |
 | N    | Not a decode bound         | 54    |
-|      | Total                      | 345   |
+|      | Total                      | 349   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -586,7 +590,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 28,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
-`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 15, and
 `cadmpeg-tessellate` 4.
 
 ## Routing

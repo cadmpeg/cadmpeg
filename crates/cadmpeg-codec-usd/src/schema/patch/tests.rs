@@ -19,7 +19,7 @@ fn the_u_index_varies_fastest_in_points() {
         [[1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [1.0, 2.0, 0.0]]
     );
     assert_eq!(patch.u_degree, 1);
-    assert!(!patch.range_narrowed);
+    assert_eq!(patch.ranges, [None, None]);
     assert!(patch.trims.is_empty());
 }
 
@@ -34,9 +34,9 @@ fn counts_that_disagree_reject_the_patch() {
 }
 
 #[test]
-fn a_narrow_range_is_flagged() {
+fn an_authored_range_is_read() {
     let patch = patch(&format!("{GRID}\ndouble2 vRange = (0, 1)")).unwrap();
-    assert!(patch.range_narrowed);
+    assert_eq!(patch.ranges, [None, Some([0.0, 1.0])]);
 }
 
 #[test]

@@ -26,6 +26,7 @@ mod records;
 mod shading;
 mod text;
 mod texture;
+mod trims;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -996,7 +997,11 @@ impl<'ir> Writer<'ir> {
             let mut meshed = Vec::new();
             for (face, surface) in faces {
                 match surface.and_then(nurbs_surface) {
-                    Some(nurbs) if face.loops.is_empty() || self.whole_domain(face, nurbs) => {
+                    Some(nurbs)
+                        if face.loops.is_empty()
+                            || self.whole_domain(face, nurbs)
+                            || self.trim_loops(face).is_some() =>
+                    {
                         prims.push(Geometry::Patch(face, nurbs));
                     }
                     _ => meshed.push(&face.id),
@@ -1525,6 +1530,11 @@ impl<'ir> Writer<'ir> {
         let reversed = nurbs.normal_reversed() != (face.sense == Sense::Reversed);
         if reversed {
             self.out.line("uniform token orientation = \"leftHanded\"");
+        }
+        if !face.loops.is_empty() && !self.whole_domain(face, nurbs) {
+            if let Some(loops) = self.trim_loops(face) {
+                self.trim_attributes(&loops);
+            }
         }
         self.color_primvars(Some(body));
         self.out.close();

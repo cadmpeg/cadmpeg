@@ -38,6 +38,8 @@ fn code_strings_are_pinned() {
             "curves.rejected",
             "nurbs.patch-rejected",
             "nurbs.trim-not-transferred",
+            "nurbs.trim-region-assumed",
+            "nurbs.boundary-not-transferred",
             "nurbs.range-not-transferred",
             "appearance.display-color-not-transferred",
             "appearance.material-not-transferred",
