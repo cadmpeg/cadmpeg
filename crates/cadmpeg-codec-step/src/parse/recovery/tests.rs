@@ -270,6 +270,38 @@ fn a_closed_shell_that_loses_a_face_keeps_the_rest_and_the_loss_names_both() {
 }
 
 #[test]
+fn a_face_that_loses_a_bound_and_a_solid_that_loses_a_void_are_dropped() {
+    let source = exchange(
+        "#9=ITEM();#20=ITEM();#21=ITEM(%,3);\
+         #30=ADVANCED_FACE('',(#20,#21),#9,.T.);#31=FACE('',(#20,#21));\
+         #32=FACE_SURFACE('',(#20,#21),#9,.T.);#33=SUBFACE('',(#20,#21),#9);\
+         #34=(FACE((#20,#21))REPRESENTATION_ITEM('')TOPOLOGICAL_REPRESENTATION_ITEM());\
+         #35=BREP_WITH_VOIDS('',#9,(#20,#21));\
+         #36=(BREP_WITH_VOIDS((#20,#21))MANIFOLD_SOLID_BREP(#9)REPRESENTATION_ITEM('')SOLID_MODEL());\
+         #40=CLOSED_SHELL('',(#30,#20));",
+    );
+    let (parsed, _) = with_service_context(source.as_bytes(), parse_inner).expect("bounded graph");
+    assert_eq!(
+        parsed.records().keys().copied().collect::<Vec<_>>(),
+        [9, 20, 40]
+    );
+    assert_eq!(
+        parsed.records()[&40].partials[0].parameters[1],
+        Value::List(vec![Value::Reference(20)])
+    );
+    let [statement] = parsed.given_up() else {
+        panic!("one given-up statement");
+    };
+    let mut dropped = statement.dropped.clone();
+    dropped.sort_unstable();
+    let offsets = (30..=36)
+        .map(|id| source.find(&format!("#{id}=")).expect("statement"))
+        .collect::<Vec<_>>();
+    assert_eq!(dropped, offsets);
+    assert_eq!(statement.lost, [(40, 30)]);
+}
+
+#[test]
 fn unordered_attribute_tables_are_sorted_for_lookup() {
     for table in [super::UNORDERED_SIMPLE, super::UNORDERED_PARTIAL] {
         assert!(table.windows(2).all(|pair| pair[0].0 < pair[1].0));
