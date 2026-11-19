@@ -397,7 +397,8 @@ the scope transform.
 
 **Question.** Which field states whether the distance of a symmetric distance
 `Extrude` is the travel on each side or the whole travel in a layout that
-stores no measurement word?
+stores no measurement word? Which reading applies when the indexed parameter
+and the fixed lane store the same distance?
 
 **Known.** `f3d.md` §3.1 "In the current reference-aware layout, a one-sided
 direction" gives the measurement word of the current reference-aware layout.
@@ -1936,17 +1937,19 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Need.** Make controlled saves of one Decal on one planar face and on one cylindrical face. Compare the target member records with the whole-body recipe form. Establish the grammar of the 90-byte identity record and of record `N + 4`, and how the face recipe resolves to faces.
 
-**Note.** The decoder projects the Decal with its image and a native face selection. It records `appearance.decal-target-unresolved`.
+**Note.** For a Decal with no decoded placement record, the decoder projects the Decal with its image and a native face selection and records `appearance.decal-target-unresolved`. DR-484 covers a Decal with a decoded placement record.
 
-### DR-484. Decal mapping modes other than `0x60`
+### DR-484. Decal placement record fields and the scope code
 
-**Question.** Which image mapping does each Decal mapping-mode byte other than `0x60` select?
+**Question.** What do the Decal scope code, the three bytes after `V`, and the unnamed placement-record fields select? Does the second of the three bytes, or the direction of `N` against `U x V`, state a mirrored image? Which placement records store adjacent trailing references or five zero bytes before `N`? Which direction of `V` is the top of the image? What is the placement-record layout of a typed Decal?
 
-**Known.** `f3d.md` §3.1 "A `Decal` scope is a presentation timeline object" places the u8 mapping mode between the image-asset reference and the target-group reference and defines mode `0x60`. Decal scopes also store the modes `0x00`, `0x01`, `0x7D`, and `0xE2`. A larger indexed record with the image-asset record index precedes the image-asset record. It stores f32 coordinate pairs and u32 index runs.
+**Known.** `f3d.md` §3.1 "The image-asset record index also names a Decal placement record" gives the placement record. The scope code between the image-asset reference and the target-group reference stays `0x01` while the decal moves, rotates, flips, changes scale, and changes from a planar face to a cylindrical face. Decal scopes also store the codes `0x00`, `0x60`, `0x7D`, and `0xE2`. Reversing the decal x axis negates `U` and leaves the three bytes after `V` at `01 00 00`. The decoder keeps the three bytes in the native `flag_bytes` field. `N` has the direction of `U x V` on the default, moved, scaled, and cylindrical placements and the opposite direction when the decal x axis is reversed. The decoder keeps a placement record whose `N` is at an angle to `U x V` and reports `appearance.decal-placement-normal-assumed`. The two f64 values after the first trailing reference are the in-plane coordinates of `O` on a planar face and `(0.25, 0)` on a cylindrical face; the f32 value is `1.0` at opacity `1.0`. The decoder also reads a placement record whose trailing references are adjacent or that stores five zero bytes before `N`, at the one position that closes the record, and reports `appearance.decal-placement-layout-assumed`. The decal y axis has the direction of `V`. The decoder keeps the frame of a decoded placement record in the native `placement` field, names the image asset, the target group, and the resolved target faces in the feature source properties, leaves the feature definition native, and records `appearance.decal-placement-native`. A Decal with no decoded placement record takes the fit-to-faces mapping with `appearance.decal-mapping-assumed`; every typed Decal is in that group.
 
-**Need.** Make controlled saves of one Decal that change one placement control at a time: scale, rotation, translation, each flip, and face chaining. Compare the mapping-mode byte and the larger same-index record across the saves.
+**Need.** Controlled saves of one Decal with the dialog flip controls, an opacity other than `1.0`, and face chaining, and one save from a file generation that writes typed references. Compare the scope code, the three bytes after `V`, the unnamed fields, the zero runs around the trailing references, and the rendered image orientation across the saves.
 
-**Note.** The decoder projects the fit-to-faces mapping for every mode. It records `appearance.decal-mapping-assumed` for a mode other than `0x60` and keeps the byte in the native `mapping_mode` field.
+**Conflict.** None.
+
+**Note.** The neutral placement frame needs the pixel size of the image and a neutral Decal placement field.
 
 ### DR-256. Ordinal prefix of a leading-flag local component occurrence
 
@@ -3056,11 +3059,11 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which source image and target does a Decal scope select when its image definition is absent or has an unparsed frame?
 
-**Known.** The Decal scope identifies a presentation operation. Its prefix stores the image-asset reference, mapping byte, and target-group reference. The referenced image definition supplies the image basename.
+**Known.** The Decal scope identifies a presentation operation. Its prefix stores the image-asset reference, scope code, and target-group reference. The referenced image definition supplies the image basename.
 
 **Need.** A save that preserves the selected image and target while its definition uses another framing form.
 
-**Note.** The decoder retains the scope identity as an external image source and records `appearance.decal-definition-unresolved`. It preserves parsed prefix values in source properties and uses the target-group reference to select faces. Missing target bindings produce `appearance.decal-target-unresolved`. An absent mapping byte or a byte other than `0x60` produces `appearance.decal-mapping-assumed`.
+**Note.** The decoder retains the scope identity as an external image source and records `appearance.decal-definition-unresolved`. It preserves parsed prefix values in source properties and uses the target-group reference to select faces. Missing target bindings produce `appearance.decal-target-unresolved`. The fit-to-faces mapping of such a Decal carries `appearance.decal-mapping-assumed`.
 
 ### DR-476. Controls of the wider SurfaceDeleteFace prologue
 
