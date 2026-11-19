@@ -1309,10 +1309,7 @@ fn a_sketch_and_an_extrude_left_unresolved_are_reported() {
         .report()
         .losses
         .iter()
-        .filter(|loss| {
-            loss.code.namespace() == "sldprt"
-                && loss.code.local_code() == "design.feature-unresolved"
-        })
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::DesignFeatureUnresolved.kind())
         .collect::<Vec<_>>();
     let [note] = notes.as_slice() else {
         panic!("one note: {:#?}", result.report().losses);
@@ -1442,7 +1439,10 @@ fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
     depends(&mut model.features, "Sketch1", "Odd");
     let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
     let note = super::order::regeneration_order(&mut timeline, &model).unwrap();
-    assert_eq!(note.code.local_code(), "design.folder-dropped");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::DesignFolderDropped.kind()
+    );
     assert!(note.message.contains("Group"), "{}", note.message);
     assert_eq!(
         names(&timeline),

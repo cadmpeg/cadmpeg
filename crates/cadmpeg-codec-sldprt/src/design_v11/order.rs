@@ -91,8 +91,8 @@ fn order(timeline: &Timeline, model: &Model) -> Option<Vec<usize>> {
         }
     }
     let count = timeline.features.len();
-    let mut outgoing = vec![Vec::new(); count];
-    let mut indegree = vec![0usize; count];
+    let mut outgoing = vec![Vec::new(); timeline.features.len()];
+    let mut indegree = vec![0usize; timeline.features.len()];
     for &(source, consumer) in &edges {
         outgoing[source].push(consumer);
         indegree[consumer] += 1;
