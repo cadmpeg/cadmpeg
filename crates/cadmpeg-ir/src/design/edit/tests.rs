@@ -553,6 +553,36 @@ fn stateless_features_follow_their_configuration() {
 }
 
 #[test]
+fn an_unresolved_operation_is_stateless_by_its_family() {
+    let mut document = timeline();
+    let record = document
+        .design
+        .features
+        .iter()
+        .position(|record| record.id == feature(3))
+        .unwrap();
+    for (family, stateless) in [
+        (OperationFamily::Sketch, true),
+        (OperationFamily::SpatialSketch, true),
+        (OperationFamily::Spreadsheet, true),
+        (OperationFamily::Datum, true),
+        (OperationFamily::TemplateInstance, true),
+        (OperationFamily::Decal, true),
+        (OperationFamily::Extrude, false),
+        (OperationFamily::Pattern, false),
+        (OperationFamily::Mesh, false),
+    ] {
+        document.design.features[record].definition.operation =
+            FeatureOperation::Unresolved { family };
+        assert_eq!(
+            document.is_stateless(&feature(3), None),
+            Ok(stateless),
+            "{family:?}"
+        );
+    }
+}
+
+#[test]
 fn set_dimension_refuses_a_driven_parameter() {
     let mut document = timeline();
     let refused = document.edit().unwrap().set_dimension(

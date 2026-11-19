@@ -8,7 +8,7 @@ use std::fmt::Debug;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
-use crate::design::container::Container;
+use crate::design::container::{Container, OrderedKind};
 use crate::design::evaluation::{CurrentState, EvaluationStatus};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use crate::design::names::{
@@ -455,9 +455,10 @@ fn a_principal_entity_a_datum_restates_is_picked_through_the_datum() {
     );
 }
 
-/// The planes in a Fusion scope `part` that places component `bracket`,
-/// with plane `b` a feature of `bracket` picking the timeline's origin.
-fn bracket_plane_on_the_timeline_origin() -> CadIr {
+/// The planes in a body that carries its own origin, of scope `part` that
+/// places component `bracket`, with plane `b` a feature of `bracket` picking
+/// the body's origin.
+fn bracket_plane_on_the_body_origin() -> CadIr {
     use crate::products::{Occurrence, ProductDefinition, Storage};
     let mut features = planes();
     features[1] = feature(
@@ -476,6 +477,10 @@ fn bracket_plane_on_the_timeline_origin() -> CadIr {
     );
     features[1].component = Some(id("product_definition", "bracket"));
     let mut ir = timeline(features);
+    let Container::Ordered { kind, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    *kind = OrderedKind::Body;
     let occurrence = Occurrence::new(
         id("occurrence", "bracket"),
         id("product_definition", "bracket"),
@@ -493,9 +498,9 @@ fn bracket_plane_on_the_timeline_origin() -> CadIr {
 
 #[test]
 fn a_principal_container_is_of_the_scope_that_spans_the_picks_definition() {
-    assert_clean(&bracket_plane_on_the_timeline_origin());
+    assert_clean(&bracket_plane_on_the_body_origin());
 
-    let mut ir = bracket_plane_on_the_timeline_origin();
+    let mut ir = bracket_plane_on_the_body_origin();
     ir.model.product_definitions[1].occurrences.clear();
     ir.model.occurrences.clear();
     assert_finding(
@@ -864,4 +869,279 @@ fn the_walk_reaches_a_selection_inside_an_operation() {
     ));
     drop(into);
     ctx.finish_session().unwrap();
+}
+
+/// Whether validation reports a design finding of `severity` on `entity`.
+fn reports(ir: &CadIr, severity: Severity, entity: &str) -> bool {
+    findings(ir).iter().any(|finding| {
+        finding.check == Check::Design
+            && finding.severity == severity
+            && finding.entity.as_deref() == Some(entity)
+    })
+}
+
+fn entity_pick(name: &TopoName) -> Value {
+    json!({"target": {"kind": "entity", "value": name}})
+}
+
+/// Plane `f` coincident with the face that `pick` picks, anchored `Input`.
+fn plane_on(pick: Value) -> Feature {
+    feature(
+        "f",
+        plane_datum(construction(vec![input(
+            "coincident",
+            Some(named(input_anchor(), vec![pick])),
+            None,
+        )])),
+    )
+}
+
+/// The unit cube as the current state of a timeline of extrude `x`, the
+/// features `between`, and plane `f` on the face `pick` picks; the cube's
+/// first face is named by `x`.
+fn plane_after(between: Vec<Feature>, pick: Value) -> CadIr {
+    let mut features = vec![feature(
+        "x",
+        json!({"kind": "unresolved", "value": {"family": "extrude"}}),
+    )];
+    features.extend(between);
+    features.push(plane_on(pick));
+    let mut ir = crate::examples::unit_cube().unwrap();
+    ir.design = timeline(features).design;
+    ir.design.scopes[0].current.push(CurrentState {
+        at: from(
+            json!({"kind": "after", "value": {"kind": "feature", "value": key("feature", "f")}}),
+        ),
+        bodies: ir
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect(),
+        poses: BTreeMap::new(),
+        status: EvaluationStatus::Current,
+        native_ref: None,
+    });
+    let face = EntityRef::Face(ir.geometry.faces[0].id.clone());
+    ir.design.names = NameTable::from(BTreeMap::from([(
+        face,
+        NameEntry {
+            name: Some(generated("face", "x")),
+            native: None,
+        },
+    )]));
+    ir
+}
+
+#[test]
+fn an_input_pick_after_a_stateless_feature_resolves_in_the_state_before_it() {
+    let datum = planes().remove(0);
+    let f = key("feature", "f");
+    assert_clean(&plane_after(
+        vec![datum.clone()],
+        entity_pick(&generated("face", "x")),
+    ));
+    let ir = plane_after(vec![datum], entity_pick(&generated("face", "a")));
+    assert!(reports(&ir, Severity::Warning, &f), "{:#?}", findings(&ir));
+}
+
+/// `plane_after` with no feature between and `f`'s pick resolved to the
+/// cube's first face, scope configurations `base` (active) and `other`, and
+/// an evaluation of `other` after `x` that holds nothing.
+fn plane_in_two_configurations() -> CadIr {
+    use crate::design::evaluation::StateBase;
+    use crate::design::refs::Evaluated;
+    use crate::validate::design::fixture;
+    let face = crate::examples::unit_cube().unwrap().geometry.faces[0]
+        .id
+        .clone();
+    let mut pick = entity_pick(&generated("face", "x"));
+    pick["resolved"] = json!([EntityRef::Face(face)]);
+    let mut ir = plane_after(Vec::new(), pick);
+    for name in ["base", "other"] {
+        let mut configuration = fixture::configuration(name, None);
+        configuration.scope = id("product_definition", "part");
+        ir.design.configurations.push(configuration);
+    }
+    ir.design.scopes[0].active_configuration = Some(id("configuration", "base"));
+    let mut evaluation = fixture::evaluation(
+        "other-after-x",
+        "other",
+        Evaluated::State(fixture::after("x")),
+        Some(fixture::stored(StateBase::Empty)),
+    );
+    evaluation.scope = id("product_definition", "part");
+    ir.design.evaluations.push(evaluation);
+    ir
+}
+
+#[test]
+fn a_pick_is_checked_in_each_configuration_in_which_its_feature_is_active() {
+    use crate::design::configuration::FeatureStateOverride;
+    let f = key("feature", "f");
+    let ir = plane_in_two_configurations();
+    assert!(reports(&ir, Severity::Error, &f), "{:#?}", findings(&ir));
+
+    let mut ir = plane_in_two_configurations();
+    ir.design.configurations[1].overrides.features.insert(
+        id("feature", "f"),
+        FeatureStateOverride {
+            suppressed: Some(true),
+            definition: None,
+        },
+    );
+    assert_clean(&ir);
+}
+
+/// The bracket fixture with plane `b` of the part picking the bracket's XY
+/// plane through `context`.
+fn bracket_plane_through(context: Value) -> CadIr {
+    let mut ir = bracket_plane_on_the_body_origin();
+    let b = feature(
+        "b",
+        plane_datum(construction(vec![input(
+            "coincident",
+            Some(named(
+                input_anchor(),
+                vec![json!({
+                    "target": {"kind": "principal", "value": {"entity": "xy_plane"}},
+                    "context": context
+                })],
+            )),
+            None,
+        )])),
+    );
+    let at = ir
+        .design
+        .features
+        .iter()
+        .position(|feature| feature.id == b.id)
+        .unwrap();
+    ir.design.features[at] = b;
+    ir
+}
+
+#[test]
+fn a_pick_context_configuration_follows_the_configuration_ref_rule() {
+    let b = key("feature", "b");
+    let nowhere = json!({"kind": "local", "value": key("configuration", "nowhere")});
+    let definition = |configuration: Option<&Value>| {
+        let mut value = json!({"definition": key("product_definition", "bracket")});
+        if let Some(configuration) = configuration {
+            value["configuration"] = configuration.clone();
+        }
+        json!({"kind": "definition", "value": value})
+    };
+    let path = |configuration: Option<&Value>| {
+        let mut step =
+            json!({"occurrence": {"kind": "occurrence", "value": key("occurrence", "bracket")}});
+        if let Some(configuration) = configuration {
+            step["configuration"] = configuration.clone();
+        }
+        json!({"kind": "occurrence", "value": [step]})
+    };
+    assert_clean(&bracket_plane_through(definition(None)));
+    assert_clean(&bracket_plane_through(path(None)));
+    for context in [definition(Some(&nowhere)), path(Some(&nowhere))] {
+        let ir = bracket_plane_through(context);
+        assert!(reports(&ir, Severity::Error, &b), "{:#?}", findings(&ir));
+    }
+}
+
+#[test]
+fn a_datum_of_a_component_restates_the_components_principal_entity() {
+    let on_bracket = |name: &str, relation: &str, value: Option<Value>| {
+        let mut plane = feature(
+            name,
+            plane_datum(construction(vec![input(
+                relation,
+                Some(named(input_anchor(), vec![principal("xy_plane")])),
+                value,
+            )])),
+        );
+        plane.component = Some(id("product_definition", "bracket"));
+        plane
+    };
+    let restating = on_bracket("c", "coincident", None);
+    let picking = on_bracket("d", "offset", Some(length(5.0)));
+    let mut ir = bracket_plane_on_the_body_origin();
+    ir.design.features.push(restating);
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.push(from(
+        json!({"kind": "feature", "value": key("feature", "c")}),
+    ));
+    ir.design
+        .features
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    assert_clean(&ir);
+
+    ir.design.features.push(picking);
+    let Container::Ordered { members, .. } = &mut ir.design.containers[0] else {
+        unreachable!()
+    };
+    members.push(from(
+        json!({"kind": "feature", "value": key("feature", "d")}),
+    ));
+    ir.design
+        .features
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    assert!(
+        reports(&ir, Severity::Error, &key("feature", "d")),
+        "{:#?}",
+        findings(&ir)
+    );
+}
+
+/// Planes `a` and `b`, with `b` offset from a rule selection of `terms`
+/// less `excluded`.
+fn rule_planes(terms: Vec<Value>, excluded: Vec<Value>) -> CadIr {
+    let mut features = planes();
+    features[1] = feature(
+        "b",
+        plane_datum(construction(vec![input(
+            "offset",
+            Some(
+                json!({"at": {"kind": "input"}, "picks": {"kind": "rule", "value": {"terms": terms, "excluded": excluded}}}),
+            ),
+            Some(length(10.0)),
+        )])),
+    );
+    timeline(features)
+}
+
+#[test]
+fn two_explicit_exclusions_with_equal_propagation_are_an_error() {
+    let explicit = |pick: Value| json!({"rule": {"kind": "explicit"}, "seeds": [pick]});
+    let term = explicit(datum_pick("a"));
+    let b = key("feature", "b");
+    assert_clean(&rule_planes(
+        vec![term.clone()],
+        vec![explicit(principal("yz_plane"))],
+    ));
+    let ir = rule_planes(
+        vec![term],
+        vec![
+            explicit(principal("yz_plane")),
+            explicit(principal("xz_plane")),
+        ],
+    );
+    assert!(reports(&ir, Severity::Error, &b), "{:#?}", findings(&ir));
+}
+
+#[test]
+fn a_native_rule_names_a_codec_of_lowercase_letters_and_digits() {
+    let native =
+        |text: &str| json!({"rule": {"kind": "native", "value": text}, "seeds": [datum_pick("a")]});
+    let b = key("feature", "b");
+    assert_clean(&rule_planes(vec![native("f3d:chain")], Vec::new()));
+    for text in ["F3D:chain", "f-3d:chain", "f3d :chain", "fcstd.v1:chain"] {
+        let ir = rule_planes(vec![native(text)], Vec::new());
+        assert!(
+            reports(&ir, Severity::Error, &b),
+            "{text}: {:#?}",
+            findings(&ir)
+        );
+    }
 }

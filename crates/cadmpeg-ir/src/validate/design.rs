@@ -56,10 +56,16 @@ use index::DesignIndex;
 use records::MemberKey;
 use walk::{Collect, ConstructionView, SelectionView, Walk};
 
-/// Whether native text has the form `codec:name`.
+/// Whether native text has the form `codec:name`, where the codec id is
+/// lowercase ASCII letters and digits (§2.2).
 fn native_text(text: &str) -> bool {
-    text.split_once(':')
-        .is_some_and(|(codec, name)| !codec.is_empty() && !name.is_empty())
+    text.split_once(':').is_some_and(|(codec, name)| {
+        !codec.is_empty()
+            && codec
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+            && !name.is_empty()
+    })
 }
 
 /// Checks that a `Topology` is closed over its own references: every

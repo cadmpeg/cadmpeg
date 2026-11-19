@@ -232,7 +232,7 @@ fn check_scope(index: &DesignRecords<'_>, scope: &DesignScope, findings: &mut Ve
 
 /// A `ConfigurationRef::Local` names a configuration of the prototype's
 /// scope; `Named` occurs only where that scope is absent or lacks the name.
-fn check_configuration_ref(
+pub(super) fn check_configuration_ref(
     index: &DesignRecords<'_>,
     configuration: &ConfigurationRef,
     prototype: Option<&str>,
@@ -683,6 +683,20 @@ fn check_occurrence_override(
     let mut paths = BTreeSet::new();
     for nested in &value.nested {
         check_path_steps(index, &nested.path, holder, "nested override", findings);
+        if nested
+            .path
+            .0
+            .iter()
+            .any(|step| step.configuration.is_some())
+        {
+            super::error(
+                findings,
+                holder,
+                format_args!(
+                    "override of {occurrence} has a nested path that states a step configuration"
+                ),
+            );
+        }
         if !paths.insert(&nested.path) {
             super::error(
                 findings,

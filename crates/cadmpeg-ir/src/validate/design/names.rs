@@ -453,10 +453,10 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
                 }));
             }
             PatternLayout::Table(table) => coordinates.push(Coordinate::Row(table)),
-            PatternLayout::Mirror { .. } => coordinates.push(Coordinate::between(1, 1)),
+            PatternLayout::Mirror { .. } => coordinates.push(Coordinate::between(0, 1)),
             PatternLayout::Scale { count, .. } => {
                 let last = literal(count).map(|count| i64::from(count) - 1);
-                coordinates.push(Coordinate::Range(Some(1), last));
+                coordinates.push(Coordinate::Range(Some(0), last));
             }
             PatternLayout::Composite(stages) => stack.extend(stages.iter().rev()),
             PatternLayout::Follow(_) | PatternLayout::Chain(_) | PatternLayout::Native(_) => {
@@ -560,3 +560,6 @@ fn check_hole_role(
         );
     }
 }
+
+#[cfg(test)]
+mod tests;
