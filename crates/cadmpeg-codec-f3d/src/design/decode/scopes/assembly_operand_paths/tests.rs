@@ -561,6 +561,7 @@ fn as_built_reads_one_typed_path_before_a_wrapper_with_an_index_gap() {
     let second_key = "66666666-6666-6666-6666-666666666666";
     let mut key_bytes = Vec::new();
     push_guid(&mut key_bytes, second_key);
+    let second_key_end = first_key_end + key_bytes.len();
     bytes.splice(first_key_end..first_key_end, key_bytes);
     bytes[count..count + 4].copy_from_slice(&2_u32.to_le_bytes());
     let wrapper = bytes.len();
@@ -589,7 +590,7 @@ fn as_built_reads_one_typed_path_before_a_wrapper_with_an_index_gap() {
     assert!(path.two_keys_in_one_typed_record());
 
     let mut one_key = bytes.clone();
-    drop(one_key.drain(first_key_end..first_key_end + key_bytes.len()));
+    drop(one_key.drain(first_key_end..second_key_end));
     one_key[count..count + 4].copy_from_slice(&1_u32.to_le_bytes());
     assert!(read(&one_key, &types).is_none());
 
