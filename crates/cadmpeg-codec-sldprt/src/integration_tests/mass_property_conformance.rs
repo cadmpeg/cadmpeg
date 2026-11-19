@@ -28,7 +28,7 @@ fn specimen(name: &str) -> DecodeResult {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let findings = cadmpeg_measure::declared_findings(&ctx, ir, MeasureOptions::default())
         .expect("measure declarations");
     ctx.finish_session().expect("measurement session");

@@ -52,7 +52,7 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             .unwrap()
             .is_ok());
         assert!(<F3dCodec as CodecBackend>::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             decoded.ir(),
             None,
         )
@@ -321,7 +321,7 @@ fn each_member_part_links_to_its_own_member_definition() {
         .unrepresented()
         .contains(&cadmpeg_core::decode::ArenaClass::Model));
     assert!(<F3dCodec as CodecBackend>::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
         None,
     )

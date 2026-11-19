@@ -271,7 +271,7 @@ fn inherit_refuses_a_schema_two_source_with_no_usable_baseline() {
     ir.native
         .namespace_mut("fcstd")
         .set_arena::<DocumentFacts>(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "document",
             &[],
         )

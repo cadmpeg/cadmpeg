@@ -696,7 +696,7 @@ fn normalized_document(
     ir: &cadmpeg_ir::CadIr,
     sections: &BTreeMap<u64, String>,
 ) -> serde_json::Value {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let original_geometry =
         serde_json::to_value(&ir.geometry).expect("serialize original geometry");
     let original_model = serde_json::to_value(&ir.model).expect("serialize original model");

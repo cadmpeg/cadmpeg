@@ -708,7 +708,7 @@ mod idless_history_binding_tests {
         };
 
         enrich_history_reference_planes(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut histories,
             &[lane],
         )

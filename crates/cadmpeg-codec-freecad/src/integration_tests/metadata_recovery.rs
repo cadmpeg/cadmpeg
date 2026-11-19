@@ -108,7 +108,7 @@ fn unreadable_optional_payload_retains_stored_bytes_and_checked_geometry() {
         .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
         .expect("independent document");
     assert!(crate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .expect("native validation")
@@ -213,7 +213,7 @@ fn unrelated_missing_attachments_recover_but_shape_sidecars_remain_required() {
                     .note(String::new())
                     .code));
             assert!(crate::validate_native(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 decoded.ir()
             )
             .expect("validation")
@@ -352,7 +352,7 @@ fn source_only_properties_repack_without_inventing_values_or_attachments() {
         assert!(properties[0].links().is_empty());
         assert!(properties[0].side_entries().is_empty());
         assert!(crate::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             roundtrip.ir()
         )
         .unwrap()

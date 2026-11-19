@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 const EPS_CURVE_INVERSE_WITNESS: f64 = 1.0e-12;
 
@@ -564,7 +564,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
         Some(point)
     );
     let bound = nurbs_surface_parameter_segment_chord_bound(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
         [point, point],
@@ -592,7 +592,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
     let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
     for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
         let bound = nurbs_surface_parameter_segment_chord_bound(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
             [pole, pole],
@@ -632,7 +632,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
         .get()
     });
     let bound = nurbs_surface_parameter_segment_chord_bound(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         parameters,
         endpoints,
@@ -736,7 +736,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             CurveGeometry::Solved(geometry.clone()),
         ));
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &crate::index::ModelIndex::build(&ir),
             &id,
             point.get(),
@@ -829,7 +829,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             .curves
             .push(bare_curve(id.clone(), CurveGeometry::Solved(geometry)));
         let inverse = crate::eval::model_curve_parameter_near_point_in_index(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &crate::index::ModelIndex::build(&ir),
             &id,
             point,
@@ -859,7 +859,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     let index = crate::index::ModelIndex::build(&ir);
     let point = Point3::new(0.5, 0.005, 0.0);
     assert!(super::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &index,
         &id,
         point,
@@ -868,7 +868,7 @@ fn indexed_curve_inverse_uses_the_caller_tolerance() {
     .expect("find the model curve parameter near the point")
     .is_none());
     let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &index,
         &id,
         point,
@@ -916,7 +916,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         CurveGeometry::Solved(geometry.clone()),
     ));
     let inverse = crate::eval::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::build(&ir),
         &id,
         point.get(),
@@ -940,7 +940,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
         .expect("placed curve"),
     ));
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::build(&ir),
         &id,
         Point3::new(0.0, 0.0, 0.0),
@@ -964,7 +964,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     let seed = 123.5;
     assert_eq!(
         crate::eval::model_curve_parameter_near_point_in_index(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &crate::index::ModelIndex::build(&ir),
             &id,
             point,
@@ -975,7 +975,7 @@ fn degenerate_curve_inverse_preserves_the_selected_parameter() {
         Some(seed)
     );
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::build(&ir),
         &id,
         Point3::new(2.0, 3.0, 5.0),
@@ -1872,7 +1872,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     let point = Point3::new(0.5, 0.0, 0.0);
     assert_eq!(
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &curve,
             point,
             EPS_CURVE_INVERSE_WITNESS,
@@ -1884,7 +1884,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     );
     assert_eq!(
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &curve,
             point,
             EPS_CURVE_INVERSE_WITNESS,
@@ -1896,7 +1896,7 @@ fn nurbs_curve_inverse_uses_the_seed_to_select_an_ambiguous_witness() {
     );
     assert_eq!(
         nurbs_curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &curve,
             Point3::new(0.5, 1.0, 0.0),
             EPS_CURVE_INVERSE_WITNESS,

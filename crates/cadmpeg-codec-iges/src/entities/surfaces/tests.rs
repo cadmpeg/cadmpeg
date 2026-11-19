@@ -552,7 +552,7 @@ fn ruled_carrier_of_long_interleaved_rails_partitions_by_search() {
     let first = ruled_rail(1, &first_boundaries, 0.0);
     let second = ruled_rail(2, &second_boundaries, 1.0);
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("partition-aligned ruled carrier");
@@ -630,7 +630,7 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         false,
     )
     .expect("valid second rail");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("partition-aligned rational ruled carrier");
@@ -1319,7 +1319,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
         false,
     )
     .expect("valid second rail");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("relative-parameter rational ruled carrier");

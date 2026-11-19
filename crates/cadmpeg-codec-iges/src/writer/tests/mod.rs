@@ -694,7 +694,7 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
     ];
     for (geometry, expected_type) in cases {
         let entities = surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             geometry.solved().expect("solved carrier"),
             0,
             IgesVersion::V5_3,
@@ -721,7 +721,7 @@ fn cone_semi_angle_outside_iges_interval_is_not_implemented() {
     .expect("the IR admits a finite signed cone angle");
     assert!(matches!(
         surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &SolvedSurfaceGeometry::Cone(cone),
             0,
             IgesVersion::V5_3
@@ -741,7 +741,7 @@ fn negative_sphere_radius_is_not_implemented() {
     .expect("the IR admits a negative nonzero sphere radius");
     assert!(matches!(
         surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &SolvedSurfaceGeometry::Sphere(sphere),
             0,
             IgesVersion::V5_3
@@ -763,7 +763,7 @@ fn torus_radii_outside_iges_interval_are_not_implemented() {
         .expect("the IR admits any finite nonzero tube radius");
         assert!(matches!(
             surface_entities(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &SolvedSurfaceGeometry::Torus(torus),
                 0,
                 IgesVersion::V5_3
@@ -1220,7 +1220,7 @@ fn negative_nurbs_weights_are_not_implemented() {
     .expect("the IR admits finite nonzero signed NURBS weights");
     assert!(matches!(
         surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &SolvedSurfaceGeometry::Nurbs(surface),
             0,
             IgesVersion::V5_3
@@ -1248,7 +1248,7 @@ fn empty_nurbs_surface_domain_is_not_implemented() {
     .expect("the IR admits a nondecreasing knot vector with an empty active domain");
     assert!(matches!(
         surface_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &SolvedSurfaceGeometry::Nurbs(surface),
             0,
             IgesVersion::V5_3
