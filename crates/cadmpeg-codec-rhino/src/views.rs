@@ -1018,6 +1018,7 @@ fn scan_viewport_userdata(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
+    child_cap: usize,
     losses: &mut Vec<LossNote>,
 ) -> Result<ViewportUserdataScan, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
@@ -1033,7 +1034,7 @@ fn scan_viewport_userdata(
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
         // The child cap drops this viewport userdata; the caller reports it.
-        if children.len() >= VIEWPORT_USERDATA_CHILD_CAP {
+        if children.len() >= child_cap {
             return Err(FramingError::InvalidLength {
                 offset: start,
                 value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),
@@ -1266,7 +1267,13 @@ fn parse_view(
                         ),
                     );
                 } else {
-                    match scan_viewport_userdata(data, child.body().clone(), archive, losses) {
+                    match scan_viewport_userdata(
+                        data,
+                        child.body().clone(),
+                        archive,
+                        VIEWPORT_USERDATA_CHILD_CAP,
+                        losses,
+                    ) {
                         Ok(scan) => {
                             if let Some(warning) =
                                 view_child_checksum_warning_excluding(data, &child, &scan.children)?
@@ -1716,8 +1723,8 @@ mod tests {
 
     use super::{
         legacy_clipping_depth, parse_attributes, parse_cplane, parse_list, parse_trace_image,
-        parse_viewport, parse_wallpaper, parse_window_position, ViewListKind, Viewport,
-        NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
+        parse_viewport, parse_wallpaper, parse_window_position, scan_viewport_userdata,
+        ViewListKind, Viewport, NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::{ArchiveVersion, FramingError};
     use crate::container::Record;
@@ -1958,13 +1965,33 @@ mod tests {
     }
 
     #[test]
-    fn viewport_userdata_children_ceiling_drops_the_userdata_without_fusing() {
+    fn viewport_userdata_children_ceiling_is_a_framing_error() {
         let archive = ArchiveVersion::V8;
-        let cap = super::VIEWPORT_USERDATA_CHILD_CAP;
+        let cap = 3;
         let child = short_chunk(archive, crate::chunks::TCODE_SHORT | 7, 0);
         let class_end = short_chunk(archive, super::TCODE_CLASS_END, 0);
         let mut userdata_body = child.repeat(cap);
         userdata_body.extend(&class_end);
+        let mut losses = Vec::new();
+        let scan = scan_viewport_userdata(
+            &userdata_body,
+            0..userdata_body.len(),
+            archive,
+            cap,
+            &mut losses,
+        );
+        assert!(matches!(
+            scan,
+            Err(FramingError::InvalidLength { offset, value })
+                if offset == userdata_body.len() - class_end.len()
+                    && value == i128::try_from(cap).expect("fixture count fits")
+        ));
+    }
+
+    #[test]
+    fn unframed_viewport_userdata_drops_the_userdata_without_fusing() {
+        let archive = ArchiveVersion::V8;
+        let userdata_body = short_chunk(archive, crate::chunks::TCODE_SHORT | 7, 0);
 
         let viewport_userdata = long_chunk(archive, super::VIEW_VIEWPORT_USERDATA, &userdata_body);
         let mut view_body = viewport_userdata;
