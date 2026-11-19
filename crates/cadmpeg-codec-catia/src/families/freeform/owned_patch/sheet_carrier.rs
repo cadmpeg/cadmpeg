@@ -79,7 +79,7 @@ impl Carrier<'_> {
         })
     }
 
-    pub(super) fn extended_rolling_ball(jet: A5FreeformCurve) -> Option<Self> {
+    pub(super) fn extended_rolling_ball(jet: &A5FreeformCurve) -> Option<Self> {
         let upper = jet.extended_v_end?;
         let first = &jet.sites.first()?.site;
         let radius = first.limit1.distance(first.center.get());
@@ -492,10 +492,9 @@ impl SpatialPlane {
             (0x84, 0x00 | 0x10 | 0x20 | 0x40, None)
             | (0x94, 0x10 | 0x60 | 0x68, None)
             | (0xa4, 0x00 | 0x50 | 0x58, None)
-            | (0xb4, 0x50 | 0x58, None)
+            | (0xb4 | 0xe4, 0x50 | 0x58, None)
             | (0xc4, 0x30 | 0x38 | 0x3c, None)
-            | (0xd4, 0x20 | 0x68 | 0xe8, None)
-            | (0xe4, 0x50 | 0x58, None) => (
+            | (0xd4, 0x20 | 0x68 | 0xe8, None) => (
                 direction(mask)?,
                 direction((layout & 0x70) | ((mask & 0x80) >> 4))?,
             ),
