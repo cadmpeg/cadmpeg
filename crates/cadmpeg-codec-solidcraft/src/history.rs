@@ -247,6 +247,8 @@ const TYPED: &[&str] = &[
     "hole",
     "split_body",
     "split_face",
+    "draft",
+    "thread",
 ];
 
 impl Walk<'_, '_> {

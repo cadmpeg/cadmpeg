@@ -20,6 +20,9 @@ use super::{boolean, id, profile, SketchUse};
 /// How far from a full turn a circular pattern's total angle may round
 /// and still spread its copies evenly around.
 const FULL_TURN_ROUNDING: f64 = 1.0e-9;
+/// How far a draft pull direction may stray from the neutral plane normal
+/// and still count as its pull frame.
+const DRAFT_PULL_PARALLEL: f64 = 1.0e-9;
 /// How small the squared sine between a coil axis and +x may be before the
 /// axis counts as along x, whose start direction is then perpendicular.
 const COIL_AXIS_ALONG_X: f64 = 1.0e-12;
@@ -122,6 +125,8 @@ impl Inputs<'_> {
                 },
             }})),
             "loft" => self.loft(record, dependencies),
+            "draft" => self.draft(record),
+            "thread" => Self::thread(record),
             "construction_plane" => {
                 let frame = sketch::plane(record.get("plane")?, self.scope, self.planes, 0)?;
                 Some(json!({"kind": "datum_plane", "value": {"frame": {
@@ -200,6 +205,72 @@ impl Inputs<'_> {
         let targets = picked(record, "faces", "face_names")?;
         let tool = self.split_plane(record.get("plane")?, dependencies)?;
         Some(json!({"kind": "split_face", "value": {"targets": targets, "tool": tool}}))
+    }
+
+    /// A taper of faces about an XY, XZ or YZ origin plane. The plane's
+    /// frame becomes the pull frame when the pull direction lies along its
+    /// normal. A neutral plane object has no neutral form here and stays
+    /// native, as does a draft whose angle does not evaluate.
+    fn draft(&self, record: &Value) -> Option<Value> {
+        let faces = picked(record, "faces", "face_names")?;
+        let name = record.get("neutral")?.as_str()?.to_ascii_uppercase();
+        if !matches!(name.as_str(), "XY" | "XZ" | "YZ") {
+            return None;
+        }
+        let frame = sketch::origin_plane(&name)?;
+        let normal = unit(frame.normal())?;
+        let mut anchor = json!({
+            "kind": "neutral_plane",
+            "plane": {"kind": "native", "value": json!({"origin_plane": name}).to_string()},
+        });
+        match record.get("pull") {
+            None | Some(Value::Null) => {}
+            pull => {
+                let direction = unit(sketch::direction(pull)?)?;
+                let offset = sketch::cross(normal, direction);
+                let mut pull = json!({"direction": point_json(direction)});
+                if sketch::dot(offset, offset).sqrt() <= DRAFT_PULL_PARALLEL {
+                    pull["frame"] = json!({
+                        "origin": point_json(frame.origin),
+                        "normal": point_json(normal),
+                        "u_axis": point_json(unit(frame.x)?),
+                    });
+                }
+                anchor["pull"] = pull;
+            }
+        }
+        let mut draft = json!({"faces": faces, "anchor": anchor});
+        match record.get("angle") {
+            None | Some(Value::Null) => {}
+            Some(angle) => {
+                let angle = self.scope.eval_json(angle, Kind::Angle)?;
+                draft["angle"] = json!(cadmpeg_ir::scalar::SlopeAngle::new(angle)?.get());
+            }
+        }
+        Some(json!({"kind": "draft", "value": draft}))
+    }
+
+    /// A cosmetic thread on a cylindrical face. The standard is metric only
+    /// when the designation is an M size; the diameter, pitch, modeled
+    /// state and extent are not in the record and stay unset.
+    fn thread(record: &Value) -> Option<Value> {
+        let selection = json!({
+            "face": [record.get("face")?],
+            "face_names": record.get("face_names"),
+        });
+        let face = picked(&selection, "face", "face_names")?;
+        let mut value = json!({"face": face});
+        if let Some(designation) = record
+            .get("designation")
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+        {
+            if designation.starts_with('M') {
+                value["standard"] = json!("metric");
+            }
+            value["designation"] = json!(designation);
+        }
+        Some(json!({"kind": "cosmetic_thread", "value": value}))
     }
 
     fn fillet(&self, record: &Value) -> Option<Value> {

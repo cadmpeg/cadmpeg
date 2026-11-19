@@ -584,6 +584,81 @@ fn a_split_by_a_construction_plane_maps_to_the_neutral_split() {
 }
 
 #[test]
+fn a_draft_on_an_origin_plane_maps_to_the_neutral_draft() {
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Drafts",
+        "units": "mm",
+        "params": [],
+        "features": [
+            {"id": 1, "name": "Draft1", "suppressed": false, "type": "draft",
+             "faces": [[20.0, 10.0, 5.0]], "face_names": ["F1:front"],
+             "neutral": "XY", "pull": [0.0, 0.0, 1.0], "angle": "10 deg"},
+            {"id": 2, "name": "Draft2", "suppressed": false, "type": "draft",
+             "faces": [[20.0, 10.0, 5.0]], "face_names": ["F1:front"],
+             "neutral": {"type": "construction", "feature": 1}, "angle": "10 deg"}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let features = features(&bytes);
+    let feature = |name: &str| {
+        features
+            .iter()
+            .find(|feature| feature["name"] == name)
+            .unwrap()
+            .clone()
+    };
+    let draft = feature("Draft1");
+    assert_eq!(draft["definition"]["value"]["kind"], "draft");
+    let operation = &draft["definition"]["value"]["value"];
+    assert_eq!(operation["anchor"]["kind"], "neutral_plane");
+    assert_eq!(
+        operation["anchor"]["pull"]["direction"],
+        json!({"x": 0.0, "y": 0.0, "z": 1.0})
+    );
+    assert!((operation["angle"].as_f64().unwrap() - 10.0_f64.to_radians()).abs() < 1e-12);
+    assert_eq!(feature("Draft2")["definition"]["value"]["kind"], "native");
+}
+
+#[test]
+fn a_thread_maps_to_a_cosmetic_thread_with_its_designation() {
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Threads",
+        "units": "mm",
+        "params": [],
+        "features": [
+            {"id": 1, "name": "Thread1", "suppressed": false, "type": "thread",
+             "face": [20.0, 10.0, 5.0], "face_names": ["F1:bore"],
+             "designation": "M6", "continuous_flanks": true},
+            {"id": 2, "name": "Thread2", "suppressed": false, "type": "thread",
+             "face": [20.0, 10.0, 5.0], "face_names": ["F1:bore"],
+             "designation": "1/4-20 UNC"}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let features = features(&bytes);
+    let thread = |name: &str| {
+        features
+            .iter()
+            .find(|feature| feature["name"] == name)
+            .unwrap()["definition"]["value"]
+            .clone()
+    };
+    let metric = thread("Thread1");
+    assert_eq!(metric["kind"], "cosmetic_thread");
+    assert_eq!(metric["value"]["standard"], "metric");
+    assert_eq!(metric["value"]["designation"], "M6");
+    assert!(metric["value"].get("diameter").is_none());
+    assert!(metric["value"].get("pitch").is_none());
+    assert!(metric["value"].get("modeled").is_none());
+    let other = thread("Thread2");
+    assert_eq!(other["kind"], "cosmetic_thread");
+    assert!(other["value"].get("standard").is_none());
+    assert_eq!(other["value"]["designation"], "1/4-20 UNC");
+}
+
+#[test]
 fn components_occurrences_and_joints_form_the_product_structure() {
     let identity = json!([
         [1.0, 0.0, 0.0, 0.0],
