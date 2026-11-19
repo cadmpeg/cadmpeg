@@ -19,6 +19,7 @@ use cadmpeg_ir::features::{
     self as old, AngularTermination, ExtrudeExtent, FeatureOperation as LegacyOperation,
     LinearTermination, RevolveExtent,
 };
+use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::units::UnitVector3;
 
@@ -41,7 +42,13 @@ pub(super) fn boolean(op: old::BooleanOp) -> Option<Boolean> {
 
 pub(super) fn output(op: old::BooleanOp, solid: Option<bool>) -> SolidOutput {
     SolidOutput {
-        body: solid.map(|solid| if solid { BodyForm::Solid } else { BodyForm::Sheet }),
+        body: solid.map(|solid| {
+            if solid {
+                BodyForm::Solid
+            } else {
+                BodyForm::Sheet
+            }
+        }),
         boolean: boolean(op),
     }
 }
@@ -135,7 +142,7 @@ fn travel(
     };
     let frame = stated.frame(selections::profile_sketch(profile, stated)?)?;
     let travel = UnitVector3::normalized_nonzero((*vector).into())?;
-    let cosine = cadmpeg_ir::math::Vector3::from(travel).dot(frame.z_axis.into());
+    let cosine = Vector3::from(travel).dot(Vector3::from(frame.z_axis));
     if (cosine.abs() - 1.0).abs() > PARALLEL {
         return None;
     }
@@ -239,18 +246,20 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
             } => (Some(profile), Some(axis), None, *solid),
             _ => return None,
         },
-        old::RevolveConstruction::Resolved { .. } => return None,
+        _ => return None,
     };
     let section = profile.and_then(|profile| selections::planar_profile(profile, stated));
-    let axis = axis.filter(|axis| axis.reference.is_none()).and_then(|axis| {
-        Some(Construction::<kinds::Axis> {
-            resolved: Some(AxisValue {
-                origin: axis.origin,
-                direction: UnitVector3::normalized_nonzero(axis.direction.into())?,
-            }),
-            ..Construction::default()
-        })
-    });
+    let axis = axis
+        .filter(|axis| axis.reference.is_none())
+        .and_then(|axis| {
+            Some(Construction::<kinds::Axis> {
+                resolved: Some(AxisValue {
+                    origin: axis.origin,
+                    direction: UnitVector3::normalized_nonzero(axis.direction.into())?,
+                }),
+                ..Construction::default()
+            })
+        });
     let span = extent.and_then(revolve_span);
     let output = output(*op, solid);
     if section.is_none() && axis.is_none() && span.is_none() && unread(&output) {

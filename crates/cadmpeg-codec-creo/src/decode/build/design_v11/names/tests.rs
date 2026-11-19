@@ -16,18 +16,23 @@ fn scan() -> ContainerScan<'static> {
         next_surface: 0,
         offset: 0,
     };
-    scan.surfaces
-        .rows
-        .extend([surface(7, 10), surface(8, 99), surface(6, 10), surface(6, 11)]);
-    scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
-        id: 9,
-        type_byte: 8,
-        feature_id: 10,
-        directions: [1, 0xf6],
-        faces: [std::num::NonZeroU32::new(7), std::num::NonZeroU32::new(8)],
-        next_edges: [9, 9],
-        offset: 0,
-    });
+    scan.surfaces.rows.extend([
+        surface(7, 10),
+        surface(8, 99),
+        surface(6, 10),
+        surface(6, 11),
+    ]);
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 9,
+            type_byte: 8,
+            feature_id: 10,
+            directions: [1, 0xf6],
+            faces: [std::num::NonZeroU32::new(7), std::num::NonZeroU32::new(8)],
+            next_edges: [9, 9],
+            offset: 0,
+        });
     scan
 }
 
@@ -48,6 +53,7 @@ fn geometry() -> CadIr {
         .collect();
     ir.geometry.edges = vec![serde_json::from_value(serde_json::json!({
         "id": format!("{EDGE}9"),
+        "carrier": {},
     }))
     .expect("edge")];
     ir

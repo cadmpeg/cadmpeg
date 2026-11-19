@@ -31,7 +31,8 @@ fn sketch() -> SketchId {
 }
 
 fn unit(value: [f64; 3]) -> UnitVector3 {
-    UnitVector3::normalized(cadmpeg_ir::math::Vector3::from(value)).expect("unit")
+    UnitVector3::normalized(cadmpeg_ir::math::Vector3::new(value[0], value[1], value[2]))
+        .expect("unit")
 }
 
 /// A section frame whose normal is +z.
@@ -58,15 +59,17 @@ fn names() -> Names {
         offset: 0,
     };
     scan.surfaces.rows.extend([surface(7, 10), surface(8, 50)]);
-    scan.curves.topology_rows.push(crate::curve::CurveTopologyRow {
-        id: 9,
-        type_byte: 8,
-        feature_id: 10,
-        directions: [1, 0xf6],
-        faces: [std::num::NonZeroU32::new(7), std::num::NonZeroU32::new(8)],
-        next_edges: [9, 9],
-        offset: 0,
-    });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 9,
+            type_byte: 8,
+            feature_id: 10,
+            directions: [1, 0xf6],
+            faces: [std::num::NonZeroU32::new(7), std::num::NonZeroU32::new(8)],
+            next_edges: [9, 9],
+            offset: 0,
+        });
     let order = [feature(10), sketch_feature(), feature(50)];
     Names::new(&scan, order.iter())
 }
@@ -231,10 +234,12 @@ fn a_revolve_states_its_axis_and_angle() {
         json!({
             "construction": {
                 "kind": "resolved",
-                "profile": {"kind": "sketch", "value": "creo:model:sketch#40"},
-                "axis": {"origin": [0.0, 0.0, 0.0], "direction": [0.0, 1.0, 0.0]},
-                "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": 1.5}},
-                "solid": true,
+                "value": {
+                    "profile": {"kind": "sketch", "value": "creo:model:sketch#40"},
+                    "axis": {"origin": [0.0, 0.0, 0.0], "direction": [0.0, 1.0, 0.0]},
+                    "extent": {"kind": "one_sided", "termination": {"kind": "angle", "angle": 1.5}},
+                    "solid": true,
+                },
             },
             "op": "new_body",
         }),
@@ -243,7 +248,10 @@ fn a_revolve_states_its_axis_and_angle() {
         panic!("revolve");
     };
     assert_eq!(
-        revolve.axis.and_then(|axis| axis.resolved).map(|axis| axis.direction),
+        revolve
+            .axis
+            .and_then(|axis| axis.resolved)
+            .map(|axis| axis.direction),
         Some(unit([0.0, 1.0, 0.0]))
     );
     assert_eq!(
@@ -263,7 +271,7 @@ fn a_round_picks_its_edges_by_their_producing_feature() {
     let operation = legacy(
         "fillet",
         json!({"groups": [{
-            "edges": {"kind": "resolved", "edges": ["creo:visibgeom:edge#9"], "native": "creo:allfeatur:edgs_affected#50:9"},
+            "edges": {"kind": "resolved", "value": {"edges": ["creo:visibgeom:edge#9"], "native": "creo:allfeatur:edgs_affected#50:9"}},
             "radius": {"kind": "constant", "radius": 2.0},
         }]}),
     );
@@ -333,7 +341,7 @@ fn a_hole_starts_on_a_face_its_own_feature_makes_by_native_name() {
     let Some(FeatureOperation::Hole(hole)) = project(&operation) else {
         panic!("hole");
     };
-    let start = hole.start.expect("start face");
+    let start = hole.start.as_ref().expect("start face");
     let Picks::Named(picks) = &start.picks else {
         panic!("named start");
     };
@@ -352,10 +360,15 @@ fn a_hole_starts_on_a_face_its_own_feature_makes_by_native_name() {
 
 #[test]
 fn a_datum_plane_states_its_frame() {
-    let operation = legacy(
-        "datum_plane",
-        json!({"frame": {"origin": [0.0, 0.0, 5.0], "normal": [0.0, 0.0, 1.0], "u_axis": [1.0, 0.0, 0.0]}}),
-    );
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let operation = LegacyOperation::DatumPlane {
+        frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+            Point3::new(0.0, 0.0, 5.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("frame"),
+    };
     let Some(FeatureOperation::Datum(datum)) = project(&operation) else {
         panic!("datum");
     };

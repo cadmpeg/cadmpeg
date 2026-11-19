@@ -62,9 +62,14 @@ pub(super) fn planar_profile(
 }
 
 /// The sketch a section names, where it is stated.
-pub(super) fn profile_sketch<'a>(value: &'a ProfileRef, stated: &Stated<'_>) -> Option<&'a cadmpeg_ir::sketches::SketchId> {
+pub(super) fn profile_sketch<'a>(
+    value: &'a ProfileRef,
+    stated: &Stated<'_>,
+) -> Option<&'a cadmpeg_ir::sketches::SketchId> {
     match value {
-        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) if stated.sketches.contains_key(sketch) => {
+        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch))
+            if stated.sketches.contains_key(sketch) =>
+        {
             Some(sketch)
         }
         _ => None,

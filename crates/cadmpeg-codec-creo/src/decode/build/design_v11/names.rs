@@ -60,7 +60,12 @@ impl Names {
         order: impl IntoIterator<Item = &'a FeatureId>,
     ) -> Self {
         Self {
-            surfaces: unique(scan.surfaces.rows.iter().map(|row| (row.id, row.feature_id))),
+            surfaces: unique(
+                scan.surfaces
+                    .rows
+                    .iter()
+                    .map(|row| (row.id, row.feature_id)),
+            ),
             edges: unique(
                 scan.curves
                     .topology_rows
@@ -137,7 +142,7 @@ impl Names {
         ir: &CadIr,
     ) -> Result<NameTable, CodecError> {
         let mut entries = BTreeMap::new();
-        let numbered = |id: &str, prefix| crate::identity::numbered_identity(id, prefix);
+        let numbered = |id: &str, prefix: &str| crate::identity::numbered_identity(id, prefix);
         for face in &ir.geometry.faces {
             if let Some(id) = numbered(face.id.as_str(), FACE) {
                 ctx.charge_entities(1, "project Creo v11 name")?;

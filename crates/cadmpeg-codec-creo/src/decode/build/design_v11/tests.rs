@@ -236,5 +236,16 @@ fn fixture_decodes_state_a_scope_that_passes_the_design_checks() {
             .map(|finding| finding.message)
             .collect::<Vec<_>>();
         assert!(findings.is_empty(), "{}: {findings:?}", path.display());
+        for face in &ir.geometry.faces {
+            if crate::identity::numbered_identity(face.id.as_str(), names::FACE).is_some() {
+                let entity = cadmpeg_ir::design::refs::EntityRef::Face(face.id.clone());
+                assert!(
+                    ir.design.names.entries().contains_key(&entity),
+                    "{}: {} has no name entry",
+                    path.display(),
+                    face.id
+                );
+            }
+        }
     }
 }

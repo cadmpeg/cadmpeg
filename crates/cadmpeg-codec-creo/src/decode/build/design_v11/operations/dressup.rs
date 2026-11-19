@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::design::construction::{kinds, Construction};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
+use cadmpeg_ir::design::names::NameKind;
 use cadmpeg_ir::design::ops::dressup::{
     BlendControls, Bore, Chamfer, ChamferSet, ChamferSize, Fillet, FilletSection, FilletSet,
     FilletSize, Hole, HoleBottom, HoleHead, HolePositions, HoleShape,
@@ -19,7 +20,6 @@ use cadmpeg_ir::design::selection::{
 };
 use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec};
 use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HolePlacement, PartialPair};
-use cadmpeg_ir::design::names::NameKind;
 use cadmpeg_ir::features::{self as old, FeatureId, FeatureOperation as LegacyOperation};
 use cadmpeg_ir::scalar::Length;
 
@@ -160,8 +160,10 @@ fn fillet<'a>(
             return None;
         }
         let edges = edges(&group.edges, holder, stated);
-        let size = match group.radius {
-            RadiusSpec::Constant { radius } => Some(FilletSize::Radius(Dimension::Literal(radius))),
+        let size = match &group.radius {
+            RadiusSpec::Constant { radius } => {
+                Some(FilletSize::Radius(Dimension::Literal(*radius)))
+            }
             RadiusSpec::Unresolved { .. } => None,
             _ => return None,
         };
@@ -245,7 +247,11 @@ fn head(kind: &HoleKind) -> Option<HoleHead> {
 /// reads there. The drilling sense of a placement is the axis of the bore's
 /// carrier, which the decoder does not set against the start face, so the
 /// direction is unstated.
-fn hole(value: &LegacyOperation, holder: &FeatureId, stated: &Stated<'_>) -> Option<FeatureOperation> {
+fn hole(
+    value: &LegacyOperation,
+    holder: &FeatureId,
+    stated: &Stated<'_>,
+) -> Option<FeatureOperation> {
     let LegacyOperation::Hole {
         profile: None,
         profile_filter: None,
@@ -295,11 +301,11 @@ fn hole(value: &LegacyOperation, holder: &FeatureId, stated: &Stated<'_>) -> Opt
         (None, drill_point) => drill_point,
     };
     let extent = match extent {
-        Some(old::LinearTermination::Blind { length }) => Some(
-            cadmpeg_ir::design::ops::shared::Limit::Amount(Dimension::Literal(Length::new(
-                length.get(),
-            )?)),
-        ),
+        Some(old::LinearTermination::Blind { length }) => {
+            Some(cadmpeg_ir::design::ops::shared::Limit::Amount(
+                Dimension::Literal(Length::new(length.get())?),
+            ))
+        }
         Some(old::LinearTermination::ThroughAll {}) => {
             Some(cadmpeg_ir::design::ops::shared::Limit::ThroughAll)
         }
