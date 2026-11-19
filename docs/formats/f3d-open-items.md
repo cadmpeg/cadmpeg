@@ -397,7 +397,8 @@ the scope transform.
 
 **Question.** Which field states whether the distance of a symmetric distance
 `Extrude` is the travel on each side or the whole travel in a layout that
-stores no measurement word?
+stores no measurement word? Which reading applies when the indexed parameter
+and the fixed lane store the same distance?
 
 **Known.** `f3d.md` §3.1 "In the current reference-aware layout, a one-sided
 direction" gives the measurement word of the current reference-aware layout.
