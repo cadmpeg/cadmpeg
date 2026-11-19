@@ -178,7 +178,7 @@ pub(super) fn document() -> CadIr {
             Member::Feature(feature("fillet")),
         ],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     design

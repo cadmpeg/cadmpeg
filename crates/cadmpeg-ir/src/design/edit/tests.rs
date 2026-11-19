@@ -43,6 +43,8 @@ use crate::scalar::{FiniteReal, Length};
 use crate::topology::{Body, BodyKind, Region};
 use crate::CadIr;
 
+mod rollback;
+
 fn id<T>(kind: &str, key: u32) -> T
 where
     T: TryFrom<String>,
@@ -258,7 +260,7 @@ fn timeline() -> CadIr {
             first: 1,
             last: 2,
         }],
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     document.design.scopes.push(DesignScope {
@@ -602,7 +604,7 @@ fn an_editor_is_only_had_over_a_valid_document() {
     let Container::Ordered { rollback, .. } = &mut document.design.containers[0] else {
         panic!("ordered");
     };
-    *rollback = Rollback::Before(Member::Feature(feature(2)));
+    *rollback = Some(Rollback::Before(Member::Feature(feature(2))));
     match document.edit() {
         Err(EditError::Invalid(findings)) => assert!(errors_only(&findings), "{findings:?}"),
         other => panic!("a current state off the rollback is an Error: {other:?}"),
@@ -1212,7 +1214,7 @@ fn insertion_takes_one_member_and_what_it_owns() {
         kind: OrderedKind::Body,
         members: vec![Member::Feature(feature(4))],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     assert_eq!(document, before, "a refused insertion changes nothing");
@@ -1233,7 +1235,7 @@ fn rolled_back(document: &mut CadIr) {
     let Container::Ordered { rollback, .. } = &mut document.design.containers[0] else {
         panic!("ordered");
     };
-    *rollback = Rollback::Before(Member::Feature(feature(2)));
+    *rollback = Some(Rollback::Before(Member::Feature(feature(2))));
     document.design.scopes[0].current[0].at = after(1);
 }
 
@@ -1324,11 +1326,11 @@ fn removing_a_member_rebases_and_retargets() {
     let Container::Ordered {
         members,
         folders,
-        rollback,
+        rollback: Some(rollback),
         ..
     } = &document.design.containers[0]
     else {
-        panic!("ordered");
+        panic!("ordered with a stated rollback");
     };
     assert_eq!(
         members,
@@ -1796,7 +1798,7 @@ fn switching_exchanges_every_current_state_of_the_scope() {
         kind: OrderedKind::Body,
         members: vec![Member::Feature(feature(4))],
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: Some(Rollback::End),
         placement: None,
     });
     document.design.scopes[0].roots.push(id("container", 2));

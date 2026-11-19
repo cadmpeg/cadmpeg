@@ -184,8 +184,18 @@ impl History {
         false
     }
 
-    /// Whether the state at `at` depends on any feature of `features`.
+    /// Whether the state at `at` depends on any feature of `features`. The
+    /// state at `After(Container(c))` for a root container `c` holds every
+    /// member of `c`, as the state at an unstated rollback does (§4).
     pub(super) fn state_depends(&self, at: &Position, features: &BTreeSet<FeatureId>) -> bool {
+        if let Position::After(root @ Member::Container(id)) = at {
+            if self.path(root).is_none() && self.roots.contains_key(id.as_str()) {
+                return self
+                    .features_of(root)
+                    .iter()
+                    .any(|feature| features.contains(feature));
+            }
+        }
         let Some((steps, inclusive)) = self.state_steps(at) else {
             return false;
         };

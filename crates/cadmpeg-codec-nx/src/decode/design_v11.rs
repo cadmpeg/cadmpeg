@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::configuration::{Arrangement, ArrangementKind, Overrides};
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{
@@ -135,8 +135,10 @@ fn is_history(feature: &LegacyFeature) -> bool {
     }
 }
 
-/// One ordered timeline of the history in construction order, with its one
-/// current state at the end, which holds every current body.
+/// One ordered timeline of the history in construction order. The decoder
+/// reads no current feature (part 11, entry B.96), so the timeline's rollback
+/// is unstated and its one current state, at `After(Container(timeline))`
+/// (§5.3), holds every current body.
 fn timeline(
     features: &[Feature],
     bodies: Vec<BodyId>,
@@ -146,16 +148,13 @@ fn timeline(
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let at = members.last().map_or_else(
-        || Position::Start(id.clone()),
-        |last| Position::After(last.clone()),
-    );
+    let at = Position::After(Member::Container(id.clone()));
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: None,
         placement: None,
     };
     let current = vec![CurrentState {

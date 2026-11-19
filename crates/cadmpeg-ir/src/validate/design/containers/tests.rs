@@ -34,7 +34,7 @@ fn containers_form_a_tree() {
             kind: OrderedKind::Body,
             members: vec![Member::Container(id("container", other))],
             folders: Vec::new(),
-            rollback: Rollback::End,
+            rollback: Some(Rollback::End),
             placement: None,
         });
     }
@@ -50,7 +50,7 @@ fn rollback_and_folders_stay_within_the_container() {
     else {
         unreachable!()
     };
-    *rollback = Rollback::Before(Member::Feature(feature("missing")));
+    *rollback = Some(Rollback::Before(Member::Feature(feature("missing"))));
     folders.push(Folder {
         name: None,
         first: 0,
@@ -94,7 +94,7 @@ fn rollback_and_folders_stay_within_the_container() {
                 last: 2,
             },
         ],
-        rollback: Rollback::Before(Member::Feature(feature("hole"))),
+        rollback: Some(Rollback::Before(Member::Feature(feature("hole")))),
         placement: None,
     };
     ir.design
