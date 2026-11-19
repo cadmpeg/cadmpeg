@@ -233,7 +233,7 @@ fn convert_replays_a_container_only_f3z_and_reports_the_carried_source() {
         ])
         .assert()
         .success();
-    assert!(fs::read(&output).unwrap() == source.as_slice());
+    assert_eq!(fs::read(&output).unwrap(), source.as_slice());
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["export"]["write_path"]["kind"], "verbatim_replay");
     assert!(value["export"]["losses"]

@@ -551,39 +551,78 @@ fn only_a_full_decode_records_the_digest() {
     }
 }
 
-/// `plan` refuses no document for its scope, and a document below `Full` has
-/// no digest to compare, so the writer refuses it for the missing baseline,
-/// edited or not.
+/// Writes `ir` through `Inherit` and returns the report and the file.
+fn patched(ir: &CadIr) -> (cadmpeg_ir::report::export::ExportReport, Vec<u8>) {
+    let mut bytes = Vec::new();
+    let report = inherit(ir)
+        .expect("the retained document patches")
+        .write_to(&mut bytes)
+        .expect("the patch writes");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    (report, bytes)
+}
+
+/// The `export:` losses of `report`, as code and severity.
+fn export_losses(
+    report: &cadmpeg_ir::report::export::ExportReport,
+) -> Vec<(&str, cadmpeg_ir::report::Severity)> {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .map(|loss| (loss.code.local_code(), loss.severity))
+        .collect()
+}
+
+/// A `Geometry` document records no digest, so its edits are not known. The
+/// writer patches the retained document as it patches the unedited `Full` one
+/// and reports `export:edit.unverified`, edited or not.
 #[test]
-fn a_document_below_full_is_refused_by_the_writer_edited_or_not() {
-    for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
-        let decoded = decode_at(depth);
-        let mut edited = decoded.ir().clone();
-        edited
-            .source
-            .as_mut()
-            .expect("the fixture records a source")
-            .attributes
-            .insert(
-                cadmpeg_core::nonblank_const!("edited_since_decode"),
-                "yes".to_owned(),
-            );
-        for ir in [decoded.ir(), &edited] {
-            let Err(CodecError::NotImplemented(message)) = inherit(ir) else {
-                panic!("a {depth} document must be refused for its missing baseline");
-            };
-            assert!(
-                message.contains(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                "{message}"
-            );
-        }
+fn a_geometry_document_is_patched_and_its_edits_reported_unverified() {
+    let (full_report, full_bytes) = patched(decode_at(DecodeDepth::Full).ir());
+    assert_eq!(export_losses(&full_report), []);
+    let decoded = decode_at(DecodeDepth::Geometry);
+    let mut edited = decoded.ir().clone();
+    edited
+        .source
+        .as_mut()
+        .expect("the fixture records a source")
+        .attributes
+        .insert(
+            cadmpeg_core::nonblank_const!("edited_since_decode"),
+            "yes".to_owned(),
+        );
+    for ir in [decoded.ir(), &edited] {
+        let (report, bytes) = patched(ir);
+        assert_eq!(bytes, full_bytes);
+        assert_eq!(
+            export_losses(&report),
+            [("edit.unverified", cadmpeg_ir::report::Severity::Warning)]
+        );
     }
 }
 
-/// A `Full` document that lost its digest cannot prove that it is unedited.
+/// A `Container` document retains no archive entry, so this writer, which has
+/// no synthesis path, holds no source bytes to write.
 #[test]
-fn a_full_document_without_its_digest_is_refused() {
+fn a_container_document_is_an_unsupported_target() {
+    let decoded = decode_at(DecodeDepth::Container);
+    let error = inherit(decoded.ir()).expect_err("no entry is retained");
+    let CodecError::UnsupportedTarget(refusal) = &error else {
+        panic!("expected a target refusal, got {error}");
+    };
+    assert_eq!(refusal.format(), "fcstd");
+}
+
+/// A `Full` document that lost its digest cannot prove that it is unedited:
+/// it is patched and reported as a document below `Full` is.
+#[test]
+fn a_full_document_without_its_digest_is_patched_and_reported_unverified() {
     let decoded = decode_at(DecodeDepth::Full);
+    let (_, unedited) = patched(decoded.ir());
     let mut stripped = decoded.ir().clone();
     stripped
         .source
@@ -591,12 +630,14 @@ fn a_full_document_without_its_digest_is_refused() {
         .expect("the fixture records a source")
         .attributes
         .remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
-    let Err(CodecError::NotImplemented(message)) = inherit(&stripped) else {
-        panic!("a document with no digest must be refused");
-    };
-    assert!(
-        message.contains(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        "{message}"
+    let (report, bytes) = patched(&stripped);
+    assert_eq!(
+        bytes, unedited,
+        "the stripped document patches as the unedited one"
+    );
+    assert_eq!(
+        export_losses(&report),
+        [("edit.unverified", cadmpeg_ir::report::Severity::Warning)]
     );
 }
 
