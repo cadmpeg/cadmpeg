@@ -491,6 +491,9 @@ fn a_body_recipe_design_link_shared_by_two_bodies_or_by_none_selects_no_body() {
 }
 
 #[test]
-fn a_body_recipe_whose_face_clauses_miss_the_state_ignores_its_design_link() {
-    assert_eq!(design_linked_case("308", 6, &[(7, 5), (8, 6)], false), None);
+fn a_body_recipe_whose_faces_were_renumbered_selects_its_design_linked_body() {
+    let links = [(7, 5), (8, 6)];
+    assert_eq!(design_linked_case("308", 6, &links, false), Some(8));
+    assert_eq!(design_linked_case("308", 5, &links, false), Some(7));
+    assert_eq!(design_linked_case("308", 6, &[(7, 6), (8, 6)], false), None);
 }
