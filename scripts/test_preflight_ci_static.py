@@ -31,6 +31,10 @@ WORKFLOW = """jobs:
         run: |
           set -euo pipefail
           python3 scripts/bad.py --check
+      - name: Event
+        env:
+          PR_BASE: abc
+        run: python3 scripts/event.py --base "$PR_BASE"
   lint:
     steps:
       - run: cargo fmt --all --check
@@ -44,6 +48,9 @@ class CommandSelection(unittest.TestCase):
             "python3 -m unittest discover -q -s scripts -p 'test_*.py'",
             "python3 scripts/good.py", "python3 scripts/bad.py --check",
             "cargo fmt --all --check"])
+
+    def test_event_commands_have_their_own_check(self) -> None:
+        self.assertNotIn("event.py", " ".join(check.commands(WORKFLOW, scripts_changed=True)))
 
     def test_tooling_tests_need_a_scripts_change(self) -> None:
         self.assertNotIn("unittest", " ".join(check.commands(WORKFLOW, scripts_changed=False)))

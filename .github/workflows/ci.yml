@@ -155,6 +155,17 @@ jobs:
         if: needs.changes.outputs.prose_only == 'true'
         run: python3 scripts/check-source-policy.py --authoring-paths-only
 
+      - name: Specification change
+        # A pull request that edits docs/cadir-v11.md outside the generated
+        # Annex A body changes no file under crates/ (#209).
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$PR_BASE"
+          python3 scripts/check-spec-change.py --base "$PR_BASE"
+
       - name: Golden coverage floors
         # Mesh-size floors in docs/golden-coverage-floors.toml. Counts may only
         # rise when fixtures are added; they must never silently fall.
