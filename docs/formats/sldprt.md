@@ -2855,6 +2855,46 @@ and every field in order. An empty tail differs from a tail containing zero.
 A complete reference selects a face only when its complete identity has one
 distinct current target.
 
+The list is a chain of *hops*; value 0 is the first hop's class, and the
+feature-local identity and path fields above are that class's fields. Each hop
+is `[class, producer, timestamp, 0, class fields...]`: the class is the code of
+a `mo*SurfIdRep_c` identity class, the producer and timestamp name the feature
+that made the face, and a wrapping class is followed, after its own fields, by
+the hop it wraps. The codes join to their classes through DisplayFace strings
+(§8), whose `<class>,<producer>,<fields>` sequence equals a list's hop
+sequence, and through the hops a consuming feature's face reference stores
+(§2). A one-hop list is four to seven values:
+
+| Code | Class | Fields | Design name (CADIR §5.7) |
+|---:|---|---|---|
+| 74 | `moFromSktEntSurfIdRep_c` | sketch entity id | `Generated`, role `Side` |
+| 83 | `moFromSktEnt3IntSurfIdRep_c` | sketch entity id, two integers | `Generated`, role `Side` |
+| 40 | `moEndFaceSurfIdRep_c` | end (0 start, 1 end), region | `Generated`, role `Start` or `End`, `index` the region |
+| 81 | `moEndFace3IntSurfIdRep_c` | end, region, 0 | as code 40 |
+| 72 | `moFilletSurfIdRep_c` | ordinal, 1 to the blend face count | `Blend`, `index` the ordinal |
+| 36 | `moSurfaceIdRep_c` | none: the feature's set of faces | `Generated`, no role |
+| 49 | `moWzdHoleSurfIdRep_c` | two integers | `Generated`, role `Other("sldprt:49")` |
+| 46 | `moSweepSideSurfIdRep_c` | two integers | role `Other("sldprt:46")` |
+| 77 | `moSimpleSurfIdRep_c` | one integer | role `Other("sldprt:77")` |
+| 78 | `moThinOffsetSurfIdRep_c` | one integer | role `Other("sldprt:78")` |
+
+Code 72 names fillet and chamfer faces alike; which edge takes which ordinal is
+not known. A cap's region is nonzero on each cap of an end with several
+regions, and mostly 0 on the one cap of an end with one; the rule that assigns
+it is not known. The sketch entity id, the producer and the timestamp are
+allocations: they stay in the native name. Wrapping classes are
+`moLPatternSurfIdRep_c` (57: two instance indices), `moCirPatternSurfIdRep2_c`
+(124: instance, 0), `moCurvePatternSurfIdRep_c` (54: instance, 0),
+`moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c` (132: one
+integer), `moCopySurfIdRep_c` (53: the copy's step for a Move/Copy Body),
+`moShellSurfIdRep_c` (65: none), and the derived, indirect and punch classes
+(55, 56, 96: one integer each). A wrapped list is longer than seven values; the
+partition reader does not keep it, so those faces have no name entry. Every
+other code is a role whose meaning is not known, `Other("sldprt:<code>")`. A
+face can carry several `FACE_ID_2001` lists where faces merged, and the pieces
+of a split face carry equal lists; the reader keeps no list for a face whose
+lists disagree.
+
 A single-face component selection that supplies only the source and local
 identity selects a face only when that pair has one distinct current target.
 Document, configuration, and mirror-plane selections use this rule. Earlier

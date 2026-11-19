@@ -60,8 +60,9 @@ pub(crate) struct Part<'a> {
 }
 
 /// Project the design of a part document into `ir.design`, beside its v10
-/// records, and state the part's root definition. Returns the number of
-/// records added.
+/// records, and state the part's root definition. A configuration whose
+/// state cannot be stated, and a sketch or extrude that cannot be typed,
+/// charges a note to `losses`. Returns the number of records added.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -125,6 +126,7 @@ pub(crate) fn project(
             current: &bodies,
         },
         &names,
+        losses,
     )?;
     let container = Container::Ordered {
         id,

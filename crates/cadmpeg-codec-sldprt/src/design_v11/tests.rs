@@ -722,12 +722,10 @@ fn faces_and_bodies_are_named_by_their_persistent_ids() {
     assert_eq!(
         entries.get(&EntityRef::Face(face.id.clone())),
         Some(&NameEntry {
-            name: Some(TopoName::Generated {
-                kind: NameKind::Face,
+            name: Some(TopoName::Blend {
                 feature: feature_named(&ir, "Boss").id.clone(),
-                role: None,
-                generator: None,
-                index: None,
+                between: Vec::new(),
+                index: Some(3),
             }),
             native: Some(native_name(&[72, 7, 0x6523_4178, 0, 3])),
         })
@@ -741,6 +739,81 @@ fn faces_and_bodies_are_named_by_their_persistent_ids() {
     );
     assert!(ir.design.evaluations.is_empty());
     assert_no_design_findings(&ir);
+}
+
+/// The name of the one face of a part whose face carries `face`.
+fn face_name_of(face: &[u32]) -> (CadIr, Option<TopoName>) {
+    let ir = decode(&with_history(
+        sldprt_with_body(&identified_triangle(face, 41)),
+        BOSS,
+        &[],
+    ));
+    let entry = ir
+        .design
+        .names
+        .entries()
+        .get(&EntityRef::Face(ir.geometry.faces[0].id.clone()))
+        .cloned();
+    let entry = entry.unwrap_or_else(|| panic!("an entry for {face:?}"));
+    assert_eq!(
+        entry.native,
+        Some(native_name(
+            &face.iter().copied().map(i64::from).collect::<Vec<_>>()
+        ))
+    );
+    assert_no_design_findings(&ir);
+    (ir, entry.name)
+}
+
+#[test]
+fn face_names_state_the_role_and_index_their_class_stores() {
+    use cadmpeg_ir::design::names::GenerationRole;
+
+    const STAMP: u32 = 0x6523_4178;
+    let generated = |ir: &CadIr, role: Option<GenerationRole>, index: Option<u32>| {
+        Some(TopoName::Generated {
+            kind: NameKind::Face,
+            feature: feature_named(ir, "Boss").id.clone(),
+            role,
+            generator: None,
+            index,
+        })
+    };
+    let other = |code: &str| {
+        Some(GenerationRole::Other(
+            cadmpeg_core::text::NonBlankString::new(code).unwrap(),
+        ))
+    };
+    for (face, role, index) in [
+        // A side swept from a sketch entity: the entity's id is an
+        // allocation, not an index.
+        (&[74, 7, STAMP, 0, 5][..], Some(GenerationRole::Side), None),
+        (
+            &[83, 7, STAMP, 0, 5, u32::MAX, 1][..],
+            Some(GenerationRole::Side),
+            None,
+        ),
+        // A cap: its end is the role, its region the index, zero included.
+        (
+            &[40, 7, STAMP, 0, 0, 0][..],
+            Some(GenerationRole::Start),
+            Some(0),
+        ),
+        (
+            &[81, 7, STAMP, 0, 1, 4, 0][..],
+            Some(GenerationRole::End),
+            Some(4),
+        ),
+        // The four-word set names the producer and no role.
+        (&[36, 7, STAMP, 0][..], None, None),
+        // A class whose fields' meaning is not established.
+        (&[49, 7, STAMP, 0, 2, 0][..], other("sldprt:49"), None),
+        // A cap whose end is neither 0 nor 1 is no established cap.
+        (&[40, 7, STAMP, 0, 2, 0][..], other("sldprt:40"), None),
+    ] {
+        let (ir, name) = face_name_of(face);
+        assert_eq!(name, generated(&ir, role, index), "{face:?}");
+    }
 }
 
 #[test]
