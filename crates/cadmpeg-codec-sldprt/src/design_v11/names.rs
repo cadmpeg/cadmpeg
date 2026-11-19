@@ -41,7 +41,8 @@ mod class {
     pub(super) const FROM_SKETCH_ENTITY_3INT: u32 = 83;
     /// `moEndFaceSurfIdRep_c`: a cap, by its end (0 start, 1 end) and region.
     pub(super) const END_FACE: u32 = 40;
-    /// `moEndFace3IntSurfIdRep_c`: the same, with a zero field after them.
+    /// `moEndFace3IntSurfIdRep_c`: the same, with a zero field after them;
+    /// what a nonzero third field states is not established.
     pub(super) const END_FACE_3INT: u32 = 81;
     /// `moFilletSurfIdRep_c`: a fillet or chamfer face, by its ordinal.
     pub(super) const FILLET: u32 = 72;
