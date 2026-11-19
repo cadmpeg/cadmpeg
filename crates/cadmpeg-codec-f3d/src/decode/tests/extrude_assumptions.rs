@@ -549,15 +549,12 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         )]
     );
 
-    for (scope, reading) in [
-        (
-            scope(
-                DesignExtrudeExtent::SymmetricDistance,
-                DesignExtrudeStart::ProfilePlane,
-            ),
-            "the whole travel",
+    for scope in [
+        scope(
+            DesignExtrudeExtent::SymmetricDistance,
+            DesignExtrudeStart::ProfilePlane,
         ),
-        (fixed, "each side"),
+        fixed,
     ] {
         let legacy = crate::design::test_support::legacy_symmetric_extrude_scope(
             scope,
@@ -571,7 +568,7 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         assert_eq!(
             notes(&native, symmetric(), code),
             [format!(
-                "Extrude {FEATURE_ID} assumes the symmetric distance applies to {reading} (DR-78)."
+                "Extrude {FEATURE_ID} assumes the symmetric distance applies to the whole travel (DR-78)."
             )]
         );
     }

@@ -397,7 +397,8 @@ the scope transform.
 
 **Question.** Which field states whether the distance of a symmetric distance
 `Extrude` is the travel on each side or the whole travel in a layout that
-stores no measurement word?
+stores no measurement word? Which reading applies when the indexed parameter
+and the fixed lane store the same distance?
 
 **Known.** `f3d.md` §3.1 "In the current reference-aware layout, a one-sided
 direction" gives the measurement word of the current reference-aware layout.
@@ -412,9 +413,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Conflict.** The fixed-lane reading uses the distance on each side. The single-lane indexed-parameter reading uses the distance as the whole travel.
 
 **Note.** The decoder retains the chosen reading with `feature.extrude-symmetric-distance-assumed`.
-For the legacy class-330/262 symmetric distance frame, an indexed distance alone uses whole travel.
-A fixed distance in this frame uses the travel on each side. When both distance carriers are
-present, projection requires equal values.
 
 ### DR-79. Typed-reference Design record grammars
 

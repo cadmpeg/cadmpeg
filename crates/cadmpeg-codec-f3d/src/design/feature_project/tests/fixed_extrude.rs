@@ -524,7 +524,7 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
         [101, 100, 11, 12, 13],
     );
     let distance = whole_travel(&legacy, Some(0.07)).expect("matching distance carriers");
-    assert!((distance - 1.4).abs() < 1.0e-12);
+    assert!((distance - 0.7).abs() < 1.0e-12, "whole travel: {distance}");
     assert!(whole_travel(&legacy, Some(0.08)).is_none());
 
     let indexed_only = crate::design::test_support::legacy_symmetric_extrude_scope(
