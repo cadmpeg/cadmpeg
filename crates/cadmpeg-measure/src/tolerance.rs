@@ -89,6 +89,11 @@ pub(crate) fn model_tolerance(linear: f64, local: impl IntoIterator<Item = f64>)
     largest(std::iter::once(linear).chain(local))
 }
 
+/// Ratio of the largest distance between the first and last pole columns of
+/// a clamped NURBS parameter to the control net's diagonal below which the
+/// surface closes at a seam in that parameter.
+pub(crate) const NURBS_SEAM_RATIO: f64 = 1.0e-6;
+
 #[cfg(test)]
 mod tests {
     #[test]

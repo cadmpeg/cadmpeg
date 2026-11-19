@@ -33,6 +33,7 @@ pub(super) fn classify(
     chart: &Chart<'_>,
     resolved: &ResolvedFace<'_>,
     shapes: &[Option<LoopShape>],
+    v_tolerance: f64,
     input: &super::RegionInput<'_, '_>,
 ) -> Measure<Region> {
     let context = input.context;
@@ -73,6 +74,12 @@ pub(super) fn classify(
             exterior: 1.0,
             closed: None,
         });
+    }
+    // A domain periodic in `u` alone nests its loops as a cylinder does.
+    if let [Some(_), None] = chart.periods() {
+        if !context.implicit_outer {
+            return super::periodic::classify(face, chart, resolved, shapes, v_tolerance);
+        }
     }
     if chart.periods().iter().any(Option::is_some) {
         return Err(MeasureFailure::unavailable(
