@@ -1472,6 +1472,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         let note = admitted_global_loss(IgesLossCode::GlobalNoncanonicalFraming, message);
         resolution.losses.push(note);
     }
+    let unreadable_suffix_start = unreadable_suffix.as_ref().map(|_| field_count);
     if let Some((offset, error)) = unreadable_suffix {
         let message = format!(
             "IGES Global field {} ({}) at Global byte {offset} has an unreadable \
@@ -1567,11 +1568,24 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     resolution.charge_maximum_coordinate(global_table);
     let author = resolution.metadata_string(FIELD_AUTHOR, global_table);
     let organization = resolution.metadata_string(FIELD_ORGANIZATION, global_table);
-    let drafting_standard = resolution
-        .metadata_integer_value(FIELD_DRAFTING_STANDARD, global_table, |value| {
-            (0..=7).contains(&value)
-        })
-        .unwrap_or(DEFAULT_DRAFTING_STANDARD);
+    // The unreadable suffix starts at field index `field_count`. A field 24
+    // inside it is malformed, and its fallback is charged as such.
+    let drafting_standard =
+        if unreadable_suffix_start.is_some_and(|start| start <= FIELD_DRAFTING_STANDARD) {
+            resolution.charge(
+                IgesLossCode::GlobalMetadataFieldUnusable,
+                FIELD_DRAFTING_STANDARD,
+                Defect::Malformed,
+                METADATA_CONSEQUENCE,
+            );
+            DEFAULT_DRAFTING_STANDARD
+        } else {
+            resolution
+                .metadata_integer_value(FIELD_DRAFTING_STANDARD, global_table, |value| {
+                    (0..=7).contains(&value)
+                })
+                .unwrap_or(DEFAULT_DRAFTING_STANDARD)
+        };
     if global_table.has_model_date() {
         resolution.metadata_date(FIELD_MODEL_DATE, global_table);
     }
