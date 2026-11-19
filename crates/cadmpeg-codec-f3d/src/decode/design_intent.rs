@@ -127,6 +127,7 @@ pub(crate) struct DesignIntentFailure {
 /// Native Design records that phase 2 produces.
 #[derive(Debug, Default)]
 pub(super) struct DesignNative {
+    pub(super) history_body_consumers: crate::history::history_bodies::ConsumerContext,
     asm_histories: Vec<AsmHistory>,
     asm_face_boundaries: Vec<AsmFaceBoundary>,
     persistent_references: Vec<PersistentReference>,
@@ -186,6 +187,7 @@ impl DesignNative {
     /// Record headers join the phase-1 headers.
     pub(super) fn store(self, native: &mut F3dNative) {
         let Self {
+            history_body_consumers: _,
             asm_histories,
             asm_face_boundaries,
             persistent_references,
@@ -863,7 +865,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             }
         }
     }
-    model.history_bodies = crate::history::history_bodies::fill(
+    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
         scan,
         crate::history::history_bodies::Inputs {
@@ -876,6 +878,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         derived_snapshots,
         &mut losses,
     )?;
+    model.history_bodies = history_bodies;
+    design.history_body_consumers.remaining_work = remaining_work;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
@@ -1471,6 +1475,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design
         .design_record_headers
         .retain(|header| !phase_one_headers.contains(header.id.as_str()));
+    design.history_body_consumers.bindings = scope_histories;
     Ok(DesignOutputs {
         native: design,
         model,
@@ -1495,6 +1500,11 @@ pub(super) fn scope_related_indices(
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(
+                scope.joint_origin_frame().filter(|frame| frame.carrier.is_some())
+                    .and_then(|_| scope.joint_origin_reference()),
+            )
+            .chain(scope.split_face_operation().filter(|operation| operation.carrier_frame.is_some()).and_then(|operation| operation.direction_reference.local_record_index()))
             .chain(scope.move_operation().map(|operation| operation.transform_record_index))
             .chain(scope.move_operation().and_then(|operation| operation.face_group.as_ref().map(|group| group.value)))
             .chain(
@@ -2070,15 +2080,18 @@ fn extend_related_design_records(
         timelines,
         &design.asm_histories,
     )?;
-    design.design_face_operands = crate::design::decode::operands::decode_face_operands(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &prereqs.construction_recipes,
-        &prereqs.design_types,
-    )?;
+    let (face_operands, face_operand_losses) =
+        crate::design::decode::operands::decode_face_operands(
+            ctx,
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &prereqs.construction_recipes,
+            &prereqs.design_types,
+        )?;
+    design.design_face_operands = face_operands;
+    profile_losses.extend(face_operand_losses);
     crate::design::decode::operands::bind_face_operand_candidates(
         &mut design.design_face_operands,
         &prereqs.construction_recipes,

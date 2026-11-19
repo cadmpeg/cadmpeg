@@ -1105,9 +1105,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
                 )
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, tool }) => {
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
+            targets,
+            tool,
+            method,
+        }) => {
             !face_selection_is_resolved(targets)
                 || match tool {
+                    cadmpeg_ir::features::SplitFaceTool::Faces(faces) => {
+                        !face_selection_is_resolved(faces)
+                    }
+                    cadmpeg_ir::features::SplitFaceTool::Native(_) => true,
                     cadmpeg_ir::features::SplitFaceTool::Plane { .. }
                     | cadmpeg_ir::features::SplitFaceTool::Planes { .. } => false,
                     cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
@@ -1115,6 +1123,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         cadmpeg_ir::features::PathRef::Native(_)
                             | cadmpeg_ir::features::PathRef::Unresolved(_)
                     ),
+                }
+                || match method {
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::Unresolved {} => true,
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::SurfaceIntersection { .. }
+                    | cadmpeg_ir::features::surfaces::SplitFaceMethod::ClosestPoint {} => false,
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::AlongVector { .. } => true,
                 }
         }
         FeatureDefinition::Operation(FeatureOperation::Loft {
@@ -2119,7 +2133,7 @@ fn report_parameter_trailer_flags(
             &mut report.losses,
             F3dLossCode::ParameterTrailerFlagUninterpreted,
             format_args!(
-                "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
+                "{} decoded parameter(s) in {} set an uninterpreted flag in the compact expression trailer.",
                 parameters.count, parameters.stream
             ),
         );
@@ -3854,7 +3868,8 @@ impl<'a> F3dDecodeSession<'a> {
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
-                if let DesignState::Projected(design) = design {
+                if let DesignState::Projected(mut design) = design {
+                    let consumers = std::mem::take(&mut design.history_body_consumers);
                     design.store(&mut self.native);
                     crate::design::decode::sketch_owners::attach(
                         ctx,
@@ -3867,6 +3882,15 @@ impl<'a> F3dDecodeSession<'a> {
                         scan,
                         &self.native,
                         &mut self.ir,
+                        &mut self.report.losses,
+                    )?;
+                    crate::history::history_bodies::fill_consumed(
+                        ctx,
+                        scan,
+                        &mut self.ir.model,
+                        &self.native,
+                        Some(&index.primary_model_brep_name),
+                        &consumers,
                         &mut self.report.losses,
                     )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
