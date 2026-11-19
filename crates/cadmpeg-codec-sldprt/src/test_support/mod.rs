@@ -106,6 +106,11 @@ fn fixture_native_envelope_context(
             std::collections::BTreeMap::default(),
         ));
     }
+    ir.state_root_definition(
+        &cadmpeg_test_support::service_decode_context(),
+        crate::decode::root_definition_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     Ok((ir, fidelity))
 }
 

@@ -589,8 +589,9 @@ fn zero_header_resabs_preserves_default_and_records_loss() {
 #[test]
 fn sat_encodings_admit_declared_and_actual_entities_once() {
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();
-    // Six native records and five emitted neutral entities.
-    options.policy.limits.max_entities = 11;
+    // Six native records, five emitted neutral entities, and the root
+    // definition.
+    options.policy.limits.max_entities = 12;
     for bytes in [
         text_sphere_stream(1.0),
         binary_sphere_stream(BinaryFixtureKind::Asm),

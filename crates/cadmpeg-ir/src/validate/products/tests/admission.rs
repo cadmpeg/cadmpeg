@@ -168,10 +168,16 @@ fn a_definition_does_not_place_itself() {
     ));
     assert_eq!(
         messages(&ir),
-        [(
-            Some("test:model:product#root".into()),
-            "product definition places itself".into()
-        )]
+        [
+            (
+                Some("test:model:product#root".into()),
+                "an occurrence places the root definition".into()
+            ),
+            (
+                Some("test:model:product#root".into()),
+                "product definition places itself".into()
+            )
+        ]
     );
 
     let mut ir = assembly();
