@@ -115,7 +115,7 @@ impl super::Builder<'_, '_, '_, '_> {
             1.0
         };
         dim.dimension()
-            .factor(self.scale, self.kilograms_per_unit, radians)
+            .factor(self.scale, self.kilograms_per_unit, radians, 1.0)
     }
 
     /// The record that a relationship target names.
