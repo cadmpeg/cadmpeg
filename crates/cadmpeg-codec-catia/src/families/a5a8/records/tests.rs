@@ -72,7 +72,7 @@ fn owned_surface_tail_retains_descending_v_limits() {
 }
 
 #[test]
-fn owned_surface_tail_orders_u_limits_by_patch() {
+fn owned_surface_tail_rejects_descending_u_for_each_patch() {
     use crate::layout::surface_terminal_span_tail as layout;
 
     let mut tail = a5_surface_tail();
@@ -83,10 +83,7 @@ fn owned_surface_tail_orders_u_limits_by_patch() {
     tail[u_start..u_start + 8].copy_from_slice(&3.0_f64.to_le_bytes());
     tail[u_start + 8..u_start + 16].copy_from_slice(&1.0_f64.to_le_bytes());
     assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), false), None);
-    assert_eq!(
-        super::parse_surface_tail(&tail, 0, tail.len(), true),
-        Some(tail.len())
-    );
+    assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
     tail[layout::CONTROLS + 1] = 0x05;
     assert_eq!(super::parse_surface_tail(&tail, 0, tail.len(), true), None);
 }
