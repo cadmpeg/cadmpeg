@@ -839,6 +839,21 @@ impl Native {
         self.0.entry(format.into()).or_default()
     }
 
+    /// Refuses the first namespace arena whose records are not in strictly
+    /// increasing order of id (§2.8).
+    pub(crate) fn check_arena_order(&self) -> Result<(), String> {
+        for (format, namespace) in &self.0 {
+            for (arena, records) in &namespace.arenas {
+                crate::document::check_ids_increase(
+                    &format!("native.{format}"),
+                    arena,
+                    records.iter().map(NativeRecord::id),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     /// Sort every arena into canonical identity order.
     pub(crate) fn finalize(&mut self) {
         for namespace in self.0.values_mut() {

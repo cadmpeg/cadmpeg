@@ -148,7 +148,7 @@ fn a_dimension_nominal_is_a_literal_or_a_parameter_binding() {
         upper: real(0.2),
     }));
     dimension.decimals = Some(2);
-    dimension.modifiers = vec![DimensionModifier::Statistical];
+    dimension.modifiers = [DimensionModifier::Statistical].into();
     let definition = PmiDefinition::Dimension(dimension);
     let wire = json!({
         "kind": "dimension",
@@ -279,15 +279,88 @@ fn a_literal_nominal_whose_quantity_disagrees_with_its_kind_is_a_finding() {
 }
 
 #[test]
-fn repeated_dimension_modifiers_are_a_finding() {
-    let mut dimension = PmiDimension::new(PmiDimensionKind::SphericalRadius);
-    dimension.modifiers = vec![DimensionModifier::Reference, DimensionModifier::Reference];
-    let mut ir = CadIr::empty();
-    ir.model
-        .pmi
-        .push(annotation("radius", PmiDefinition::Dimension(dimension)));
-    ir.finalize();
-    assert_eq!(pmi_findings(&ir), 1);
+fn dimension_modifiers_are_a_set_that_refuses_a_repeat_and_disorder() {
+    let with = |modifiers: serde_json::Value| json!({"dimension": {"kind": "size"}, "modifiers": modifiers});
+    let read = serde_json::from_value::<PmiDimension>(with(json!([
+        {"kind": "reference"},
+        {"kind": "controlled_radius"},
+        {"kind": "other", "value": "free state"}
+    ])))
+    .expect("a set in declared variant order");
+    assert_eq!(read.modifiers.len(), 3);
+    for (modifiers, refusal) in [
+        (
+            json!([{"kind": "statistical"}, {"kind": "statistical"}]),
+            "twice",
+        ),
+        (
+            json!([{"kind": "controlled_radius"}, {"kind": "reference"}]),
+            "out of order",
+        ),
+    ] {
+        let error = serde_json::from_value::<PmiDimension>(with(modifiers))
+            .expect_err("a set refuses the array")
+            .to_string();
+        assert!(error.contains(refusal), "{error}");
+    }
+    assert!(serde_json::from_value::<PmiDimension>(with(json!([
+        {"kind": "other", "value": " "}
+    ])))
+    .is_err());
+}
+
+#[test]
+fn an_other_dimension_modifier_naming_a_typed_modifier_is_a_finding() {
+    let other = |text: &str| {
+        DimensionModifier::Other(cadmpeg_core::text::NonBlankString::new(text).expect("a text"))
+    };
+    let findings = |modifiers: &[DimensionModifier]| {
+        let mut dimension = PmiDimension::new(PmiDimensionKind::Size);
+        dimension.modifiers = modifiers.iter().cloned().collect();
+        let mut ir = CadIr::empty();
+        ir.model
+            .pmi
+            .push(annotation("size", PmiDefinition::Dimension(dimension)));
+        ir.finalize();
+        pmi_findings(&ir)
+    };
+    assert_eq!(
+        findings(&[DimensionModifier::Reference, other("free state")]),
+        0
+    );
+    for text in ["auxiliary", "Controlled Radius", "REFERENCE", "statistical"] {
+        assert_eq!(findings(&[other(text)]), 1, "{text}");
+    }
+}
+
+#[test]
+fn an_other_zone_form_naming_a_typed_form_is_a_finding() {
+    let findings = |name: &str| {
+        let mut ir = CadIr::empty();
+        ir.model.pmi.push(annotation(
+            "flat",
+            PmiDefinition::GeometricTolerance {
+                tolerance: GeometricToleranceKind::Flatness,
+                magnitude: PmiMagnitude::new(length(0.1)).expect("nonnegative magnitude"),
+                defined_unit: None,
+                defined_area_unit: None,
+                defined_area_second_unit: None,
+                datum_system: None,
+                modifiers: Vec::new(),
+                displacement: None,
+                maximum_upper: None,
+                zones: vec![super::zones::ToleranceZone {
+                    form: super::zones::ToleranceZoneForm::Other(name.into()),
+                    projections: Vec::new(),
+                }],
+            },
+        ));
+        ir.finalize();
+        pmi_findings(&ir)
+    };
+    assert_eq!(findings("conical"), 0);
+    assert_eq!(findings("Spherical"), 1);
+    assert_eq!(findings("CYLINDRICAL OR CIRCULAR"), 1);
 }
 
 #[test]

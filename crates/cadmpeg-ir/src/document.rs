@@ -629,6 +629,18 @@ macro_rules! declare_home_arenas {
                 0 $(+ self.$field.len())*
             }
 
+            /// Refuses the first arena whose records are not in strictly
+            /// increasing order of id (§2.2, §2.8), naming `home`, the arena,
+            /// and the id.
+            pub(crate) fn check_arena_order(&self, home: &str) -> Result<(), String> {
+                $(check_ids_increase(
+                    home,
+                    stringify!($field),
+                    self.$field.iter().map(crate::schema::ArenaRecord::record_identity),
+                )?;)*
+                Ok(())
+            }
+
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
                 $(if !arena_is_ordered(&self.$field) {
@@ -748,6 +760,7 @@ macro_rules! declare_topology {
             where
                 S: Serializer,
             {
+                self.check_arena_order("topology").map_err(serde::ser::Error::custom)?;
                 TopologyWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -792,6 +805,7 @@ macro_rules! declare_topology {
                             .map_err(serde::de::Error::custom)?;
                     }
                 }
+                topology.check_arena_order("topology").map_err(serde::de::Error::custom)?;
                 Ok(topology)
             }
         }
@@ -897,6 +911,7 @@ macro_rules! declare_model {
                 S: Serializer,
             {
                 feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
+                self.check_arena_order("model").map_err(serde::ser::Error::custom)?;
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -923,6 +938,7 @@ macro_rules! declare_model {
                     model.features.push(feature);
                 }
                 feature_parents::validate(&[&model]).map_err(serde::de::Error::custom)?;
+                model.check_arena_order("model").map_err(serde::de::Error::custom)?;
                 Ok(model)
             }
         }
@@ -1187,6 +1203,30 @@ fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
     values
         .windows(2)
         .all(|pair| pair[0].record_identity() <= pair[1].record_identity())
+}
+
+/// Refuses the first id of `ids` that does not follow the one before it in
+/// strictly increasing order: an arena is a checked type (§2.8).
+pub(crate) fn check_ids_increase<'a>(
+    home: &str,
+    arena: &str,
+    ids: impl IntoIterator<Item = &'a str>,
+) -> Result<(), String> {
+    let mut previous: Option<&str> = None;
+    for id in ids {
+        match previous {
+            Some(previous) if id == previous => {
+                return Err(format!("arena {home}.{arena} holds id {id} twice"));
+            }
+            Some(previous) if id < previous => {
+                return Err(format!(
+                    "arena {home}.{arena} is not in strictly increasing order of id: {id} follows {previous}"
+                ));
+            }
+            _ => previous = Some(id),
+        }
+    }
+    Ok(())
 }
 
 fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
@@ -2134,6 +2174,8 @@ struct CadIrReadWire {
 impl Serialize for CadIr {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.check_scope().map_err(serde::ser::Error::custom)?;
+        check_design_arena_order(&self.design, &self.process, &self.native)
+            .map_err(serde::ser::Error::custom)?;
         CadIrWriteWire {
             ir_version: IrVersion,
             fragment: self.fragment,
@@ -2156,10 +2198,25 @@ impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
+        check_design_arena_order(&wire.design, &wire.process, &wire.native)
+            .map_err(serde::de::Error::custom)?;
         wire.admit_state_chains()
             .map_err(serde::de::Error::custom)?;
         wire.try_into().map_err(serde::de::Error::custom)
     }
+}
+
+/// Refuses a design, process, or native arena whose records are not in
+/// strictly increasing order of id (§2.8). The topology and model homes
+/// check their own arenas as they are read and written.
+fn check_design_arena_order(
+    design: &Design,
+    process: &Process,
+    native: &Native,
+) -> Result<(), String> {
+    design.check_arena_order("design")?;
+    process.check_arena_order("process")?;
+    native.check_arena_order()
 }
 
 impl CadIrReadWire {
@@ -2527,6 +2584,20 @@ impl CadIr {
         let probe = serde_json::from_str::<VersionProbe>(s)?;
         check_ir_version(probe.ir_version.as_ref())?;
         serde_json::from_str::<Self>(s)
+    }
+
+    /// Refuses the first arena of the document's homes or of a native
+    /// namespace whose records are not in strictly increasing order of id,
+    /// naming the arena and the id (§2.2, §2.8). The arenas of a state's
+    /// delta are checked when the delta is read or written.
+    ///
+    /// # Errors
+    ///
+    /// Returns the condition the arena breaks and where.
+    pub fn check_arena_order(&self) -> Result<(), String> {
+        self.geometry.check_arena_order("topology")?;
+        self.model.check_arena_order("model")?;
+        check_design_arena_order(&self.design, &self.process, &self.native)
     }
 
     /// Sort geometry, model, design, process, native, and unknown-record

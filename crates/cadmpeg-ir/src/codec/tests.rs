@@ -562,3 +562,48 @@ fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
     assert_eq!(result.ir().scope(), ContentScope::full());
     assert_eq!(result.ir().model.parameters.len(), 1);
 }
+
+struct RepeatedIdentityCodec;
+
+impl CodecBackend for RepeatedIdentityCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the repeated identity test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        let point = ir.geometry.points[0].clone();
+        ir.geometry.points.push(point);
+        Ok(decoded(ir))
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_refuses_an_arena_that_holds_an_id_twice() {
+    let error = RepeatedIdentityCodec
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect_err("an arena holds each id once (§2.8)");
+    let text = error.to_string();
+    assert!(
+        text.contains("topology.points") && text.contains("twice"),
+        "{text}"
+    );
+}

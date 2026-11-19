@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information independent of design history.
 
+use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
 use cadmpeg_derive::DeserializeName;
@@ -213,7 +214,7 @@ impl PmiDimensionKind {
 }
 
 /// A qualifier of a dimension, as ASME Y14.5 defines it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -228,7 +229,21 @@ pub enum DimensionModifier {
     #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     ControlledRadius,
     /// The source's text of another modifier.
-    Other(String),
+    Other(cadmpeg_core::text::NonBlankString),
+}
+
+impl DimensionModifier {
+    /// Whether an `Other` text names one of the typed modifiers, compared
+    /// without regard to ASCII case (part 10).
+    #[must_use]
+    pub fn other_names_a_typed_modifier(&self) -> bool {
+        match self {
+            Self::Other(text) => ["reference", "auxiliary", "statistical", "controlled radius"]
+                .iter()
+                .any(|name| text.as_str().eq_ignore_ascii_case(name)),
+            _ => false,
+        }
+    }
 }
 
 /// Geometric form of a datum target feature.
@@ -476,8 +491,11 @@ pub struct PmiDimension {
         deserialize_with = "deserialize_decimals"
     )]
     pub decimals: Option<u8>,
-    /// Qualifiers in source order, each once.
-    pub modifiers: Vec<DimensionModifier>,
+    /// The qualifiers, a set: each is stated once and their order carries no
+    /// meaning.
+    #[serde(with = "cadmpeg_core::distinct_keys::set")]
+    #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<DimensionModifier>"))]
+    pub modifiers: BTreeSet<DimensionModifier>,
 }
 
 impl PmiDimension {
@@ -490,7 +508,7 @@ impl PmiDimension {
             nominal: None,
             tolerance: None,
             decimals: None,
-            modifiers: Vec::new(),
+            modifiers: BTreeSet::new(),
         }
     }
 

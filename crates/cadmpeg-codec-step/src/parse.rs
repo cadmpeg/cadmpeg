@@ -1039,7 +1039,7 @@ impl Parser<'_, '_, '_> {
         }
         let mut data: Vec<DataSection> = Vec::new();
         let mut records = BTreeMap::new();
-        let mut ambiguous = BTreeSet::new();
+        let mut stated = BTreeSet::new();
 
         let mut data_section_names = BTreeSet::new();
         while self.peek_name("DATA") {
@@ -1082,7 +1082,7 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let record_start = self.current_offset();
             while !self.peek_name("ENDSEC") && self.current.is_some() {
-                self.recover_data_record(&mut records, &mut ambiguous, &mut omitted_spans)?;
+                self.recover_data_record(&mut records, &mut stated, &mut omitted_spans)?;
             }
             let record_end = self.current_offset();
             self.defer_lexical_errors = false;

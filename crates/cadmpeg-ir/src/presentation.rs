@@ -164,7 +164,9 @@ impl TryFrom<PresentationDocumentWire> for PresentationDocument {
             native_ref: wire.native_ref,
             ..Self::new(wire.id)
         };
-        document.set_states(wire.states)?;
+        // No condition of §2.8 is stated on the states' orders, so reading
+        // admits states that repeat one.
+        document.states = wire.states;
         Ok(document)
     }
 }
@@ -569,12 +571,12 @@ mod tests {
         );
         assert!(document.set_states(vec![state(2), state(2)]).is_err());
         assert_eq!(document.states(), states);
-        let mut invalid = wire;
-        invalid["states"] =
+        let mut repeated = wire;
+        repeated["states"] =
             serde_json::to_value(vec![state(2), state(2)]).expect("serialize states");
-        let error = serde_json::from_value::<PresentationDocument>(invalid)
-            .expect_err("duplicate state order");
-        assert!(error.to_string().contains("states"));
+        let read = serde_json::from_value::<PresentationDocument>(repeated)
+            .expect("reading admits a repeated state order (§2.8)");
+        assert_eq!(read.states(), [state(2), state(2)]);
         document.set_states(Vec::new()).expect("empty states");
         assert!(document.states().is_empty());
     }

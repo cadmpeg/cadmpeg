@@ -489,3 +489,46 @@ fn compressed_delimiters_read_the_global_prefix() {
         (b',', b';')
     );
 }
+
+#[test]
+fn a_repeated_directory_sequence_keeps_its_first_record() {
+    let source = compressed_points_file();
+    let second = b"116,4.0,5.0,6.0;\r\n";
+    let second_end = source
+        .windows(second.len())
+        .position(|window| window == second)
+        .unwrap()
+        + second.len();
+    let copy = b"D3@18_THIRD;\r\n116,7.0,8.0,9.0;\r\n";
+    let mut repeated = source[..second_end].to_vec();
+    repeated.extend_from_slice(copy);
+    repeated.extend_from_slice(&source[second_end..]);
+
+    let (_, copies) = super::expand(&repeated).unwrap();
+    assert_eq!(
+        copies,
+        [super::RepeatedDataRecord {
+            sequence: 3,
+            span: second_end..second_end + copy.len() - 2,
+        }]
+    );
+    let result = IgesCodec
+        .decode(&mut Cursor::new(repeated), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().geometry.points.len(), 2);
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == IgesLossCode::DirectoryRecordRepeated.kind())
+        .collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!("one loss for the one copy: {losses:?}");
+    };
+    let span = format!("bytes {second_end}..{}", second_end + copy.len() - 2);
+    assert!(
+        loss.message.contains("D3") && loss.message.contains(&span),
+        "{}",
+        loss.message
+    );
+}

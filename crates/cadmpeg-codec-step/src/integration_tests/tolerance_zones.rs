@@ -188,9 +188,10 @@ fn spherical_dimension_modifiers_round_trip_through_compound_items() {
             dimension.modifiers,
             [
                 DimensionModifier::Reference,
-                DimensionModifier::ControlledRadius,
-                DimensionModifier::Statistical
+                DimensionModifier::Statistical,
+                DimensionModifier::ControlledRadius
             ]
+            .into()
         );
     }
 }
