@@ -19,6 +19,10 @@ use crate::families::b2::records::{
     b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_torus_geometry,
     cylinder_range_origin, B2Cone, B2Sphere, B2Torus,
 };
+use crate::layout::{
+    sheet_plane_explicit_v_a0_payload as explicit_v_a0,
+    sheet_plane_implicit_v_payload as implicit_v_a0,
+};
 use crate::wire::bytes::{allocation_reference, AllocationReference};
 use crate::wire::records::ConsolidatedRecord;
 
@@ -424,11 +428,19 @@ impl SpatialPlane {
             | (0xa4, 0x00 | 0x50 | 0x58, None)
             | (0xb4, 0x50 | 0x58, None)
             | (0xc4, 0x30 | 0x38 | 0x3c, None)
-            | (0xd4, 0x20 | 0x68 | 0xa0 | 0xe8, None)
+            | (0xd4, 0x20 | 0x68 | 0xe8, None)
             | (0xe4, 0x50 | 0x58, None) => (
                 direction(mask)?,
                 direction((layout & 0x70) | ((mask & 0x80) >> 4))?,
             ),
+            (0xd4, 0xa0, None) => {
+                let v_mask = match bytes.len() {
+                    implicit_v_a0::LEN => 0x58,
+                    explicit_v_a0::LEN => 0x50,
+                    _ => return None,
+                };
+                (direction(mask)?, direction(v_mask)?)
+            }
             (0xb4, 0xd0, None) => {
                 let y = view.f64_le()?;
                 if y.abs() != 1.0 {
@@ -747,5 +759,25 @@ mod tests {
         let plane = Carrier::Plane(SpatialPlane::read(&bytes).expect("packed plane"));
         let point = plane.evaluate([2.0, 5.0]).expect("chart point");
         assert!(point.distance(Point3::new(5.0, 7.0, 9.0)) < 1e-12);
+    }
+    #[test]
+    fn bounded_plane_preserves_the_82_byte_a0_frame_and_its_signed_v_axis() {
+        for sign in [-1.0_f64, 1.0] {
+            let mut bytes = vec![0xd4, 0xa0];
+            for value in [3.0_f64, 4.0, 5.0, -1.0, 0.0, sign, 0.0, 20.0, -10.0, 10.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            assert_eq!(bytes.len(), explicit_v_a0::LEN);
+            let plane = SpatialPlane::read(&bytes).expect("legacy explicit V frame");
+            assert_eq!(plane.bounds, Some([[0.0, 20.0], [-10.0, 10.0]]));
+            assert_eq!(
+                Carrier::Plane(plane).evaluate([2.0, 3.0]),
+                Some(Point3::new(1.0, 4.0 + 3.0 * sign, 5.0))
+            );
+            bytes.push(0);
+            assert!(SpatialPlane::read(&bytes).is_none());
+            bytes.truncate(explicit_v_a0::LEN - 1);
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
     }
 }

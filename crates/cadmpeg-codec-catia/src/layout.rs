@@ -883,3 +883,19 @@ pub(crate) mod container_property_record {
     /// Offset of `value_bytes` (`u32`, big-endian). Spec §3.1.
     pub(crate) const VALUE_BYTES: usize = 10;
 }
+
+/// Byte offsets for the `sheet_plane_implicit_v_payload` record.
+///
+/// Spec §6.3. Record length 74 B.
+pub(crate) mod sheet_plane_implicit_v_payload {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 74;
+}
+
+/// Byte offsets for the `sheet_plane_explicit_v_a0_payload` record.
+///
+/// Spec §6.3. Record length 82 B.
+pub(crate) mod sheet_plane_explicit_v_a0_payload {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 82;
+}

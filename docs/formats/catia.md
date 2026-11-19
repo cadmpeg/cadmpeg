@@ -877,7 +877,7 @@ The one-component layout stores `+18` direction component (`f64le`): X for `e4` 
 
 Sheet-owned class-`27` plane selectors retain their axis components and signs. Selector `08 68 1d` stores origin XYZ and V's signed Y component, with U=(1,0,0) and V=(0,v_y,0). Selector `08 e8 1d` has the same axes with v_y=1 and omits the direction scalar. These unrestricted payloads end after the frame scalars.
 
-Selector `d4 a0` stores origin XYZ, U's X and Z components, and four bounds, with U=(u_x,0,u_z) and V=(0,1,0). Selector `d4 20` adds V's signed Y component before those bounds. Each axis is a unit vector and the completed frame is orthonormal. The bounds are ordered U and V intervals. The [CATIA record layouts](../layouts/catia.md) give their field offsets and lengths.
+Selector `d4 a0` stores origin XYZ, U's X and Z components, and four bounds, with U=(u_x,0,u_z) and V=(0,1,0). This implicit-V form is 74 bytes. The 82-byte `d4 a0` form stores V's signed Y component between U and the four bounds. Its V axis is (0,v_y,0), with v_y equal to -1 or +1. Selector `d4 20` adds V's signed Y component before those bounds. Each axis is a unit vector and the completed frame is orthonormal. The bounds are ordered U and V intervals. The [CATIA record layouts](../layouts/catia.md) give their field offsets and lengths.
 
 A packed consolidated class-`27` plane chart has packed marker `08`, a two-byte little-endian control word, origin `(x,y,z)`, and a scalar lane. The control word selects the chart axes and the scalar order after the origin:
 
