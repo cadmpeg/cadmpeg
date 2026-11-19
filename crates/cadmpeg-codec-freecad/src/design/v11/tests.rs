@@ -361,8 +361,12 @@ fn a_parameter_with_an_empty_expression_is_stated_with_its_stored_value() {
         let empty = crate::loss::FreecadLossCode::ParameterExpressionEmpty.note("");
         assert_eq!(empty.code.to_string(), "fcstd/parameter.expression-empty");
         assert!(
-            decoded.report().losses.iter().any(|loss| loss.code == empty.code
-                && loss.message.contains("fcstd:design:parameter#Pad:Length")),
+            decoded
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == empty.code
+                    && loss.message.contains("fcstd:design:parameter#Pad:Length")),
             "{:?}",
             decoded.report().losses
         );

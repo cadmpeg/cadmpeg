@@ -261,9 +261,7 @@ fn stored_literal(value: &LegacyValue, carrier: Option<&str>) -> Option<Node<Par
         LegacyValue::Length(value) => value.get(),
         LegacyValue::Angle(value) => value.get(),
         LegacyValue::Real(value) => value.get(),
-        LegacyValue::Integer(_) | LegacyValue::Boolean(_) | LegacyValue::String(_) => {
-            return None
-        }
+        LegacyValue::Integer(_) | LegacyValue::Boolean(_) | LegacyValue::String(_) => return None,
     };
     literal_in((unit.from_canonical)(canonical), &unit)
 }

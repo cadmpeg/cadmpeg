@@ -317,10 +317,7 @@ fn native(kind: &str) -> FeatureOperation {
 
 /// The feature's operation: its family where the decoder reads the operation,
 /// and the source's kind where it does not.
-fn operation(
-    legacy: &LegacyFeature,
-    operation: &LegacyOperation,
-) -> FeatureOperation {
+fn operation(legacy: &LegacyFeature, operation: &LegacyOperation) -> FeatureOperation {
     let kind = legacy.source_tag.as_deref().unwrap_or("feature");
     let family = match operation {
         LegacyOperation::StoredGeometry {} => {
