@@ -69,6 +69,8 @@ enum SheetSurfaceFit {
 struct SheetBoundaryRecovery {
     rolling_extension_mm: f64,
     affine_vertex_shift_mm: f64,
+    endpoint_vertex_shift: f64,
+    paired_station_vertex: Option<(usize, Point3)>,
 }
 
 struct Patch {
@@ -511,6 +513,7 @@ pub(super) fn append(
         ..
     } = stream;
     if carriers.is_empty()
+        && stream.selection.is_none()
         && !records
             .iter()
             .any(|frame| sheet_group::root(frame, data) || sheet_group::backward_root(frame, data))

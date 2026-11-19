@@ -135,6 +135,100 @@ fn shared_sheet_retries_after_a_later_neighbor_is_admitted() {
 }
 
 #[test]
+fn shared_sheet_aligns_edges_before_checking_incident_vertices() {
+    let gap = 0.0015;
+    for rotation in 0..4 {
+        let mut patches = two_face_sheet();
+        for side in &mut patches[1].sides {
+            for (id, point) in &mut side.vertices {
+                if matches!(*id, 1 | 2) {
+                    point.x += gap;
+                }
+            }
+        }
+        let side = &mut patches[1].sides[3];
+        let uv = [[1.0 + gap, 0.0], [1.0 + gap, 1.0]];
+        side.curve = NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            uv.map(|[x, y]| Point3::new(x, y, 0.0)).to_vec(),
+            None,
+            false,
+        )
+        .expect("offset shared curve");
+        side.pcurve = line_pcurve([0.0, 1.0], uv).expect("offset shared pcurve");
+        patches[1].sides.rotate_left(rotation);
+        let (ir, notes) = transfer_with_notes(patches);
+        assert_shared_sheet(&ir);
+        assert_reconciliation(&notes, [1, 0, 1, 0], gap);
+    }
+}
+
+#[test]
+fn shared_sheet_centers_incident_endpoints_within_the_surface_tolerance() {
+    let mut patches = two_face_sheet();
+    let side = &mut patches[1].sides[0];
+    let uv = [[1.0015, 0.0], [2.0, 0.0]];
+    side.curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        uv.map(|[x, y]| Point3::new(x, y, 0.0)).to_vec(),
+        None,
+        false,
+    )
+    .expect("incident curve");
+    side.pcurve = line_pcurve([0.0, 1.0], uv).expect("incident pcurve");
+    let mut records = BTreeMap::new();
+    reconcile_admitted_vertices(&mut patches, &BTreeSet::from([0, 1]), &mut records);
+    for side in patches.iter().flat_map(|patch| &patch.sides) {
+        for (&(vertex, point), t) in side
+            .vertices
+            .iter()
+            .zip(side.curve.full_knot_endpoints().endpoints())
+        {
+            if vertex == 1 {
+                assert!((point.x - 1.00075).abs() < 1.0e-12);
+                assert!(
+                    curve_point(&side.curve, t)
+                        .expect("endpoint")
+                        .distance(point)
+                        <= GAP_MM
+                );
+            }
+        }
+    }
+    assert_shared_sheet(&transfer(patches));
+}
+
+#[test]
+fn shared_sheet_keeps_vertices_when_endpoints_have_no_common_tolerance_ball() {
+    let mut patches = two_face_sheet();
+    let side = &mut patches[1].sides[0];
+    let uv = [[1.003, 0.0], [2.0, 0.0]];
+    side.curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        uv.map(|[x, y]| Point3::new(x, y, 0.0)).to_vec(),
+        None,
+        false,
+    )
+    .expect("separated incident curve");
+    side.pcurve = line_pcurve([0.0, 1.0], uv).expect("incident pcurve");
+    let before = patches
+        .iter()
+        .flat_map(|patch| patch.sides.iter().map(|side| side.vertices))
+        .collect::<Vec<_>>();
+    let mut records = BTreeMap::new();
+    reconcile_admitted_vertices(&mut patches, &BTreeSet::from([0, 1]), &mut records);
+    let after = patches
+        .iter()
+        .flat_map(|patch| patch.sides.iter().map(|side| side.vertices))
+        .collect::<Vec<_>>();
+    assert_eq!(before, after);
+    assert!(records.is_empty());
+}
+
+#[test]
 fn shared_sheet_requires_corroboration_and_bounds_vertex_repairs() {
     let mut uncorroborated = two_face_sheet();
     uncorroborated[1].sides[0].vertices[0].1.x += 0.003;

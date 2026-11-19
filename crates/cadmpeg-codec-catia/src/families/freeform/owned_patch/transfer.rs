@@ -38,7 +38,7 @@ use super::{
 
 const EDGE_SAMPLES: u32 = 40;
 const MAX_SHARED_EDGE_SEED_GAP_MM: f64 = 0.005;
-const MAX_CORROBORATED_VERTEX_GAP_MM: f64 = 0.005;
+pub(super) const MAX_CORROBORATED_VERTEX_GAP_MM: f64 = 0.005;
 type AdmittedEdges = BTreeMap<usize, (usize, usize, usize)>;
 
 #[derive(Clone, Copy, Default)]
@@ -117,9 +117,32 @@ pub(super) fn append(
             .get(&(source, body))
             .cloned()
             .unwrap_or_else(|| BTreeSet::from([body]));
-        patches.sort_by_key(|patch| patch.priority);
+        let mut edge_spans = BTreeMap::<usize, f64>::new();
+        for patch in &patches {
+            for side in &patch.sides {
+                let span = side.vertices[0].1.distance(side.vertices[1].1);
+                edge_spans
+                    .entry(side.edge)
+                    .and_modify(|maximum| *maximum = maximum.max(span))
+                    .or_insert(span);
+            }
+        }
+        let collapsed = |patch: &Patch| {
+            patch.sides.iter().any(|side| {
+                let span = side.vertices[0].1.distance(side.vertices[1].1);
+                span <= GAP_MM && edge_spans[&side.edge] > span + GAP_MM
+            })
+        };
+        patches.sort_by_key(|patch| (collapsed(patch), patch.priority));
         let mut reconciliations = BTreeMap::new();
         let selected = compatible_patches(&mut patches, &mut reconciliations);
+        for &index in &selected {
+            let gap = patches[index].recovery.endpoint_vertex_shift;
+            if gap > 0.0 {
+                let record = reconciliations.entry(index).or_default();
+                record.vertex_repair = Some(record.vertex_repair.unwrap_or(0.0).max(gap));
+            }
+        }
         let mut by_edge = BTreeMap::<_, Vec<_>>::new();
         for &index in &selected {
             for side in &patches[index].sides {
@@ -462,7 +485,64 @@ fn compatible_patches(
             break;
         }
     }
+    reconcile_admitted_vertices(patches, &admitted, reconciliations);
     admitted
+}
+
+fn reconcile_admitted_vertices(
+    patches: &mut [Patch],
+    admitted: &BTreeSet<usize>,
+    reconciliations: &mut BTreeMap<usize, Reconciliation>,
+) {
+    let mut sites = BTreeMap::<usize, Vec<Point3>>::new();
+    for &index in admitted {
+        for side in &patches[index].sides {
+            for (&(vertex, point), parameter) in side
+                .vertices
+                .iter()
+                .zip(side.curve.full_knot_endpoints().endpoints())
+            {
+                let sites = sites.entry(vertex).or_default();
+                sites.push(point);
+                if let Some(endpoint) = curve_point(&side.curve, parameter) {
+                    sites.push(endpoint);
+                }
+            }
+        }
+    }
+    let centers = sites
+        .into_iter()
+        .filter_map(|(vertex, points)| {
+            let anchor = *points.first()?;
+            if points.iter().all(|point| point.distance(anchor) <= GAP_MM) {
+                return None;
+            }
+            let (a, b) = points
+                .iter()
+                .enumerate()
+                .flat_map(|(i, a)| points[i + 1..].iter().map(move |b| (a, b)))
+                .max_by(|(a, b), (c, d)| a.distance(**b).total_cmp(&c.distance(**d)))?;
+            let center = Point3::new(a.x.midpoint(b.x), a.y.midpoint(b.y), a.z.midpoint(b.z));
+            points
+                .iter()
+                .all(|point| point.distance(center) <= GAP_MM)
+                .then_some((vertex, center))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for &index in admitted {
+        for side in &mut patches[index].sides {
+            for (vertex, point) in &mut side.vertices {
+                if let Some(&center) = centers.get(vertex) {
+                    let gap = point.distance(center);
+                    if gap > 0.0 {
+                        let record = reconciliations.entry(index).or_default();
+                        record.vertex_repair = Some(record.vertex_repair.unwrap_or(0.0).max(gap));
+                        *point = center;
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn retry_shared_boundary(
@@ -484,7 +564,6 @@ fn retry_shared_boundary(
     };
     let mut max_gap_mm = vertex_gap;
     let mut modified = vertex_gap > 0.0;
-    let mut local = BTreeMap::new();
     for side in &mut retry.sides {
         match edges.get(&side.edge) {
             Some(&(1, face, edge)) => {
@@ -502,6 +581,16 @@ fn retry_shared_boundary(
             None => (),
             Some(_) => return None,
         }
+    }
+    let aligned_vertex_gap =
+        repair_corroborated_vertices(&mut retry, admitted, vertices, edges, true);
+    if aligned_vertex_gap > 0.0 {
+        record.vertex_repair = Some(vertex_gap.max(aligned_vertex_gap));
+        max_gap_mm = max_gap_mm.max(aligned_vertex_gap);
+        modified = true;
+    }
+    let mut local = BTreeMap::new();
+    for side in &retry.sides {
         for &(id, point) in &side.vertices {
             let existing = *local
                 .entry(id)
@@ -800,7 +889,7 @@ fn append_component(
         owner.shells.push(shell);
     } else {
         ir.geometry.regions.push(Region {
-            id: region,
+            id: region.clone(),
             body: body_id.clone(),
             shells: vec![shell],
             native_ref: None,

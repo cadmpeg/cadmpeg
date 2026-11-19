@@ -2732,6 +2732,15 @@ fn fit_ring(
     if flip {
         sides.reverse();
     }
+    let paired_station_vertex = (tensor_station_vertices.len() == 1)
+        .then(|| tensor_station_vertices.first().copied())
+        .flatten()
+        .and_then(|vertex| {
+            sides
+                .iter()
+                .flat_map(|side| side.vertices)
+                .find_map(|(id, point)| (id == vertex).then_some((id, point)))
+        });
     Some(Patch {
         face,
         body: member.body,
@@ -2752,6 +2761,7 @@ fn fit_ring(
         inner_starts: Vec::new(),
         recovery: super::SheetBoundaryRecovery {
             rolling_extension_mm,
+            paired_station_vertex,
             ..super::SheetBoundaryRecovery::default()
         },
     })

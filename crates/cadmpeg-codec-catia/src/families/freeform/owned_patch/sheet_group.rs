@@ -172,6 +172,11 @@ fn allocation_run_start(
     (position == seed).then_some(start)
 }
 
+struct ScopedMembers {
+    members: Vec<(usize, usize, bool)>,
+    end_anchored: bool,
+}
+
 struct Allocations {
     starts: Vec<usize>,
     records: Vec<ConsolidatedRecord>,
@@ -253,7 +258,12 @@ impl Allocations {
         self.starts.get(index + 1).copied().unwrap_or(self.limit)
     }
 
-    fn faces(&self, bytes: &[u8], shells: &[usize]) -> Option<Vec<(usize, usize, bool)>> {
+    fn faces(
+        &self,
+        bytes: &[u8],
+        shells: &[usize],
+        governing: bool,
+    ) -> Option<Vec<(usize, usize, bool)>> {
         let mut output = Vec::new();
         for (s, &slot) in shells.iter().enumerate() {
             let shell = self.starts.binary_search(&slot).ok()?;
@@ -265,13 +275,14 @@ impl Allocations {
             let first = self.after(shell);
             let end = shells.get(s + 1).copied().unwrap_or(self.limit);
             let end_index = self.starts.partition_point(|&start| start < end);
-            if self
-                .records
-                .get(shell + 1..end_index)?
-                .iter()
-                .filter(|f| f.class() == 0x5f)
-                .count()
-                != members.len()
+            if !governing
+                && self
+                    .records
+                    .get(shell + 1..end_index)?
+                    .iter()
+                    .filter(|f| f.class() == 0x5f)
+                    .count()
+                    != members.len()
             {
                 return None;
             }
@@ -296,6 +307,45 @@ impl Allocations {
         Some(output)
     }
 
+    fn members_with_preceding_supports(
+        &self,
+        bytes: &[u8],
+        local: &Self,
+        group_end: usize,
+        members: &[(usize, usize, bool)],
+    ) -> Option<ScopedMembers> {
+        let global_index = |index: usize| {
+            let start = local.records.get(index)?.source_range().start;
+            self.records
+                .binary_search_by_key(&start, |record| record.source_range().start)
+                .ok()
+        };
+        let mut preceding = 0;
+        let mut same_supports = true;
+        let resolved = members
+            .iter()
+            .map(|&(shell, face, forward)| {
+                let face = global_index(face)?;
+                let mut at = 1;
+                let support = allocation_reference(payload(bytes, &self.records[face])?, &mut at)?;
+                let target = self.resolve(face, support, true)?;
+                if self.records[target].source_range().start < group_end {
+                    preceding += 1;
+                }
+                same_supports &= self.resolve(face, support, false) == Some(target);
+                Some((global_index(shell)?, face, forward))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if preceding == 0 {
+            return None;
+        }
+        let all_precede = preceding == members.len();
+        (all_precede || same_supports).then_some(ScopedMembers {
+            members: resolved,
+            end_anchored: all_precede,
+        })
+    }
+
     fn backward_faces(
         &self,
         bytes: &[u8],
@@ -308,7 +358,7 @@ impl Allocations {
         let distance = backward_shell_distance(payload(bytes, &self.records[index])?)?;
         let shell = self.backward_target(index, distance)?;
         let frame = &self.records[shell];
-        if frame.class() != 0x61 || frame.family() != Family::A || frame.flag() != Flag::Flag03 {
+        if frame.class() != 0x61 || frame.flag() != Flag::Flag03 {
             return None;
         }
         let (references, bits) = sheet_references(payload(bytes, frame)?, frame.family())?;
@@ -417,6 +467,7 @@ fn add_site(sites: &mut Sites, body: (usize, usize), id: usize, point: Point3) {
 pub(super) struct SelectedGroups {
     pub(super) source: usize,
     groups: BTreeSet<usize>,
+    allocation: Rc<Allocations>,
     pub(super) legacy_bodies: BTreeSet<super::roster::RecordKey>,
     legacy_roots: BodyRoots,
 }
@@ -497,6 +548,7 @@ fn selected_groups(
         selected = Some(SelectedGroups {
             source,
             groups,
+            allocation: Rc::new(alloc),
             legacy_bodies,
             legacy_roots,
         });
@@ -533,26 +585,54 @@ pub(super) fn patches(
     let mut allocation_starts = BTreeMap::new();
     let mut source_bytes = BTreeMap::new();
     let mut mixed_allocations = BTreeMap::new();
-    let mut excluded_groups = 0;
-    for group in records
+    let mut governing_tensors = None;
+    let mut groups = records
         .iter()
-        .filter(|frame| root(frame, data) || backward_root(frame, data))
-    {
-        let source = group.source_index();
-        if selected.as_ref().is_some_and(|selected| {
-            selected.source == source && !selected.groups.contains(&group.source_range().start)
-        }) {
-            excluded_groups += 1;
-            continue;
+        .filter(|frame| {
+            frame.family() == Family::B && frame.class() == 0x5b && frame.flag() == Flag::Flag13
+        })
+        .map(|frame| {
+            (
+                (frame.source_index(), frame.source_range().start),
+                frame.byte_offset(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    if let Some(selected) = &selected {
+        for &start in &selected.groups {
+            let physical = file_offset(&sources[selected.source], start).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "governing sheet root is outside its logical source",
+                )
+            })?;
+            groups.entry((selected.source, start)).or_insert(physical);
         }
+    }
+    let mut excluded_groups = 0;
+    for ((source, start), group_position) in groups {
         let extents = &sources[source];
         let bytes = match source_bytes.entry(source) {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(logical_bytes(ctx, data, extents)?),
         };
         let bytes = bytes.as_ref();
-        let backward = backward_root(group, data);
+        let Some(group) = parse_consolidated_allocation_record(bytes, start, bytes.len()) else {
+            continue;
+        };
+        let group = &group;
+        if !root(group, bytes) && !backward_root(group, bytes) {
+            continue;
+        }
+        let governing = selected
+            .as_ref()
+            .filter(|selected| selected.source == source);
+        if governing.is_some_and(|selected| !selected.groups.contains(&start)) {
+            excluded_groups += 1;
+            continue;
+        }
+        let backward = backward_root(group, bytes);
         let mut end_anchored = backward;
+        let mut preceding_supports = false;
         let (alloc, members) = if backward {
             let Some(seed) = records.windows(3).find(|frames| {
                 frames[0].source_index() == source
@@ -574,11 +654,26 @@ pub(super) fn patches(
             (alloc, members)
         } else {
             let alloc = Rc::new(Allocations::read(bytes, group.source_range().end, None));
-            let members = payload(data, group)
+            let members = payload(bytes, group)
                 .and_then(shell_slots)
-                .and_then(|shells| alloc.faces(bytes, &shells));
-            if members.is_some() {
-                (alloc, members)
+                .and_then(|shells| alloc.faces(bytes, &shells, governing.is_some()));
+            if let Some(members) = members {
+                let extended = governing.and_then(|selected| {
+                    let resolved = selected.allocation.members_with_preceding_supports(
+                        bytes,
+                        &alloc,
+                        group.source_range().end,
+                        &members,
+                    )?;
+                    Some((Rc::clone(&selected.allocation), resolved))
+                });
+                if let Some((alloc, resolved)) = extended {
+                    preceding_supports = true;
+                    end_anchored = resolved.end_anchored;
+                    (alloc, Some(resolved.members))
+                } else {
+                    (alloc, Some(members))
+                }
             } else {
                 let mixed = alloc.records.first().is_some_and(|frame| {
                     frame.class() == 0x61
@@ -626,28 +721,69 @@ pub(super) fn patches(
             (frame.family() == family && frame.class() == class).then_some(target)
         };
         let physical = |position| file_offset(extents, position);
-        let uncached = alloc
-            .records
-            .iter()
-            .filter(|frame| {
-                frame.family() == Family::A
-                    && frame.class() == 0x34
-                    && physical(frame.byte_offset()).is_some_and(|pos| !carriers.contains_key(&pos))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let tensors = crate::families::a5a8::records::a5_owned_surfaces_from_records(
-            bytes, &uncached, refusal,
-        )?
-        .into_iter()
-        .map(|surface| (surface.pos, surface.geometry))
-        .collect();
+        let mut load_tensors = || {
+            let uncached = alloc
+                .records
+                .iter()
+                .filter(|frame| {
+                    frame.family() == Family::A
+                        && frame.class() == 0x34
+                        && physical(frame.byte_offset())
+                            .is_some_and(|pos| !carriers.contains_key(&pos))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            Ok::<_, cadmpeg_core::CodecError>(
+                crate::families::a5a8::records::a5_owned_surfaces_from_records(
+                    bytes, &uncached, refusal,
+                )?
+                .into_iter()
+                .map(|surface| (surface.pos, surface.geometry))
+                .collect(),
+            )
+        };
+        let local_tensors;
+        let tensors = if preceding_supports {
+            if governing_tensors.is_none() {
+                governing_tensors = Some(load_tensors()?);
+            }
+            governing_tensors
+                .as_ref()
+                .expect("governing tensors loaded")
+        } else {
+            local_tensors = load_tensors()?;
+            &local_tensors
+        };
         let trim_source = Source {
             bytes,
             records: &alloc.records,
             resolve: |index, reference| alloc.resolve(index, reference, end_anchored),
             physical,
-            tensors: &tensors,
+            tensors,
+        };
+        let end_source = Source {
+            bytes,
+            records: &alloc.records,
+            resolve: |index, reference| alloc.resolve(index, reference, true),
+            physical,
+            tensors,
+        };
+        let decode_face = |face, member, refusal: &mut crate::nurbs::LaneRefusals| {
+            trim_source
+                .decode(ir, face, member, carriers, refusal)
+                .or_else(|| {
+                    if end_anchored || governing.is_none() {
+                        return None;
+                    }
+                    let mut at = 1;
+                    let reference =
+                        allocation_reference(payload(bytes, alloc.records.get(face)?)?, &mut at)?;
+                    let support = alloc.resolve(face, reference, false)?;
+                    if alloc.resolve(face, reference, true)? != support {
+                        return None;
+                    }
+                    end_source.decode(ir, face, member, carriers, refusal)
+                })
         };
         let start = output.len();
         let mut pending = Vec::new();
@@ -665,10 +801,7 @@ pub(super) fn patches(
                 body: (source, shell_pos),
                 forward,
             };
-            roots
-                .entry(member.body)
-                .or_default()
-                .insert(group.byte_offset());
+            roots.entry(member.body).or_default().insert(group_position);
             let owners = sheet_members
                 .entry((source, alloc.records[face].source_range().start))
                 .or_default();
@@ -690,7 +823,7 @@ pub(super) fn patches(
                 output.push(patch);
                 continue;
             }
-            let Some(decoded) = trim_source.decode(ir, face, member, carriers, refusal) else {
+            let Some(decoded) = decode_face(face, member, refusal) else {
                 continue;
             };
             for site @ (vertex, _, point, explicit, _) in decoded.endpoint_sites() {
@@ -761,7 +894,31 @@ pub(super) fn patches(
         }
         let mut disputed = witnesses::disputed(&output[start..]);
         primary.corroborate(&mut disputed);
-        if !disputed.is_empty() {
+        let mut paired_stations = BTreeMap::<_, Option<Point3>>::new();
+        for patch in &output[start..] {
+            let Some((vertex, point)) = patch.recovery.paired_station_vertex else {
+                continue;
+            };
+            paired_stations
+                .entry((patch.body, vertex))
+                .and_modify(|prior| {
+                    if prior.is_some_and(|prior| prior.distance(point) > super::GAP_MM) {
+                        *prior = None;
+                    }
+                })
+                .or_insert(Some(point));
+        }
+        for ((body, vertex), point) in paired_stations {
+            if let Some(point) = point {
+                disputed
+                    .entry(body)
+                    .or_default()
+                    .entry(vertex)
+                    .or_insert(point);
+            }
+        }
+        let plane_sites = endpoints.plane_refit_sites(&output[start..]);
+        if !disputed.is_empty() || !plane_sites.is_empty() {
             let mut edges = BTreeMap::<_, BTreeMap<_, Vec<_>>>::new();
             for patch in &output[start..] {
                 let by_edge = edges.entry(patch.body).or_default();
@@ -774,15 +931,26 @@ pub(super) fn patches(
             }
             let mut replacements = Vec::new();
             for (index, patch) in output[start..].iter().enumerate() {
-                let Some(sites) = disputed.get(&patch.body) else {
-                    continue;
+                let common_sites = disputed.get(&patch.body);
+                let plane_sites = plane_sites.get(&patch.face);
+                let combined;
+                let sites = match (common_sites, plane_sites) {
+                    (Some(common), Some(plane)) => {
+                        combined = common
+                            .iter()
+                            .chain(plane.iter())
+                            .map(|(&v, &p)| (v, p))
+                            .collect();
+                        &combined
+                    }
+                    (Some(sites), None) | (None, Some(sites)) => sites,
+                    (None, None) => continue,
                 };
                 if !witnesses::disagrees(patch, sites) {
                     continue;
                 }
                 let (face, member) = native_faces[&patch.face];
-                let recovered = trim_source
-                    .decode(ir, face, member, carriers, refusal)
+                let recovered = decode_face(face, member, refusal)
                     .and_then(|face| {
                         face.patch(ir, Some(sites))
                             .filter(|refitted| !witnesses::disagrees(refitted, sites))
@@ -812,7 +980,73 @@ pub(super) fn patches(
                 .iter()
                 .filter_map(|face| face.recover_rolling_boundary(ir, None)),
         );
+        if !pending.is_empty() {
+            let sites = witnesses::retry_sites(&output[start..]);
+            pending.retain(|face| {
+                let Some(vertices) = sites.get(&face.member.body) else {
+                    return true;
+                };
+                let Some(mut patch) = face.patch(ir, Some(vertices)) else {
+                    return true;
+                };
+                patch.priority = VERTEX_RETRY_PRIORITY;
+                output.push(patch);
+                false
+            });
+        }
         endpoints.resolve(&mut output[start..]);
+        let mut edge_uses = BTreeMap::<_, BTreeMap<_, Vec<_>>>::new();
+        for patch in &output[start..] {
+            for side in &patch.sides {
+                edge_uses
+                    .entry(patch.body)
+                    .or_default()
+                    .entry(side.edge)
+                    .or_default()
+                    .push((patch.face, side));
+            }
+        }
+        let refits = output[start..]
+            .iter()
+            .filter_map(|patch| {
+                if !matches!(
+                    patch.surface_fit,
+                    Some(super::SheetSurfaceFit::RollingBall { .. })
+                ) {
+                    return None;
+                }
+                let by_edge = edge_uses.get(&patch.body)?;
+                let mut peers = BTreeMap::new();
+                let mut conflict = false;
+                for side in &patch.sides {
+                    let mut uses = by_edge
+                        .get(&side.edge)?
+                        .iter()
+                        .filter(|(face, _)| *face != patch.face);
+                    let (_, peer) = *uses.next()?;
+                    if uses.next().is_some() {
+                        return None;
+                    }
+                    conflict |= side.vertices.iter().any(|(id, point)| {
+                        peer.vertices.iter().any(|(other, anchor)| {
+                            id == other
+                                && point.distance(*anchor)
+                                    > super::transfer::MAX_CORROBORATED_VERTEX_GAP_MM
+                        })
+                    });
+                    peers.insert(side.edge, peer);
+                }
+                if !conflict {
+                    return None;
+                }
+                let (face, member) = *native_faces.get(&patch.face)?;
+                let mut refit =
+                    decode_face(face, member, refusal)?.recover_from_shell_edges(&peers)?;
+                refit.priority = ROLLING_BOUNDARY_RETRY_PRIORITY;
+                Some(refit)
+            })
+            .collect::<Vec<_>>();
+        output.extend(refits);
     }
     if excluded_groups != 0 {
         refusal.push_body_selection(true, excluded_groups);
@@ -829,6 +1063,140 @@ pub(super) fn patches(
 mod tests {
     use super::*;
     use crate::wire::records::parse_consolidated_record;
+
+    fn one_member_group(reference: u8) -> Vec<u8> {
+        let mut payload = vec![0x81, reference, 5, 1];
+        for value in [-1.0_f32, 1.0, -1.0, 1.0, -1.0, 1.0] {
+            payload.extend(value.to_le_bytes());
+        }
+        payload.push(3);
+        let mut frame = vec![
+            0xb2,
+            0x13,
+            0x5b,
+            u8::try_from(payload.len()).expect("small root"),
+            5,
+        ];
+        frame.extend(payload);
+        frame
+    }
+
+    #[test]
+    fn backward_sheet_roster_accepts_compact_family() {
+        let mut bytes = vec![0xb2, 3, 0x5f, 0, 5];
+        bytes.extend([0xb2, 3, 0x61, 5, 5, 0x81, 5, 0, 0x13, 3]);
+        let root = bytes.len();
+        bytes.extend(one_member_group(5));
+        let alloc = Allocations::read(&bytes, 0, Some(bytes.len()));
+        let group = parse_consolidated_record(&bytes, root, bytes.len()).expect("sheet root");
+        assert_eq!(
+            alloc.backward_faces(&bytes, &group),
+            Some(vec![(1, 0, true)])
+        );
+    }
+
+    #[test]
+    fn governing_sheet_root_accepts_four_byte_allocation_header() {
+        let ordinary = one_member_group(3);
+        let mut data = vec![0xb2, 3, 0x25, 0, 5];
+        data.extend([0xb5, 0x13, 0x5b, ordinary[3], 0x0c, 0, 0, 1]);
+        data.extend_from_slice(&ordinary[5..]);
+        let shell = data.len();
+        data.extend([0xb2, 3, 0x61, 5, 5, 0x81, 3, 0, 0x13, 3]);
+        let face = data.len();
+        data.extend([0xb2, 3, 0x5f, 0, 5]);
+        let sources = vec![vec![
+            SourceExtent::within(&data, 0, data.len()).expect("source")
+        ]];
+        let records = crate::wire::records::consolidated_records_in_sources(&data, &sources)
+            .expect("records");
+        assert!(!records.iter().any(|frame| frame.class() == 0x5b));
+        let selection = crate::container::body_selection::BodySelection {
+            source: 0,
+            allocation_ends: vec![65_537],
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &data,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        )
+        .expect("context");
+        let stream = Stream {
+            data: &data,
+            sources: &sources,
+            records: &records,
+            selection: Some(&selection),
+        };
+        let sheets = patches(
+            &ctx,
+            &CadIr::empty(),
+            &stream,
+            &BTreeMap::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("sheet membership");
+        assert_eq!(
+            sheets.members.get(&(0, face)),
+            Some(&vec![Member {
+                body: (0, shell),
+                forward: true
+            }])
+        );
+    }
+
+    #[test]
+    fn governing_sheet_root_survives_extent_split() {
+        let mut logical = vec![0xb2, 3, 0x25, 0, 5];
+        logical.extend(one_member_group(3));
+        let shell = logical.len();
+        logical.extend([0xb2, 3, 0x61, 5, 5, 0x81, 3, 0, 0x13, 3]);
+        let face = logical.len();
+        logical.extend([0xb2, 3, 0x5f, 0, 5]);
+        let split = 17;
+        let gap = [0xff; 11];
+        let mut data = logical[..split].to_vec();
+        data.extend(gap);
+        data.extend_from_slice(&logical[split..]);
+        let sources = vec![vec![
+            SourceExtent::within(&data, 0, split).expect("first extent"),
+            SourceExtent::within(&data, split + gap.len(), data.len()).expect("second extent"),
+        ]];
+        let records = crate::wire::records::consolidated_records_in_sources(&data, &sources)
+            .expect("records");
+        let selection = crate::container::body_selection::BodySelection {
+            source: 0,
+            allocation_ends: vec![2],
+        };
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &data,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::desktop(),
+        )
+        .expect("context");
+        let stream = Stream {
+            data: &data,
+            sources: &sources,
+            records: &records,
+            selection: Some(&selection),
+        };
+        let sheets = patches(
+            &ctx,
+            &CadIr::empty(),
+            &stream,
+            &BTreeMap::new(),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("sheet membership");
+        assert_eq!(
+            sheets.members.get(&(0, face)),
+            Some(&vec![Member {
+                body: (0, shell + gap.len()),
+                forward: true
+            }])
+        );
+    }
 
     #[test]
     fn wide_vertex_roster_crosses_weighted_allocations_and_stays_in_source() {
@@ -1079,6 +1447,29 @@ mod tests {
     }
 
     #[test]
+    fn governing_forward_roster_resolves_support_before_the_group() {
+        let mut bytes = vec![0xb2, 3, 0x27, 0, 5, 0xb2, 0x13, 0x5b, 0, 5];
+        let group_end = bytes.len();
+        bytes.extend([0xb2, 3, 0x61, 5, 5, 0x81, 3, 0, 0x13, 3]);
+        bytes.extend([0xb2, 3, 0x5f, 4, 5, 0x82, 0x0d, 3, 5]);
+        let local = Allocations::read(&bytes, group_end, Some(bytes.len()));
+        let full = Allocations::read(&bytes, 0, Some(bytes.len()));
+        let members = local.faces(&bytes, &[0], true).expect("governing roster");
+        assert_eq!(members, [(0, 1, true)]);
+        assert_eq!(
+            full.members_with_preceding_supports(&bytes, &local, group_end, &members)
+                .map(|scope| (scope.members, scope.end_anchored)),
+            Some((vec![(2, 3, true)], true))
+        );
+        let reference = AllocationReference {
+            value: 3,
+            encoding: AllocationReferenceEncoding::BackwardDistance,
+        };
+        assert_eq!(full.resolve(3, reference, true), Some(0));
+        assert_eq!(local.resolve(1, reference, true), None);
+    }
+
+    #[test]
     fn sheet_group_uses_per_roster_bits_and_exact_allocation_starts() {
         let mut bytes = vec![0xb2, 0x13, 0x5b, 33, 5, 0x82, 3, 0x06, 5, 9, 1];
         bytes.extend([0; 24]);
@@ -1105,7 +1496,7 @@ mod tests {
             .expect("valid fixture sheet group");
         let alloc = Allocations::read(&bytes, start, None);
         assert_eq!(
-            alloc.faces(&bytes, &slots),
+            alloc.faces(&bytes, &slots, false),
             Some(vec![(0, 1, false), (0, 3, true), (4, 5, true)])
         );
         let backward = AllocationReference {
@@ -1113,7 +1504,14 @@ mod tests {
             encoding: AllocationReferenceEncoding::WidthCoded,
         };
         assert_eq!(alloc.resolve(3, backward, false), Some(1));
+        bytes.extend(face);
+        let alloc = Allocations::read(&bytes, start, None);
+        assert!(alloc.faces(&bytes, &slots, false).is_none());
+        assert_eq!(
+            alloc.faces(&bytes, &slots, true),
+            Some(vec![(0, 1, false), (0, 3, true), (4, 5, true)])
+        );
         bytes[start + 11] = 0x0b;
-        assert!(alloc.faces(&bytes, &slots).is_none());
+        assert!(alloc.faces(&bytes, &slots, true).is_none());
     }
 }

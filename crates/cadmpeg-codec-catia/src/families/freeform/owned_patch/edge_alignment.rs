@@ -320,7 +320,8 @@ pub(super) fn project_spline(
     };
     let project = memoize(project);
     let fit = fit_edge_with_error(range, &project, UV_FIT_TOLERANCE)
-        .or_else(|| fit_edge_with_error(range, &project, UV_FIT_FALLBACK))?;
+        .or_else(|| fit_edge_with_error(range, &project, UV_FIT_FALLBACK))
+        .or_else(|| fit_edge_with_error(range, &project, UV_FIT_PACING_FALLBACK))?;
     let poles = fit
         .control_points()
         .iter()

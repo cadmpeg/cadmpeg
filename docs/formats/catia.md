@@ -1229,8 +1229,12 @@ The width-coded or compact backward shell distance selects a preceding
 roster by its allocation end. Intervening allocations can separate that
 roster from the group. The group allocation width and the shell distance
 occupy separate fields.
-The referenced A-family class-`61` roster has count `18 <n:u16le>`,
-followed by `n` allocation references and the packed sheet orientation
+A governing group address selects its frame in the complete logical allocation
+walk. A B5 allocation header carries a four-byte allocation token. Physical
+extent boundaries preserve the logical address and its ownership relations.
+The referenced class-`61` roster has count `80+n` in a B-family frame,
+or count `18 <n:u16le>` in an A-family wide frame, followed by `n`
+allocation references and the packed sheet orientation
 lane. The references name distinct class-`5f` faces in roster order.
 The member lane can mix new owned faces with reused preceding faces.
 In this group, a backward distance counts from the end of its frame's
@@ -1241,6 +1245,10 @@ An adjacent class-`61` sheet roster can mix these forward references with
 backward references. Its count has the same compact and A-family forms.
 Its packed control is `3`, and its references select distinct class-`5f`
 frames in occurrence order through the allocation-end address rules above.
+A governing sheet group with a forward roster owns the listed class-`5f`
+frames. Member supports can occur before and within the group in the
+complete logical run. If all member supports precede the group, the
+members resolve geometry references by allocation ends.
 The contiguous allocation run admits `a8` A-family and `b5` B-family frames
 with a four-byte header token `0c <width:u24le>`.
 Its address scope includes the contiguous allocations before a class-`65`
