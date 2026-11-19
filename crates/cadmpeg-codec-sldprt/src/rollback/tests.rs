@@ -6,7 +6,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_parasolid::records::DeltasRecords;
 use cadmpeg_parasolid::test_support::test_pmarks;
 
-use super::{join, mark_chain, mark_records, MarkChain, MarkRecord, Reading, Unread};
+use super::{
+    join, mark_chain, mark_records, token_naming_marks, MarkChain, MarkRecord, Reading, Unread,
+};
 use crate::carchive::reader::MarkOwner;
 use crate::layout::pmark_record_head as head;
 
@@ -211,5 +213,40 @@ fn marks_that_fix_no_position_name_their_reason() {
     assert_eq!(
         join(&chain(&[8, 1]), &[], walk).unwrap(),
         Reading::Unread(Unread::NoMarkRecord)
+    );
+}
+
+fn tagged(index: u16, mark: u32) -> Vec<u8> {
+    [
+        (0x8000 | index).to_le_bytes().to_vec(),
+        record_head(mark, 0, 0),
+    ]
+    .concat()
+}
+
+#[test]
+fn an_unreconciled_map_takes_the_token_whose_records_name_the_most_marks() {
+    let marks = chain(&[11, 8, 5, 1]);
+    let stream = resolved(&[
+        tagged(0x2b, 5),
+        tagged(0x30, 5),
+        tagged(0x2b, 8),
+        tagged(0x31, 1),
+        tagged(0x31, 1),
+        tagged(0x2b, 11),
+    ]);
+    assert_eq!(token_naming_marks(&stream, 0x40, &marks), Some(0x2b));
+    assert_eq!(
+        token_naming_marks(&stream, 0x2b, &marks),
+        None,
+        "a token at or past the map count names no class of the configuration"
+    );
+    let tied = resolved(&[tagged(0x2b, 5), tagged(0x30, 8)]);
+    assert_eq!(token_naming_marks(&tied, 0x40, &marks), None);
+    let initial = resolved(&[tagged(0x31, 1)]);
+    assert_eq!(
+        token_naming_marks(&initial, 0x40, &marks),
+        None,
+        "no feature records the initial mark"
     );
 }

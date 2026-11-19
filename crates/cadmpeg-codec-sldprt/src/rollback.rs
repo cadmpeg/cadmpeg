@@ -3,7 +3,7 @@
 //! §3.4): the current mark of the active configuration's partition against
 //! the mark each feature's `moPMarkRecord_c` names.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -25,6 +25,10 @@ const RESOLVED_FEATURES_SUFFIX: &str = "-ResolvedFeatures";
 const RANGE_FORM_WORD: u32 = 1;
 /// The map count u32 and the u16 that open a `ResolvedFeatures` stream.
 const RESOLVED_FEATURES_HEAD: usize = 6;
+/// The `CArchive` word that a u32 class token follows.
+const LONG_TAG: u16 = 0x7fff;
+/// The `CArchive` word that opens a class declaration.
+const DECLARATION_TAG: u16 = 0xffff;
 
 /// What the stored marks state of the rollback position.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +54,8 @@ pub(crate) enum Unread {
     NoCurrentMark,
     /// The configuration's object or feature stream is absent.
     NoFeatureStreams,
-    /// The configuration's class map does not reconcile with its feature stream.
+    /// The configuration's class map does not reconcile with its feature
+    /// stream, and no single class token opens the records of its marks.
     ClassMapUnreconciled,
     /// The class map declares no `moPMarkRecord_c`.
     NoMarkClass,
@@ -80,7 +85,8 @@ impl std::fmt::Display for Unread {
                 f.write_str("the configuration has no object stream or feature stream")
             }
             Self::ClassMapUnreconciled => f.write_str(
-                "the configuration's class map does not reconcile with its feature stream",
+                "the configuration's class map does not reconcile with its feature stream, and no \
+                 single class token opens records of its marks",
             ),
             Self::NoMarkClass => write!(f, "the class map declares no {MARK_CLASS}"),
             Self::NoMarkRecord => write!(f, "the feature stream holds no {MARK_CLASS} record"),
@@ -170,14 +176,16 @@ pub(crate) fn read(
     let Some(count) = crate::archive::resolved_features_count(resolved) else {
         return Ok(Reading::Unread(Unread::ClassMapUnreconciled));
     };
-    let Some(map) = crate::archive::class_index_map(config, count, ctx)? else {
-        return Ok(Reading::Unread(Unread::ClassMapUnreconciled));
+    let index = match crate::archive::class_index_map(config, count, ctx)? {
+        Some(map) => map
+            .iter()
+            .find_map(|(index, name)| (name == MARK_CLASS).then_some(*index))
+            .ok_or(Unread::NoMarkClass),
+        None => token_naming_marks(resolved, count, &chain).ok_or(Unread::ClassMapUnreconciled),
     };
-    let Some(index) = map
-        .iter()
-        .find_map(|(index, name)| (name == MARK_CLASS).then_some(*index))
-    else {
-        return Ok(Reading::Unread(Unread::NoMarkClass));
+    let index = match index {
+        Ok(index) => index,
+        Err(unread) => return Ok(Reading::Unread(unread)),
     };
     join(&chain, &mark_records(resolved, index), || {
         let Some(version) =
@@ -234,13 +242,63 @@ pub(crate) fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
     })
 }
 
+/// The class index of `moPMarkRecord_c` where the class map does not
+/// reconcile: among the indices below the stream's map `count`, the one whose
+/// class tokens open the most record heads naming distinct main-line marks
+/// after the initial one. `None` where no index or several do.
+pub(crate) fn token_naming_marks(stream: &[u8], count: u32, chain: &MarkChain) -> Option<u32> {
+    let marks = match chain.main.split_last() {
+        Some((_, later)) if !later.is_empty() => later,
+        _ => chain.main.as_slice(),
+    };
+    let mut named = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for at in RESOLVED_FEATURES_HEAD..stream.len() {
+        let Some(word) = View::u16_le_at(stream, at) else {
+            break;
+        };
+        let (index, body) = match word {
+            LONG_TAG => match View::u32_le_at(stream, at + 2) {
+                Some(long) if long & 0x8000_0000 != 0 => (long & 0x7fff_ffff, at + 6),
+                _ => continue,
+            },
+            DECLARATION_TAG => continue,
+            word if word & 0x8000 != 0 => (u32::from(word & 0x7fff), at + 2),
+            _ => continue,
+        };
+        if index == 0 || index >= count {
+            continue;
+        }
+        if let Some(mark) = record_mark(stream, body).filter(|mark| marks.contains(mark)) {
+            named.entry(index).or_default().insert(mark);
+        }
+    }
+    let most = named.values().map(BTreeSet::len).max()?;
+    let mut leaders = named
+        .iter()
+        .filter(|(_, marks)| marks.len() == most)
+        .map(|(index, _)| *index);
+    match (leaders.next(), leaders.next()) {
+        (Some(index), None) => Some(index),
+        _ => None,
+    }
+}
+
+/// The mark of the record head at `body`, where the bytes there have its form.
+fn record_mark(stream: &[u8], body: usize) -> Option<u32> {
+    let record = stream.get(body..body.checked_add(head::LEN)?)?;
+    let mark = View::u32_le_at(record, head::MARK)?;
+    let form = View::u32_le_at(record, head::FORM)?;
+    let form_word = View::u32_le_at(record, head::FORM_WORD)?;
+    (form <= 1 || form_word == RANGE_FORM_WORD).then_some(mark)
+}
+
 /// Every `moPMarkRecord_c` of a `ResolvedFeatures` stream whose class has map
 /// index `index`, in stream order.
 pub(crate) fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
     let tag = match u16::try_from(index) {
-        Ok(short) if short < 0x7fff => (0x8000 | short).to_le_bytes().to_vec(),
+        Ok(short) if short < LONG_TAG => (0x8000 | short).to_le_bytes().to_vec(),
         _ => {
-            let mut tag = 0x7fff_u16.to_le_bytes().to_vec();
+            let mut tag = LONG_TAG.to_le_bytes().to_vec();
             tag.extend_from_slice(&(0x8000_0000 | index).to_le_bytes());
             tag
         }
@@ -253,11 +311,7 @@ pub(crate) fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
         .filter(|(_, window)| *window == tag.as_slice())
         .filter_map(|(offset, _)| {
             let at = RESOLVED_FEATURES_HEAD + offset + tag.len();
-            let record = stream.get(at..at.checked_add(head::LEN)?)?;
-            let mark = View::u32_le_at(record, head::MARK)?;
-            let form = View::u32_le_at(record, head::FORM)?;
-            let form_word = View::u32_le_at(record, head::FORM_WORD)?;
-            (form <= 1 || form_word == RANGE_FORM_WORD).then_some(MarkRecord { at, mark })
+            record_mark(stream, at).map(|mark| MarkRecord { at, mark })
         })
         .collect()
 }
