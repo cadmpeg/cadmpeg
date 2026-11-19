@@ -497,8 +497,7 @@ enum Task<'a, R> {
     Branch(&'a Node<R>, &'a Node<R>),
 }
 
-/// Evaluates a neutral expression tree on canonical values: a design
-/// expression, or a process expression whose references are `ParamRef`s.
+/// Evaluates a neutral design expression tree on canonical values.
 /// `reference` gives a reference's value, or `None` where it has none.
 ///
 /// # Errors
@@ -507,7 +506,16 @@ enum Task<'a, R> {
 /// parameter, or a bend variable has no value, [`EvalError::Type`] where an
 /// operand does not have the quantity or kind its operator takes, and
 /// [`EvalError::Domain`] for an operation outside its domain.
-pub fn evaluate<R>(
+pub fn evaluate(
+    root: &Node<ParameterRef>,
+    reference: &mut dyn FnMut(&ParameterRef) -> Option<Value>,
+) -> Result<Value, EvalError> {
+    evaluate_tree(root, reference)
+}
+
+/// [`evaluate`] over a tree of any reference type: a design expression, or
+/// a process expression whose references are `ParamRef`s.
+pub(super) fn evaluate_tree<R>(
     root: &Node<R>,
     reference: &mut dyn FnMut(&R) -> Option<Value>,
 ) -> Result<Value, EvalError> {

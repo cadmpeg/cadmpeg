@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::eval::{cache_value, evaluate, kind_value};
+use super::eval::{cache_value, evaluate_tree, kind_value};
 use super::history::{Context, Currents, Dependents, History};
 use super::wire::{record_reads, rewrite, Reads};
 use super::EditError;
@@ -236,28 +236,30 @@ impl CadIr {
                         Some(kind),
                     ) => {
                         let mut blocked = false;
-                        let result = evaluate(node, &mut |reference: &ParamRef| match reference {
-                            ParamRef::Process(target) if pending.contains(target) => {
-                                blocked = true;
-                                None
-                            }
-                            ParamRef::Process(target) => {
-                                let held = &self.process.parameters[*index.get(target)?];
-                                cache_value(held.kind.as_ref()?, held.value.as_ref()?)
-                            }
-                            ParamRef::Design(design) => {
-                                let RefTarget::Parameter(target) = &design.target else {
-                                    return None;
-                                };
-                                if design.through.is_some() {
-                                    return None;
+                        let result =
+                            evaluate_tree(node, &mut |reference: &ParamRef| match reference {
+                                ParamRef::Process(target) if pending.contains(target) => {
+                                    blocked = true;
+                                    None
                                 }
-                                let held = self.design_parameter(target).ok()?;
-                                let configuration = self.active_configuration_of(&held.scope);
-                                let cache = self.parameter_cache(target, configuration).ok()??;
-                                cache_value(&held.kind, cache)
-                            }
-                        });
+                                ParamRef::Process(target) => {
+                                    let held = &self.process.parameters[*index.get(target)?];
+                                    cache_value(held.kind.as_ref()?, held.value.as_ref()?)
+                                }
+                                ParamRef::Design(design) => {
+                                    let RefTarget::Parameter(target) = &design.target else {
+                                        return None;
+                                    };
+                                    if design.through.is_some() {
+                                        return None;
+                                    }
+                                    let held = self.design_parameter(target).ok()?;
+                                    let configuration = self.active_configuration_of(&held.scope);
+                                    let cache =
+                                        self.parameter_cache(target, configuration).ok()??;
+                                    cache_value(&held.kind, cache)
+                                }
+                            });
                         if blocked {
                             Attempt::Blocked
                         } else {
