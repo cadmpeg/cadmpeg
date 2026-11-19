@@ -52,6 +52,14 @@ pub(crate) enum InventorLossCode {
     FeatureRecordMalformed,
     /// A decoded operation has operands outside the v11 operation contract.
     FeatureDesignOperationNative,
+    /// Source topology metadata retains native names and memberships.
+    FeatureDesignTopologyNative,
+    /// Decoded history geometry retains its legacy arena.
+    FeatureDesignHistoryLegacy,
+    /// Source participant links and operation properties retain their native form.
+    FeatureDesignMetadataNative,
+    /// A sketch relation retains operands whose v11 relation is unresolved.
+    SketchDesignConstraintNative,
     /// An optional feature label is empty and has no neutral display name.
     FeatureLabelUnusable,
     /// Sketch curves carry entity flags whose construction meaning is
@@ -165,6 +173,8 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalStyleFormsNative,
     /// The active unfold rule states no decimal K-factor; sheet-metal rules keep no allowance.
     FeatureSheetMetalUnfoldFactorNative,
+    /// Relief forms and unadmitted relief dimensions retain native values.
+    FeatureSheetMetalReliefNative,
     /// A style `KFactor` parameter differs from the active unfold-rule K-factor; the rule keeps no allowance.
     FeatureSheetMetalStyleFactorConflict,
     /// No active unfold rule resolves in a part with sheet-metal styles.
@@ -362,6 +372,10 @@ impl InventorLossCode {
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
         Self::FeatureDesignOperationNative,
+        Self::FeatureDesignTopologyNative,
+        Self::FeatureDesignHistoryLegacy,
+        Self::FeatureDesignMetadataNative,
+        Self::SketchDesignConstraintNative,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
@@ -415,6 +429,7 @@ impl InventorLossCode {
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
         Self::FeatureSheetMetalUnfoldFactorNative,
+        Self::FeatureSheetMetalReliefNative,
         Self::FeatureSheetMetalStyleFactorConflict,
         Self::FeatureSheetMetalUnfoldRuleUnresolved,
         Self::FeatureSheetMetalStyleFactorAssumed,
@@ -521,6 +536,10 @@ impl InventorLossCode {
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
             Self::FeatureDesignOperationNative => "feature.design-operation-native",
+            Self::FeatureDesignTopologyNative => "feature.design-topology-native",
+            Self::FeatureDesignHistoryLegacy => "feature.design-history-legacy",
+            Self::FeatureDesignMetadataNative => "feature.design-metadata-native",
+            Self::SketchDesignConstraintNative => "sketch.design-constraint-native",
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
@@ -597,6 +616,7 @@ impl InventorLossCode {
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
             Self::FeatureSheetMetalUnfoldFactorNative => "feature.sheet-metal-unfold-factor-native",
+            Self::FeatureSheetMetalReliefNative => "feature.sheet-metal-relief-native",
             Self::FeatureSheetMetalStyleFactorConflict => {
                 "feature.sheet-metal-style-factor-conflict"
             }
@@ -763,6 +783,10 @@ impl InventorLossCode {
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
             | Self::FeatureDesignOperationNative
+            | Self::FeatureDesignTopologyNative
+            | Self::FeatureDesignHistoryLegacy
+            | Self::FeatureDesignMetadataNative
+            | Self::SketchDesignConstraintNative
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
@@ -773,6 +797,7 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
             | Self::FeatureSheetMetalUnfoldFactorNative
+            | Self::FeatureSheetMetalReliefNative
             | Self::FeatureSheetMetalStyleFactorConflict
             | Self::FeatureSheetMetalUnfoldRuleUnresolved
             | Self::FeatureSheetMetalStyleFactorAssumed
@@ -917,6 +942,10 @@ mod tests {
                 "sketch.record-malformed",
                 "feature.record-malformed",
                 "feature.design-operation-native",
+                "feature.design-topology-native",
+                "feature.design-history-legacy",
+                "feature.design-metadata-native",
+                "sketch.design-constraint-native",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
@@ -970,6 +999,7 @@ mod tests {
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
                 "feature.sheet-metal-unfold-factor-native",
+                "feature.sheet-metal-relief-native",
                 "feature.sheet-metal-style-factor-conflict",
                 "feature.sheet-metal-unfold-rule-unresolved",
                 "feature.sheet-metal-style-factor-assumed",

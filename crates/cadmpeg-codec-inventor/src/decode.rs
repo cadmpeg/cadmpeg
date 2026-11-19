@@ -1327,7 +1327,9 @@ fn decode_container<'a>(
     let transferred_sketch_constraint_count = ir.model.sketch_constraints.len();
     let transferred_feature_count = ir.model.features.len();
     let transferred_feature_result_count = ir.model.feature_result_topologies.len();
+    let unproduced_bodies = crate::design_v11::unproduced_bodies(&ir);
     let coverage_entries = [
+        (crate::coverage::DESIGN_UNPRODUCED_BODIES, unproduced_bodies),
         (crate::coverage::RSE_STORAGE_BANDS, storage_bands.len()),
         (crate::coverage::RSE_DATABASES, databases.len()),
         (
@@ -1573,6 +1575,10 @@ fn decode_container<'a>(
             &mut losses,
         )?;
     }
+    if document_kind == DocumentKind::Assembly {
+        crate::design_v11::assembly::project(ctx, &mut ir)?;
+    }
+    crate::design_v11::contraction::finish(&mut ir);
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,

@@ -216,7 +216,6 @@ pub(crate) fn validate_native(
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
     validate_features(ctx, ir, &data, &mut findings)?;
-    findings.extend(crate::design_v11::validate_operations(ir)?);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),
@@ -251,6 +250,34 @@ pub(crate) fn validate_native(
                 Some(issue.id.clone()),
             )
         });
+    }
+    if document_kind(ir) == Some("part") && !ir.design.scopes.is_empty() {
+        let mut features = crate::feature::FeatureInventory::default();
+        features.features = data.pm_dc_features;
+        features.pattern_features = data.pm_dc_pattern_features;
+        features.work_planes = data.pm_dc_work_planes;
+        features.properties = data.pm_dc_feature_properties;
+        features.sheet_metal_styles = data.pm_dc_sheet_metal_styles;
+        features.sheet_metal_flanges = data.pm_dc_sheet_metal_flanges;
+        features.sheet_metal_unfold_rules = data.pm_app_sheet_metal_unfold_rules;
+        features.sheet_metal_unfold_selections = data.pm_app_sheet_metal_unfold_selections;
+        let sketches = crate::sketch::SketchInventory {
+            sketches: data.pm_dc_sketches,
+            entities: Vec::new(),
+            transforms: Vec::new(),
+            directions: Vec::new(),
+            constraints: Vec::new(),
+            text_members: Vec::new(),
+            issues: Vec::new(),
+        };
+        findings.extend(crate::design_v11::validate_operations(
+            ctx,
+            ir,
+            &features,
+            &sketches,
+            &data.pm_dc_parameters,
+            &data.pm_dc_units,
+        )?);
     }
     Ok(findings)
 }
@@ -3933,12 +3960,36 @@ fn validate_assembly(
             None,
         ));
     }
+    if !ir.scope().design {
+        if !ir.model.assembly_joints.is_empty() {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor grounding is outside the document's design scope".into(),
+                None,
+            ));
+        }
+        return Ok(());
+    }
     projected
         .joints
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     let mut expected_joints = ir.model.assembly_joints.clone();
     expected_joints.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    if expected_joints != projected.joints {
+    let grounded = ir
+        .design
+        .scopes
+        .iter()
+        .flat_map(|scope| scope.occurrences.iter())
+        .filter(|(_, state)| state.grounded == Some(true))
+        .map(|(id, _)| id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let expected_grounded = crate::design_v11::assembly::grounded(&projected.joints);
+    if (ir.model.assembly_joints.is_empty()
+        && !ir.design.scopes.is_empty()
+        && grounded != expected_grounded)
+        || ((!ir.model.assembly_joints.is_empty() || ir.design.scopes.is_empty())
+            && expected_joints != projected.joints)
+    {
         findings.push(finding(
             Check::NativeLinks,
             "Inventor neutral assembly joints do not match the typed assembly records".into(),

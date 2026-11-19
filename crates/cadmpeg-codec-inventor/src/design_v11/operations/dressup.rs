@@ -81,6 +81,7 @@ fn thickness(value: cadmpeg_ir::scalar::PositiveLength, outward: Option<bool>) -
 pub(super) fn operation(
     value: &LegacyOperation,
     sketches: &[Sketch],
+    inputs: &[old::FeatureInputTopology],
 ) -> Option<Projected<FeatureOperation>> {
     if !matches!(
         value,
@@ -102,7 +103,7 @@ pub(super) fn operation(
                     .iter()
                     .map(|group| {
                         Ok(new::FilletSet::Edges {
-                            edges: selections::edge(&group.edges)?,
+                            edges: selections::edge(&group.edges, inputs)?,
                             section: new::FilletSection {
                                 size: Some(radius(&group.radius)?),
                                 profile: None,
@@ -186,7 +187,7 @@ pub(super) fn operation(
                     .iter()
                     .map(|group| {
                         Ok(new::ChamferSet {
-                            edges: selections::set(selections::edge(&group.edges)?)?,
+                            edges: selections::set(selections::edge(&group.edges, inputs)?)?,
                             size: Some(match group.spec {
                                 old::edge_treatments::ChamferSpec::Distance { distance } => {
                                     new::ChamferSize::Distance(Dimension::Literal(distance))

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback, UnorderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
@@ -18,10 +18,12 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::CadIr;
 
+pub(crate) mod assembly;
+pub(crate) mod contraction;
 mod datums;
 mod operations;
 mod parameters;
-mod sheet_metal;
+pub(crate) mod sheet_metal;
 mod sketches;
 
 pub(crate) fn project(
@@ -56,25 +58,130 @@ pub(crate) fn project(
                 .map(|record| (record.id(), record.header.flags)),
         )
         .collect();
-    project_history(ctx, ir, &flags)?;
+    project_history(ctx, ir, &flags, !features.sheet_metal_styles.is_empty())?;
     parameters::project(ctx, ir, parameters, units)?;
-    sketches::project(ctx, ir)?;
+    losses.extend(sketches::project(ctx, ir)?);
     datums::project(ctx, ir)?;
     sheet_metal::project(ctx, ir, features, parameters, losses)?;
-    operations::project(ctx, ir, losses)
+    operations::project(ctx, ir, losses)?;
+    sheet_metal::attachments::project(ir, features)?;
+    losses.extend(sheet_metal::feature_reliefs(ir, features, parameters)?);
+    native_losses(ir, losses);
+    Ok(())
+}
+
+fn native_losses(ir: &CadIr, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) {
+    use crate::loss::InventorLossCode;
+    for source in &ir.model.features {
+        if !source.dependencies.is_empty()
+            || source
+                .source_properties
+                .keys()
+                .any(|key| !matches!(key.as_str(), "suppressed" | "history" | "end_of_part"))
+        {
+            losses.push(InventorLossCode::FeatureDesignMetadataNative.note(format!(
+                "Feature {} keeps its source participant links and properties in native records; v11 references state its admitted operands.", source.id
+            )));
+        }
+    }
+    if !ir.model.history_bodies.is_empty() {
+        losses.push(InventorLossCode::FeatureDesignHistoryLegacy.note(
+            "Decoded history bodies retain source-linked legacy topology and native position identifiers."
+        ));
+    }
+    let native_outputs = ir.model.features.iter().any(|source| !source.evaluation.outputs().is_empty()
+        && !ir.design.features.iter().any(|feature| feature.id == source.id && matches!(&feature.definition.operation,
+            FeatureOperation::Stored { bodies: Some(bodies), .. } if bodies == source.evaluation.outputs())));
+    if !ir.model.feature_input_topologies.is_empty()
+        || !ir.model.feature_result_topologies.is_empty()
+        || native_outputs
+    {
+        losses.push(InventorLossCode::FeatureDesignTopologyNative.note(
+            "Source topology names, partial memberships, and non-stored result-body joins stay native; v11 picks and evaluations state admitted identities and geometry."
+        ));
+    }
+}
+
+pub(crate) fn unproduced_bodies(ir: &CadIr) -> usize {
+    let produced = ir
+        .model
+        .features
+        .iter()
+        .flat_map(|feature| feature.evaluation.outputs().iter())
+        .collect::<BTreeSet<_>>();
+    ir.geometry
+        .bodies
+        .iter()
+        .filter(|body| !produced.contains(&body.id))
+        .count()
 }
 
 pub(crate) fn validate_operations(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
+    features: &crate::feature::FeatureInventory,
+    sketches: &crate::sketch::SketchInventory,
+    parameters: &[crate::design::PmDcParameter],
+    units: &[crate::design::PmDcUnit],
 ) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
-    operations::validate(ir)
+    let mut expected = CadIr::empty();
+    expected
+        .model
+        .product_definitions
+        .clone_from(&ir.model.product_definitions);
+    expected.model.features.clone_from(&ir.model.features);
+    expected.model.parameters.clone_from(&ir.model.parameters);
+    expected.model.sketches.clone_from(&ir.model.sketches);
+    expected
+        .model
+        .sketch_entities
+        .clone_from(&ir.model.sketch_entities);
+    expected
+        .model
+        .sketch_constraints
+        .clone_from(&ir.model.sketch_constraints);
+    expected
+        .model
+        .feature_input_topologies
+        .clone_from(&ir.model.feature_input_topologies);
+    expected.geometry.bodies.clone_from(&ir.geometry.bodies);
+    project(
+        ctx,
+        &mut expected,
+        features,
+        sketches,
+        parameters,
+        units,
+        &mut Vec::new(),
+    )?;
+    if ir.design == expected.design {
+        return Ok(Vec::new());
+    }
+    let actual = serde_json::to_value(&ir.design)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let expected = serde_json::to_value(&expected.design)
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+    let detail = cadmpeg_ir::compare::values_agree(&actual, &expected)
+        .err()
+        .unwrap_or_else(|| "exact scalar values differ".to_owned());
+    Ok(vec![cadmpeg_ir::report::check::Finding {
+        check: cadmpeg_ir::report::check::Check::NativeLinks,
+        severity: cadmpeg_ir::report::Severity::Error,
+        message: format!("Inventor v11 design differs from its admitted source operands: {detail}"),
+        entity: None,
+        related: Vec::new(),
+    }])
 }
 
 fn project_history(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     flags: &BTreeMap<String, u32>,
+    has_rules: bool,
 ) -> Result<(), CodecError> {
+    if ir.model.features.is_empty() && ir.model.parameters.is_empty() && !has_rules {
+        return Ok(());
+    }
     let Some(part) = ir.model.product_definitions.first() else {
         return Ok(());
     };
@@ -88,7 +195,7 @@ fn project_history(
         let history = ordered
             .iter()
             .copied()
-            .filter(|feature| is_flat_pattern(feature) == flat)
+            .filter(|feature| is_flat_pattern(feature) == flat && !is_block_definition(feature))
             .collect::<Vec<_>>();
         if flat && history.is_empty() {
             continue;
@@ -112,15 +219,17 @@ fn project_history(
                 || Position::Start(id.clone()),
                 |index| Position::After(members[index].clone()),
             );
+            let mut bodies = ir
+                .geometry
+                .bodies
+                .iter()
+                .filter(|body| owned_bodies.contains(&body.id))
+                .map(|body| body.id.clone())
+                .collect::<Vec<_>>();
+            bodies.sort();
             current.push(CurrentState {
                 at,
-                bodies: ir
-                    .geometry
-                    .bodies
-                    .iter()
-                    .filter(|body| owned_bodies.contains(&body.id))
-                    .map(|body| body.id.clone())
-                    .collect(),
+                bodies,
                 poses: BTreeMap::default(),
                 status: EvaluationStatus::Current,
                 native_ref: None,
@@ -134,6 +243,22 @@ fn project_history(
             folders: Vec::new(),
             rollback,
             placement: None,
+        });
+    }
+    let blocks = ordered
+        .iter()
+        .filter(|feature| is_block_definition(feature))
+        .map(|feature| Member::Feature(feature.id.clone()))
+        .collect::<BTreeSet<_>>();
+    if !blocks.is_empty() {
+        ctx.charge_entities(1, "project Inventor Blocks group")?;
+        let id =
+            ContainerId::mint("inventor:document:group#blocks").map_err(CodecError::malformed)?;
+        roots.push(id.clone());
+        ir.design.containers.push(Container::Unordered {
+            id,
+            kind: UnorderedKind::Group,
+            members: blocks,
         });
     }
     for feature in ordered {
@@ -174,6 +299,13 @@ fn project_history(
     Ok(())
 }
 
+fn is_block_definition(feature: &LegacyFeature) -> bool {
+    matches!(
+        feature.evaluation.definition().operation(),
+        LegacyOperation::SketchBlockDefinition { .. }
+    )
+}
+
 fn is_flat_pattern(feature: &LegacyFeature) -> bool {
     property(feature, "history", "flat_pattern")
         || feature.source_tag.as_deref() == Some("flat_pattern")
@@ -187,10 +319,17 @@ fn property(feature: &LegacyFeature, key: &str, value: &str) -> bool {
 }
 
 fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
+    native_with_options(kind, BTreeMap::default())
+}
+
+fn native_with_options(
+    kind: &str,
+    native_options: BTreeMap<NonBlankString, cadmpeg_ir::design::options::NativeOption>,
+) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
         kind: NonBlankString::new(format!("inventor:{kind}"))
             .ok_or_else(|| CodecError::malformed("Inventor v11 operation kind is blank"))?,
-        native_options: BTreeMap::default(),
+        native_options,
         source_settings: BTreeMap::default(),
     })
 }
@@ -340,7 +479,22 @@ fn operation(operation: &LegacyOperation) -> Result<FeatureOperation, CodecError
             UnresolvedFamily::TopologyOptimization => return native("topology_optimization"),
             UnresolvedFamily::MoveObject => OperationFamily::TransformBodies,
         },
-        LegacyOperation::Native { kind, .. } => return native(kind.as_str()),
+        LegacyOperation::Native { kind, parameters } => {
+            if parameters.is_empty() {
+                return native(kind.as_str());
+            }
+            let text = cadmpeg_ir::hash::finite_json::to_canonical_json_string(parameters)
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            let text = NonBlankString::new(text)
+                .ok_or_else(|| CodecError::malformed("Inventor native parameters are blank"))?;
+            return native_with_options(
+                kind.as_str(),
+                BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("inventor:parameters"),
+                    cadmpeg_ir::design::options::NativeOption::Text(Dimension::Literal(text)),
+                )]),
+            );
+        }
         LegacyOperation::Extrude { .. } => OperationFamily::Extrude,
         LegacyOperation::Loft { .. } => OperationFamily::Loft,
     };
