@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::VertexSelection;
@@ -183,6 +183,7 @@ pub(super) fn angular_termination_has_unresolved_operands(
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}
         | AngularTermination::ToLast {}
+        | AngularTermination::ToPlane { .. }
         | AngularTermination::Angle { .. } => false,
     }
 }
@@ -822,6 +823,11 @@ pub(in super::super) fn build_ir(
         feature_result_edge_count,
         &mut coverage,
     );
+    let definition =
+        super::design_v11::root_definition(ctx, &mut ir, super::design_v11::model_kind(scan))?;
+    if ctx.depth() >= DecodeDepth::Design {
+        super::design_v11::project(ctx, scan, &mut ir, &definition)?;
+    }
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),

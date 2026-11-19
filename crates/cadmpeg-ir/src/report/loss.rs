@@ -4,6 +4,7 @@
 use std::fmt;
 
 use crate::provenance::SourceProvenance;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::report::Severity;
 
 /// What subsystem a loss pertains to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -30,6 +31,8 @@ pub enum LossCategory {
     DesignIntent,
     /// Product structure, component occurrences, placements, or external dependencies.
     Product,
+    /// Manufacturing process records not transferred.
+    Process,
     /// Anything else.
     Other,
 }
@@ -44,13 +47,14 @@ impl fmt::Display for LossCategory {
             Self::Attribute => "attribute",
             Self::DesignIntent => "design_intent",
             Self::Product => "product",
+            Self::Process => "process",
             Self::Other => "other",
         })
     }
 }
 
 /// Strict-mode handling for a loss code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -67,7 +71,7 @@ pub enum StrictConsequence {
 /// taxonomy variant for subsystem reporting; strict-mode floors on a
 /// [`LossKind`] are pinned at construction so a later local→taxonomy remap in
 /// source does not silently change rejection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -256,6 +260,7 @@ impl LossTaxonomy {
             Self::AssemblyComponentsExternal
             | Self::AssemblyPlacementsNotTransferred
             | Self::PhysicsNotTransferred => LossCategory::Product,
+            Self::ProcessRecordOmitted => LossCategory::Process,
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
             | Self::IntegrityFailure
@@ -264,8 +269,7 @@ impl LossTaxonomy {
             | Self::SourceDialectDisplaced
             | Self::AssetNotTransferred
             | Self::PassthroughRecordOmitted
-            | Self::PreservedSourceUnavailable
-            | Self::ProcessRecordOmitted => LossCategory::Other,
+            | Self::PreservedSourceUnavailable => LossCategory::Other,
             Self::MissingGeometryStream
             | Self::GeometryNotTransferred
             | Self::GeometryAgreementSampled
@@ -576,6 +580,13 @@ pub struct LossNote {
         deserialize_with = "deserialize_provenance"
     )]
     pub provenance: Option<SourceProvenance>,
+    /// The number of source instances the note reports together.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_count"
+    )]
+    pub count: Option<u64>,
 }
 
 impl LossNote {
@@ -587,6 +598,7 @@ impl LossNote {
             code,
             message: message.into(),
             provenance: None,
+            count: None,
         }
     }
 
@@ -604,6 +616,13 @@ impl LossNote {
         self
     }
 
+    /// Records that this note reports `count` source instances together.
+    #[must_use]
+    pub const fn with_count(mut self, count: u64) -> Self {
+        self.count = Some(count);
+        self
+    }
+
     /// Returns strict-mode handling after applying the kind's severity floor.
     pub fn strict_consequence(&self) -> StrictConsequence {
         match self.code.strict_floor() {
@@ -616,6 +635,7 @@ impl LossNote {
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_strict_floor, Severity, "strict_floor");
 cadmpeg_core::named_optional_field!(deserialize_provenance, SourceProvenance, "provenance");
+cadmpeg_core::named_optional_field!(deserialize_count, u64, "count");
 
 #[cfg(test)]
 mod tests;

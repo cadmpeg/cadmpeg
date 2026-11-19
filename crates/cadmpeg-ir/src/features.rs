@@ -19,6 +19,7 @@ use crate::scalar::{
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -40,8 +41,16 @@ mod body_selection;
 mod decode_clone;
 mod membership;
 mod operation;
+mod primitive_solid;
 mod selection_overlap;
+mod source_literals;
 
+/// Boundary fill cell selections.
+pub mod boundary_fill;
+use boundary_fill::BoundaryFillCell;
+
+#[doc = "Checked datum geometry and construction inputs."]
+pub mod datums;
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
 
@@ -61,9 +70,13 @@ use sheet_metal::SheetMetalBendLinesConstruction;
 pub mod patterns;
 use patterns::{PatternKind, PatternSeed};
 
+#[doc = "Face replacement operands and tangent-chain settings."]
+pub mod replace_face;
+use replace_face::ReplaceFaceOperands;
+
 #[doc = "Surface operation settings and constructors."]
 pub mod surfaces;
-use surfaces::UntrimLoops;
+use surfaces::{SilhouetteSplitMode, SplitFaceMethod, UntrimLoops};
 
 macro_rules! checked_feature_geometry {
     ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal $(, $getter:ident)*) => {
@@ -1481,7 +1494,7 @@ pub enum PmiDimensionSubtype {
 }
 
 /// Geometric interpretation requested by a dimension display modifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2216,7 +2229,7 @@ pub enum DatumPointConstruction {
 }
 
 /// Rule that maps a raster decal onto its selected faces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2474,16 +2487,7 @@ selection_operands!(
     |_: &FaceSelection| true,
     face_selections_overlap
 );
-selection_operands!(
-    ReplaceFaceOperands,
-    ReplaceFaceOperandsWire,
-    FaceSelection,
-    targets,
-    replacements,
-    |_: &FaceSelection| true,
-    face_selections_overlap,
-    try_edit
-);
+
 selection_operands!(
     SectionOperands,
     SectionOperandsWire,
@@ -2517,13 +2521,6 @@ impl CombineOperands {
     /// Move both selections out of this admitted pair.
     pub fn into_parts(self) -> (BodySelection, BodySelection) {
         (self.target, self.tools)
-    }
-}
-
-impl ReplaceFaceOperands {
-    /// Move both selections out of this admitted pair.
-    pub fn into_parts(self) -> (FaceSelection, FaceSelection) {
-        (self.targets, self.replacements)
     }
 }
 
@@ -2610,7 +2607,7 @@ impl<'de> Deserialize<'de> for TreeChildren {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = "Operation mode for a local component occurrence transfer."]
@@ -2939,10 +2936,8 @@ pub enum FeatureOperation {
     },
     /// Constructed reference axis.
     DatumAxis {
-        /// Point on the axis in model space.
-        origin: FinitePoint3,
-        /// Axis direction.
-        direction: FeatureDirection3,
+        #[doc = "Readable geometry, construction inputs and source options."]
+        axis: datums::DatumAxis,
     },
     /// Constructed reference point.
     DatumPoint {
@@ -3354,9 +3349,21 @@ pub enum FeatureOperation {
         /// Closed profile defining the planar sheet boundary.
         profile: PlanarProfileRef,
         /// Finished sheet thickness.
-        thickness: PositiveLength,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_thickness"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "PositiveLength"))]
+        thickness: Option<PositiveLength>,
         /// Distribution of thickness relative to the profile plane.
-        side: SheetMetalThicknessSide,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_base_flange_side"
+        )]
+        #[cfg_attr(feature = "schema", schemars(with = "SheetMetalThicknessSide"))]
+        side: Option<SheetMetalThicknessSide>,
     },
     /// Flat plate attached to an existing sheet edge.
     /// Replay the plate before its paired `SheetMetalBend`. The bend builds the joining region.
@@ -3809,13 +3816,29 @@ pub enum FeatureOperation {
         #[doc = "Component creation requested for the Boolean result."]
         destination: CombineDestination,
     },
-    /// Creates solid bodies from selected cells enclosed by boundary bodies.
+    /// Creates or combines solids from cells enclosed by boundary tools.
     BoundaryFill {
         /// Bodies whose faces partition space into candidate cells.
         tools: BodySelection,
-        /// Enclosed cells retained as result bodies, in source order.
+        /// Selected cells, in source order.
         #[serde(deserialize_with = "deserialize_local_cells")]
-        cells: NonEmptyMembers<BodySelection>,
+        cells: NonEmptyMembers<BoundaryFillCell>,
+        /// Construction-plane selectors in source order, including empty source slots.
+        plane_tools: Vec<Option<SelectionReference>>,
+        /// Boolean effect of the selected cells.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_boundary_fill_operation"
+        )]
+        operation: Option<BooleanOp>,
+        /// Whether to remove tool bodies after the fill.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_boundary_fill_remove_tools"
+        )]
+        remove_tools: Option<bool>,
     },
     /// Removes one side of selected bodies using selected surface faces.
     CutWithSurface {
@@ -3857,6 +3880,13 @@ pub enum FeatureOperation {
         targets: BodySelection,
         /// Geometry that partitions the target bodies.
         tool: SplitBodyTool,
+        /// Whether the operation extends the splitting geometry through the targets.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_split_body_extend_tool"
+        )]
+        extend_tool: Option<bool>,
     },
     /// Partitions selected faces along selected sketch curves while retaining
     /// every resulting face region.
@@ -3865,6 +3895,22 @@ pub enum FeatureOperation {
         targets: FaceSelection,
         /// Geometry or datum plane that partitions the target faces.
         tool: SplitFaceTool,
+        #[doc = "Method used to apply the splitting tool to the target faces."]
+        method: SplitFaceMethod,
+    },
+    /// Partitions a body's faces or volume along its silhouette in a given direction.
+    SilhouetteSplit {
+        /// Body selected before the split.
+        target: BodySelection,
+        /// Saved model-space silhouette direction.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_direction"
+        )]
+        direction: Option<FeatureDirection3>,
+        /// Result of the partition.
+        mode: SilhouetteSplitMode,
     },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
@@ -4159,7 +4205,7 @@ pub enum FeatureDefinition {
 }
 
 /// Operation family of a feature whose construction operands are unresolved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4227,7 +4273,7 @@ pub enum UnresolvedFamily {
 }
 
 #[doc = "Component creation mode of a Boolean combination."]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CombineDestination {
@@ -4295,7 +4341,7 @@ impl Default for ExtrudeDirection {
 }
 
 /// External model format consumed by an imported-geometry feature.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4329,7 +4375,7 @@ pub enum FuzzyTolerance {
 }
 
 /// Geometric offset construction used by a thin-wall shell operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4343,7 +4389,7 @@ pub enum ShellMode {
 }
 
 /// Corner continuation law for adjacent shell offset faces.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4357,7 +4403,7 @@ pub enum ShellJoin {
 }
 
 /// Traversal relationship between ruled-surface boundary curves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4386,279 +4432,6 @@ pub enum PrimitiveSolidScaleError {
     NonFinite,
     /// A positive dimension or strict extent collapses under rounding.
     Admission(&'static str),
-}
-
-impl PrimitiveSolid {
-    /// Admits dimensions that define a solid primitive.
-    pub fn new(kind: PrimitiveSolidKind) -> Result<Self, &'static str> {
-        let positive = |value: Length| value.get() > 0.0;
-        let valid = match &kind {
-            PrimitiveSolidKind::Box {
-                length,
-                width,
-                height,
-            } => positive(*length) && positive(*width) && positive(*height),
-            PrimitiveSolidKind::Cylinder { radius, height, .. } => {
-                positive(*radius) && positive(*height)
-            }
-            PrimitiveSolidKind::Cone {
-                radius1,
-                radius2,
-                height,
-                ..
-            } => {
-                radius1.get() >= 0.0
-                    && radius2.get() >= 0.0
-                    && (positive(*radius1) || positive(*radius2))
-                    && positive(*height)
-            }
-            PrimitiveSolidKind::Sphere {
-                radius,
-                latitude1,
-                latitude2,
-                ..
-            } => positive(*radius) && latitude1.get() < latitude2.get(),
-            PrimitiveSolidKind::Ellipsoid {
-                x_radius,
-                y_radius,
-                z_radius,
-                latitude1,
-                latitude2,
-                ..
-            } => {
-                positive(*x_radius)
-                    && positive(*y_radius)
-                    && positive(*z_radius)
-                    && latitude1.get() < latitude2.get()
-            }
-            PrimitiveSolidKind::Torus {
-                major_radius,
-                minor_radius,
-                latitude1,
-                latitude2,
-                ..
-            } => {
-                positive(*major_radius)
-                    && positive(*minor_radius)
-                    && latitude1.get() < latitude2.get()
-            }
-            PrimitiveSolidKind::Prism {
-                sides,
-                circumradius,
-                height,
-            } => *sides >= 3 && positive(*circumradius) && positive(*height),
-            PrimitiveSolidKind::Wedge {
-                xmin,
-                ymin,
-                zmin,
-                x2min,
-                z2min,
-                xmax,
-                ymax,
-                zmax,
-                x2max,
-                z2max,
-            } => {
-                xmax.get() > xmin.get()
-                    && ymax.get() > ymin.get()
-                    && zmax.get() > zmin.get()
-                    && x2max.get() >= x2min.get()
-                    && z2max.get() >= z2min.get()
-            }
-        };
-        valid
-            .then_some(Self(kind))
-            .ok_or(INVALID_PRIMITIVE_DIMENSIONS)
-    }
-
-    /// The primitive with every length times `scale`, keeping its angles and
-    /// side count.
-    ///
-    /// A non-finite result is distinguished from a collapsed dimension. Rounding is monotone, so a
-    /// positive scale keeps every sign and every non-strict order of the
-    /// lengths, and the angles and the side count are kept. The scaled
-    /// dimensions are tested only for what scaling can break: a positive
-    /// length that rounds to zero, and a wedge extent whose strictly ordered
-    /// bounds round to one value. That refusal is the admission's own text.
-    pub fn scaled(&self, scale: PositiveReal) -> Result<Self, PrimitiveSolidScaleError> {
-        let scaled = |value: Length| {
-            Length::new(value.get() * scale.get()).ok_or(PrimitiveSolidScaleError::NonFinite)
-        };
-        let positive = |value: Length| value.get() > 0.0;
-        let (kind, valid) = match &self.0 {
-            PrimitiveSolidKind::Box {
-                length,
-                width,
-                height,
-            } => {
-                let [length, width, height] = [scaled(*length)?, scaled(*width)?, scaled(*height)?];
-                (
-                    PrimitiveSolidKind::Box {
-                        length,
-                        width,
-                        height,
-                    },
-                    positive(length) && positive(width) && positive(height),
-                )
-            }
-            PrimitiveSolidKind::Cylinder {
-                radius,
-                height,
-                angle,
-            } => {
-                let [radius, height] = [scaled(*radius)?, scaled(*height)?];
-                (
-                    PrimitiveSolidKind::Cylinder {
-                        radius,
-                        height,
-                        angle: *angle,
-                    },
-                    positive(radius) && positive(height),
-                )
-            }
-            PrimitiveSolidKind::Cone {
-                radius1,
-                radius2,
-                height,
-                angle,
-            } => {
-                let [radius1, radius2, height] =
-                    [scaled(*radius1)?, scaled(*radius2)?, scaled(*height)?];
-                (
-                    PrimitiveSolidKind::Cone {
-                        radius1,
-                        radius2,
-                        height,
-                        angle: *angle,
-                    },
-                    (positive(radius1) || positive(radius2)) && positive(height),
-                )
-            }
-            PrimitiveSolidKind::Sphere {
-                radius,
-                latitude1,
-                latitude2,
-                longitude,
-            } => {
-                let radius = scaled(*radius)?;
-                (
-                    PrimitiveSolidKind::Sphere {
-                        radius,
-                        latitude1: *latitude1,
-                        latitude2: *latitude2,
-                        longitude: *longitude,
-                    },
-                    positive(radius),
-                )
-            }
-            PrimitiveSolidKind::Ellipsoid {
-                x_radius,
-                y_radius,
-                z_radius,
-                latitude1,
-                latitude2,
-                longitude,
-            } => {
-                let [x_radius, y_radius, z_radius] =
-                    [scaled(*x_radius)?, scaled(*y_radius)?, scaled(*z_radius)?];
-                (
-                    PrimitiveSolidKind::Ellipsoid {
-                        x_radius,
-                        y_radius,
-                        z_radius,
-                        latitude1: *latitude1,
-                        latitude2: *latitude2,
-                        longitude: *longitude,
-                    },
-                    positive(x_radius) && positive(y_radius) && positive(z_radius),
-                )
-            }
-            PrimitiveSolidKind::Torus {
-                major_radius,
-                minor_radius,
-                latitude1,
-                latitude2,
-                longitude,
-            } => {
-                let [major_radius, minor_radius] = [scaled(*major_radius)?, scaled(*minor_radius)?];
-                (
-                    PrimitiveSolidKind::Torus {
-                        major_radius,
-                        minor_radius,
-                        latitude1: *latitude1,
-                        latitude2: *latitude2,
-                        longitude: *longitude,
-                    },
-                    positive(major_radius) && positive(minor_radius),
-                )
-            }
-            PrimitiveSolidKind::Prism {
-                sides,
-                circumradius,
-                height,
-            } => {
-                let [circumradius, height] = [scaled(*circumradius)?, scaled(*height)?];
-                (
-                    PrimitiveSolidKind::Prism {
-                        sides: *sides,
-                        circumradius,
-                        height,
-                    },
-                    positive(circumradius) && positive(height),
-                )
-            }
-            PrimitiveSolidKind::Wedge {
-                xmin,
-                ymin,
-                zmin,
-                x2min,
-                z2min,
-                xmax,
-                ymax,
-                zmax,
-                x2max,
-                z2max,
-            } => {
-                let [xmin, ymin, zmin, x2min, z2min, xmax, ymax, zmax, x2max, z2max] = [
-                    scaled(*xmin)?,
-                    scaled(*ymin)?,
-                    scaled(*zmin)?,
-                    scaled(*x2min)?,
-                    scaled(*z2min)?,
-                    scaled(*xmax)?,
-                    scaled(*ymax)?,
-                    scaled(*zmax)?,
-                    scaled(*x2max)?,
-                    scaled(*z2max)?,
-                ];
-                (
-                    PrimitiveSolidKind::Wedge {
-                        xmin,
-                        ymin,
-                        zmin,
-                        x2min,
-                        z2min,
-                        xmax,
-                        ymax,
-                        zmax,
-                        x2max,
-                        z2max,
-                    },
-                    xmax.get() > xmin.get() && ymax.get() > ymin.get() && zmax.get() > zmin.get(),
-                )
-            }
-        };
-        valid
-            .then_some(Self(kind))
-            .ok_or(PrimitiveSolidScaleError::Admission(
-                INVALID_PRIMITIVE_DIMENSIONS,
-            ))
-    }
-
-    /// Returns the primitive form and dimensions.
-    pub fn kind(&self) -> &PrimitiveSolidKind {
-        &self.0
-    }
 }
 
 impl TryFrom<PrimitiveSolidKind> for PrimitiveSolid {
@@ -5355,7 +5128,7 @@ impl RevolveConstruction {
 }
 
 /// Operand ordering used to fuse a `PartDesign` revolution result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -5422,7 +5195,7 @@ pub struct RibConstruction {
 }
 
 /// Distribution of rib thickness around its profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -5451,7 +5224,7 @@ pub enum RibDraft {
 }
 
 /// Canonical role of a non-modeling feature-tree node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -5526,7 +5299,7 @@ pub enum CosmeticThreadExtent {
 }
 
 /// Canonical role of a built-in reference plane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -5588,7 +5361,7 @@ impl From<SketchFeatureBindingWire> for SketchFeatureBinding {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 /// Side retained by a body-trim operation.
@@ -5624,7 +5397,7 @@ impl Default for CurveProjectionDirection {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 /// Direction state for projection without an explicit vector.
@@ -5637,7 +5410,7 @@ pub enum CurveProjectionDirectionState {
 }
 
 /// Selection interpretation for a delete/keep-body operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -5681,7 +5454,7 @@ pub enum WrapMode {
 }
 
 /// Continuity order imposed at a generated surface boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -5923,7 +5696,7 @@ impl TryFrom<TrimCellSelectionWire> for TrimCellSelection {
     }
 }
 /// Geometric law used to extend a surface boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -5964,7 +5737,7 @@ pub enum RuledSurfaceMode {
 }
 
 /// Corner construction law for a ruled-surface operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6032,7 +5805,7 @@ impl ScaleFactors {
 }
 
 /// Direction in which a thicken feature adds material.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6046,7 +5819,7 @@ pub enum ThickenSide {
 }
 
 /// Relief form selected by the document's sheet-metal rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SheetMetalReliefForm {
@@ -6072,7 +5845,7 @@ pub struct SheetMetalRelief {
 }
 
 /// Transition form selected by the document's sheet-metal rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SheetMetalTransitionForm {
@@ -6092,7 +5865,7 @@ pub struct SheetMetalTransition {
 }
 
 /// Face pair a sheet-metal flange height is measured from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6104,7 +5877,7 @@ pub enum SheetMetalHeightDatum {
 }
 
 /// Geometric effect of a sheet-metal corner evaluation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6114,7 +5887,7 @@ pub enum SheetMetalCornerEffect {
 }
 
 /// Placement of a sheet-metal bend region against its selected edge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6178,7 +5951,7 @@ pub enum SheetMetalHemForm {
 }
 
 /// Placement of a sheet-metal hem bend against its selected edge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6190,7 +5963,7 @@ pub enum SheetMetalHemBendPosition {
 }
 
 /// Direction of a sheet-metal hem fold.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6352,7 +6125,7 @@ impl SheetMetalFlangeTwoSidedWidth {
 }
 
 /// Distribution of sheet thickness relative to its construction plane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7528,7 +7301,7 @@ pub enum ExtrudeStart {
 }
 
 /// Source of a resolved feature support plane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PlaneTargetSource {
@@ -7652,6 +7425,20 @@ pub enum AngularTermination {
     ToShape {
         /// Native or resolved target shape selection.
         target: FaceSelection,
+    },
+    /// Extends until it reaches a plane with its native target reference.
+    ToPlane {
+        /// Model-space frame of the terminating plane.
+        plane: FeatureSupportPlaneFrame,
+        /// Native target record.
+        native: NonBlankString,
+        /// Source of the target plane.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_plane_target_source"
+        )]
+        source: Option<PlaneTargetSource>,
     },
     /// Fixed angular travel.
     Angle {
@@ -7858,7 +7645,7 @@ impl JsonSchema for FaceMaker {
 }
 
 /// Relationship between outer-wire and inner-wire taper directions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7870,7 +7657,7 @@ pub enum InnerWireTaper {
 }
 
 /// Persisted construction algorithm used for a parametric helix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7906,7 +7693,7 @@ pub enum HelixShape {
 }
 
 /// Result topology retained by a projection-on-surface operation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7919,8 +7706,11 @@ pub enum SurfaceProjectionMode {
     Edges,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_boundary_fill_operation, BooleanOp, "operation");
+cadmpeg_core::named_optional_field!(deserialize_boundary_fill_remove_tools, bool, "remove_tools");
+
 /// Boolean effect of a solid-producing feature.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7938,7 +7728,7 @@ pub enum BooleanOp {
 }
 
 /// Boolean operation that consumes at least one existing target body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -8139,7 +7929,7 @@ pub enum CoilSection {
 }
 
 /// Radial placement of a generated Coil section.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -8186,7 +7976,7 @@ pub enum SweepMode {
 }
 
 /// How a solid sweep result meets the existing bodies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -8799,7 +8589,7 @@ pub enum SweepOrientation {
 }
 
 /// Corner continuation used by a sweep path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -8813,7 +8603,7 @@ pub enum SweepTransition {
 }
 
 /// Cross-section interpolation law for a multi-section sweep.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -8937,7 +8727,7 @@ pub struct HelicalSweepConstruction {
 }
 
 /// Independent-parameter law used to author a helical sweep.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -9039,7 +8829,7 @@ pub enum BinderConstruction {
 }
 
 /// Update lifecycle of a subshape binder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -9053,7 +8843,7 @@ pub enum BinderLifecycle {
 }
 
 /// Placement interpretation for bound subobjects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -9065,7 +8855,7 @@ pub enum BinderPlacement {
 }
 
 /// Copy-on-change state of a subshape binder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -9096,7 +8886,7 @@ pub struct BinderOffset {
 }
 
 /// Corner join law of a binder offset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -9588,7 +9378,7 @@ impl<'de> Deserialize<'de> for GeometryImportPath {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SplitBodyTool {
-    /// Surface faces extended as necessary to partition the targets.
+    /// Surface faces used to partition the targets.
     Faces(FaceSelection),
     /// Datum-plane feature extended through the target bodies.
     Plane {
@@ -9603,6 +9393,10 @@ pub enum SplitBodyTool {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SplitFaceTool {
+    #[doc = "Selected surface faces used as the splitting tool."]
+    Faces(FaceSelection),
+    #[doc = "Native splitting geometry whose neutral kind is unresolved."]
+    Native(String),
     /// Sketch or model-space path projected onto the target faces.
     Path(PathRef),
     /// Datum-plane feature extended through the target faces.
@@ -9660,7 +9454,7 @@ pub enum FlexMode {
 }
 
 /// Structural form of a flex deformation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -9746,6 +9540,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_thread_pitch, PositiveLength, "pitch");
 cadmpeg_core::named_optional_field!(deserialize_thread_modeled, bool, "modeled");
+cadmpeg_core::named_optional_field!(deserialize_split_body_extend_tool, bool, "extend_tool");
 cadmpeg_core::named_optional_field!(deserialize_opacity, Fraction, "opacity");
 cadmpeg_core::named_optional_field!(deserialize_reference, DatumPlaneReference, "reference");
 cadmpeg_core::named_optional_field!(
@@ -9805,6 +9600,11 @@ cadmpeg_core::named_optional_field!(
     "bodies"
 );
 cadmpeg_core::named_optional_field!(deserialize_thickness, PositiveLength, "thickness");
+cadmpeg_core::named_optional_field!(
+    deserialize_base_flange_side,
+    SheetMetalThicknessSide,
+    "side"
+);
 cadmpeg_core::named_optional_field!(deserialize_outward, bool, "outward");
 cadmpeg_core::named_optional_field!(deserialize_mode, ShellMode, "mode");
 cadmpeg_core::named_optional_field!(deserialize_join, ShellJoin, "join");

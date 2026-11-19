@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
-use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::{ExternalDocument, Occurrence, Storage};
 use serde_json::Value;
 
 use crate::loss::NxLossCode;
@@ -79,13 +79,25 @@ fn has_loss(result: &DecodeResult, code: NxLossCode) -> bool {
 }
 
 fn component_occurrences(result: &DecodeResult) -> Vec<&Occurrence> {
-    result
+    result.ir().model.occurrences.iter().collect()
+}
+
+/// The document an occurrence's prototype names.
+fn prototype_document<'r>(
+    result: &'r DecodeResult,
+    occurrence: &Occurrence,
+) -> &'r ExternalDocument {
+    let definition = result
         .ir()
         .model
-        .occurrences
+        .product_definitions
         .iter()
-        .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Occurrence { .. }))
-        .collect()
+        .find(|definition| definition.id == occurrence.prototype)
+        .expect("prototype definition");
+    match &definition.storage {
+        Storage::External(document) => document,
+        other => panic!("prototype storage {other:?} names no document"),
+    }
 }
 
 fn native_counts(result: &DecodeResult) -> (usize, usize) {
@@ -127,13 +139,10 @@ fn millimeter_part_emits_placements_of_a_single_prototype_uuid_group() {
     for (ordinal, occurrence) in occurrences.iter().enumerate() {
         assert_eq!(occurrence.name.as_deref(), Some(PROTOTYPE));
         assert_eq!(
-            occurrence.prototype,
-            PrototypeReference::External {
-                document: ExternalDocument::Missing {},
-                object: None,
-            }
+            prototype_document(&result, occurrence),
+            &ExternalDocument::default()
         );
-        let rows = occurrence.transform.affine_rows();
+        let rows = occurrence.transform.unwrap().affine_rows();
         let x = 12.5 + f64::from(u32::try_from(ordinal).unwrap());
         assert!((rows[0][3] - x).abs() < 1e-12);
         assert!((rows[1][3] + 3.25).abs() < 1e-12);
@@ -163,7 +172,10 @@ fn part_without_length_expressions_withholds_its_placements() {
     let result = decode(two_placement_file(None, 2));
 
     assert!(result.ir().model.occurrences.is_empty());
-    assert!(result.ir().model.product_definitions.is_empty());
+    assert!(matches!(
+        result.ir().model.product_definitions.as_slice(),
+        [root] if root.is_root() && root.occurrences.is_empty()
+    ));
     assert_eq!(native_counts(&result), (2, 2));
     assert!(has_loss(
         &result,
@@ -300,14 +312,12 @@ fn apply(rows: [[f64; 4]; 3], point: [f64; 3]) -> [f64; 3] {
     out
 }
 
-fn child_filename(occurrence: &Occurrence) -> &str {
-    match &occurrence.prototype {
-        PrototypeReference::External {
-            document: ExternalDocument::Path { path },
-            ..
-        } => path.as_str(),
-        other => panic!("MTC occurrence prototype {other:?} has no child filename"),
-    }
+fn child_filename<'r>(result: &'r DecodeResult, occurrence: &Occurrence) -> &'r str {
+    prototype_document(result, occurrence)
+        .path
+        .as_ref()
+        .expect("MTC occurrence prototype has a child filename")
+        .as_str()
 }
 
 #[test]
@@ -330,14 +340,14 @@ fn mtc_occurrences_place_every_child_where_the_step_twin_does() {
     ));
 
     let world = |occurrence: &Occurrence| {
-        let rows = occurrence.transform.affine_rows();
-        let centre = apply(rows, child_centres(child_filename(occurrence)).0);
+        let rows = occurrence.transform.unwrap().affine_rows();
+        let centre = apply(rows, child_centres(child_filename(&result, occurrence)).0);
         let axis = [rows[0][2], rows[1][2], rows[2][2]];
         (centre, axis)
     };
     let box_occurrence = occurrences
         .iter()
-        .find(|occurrence| child_filename(occurrence) == BOX)
+        .find(|occurrence| child_filename(&result, occurrence) == BOX)
         .expect("MTC places the box");
     let step_box_centre = child_centres(BOX).1;
     let nx_box_centre = world(box_occurrence).0;
@@ -349,7 +359,7 @@ fn mtc_occurrences_place_every_child_where_the_step_twin_does() {
 
     let mut matched = [false; STEP_USES.len()];
     for occurrence in &occurrences {
-        let child = child_filename(occurrence);
+        let child = child_filename(&result, occurrence);
         let (centre, axis) = world(occurrence);
         let centre = add(centre, registration);
         let candidates: Vec<usize> = STEP_USES

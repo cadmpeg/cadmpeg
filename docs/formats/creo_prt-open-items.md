@@ -233,8 +233,6 @@ dimension.
 
 **Need.** Define the remaining body grammar and a unique placement witness before constructing a torus or sphere carrier from those forms. An agreeing inline radius pair does not resolve conflicting origin or direction readings.
 
-**Conflict.** The decoder reads a type-26 radius slot with the `0d` and `2d` meanings only for the prototype-minor-radius replay. Its carrier path reads the generic suffix lane, so `0d` and `2d` rows get no torus carrier.
-
 ### GS-06. Prototype-adjacent `tab_cyl` parameters
 
 **Question.** What does each parameter in a prototype-adjacent `tab_cyl` instance row control?
@@ -594,6 +592,27 @@ vertices and midpoints.
 
 **Need.** Establish carrier and branch selection for other cone chart paths
 and face pairs through independent chart and topology witnesses.
+
+### GS-38. Type-26 row forms and direct torus replay radii
+
+**Question.** Which local-system grammar follows the envelope-closing `e3` of
+a type-26 positional row that the inline-carrier form, the
+local-system-suffix form, and the direct torus replay all reject, and which
+radius forms does the direct torus replay store?
+
+**Known.** `creo_prt.md` places a type-26 positional row through three forms:
+the positional row with an inline carrier, the local-system-suffix form, and
+the direct torus replay. The carrier path of the two inline forms and the
+prototype-minor-radius replay read `radius1 radius2` in the type-26
+radius-slot lane, where `0d` is one quarter and `2d <tail7>`
+reconstructs `40 <tail7>`. The direct replay has a fixed envelope image and a
+five-coordinate radius proof. It reads its radii in the positional row lane,
+where `0d` is negative one, and requires a positive major radius. Its
+positional local-system lane reads `e4` as one.
+
+**Need.** Type-26 positional rows that all three forms reject, and direct
+replay rows with `0d`, `2d`, or zero radii, each with an independently known
+center and radii.
 
 ## 3. Section solving and feature placement
 

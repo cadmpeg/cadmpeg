@@ -702,7 +702,7 @@ The fixed selector prefix after the content header contains `state:i32`, `enable
 
 The selector's edge-item reference selects its owning edge-item record in the same PmDc segment. An edge item with an empty index-reference list can be the target of this reference. The body, edge-item, and context references of the qualified direct form are qualified non-null references. Their target types are `474d8790d011f8d10008cabc0663dc09`, `82695c37d111516b0008a1ba32a3dc09`, and `4220e9ccd111c5710008a7ba32a3dc09`, respectively. An explicit edge item has a nonempty index-reference list, index-reference value −1, and final value 0. Each selected source index identifies a selector whose edge-item reference selects that item.
 
-In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. Qualifier 1 on a face owner identifies the selected face. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body. The first record of the archive snapshot is a `body`, `edge`, or `face` record wrapped by the name chain `End-of-ASM-History-Section`.
+In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. Qualifier 1 on a face owner identifies the selected face. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body. The first record of the archive snapshot is wrapped by the name chain `End-of-ASM-History-Section` ([asm.md §3.2](asm.md#32-delta_state-records)). The wrapped record can be any entity record, including a topology, geometry, or attribute record.
 
 In a schema-44 carrier, generated naming families `INV_NMX_GEN_TAG`, `INV_NMX_SWEEPGENERATED_TAG`, `INV_NMX_BLEND_TAG`, `INV_NMX_FLANGE_TAG`, and `INV_NMX_BEND_TAG` have the same five common attribute fields. Family `INV_NMX_FEATURE_TAG` has the same common fields. The family values of these families start with 1, 44, a positive source-name count, and that many ordered `(feature_source_index, name_value)` integer pairs. A count of 1 with name value −1 is the common form; the later pair integers and the family-specific tail follow the pairs. The source index names the generating feature, including a plate, bend, or corner. The owning entity reference names the attributed face, edge, or vertex. The remaining integers are part of the generated name. A generated source index identifies a naming contribution; it does not identify a browser history position or a body revision.
 
@@ -1132,7 +1132,7 @@ For a plate owned by a `08dcddc3d311d0976000a7a99dccefb0` flange record, slot 1 
 
 Type `b07438a0d4113812600018aa9dccefb0` stores the contour-flange parent. Its payload has the flange-parent layout: the state content header without stamps, `state:i32`, a type-2 reference list, and `value:u32`, then ends. The reference list selects the plate, bend, and corner generic-feature records in that order. The parent's feature label carries the contour-flange name and the four ordered participants of a flange label: the consumed planar sketch, that plate, that bend, and that corner.
 
-The contour plate has the 17-property form with these slot roles:
+The contour plate has the 17-property form with these slot roles. The scalar values in the table describe the standalone form:
 
 | Slot | Operand |
 | ---: | --- |
@@ -1141,30 +1141,33 @@ The contour plate has the 17-property form with these slot roles:
 | 2 | Plate-side enumeration `(2, 0)` |
 | 3 | Travel length parameter |
 | 4 | Contour attachment control `40b45504d4115612600018aa9dccefb0` |
-| 5, 6, 12, 14 | Null |
+| 5, 6, 14 | Null |
 | 7 | Empty edge collection |
 | 8 | Feature dimensions |
 | 9 | Corner control |
 | 10 | Bend relief |
 | 11 | Transition |
+| 12 | Null for a standalone contour; attachment selection list `ce2d9b29ad43d8802f132c9a40c9ba90` for an edge-attached contour |
 | 13 | Plate scalar control 0 |
 | 15 | Result object collection |
-| 16 | Part operation `(5, 1)`; the result is a new body |
+| 16 | Part operation; `(5, 1)` makes a new body in the standalone form |
 
-The slot-3 parameter is a length parameter, or a parameter with a dimensionless base unit whose value is the travel length in internal centimetres. Slot 12 is null, so the contour plate has no attachment selection list. The contour attachment control contains the attachment control fields followed by these fields, then ends:
+The slot-3 parameter is a length parameter, or a parameter with a dimensionless base unit whose value is the travel length in internal centimetres. The edge-attached contour uses the attachment selection list and wrappers defined above. The attachment order follows the list-member order, then each wrapper's edge-collection member order, then each edge item's source-index order. The selectors join the B-rep edge revisions of the input sheet before the contour flange by the source-index and key rule of section 13. The selected edge is the free boundary of the input sheet before the bend setback.
+
+The contour attachment control contains the attachment control fields followed by these fields, then ends:
 
 ```text
 extension u32
 value u8
 ```
 
-In the projected form, `thickness` is the sheet thickness and `radius` is the inside bend radius. The first direction is the same reference as plate slot 1. The second direction references a stored direction record; the contour flange does not consume its vector. `control`, `first_option`, and `second_option` are Boolean false. `first_mode` is enumeration `(9, 1)` and `second_mode` is enumeration `(9, 4)`. `states` is `[1, 1, 1]` and `value` is 0. `extension` references a state-10 attachment-state record whose `attachment` is the contour attachment control and whose other references repeat the thickness, radius, relief width, minimum remnant, and option references. The relief and transition satisfy the relief and transition relations of the flange control form, including equality with the document-style forms.
+In the standalone form, `thickness` is the sheet thickness and `radius` is the inside bend radius. The first direction is the same reference as plate slot 1. The second direction references a stored direction record; the contour flange does not consume its vector. `control`, `first_option`, and `second_option` are Boolean false. `first_mode` is enumeration `(9, 1)` and `second_mode` is enumeration `(9, 4)`. `states` is `[1, 1, 1]` and `value` is 0. `extension` references a state-10 attachment-state record whose `attachment` is the contour attachment control and whose other references repeat the thickness, radius, relief width, minimum remnant, and option references. The relief and transition satisfy the relief and transition relations of the flange control form, including equality with the document-style forms.
 
 The contour bend has the 11-property form. Slots 0, 3, 4, 7, and 9 are the same references as plate slots 7, 4, 10, 11, and 15. Slot 1 is the attachment radius reference and slot 2 is the attachment thickness reference. Slot 5 is null, slot 6 is a feature-dimension list, slot 8 is bend scalar 6 with state 1, and slot 10 is Boolean true. The contour corner has the seven-property form. Its slots 0, 3, 4, and 6 are the same references as plate slots 9, 12, 0, and 15; slots 1 and 5 are null; slot 2 is a feature-dimension list.
 
 For plate-side enumeration `(2, 0)` and contour attachment modes `(9, 1)` and `(9, 4)`, the thickness extends opposite the consumed sketch plane normal crossed with the tangent of the first selected profile curve in its stored direction. The profile curves follow the slot-0 wire order.
 
-A contour flange makes one sheet. The open profile is the ordered chain of whole curves of the consumed sketch that the slot-0 wire edges run along. The sheet travels from the profile plane along slot 1 by the slot-3 length. Its thickness is the attachment thickness, and the bends at the profile vertices have the attachment radius as inside radius. The bend and corner children store the bend and corner operands of that one sheet. They make no separate body: the plate, bend, and corner refer to one result collection.
+A standalone contour flange makes one sheet. The open profile is the ordered chain of whole curves of the consumed sketch that the slot-0 wire edges run along. The sheet travels from the profile plane along slot 1 by the slot-3 length. Its thickness is the attachment thickness, and the bends at the profile vertices have the attachment radius as inside radius. The bend and corner children store the bend and corner operands of that one sheet. They make no separate body: the plate, bend, and corner refer to one result collection.
 
 The bend radius in slot 1 repeats the radius reference of the attachment control. The flange record owns ordered plate, bend, and corner children. Each child is a separate generic feature with its own source index, label owner, state, and history position. Sharing an attachment control identifies the plate and bend pair. The bend is not a property sub-record of the plate. The plate and bend refer to a common result-body wrapper; result identity alone does not select a history revision. Neither the attachment control nor the bend's property vector contains an angle parameter.
 
@@ -1182,7 +1185,7 @@ Feature-label classes `7f588068b74378a0559515946f7a1c12`, `852f6bb0d411db6f60004
 
 Each attachment selection wrapper selects an edge collection. Each edge item in that collection stores its ordered edge-selector source indexes. One wrapper can select several edges. The flange owns one bend feature independently of the number of selected edges. The corner control and selections are shared operands, not references to the parent flange. The corner result collection has a distinct identity or repeats the plate result collection. Distinct collections can contain the same surface-body member. The ordered flange children and label participants identify the owning plate, bend, and corner.
 
-The single-edge unchanged corner form has one selected attachment edge and the shared plate/bend/corner operands above. Its edge selector resolves to one persistent generated edge of the preceding sheet through the naming join in section 13. The six-property form repeats plate slot 6 as its result-body property. The seven-property form repeats plate slot 15 as its result collection. Its corner form is type 8 value 3, its option is true, and its raw word is 0. Its control and relief enumerations are one of:
+The single-edge unchanged corner form has one selected attachment edge and the shared plate/bend/corner operands above. Its edge selector selects one edge of the preceding sheet: one persistent generated edge through the naming join in section 13, or one stored edge revision through the matching attribute of the selector in section 13. The six-property form repeats plate slot 6 as its result-body property. The seven-property form repeats plate slot 15 as its result collection. Its corner form is type 8 value 3, its option is true, and its raw word is 0. Its control and relief enumerations are one of:
 
 | Control | Relief form | Secondary form |
 | --- | --- | --- |
@@ -1269,7 +1272,7 @@ option u32
 
 Types `7267cc3bd31104a96000b3a99dccefb0`, `720c3e2bd311976060007aa99dccefb0`, `e0a8d8afd3117d5a0008928f8b1f0f69`, and `07a66130d4118895600053aa9dccefb0` contain the versioned content header and stamps, followed by `type_value:i16` and `value:u16`, then end. Their type values are 9, 304 or 501, 8, and 4 respectively. An enumeration value is a scalar, not a record reference.
 
-The sheet-metal style record has type identifier `13234560d3117a0d6000ecb21d6eefb0`. For PmDc segment major versions 29 and 31, its operand prefix contains:
+The sheet-metal style record has type identifier `13234560d3117a0d6000ecb21d6eefb0`. For PmDc segment major versions 29, 30, and 31, its operand prefix contains:
 
 ```text
 prefix bytes[30]
@@ -1292,7 +1295,64 @@ For PmDc segment major versions 20 and 23, the same operand sequence has `prefix
 
 The length operands reference the parameters `Thickness`, `BendRadius`, `BendReliefWidth`, `BendReliefDepth`, `CornerReliefSize`, `SeamGap`, `MinimumRemnant`, and `TransitionRadius`. The relief-form references select type `720c3e2bd311976060007aa99dccefb0`. The transition-form reference selects type `07a66130d4118895600053aa9dccefb0`. The option references a Boolean. Enumeration identity includes both `type_value` and `value`; equal values in distinct types do not identify equal forms. A length formula that consists of a parameter-reference expression to the style operand uses that style parameter. A literal expression is an explicit length operand, including when its evaluated value equals the style parameter.
 
+A `PmApp` record with type identifier `3e0b6bdaf5417a648da91fbd093fe213` stores one unfold rule. For `PmApp` segment major versions above 23, its payload contains:
+
+```text
+header_value u32
+header_id u16
+state u8
+flags u16
+padding u16 = 0
+values u16[2]
+default_state u32
+value u32
+name_reference u32
+name utf16
+long_name utf16
+style_state u16
+key utf16
+form u32
+expression utf16
+display utf16
+```
+
+For `PmApp` segment major versions 17 through 23, the payload has the same fields without `padding`. Each `utf16` field is a u32 code-unit count followed by that many UTF-16LE code units. A suffix follows the fields. `expression` is the K-factor expression text. When the text is a decimal number of ASCII digits with at most one decimal point and at least one digit, optionally followed by the unitless suffix ` ul`, the K-factor is the value of that decimal number.
+
+A `PmApp` record with type identifier `20d0a6fdd2118f936000a1b70b02ecb0` stores one style category. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+category_len u32
+category bytes[category_len]
+value u32
+reference u32
+form u32
+entry_count u32
+entry_values u32[2]
+entries (name utf16, rule u32)[entry_count]
+```
+
+`category` is ASCII. `entry_values` is present only when `entry_count` is above zero. Each entry `rule` is a one-based record index in the same `PmApp` segment, with the reference qualifier in bit 31. A suffix follows the fields. The category `SheetMetalUnfold` selects the active unfold rule. The active unfold rule exists when the document has exactly one `SheetMetalUnfold` category record, the record has exactly one entry, the entry `rule` selects an unfold-rule record, and the entry `name` equals the rule `name`.
+
 The plate scalar control contains `value:u32` after its versioned content header and stamps. The base bend scalar control contains `value:u32` after that header and stamps. The extended bend scalar control contains `value:u32` and `state:u8`. Each record ends after its last stated field.
+
+Feature-label classes `1a4066115a4744b315a62ab003a988a7` and `e9a3cc35a84fd15b179fa499ab579fa5` identify an Unfold and a Refold. An Unfold flattens bends of a sheet-metal body, and a Refold restores flattened bends. Each is a separate labeled generic feature with eight properties:
+
+| Slot | Operand |
+| ---: | --- |
+| 0 | Body selection `83aadad54f4375dacd1003b260a8a422` of the sheet-metal body |
+| 1 | Face item of the stationary face |
+| 2 | Face collection of the bend faces |
+| 3 | Boolean |
+| 4 | Fold list `39aa157e5441b3cb7ceab7875194c38a` |
+| 5 | Null |
+| 6 | Null |
+| 7 | Fold enumeration: type `a3eb88462242225c481151b12ef4b063` in an Unfold, type `6e3db2eb4149fe4f20fb6c811f2110b4` in a Refold |
+
+The body selection names one body. The stationary face item selects one face. The bend face collection contains one face item for each selected bend face. A bend that a cut divides contributes the faces of each remaining part. The fold list contains the versioned content header and stamps, followed by a type-2 reference list, then ends. Each fold enumeration contains the versioned content header and stamps, followed by `type_value:i16` and `value:u16`, then ends; the type value is 5. The Refold record and its operands contain no reference to an Unfold.
+
+In the projected form, slot 3 is Boolean true, the fold list is empty, and the fold enumeration is `(5, 1)`. The Unfold keeps the slot-1 face item as its stationary face and the slot-2 face collection as its bend faces. The Refold has no source Unfold.
 
 ### 13.6 Rectangular patterns
 

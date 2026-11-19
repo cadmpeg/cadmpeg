@@ -270,7 +270,9 @@ fn each_member_part_links_to_its_own_member_definition() {
         .iter()
         .map(|definition| definition.id.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(definitions.len(), 2, "{definitions:?}");
+    // §8.1: the root file's root definition and one File definition per
+    // member.
+    assert_eq!(definitions.len(), 3, "{definitions:?}");
     let stubs = decoded
         .ir()
         .native_unknowns("f3d")

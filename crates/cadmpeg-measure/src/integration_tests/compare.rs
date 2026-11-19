@@ -196,37 +196,24 @@ fn a_moved_signature_body_disagrees_by_its_vertex_box() {
 fn occurrences_that_place_bodies_keep_the_verdict_inconclusive() {
     use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
     use cadmpeg_ir::products::{
-        Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+        ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
     };
     let placed = |transform: Transform| {
         let mut cube = cube();
         let definition = ProductDefinitionId::mint("synthetic:cube:product#1").expect("id");
-        cube.model.product_definitions.push(ProductDefinition {
-            sketches: Vec::default(),
-            id: definition.clone(),
-            kind: ProductDefinitionKind::Part,
-            source_name: None,
-            label: None,
-            description: None,
-            part_number: None,
-            bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![cube.geometry.bodies[0].id.clone()],
-            native_ref: None,
-        });
-        let one = cadmpeg_ir::scalar::FiniteReal::new(1.0).expect("finite");
-        cube.model.occurrences.push(Occurrence {
-            id: OccurrenceId::mint("synthetic:cube:occurrence#1").expect("id"),
-            prototype: PrototypeReference::Local { definition },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform,
-            linked_prototype: None,
-            scale: [one; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        });
+        let occurrence = OccurrenceId::mint("synthetic:cube:occurrence#1").expect("id");
+        let mut part = ProductDefinition::new(definition.clone(), Storage::Embedded);
+        part.kind = Some(ProductDefinitionKind::Part);
+        part.bodies = vec![cube.geometry.bodies[0].id.clone()];
+        let mut root = ProductDefinition::root(
+            ProductDefinitionId::mint("synthetic:cube:product#root").expect("id"),
+            ExternalDocument::default(),
+        );
+        root.occurrences.push(occurrence.clone());
+        cube.model.product_definitions.extend([part, root]);
+        cube.model
+            .occurrences
+            .push(Occurrence::new(occurrence, definition, Some(transform)));
         cube
     };
     let plain = cube();

@@ -2,6 +2,7 @@
 //! One boundary piece: a parameter interval with its image in the carrier's
 //! parameter plane and in model space.
 
+use std::cell::OnceCell;
 use std::rc::Rc;
 
 use cadmpeg_ir::features::FiniteVector3;
@@ -23,6 +24,29 @@ const MAX_NESTING_SAMPLES_PER_PIECE: usize = 1 << 10;
 /// Golden-section steps of the search for a singular point of the carrier
 /// between two samples whose parameter image jumps.
 const MAX_SINGULAR_APPROACH_STEPS: usize = 64;
+
+/// Bisection steps of the search for the parameter where a piece enters the
+/// allowance of a singular point of the carrier.
+const MAX_SINGULAR_ENTRY_STEPS: usize = 64;
+
+/// False-position steps of the search for the parameter where a piece's
+/// parameter image crosses a knot value.
+const MAX_KNOT_CROSSING_STEPS: usize = 64;
+
+/// The step, relative to the piece's parameter span, at which the search
+/// for a knot crossing stops.
+const KNOT_CROSSING_RESOLUTION: f64 = 1.0e-9;
+
+/// Passes through singular points of the carrier at which one inverted
+/// curve interval splits into pieces.
+const MAX_SINGULAR_CROSSINGS_PER_PIECE: usize = 4;
+
+/// An inverted curve interval: its piece, or the parameter inside it where
+/// the curve passes through a singular point of the carrier.
+enum Inversion<'ir> {
+    Piece(Box<Piece<'ir>>),
+    Crossing(f64),
+}
 
 /// Where a piece's points come from.
 #[derive(Clone)]
@@ -79,6 +103,11 @@ pub(crate) struct Piece<'ir> {
     /// The distance within which a point is at a singular point of the
     /// chart.
     alpha: f64,
+    /// Per end, the parameter where the piece enters the allowance of a
+    /// singular point and the lifted `u` it keeps from there to that end.
+    held: [Option<(f64, f64)>; 2],
+    /// The parameters where the piece crosses an interior `v` knot.
+    knot_crossings: OnceCell<Vec<f64>>,
 }
 
 impl<'ir> Piece<'ir> {
@@ -100,6 +129,8 @@ impl<'ir> Piece<'ir> {
             reference: vec![(0.0, from), (1.0, to)],
             periods: [None, None],
             alpha: 0.0,
+            held: [None, None],
+            knot_crossings: OnceCell::new(),
         }
     }
 
@@ -124,6 +155,8 @@ impl<'ir> Piece<'ir> {
             reference: Vec::new(),
             periods: chart.periods(),
             alpha: use_.alpha,
+            held: [None, None],
+            knot_crossings: OnceCell::new(),
         }
     }
 
@@ -187,19 +220,55 @@ impl<'ir> Piece<'ir> {
         }
     }
 
-    /// A curve interval inverted onto `chart`, with an unwrap reference fine
-    /// enough that consecutive samples differ by less than a quarter period.
+    /// A curve interval inverted onto `chart` as pieces in traversal order.
+    /// The interval splits at each parameter inside it where the curve
+    /// passes through a singular point of the carrier, so that the pieces
+    /// meet there.
     pub(crate) fn inverted(
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+        curve: &Rc<CurveChart<'ir>>,
+        interval: [f64; 2],
+        use_: CoedgeUse<'ir>,
+    ) -> Measure<Vec<Self>> {
+        let mut pieces = Vec::new();
+        let mut pending = vec![interval];
+        let mut crossings = 0_usize;
+        while let Some([t0, t1]) = pending.pop() {
+            match Self::inverted_interval(eval, chart, Rc::clone(curve), [t0, t1], use_)? {
+                Inversion::Piece(piece) => pieces.push(*piece),
+                Inversion::Crossing(t) => {
+                    crossings += 1;
+                    if crossings > MAX_SINGULAR_CROSSINGS_PER_PIECE {
+                        return Err(MeasureFailure::unavailable(
+                            UnavailableReason::EvaluationWorkExhausted,
+                            None,
+                            "the curve passes through more singular points of the surface than the crossing cap",
+                        ));
+                    }
+                    pending.push([t, t1]);
+                    pending.push([t0, t]);
+                }
+            }
+        }
+        Ok(pieces)
+    }
+
+    /// One curve interval inverted onto `chart`, with an unwrap reference
+    /// fine enough that consecutive samples differ by less than a quarter
+    /// period, or the parameter where the curve passes through a singular
+    /// point of the carrier inside the interval.
+    fn inverted_interval(
         eval: &Eval<'_, '_>,
         chart: &Chart<'_>,
         curve: Rc<CurveChart<'ir>>,
         [t0, t1]: [f64; 2],
         use_: CoedgeUse<'ir>,
-    ) -> Measure<Self> {
+    ) -> Measure<Inversion<'ir>> {
         let alpha = use_.alpha;
         let periods = chart.periods();
         let mut count = 4_usize;
-        let (reference, off_surface) = loop {
+        let (mut reference, off_surface) = loop {
             let mut raw_samples: Vec<(f64, [f64; 2], bool)> = Vec::with_capacity(count + 1);
             let mut off_surface: f64 = 0.0;
             let mut seed: Option<[f64; 2]> = None;
@@ -225,17 +294,18 @@ impl<'ir> Piece<'ir> {
                 off_surface = off_surface.max(distance);
                 raw_samples.push((t, raw, chart.singular_at(point, alpha)));
             }
+            if let Some(bracket) = interior_singular_bracket(&raw_samples) {
+                return crossing(eval, chart, &curve, bracket, [t0, t1], alpha)
+                    .map(Inversion::Crossing);
+            }
             let (reference, smooth) = unwrap(periods, &raw_samples)?;
             if smooth {
                 break (reference, off_surface);
             }
             if count >= MAX_NESTING_SAMPLES_PER_PIECE {
-                if passes_singular_point(eval, chart, &curve, &raw_samples, alpha)? {
-                    return Err(MeasureFailure::unavailable(
-                        UnavailableReason::BoundaryInversionFailed,
-                        None,
-                        "the curve passes through a singular point of the surface inside its interval",
-                    ));
+                if let Some(bracket) = singular_jump(eval, chart, &curve, &raw_samples, alpha)? {
+                    return crossing(eval, chart, &curve, bracket, [t0, t1], alpha)
+                        .map(Inversion::Crossing);
                 }
                 return Err(MeasureFailure::unavailable(
                     UnavailableReason::EvaluationWorkExhausted,
@@ -245,7 +315,8 @@ impl<'ir> Piece<'ir> {
             }
             count *= 2;
         };
-        Ok(Self {
+        let held = held_ends(eval, chart, &curve, &mut reference, alpha)?;
+        Ok(Inversion::Piece(Box::new(Self {
             coedge: Some(use_.coedge),
             source: Source::Curve(curve),
             t0,
@@ -256,7 +327,20 @@ impl<'ir> Piece<'ir> {
             reference,
             periods,
             alpha,
-        })
+            held,
+            knot_crossings: OnceCell::new(),
+        })))
+    }
+
+    /// The `u` the piece keeps at `t` inside the allowance of a singular
+    /// point at one of its ends.
+    fn held_u(&self, t: f64) -> Option<f64> {
+        let [start, end] = self.held;
+        let forward = self.t1 >= self.t0;
+        start
+            .filter(|(entry, _)| (t <= *entry) == forward)
+            .or_else(|| end.filter(|(entry, _)| (t >= *entry) == forward))
+            .map(|(_, u)| u)
     }
 
     /// The reference lift at `t`, interpolated between samples.
@@ -305,15 +389,7 @@ impl<'ir> Piece<'ir> {
         point: Point3,
     ) -> Measure<([f64; 2], bool)> {
         let reference = self.reference_at(t);
-        let seed = match chart.domain() {
-            Some(domain) => std::array::from_fn(|axis| match self.periods[axis] {
-                Some(period) => {
-                    domain[axis][0] + (reference[axis] - domain[axis][0]).rem_euclid(period)
-                }
-                None => reference[axis],
-            }),
-            None => reference,
-        };
+        let seed = domain_seed(chart, self.periods, reference);
         let Some(raw) = chart.invert(eval, point, Some(seed), self.alpha)? else {
             return Err(MeasureFailure::unavailable(
                 UnavailableReason::BoundaryInversionFailed,
@@ -321,7 +397,9 @@ impl<'ir> Piece<'ir> {
                 "a boundary point does not invert onto the surface",
             ));
         };
-        Ok(if chart.singular_at(point, self.alpha) {
+        Ok(if let Some(u) = self.held_u(t) {
+            ([u, raw[1]], true)
+        } else if chart.singular_at(point, self.alpha) {
             ([reference[0], raw[1]], true)
         } else {
             (nearest(self.periods, raw, reference), false)
@@ -414,10 +492,92 @@ impl<'ir> Piece<'ir> {
     /// Parameters inside the piece where its curve's smoothness may break.
     pub(crate) fn breaks(&self) -> Vec<f64> {
         match &self.source {
-            Source::Curve(curve) => curve.breaks(),
+            Source::Curve(curve) => {
+                let mut breaks = curve.breaks();
+                breaks.extend(self.held.iter().flatten().map(|(entry, _)| *entry));
+                breaks
+            }
             Source::Pcurve { span, .. } => span.breaks(),
             Source::Segment { .. } => Vec::new(),
         }
+    }
+
+    /// The parameters where the piece's `v` crosses an interior `v` knot of
+    /// a NURBS chart, computed once per piece.
+    pub(crate) fn v_knot_crossings(
+        &self,
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+    ) -> Measure<Vec<f64>> {
+        if let Some(crossings) = self.knot_crossings.get() {
+            return Ok(crossings.clone());
+        }
+        let Chart::Nurbs(nurbs) = chart else {
+            return Ok(Vec::new());
+        };
+        let [v0, v1] = nurbs.domain[1];
+        let mut knots = nurbs.v_breaks();
+        knots.retain(|knot| v0 < *knot && *knot < v1);
+        knots.dedup();
+        let crossings = self.crossings(eval, chart, 1, &knots)?;
+        Ok(self.knot_crossings.get_or_init(|| crossings).clone())
+    }
+
+    /// The parameters where the piece's `axis` coordinate crosses one of
+    /// `values`, by Illinois false-position steps between consecutive
+    /// reference samples, breaks and ends whose coordinates bracket the
+    /// value.
+    fn crossings(
+        &self,
+        eval: &Eval<'_, '_>,
+        chart: &Chart<'_>,
+        axis: usize,
+        values: &[f64],
+    ) -> Measure<Vec<f64>> {
+        let (low, high) = (self.t0.min(self.t1), self.t0.max(self.t1));
+        let resolution = KNOT_CROSSING_RESOLUTION * (high - low);
+        let mut scan: Vec<f64> = [self.t0, self.t1]
+            .into_iter()
+            .chain(self.reference.iter().map(|(t, _)| *t))
+            .chain(self.breaks())
+            .filter(|t| (low..=high).contains(t))
+            .collect();
+        scan.sort_by(f64::total_cmp);
+        scan.dedup();
+        let mut samples = Vec::with_capacity(scan.len());
+        for t in scan {
+            samples.push((t, self.uv(eval, chart, t)?[axis]));
+        }
+        let mut crossings = Vec::new();
+        for pair in samples.windows(2) {
+            let [(ta, a), (tb, b)] = [pair[0], pair[1]];
+            for &value in values {
+                if !((a < value && value < b) || (b < value && value < a)) {
+                    continue;
+                }
+                let (mut t_old, mut f_old) = (ta, a - value);
+                let (mut t_new, mut f_new) = (tb, b - value);
+                for _ in 0..MAX_KNOT_CROSSING_STEPS {
+                    let t = t_new - f_new * (t_new - t_old) / (f_new - f_old);
+                    if !(t.is_finite() && (ta.min(tb)..=ta.max(tb)).contains(&t)) {
+                        break;
+                    }
+                    let f = self.uv(eval, chart, t)?[axis] - value;
+                    let moved = (t - t_new).abs();
+                    if f * f_new < 0.0 {
+                        (t_old, f_old) = (t_new, f_new);
+                    } else {
+                        f_old *= 0.5;
+                    }
+                    (t_new, f_new) = (t, f);
+                    if f == 0.0 || moved <= resolution {
+                        break;
+                    }
+                }
+                crossings.push(t_new);
+            }
+        }
+        Ok(crossings)
     }
 
     /// Whether the piece is a synthesized segment.
@@ -539,6 +699,9 @@ fn interpolate(t0: f64, t1: f64, index: usize, count: usize) -> f64 {
 /// Parameter-plane samples `(t, uv)` in parameter order.
 type Reference = Vec<(f64, [f64; 2])>;
 
+/// Two samples `(t, uv)` on either side of a pass near a singular point.
+type Bracket = [(f64, [f64; 2]); 2];
+
 /// Unwrap raw samples `(t, uv, singular)` into a continuous lift. A
 /// singular sample takes `u` from its nearest regular neighbour, preferring
 /// the previous one. The second value is whether consecutive lifted samples
@@ -599,65 +762,212 @@ fn unwrap(
     Ok((reference, smooth))
 }
 
-/// Whether the curve passes within `alpha` of a singular point of `chart`
-/// between two consecutive samples `(t, uv, singular)` whose nearest lifts
-/// differ by a quarter period or more. Near a singular point the parameter
-/// image turns by up to half a period over a vanishing curve length, so
-/// such a pair brackets the point; a golden-section search of the distance
-/// to the singular points decides.
-fn passes_singular_point(
+/// `uv` taken into `chart`'s domain along its periodic directions.
+fn domain_seed(chart: &Chart<'_>, periods: [Option<f64>; 2], uv: [f64; 2]) -> [f64; 2] {
+    match chart.domain() {
+        Some(domain) => std::array::from_fn(|axis| match periods[axis] {
+            Some(period) => domain[axis][0] + (uv[axis] - domain[axis][0]).rem_euclid(period),
+            None => uv[axis],
+        }),
+        None => uv,
+    }
+}
+
+/// The entry parameter and lifted `u` for each end of an inverted piece
+/// whose reference samples there lie within `alpha` of a singular point.
+/// The piece and its reference samples keep that `u` from the entry to the
+/// end, so the junction at the end starts from the `u` that the piece's
+/// integrals reach.
+fn held_ends(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    curve: &CurveChart<'_>,
+    reference: &mut Reference,
+    alpha: f64,
+) -> Measure<[Option<(f64, f64)>; 2]> {
+    let inside = |t: f64| -> Measure<bool> { Ok(chart.singular_at(curve.point(eval, t)?, alpha)) };
+    let mut flags = Vec::with_capacity(reference.len());
+    for (t, _) in reference.iter() {
+        flags.push(inside(*t)?);
+    }
+    let count = reference.len();
+    let leading = flags.iter().take_while(|flag| **flag).count();
+    if leading == count {
+        return Ok([None, None]);
+    }
+    let trailing = flags.iter().rev().take_while(|flag| **flag).count();
+    let periods = chart.periods();
+    let mut held = [None, None];
+    let ends = [
+        (leading > 0).then(|| (leading - 1, leading, 0..leading)),
+        (trailing > 0).then(|| {
+            (
+                count - trailing,
+                count - trailing - 1,
+                count - trailing..count,
+            )
+        }),
+    ];
+    for (side, end) in ends.into_iter().enumerate() {
+        let Some((singular_index, regular_index, run)) = end else {
+            continue;
+        };
+        let (Some(&(mut low, _)), Some(&(mut high, anchor))) =
+            (reference.get(singular_index), reference.get(regular_index))
+        else {
+            continue;
+        };
+        for _ in 0..MAX_SINGULAR_ENTRY_STEPS {
+            eval.charge(1)?;
+            let middle = low.midpoint(high);
+            if inside(middle)? {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        let point = curve.point(eval, high)?;
+        let seed = domain_seed(chart, periods, anchor);
+        let Some(raw) = chart.invert(eval, point, Some(seed), alpha)? else {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::BoundaryInversionFailed,
+                None,
+                "a boundary point does not invert onto the surface",
+            ));
+        };
+        let u = nearest(periods, raw, anchor)[0];
+        for index in run {
+            if let Some((_, uv)) = reference.get_mut(index) {
+                uv[0] = u;
+            }
+        }
+        if let Some(slot) = held.get_mut(side) {
+            *slot = Some((high, u));
+        }
+    }
+    Ok(held)
+}
+
+/// The regular samples `(t, uv)` on either side of the first run of
+/// singular samples inside `samples`, when a regular sample precedes and
+/// follows that run.
+fn interior_singular_bracket(samples: &[(f64, [f64; 2], bool)]) -> Option<Bracket> {
+    let first = samples.iter().position(|(_, _, singular)| !singular)?;
+    let entry = first
+        + samples[first..]
+            .iter()
+            .position(|(_, _, singular)| *singular)?;
+    let exit = entry
+        + samples[entry..]
+            .iter()
+            .position(|(_, _, singular)| !singular)?;
+    let (before, after) = (samples.get(entry - 1)?, samples.get(exit)?);
+    Some([(before.0, before.1), (after.0, after.1)])
+}
+
+/// The first pair of consecutive samples `(t, uv, singular)` whose nearest
+/// lifts differ by a quarter period or more, and between which the curve
+/// passes within `alpha` of a singular point of `chart`. Near a singular
+/// point the parameter image turns by up to half a period over a vanishing
+/// curve length, so such a pair brackets the point; a golden-section search
+/// of the distance to the singular points decides.
+fn singular_jump(
     eval: &Eval<'_, '_>,
     chart: &Chart<'_>,
     curve: &CurveChart<'_>,
     samples: &[(f64, [f64; 2], bool)],
     alpha: f64,
-) -> Measure<bool> {
-    let singular: Vec<Point3> = chart
-        .apex()
-        .map(|(_, apex)| apex)
-        .into_iter()
-        .chain(chart.poles().into_iter().flatten().map(|(_, pole)| pole))
-        .collect();
+) -> Measure<Option<Bracket>> {
+    let singular: Vec<Point3> = chart.singular_points().collect();
     if singular.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
     let periods = chart.periods();
-    let distance = |t: f64| -> Measure<f64> {
-        let point = curve.point(eval, t)?;
-        Ok(singular
-            .iter()
-            .map(|candidate| candidate.distance(point))
-            .fold(f64::INFINITY, f64::min))
-    };
+    let distance = |t: f64| singular_distance(eval, curve, &singular, t);
     for pair in samples.windows(2) {
         let ((ta, a, _), (tb, b, _)) = (pair[0], pair[1]);
         let lifted = nearest(periods, b, a);
         let jumps = (0..2).any(|axis| {
             periods[axis].is_some_and(|period| (lifted[axis] - a[axis]).abs() >= period / 4.0)
         });
-        if jumps && golden_minimum(eval, &distance, [ta, tb])? <= alpha {
-            return Ok(true);
+        if jumps && golden_minimum(eval, &distance, [ta, tb])?.1 <= alpha {
+            return Ok(Some([(ta, a), (tb, b)]));
         }
     }
-    Ok(false)
+    Ok(None)
 }
 
-/// The smallest value of `value` that a golden-section search finds on
-/// `[low, high]`, including both ends.
+/// The distance from the curve point at `t` to the nearest of `singular`.
+fn singular_distance(
+    eval: &Eval<'_, '_>,
+    curve: &CurveChart<'_>,
+    singular: &[Point3],
+    t: f64,
+) -> Measure<f64> {
+    let point = curve.point(eval, t)?;
+    Ok(singular
+        .iter()
+        .map(|candidate| candidate.distance(point))
+        .fold(f64::INFINITY, f64::min))
+}
+
+/// The parameter between the samples `bracket` where the curve passes
+/// through a singular point of `chart`: the minimum of the distance to the
+/// singular points by a golden-section search. The parameter lies inside
+/// `interval` and its point within `alpha` of a singular point. On a cone
+/// the samples lie on one side of the apex, so the curve stays on one
+/// nappe.
+fn crossing(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    curve: &CurveChart<'_>,
+    [(ta, a), (tb, b)]: Bracket,
+    [t0, t1]: [f64; 2],
+    alpha: f64,
+) -> Measure<f64> {
+    let failed = |message: &str| {
+        MeasureFailure::unavailable(
+            UnavailableReason::BoundaryInversionFailed,
+            None,
+            message.to_owned(),
+        )
+    };
+    if let Some((apex, _)) = chart.apex() {
+        if (a[1] - apex) * (b[1] - apex) < 0.0 {
+            return Err(failed(
+                "the curve passes through the cone apex onto the opposite nappe",
+            ));
+        }
+    }
+    let singular: Vec<Point3> = chart.singular_points().collect();
+    let distance = |t: f64| singular_distance(eval, curve, &singular, t);
+    let (t, distance) = golden_minimum(eval, &distance, [ta, tb])?;
+    let inside = t0.min(t1) < t && t < t0.max(t1);
+    if !inside || distance > alpha {
+        return Err(failed(
+            "the curve's pass near a singular point of the surface has no parameter inside its interval within the allowance",
+        ));
+    }
+    Ok(t)
+}
+
+/// The parameter and value of the smallest value of `value` that a
+/// golden-section search finds on `[low, high]`, including both ends.
 fn golden_minimum(
     eval: &Eval<'_, '_>,
     value: &dyn Fn(f64) -> Measure<f64>,
     [low, high]: [f64; 2],
-) -> Measure<f64> {
+) -> Measure<(f64, f64)> {
     let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
     let (mut lower, mut upper) = (low, high);
-    let mut best = value(lower)?.min(value(upper)?);
+    let keep = |best: (f64, f64), t: f64, at: f64| if at < best.1 { (t, at) } else { best };
+    let mut best = keep((lower, value(lower)?), upper, value(upper)?);
     let mut left = upper - ratio * (upper - lower);
     let mut right = lower + ratio * (upper - lower);
     let (mut at_left, mut at_right) = (value(left)?, value(right)?);
     for _ in 0..MAX_SINGULAR_APPROACH_STEPS {
         eval.charge(1)?;
-        best = best.min(at_left).min(at_right);
+        best = keep(keep(best, left, at_left), right, at_right);
         if at_left <= at_right {
             upper = right;
             right = left;
@@ -672,7 +982,7 @@ fn golden_minimum(
             at_right = value(right)?;
         }
     }
-    Ok(best.min(at_left).min(at_right))
+    Ok(keep(keep(best, left, at_left), right, at_right))
 }
 
 /// `raw` lifted by whole periods to the value nearest `reference`.

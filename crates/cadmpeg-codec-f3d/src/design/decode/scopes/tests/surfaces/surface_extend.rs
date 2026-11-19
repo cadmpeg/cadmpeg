@@ -3,6 +3,7 @@
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::surfaces::exact_surface_extend_operation;
+use crate::design::decode::scopes::surfaces::surface_extend_loss;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::test_support::indexed_header;
@@ -135,6 +136,8 @@ fn compact_owner_and_87_byte_boundary_tail_decode_the_extend_operation() {
             tolerance: cadmpeg_ir::scalar::PositiveReal::new(4.85e-5)
                 .expect("checked fixture value"),
             tolerance_offset: u64_from_index(tail + 39),
+            method_code: None,
+            method_code_offset: None,
         })
     );
 }
@@ -227,4 +230,108 @@ fn compact_flag_record_does_not_add_a_loss() {
             .unwrap();
     assert_eq!(operation.boundary_reference_record_index, 60);
     assert!(losses.is_empty());
+}
+
+fn prologue(method_code: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"354", SCOPE);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.extend_from_slice(&method_code.to_le_bytes());
+    marked(&mut bytes, OWNER);
+    assert_eq!(bytes.len(), 44);
+    bytes
+}
+
+fn fixture_after(bytes: Vec<u8>) -> Vec<u8> {
+    fixture_after_distance(bytes, 2.54)
+}
+
+fn fixture_after_distance(mut bytes: Vec<u8>, distance: f64) -> Vec<u8> {
+    compact_distance_owner(&mut bytes, distance);
+    boundary_carrier(&mut bytes, &COMPACT_TAIL);
+    indexed_header(&mut bytes, *b"123", FLAG_RECORD);
+    bytes.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0]);
+    bytes
+}
+
+#[test]
+fn fixed_prologue_gives_the_extension_method_code() {
+    use cadmpeg_ir::features::SurfaceExtension;
+    for (code, extension) in [
+        (0, SurfaceExtension::Perpendicular),
+        (1, SurfaceExtension::Natural),
+        (2, SurfaceExtension::Linear),
+        (3, SurfaceExtension::Unresolved),
+    ] {
+        let operation = decode(&fixture_after(prologue(code))).unwrap();
+        assert_eq!(operation.method_code, Some(code));
+        assert_eq!(operation.method_code_offset, Some(29));
+        assert_eq!(operation.extension(), extension);
+    }
+}
+
+#[test]
+fn a_violated_prologue_leaves_the_extension_method_unread() {
+    let edits = [
+        (11, 1),
+        (19, 1),
+        (20, 0),
+        (21, 1),
+        (28, 1),
+        (33, 0),
+        (34, u8::try_from(CARRIER).unwrap()),
+        (38, 1),
+        (43, 1),
+    ];
+    for (at, value) in edits {
+        let mut bytes = prologue(1);
+        bytes[at] = value;
+        let operation = decode(&fixture_after(bytes)).unwrap();
+        assert_eq!(operation.method_code, None);
+        assert_eq!(operation.method_code_offset, None);
+        assert_eq!(
+            operation.extension(),
+            cadmpeg_ir::features::SurfaceExtension::Unresolved
+        );
+    }
+}
+
+fn loss_code(distance: f64, code: Option<u32>) -> Option<String> {
+    let bytes = match code {
+        Some(code) => fixture_after_distance(prologue(code), distance),
+        None => fixture(distance, &COMPACT_TAIL).0,
+    };
+    let operation = decode(&bytes).unwrap();
+    surface_extend_loss("scope", &operation).map(|loss| loss.code.local_code().to_owned())
+}
+
+#[test]
+fn a_named_extension_method_with_a_positive_distance_has_no_loss() {
+    for code in 0..=2 {
+        assert_eq!(loss_code(2.54, Some(code)), None);
+    }
+}
+
+#[test]
+fn an_unnamed_method_code_or_another_prologue_reports_the_unresolved_method() {
+    for code in [Some(3), None] {
+        assert_eq!(
+            loss_code(2.54, code).as_deref(),
+            Some("feature.surface-extend-method-unresolved")
+        );
+    }
+}
+
+#[test]
+fn a_nonpositive_distance_reports_only_the_distance_loss() {
+    for distance in [-2.54, 0.0] {
+        for code in [Some(1), Some(3), None] {
+            assert_eq!(
+                loss_code(distance, code).as_deref(),
+                Some("feature.surface-extend-distance-nonpositive")
+            );
+        }
+    }
 }

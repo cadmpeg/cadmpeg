@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::design::feature_project::replace_face::project_replace_face;
 use cadmpeg_test_support::wire;
 
-use crate::design::feature_project::{
-    bind_surface_trim_cell_selections, project_replace_face, project_surface_trim,
-};
+use crate::design::feature_project::{bind_surface_trim_cell_selections, project_surface_trim};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -19,6 +18,61 @@ use crate::records::{
     },
 };
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+
+#[test]
+fn replacement_missing_definitions_retains_control_and_typed_selections() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:test:scope#40",
+        crate::records::feature::scope::DesignFeatureKind::ReplaceFace,
+        40,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::ReplaceFace(value) =
+        scope.payload_mut()
+    {
+        *value = Some(
+            crate::records::feature::surface_ops::DesignReplaceFaceOperation {
+                tangent_chain: true,
+                flagged_prefix_word: Some(0x1122_3344),
+                replacement_group_record_indices: vec![44],
+                target_group_record_indices: vec![50],
+                trailing_identity: crate::records::mesh::DesignRelaxedGuidText::try_from(
+                    "00000000-0000-0000-0000-000000000000".to_owned(),
+                )
+                .unwrap(),
+            },
+        );
+    } else {
+        panic!("replacement payload");
+    }
+    let mut losses = Vec::new();
+    let definition = project_replace_face(&scope, &[], &[], &[], &mut losses).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) = definition
+    else {
+        panic!("typed replacement");
+    };
+    assert_eq!(operands.tangent_chain(), Some(true));
+    assert_eq!(
+        operands.targets(),
+        &FaceSelection::Native("f3d:test:scope#40".into())
+    );
+    assert_eq!(
+        operands.replacements(),
+        &FaceSelection::Native("f3d:test:scope#40".into())
+    );
+    assert_eq!(losses.len(), 4);
+    assert!(losses.iter().all(|loss| [
+        crate::loss::F3dLossCode::ReplaceFaceFlaggedPrefixWordAssumed
+            .note("x")
+            .code,
+        crate::loss::F3dLossCode::ReplaceFaceTangentChainAssumed
+            .note("x")
+            .code,
+        crate::loss::F3dLossCode::ReplaceFaceSelectionAssumed
+            .note("x")
+            .code,
+    ]
+    .contains(&loss.code)));
+}
 
 fn body_recipe_limit_fixture() -> (
     DesignParameterScope,
@@ -76,6 +130,27 @@ fn body_recipe_limit_fixture() -> (
     )
     .unwrap();
     (scope, group, operand)
+}
+
+#[test]
+fn replacement_entity_support_retains_its_group_when_its_definition_is_unresolved() {
+    let (scope, mut group, _) = body_recipe_limit_fixture();
+    group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X21,
+        );
+    let mut losses = Vec::new();
+    let definition =
+        project_replace_face(&scope, std::slice::from_ref(&group), &[], &[], &mut losses).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) = definition
+    else {
+        panic!("typed replacement");
+    };
+    assert_eq!(operands.replacements(), &FaceSelection::Native(group.id));
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::F3dLossCode::ReplaceFaceSupportAssumed
+            .note("x")
+            .code));
 }
 
 #[test]
@@ -277,6 +352,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         &[replacement_group.clone(), target_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
+        &mut Vec::new(),
     )
     .expect("typed ReplaceFace");
     assert!(matches!(
@@ -297,10 +373,11 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         &[target_group.clone(), replacement_group.clone()],
         std::slice::from_ref(&target),
         std::slice::from_ref(&replacement),
+        &mut Vec::new(),
     );
     assert!(matches!(
         reversed,
-        Some(FeatureDefinition::Operation(
+        Ok(FeatureDefinition::Operation(
             FeatureOperation::ReplaceFace { .. }
         ))
     ));
@@ -312,9 +389,10 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             target_group.clone()
         ],
         std::slice::from_ref(&target),
-        std::slice::from_ref(&replacement)
+        std::slice::from_ref(&replacement),
+        &mut Vec::new(),
     )
-    .is_none());
+    .is_ok());
 
     let mut invalid_scope = scope;
     invalid_scope
@@ -328,9 +406,10 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         &invalid_scope,
         &[replacement_group, target_group],
         std::slice::from_ref(&target),
-        std::slice::from_ref(&replacement)
+        std::slice::from_ref(&replacement),
+        &mut Vec::new(),
     )
-    .is_none());
+    .is_ok());
 }
 
 fn trim_body_draft(
@@ -469,6 +548,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
         &[target_group.clone(), tool_group.clone()],
         std::slice::from_ref(&body),
         std::slice::from_ref(&curves),
+        &[],
         &mut losses,
     )
     .expect("typed SurfaceTrim");
@@ -504,6 +584,82 @@ fn surface_trim_scope(references: Vec<u32>) -> DesignParameterScope {
 }
 
 #[test]
+fn surface_trim_projects_the_owned_face_recipe_as_its_tool() {
+    use super::super::{project_parameter_design_with_edge_identities, ProjectInputs};
+    use crate::design::test_support::synthetic_feature_timelines;
+
+    let (scope, target_group, _, body, curves) = surface_trim_fixture();
+    let tool_group = group(1200, 2, 1203, 1204, DesignOperandRole::ROLE_0X9);
+    let tool_id = tool_group.id.clone();
+    let groups = [target_group, tool_group];
+    let mut face = super::pattern::seed_face_operand(ConstructionRecipeKind::Face).into_draft();
+    face.id = "f3d:Design/BulkStream.dat:face-operand#1204".into();
+    face.scope_record_index = 1200;
+    face.scope_reference_ordinal = 2;
+    face.group.as_mut().unwrap().group_record_index = 1203;
+    face.record_index = 1204;
+    face.recipe_record_index = 1207;
+    face.next_record_index = 1209;
+    let face = DesignFaceOperand::try_new(face).unwrap();
+    let scopes = std::slice::from_ref(&scope);
+    let timelines = synthetic_feature_timelines(scopes);
+    let projection = crate::test_support::with_decode_context(|ctx| {
+        project_parameter_design_with_edge_identities(
+            ctx,
+            &ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                construction_groups: &groups,
+                body_recipe_operands: std::slice::from_ref(&body),
+                face_operands: std::slice::from_ref(&face),
+                ..Default::default()
+            },
+        )
+    })
+    .unwrap();
+    let [feature] = projection.features.as_slice() else {
+        panic!("expected one SurfaceTrim feature");
+    };
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            faces: FaceSelection::Historical { faces, .. },
+            tool: cadmpeg_ir::features::PathRef::Native(tool),
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+        }) if faces.len() == 1 && tool == &tool_id
+    ));
+    assert!(projection.projection_losses.is_empty());
+    assert_eq!(feature.source_properties.len(), 4);
+    for (ordinal, record_index) in ["1201", "1202", "1203", "1204"].into_iter().enumerate() {
+        assert_eq!(
+            feature
+                .source_properties
+                .get(format!("reference:{ordinal}").as_str())
+                .map(String::as_str),
+            Some(record_index)
+        );
+    }
+
+    let mut losses = Vec::new();
+    let mut misplaced = face.clone();
+    misplaced.scope_reference_ordinal = 1;
+    let mut bounded = face.clone();
+    bounded.recipe_kind = ConstructionRecipeKind::BoundedFace;
+    for invalid in [&[][..], &[misplaced], &[bounded], &[face.clone(), face]] {
+        assert!(project_surface_trim(
+            &scope,
+            &groups,
+            std::slice::from_ref(&body),
+            std::slice::from_ref(&curves),
+            invalid,
+            &mut losses,
+        )
+        .is_none());
+    }
+    assert!(losses.is_empty());
+}
+
+#[test]
 fn surface_trim_keeps_native_target_when_its_body_is_unresolved() {
     let (scope, target_group, tool_group, _, curves) = surface_trim_fixture();
     let mut losses = Vec::new();
@@ -512,6 +668,7 @@ fn surface_trim_keeps_native_target_when_its_body_is_unresolved() {
         &[target_group.clone(), tool_group.clone()],
         &[trim_body(1201, 0, 1202)],
         std::slice::from_ref(&curves),
+        &[],
         &mut losses,
     )
     .expect("typed SurfaceTrim");
@@ -548,6 +705,7 @@ fn surface_trim_projects_multi_member_target_and_tool_groups() {
             trim_body(1204, 1, 1206),
         ],
         &[trim_curves(1204, 0, 1205), trim_curves(1204, 2, 1207)],
+        &[],
         &mut losses,
     )
     .expect("typed SurfaceTrim");
@@ -575,6 +733,7 @@ fn surface_trim_requires_groups_that_partition_the_references() {
         &[target_group.clone(), short_tool],
         &bodies,
         &[trim_curves(1204, 0, 1205), trim_curves(1204, 1, 1206)],
+        &[],
         &mut losses,
     )
     .is_none());
@@ -595,6 +754,7 @@ fn surface_trim_requires_groups_that_partition_the_references() {
             trim_curves(1203, 2, 1206),
             trim_curves(1203, 3, 1207),
         ],
+        &[],
         &mut losses,
     )
     .is_none());
@@ -618,6 +778,7 @@ fn surface_trim_projects_untyped_members_by_group_role_with_a_loss() {
         &groups,
         &[],
         std::slice::from_ref(&curves),
+        &[],
         &mut losses,
     )
     .expect("SurfaceTrim with an untyped target member");
@@ -638,6 +799,7 @@ fn surface_trim_projects_untyped_members_by_group_role_with_a_loss() {
             &groups,
             std::slice::from_ref(&body),
             &tool_records,
+            &[],
             &mut losses,
         )
         .expect("SurfaceTrim with an untyped tool member");
@@ -655,7 +817,7 @@ fn surface_trim_projects_untyped_members_by_group_role_with_a_loss() {
     }
 
     let mut losses = Vec::new();
-    assert!(project_surface_trim(&scope, &groups, &[], &[], &mut losses).is_some());
+    assert!(project_surface_trim(&scope, &groups, &[], &[], &[], &mut losses).is_some());
     assert_eq!(losses, vec![untyped_trim_member_loss(2)]);
 }
 
@@ -667,6 +829,7 @@ fn surface_trim_projects_a_trimming_body_tool() {
         &scope,
         &[target_group, tool_group.clone()],
         &[body, trim_body(1203, 0, 1204)],
+        &[],
         &[],
         &mut losses,
     )
@@ -690,6 +853,7 @@ fn surface_trim_rejects_an_entity_selection_target_member() {
         &[target_group, tool_group],
         &[],
         &[trim_curves(1201, 0, 1202), curves],
+        &[],
         &mut losses,
     )
     .is_none());

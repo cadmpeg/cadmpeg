@@ -9,7 +9,8 @@ The primary write envelope is a ZIP archive containing `Document.xml` with docum
 The application graph may contain core App, Part, PartDesign, Sketcher,
 Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may use text or binary
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
-independently optional.
+independently optional. Each archive entry is one part. A Geometry property needs the side entry
+that holds its payload.
 
 The synthesis catalog is `fcstd:schema-4`, the one band an explicit write target may name. A
 retained document write regenerates the ZIP container deterministically, writes `Document.xml`
@@ -99,6 +100,12 @@ Each provider has one direct `Properties` container, and direct property names a
 that container. Registered GUI property types define the cardinality of their value elements;
 unregistered properties retain their ordered values without semantic dispatch.
 
+An `Expand` element in `GuiDocument.xml` records the saved expansion of the document tree. Each
+child `Expand` element names one expanded tree item by object name in its `name` attribute and
+nests the expanded items beneath that item. An empty `Expand` element records that no item is
+expanded. A `ViewProvider` may also
+carry its own `expanded` attribute.
+
 Each `ObjectData` object has at most one direct `Extensions` container and at most one direct
 `Properties` container. When both are present, `Extensions` precedes `Properties`. An extension
 container's `Count` equals its `Extension` records. Extension names and runtime types are unique
@@ -153,7 +160,7 @@ containers are invalid. `Properties.Count` equals the number of `Property` recor
 Property names are unique across both record kinds within one container. A property family is
 selected by an exact registered runtime type. An unregistered runtime type does not select a family
 from a substring of its name.
-A missing unrelated file attachment does not supply admitted side-entry data. Required shape payloads must remain readable. A malformed link-property payload has source-only XML and no admitted values or links; no empty link or replacement scalar is inferred.
+A missing unrelated file attachment does not supply admitted side-entry data. A Geometry property needs only the side entry that holds its payload; for an exact shape, that is the entry its direct `Part` carrier names. A malformed link-property payload has source-only XML and no admitted values or links; no empty link or replacement scalar is inferred.
 
 A `Property` contains its runtime-type-specific value XML. A `_Property` has no persisted value.
 Status and dynamic-property metadata are optional record attributes. Property container dispatch

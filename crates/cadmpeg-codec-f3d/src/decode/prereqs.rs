@@ -22,6 +22,7 @@ use crate::xref::XrefTable;
 /// Design records that geometry and product projection read.
 #[derive(Debug)]
 pub(super) struct ProductPrereqs {
+    pub(super) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     pub(super) construction_recipes: Vec<ConstructionRecipe>,
     pub(super) design_material_assignments: Vec<DesignMaterialAssignment>,
     pub(super) design_types: Vec<SegmentType>,
@@ -112,6 +113,7 @@ impl ProductPrereqs {
     /// reference outcome.
     pub(super) fn store(self, native: &mut F3dNative) -> Result<Option<XrefTable>, CodecError> {
         let Self {
+            given_up: _,
             construction_recipes,
             design_material_assignments,
             design_types,
@@ -220,6 +222,7 @@ pub(super) fn decode(
         paths: design_component_paths,
     } = crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
+        given_up,
         scopes: mut design_parameter_scopes,
         losses: design_parameter_scope_losses,
         work_plane_inferred_axes: design_work_plane_inferred_axes,
@@ -244,8 +247,11 @@ pub(super) fn decode(
             &history_index,
             &primary_frames,
         )?;
-    let design_joint_motions =
-        crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
+    let design_joint_motions = crate::design::decode::joint_motion::decode_joint_motions(
+        scan,
+        &design_parameter_scopes,
+        &design_types,
+    )?;
     let mut design_feature_timeline_losses = Vec::new();
     let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(
         scan,
@@ -261,7 +267,7 @@ pub(super) fn decode(
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
     let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
-            return Err(error)
+            return Err(error);
         }
         other => other,
     };
@@ -276,6 +282,7 @@ pub(super) fn decode(
                 .map_or(&[], |table| table.references.as_slice()),
         )?;
     Ok(ProductPrereqs {
+        given_up,
         construction_recipes,
         design_material_assignments,
         design_types,

@@ -58,59 +58,10 @@
       "occurrences": [
         {
           "id": "pvz:model:occurrence#0",
-          "native_ref": "definition 0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
-          "id": "pvz:model:occurrence#1",
           "name": "41",
           "native_ref": "definition 0 occurrence 0",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#1",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "pvz:model:definition#1",
           "transform": [
             [
               1.0,
@@ -133,32 +84,20 @@
           ]
         },
         {
-          "id": "pvz:model:occurrence#2",
+          "id": "pvz:model:occurrence#1",
           "name": "42",
           "native_ref": "definition 0 occurrence 1",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#1",
-            "kind": "local"
-          },
-          "scale": [
-            2.0,
-            2.0,
-            2.0
-          ],
+          "overrides": [],
+          "prototype": "pvz:model:definition#1",
           "transform": [
             [
               0.0,
-              -1.0,
+              -2.0,
               0.0,
               0.0
             ],
             [
-              1.0,
+              2.0,
               0.0,
               0.0,
               200.0
@@ -166,29 +105,17 @@
             [
               0.0,
               0.0,
-              1.0,
+              2.0,
               0.0
             ]
           ]
         },
         {
-          "id": "pvz:model:occurrence#3",
+          "id": "pvz:model:occurrence#2",
           "name": "43",
           "native_ref": "definition 0 occurrence 2",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "pvz:model:occurrence#0"
-          },
-          "prototype": {
-            "definition": "pvz:model:definition#2",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "pvz:model:definition#2",
           "transform": [
             [
               1.0,
@@ -225,19 +152,38 @@
             "PART_NUMBER": "TOP-001"
           },
           "id": "pvz:model:definition#0",
+          "instance_bodies": [],
           "kind": "part",
           "native_ref": "definition 0",
+          "occurrences": [
+            "pvz:model:occurrence#0",
+            "pvz:model:occurrence#1",
+            "pvz:model:occurrence#2"
+          ],
+          "representations": [],
           "sketches": [],
-          "source_name": "TOP.ASM"
+          "source_name": "TOP.ASM",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "pvz:model:definition#1",
+          "instance_bodies": [],
           "kind": "part",
           "native_ref": "definition 1",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "BRACKET.PRT"
+          "source_name": "BRACKET.PRT",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         },
         {
           "bodies": [],
@@ -245,10 +191,17 @@
             "MATERIAL": "STEEL"
           },
           "id": "pvz:model:definition#2",
+          "instance_bodies": [],
           "kind": "part",
           "native_ref": "definition 2",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
-          "source_name": "PLATE.PRT"
+          "source_name": "PLATE.PRT",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
