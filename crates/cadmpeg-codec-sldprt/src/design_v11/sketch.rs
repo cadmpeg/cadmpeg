@@ -4,7 +4,7 @@
 //! A sketch feature whose sketch the decoder typed names a sketch record that
 //! holds its entities and relations. The plane is a construction: one
 //! `Coincident` input on the built-in plane the sketch's profile names where
-//! the stored frame lies in that plane, else the `Unread` input of §5.9, with
+//! that plane precedes the sketch and the stored frame lies in it, else the `Unread` input of §5.9, with
 //! the stored frame as its value. A point record that several curves name
 //! is one point entity with a role for each, so a coincidence of two of its
 //! ends is that entity's. The decoder reads the construction flag where it
@@ -12,7 +12,7 @@
 //! value, and states that parameter's quantity; a reference dimension whose
 //! parameter no tree node lists binds a `Driven` parameter minted for it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::construction::{
@@ -82,19 +82,24 @@ pub(super) struct Context<'a> {
 /// decoder typed.
 pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Sketches {
     let mut out = Sketches::default();
+    let mut preceding = HashSet::new();
     for feature in features.iter_mut() {
-        if !matches!(
+        if matches!(
             feature.definition.operation,
             FeatureOperation::Unresolved {
                 family: OperationFamily::Sketch
             }
         ) {
-            continue;
+            let support = context
+                .supports
+                .get(&feature.id)
+                .filter(|(datum, _)| preceding.contains(datum));
+            match sketch(feature, context, support, &mut out) {
+                Ok(id) => feature.definition.operation = FeatureOperation::Sketch(id),
+                Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
+            }
         }
-        match sketch(feature, context, &mut out) {
-            Ok(id) => feature.definition.operation = FeatureOperation::Sketch(id),
-            Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
-        }
+        preceding.insert(feature.id.clone());
     }
     out
 }
@@ -102,6 +107,7 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Sketch
 fn sketch(
     feature: &Feature,
     context: &Context<'_>,
+    support: Option<&(FeatureId, PrincipalEntity)>,
     out: &mut Sketches,
 ) -> Result<SketchId, &'static str> {
     let model = context.model;
@@ -189,10 +195,7 @@ fn sketch(
         id: record.id.clone(),
         owner: feature.id.clone(),
         name: record.name.clone(),
-        plane: SketchPlane::Placed(Box::new(placement(
-            record.placement,
-            context.supports.get(&feature.id),
-        )?)),
+        plane: SketchPlane::Placed(Box::new(placement(record.placement, support)?)),
         solve: SketchSolve {
             state: None,
             status: EvaluationStatus::Current,

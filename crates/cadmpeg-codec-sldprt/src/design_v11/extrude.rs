@@ -6,7 +6,8 @@
 //! through-all, is typed: the profile is a `Sketch` pick, a blind limit binds the dimension that holds its distance,
 //! and a merge into a part that holds no body yet is a new body (§6). An
 //! extrude whose start, limits, draft, or profile the decoder reads only in
-//! part stays `Unresolved`.
+//! part stays `Unresolved`, and so does one whose sketch the timeline lists
+//! after it, which its `Input` profile pick cannot see.
 
 use std::collections::{HashMap, HashSet};
 
@@ -57,7 +58,11 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
         })
         .collect::<HashMap<_, _>>();
     let mut body_before = false;
+    let mut preceding = HashSet::new();
     for feature in features.iter_mut() {
+        if let FeatureOperation::Sketch(sketch) = &feature.definition.operation {
+            preceding.insert(sketch.clone());
+        }
         let family = match &feature.definition.operation {
             FeatureOperation::Unresolved { family } => Some(*family),
             FeatureOperation::Datum(_) | FeatureOperation::Sketch(_) => None,
@@ -68,7 +73,7 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
         };
         match family {
             Some(OperationFamily::Extrude) => {
-                match extrude(feature, context, &sketch_of, body_before) {
+                match extrude(feature, context, &sketch_of, &preceding, body_before) {
                     Ok((extrude, bound)) => {
                         feature.definition.operation = FeatureOperation::Extrude(Box::new(extrude));
                         out.bound.extend(bound);
@@ -97,6 +102,7 @@ fn extrude(
     feature: &Feature,
     context: &Context<'_>,
     sketch_of: &HashMap<FeatureId, SketchId>,
+    preceding: &HashSet<SketchId>,
     body_before: bool,
 ) -> Result<(Extrude, Bound), &'static str> {
     let source = context
@@ -136,6 +142,9 @@ fn extrude(
     };
     if !context.sketches.contains(sketch) {
         return Err("the extrude's sketch is not stated");
+    }
+    if !preceding.contains(sketch) {
+        return Err("the extrude's sketch follows it in the timeline");
     }
     let direction = match direction {
         v10::ExtrudeDirection::ProfileNormal {} => {
