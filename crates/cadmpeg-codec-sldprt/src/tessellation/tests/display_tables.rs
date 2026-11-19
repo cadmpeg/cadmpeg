@@ -317,7 +317,6 @@ fn one_face_header_over_one_table_yields_one_display_face() {
         payload,
         ps_streams: Vec::new(),
         ps_probe_capped: false,
-        ps_auxiliary_refusal: None,
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&block.payload, &arena, &DecodePolicy::service())
@@ -440,7 +439,6 @@ fn display_faces_of(payload: &[u8]) -> Vec<crate::tessellation::DisplayFace> {
         payload: payload.to_vec(),
         ps_streams: Vec::new(),
         ps_probe_capped: false,
-        ps_auxiliary_refusal: None,
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&block.payload, &arena, &DecodePolicy::service())

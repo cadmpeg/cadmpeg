@@ -67,7 +67,6 @@ fn named_block(section: &str, payload: Vec<u8>) -> Block {
         payload,
         ps_streams: Vec::new(),
         ps_probe_capped: false,
-        ps_auxiliary_refusal: None,
     }
 }
 
@@ -83,6 +82,8 @@ fn synthetic_scan(
         cache_cells: Vec::new(),
         compound_streams,
         solidworks: crate::container::SolidWorksEnvelopeScan::default(),
+        given_up: Vec::new(),
+        noncanonical: Vec::new(),
     }
 }
 
