@@ -202,11 +202,19 @@ pub(in crate::families) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
-fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<usize> {
-    surface_tail_parameters(data, at, end, owned).map(|_| end)
+struct SurfaceTail {
+    parameters: [f64; 8],
+    descriptors: Option<[(u32, Option<u32>); 2]>,
+    continuation: Vec<f64>,
+    flags: [u8; 3],
+    fixed_suffix: bool,
 }
 
-fn surface_tail_parameters(data: &[u8], at: usize, end: usize, owned: bool) -> Option<[f64; 8]> {
+fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<usize> {
+    surface_tail(data, at, end, owned).map(|_| end)
+}
+
+fn surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<SurfaceTail> {
     use crate::layout::surface_terminal_span_tail as layout;
 
     let tail = data.get(at..end)?;
@@ -228,19 +236,18 @@ fn surface_tail_parameters(data: &[u8], at: usize, end: usize, owned: bool) -> O
         _ if owned && tail_len >= layout::LEN => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
+    let flags: [u8; 3] = tail
+        .get(layout::FLAGS + extra..layout::CONTINUATION + extra)?
+        .try_into()
+        .ok()?;
     if controls[0] != 1
         || !(controls[2] == 1 || owned && tail_len == 142 && controls[2] == 0)
-        || !matches!(
-            tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
-            [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]
-        )
+        || !matches!(flags, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01])
     {
         return None;
     }
     let parameters = read_f64_array::<8>(tail, cursor)?.map(FiniteReal::get);
-    let ordered_u =
-        parameters[0] < parameters[1] || (owned && tail_len == 142 && controls[0] < controls[1]);
-    if !ordered_u
+    if parameters[0] >= parameters[1]
         || (if owned && tail_len == 142 {
             parameters[2] == parameters[3]
         } else {
@@ -253,60 +260,76 @@ fn surface_tail_parameters(data: &[u8], at: usize, end: usize, owned: bool) -> O
     }
     let continuation_start = layout::CONTINUATION + extra;
     let continuation_end = continuation_start + continuation_bytes;
-    let continuation = tail.get(continuation_start..continuation_end)?;
+    let bytes = tail.get(continuation_start..continuation_end)?;
+    let mut continuation = Vec::new();
     for index in 0..continuation_bytes / 8 {
-        let value = f64_le(continuation, index * 8)?;
-        if tail_len == 133 && value.get() != 0.0 {
+        let value = f64_le(bytes, index * 8)?.get();
+        if tail_len == 133 && value != 0.0 {
             return None;
         }
+        continuation.push(value);
     }
     let suffix = &tail[continuation_end..];
-    let valid_suffix = if owned && tail_len >= layout::LEN {
-        owned_surface_suffix(suffix).is_some()
+    let fixed_suffix = fixed_surface_suffix(tail_len, flags, suffix, owned);
+    let descriptors = if owned {
+        Some(owned_surface_suffix(suffix)?)
     } else {
-        match (
-            tail_len,
-            &tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
-        ) {
-            (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
-            (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
-                matches!(
-                    suffix,
-                    [0x01, 0x00, 0x01 | 0x09, 0x00, 0x07, 0x07]
-                        | [0x09, 0x00, 0x09, 0x00, 0x07, 0x07]
-                )
-            }
-            (142, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
-                suffix.len() == 7
-                    && suffix[0] % 4 == 1
-                    && matches!(
-                        suffix[1..4],
-                        [0x00, 0x01 | 0x05 | 0x09 | 0x0d | 0x11 | 0x15 | 0x19, 0x01]
-                    )
-                    && suffix[4] % 4 == 1
-                    && suffix[5..] == [0x07, 0x07]
-            }
-            _ => false,
-        }
+        None
     };
-    valid_suffix.then_some(parameters)
+    (fixed_suffix || owned && tail_len >= layout::LEN && descriptors.is_some()).then_some(
+        SurfaceTail {
+            parameters,
+            descriptors,
+            continuation,
+            flags,
+            fixed_suffix,
+        },
+    )
 }
 
-fn owned_surface_suffix(bytes: &[u8]) -> Option<()> {
+fn fixed_surface_suffix(length: usize, flags: [u8; 3], suffix: &[u8], owned: bool) -> bool {
+    match (length, flags) {
+        (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
+        (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
+            matches!(
+                suffix,
+                [0x01, 0x00, 0x01 | 0x09, 0x00, 0x07, 0x07] | [0x09, 0x00, 0x09, 0x00, 0x07, 0x07]
+            ) || owned
+                && matches!(
+                    suffix,
+                    [0x05, 0x00, 0x05 | 0x09, 0x00, 0x07, 0x07]
+                        | [0x09, 0x00, 0x01, 0x00, 0x07, 0x07]
+                )
+        }
+        (142, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
+            suffix.len() == 7
+                && suffix[0] % 4 == 1
+                && matches!(
+                    suffix[1..4],
+                    [0x00, 0x01 | 0x05 | 0x09 | 0x0d | 0x11 | 0x15 | 0x19, 0x01]
+                )
+                && suffix[4] % 4 == 1
+                && suffix[5..] == [0x07, 0x07]
+        }
+        _ => false,
+    }
+}
+
+fn owned_surface_suffix(bytes: &[u8]) -> Option<[(u32, Option<u32>); 2]> {
     let mut at = 0;
-    for _ in 0..2 {
-        compact_int(bytes, &mut at)?;
+    let mut descriptors = [(0, None); 2];
+    for descriptor in &mut descriptors {
+        let control = compact_int(bytes, &mut at)?;
         let present = View::over_retained(bytes.get(at..)?).u8()?;
         at += 1;
-        match present {
-            0x00 => {}
-            0x01 => {
-                compact_int(bytes, &mut at)?;
-            }
+        let extra = match present {
+            0x00 => None,
+            0x01 => Some(compact_int(bytes, &mut at)?),
             _ => return None,
-        }
+        };
+        *descriptor = (control, extra);
     }
-    (bytes.get(at..) == Some([0x07, 0x07].as_slice())).then_some(())
+    (bytes.get(at..) == Some([0x07, 0x07].as_slice())).then_some(descriptors)
 }
 
 fn a8_inline_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {
@@ -1913,25 +1936,31 @@ fn a5_surface(
         control_points.push(point);
         at += 24;
     }
-    let weights = match mode {
-        0x01 => None,
+    let (weights, inferred_weights) = match mode {
+        0x01 => (None, false),
         0x05 => {
             let Some(weights) = a5_weights(data, &mut at, u_count, v_count, end) else {
                 return Ok(None);
             };
-            Some(weights)
+            (Some(weights.values), weights.inferred)
         }
         _ => return Ok(None),
     };
-    let Some(parameters) = surface_tail_parameters(data, at, end, owned) else {
+    let Some(tail) = surface_tail(data, at, end, owned) else {
         return Ok(None);
     };
+    let parameters = tail.parameters;
     let full_limits = [
         u_distinct[0],
         u_distinct[u_distinct.len() - 1],
         v_distinct[0],
         v_distinct[v_distinct.len() - 1],
     ];
+    if !tail.fixed_suffix
+        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
+    {
+        return Ok(None);
+    }
     let control_points = grid_rows(control_points, v_count)?;
     let weights = weights
         .map(|values| grid_rows(values, v_count))
@@ -1950,6 +1979,22 @@ fn a5_surface(
         && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
     {
         refusal.push_surface_parameters_not_transferred(pos, parameters);
+    }
+    if geometry.is_some() && inferred_weights {
+        refusal.push_surface_weights_inferred(pos);
+    }
+    let extrapolation = tail.descriptors.filter(|descriptors| {
+        *descriptors != [(0, None); 2]
+            || tail.flags != [1, 1, 1]
+            || tail.continuation.iter().any(|value| *value != 0.0)
+    });
+    if let (true, Some(descriptors)) = (geometry.is_some(), extrapolation) {
+        refusal.push_surface_extrapolation_not_transferred(
+            pos,
+            descriptors,
+            tail.flags,
+            &tail.continuation,
+        );
     }
     Ok(geometry.map(|geometry| FreeformSurface {
         pos,
@@ -2333,18 +2378,32 @@ fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     Some((knots, count))
 }
 
+struct WeightProgram {
+    values: Vec<NonZeroReal>,
+    inferred: bool,
+}
+
 fn a5_weights(
     bytes: &[u8],
     at: &mut usize,
     rows: usize,
     cols: usize,
     end: usize,
-) -> Option<Vec<NonZeroReal>> {
+) -> Option<WeightProgram> {
+    use crate::layout::{
+        surface_weight_repeat_row_prefix as repeat_row, surface_weight_row_prefix as row_prefix,
+        surface_weight_symmetric_03_prefix as symmetric_03,
+        surface_weight_symmetric_07_prefix as symmetric_07,
+    };
+
     let count = rows.checked_mul(cols)?;
     let mut view = View::over_retained(bytes.get(*at..end)?);
-    let first = view.u8()?;
+    let mut peek = view;
+    let first = peek.u8()?;
     let mut weights = Vec::new();
+    let mut inferred = false;
     if first == 0x00 {
+        view.u8()?;
         if count.checked_mul(8)? > view.remaining() {
             return None;
         }
@@ -2352,31 +2411,47 @@ fn a5_weights(
             weights.push(NonZeroReal::new(view.f64_le()?)?);
         }
     } else {
-        for row in 0..rows {
-            let command = if row == 0 { first } else { view.u8()? };
+        for _ in 0..rows {
+            let mut prefix = View::over_retained(view.unread());
+            prefix.seek(row_prefix::COMMAND)?;
+            let command = prefix.u8()?;
             let row_start = weights.len();
             if command == 0x02 {
+                view.u8()?;
                 let previous_start = row_start.checked_sub(cols)?;
                 for column in 0..cols {
                     weights.push(weights[previous_start + column]);
                 }
                 continue;
             }
-            if !matches!(command, 0x01 | 0x05) {
+            if !matches!(
+                command,
+                symmetric_03::COMMAND_VALUE | repeat_row::COMMAND_VALUE
+            ) {
                 return None;
             }
-            let mirror = view.u16_le()?;
-            let repeat = if command == 0x05 {
-                usize::from(view.u16_le()?)
+            prefix.seek(row_prefix::MIRROR)?;
+            let mirror = prefix.u16_le()?;
+            let repeat = if command == repeat_row::COMMAND_VALUE {
+                prefix.seek(repeat_row::LEADING_REPEATS)?;
+                let repeat = usize::from(prefix.u16_le()?);
+                view.take(repeat_row::LEN)?;
+                repeat
             } else {
+                view.take(row_prefix::LEN)?;
                 0
             };
             if repeat >= cols {
                 return None;
             }
+            let symmetric = command == symmetric_03::COMMAND_VALUE
+                && matches!(
+                    mirror,
+                    symmetric_03::CONTROL_VALUE | symmetric_07::CONTROL_VALUE
+                );
+            inferred |= !symmetric;
             for column in 0..cols {
                 let reflected = cols - 1 - column;
-                let symmetric = command == 0x01 && matches!(mirror, 0x0003 | 0x0007);
                 let mirrored = reflected < column
                     && (symmetric
                         || mirror
@@ -2396,7 +2471,10 @@ fn a5_weights(
         }
     }
     *at = end.checked_sub(view.remaining())?;
-    Some(weights)
+    Some(WeightProgram {
+        values: weights,
+        inferred,
+    })
 }
 
 #[cfg(test)]
