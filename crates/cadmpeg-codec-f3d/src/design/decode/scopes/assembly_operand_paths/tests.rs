@@ -588,6 +588,11 @@ fn as_built_reads_one_typed_path_before_a_wrapper_with_an_index_gap() {
     );
     assert!(path.two_keys_in_one_typed_record());
 
+    let mut one_key = bytes.clone();
+    drop(one_key.drain(first_key_end..first_key_end + key_bytes.len()));
+    one_key[count..count + 4].copy_from_slice(&1_u32.to_le_bytes());
+    assert!(read(&one_key, &types).is_none());
+
     for (at, value) in [
         (wrapper + super::path_wrapper::CONSTANT_ONE_WORD, 2),
         (wrapper + super::path_wrapper::PATH_REFERENCE + 1, 66),

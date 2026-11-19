@@ -2864,7 +2864,9 @@ index `N` can reference a version-1 wrapper of type
 `FF415D89-A1DB-44AC-B824-E9A772B86ED4` at index `N+3`. The version-4
 occurrence path at `N+1` stores two consecutive occurrence keys and four
 identity GUIDs. The 37-byte wrapper immediately follows the path and names it
-as its sole member.
+as its sole member. The first key names the parent occurrence and the second
+names its child. For an external placement, the child belongs to the member
+document.
 
 The class-388/266 legacy locator run uses class `451` for each 190-byte locator and class `369` for each wrapper. A class-451 locator keeps the same fixed offsets and backlinks as the common locator. Its wrapper reference names the class-369 record at `N + count + 1`, where `count` is the class-369 path count. A class-369 wrapper stores ten zero bytes, byte value 1 at offset 21, and path count 1 or 2 at offset 22. A class-369 wrapper stores marker 1 and its path count. A class-369 wrapper with path count 1 is 37 bytes. A class-369 wrapper with path count 2 is 48 bytes. Count 1 uses one marked path reference at offset 26 and a 37-byte span. Count 2 adds a marked path reference at offset 37 and has a 48-byte span. A class-369 wrapper stores one marked path reference at offset 26. A class-369 wrapper stores two marked path references at offsets 26 and 37. The referenced class-412 path records have consecutive indexes `N + 1` through `N + count` and each has a 425-byte span. A class-412 path record is 425 bytes in the class-388 legacy envelope. The class-412 path prefix stores ten zero bytes, marker 1 at offset 21, and three zero bytes at offsets 22 through 24. A class-412 path stores one occurrence GUID followed by four identity GUIDs. The class-412 path stores u64 value 2 between its identity pairs. The class-412 path stores u32 value 2 before its zero tail. The wrapper order is the occurrence order. The occurrence GUIDs from all wrapper members form the ordered occurrence path; the four identity GUIDs from the final wrapper member form the identity suffix.
 
