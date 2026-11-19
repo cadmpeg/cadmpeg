@@ -82,3 +82,30 @@ with Compute Optimized unless stated.
 - `two_target_pattern.f3d`: two plates at x 0–40 and 41–81 mm and one 21 × 4 mm
   slot cut through both, patterned along Y with quantity 3 at 10 mm, Compute
   Adjust. 2 bodies, 14800 mm³, 36 faces.
+
+# Fusion API fixtures: Combine tools
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2704.1.53 from a new design. A target box (Extrude 1) is joined with tool boxes
+that each come from their own Extrude and partly overlap it. Keep Tools is off.
+The API reported the tool count, and the body count, volume and face count after
+the Combine.
+
+- `combine_tools_n1.f3d`: one tool. 1 body, 9480 mm³, 12 faces.
+- `combine_tools_n2.f3d`: two tools. 1 body, 9960 mm³, 18 faces.
+- `combine_tools_n3.f3d`: three tools. 1 body, 10440 mm³, 24 faces.
+
+# Fusion API fixtures: surface revolves
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. A Sketch on the XZ origin plane is revolved about
+the Z origin axis as a new surface body (isSolid false), with an angle extent of
+90 deg and Symmetric on. The API reported the body count, area and face count
+after the Revolve.
+
+- `symmetric_surface_revolve.f3d`: a closed rectangle at x 5–10 mm, z 0–10 mm.
+  1 surface body, 706.85835 mm², 4 faces: cylinders at radius 5 and 10 mm and
+  two planar annular faces.
+- `open_profile_surface_revolve.f3d`: one open line from (10, 0, 0) to
+  (10, 0, 10) mm, selected through createOpenProfile. 1 surface body,
+  314.15927 mm², 1 cylindrical face.

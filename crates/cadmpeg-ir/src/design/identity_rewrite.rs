@@ -102,6 +102,8 @@ impl<T: Keyed + RewriteIdentities, O: MemberOrder> RewriteIdentities for Members
 }
 
 rewrite_scalar!(CodecId);
+rewrite_scalar!(super::parameter::Tolerance);
+rewrite_scalar!(super::units::Quantity);
 rewrite_scalar!(NativeName);
 rewrite_scalar!(NativeNameValue);
 rewrite_scalar!(NameKind);

@@ -1068,7 +1068,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || direction.is_none()
                 || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool, .. }) => {
             !body_selection_is_resolved(targets)
                 || match tool {
                     cadmpeg_ir::features::SplitBodyTool::Faces(faces) => {
@@ -1105,9 +1105,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
                 )
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, tool }) => {
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
+            targets,
+            tool,
+            method,
+        }) => {
             !face_selection_is_resolved(targets)
                 || match tool {
+                    cadmpeg_ir::features::SplitFaceTool::Faces(faces) => {
+                        !face_selection_is_resolved(faces)
+                    }
+                    cadmpeg_ir::features::SplitFaceTool::Native(_) => true,
                     cadmpeg_ir::features::SplitFaceTool::Plane { .. }
                     | cadmpeg_ir::features::SplitFaceTool::Planes { .. } => false,
                     cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
@@ -1115,6 +1123,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         cadmpeg_ir::features::PathRef::Native(_)
                             | cadmpeg_ir::features::PathRef::Unresolved(_)
                     ),
+                }
+                || match method {
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::Unresolved {} => true,
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::SurfaceIntersection { .. }
+                    | cadmpeg_ir::features::surfaces::SplitFaceMethod::ClosestPoint {} => false,
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::AlongVector { .. } => true,
                 }
         }
         FeatureDefinition::Operation(FeatureOperation::Loft {
@@ -2119,7 +2133,7 @@ fn report_parameter_trailer_flags(
             &mut report.losses,
             F3dLossCode::ParameterTrailerFlagUninterpreted,
             format_args!(
-                "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
+                "{} decoded parameter(s) in {} set an uninterpreted flag in the compact expression trailer.",
                 parameters.count, parameters.stream
             ),
         );
@@ -3854,7 +3868,8 @@ impl<'a> F3dDecodeSession<'a> {
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
-                if let DesignState::Projected(design) = design {
+                if let DesignState::Projected(mut design) = design {
+                    let consumers = std::mem::take(&mut design.history_body_consumers);
                     design.store(&mut self.native);
                     crate::design::decode::sketch_owners::attach(
                         ctx,
@@ -3867,6 +3882,15 @@ impl<'a> F3dDecodeSession<'a> {
                         scan,
                         &self.native,
                         &mut self.ir,
+                        &mut self.report.losses,
+                    )?;
+                    crate::history::history_bodies::fill_consumed(
+                        ctx,
+                        scan,
+                        &mut self.ir.model,
+                        &self.native,
+                        Some(&index.primary_model_brep_name),
+                        &consumers,
                         &mut self.report.losses,
                     )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
@@ -3928,24 +3952,29 @@ impl<'a> F3dDecodeSession<'a> {
                     )?,
                     Ok(None) | Err(_) => false,
                 };
-                if mesh_projection.count > 0 {
-                    apply_mesh_body_classification(&mut self.report, scan, mesh_projection.count);
-                } else if !assembly {
-                    apply_bodyless_design_classification(
-                        &mut self.report,
-                        if inputs.model_body_maps_empty {
+                let brep_streams = container::design_breps(scan).count();
+                apply_carrier_classification(
+                    &mut self.report,
+                    &DesignCarriers {
+                        decoded_meshes: mesh_projection.count,
+                        unjoined_mesh_containers: mesh_projection.unjoined,
+                        paramesh_entries: container::paramesh_entries(scan).count(),
+                        brep_entries: container::brep_entries(scan).count(),
+                        brep_streams,
+                        selected_brep_streams: if inputs.model_body_maps_empty {
                             0
                         } else {
-                            container::design_breps(scan).count()
+                            brep_streams
                         },
-                        container::text_brep_names(scan).count(),
-                        self.native.design_body_bindings.len()
+                        text_brep_streams: container::text_brep_names(scan).count(),
+                        declared_bodies: self.native.design_body_bindings.len()
                             + self.native.design_body_members.len(),
-                        self.ir.model.sketch_entities.len()
+                        sketch_entities: self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
-                        self.native.design_canvas_images.len(),
-                    );
-                }
+                        reference_images: self.native.design_canvas_images.len(),
+                    },
+                    assembly,
+                );
                 report_unresolved_dimension_companions(&mut self.report, unresolved_companions);
                 match xref {
                     Ok(Some(table)) => {
@@ -4372,6 +4401,8 @@ fn decode_scanned_document<'a>(
 struct MeshProjection {
     /// Number of joined mesh-body containers.
     count: usize,
+    /// Number of decoded mesh geometry containers that no Design mesh body joins.
+    unjoined: usize,
     /// Tessellation identities grouped by their Design stream and feature scope record.
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
 }
@@ -4538,6 +4569,7 @@ fn project_mesh_bodies(
             );
             return Ok(MeshProjection {
                 count: 0,
+                unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
             });
         }
@@ -4636,12 +4668,23 @@ fn project_mesh_bodies(
         }
     }
     let mut bodies = Vec::new();
+    let unjoined = decoded
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            matches!(
+                outcome,
+                crate::design::decode::mesh::MeshContainerOutcome::Unjoined { .. }
+            )
+        })
+        .count();
     for outcome in decoded.outcomes {
         collect_mesh_outcome(&mut bodies, report, outcome)?;
     }
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
         count: bodies.len(),
+        unjoined,
         tessellations_by_scope: std::collections::HashMap::new(),
     };
     for mut body in bodies {
@@ -5023,12 +5066,64 @@ fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref:
     }
 }
 
+/// Geometry carriers a design stores, counted before its transfer is classified.
+pub(crate) struct DesignCarriers {
+    pub(crate) decoded_meshes: usize,
+    pub(crate) unjoined_mesh_containers: usize,
+    pub(crate) paramesh_entries: usize,
+    /// Binary and text BREP entries, whether or not their payload opened.
+    pub(crate) brep_entries: usize,
+    pub(crate) brep_streams: usize,
+    /// BREP streams that the model-body maps select.
+    pub(crate) selected_brep_streams: usize,
+    pub(crate) text_brep_streams: usize,
+    pub(crate) declared_bodies: usize,
+    pub(crate) sketch_entities: usize,
+    pub(crate) reference_images: usize,
+}
+
+/// Classify the geometry transfer of a design from the carriers it stores.
+pub(crate) fn apply_carrier_classification(
+    report: &mut DecodeBody,
+    carriers: &DesignCarriers,
+    assembly: bool,
+) {
+    let untransferred_mesh_containers = carriers
+        .paramesh_entries
+        .checked_sub(carriers.unjoined_mesh_containers)
+        .filter(|containers| *containers > 0);
+    if carriers.decoded_meshes > 0 {
+        apply_mesh_body_classification(report, carriers.brep_streams, carriers.decoded_meshes);
+    } else if !assembly {
+        if let (Some(untransferred_mesh_containers), 0) =
+            (untransferred_mesh_containers, carriers.brep_entries)
+        {
+            push_loss_vec(
+                &mut report.losses,
+                F3dLossCode::MeshOnlyDesignUntransferred,
+                format_args!(
+                    "mesh-only design: the Design asset stores no BREP entry, and {untransferred_mesh_containers} of its mesh geometry container(s) transferred no mesh body"
+                ),
+            );
+        } else {
+            apply_bodyless_design_classification(
+                report,
+                carriers.selected_brep_streams,
+                carriers.text_brep_streams,
+                carriers.declared_bodies,
+                carriers.sketch_entities,
+                carriers.reference_images,
+            );
+        }
+    }
+}
+
 /// Classify a mesh-body document.
 ///
 /// Mesh bodies use tessellation as their geometry carrier. The report marks
 /// geometry as transferred and records vertex precision.
-fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan, bodies: usize) {
-    if container::design_breps(scan).next().is_some() {
+fn apply_mesh_body_classification(report: &mut DecodeBody, brep_streams: usize, bodies: usize) {
+    if brep_streams > 0 {
         return;
     }
     report.losses.retain(|loss| {

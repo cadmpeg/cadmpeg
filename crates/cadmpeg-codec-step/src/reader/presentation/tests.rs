@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 use super::{find_color, style_application_order, ColorResolution, StyleDomain};
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::BTreeSet;
 
 mod cache_storage;
@@ -960,6 +961,41 @@ fn surface_style_transparency_transfers_to_appearance_alpha() {
         .any(|binding| binding.source_entity_id.as_deref() == Some("#12")));
 }
 
+/// ISO 10303-46 admits `SURFACE_STYLE_TRANSPARENT` in a surface side style
+/// only through a rendering's properties, so one listed directly in the side
+/// style leaves the color opaque and is reported.
+#[test]
+fn a_transparency_listed_outside_a_rendering_is_reported() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('surface origin',(0.,0.,0.));
+#2=DIRECTION('surface normal',(0.,0.,1.));
+#3=DIRECTION('surface u',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('surface placement',#1,#2,#3);
+#5=PLANE('styled surface',#4);
+#6=COLOUR_RGB('red',1.,0.,0.);
+#7=SURFACE_STYLE_TRANSPARENT(0.25);
+#8=SURFACE_STYLE_RENDERING(.CONSTANT_SHADING.,#6);
+#9=SURFACE_SIDE_STYLE('',(#8,#7));
+#10=SURFACE_STYLE_USAGE(.BOTH.,#9);
+#11=PRESENTATION_STYLE_ASSIGNMENT((#10));
+#12=STYLED_ITEM('',(#11),#5);",
+    );
+
+    let alphas = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .filter_map(|appearance| appearance.base_color.map(cadmpeg_ir::topology::Color::a))
+        .collect::<Vec<_>>();
+    assert_eq!(alphas, vec![1.0]);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::SurfaceTransparencyMisplaced.kind()
+            && loss.message.contains("SURFACE_SIDE_STYLE #9")
+            && loss.message.contains("#7")
+    }));
+}
+
 #[test]
 fn duplicate_surface_transparency_properties_do_not_select_by_set_order() {
     for input in [
@@ -1757,6 +1793,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             placement: Some(Transform::identity()),
             semantics: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),
