@@ -168,6 +168,18 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_surface_extrapolation_not_transferred(
+        &mut self,
+        source: usize,
+        descriptors: [(u32, Option<u32>); 2],
+        flags: [u8; 3],
+        continuation: &[f64],
+    ) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceExtrapolationNotTransferred.note(format!(
+            "For surface record at offset {source}, extrapolation descriptors {descriptors:?}, flags {flags:?}, and continuation values {continuation:?} remain outside the neutral NURBS carrier."
+        )));
+    }
+
     pub(crate) fn push_surface_parameters_not_transferred(
         &mut self,
         source: usize,
