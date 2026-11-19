@@ -57,6 +57,7 @@ fn paste_scope(sources: &[u64], copies: &[u64]) -> DesignParameterScope {
                     node_guid_offset: 0,
                 })
                 .collect(),
+            owner_timeline_name: None,
         });
     }
     scope
@@ -159,4 +160,81 @@ fn a_paste_copy_keeps_every_pair_in_one_component() {
     let scope = paste_scope(&[20, 21], &[30, 31]);
     assert!(paste_copy(&scope, &bindings(3)).is_some());
     assert!(paste_copy(&scope, &bindings(282)).is_none());
+}
+
+fn cross_component_paste(
+    scope: &DesignParameterScope,
+    bindings: &[DesignBodyBinding],
+) -> Option<(
+    cadmpeg_ir::features::FeatureDefinition,
+    Vec<cadmpeg_ir::ids::BodyId>,
+)> {
+    super::cross_component_paste(scope, scope.base_feature_construction().unwrap(), bindings)
+}
+
+#[test]
+fn a_paste_into_a_component_without_its_sources_inserts_its_copies() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedBodies};
+    let bindings = [
+        component_body(20, "f3d:model:body#1", 3),
+        component_body(21, "f3d:model:body#2", 4),
+        component_body(30, "f3d:model:body#3", 282),
+        component_body(31, "f3d:model:body#4", 282),
+    ];
+    let scope = paste_scope(&[20, 21], &[30, 31]);
+    let (definition, copies) =
+        cross_component_paste(&scope, &bindings).expect("cross-component paste");
+    assert_eq!(
+        copies,
+        [
+            bindings[2].body.clone().unwrap(),
+            bindings[3].body.clone().unwrap()
+        ]
+    );
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::InsertBodies {
+            bodies: InsertedBodies::Resolved { native },
+        }) if native == scope.id
+    ));
+    assert!(paste_copy(&scope, &bindings).is_none());
+}
+
+#[test]
+fn an_inserting_paste_needs_its_copies_in_one_component_that_holds_no_source() {
+    let source = component_body(20, "f3d:model:body#1", 3);
+    let copy = component_body(30, "f3d:model:body#3", 282);
+    let other_copy = component_body(31, "f3d:model:body#4", 283);
+    let source_beside_copy = component_body(21, "f3d:model:body#2", 282);
+    let mut history_only = copy.clone();
+    history_only.body = None;
+    let mut unowned = source.clone();
+    unowned.component_owner = None;
+    for (sources, copies, bindings) in [
+        (
+            &[20, 21][..],
+            &[30, 31][..],
+            vec![
+                source.clone(),
+                source_beside_copy.clone(),
+                copy.clone(),
+                other_copy,
+            ],
+        ),
+        (
+            &[20, 21],
+            &[30, 30],
+            vec![source.clone(), source_beside_copy.clone(), copy.clone()],
+        ),
+        (&[21], &[30], vec![source_beside_copy, copy.clone()]),
+        (&[20], &[30], vec![source.clone(), history_only]),
+        (&[20], &[30], vec![unowned, copy.clone()]),
+        (&[20], &[30], vec![copy.clone()]),
+        (&[], &[30], vec![source.clone(), copy.clone()]),
+    ] {
+        assert!(
+            cross_component_paste(&paste_scope(sources, copies), &bindings).is_none(),
+            "{sources:?} -> {copies:?}"
+        );
+    }
 }
