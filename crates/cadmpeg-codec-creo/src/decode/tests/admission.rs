@@ -92,8 +92,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
         "{error:?}"
     );
 
-    options.policy.limits.max_entities =
-        4 + u64::try_from(design_records + name_entries).unwrap();
+    options.policy.limits.max_entities = 4 + u64::try_from(design_records + name_entries).unwrap();
     CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");
