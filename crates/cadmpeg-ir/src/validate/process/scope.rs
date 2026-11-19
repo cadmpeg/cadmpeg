@@ -9,10 +9,11 @@ use std::collections::BTreeSet;
 use super::records::{OwnerKey, ProcessRecords};
 use super::walk::Walked;
 use crate::design::dimension::{ParamRef, ParameterRef};
-use crate::design::selection::{Anchor, OccurrencePath, PickContext, StepRef};
+use crate::design::selection::{Anchor, OccurrencePath, PickContext};
 use crate::report::check::Finding;
 use crate::validate::design::evaluations::check_position;
 use crate::validate::design::records::{MemberKey, PositionKey};
+use crate::validate::design::selections;
 
 pub(super) fn check_scope(
     records: &ProcessRecords<'_>,
@@ -29,12 +30,18 @@ pub(super) fn check_scope(
             );
         }
     }
+    let moved = selections::moved_occurrences(records.ir);
     for record in walked {
-        check_record(records, record, findings);
+        check_record(records, record, &moved, findings);
     }
 }
 
-fn check_record(records: &ProcessRecords<'_>, record: &Walked<'_>, findings: &mut Vec<Finding>) {
+fn check_record(
+    records: &ProcessRecords<'_>,
+    record: &Walked<'_>,
+    moved: &BTreeSet<&str>,
+    findings: &mut Vec<Finding>,
+) {
     let id = record.id;
     let setups = records.setups_of(record.owner);
     let shared = !matches!(record.owner, OwnerKey::Setup(_) | OwnerKey::Operation(_));
@@ -133,13 +140,13 @@ fn check_record(records: &ProcessRecords<'_>, record: &Walked<'_>, findings: &mu
         }
     }
     for path in through {
-        check_path(records, scope, path, id, "`through`", findings);
+        check_path(records, scope, path, moved, id, findings);
     }
     for (at, context) in &record.found.contexts {
         let what = format!("pick context at {at}");
         match context {
             PickContext::Occurrence(path) => {
-                check_path(records, scope, path, id, &what, findings);
+                check_path(records, scope, path, moved, id, findings);
             }
             PickContext::Definition(definition) => {
                 check_definition(records, definition.definition.as_str(), id, &what, findings);
@@ -152,7 +159,7 @@ fn check_record(records: &ProcessRecords<'_>, record: &Walked<'_>, findings: &mu
                 let assembly = assembly.definition.as_str();
                 if check_definition(records, assembly, id, &what, findings) {
                     for path in own.iter().chain(target) {
-                        check_path(records, assembly, path, id, &what, findings);
+                        check_path(records, assembly, path, moved, id, findings);
                     }
                 }
             }
@@ -178,51 +185,18 @@ fn check_definition(
     exists
 }
 
-/// An occurrence path resolves from `from`: each step names an occurrence
-/// that the definition the path has reached lists, the first `from` (§8.1).
-/// A step past a native step is not checked.
+/// An occurrence path resolves from `from` (§8.1), under the design rule.
 fn check_path(
     records: &ProcessRecords<'_>,
     from: &str,
     path: &OccurrencePath,
+    moved: &BTreeSet<&str>,
     id: &str,
-    what: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let design = records.design;
-    let mut at = from;
-    for step in &path.0 {
-        let StepRef::Occurrence(occurrence) = &step.occurrence else {
-            return;
-        };
-        let occurrence = occurrence.as_str();
-        if !design.occurrences.contains_key(occurrence) {
-            super::error(
-                findings,
-                id,
-                format_args!("{what} path names {occurrence}, which is no occurrence of the model"),
-            );
-            return;
-        }
-        let placed = design.definitions.get(at).is_some_and(|definition| {
-            definition
-                .occurrences
-                .iter()
-                .any(|listed| listed.as_str() == occurrence)
-        });
-        if !placed {
-            super::error(
-                findings,
-                id,
-                format_args!("{what} path steps to {occurrence}, which is not placed in {at}"),
-            );
-            return;
-        }
-        let Some(prototype) = design.prototype(occurrence) else {
-            return;
-        };
-        at = prototype;
-    }
+    super::as_process(findings, |findings| {
+        selections::check_path(records.design, Some(from), path, moved, id, findings);
+    });
 }
 
 #[cfg(test)]

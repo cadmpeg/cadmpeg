@@ -118,13 +118,13 @@ fn a_through_path_resolves_from_the_setups_scope() {
     ir.process.operations[2].technology.stepdown = through("missing");
     assert_error(
         &ir,
-        "`through` path names test:design:occurrence#missing, which is no occurrence",
+        "an occurrence path names occurrence test:design:occurrence#missing, which does not exist",
     );
 
     ir.process.operations[2].technology.stepdown = through("nested");
     assert_error(
         &ir,
-        "`through` path steps to test:design:occurrence#nested, which is not placed in test:design:definition#part",
+        "occurrence path step test:design:occurrence#nested is not an occurrence of the previous step's prototype",
     );
 
     ir.process.operations[2].technology.stepdown = None;
@@ -132,5 +132,8 @@ fn a_through_path_resolves_from_the_setups_scope() {
     ir.process.tools[0].nc.number = Some(Dimension::Parameter(reference("pin")));
     assert_no_process_finding(&ir);
     ir.process.tools[0].nc.number = Some(Dimension::Parameter(reference("nested")));
-    assert_error(&ir, "which is not placed in test:design:definition#part");
+    assert_error(
+        &ir,
+        "occurrence path step test:design:occurrence#nested is not an occurrence",
+    );
 }

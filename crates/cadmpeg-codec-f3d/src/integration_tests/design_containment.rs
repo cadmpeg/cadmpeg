@@ -255,3 +255,40 @@ fn a_resource_refusal_in_design_intent_still_refuses_the_document() {
         "{failure:?}"
     );
 }
+
+#[test]
+fn a_consumed_history_failure_in_finalize_keeps_geometry_and_design() {
+    let full = decode(design_archive());
+    crate::history::history_bodies::inject_consumed_failure(malformed_design);
+    let contained = decode(design_archive());
+    assert_eq!(contained.ir().geometry, full.ir().geometry);
+    assert_eq!(contained.ir().model.features, full.ir().model.features);
+    assert_eq!(
+        f3d_native(contained.ir()).asm_histories,
+        f3d_native(full.ir()).asm_histories
+    );
+    let losses = contained
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::FeatureHistoryBodyUndecoded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("injected design-intent failure"));
+    assert_valid(&contained);
+}
+
+#[test]
+fn a_consumed_history_resource_refusal_in_finalize_refuses_the_document() {
+    crate::history::history_bodies::inject_consumed_failure(recursion_refusal);
+    let failure = F3dCodec
+        .decode(
+            &mut Cursor::new(design_archive()),
+            &DecodeOptions::default(),
+        )
+        .expect_err("a consumed history resource refusal propagates");
+    assert!(matches!(
+        failure,
+        DecodeFailure::Codec(CodecError::ResourceLimit(_))
+    ));
+}
