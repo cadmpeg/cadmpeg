@@ -299,7 +299,8 @@ fn scene_offsets_are_relative_to_the_retained_world_window() {
 }
 
 #[test]
-fn scene_inserted_synthetic_root_shares_placement_path_and_child_uses_member_definition() {
+fn scene_inserted_synthetic_root_leaves_placement_path_to_holder_and_child_uses_member_definition()
+{
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -329,15 +330,19 @@ fn scene_inserted_synthetic_root_shares_placement_path_and_child_uses_member_def
         .unwrap()
         .arena_as_for_decode(&ctx, "display_poses")
         .unwrap();
-    assert_eq!(rows[0].binding, SceneBinding::Ambiguous {});
+    assert_eq!(
+        rows[0].binding,
+        SceneBinding::Bound {
+            occurrence: OccurrenceId::mint("f3d:test:occurrence#holder").unwrap()
+        }
+    );
     assert_eq!(
         rows[1].binding,
         SceneBinding::Bound {
             occurrence: OccurrenceId::mint("f3d:test:occurrence#child").unwrap()
         }
     );
-    assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].code, F3dLossCode::SceneOverrideAmbiguous.kind());
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -406,10 +411,6 @@ fn scene_tagged_pair_suffix_is_admitted_and_stays_unbound() {
 #[test]
 fn scene_tagged_elements_must_be_a_suffix_at_a_pair_boundary() {
     let mut odd = crate::test_support::scene::override_row_tagged(&[3, 17, 5, 9], 1);
-    odd.extend(crate::test_support::scene::override_row_tagged(
-        &[3, 17, 5, 9],
-        0,
-    ));
     let mut interrupted = crate::test_support::scene::override_row_tagged(&[3, 17, 5, 9], 2);
     let last_high_word = interrupted.len() - 12;
     interrupted[last_high_word] = 0;
@@ -423,4 +424,169 @@ fn scene_tagged_elements_must_be_a_suffix_at_a_pair_boundary() {
             .count(),
         1
     );
+}
+
+#[test]
+fn scene_fully_tagged_paths_bind_through_complete_occurrence_chains() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.occurrences = vec![
+        occurrence("f3d:test:occurrence#parent", Some("parent")),
+        occurrence("f3d:test:occurrence#child", Some("child")),
+    ];
+    place(&mut ir, &[None, Some(0)]);
+    let sources = Sources::from([
+        ("parent".to_owned(), [3, 17]),
+        ("child".to_owned(), [23, 29]),
+    ]);
+    let mut world = crate::test_support::scene::override_row_tagged(&[3, 17], 0);
+    world.extend(crate::test_support::scene::override_row_tagged(
+        &[3, 17, 23, 29],
+        0,
+    ));
+    world.extend(crate::test_support::scene::override_row_tagged(
+        &[5, 17, 23, 29],
+        0,
+    ));
+    let (rows, mut losses) = decode(&world);
+    assert!(losses.is_empty());
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|row| row.tagged_from == Some(0)));
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(&ctx, "display_poses", &rows)
+        .unwrap();
+    let unchanged = ir.model.occurrences.clone();
+    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    let rows: Vec<DisplayPose> = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as_for_decode(&ctx, "display_poses")
+        .unwrap();
+    for (row, occurrence) in rows.iter().zip(&unchanged) {
+        assert_eq!(
+            row.binding,
+            SceneBinding::Bound {
+                occurrence: occurrence.id.clone()
+            }
+        );
+    }
+    assert_eq!(rows[2].binding, SceneBinding::Unbound {});
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code, F3dLossCode::SceneOverrideUnbound.kind());
+    assert!(validate(&rows, &ir.model).is_empty());
+    assert_eq!(ir.model.occurrences, unchanged);
+}
+
+#[test]
+fn scene_shared_definition_paths_keep_each_insertion_and_original_occurrence() {
+    for tagged_from in [0, 4] {
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.occurrences = vec![
+            occurrence("f3d:test:occurrence#first", Some("first")),
+            occurrence("f3d:test:occurrence#second", Some("second")),
+            occurrence("f3d:test:occurrence#child", Some("child")),
+        ];
+        place(&mut ir, &[None, None, Some(0)]);
+        ir.model.occurrences[1].prototype = ir.model.occurrences[0].prototype.clone();
+        let unchanged = ir.model.occurrences.clone();
+        let definitions = ir.model.product_definitions.clone();
+        let sources = Sources::from([
+            ("first".to_owned(), [3, 17]),
+            ("second".to_owned(), [3, 19]),
+            ("child".to_owned(), [23, 29]),
+        ]);
+        let mut world =
+            crate::test_support::scene::override_row_tagged(&[3, 17, 23, 29], tagged_from);
+        let mut second =
+            crate::test_support::scene::override_row_tagged(&[3, 19, 23, 29], tagged_from);
+        let translation = COUNTED_NAME.len() + 5 + 12 * std::mem::size_of::<f32>();
+        second[translation..translation + std::mem::size_of::<f32>()]
+            .copy_from_slice(&(-2.0_f32).to_le_bytes());
+        world.extend(second);
+        let (rows, mut losses) = decode(&world);
+        assert_eq!(rows.len(), 2);
+        ir.native
+            .namespace_mut("f3d")
+            .set_arena(&ctx, "display_poses", &rows)
+            .unwrap();
+        bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+        let rows: Vec<DisplayPose> = ir
+            .native
+            .namespace("f3d")
+            .unwrap()
+            .arena_as_for_decode(&ctx, "display_poses")
+            .unwrap();
+        assert!(losses.is_empty());
+        for row in &rows {
+            assert_eq!(
+                row.binding,
+                SceneBinding::Bound {
+                    occurrence: unchanged[2].id.clone()
+                }
+            );
+        }
+        assert_eq!(rows[0].path.0, [3, 17, 23, 29]);
+        assert_eq!(rows[1].path.0, [3, 19, 23, 29]);
+        assert_eq!(rows[0].transform.0[0][3], 20.0);
+        assert_eq!(rows[1].transform.0[0][3], -20.0);
+        assert!(validate(&rows, &ir.model).is_empty());
+        assert_eq!(ir.model.occurrences, unchanged);
+        assert_eq!(ir.model.product_definitions, definitions);
+    }
+}
+
+#[test]
+fn scene_carrierless_children_leave_their_insertion_path_to_the_insertion() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.occurrences = vec![
+        occurrence("f3d:test:occurrence#first", Some("first")),
+        occurrence("f3d:test:occurrence#second", Some("second")),
+        occurrence("f3d:test:occurrence#frame", None),
+        occurrence("f3d:test:occurrence#child", Some("child")),
+    ];
+    place(&mut ir, &[None, None, Some(0), Some(0)]);
+    ir.model.occurrences[1].prototype = ir.model.occurrences[0].prototype.clone();
+    let sources = Sources::from([
+        ("first".to_owned(), [3, 17]),
+        ("second".to_owned(), [3, 19]),
+        ("child".to_owned(), [23, 29]),
+    ]);
+    let mut world = crate::test_support::scene::override_row_tagged(&[3, 17], 0);
+    world.extend(crate::test_support::scene::override_row_tagged(&[3, 19], 0));
+    world.extend(crate::test_support::scene::override_row_tagged(
+        &[3, 19, 23, 29],
+        0,
+    ));
+    let (rows, mut losses) = decode(&world);
+    assert_eq!(rows.len(), 3);
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(&ctx, "display_poses", &rows)
+        .unwrap();
+    let unchanged = ir.model.occurrences.clone();
+    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    let rows: Vec<DisplayPose> = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as_for_decode(&ctx, "display_poses")
+        .unwrap();
+    assert!(losses.is_empty());
+    let bound = |index: usize| SceneBinding::Bound {
+        occurrence: unchanged[index].id.clone(),
+    };
+    assert_eq!(rows[0].binding, bound(0));
+    assert_eq!(rows[1].binding, bound(1));
+    assert_eq!(rows[2].binding, bound(3));
+    assert!(validate(&rows, &ir.model).is_empty());
 }
