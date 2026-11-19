@@ -1666,17 +1666,19 @@ impl MeshQuotient {
                 let Some((&first, rest)) = roots.split_first() else {
                     continue;
                 };
-                for &root in rest {
-                    for edge in self
-                        .members(first)
-                        .iter()
-                        .chain(self.members(root))
-                        .map(|node| node / 2)
-                    {
-                        if !edge_candidates[edge].is_empty() {
-                            affected_edges.insert(edge);
-                        }
+                if rest.is_empty() {
+                    continue;
+                }
+                for edge in roots
+                    .iter()
+                    .flat_map(|&root| self.members(root))
+                    .map(|node| node / 2)
+                {
+                    if !edge_candidates[edge].is_empty() {
+                        affected_edges.insert(edge);
                     }
+                }
+                for &root in rest {
                     if self.merge(first, root)?.is_none() {
                         return Ok(false);
                     }
