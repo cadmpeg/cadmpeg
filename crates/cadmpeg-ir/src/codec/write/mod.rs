@@ -38,6 +38,7 @@ pub use coverage::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
     ProcessArenaDispositions,
 };
+pub use loss::{carried_source_losses, TargetLossCode, WriterLossCode};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// Implementation surface for one output format.

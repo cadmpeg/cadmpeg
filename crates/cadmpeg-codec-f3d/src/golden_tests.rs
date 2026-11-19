@@ -21,7 +21,7 @@ use cadmpeg_ir::{report::export::WritePath, CadIr};
 use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 use cadmpeg_test_support::golden::{elide_local_digests, snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, unrepresented_source_is_not_reused,
+    mutation_roundtrip, semantic_roundtrip, unrepresented_source_is_reported,
     verbatim_replay_holds, ExpectedWritePath, MutationOutcome, SemanticOutcome,
 };
 
@@ -840,61 +840,26 @@ fn golden_output_is_deterministic() {
     }
 }
 
-/// Every committed fixture replays its retained bytes back to itself, except a
-/// fixture whose decode keeps bytes it did not decode: that one is neither
-/// replayed nor patched.
+/// Every committed fixture replays its retained bytes back to itself. A
+/// fixture whose decode keeps bytes it did not decode replays too, and its
+/// report carries `export:source.carried`.
 #[test]
 fn fixtures_replay_verbatim() {
-    let mut unrepresented = Vec::new();
+    let mut marked = Vec::new();
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
-        let marked = !decode_result(&input)
+        let unrepresented = decode_result(&input)
             .expect("committed fixture decodes")
             .source_fidelity()
-            .unrepresented()
-            .is_empty();
-        if marked {
-            unrepresented_source_is_not_reused(&F3dCodec, name, &input);
-            unrepresented.push(name);
-        } else {
+            .unrepresented();
+        if unrepresented.is_empty() {
             verbatim_replay_holds(&F3dCodec, name, &input);
+        } else {
+            unrepresented_source_is_reported(&F3dCodec, name, &input);
+            marked.push(name);
         }
     }
-    assert_eq!(unrepresented, ["container_metadata_only"]);
-}
-
-/// A sidecar that marks the source image `untyped` bars patch and replay, so
-/// an unedited fixture the generator can write is synthesized and the report
-/// names the cause.
-#[test]
-fn an_unrepresented_source_image_is_synthesized() {
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
-    let input = read_fixture("body_color").expect("committed fixture");
-    let (ir, _, mut fidelity) = decode_result(&input)
-        .expect("committed fixture decodes")
-        .into_parts();
-    fidelity
-        .mark_untyped(
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-            [cadmpeg_core::decode::ArenaClass::Design],
-        )
-        .expect("the decode retains its source image");
-    let plan = F3dCodec
-        .plan(
-            EncodeInput::new(&ir, Some(&fidelity)),
-            TargetRequest::Inherit,
-        )
-        .expect("the generator writes this fixture");
-    let WritePath::Synthesized { fidelity } = plan.report().write_path() else {
-        panic!("a marked image is neither patched nor replayed");
-    };
-    let cadmpeg_ir::report::export::SynthesisFidelity::Degraded { reason } = fidelity else {
-        panic!("the synthesis names its cause: {fidelity:?}");
-    };
-    assert!(
-        reason.starts_with("source unrepresented: retained F3D source records hold design"),
-        "{reason}"
-    );
+    assert_eq!(marked, ["container_metadata_only"]);
 }
 
 /// Write path requires a decode baseline.
@@ -905,8 +870,7 @@ fn fixtures_refuse_to_write_without_a_baseline() {
         semantic_roundtrip(&F3dCodec, name, &input, |outcome| {
             match outcome {
             SemanticOutcome::Refused { error } => assert!(
-                matches!(error, CodecError::NotImplemented(_))
-                    || crate::test_support::is_unrepresented_refusal(error),
+                matches!(error, CodecError::NotImplemented(_)),
                 "fixture `{name}`: a missing baseline is an unbuilt capability, not a malformed input: {error}"
             ),
             SemanticOutcome::Written { report, .. } => panic!(

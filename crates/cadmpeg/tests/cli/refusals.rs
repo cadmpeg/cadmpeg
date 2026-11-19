@@ -168,44 +168,16 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .any(|loss| { loss["code"]["value"]["code"] == "export.no-geometry-written" }));
 }
 
-/// `--container-only` permits CADIR output only: any other output refuses at
-/// plan, before anything is written.
+/// A container-only document converts to STEP: the writer writes what the
+/// document holds, charges its empty-output loss, and notes the depth it plans
+/// from.
 #[cfg(all(feature = "creo", feature = "step"))]
 #[test]
-fn convert_refuses_a_container_only_non_cadir_output() {
+fn convert_writes_a_container_only_document_to_step() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
+    let output = dir.path().join("empty.step");
     let report = dir.path().join("depth.json");
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args([
-            "convert",
-            input.to_str().unwrap(),
-            "-f",
-            "step",
-            "--container-only",
-            "--report",
-            report.to_str().unwrap(),
-        ])
-        .assert()
-        .code(1)
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains(
-            "--container-only permits CADIR output only; step was asked for",
-        ));
-    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-    assert_eq!(value["refusal"]["stage"], "plan");
-    assert_eq!(value["refusal"]["code"], "container_only_output");
-}
-
-/// A container-only decode written as CADIR is the one output
-/// `--container-only` admits.
-#[cfg(feature = "creo")]
-#[test]
-fn convert_writes_a_container_only_cadir_output() {
-    let dir = tempdir().unwrap();
-    let input = geometryless_creo(dir.path(), "empty.prt");
-    let output = dir.path().join("empty.cadir.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -214,11 +186,61 @@ fn convert_writes_a_container_only_cadir_output() {
             "-o",
             output.to_str().unwrap(),
             "--container-only",
+            "--report",
+            report.to_str().unwrap(),
         ])
         .assert()
         .success();
-    let written: serde_json::Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
-    assert_eq!(written["scope"]["model"], false);
+    assert!(fs::read(&output).unwrap().starts_with(b"ISO-10303-21"));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert!(value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
+    assert!(value["export"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains(
+            "the document records container depth; the step writer plans from geometry"
+        )));
+}
+
+/// A same-format container-only F3Z conversion replays the archive, whose
+/// members the decode kept undecoded, and reports the carried bytes.
+#[cfg(feature = "f3d")]
+#[test]
+fn convert_replays_a_container_only_f3z_and_reports_the_carried_source() {
+    let dir = tempdir().unwrap();
+    let source = include_bytes!("../../../../corpus/f3d/F30a.f3z");
+    let input = dir.path().join("source.f3z");
+    fs::write(&input, source).unwrap();
+    let output = dir.path().join("written.f3z");
+    let report = dir.path().join("report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--container-only",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert!(fs::read(&output).unwrap() == source.as_slice());
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(value["export"]["write_path"]["kind"], "verbatim_replay");
+    assert!(value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["value"]["namespace"] == "export"
+            && loss["code"]["value"]["code"] == "source.carried"
+            && loss["severity"] == "info"));
 }
 
 /// The format half of `--to` is checked before the input is opened.

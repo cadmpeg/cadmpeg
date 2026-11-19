@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! F3D target resolution, preservation dispatch, and export reporting.
 
-use std::collections::BTreeSet;
-
-use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
-    WritePath,
+    carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
+    ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::source_fidelity::class_list;
 
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec, PreservedWritePath};
@@ -44,16 +40,11 @@ pub(crate) fn plan(
                 bytes,
                 write_path,
                 notes,
-            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
+            } => Ok(preserved_body(input, write_path, bytes, notes)),
             Preservation::SourceImageUnavailable => Err(target.unavailable(
                 "its retained source image is unavailable for preservation and the generator \
                  cannot synthesize it",
             )),
-            Preservation::SourceUnrepresented(classes) => Err(target.unavailable(format!(
-                "its retained source holds {} content the document does not represent, so it \
-                 is neither patched nor replayed, and the generator cannot synthesize it",
-                class_list(&classes)
-            ))),
         };
     }
     if target.preserves_source() {
@@ -62,22 +53,9 @@ pub(crate) fn plan(
                 bytes,
                 write_path,
                 notes,
-            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
+            } => Ok(preserved_body(input, write_path, bytes, notes)),
             Preservation::SourceImageUnavailable => {
                 synthesized_body(input, SynthesisCause::SourceImageUnavailable)
-            }
-            Preservation::SourceUnrepresented(classes) => {
-                let held = class_list(&classes);
-                synthesized_body(input, SynthesisCause::SourceUnrepresented(classes)).map_err(
-                    |error| match error {
-                        CodecError::NotImplemented(detail) => target.unavailable(format!(
-                            "its retained source holds {held} content the document does not \
-                             represent, so it is neither patched nor replayed, and the generator \
-                             cannot synthesize it: {detail}"
-                        )),
-                        other => other,
-                    },
-                )
             }
         };
     }
@@ -102,24 +80,17 @@ enum Preservation {
         write_path: PreservedWritePath,
         notes: Vec<String>,
     },
+    /// The only reason preservation is ever declined.
     SourceImageUnavailable,
-    /// A retained record is `untyped`: its bytes hold content of these
-    /// classes that the document does not, so they are neither patched nor
-    /// replayed.
-    SourceUnrepresented(BTreeSet<ArenaClass>),
 }
 
 fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
-    let Some(sidecar) = input.fidelity else {
+    let Some(record) = input
+        .fidelity
+        .and_then(|sidecar| sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID))
+    else {
         return Ok(Preservation::SourceImageUnavailable);
     };
-    let Some(record) = sidecar.retained_record(ids::FILE_SOURCE_IMAGE_ID) else {
-        return Ok(Preservation::SourceImageUnavailable);
-    };
-    let unrepresented = sidecar.unrepresented();
-    if !unrepresented.is_empty() {
-        return Ok(Preservation::SourceUnrepresented(unrepresented));
-    }
     let Some(data) = record.data() else {
         return Err(CodecError::Malformed(
             "retained F3D source image has no bytes".into(),
@@ -136,7 +107,7 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
 }
 
 fn preserved_body(
-    ir: &CadIr,
+    input: EncodeInput<'_>,
     write_path: PreservedWritePath,
     bytes: Vec<u8>,
     notes: Vec<String>,
@@ -150,7 +121,8 @@ fn preserved_body(
     // Replay runs only while the document digest matches its decode baseline,
     // and the patcher refuses unless the patched baseline digests equal to the
     // target document, so every arena is carried.
-    let mut body = body(ir, write_path, ArenaCoverage::Complete, Vec::new(), bytes);
+    let losses = carried_source_losses(input.fidelity, &write_path);
+    let mut body = body(input.ir, write_path, ArenaCoverage::Complete, losses, bytes);
     body.notes.extend(notes);
     body
 }
@@ -159,7 +131,6 @@ enum SynthesisCause {
     Fresh,
     Displaced(String),
     SourceImageUnavailable,
-    SourceUnrepresented(BTreeSet<ArenaClass>),
 }
 
 impl SynthesisCause {
@@ -178,16 +149,6 @@ impl SynthesisCause {
                     F3dLossCode::SourcePreservedImageUnavailable
                         .note("preserved F3D source image is unavailable; regenerated from IR"),
                 ),
-            ),
-            Self::SourceUnrepresented(classes) => (
-                Consumption::Degraded {
-                    reason: format!(
-                        "source unrepresented: retained F3D source records hold {} content the \
-                         document does not represent; regenerated from IR",
-                        class_list(&classes)
-                    ),
-                },
-                None,
             ),
         }
     }

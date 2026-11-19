@@ -187,10 +187,10 @@ fn a_synthesized_export_states_the_target_it_wrote() {
     }
 }
 
-/// A retained record marked `untyped` holds content the document does not, so
-/// an unedited document is synthesized rather than replayed (§3.4).
+/// A retained image marked `untyped` replays as an unmarked one does, and the
+/// report carries `export:source.carried` naming the image (§3.4).
 #[test]
-fn an_unrepresented_source_is_synthesized_rather_than_replayed() {
+fn an_unrepresented_source_replays_and_is_reported() {
     let mut decoded = EditableDecodeResult::from(
         IgesCodec
             .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
@@ -203,26 +203,35 @@ fn an_unrepresented_source_is_synthesized_rather_than_replayed() {
             [cadmpeg_core::decode::ArenaClass::Model],
         )
         .expect("the decode retains its source image");
-    for request in [
-        TargetRequest::Inherit,
-        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
-    ] {
-        let plan = IgesCodec
-            .plan(
-                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-                request,
-            )
-            .expect("an unrepresented source plans");
-        assert!(matches!(
-            plan.report().write_path(),
-            WritePath::Synthesized { .. }
-        ));
-        let reason = degraded_reason(&plan, "an unrepresented source must degrade");
-        assert!(
-            reason.starts_with("source unrepresented: retained IGES source records hold model"),
-            "{reason}"
-        );
-    }
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("an unrepresented source plans");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::VerbatimReplay { .. }
+    ));
+    let carried: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .collect();
+    assert_eq!(carried.len(), 1, "{carried:?}");
+    assert_eq!(carried[0].code.local_code(), "source.carried");
+    assert_eq!(carried[0].severity, cadmpeg_ir::report::Severity::Info);
+    assert!(
+        carried[0]
+            .message
+            .contains(&format!("{} (model)", crate::SOURCE_IMAGE_ID)),
+        "{}",
+        carried[0].message
+    );
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("the replay writes");
+    assert!(written == point_file(), "the replay reproduces the source");
 }
 
 #[test]

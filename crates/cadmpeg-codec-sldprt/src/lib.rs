@@ -134,11 +134,10 @@ mod writer;
 mod writer_patch;
 mod writer_transform;
 
-use cadmpeg_core::decode::{ArenaClass, DecodeContext, DecodeDepth, View};
+use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ContainerSummary;
-use std::collections::BTreeSet;
 use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
@@ -295,34 +294,24 @@ impl SldprtCodec {
 }
 
 /// Why an eligible retained-image replay took the semantic path instead.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReplaySkipped {
     BaselineMissing,
     DigestMismatch,
     ImageMissing,
-    /// A retained record is `untyped`: its bytes hold content of these
-    /// classes that the document does not, so they are neither patched nor
-    /// replayed.
-    SourceUnrepresented(BTreeSet<ArenaClass>),
 }
 
 impl ReplaySkipped {
-    fn consumption(&self) -> Consumption {
+    fn consumption(self) -> Consumption {
         Consumption::Degraded {
             reason: match self {
-                Self::BaselineMissing => {
-                    "preserved SLDPRT source digest baseline is unavailable".into()
-                }
+                Self::BaselineMissing => "preserved SLDPRT source digest baseline is unavailable",
                 Self::DigestMismatch => {
-                    "decoded model no longer matches the preserved SLDPRT source digest".into()
+                    "decoded model no longer matches the preserved SLDPRT source digest"
                 }
-                Self::ImageMissing => "preserved SLDPRT source image is unavailable".into(),
-                Self::SourceUnrepresented(classes) => format!(
-                    "source unrepresented: retained SLDPRT source records hold {} content the \
-                     document does not represent; regenerated from IR",
-                    cadmpeg_ir::source_fidelity::class_list(classes)
-                ),
-            },
+                Self::ImageMissing => "preserved SLDPRT source image is unavailable",
+            }
+            .into(),
         }
     }
 }
@@ -401,13 +390,13 @@ impl Written {
     }
 
     /// The semantic path that ran instead of an eligible replay, with why.
-    fn replay_skipped(&self) -> Option<(SemanticPath, &ReplaySkipped)> {
+    fn replay_skipped(&self) -> Option<(SemanticPath, ReplaySkipped)> {
         match self {
             Self::Semantic {
                 path,
                 fidelity: SemanticFidelity::ReplaySkipped(reason),
                 ..
-            } => Some((*path, reason)),
+            } => Some((*path, *reason)),
             _ => None,
         }
     }

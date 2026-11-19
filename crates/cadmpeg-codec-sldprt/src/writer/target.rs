@@ -2,9 +2,10 @@
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{target::ResolvedWrite, EncodeInput, ExportBody, WritePath};
-use cadmpeg_ir::source_fidelity::class_list;
-use cadmpeg_ir::{Annotations, SourceFidelity};
+use cadmpeg_ir::codec::write::{
+    carried_source_losses, target::ResolvedWrite, EncodeInput, ExportBody, WritePath,
+};
+use cadmpeg_ir::Annotations;
 
 use crate::loss::SldprtLossCode;
 use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
@@ -30,21 +31,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let unrepresented = input
-        .fidelity
-        .map(SourceFidelity::unrepresented)
-        .unwrap_or_default();
     let (written, bytes) = match write(input, resolved.preserves_source()) {
-        Err(CodecError::NotImplemented(detail))
-            if resolved.preserves_source() && !unrepresented.is_empty() =>
-        {
-            return Err(resolved.unavailable(format!(
-                "its retained source holds {} content the document does not represent, so it \
-                 is neither patched nor replayed, and the semantic writer cannot write it: \
-                 {detail}",
-                class_list(&unrepresented)
-            )));
-        }
         Err(error @ CodecError::NotImplemented(_)) if resolved.entry().is_none() => {
             let synthesis_targets = crate::dialect::TARGETS
                 .iter()
@@ -72,17 +59,6 @@ pub(crate) fn plan(
 fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<u8>), CodecError> {
     let mut bytes = Vec::new();
     let written = match input.fidelity {
-        Some(value) if replay_eligible && !value.unrepresented().is_empty() => {
-            SldprtCodec::write_semantic(
-                input.ir,
-                &Annotations::default(),
-                &[],
-                SemanticFidelity::ReplaySkipped(ReplaySkipped::SourceUnrepresented(
-                    value.unrepresented(),
-                )),
-                &mut bytes,
-            )?
-        }
         Some(value) if replay_eligible => {
             let records = source_records(input.ir, value)?;
             SldprtCodec::write_preserved_with_annotations(
@@ -138,7 +114,7 @@ fn finish(
     let write_path = written.path();
     let mut losses: Vec<_> = written
         .replay_skipped()
-        .filter(|(_, reason)| **reason == ReplaySkipped::ImageMissing)
+        .filter(|(_, reason)| *reason == ReplaySkipped::ImageMissing)
         .map(|(path, _)| {
             SldprtLossCode::SourcePreservedImageUnavailable.note(match path {
                 SemanticPath::Patched => {
@@ -168,6 +144,7 @@ fn finish(
     if let Some(message) = displacement {
         losses.push(SldprtLossCode::SourceDialectDisplaced.note(message));
     }
+    losses.extend(carried_source_losses(input.fidelity, &write_path));
     let path_note = match &write_path {
         WritePath::VerbatimReplay => "preserved source container replayed verbatim",
         WritePath::Patched { .. } => "preserved source container replayed with semantic patches",

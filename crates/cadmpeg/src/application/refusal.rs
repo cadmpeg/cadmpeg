@@ -12,7 +12,7 @@ use std::path::Path;
 use cadmpeg_core::decode::{DecodeDepth, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
-use cadmpeg_ir::codec::{DecodeFailure, FormatId};
+use cadmpeg_ir::codec::DecodeFailure;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use cadmpeg_registry::Format;
 use serde::Serialize;
@@ -195,8 +195,6 @@ pub(crate) enum RefusalCode {
     UnsupportedTarget,
     /// The document records less of its source than measurement needs.
     InsufficientDepth,
-    /// A container-only decode was asked for an output other than CADIR.
-    ContainerOnlyOutput,
     /// The selected format has no encoder in this build.
     UnsupportedOutputFormat,
     /// Binary container would stream to stdout without `--binary-stdout`.
@@ -213,10 +211,9 @@ impl RefusalCode {
             }
             Self::CheckFailed => (RefusalStage::Check, 1),
             Self::ExportLossRejected => (RefusalStage::Export, 1),
-            Self::UnsupportedTarget
-            | Self::InsufficientDepth
-            | Self::ContainerOnlyOutput
-            | Self::UnsupportedOutputFormat => (RefusalStage::Plan, 1),
+            Self::UnsupportedTarget | Self::InsufficientDepth | Self::UnsupportedOutputFormat => {
+                (RefusalStage::Plan, 1)
+            }
             Self::BinaryStdoutRejected => (RefusalStage::Plan, 2),
         };
         RefusalDisposition { stage, exit_code }
@@ -235,7 +232,6 @@ impl fmt::Display for RefusalCode {
             Self::ExportLossRejected => "export_loss_rejected",
             Self::UnsupportedTarget => "unsupported_target",
             Self::InsufficientDepth => "insufficient_depth",
-            Self::ContainerOnlyOutput => "container_only_output",
             Self::UnsupportedOutputFormat => "unsupported_output_format",
             Self::BinaryStdoutRejected => "binary_stdout_rejected",
         })
@@ -361,11 +357,6 @@ pub(crate) enum ConversionRefusal {
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
         validation: ValidationReport,
-    },
-    /// `--container-only` was given with an output other than CADIR.
-    ContainerOnlyOutput {
-        /// The output format asked for.
-        format: FormatId,
     },
     /// Binary container would write to stdout without an override.
     BinaryStdoutRejected {
@@ -624,14 +615,6 @@ impl ConversionRefusal {
                     export: None,
                 },
             },
-            Self::ContainerOnlyOutput { format } => RefusalEvidence {
-                code: RefusalCode::ContainerOnlyOutput,
-                message: Cow::Owned(format!(
-                    "--container-only permits CADIR output only; {format} was asked for"
-                )),
-                detail: None,
-                reports: RefusalReports::default(),
-            },
             Self::BinaryStdoutRejected { message } => RefusalEvidence {
                 code: RefusalCode::BinaryStdoutRejected,
                 message: Cow::Borrowed(message),
@@ -780,22 +763,6 @@ mod tests {
             report["target"]["available"][0]["id"],
             "iges:5.3-fixed-ascii"
         );
-    }
-
-    #[test]
-    fn a_container_only_output_refusal_names_the_format_at_plan() {
-        let refusal = ConversionRefusal::ContainerOnlyOutput {
-            format: cadmpeg_ir::codec::FormatId::new("step"),
-        };
-        assert_eq!(refusal.code(), RefusalCode::ContainerOnlyOutput);
-        assert_eq!(refusal.exit_code(), 1);
-        assert_eq!(
-            refusal.to_string(),
-            "--container-only permits CADIR output only; step was asked for"
-        );
-        let report = report_value(&refusal);
-        assert_eq!(report["code"], "container_only_output");
-        assert_eq!(report["stage"], "plan");
     }
 
     #[test]

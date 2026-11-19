@@ -11,8 +11,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput, ExportBody, PatchConsumption,
-    WritePath,
+    carried_source_losses, target::ResolvedWrite, ArenaCoverage, Consumption, EncodeInput,
+    ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
@@ -94,20 +94,8 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let resolution = resolve(input.ir, resolved)?;
-    let unrepresented = input
-        .fidelity
-        .map(cadmpeg_ir::SourceFidelity::unrepresented)
-        .unwrap_or_default();
-    if !unrepresented.is_empty() {
-        return Err(resolved.unavailable(format!(
-            "the retained FCStd source records hold {} content the document does not \
-             represent, so the retained document is not patched, and this writer \
-             regenerates no Document.xml",
-            cadmpeg_ir::source_fidelity::class_list(&unrepresented)
-        )));
-    }
     admit_unedited(input.ir)?;
-    finish(&resolution)
+    finish(&resolution, input.fidelity)
 }
 
 /// Native `fcstd` arenas this writer handles itself: property values patch
@@ -175,18 +163,23 @@ fn admit_unedited(ir: &CadIr) -> Result<(), CodecError> {
 /// and the fidelity resolution; this writer patches the retained document and
 /// consumes no sidecar. [`admit_unedited`] has proved that nothing outside the
 /// carried native arenas changed since decode, so the retained graph carries
-/// every model arena.
-fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
+/// every model arena. Every write is a patch, so `untyped` retained records
+/// in `fidelity` charge both carried-source codes.
+fn finish(
+    resolution: &Resolution<'_>,
+    fidelity: Option<&cadmpeg_ir::SourceFidelity>,
+) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
     let outcome = write(&mut bytes, resolution)?;
+    let write_path = WritePath::Patched {
+        consumption: PatchConsumption::Independent(Consumption::NotConsumed),
+    };
     Ok(ExportBody {
         bytes,
         census: outcome.census,
-        write_path: WritePath::Patched {
-            consumption: PatchConsumption::Independent(Consumption::NotConsumed),
-        },
+        losses: carried_source_losses(fidelity, &write_path),
+        write_path,
         coverage: ArenaCoverage::Complete,
-        losses: Vec::new(),
         notes: outcome.notes,
     })
 }

@@ -466,27 +466,33 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
     }
 }
 
-/// A sidecar that marks a retained record `untyped` bars the patch (§3.4),
-/// and this writer regenerates no `Document.xml`, so the write is refused by
-/// target; without the marked record the same document patches.
+/// A sidecar that marks a retained record `untyped` patches as an unmarked
+/// one does, and the report carries both carried-source codes naming the
+/// record.
 #[test]
-fn an_untyped_retained_record_refuses_the_patch() {
+fn an_untyped_retained_record_is_patched_and_reported() {
     let decoded = decode_at(DecodeDepth::Full);
     let (ir, _, mut fidelity) = decoded.into_parts();
-    let plan = |fidelity: &cadmpeg_ir::SourceFidelity| {
-        Encoder::plan(
+    let write = |fidelity: &cadmpeg_ir::SourceFidelity| {
+        let plan = Encoder::plan(
             &FcstdCodec,
             EncodeInput::new(&ir, Some(fidelity)),
             TargetRequest::Inherit,
         )
+        .expect("the retained document patches");
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("the patch writes");
+        (report, bytes)
     };
+    let (unmarked, unmarked_bytes) = write(&fidelity);
     assert!(matches!(
-        plan(&fidelity)
-            .expect("an unmarked sidecar patches")
-            .report()
-            .write_path(),
+        unmarked.write_path(),
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
+    assert!(!unmarked
+        .losses
+        .iter()
+        .any(|loss| loss.code.namespace() == "export"));
     fidelity
         .insert_retained_record(
             "fcstd:test:skipped#0"
@@ -497,15 +503,22 @@ fn an_untyped_retained_record_refuses_the_patch() {
                 .with_untyped([cadmpeg_core::decode::ArenaClass::Design]),
         )
         .expect("a new record id");
-    let Err(CodecError::UnsupportedTarget(refusal)) = plan(&fidelity) else {
-        panic!("a marked sidecar must refuse the patch by target");
-    };
-    assert!(
-        refusal
-            .to_string()
-            .contains("hold design content the document does not represent"),
-        "{refusal}"
-    );
+    let (marked, marked_bytes) = write(&fidelity);
+    assert_eq!(marked_bytes, unmarked_bytes);
+    let carried: Vec<_> = marked
+        .losses
+        .iter()
+        .filter(|loss| loss.code.namespace() == "export")
+        .map(|loss| (loss.code.local_code(), loss.severity, loss.message.as_str()))
+        .collect();
+    assert_eq!(carried.len(), 2, "{carried:?}");
+    assert_eq!(carried[0].0, "source.carried");
+    assert_eq!(carried[0].1, cadmpeg_ir::report::Severity::Info);
+    assert_eq!(carried[1].0, "source.unchecked");
+    assert_eq!(carried[1].1, cadmpeg_ir::report::Severity::Warning);
+    assert!(carried
+        .iter()
+        .all(|(_, _, message)| message.contains("fcstd:test:skipped#0 (design)")));
 }
 
 fn decode_at(depth: DecodeDepth) -> cadmpeg_ir::DecodeResult {

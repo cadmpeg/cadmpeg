@@ -3,11 +3,11 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
+    carried_source_losses,
     target::{ResolvedTarget, ResolvedWrite},
     ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
-use cadmpeg_ir::source_fidelity::class_list;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
@@ -19,7 +19,7 @@ pub(crate) fn plan(
     match resolved.target() {
         // Off-catalog same-format source: only a verbatim replay can honor it.
         ResolvedTarget::Preserved { .. } => match replay_bytes(input.ir, input.fidelity)? {
-            Replay::Replayed { bytes } => Ok(replayed_body(input.ir, bytes)),
+            Replay::Replayed { bytes } => Ok(replayed_body(input, bytes)),
             Replay::Declined(reason) => Err(resolved.unavailable(match reason {
                 DeclineReason::Rejected(reason) => {
                     format!("{reason}; the semantic writer cannot synthesize the inherited dialect")
@@ -55,7 +55,7 @@ fn replay_or_synthesize(
     version: crate::IgesVersion,
 ) -> Result<ExportBody, CodecError> {
     let replay_failure = match replay_bytes(input.ir, input.fidelity)? {
-        Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
+        Replay::Replayed { bytes } => return Ok(replayed_body(input, bytes)),
         Replay::Declined(reason) => reason,
     };
     synthesized_body(
@@ -65,15 +65,15 @@ fn replay_or_synthesize(
     )
 }
 
-fn replayed_body(ir: &CadIr, bytes: Vec<u8>) -> ExportBody {
+fn replayed_body(input: EncodeInput<'_>, bytes: Vec<u8>) -> ExportBody {
     super::body(
         bytes,
         WritePath::VerbatimReplay,
         // Replay runs only while the document digest matches its decode baseline.
         ArenaCoverage::Complete,
-        Vec::new(),
+        carried_source_losses(input.fidelity, &WritePath::VerbatimReplay),
         "preserved source container replayed verbatim",
-        super::counts_for_ir(ir),
+        super::counts_for_ir(input.ir),
     )
 }
 
@@ -188,16 +188,6 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
     let record = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID));
-    let unrepresented = fidelity
-        .map(SourceFidelity::unrepresented)
-        .unwrap_or_default();
-    if !unrepresented.is_empty() {
-        return Ok(Replay::Declined(DeclineReason::Rejected(format!(
-            "source unrepresented: retained IGES source records hold {} content the document \
-             does not represent; byte replay skipped",
-            class_list(&unrepresented)
-        ))));
-    }
     let Some(expected) = source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE) else {
         return Ok(Replay::declined_for_record(
             record,

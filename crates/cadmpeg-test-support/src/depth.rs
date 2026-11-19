@@ -22,8 +22,8 @@
 //! only design projection derives. Source attributes holding a local digest
 //! are not compared either: they fingerprint the whole document, design arenas
 //! included, as the replay baseline of the source format's own writer. A cut
-//! is sound because that writer patches or replays only where no retained
-//! record is `untyped`, and the cut marks the bytes it keeps undecoded.
+//! is sound because the cut marks the bytes it keeps undecoded, and that
+//! writer reports each file that carries them (`export:source.carried`).
 //!
 //! A codec without a cut delivers `Full` for the geometry request and passes on
 //! the same terms; [`DepthSummary::cut`] counts the inputs where it did not.
@@ -220,8 +220,8 @@ fn compare(
 ///
 /// A class is cut where the geometry document's scope lacks it and the full
 /// decode holds a record of it or marks it. Bytes a decode keeps but does not
-/// decode carry the `untyped` mark, or the source format's writer would patch
-/// or replay content the document does not hold.
+/// decode carry the `untyped` mark, so the source format's writer reports
+/// content the document does not hold when it carries those bytes.
 fn unmarked_cut_classes(bytes: &[u8], full: &DecodeResult, geometry: &DecodeResult) -> Vec<String> {
     let whole_file = cadmpeg_core::decode::u64_from_index(bytes.len());
     let keeps_whole_file = geometry

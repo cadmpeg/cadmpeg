@@ -8,14 +8,13 @@
 //! cases, and over an unedited document it always takes the copy. It then passes
 //! no matter what the writer does, because the writer never ran.
 //!
-//! There are exactly four entry points here, one per way the question can be
+//! There are exactly three entry points here, one per way the question can be
 //! asked:
 //!
 //! - [`verbatim_replay_holds`] covers the copy. It asserts the copy happened and
 //!   that the copy is faithful. It says nothing about the writer.
-//! - [`unrepresented_source_is_not_reused`] covers a decode that kept bytes it
-//!   did not decode (an `untyped` retained record). Such bytes are neither
-//!   patched nor replayed, so it asserts the copy and the patch did not happen.
+//!   [`unrepresented_source_is_reported`] is the same copy of a decode that
+//!   kept bytes it did not decode, and also asserts the report says so.
 //! - [`semantic_roundtrip`] covers the writer with the baseline taken away, so
 //!   the copy is not available, and asserts the copy did not happen.
 //! - [`mutation_roundtrip`] covers the writer with the baseline left in place
@@ -49,74 +48,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
 
-/// What the encoder did with an unedited decode that keeps bytes it did not
-/// decode.
-#[derive(Debug)]
-pub enum UnrepresentedOutcome {
-    /// The writer synthesized the document; its report is not a replay or a
-    /// patch.
-    Synthesized {
-        /// The encoder's report.
-        report: Box<ExportReport>,
-    },
-    /// The encoder refused. A writer that cannot synthesize the document
-    /// refuses it.
-    Refused {
-        /// The refusal error.
-        error: CodecError,
-    },
-}
-
-/// Encodes an unedited decode of `fixture` whose sidecar marks a retained
-/// record `untyped`, and asserts the encoder neither replayed nor patched.
-///
-/// # Panics
-///
-/// Panics when the decode fails, when it marks no retained record `untyped`,
-/// when the write fails after planning succeeded, or when the encoder replayed
-/// or patched.
-pub fn unrepresented_source_is_not_reused<C>(
-    codec: &C,
-    label: &str,
-    fixture: &[u8],
-) -> UnrepresentedOutcome
-where
-    C: Codec + Encoder,
-{
-    let decoded = Codec::decode(
-        codec,
-        &mut std::io::Cursor::new(fixture.to_vec()),
-        &DecodeOptions::default(),
-    )
-    .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
-    let (ir, _decode_report, source_fidelity) = decoded.into_parts();
-    assert!(
-        !source_fidelity.unrepresented().is_empty(),
-        "{label}: the decode marks no retained record `untyped`; use `verbatim_replay_holds`"
-    );
-    match Encoder::plan(
-        codec,
-        EncodeInput::new(&ir, Some(&source_fidelity)),
-        TargetRequest::Inherit,
-    ) {
-        Ok(plan) => {
-            let path = plan.report().write_path().clone();
-            let report = plan
-                .write_to(&mut Vec::new())
-                .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
-            assert!(
-                matches!(path, WritePath::Synthesized { .. }),
-                "{label}: the sidecar marks content the document does not hold, so its bytes are \
-                 neither patched nor replayed, yet the encoder took the {path} path"
-            );
-            UnrepresentedOutcome::Synthesized {
-                report: Box::new(report),
-            }
-        }
-        Err(error) => UnrepresentedOutcome::Refused { error },
-    }
-}
-
 /// Encodes an unedited decode of `fixture` and asserts the encoder replayed the
 /// retained bytes verbatim, producing `fixture` again.
 ///
@@ -125,10 +56,9 @@ where
 ///
 /// # Panics
 ///
-/// Panics when the decode or the encode fails, when the decode marks a
-/// retained record `untyped` (use [`unrepresented_source_is_not_reused`]),
-/// when the encoder took any path other than [`WritePath::VerbatimReplay`], or
-/// when the replayed bytes differ from `fixture`.
+/// Panics when the decode or the encode fails, when the encoder took any path
+/// other than [`WritePath::VerbatimReplay`], or when the replayed bytes differ
+/// from `fixture`.
 pub fn verbatim_replay_holds<C>(codec: &C, label: &str, fixture: &[u8]) -> ExportReport
 where
     C: Codec + Encoder,
@@ -140,13 +70,6 @@ where
             &DecodeOptions::default(),
         )
         .unwrap_or_else(|error| panic!("{label}: decode failed: {error}")),
-    );
-    let unrepresented = decoded.source_fidelity().unrepresented();
-    assert!(
-        unrepresented.is_empty(),
-        "{label}: the decode marks retained records `untyped` ({}), so its bytes are neither \
-         patched nor replayed; use `unrepresented_source_is_not_reused`",
-        cadmpeg_ir::source_fidelity::class_list(&unrepresented)
     );
     let plan = Encoder::plan(
         codec,
@@ -168,6 +91,38 @@ where
         written == fixture,
         "{label}: verbatim replay produced different bytes: {}",
         describe_byte_difference(fixture, &written)
+    );
+    report
+}
+
+/// [`verbatim_replay_holds`] over a fixture whose decode marks a retained
+/// record `untyped`, asserting the replay report carries
+/// `export:source.carried`.
+///
+/// # Panics
+///
+/// Panics as [`verbatim_replay_holds`] does, when the decode marks no retained
+/// record `untyped`, or when the report carries no `export:source.carried`.
+pub fn unrepresented_source_is_reported<C>(codec: &C, label: &str, fixture: &[u8]) -> ExportReport
+where
+    C: Codec + Encoder,
+{
+    let decoded = Codec::decode(
+        codec,
+        &mut std::io::Cursor::new(fixture.to_vec()),
+        &DecodeOptions::default(),
+    )
+    .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
+    assert!(
+        !decoded.into_parts().2.unrepresented().is_empty(),
+        "{label}: the decode marks no retained record `untyped`; use `verbatim_replay_holds`"
+    );
+    let report = verbatim_replay_holds(codec, label, fixture);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.namespace() == "export" && loss.code.local_code() == "source.carried"
+        }),
+        "{label}: the replay carries untyped bytes, but its report has no export:source.carried"
     );
     report
 }

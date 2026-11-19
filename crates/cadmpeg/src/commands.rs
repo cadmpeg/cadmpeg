@@ -501,9 +501,6 @@ pub(crate) fn convert(
             }
         }
 
-        if args.container_only {
-            target.admit_container_only()?;
-        }
         let depth = if conversion.full_decode || conversion.losses.needs_full_decode() {
             DecodeDepth::Full
         } else {

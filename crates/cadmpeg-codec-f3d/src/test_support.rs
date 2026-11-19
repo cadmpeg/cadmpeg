@@ -79,31 +79,6 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Writes `ir` by the retained-image path: replay while the baseline holds,
-/// the patch otherwise.
-///
-/// `plan` takes this path only where no retained record is `untyped`. Tests
-/// of the path's mechanics over a marked fixture call this;
-/// [`plan_inherited_write`] states what `plan` does with the fixture.
-pub(crate) fn write_retained(
-    ir: &CadIr,
-    fidelity: &SourceFidelity,
-    writer: &mut dyn Write,
-) -> Result<crate::PreservedWritePath, CodecError> {
-    let data = fidelity
-        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
-        .and_then(cadmpeg_ir::RetainedSourceRecord::data)
-        .expect("the decode retains its source image with its bytes");
-    F3dCodec::write_preserved_bytes(ir, data, writer, &mut Vec::new())
-}
-
-/// Whether `error` is the target refusal of a document whose sidecar marks a
-/// retained record `untyped` and that the generator cannot synthesize.
-pub(crate) fn is_unrepresented_refusal(error: &CodecError) -> bool {
-    matches!(error, CodecError::UnsupportedTarget(refusal)
-        if refusal.to_string().contains("content the document does not represent"))
-}
-
 /// A finite test value as the checked scalar a record holds.
 pub(crate) fn real(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).expect("a finite test value")

@@ -43,17 +43,6 @@ impl ExportTarget {
     pub(crate) fn request(&self) -> DecodeDepth {
         self.encoder.request()
     }
-
-    /// Refuses a non-CADIR output of a container-only decode.
-    pub(crate) fn admit_container_only(&self) -> Result<(), ApplicationError> {
-        if self.selection.format == Format::Cadir {
-            return Ok(());
-        }
-        Err(ConversionRefusal::ContainerOnlyOutput {
-            format: self.selection.format.name(),
-        }
-        .into())
-    }
 }
 
 /// The output format and target token selected by the command line.
