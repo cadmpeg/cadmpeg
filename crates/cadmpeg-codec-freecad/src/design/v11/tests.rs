@@ -2,10 +2,14 @@
 
 use std::io::Cursor;
 
+use std::collections::BTreeSet;
+
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
-use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::evaluation::EvaluationStatus;
+use cadmpeg_ir::design::feature::{FeatureOperation, FuzzyTolerance, OperationFamily};
 use cadmpeg_ir::design::refs::{Member, Position};
-use cadmpeg_ir::{Codec, DecodeOptions};
+use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
@@ -14,6 +18,40 @@ const DESIGN_HISTORY: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corpus/freecad_fcstd/fixtures/design_history.FCStd"
 ));
+const FUZZY_STORED: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corpus/freecad_fcstd/fixtures/named_constraint_1.1.4_N10a.FCStd"
+));
+const CORE_OPERATIONS: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
+));
+
+fn decode(bytes: &[u8], depth: DecodeDepth) -> CadIr {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                depth,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_valid_document(decoded.ir());
+    decoded.ir().clone()
+}
+
+fn root_bodies(ir: &CadIr) -> BTreeSet<String> {
+    ir.model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.is_root())
+        .unwrap()
+        .bodies
+        .iter()
+        .map(|body| body.as_str().to_owned())
+        .collect()
+}
 
 fn feature(id: &str) -> Member {
     Member::Feature(cadmpeg_ir::features::FeatureId::mint(id).unwrap())
@@ -172,4 +210,132 @@ fn an_object_outside_every_body_has_no_design_record() {
     assert!(design.containers.is_empty());
     assert!(design.features.is_empty());
     assert!(design.parameters.is_empty());
+}
+
+#[test]
+fn a_body_with_no_member_states_no_scope_and_no_container() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="PartDesign::Body" name="Body" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Body"><Properties Count="1">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="0"/></Property>
+</Properties></Object></ObjectData>
+</Document>"#;
+    let ir = decode(&archive(document), DecodeDepth::Design);
+    assert!(ir.design.scopes.is_empty(), "{:?}", ir.design.scopes);
+    assert!(ir.design.containers.is_empty());
+}
+
+#[test]
+fn a_body_freecad_marks_touched_is_stale() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="PartDesign::Body" name="Body" id="1" Touched="1"/>
+ <Object type="Part::Feature" name="First" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Body"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="First"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="First"/></Property>
+ </Properties></Object>
+ <Object name="First"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let stale = decode(&archive(document), DecodeDepth::Design);
+    assert_eq!(
+        stale.design.scopes[0].current[0].status,
+        EvaluationStatus::Stale
+    );
+    let current = decode(
+        &archive(&document.replace(r#" Touched="1""#, "")),
+        DecodeDepth::Design,
+    );
+    assert_eq!(
+        current.design.scopes[0].current[0].status,
+        EvaluationStatus::Current
+    );
+}
+
+#[test]
+fn a_multitransform_stage_is_no_feature() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="PartDesign::Body" name="Body" id="1"/>
+ <Object type="Part::Feature" name="Base" id="2"/>
+ <Object type="PartDesign::LinearPattern" name="Stage" id="3"/>
+ <Object type="PartDesign::MultiTransform" name="Pattern" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Body"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="3"><Link value="Base"/><Link value="Stage"/><Link value="Pattern"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="Pattern"/></Property>
+ </Properties></Object>
+ <Object name="Base"><Properties Count="0"/></Object>
+ <Object name="Stage"><Properties Count="0"/></Object>
+ <Object name="Pattern"><Properties Count="1">
+  <Property name="Transformations" type="App::PropertyLinkList"><LinkList count="1"><Link value="Stage"/></LinkList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let ir = decode(&archive(document), DecodeDepth::Design);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first() else {
+        panic!("{:?}", ir.design.containers);
+    };
+    assert_eq!(
+        members.as_slice(),
+        ["fcstd:design:feature#Base", "fcstd:design:feature#Pattern"].map(feature)
+    );
+    assert!(ir
+        .design
+        .features
+        .iter()
+        .all(|feature| feature.id.as_str() != "fcstd:design:feature#Stage"));
+}
+
+#[test]
+fn refine_and_fuzzy_tolerance_are_stated_where_stored() {
+    let pad = |ir: &CadIr| {
+        ir.design
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == "fcstd:design:feature#Pad")
+            .unwrap()
+            .definition
+            .clone()
+    };
+    let refine_only = pad(&decode(DESIGN_HISTORY, DecodeDepth::Design));
+    assert!(refine_only.refine.is_some());
+    assert_eq!(refine_only.fuzzy_tolerance, None);
+    let both = pad(&decode(FUZZY_STORED, DecodeDepth::Design));
+    assert!(both.refine.is_some());
+    assert!(matches!(
+        both.fuzzy_tolerance,
+        Some(FuzzyTolerance::KernelDefault | FuzzyTolerance::Automatic)
+    ));
+}
+
+#[test]
+fn a_native_kind_uses_the_codec_id() {
+    let FeatureOperation::Native { kind, .. } = super::native("PartDesign::FeatureBase").unwrap()
+    else {
+        panic!();
+    };
+    assert_eq!(kind.as_str(), "fcstd:PartDesign::FeatureBase");
+}
+
+#[test]
+fn the_root_owns_top_level_shapes_only_where_no_scope_is_stated() {
+    let design = decode(CORE_OPERATIONS, DecodeDepth::Design);
+    let [scope] = design.design.scopes.as_slice() else {
+        panic!("{:?}", design.design.scopes);
+    };
+    let current = scope
+        .current
+        .iter()
+        .flat_map(|state| &state.bodies)
+        .map(|body| body.as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(root_bodies(&design), current);
+    let geometry = root_bodies(&decode(CORE_OPERATIONS, DecodeDepth::Geometry));
+    assert!(geometry.is_superset(&current));
+    assert!(geometry
+        .iter()
+        .any(|body| body.starts_with("fcstd:model:body#Revolution:Shape:")));
 }

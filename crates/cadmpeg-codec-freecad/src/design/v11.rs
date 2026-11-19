@@ -3,10 +3,12 @@
 //!
 //! The document is one scope at its root definition. Each `PartDesign::Body`
 //! is an ordered `Body` container, a root of the scope, whose `Tip` is its
-//! rollback, and each of its members is one feature. An object outside every
-//! Body has no design record.
+//! rollback, and each of its members is one feature, except the stages a
+//! `MultiTransform` lists, which are its layout (§6.5). An object outside
+//! every Body has no design record, and a document whose Bodies hold no
+//! member and no parameter has no scope (§5.1).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -27,10 +29,17 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::BodyId;
 
+use crate::native::{ObjectRecord, PropertyRecord};
+
 mod parameters;
 
-/// Project the decoded design of `ir` into its v11 design layer.
-pub(crate) fn project(ir: &mut CadIr) -> Result<(), CodecError> {
+/// Project the decoded design of `ir` into its v11 design layer, and say
+/// whether it states a scope.
+pub(crate) fn project(
+    ir: &mut CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+) -> Result<bool, CodecError> {
     let Some(definition) = ir
         .model
         .product_definitions
@@ -38,16 +47,17 @@ pub(crate) fn project(ir: &mut CadIr) -> Result<(), CodecError> {
         .find(|definition| definition.is_root())
         .map(|definition| definition.id.clone())
     else {
-        return Ok(());
+        return Ok(false);
     };
-    let history = History::of(&ir.model.features)?;
+    let source = Source::of(objects, properties);
+    let history = History::of(&ir.model.features, &source)?;
     if history.bodies.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let mut features = Vec::new();
     for member in &history.contained {
         if let Some(legacy) = history.features.get(member) {
-            features.push(feature(legacy)?);
+            features.push(feature(legacy, &source)?);
         }
     }
     let mut containers = Vec::new();
@@ -79,11 +89,19 @@ pub(crate) fn project(ir: &mut CadIr) -> Result<(), CodecError> {
             || Position::Start(id.clone()),
             |index| Position::After(members[index].clone()),
         );
+        let touched = body
+            .native_ref
+            .as_deref()
+            .is_some_and(|object| source.touched.contains(object));
         current.push(CurrentState {
             at,
             bodies: body.outputs.clone(),
             poses: BTreeMap::default(),
-            status: EvaluationStatus::Current,
+            status: if touched {
+                EvaluationStatus::Stale
+            } else {
+                EvaluationStatus::Current
+            },
             native_ref: body.native_ref.clone(),
         });
         roots.push(id.clone());
@@ -99,9 +117,17 @@ pub(crate) fn project(ir: &mut CadIr) -> Result<(), CodecError> {
     }
     containers.sort_by(|a, b| a.id().cmp(b.id()));
     features.sort_by(|a, b| a.id.cmp(&b.id));
+    let carriers = properties
+        .iter()
+        .map(|property| (property.id.as_str(), property.type_name.as_str()))
+        .collect::<HashMap<_, _>>();
+    let parameters = parameters::project(ir, &definition, &body_containers, &features, &carriers)?;
+    if features.is_empty() && parameters.is_empty() {
+        return Ok(false);
+    }
     ir.design.containers = containers;
     ir.design.features = features;
-    parameters::project(ir, &definition, &body_containers)?;
+    ir.design.parameters = parameters;
     ir.design.scopes.push(DesignScope {
         definition,
         roots,
@@ -110,7 +136,65 @@ pub(crate) fn project(ir: &mut CadIr) -> Result<(), CodecError> {
         occurrences: BTreeMap::default(),
         current,
     });
-    Ok(())
+    Ok(true)
+}
+
+/// What the projection reads from the document's object records beside the
+/// decoded features.
+struct Source<'a> {
+    /// The objects FreeCAD marks `Touched`, out of date.
+    touched: BTreeSet<&'a str>,
+    /// The properties each object stores, by object and name.
+    stored: BTreeSet<(&'a str, &'a str)>,
+    /// The objects a `MultiTransform` lists in `Transformations`.
+    stages: BTreeSet<&'a str>,
+}
+
+impl<'a> Source<'a> {
+    fn of(objects: &'a [ObjectRecord], properties: &'a [PropertyRecord]) -> Self {
+        let touched = objects
+            .iter()
+            .filter(|object| object.attributes.get("Touched").map(String::as_str) == Some("1"))
+            .map(|object| object.id().as_str())
+            .collect();
+        let stored = properties
+            .iter()
+            .map(|property| (property.owner.as_str(), property.name.as_str()))
+            .collect();
+        let transforms = objects
+            .iter()
+            .filter(|object| object.type_name.ends_with("MultiTransform"))
+            .map(|object| object.id().as_str())
+            .collect::<BTreeSet<_>>();
+        let stages = properties
+            .iter()
+            .filter(|property| {
+                property.name == "Transformations" && transforms.contains(property.owner.as_str())
+            })
+            .flat_map(|property| property.links())
+            .filter_map(|link| link.as_ref()?.object())
+            .collect();
+        Self {
+            touched,
+            stored,
+            stages,
+        }
+    }
+
+    /// Whether the object `legacy` was read from stores property `name`.
+    fn stores(&self, legacy: &LegacyFeature, name: &str) -> bool {
+        legacy
+            .native_ref
+            .as_deref()
+            .is_some_and(|object| self.stored.contains(&(object, name)))
+    }
+
+    fn is_stage(&self, legacy: &LegacyFeature) -> bool {
+        legacy
+            .native_ref
+            .as_deref()
+            .is_some_and(|object| self.stages.contains(object))
+    }
 }
 
 /// The design objects of the document and the `PartDesign::Body` objects among
@@ -132,7 +216,7 @@ struct BodyHistory<'a> {
 }
 
 impl<'a> History<'a> {
-    fn of(legacy: &'a [LegacyFeature]) -> Result<Self, CodecError> {
+    fn of(legacy: &'a [LegacyFeature], source: &Source<'_>) -> Result<Self, CodecError> {
         let mut ordered = legacy.iter().collect::<Vec<_>>();
         ordered.sort_by_key(|feature| (feature.ordinal, &feature.id));
         let mut features = BTreeMap::new();
@@ -155,7 +239,7 @@ impl<'a> History<'a> {
             .map(|(feature, _)| &feature.id)
             .collect::<BTreeSet<_>>();
         for feature in &ordered {
-            if !container_ids.contains(&feature.id) {
+            if !container_ids.contains(&feature.id) && !source.is_stage(feature) {
                 features.insert(&feature.id, *feature);
             }
         }
@@ -194,7 +278,10 @@ impl<'a> History<'a> {
     }
 }
 
-fn feature(legacy: &LegacyFeature) -> Result<Feature, CodecError> {
+/// The feature of `legacy`. Its `refine` and `fuzzy_tolerance` are stated only
+/// where the object stores `Refine` and `FuzzyTolerance` (§2.4): the decoded
+/// definition fills the one the object lacks.
+fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Result<Feature, CodecError> {
     let (operation, refine, fuzzy_tolerance) = match legacy.evaluation.definition() {
         LegacyDefinition::PostProcess {
             operation,
@@ -202,14 +289,16 @@ fn feature(legacy: &LegacyFeature) -> Result<Feature, CodecError> {
             fuzzy_tolerance,
         } => (
             operation,
-            Some(*refine),
-            Some(match fuzzy_tolerance {
-                LegacyFuzzyTolerance::KernelDefault => FuzzyTolerance::KernelDefault,
-                LegacyFuzzyTolerance::Automatic => FuzzyTolerance::Automatic,
-                LegacyFuzzyTolerance::Explicit(value) => {
-                    FuzzyTolerance::Explicit(Dimension::Literal(*value))
-                }
-            }),
+            source.stores(legacy, "Refine").then_some(*refine),
+            source
+                .stores(legacy, "FuzzyTolerance")
+                .then(|| match fuzzy_tolerance {
+                    LegacyFuzzyTolerance::KernelDefault => FuzzyTolerance::KernelDefault,
+                    LegacyFuzzyTolerance::Automatic => FuzzyTolerance::Automatic,
+                    LegacyFuzzyTolerance::Explicit(value) => {
+                        FuzzyTolerance::Explicit(Dimension::Literal(*value))
+                    }
+                }),
         ),
         LegacyDefinition::Operation(operation) => (operation, None, None),
     };
@@ -231,7 +320,7 @@ fn feature(legacy: &LegacyFeature) -> Result<Feature, CodecError> {
 
 fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("freecad:{kind}"))
+        kind: NonBlankString::new(format!("fcstd:{kind}"))
             .ok_or_else(|| CodecError::malformed("FCStd v11 operation kind is blank"))?,
         native_options: BTreeMap::default(),
         source_settings: BTreeMap::default(),

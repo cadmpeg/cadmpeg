@@ -2,9 +2,11 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
+use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral};
 use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
+use cadmpeg_ir::features::ParameterValue as LegacyValue;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions};
 
 use crate::test_support::test_archive::assert_valid_document;
@@ -101,4 +103,47 @@ fn a_stored_angle_is_a_literal_in_degrees() {
     let angle = parameter(&ir, "fcstd:design:parameter#Draft:Angle");
     assert_eq!(neutral(angle), ("5[deg]".to_owned(), Vec::new()));
     assert_eq!(angle.kind, ValueKind::Quantity(Quantity::ANGLE));
+}
+
+fn literal_text(text: &str, value: &LegacyValue, carrier: Option<&str>) -> Option<String> {
+    let node = super::literal(text, Some(value), carrier)?;
+    let parameter = Expression::Neutral(Neutral(node));
+    let wire = serde_json::to_value(&parameter).unwrap();
+    Some(wire["value"]["text"].as_str().unwrap().to_owned())
+}
+
+#[test]
+fn a_literal_takes_its_carriers_unit_not_the_one_its_number_agrees_in() {
+    let half_turn = LegacyValue::Angle(Angle::new(std::f64::consts::PI).unwrap());
+    assert_eq!(
+        literal_text(
+            "3.141592653589793",
+            &half_turn,
+            Some(super::CONSTRAINT_LIST)
+        )
+        .as_deref(),
+        Some("3.14159265358979[rad]")
+    );
+    let degrees = LegacyValue::Angle(Angle::new(180_f64.to_radians()).unwrap());
+    assert_eq!(
+        literal_text("180", &degrees, Some("App::PropertyAngle")).as_deref(),
+        Some("180[deg]")
+    );
+    assert_eq!(literal_text("180", &degrees, None), None);
+}
+
+#[test]
+fn a_literal_is_the_shortest_decimal_at_fifteen_significant_digits() {
+    let length = LegacyValue::Length(Length::new(5.751_842_036_105_048).unwrap());
+    assert_eq!(
+        literal_text("5.751842036105048", &length, Some("App::PropertyLength")).as_deref(),
+        Some("5.75184203610505[mm]")
+    );
+    let tenth = LegacyValue::Length(Length::new(0.300_000_000_000_000_04).unwrap());
+    assert_eq!(
+        literal_text("0.30000000000000004", &tenth, None).as_deref(),
+        Some("0.3[mm]")
+    );
+    assert_eq!(super::decimal(0.1 + 0.2, |value| value), "0.3");
+    assert_eq!(super::decimal(12.5, f64::to_radians), "12.5");
 }

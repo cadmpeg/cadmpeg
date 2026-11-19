@@ -2,7 +2,7 @@
 //! The properties and sketch constraints of a Body's features, and the
 //! properties of the Body, as v11 parameters.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
@@ -10,6 +10,7 @@ use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     self, BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
+use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
@@ -22,21 +23,21 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::ProductDefinitionId;
 use cadmpeg_ir::scalar::FiniteReal;
 
-/// Relative agreement at which a stored angle's text is read in degrees or
-/// in radians against its canonical value.
-const ANGLE_TEXT_AGREEMENT: f64 = 1e-12;
+/// The property type of a sketch's constraints, whose values `FreeCAD` stores
+/// in millimetres and radians.
+const CONSTRAINT_LIST: &str = "Sketcher::PropertyConstraintList";
 
-/// Project each parameter the decoder read that a design feature or a Body
-/// owns into the scope of `definition`. `containers` maps a Body's feature to
-/// its container.
+/// Each parameter the decoder read that one of `features` or a Body owns, in
+/// the scope of `definition`. `containers` maps a Body's feature to its
+/// container, and `carriers` a property record to its type.
 pub(super) fn project(
-    ir: &mut CadIr,
+    ir: &CadIr,
     definition: &ProductDefinitionId,
     containers: &BTreeMap<FeatureId, ContainerId>,
-) -> Result<(), CodecError> {
-    let features = ir
-        .design
-        .features
+    features: &[Feature],
+    carriers: &HashMap<&str, &str>,
+) -> Result<Vec<DesignParameter>, CodecError> {
+    let features = features
         .iter()
         .map(|feature| &feature.id)
         .collect::<BTreeSet<_>>();
@@ -71,7 +72,7 @@ pub(super) fn project(
         let parameter_definition = if property(parameter, "is_driving") == Some("0") {
             ParameterDefinition::Driven
         } else {
-            ParameterDefinition::Expression(expression(parameter, &by_id, &kind)?)
+            ParameterDefinition::Expression(expression(parameter, &by_id, &kind, carriers)?)
         };
         parameters.push(DesignParameter {
             id: parameter.id.clone(),
@@ -92,8 +93,7 @@ pub(super) fn project(
         });
     }
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
-    ir.design.parameters = parameters;
-    Ok(())
+    Ok(parameters)
 }
 
 fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
@@ -142,47 +142,66 @@ fn expression(
     parameter: &LegacyParameter,
     parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
     kind: &ValueKind,
+    carriers: &HashMap<&str, &str>,
 ) -> Result<Expression, CodecError> {
     let text = parameter.expression.as_str();
     if parameter.dependencies.is_empty() {
-        if let Some(literal) = literal(text, parameter.value.as_ref()) {
+        let carrier = parameter
+            .native_ref
+            .as_deref()
+            .and_then(|property| carriers.get(property).copied());
+        if let Some(literal) = literal(text, parameter.value.as_ref(), carrier) {
             return Ok(Expression::Neutral(Neutral(literal)));
         }
     }
     translated(parameter, text, parameters, kind)
 }
 
-/// A stored value as a literal in the unit `FreeCAD` stores it in: millimetres
-/// for a length, degrees or radians for an angle, whichever the stored text
-/// agrees with, and no unit for a real.
-fn literal(text: &str, value: Option<&LegacyValue>) -> Option<Node<ParameterRef>> {
+/// A stored value as a literal in the unit its carrier stores it in (§5.12):
+/// millimetres for a length, degrees for an angle property, radians for a
+/// sketch constraint's angle, and no unit for a real. An angle whose carrier
+/// the decoder does not know has no literal.
+fn literal(
+    text: &str,
+    value: Option<&LegacyValue>,
+    carrier: Option<&str>,
+) -> Option<Node<ParameterRef>> {
     let stored = text
         .trim()
         .parse::<f64>()
         .ok()
         .filter(|value| value.is_finite())?;
-    let unit = match value? {
-        LegacyValue::Length(_) => "mm",
-        LegacyValue::Angle(angle) => {
-            let radians = angle.get();
-            let tolerance = ANGLE_TEXT_AGREEMENT * radians.abs().max(1.0);
-            if (stored.to_radians() - radians).abs() <= tolerance {
-                "deg"
-            } else if (stored - radians).abs() <= tolerance {
-                "rad"
-            } else {
-                return None;
-            }
+    let (unit, canonical): (&str, fn(f64) -> f64) = match value? {
+        LegacyValue::Length(_) => ("mm", |value| value),
+        LegacyValue::Angle(_) if carrier == Some(CONSTRAINT_LIST) => ("rad", |value| value),
+        LegacyValue::Angle(_) if carrier.is_some_and(|carrier| carrier.contains("Angle")) => {
+            ("deg", f64::to_radians)
         }
-        LegacyValue::Real(_) => "",
-        LegacyValue::Integer(_) | LegacyValue::Boolean(_) | LegacyValue::String(_) => return None,
+        LegacyValue::Real(_) => ("", |value| value),
+        LegacyValue::Angle(_)
+        | LegacyValue::Integer(_)
+        | LegacyValue::Boolean(_)
+        | LegacyValue::String(_) => return None,
     };
+    let number = decimal(stored, canonical);
     let text = if unit.is_empty() {
-        format!("{stored}")
+        number
     } else {
-        format!("{stored}[{unit}]")
+        format!("{number}[{unit}]")
     };
     expr::parse(&text, &[], &[]).ok()
+}
+
+/// The shortest decimal whose value in the canonical unit equals that of
+/// `stored` to 15 significant digits (§5.12). `canonical` converts a number
+/// in the literal's unit to the canonical unit.
+fn decimal(stored: f64, canonical: fn(f64) -> f64) -> String {
+    let fifteen = |value: f64| format!("{:.14e}", canonical(value));
+    let target = fifteen(stored);
+    (0..17)
+        .filter_map(|places| format!("{stored:.places$e}").parse::<f64>().ok())
+        .find(|candidate| fifteen(*candidate) == target)
+        .map_or_else(|| format!("{stored}"), |candidate| format!("{candidate}"))
 }
 
 /// A `FreeCAD` expression as a neutral tree where every construct translates

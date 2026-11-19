@@ -1158,14 +1158,16 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &shape_payloads,
             );
-            design::state_root_definition(
+            let top_level = design::state_root_definition(
                 &mut ir,
                 &graph.objects,
                 &graph.properties,
                 &shape_payloads,
             )?;
-            if ctx.depth() >= DecodeDepth::Design {
-                design::v11::project(&mut ir)?;
+            let scoped = ctx.depth() >= DecodeDepth::Design
+                && design::v11::project(&mut ir, &graph.objects, &graph.properties)?;
+            if !scoped {
+                design::own_at_root(&mut ir, top_level);
             }
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(
