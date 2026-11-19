@@ -61,6 +61,12 @@ pub(crate) fn integer_parameter_body(value: u32) -> Vec<u8> {
 /// one name object takes 6, and `moLengthParameter_c` takes 7, so the map ends
 /// at 9.
 pub(crate) fn config_object_stream() -> Vec<u8> {
+    config_object_stream_declaring("moLengthParameter_c")
+}
+
+/// [`config_object_stream`] with `class` in place of `moLengthParameter_c`
+/// at index 7.
+pub(crate) fn config_object_stream_declaring(class: &str) -> Vec<u8> {
     // The walk reads the `swVersion` fallback from offset 22.
     let mut stream = vec![0; 22];
     stream.extend_from_slice(&17_000_u32.to_le_bytes());
@@ -70,7 +76,25 @@ pub(crate) fn config_object_stream() -> Vec<u8> {
     stream.extend_from_slice(&[0xff, 0xfe, 0xff, 0x01, b'A', 0]);
     stream.extend_from_slice(&tag(4));
     stream.extend_from_slice(&[0xff, 0xfe, 0xff, 0x01, b'B', 0]);
-    stream.extend(declaration("moLengthParameter_c"));
+    stream.extend(declaration(class));
+    stream
+}
+
+/// A `Config-0-ResolvedFeatures` payload for [`config_object_stream_declaring`]
+/// with `moPMarkRecord_c`: the map count, a u16, and one record in its flag-1
+/// form naming `mark`.
+pub(crate) fn mark_record_stream(mark: u32) -> Vec<u8> {
+    let mut stream = CONFIGURATION_MAP_COUNT.to_le_bytes().to_vec();
+    stream.extend_from_slice(&[0, 0]);
+    stream.extend_from_slice(&tag(7));
+    for word in [mark, 1, 0] {
+        stream.extend_from_slice(&word.to_le_bytes());
+    }
+    stream.extend_from_slice(&[0; 8]);
+    for word in [20_u32, 0, 20] {
+        stream.extend_from_slice(&word.to_le_bytes());
+    }
+    stream.extend_from_slice(&[0; 16]);
     stream
 }
 

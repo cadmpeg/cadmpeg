@@ -3412,6 +3412,7 @@ fn build_geometry_ir(
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let rollback = part.then(|| crate::rollback::read(ctx, scan)).transpose()?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
@@ -4226,14 +4227,14 @@ fn build_geometry_ir(
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
-    if part {
+    if let Some(rollback) = rollback {
         project_design(
             ctx,
-            scan,
             &mut ir,
             &native.feature_histories,
             &native.feature_input_lanes,
             current_bodies,
+            rollback,
             &mut pmi_losses,
         )?;
     }
@@ -4246,24 +4247,17 @@ fn build_geometry_ir(
 }
 
 /// State the v11 design of a part document beside its v10 records, with the
-/// rollback position the stored marks of `scan` give.
+/// rollback position its stored marks give.
 fn project_design(
     ctx: &DecodeContext<'_>,
-    scan: &ContainerScan<'_>,
     ir: &mut CadIr,
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
+    rollback: crate::rollback::Reading,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(
-        ir,
-        histories,
-        lanes,
-        bodies,
-        || crate::rollback::read(ctx, scan),
-        losses,
-    )?;
+    let added = crate::design_v11::project(ir, histories, lanes, bodies, rollback, losses)?;
     ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
 }
 
@@ -4670,6 +4664,7 @@ fn build_metadata_ir(
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let rollback = part.then(|| crate::rollback::read(ctx, scan)).transpose()?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
@@ -5111,7 +5106,7 @@ fn build_metadata_ir(
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
-    if part {
+    if let Some(rollback) = rollback {
         let bodies = ir
             .geometry
             .bodies
@@ -5120,11 +5115,11 @@ fn build_metadata_ir(
             .collect();
         project_design(
             ctx,
-            scan,
             &mut ir,
             &native.feature_histories,
             &native.feature_input_lanes,
             bodies,
+            rollback,
             &mut pmi_losses,
         )?;
     }

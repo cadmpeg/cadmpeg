@@ -665,3 +665,81 @@ fn a_rolled_back_timeline_states_the_member_after_its_bar() {
         )
     );
 }
+
+const MARKED_KEYWORDS: &[u8] = br#"<Keywords Name="Marked">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Sketch Name="Sketch1" Type="ProfileFeature" id="8"/>
+    </Extrusion>
+</Keywords>"#;
+
+/// The current mark `test_pmarks::prefix` writes.
+const CURRENT_MARK: u32 = 0x1234_5678;
+
+/// A part whose partition section holds a deltas transmit at
+/// [`CURRENT_MARK`] and whose one feature record names `record_mark`.
+fn part_with_marks(record_mark: u32) -> (CadIr, Vec<String>) {
+    use cadmpeg_parasolid::test_support::test_pmarks;
+
+    use crate::test_support::carchive::{config_object_stream_declaring, mark_record_stream};
+    use crate::test_support::container::outer_header;
+    use crate::test_support::parasolid::parasolid_with_body;
+
+    let mut partition =
+        parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    partition.extend(test_pmarks::complete(test_pmarks::prefix(1)));
+    let mut source = outer_header();
+    source.extend(make_block(0x20, "Contents/Config-0-Partition", &partition));
+    source.extend(make_block(0x42, "Contents/Keywords", MARKED_KEYWORDS));
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0",
+        &config_object_stream_declaring("moPMarkRecord_c"),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-0-ResolvedFeatures",
+        &mark_record_stream(record_mark),
+    ));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(native_envelope_fixture(&source)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let unread = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "history.rollback-unread")
+        .map(|loss| loss.message.clone())
+        .collect();
+    (result.ir().clone(), unread)
+}
+
+fn timeline_rollback(ir: &CadIr) -> &Rollback {
+    let [Container::Ordered { rollback, .. }] = ir.design.containers.as_slice() else {
+        panic!("one ordered container: {:#?}", ir.design.containers);
+    };
+    rollback
+}
+
+#[test]
+fn a_current_mark_at_the_last_feature_mark_reads_the_end() {
+    let (ir, unread) = part_with_marks(CURRENT_MARK);
+    assert_eq!(unread, Vec::<String>::new());
+    assert_eq!(timeline_rollback(&ir), &Rollback::End);
+}
+
+#[test]
+fn a_current_mark_no_feature_names_is_reported_unread() {
+    let (ir, unread) = part_with_marks(5);
+    assert_eq!(
+        unread,
+        [format!(
+            "The rollback position of the feature tree is not read (current mark \
+             {CURRENT_MARK} is the mark of no feature); the timeline is stated built through \
+             its last member."
+        )]
+    );
+    assert_eq!(timeline_rollback(&ir), &Rollback::End);
+}

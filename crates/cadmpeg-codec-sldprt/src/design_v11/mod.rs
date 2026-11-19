@@ -41,15 +41,15 @@ use crate::rollback::{Reading, Unread};
 ///
 /// `lanes` are the `ResolvedFeatures` lanes whose scalars type the v10
 /// parameters. `bodies` are the bodies of the current geometry: those of the
-/// active configuration. `read_rollback` reads the stored marks; a reading that
-/// does not fix the position adds its reason to `losses`. Returns the number
-/// of records added.
+/// active configuration. `rollback` is what the stored marks state of the
+/// rollback position; a reading that does not fix it adds its reason to
+/// `losses`. Returns the number of records added.
 pub(crate) fn project(
     ir: &mut CadIr,
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     bodies: Vec<BodyId>,
-    read_rollback: impl FnOnce() -> Result<Reading, CodecError>,
+    rollback: Reading,
     losses: &mut Vec<LossNote>,
 ) -> Result<usize, CodecError> {
     let timeline = tree::timeline(histories)?;
@@ -63,7 +63,7 @@ pub(crate) fn project(
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
-    let built = match stated(&timeline.features, read_rollback()?) {
+    let built = match stated(&timeline.features, rollback) {
         Ok(built) => built,
         Err(unread) => {
             losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
