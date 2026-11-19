@@ -431,6 +431,18 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     use cadmpeg_ir::features::ParameterValue as V10;
     use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
     const OWNER: &str = "f3d:model:feature#extrude:20";
+    const XREF: &str = "xref/role-1/reference-0/occurrence-0/";
+    let mut shared = parameter(
+        "shared",
+        Some(format!("f3d:{XREF}model:document-parameters#0").as_str()),
+        "2 mm",
+        Some(V10::Length(Length::new(2.0).unwrap())),
+        &[],
+        &[],
+    );
+    shared.native_ref = Some(format!(
+        "f3d:{XREF}FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#shared"
+    ));
     let legacy = [
         parameter(
             "d1",
@@ -488,14 +500,7 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
             &[],
             &[("owner_record_index", "77")],
         ),
-        parameter(
-            "shared",
-            Some("f3d:xref/role-1/reference-0/occurrence-0/model:document-parameters#0"),
-            "2 mm",
-            Some(V10::Length(Length::new(2.0).unwrap())),
-            &[],
-            &[],
-        ),
+        shared,
         parameter(
             "other",
             Some("f3d:model:feature#other:9"),
@@ -506,9 +511,17 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
         ),
     ];
     let root = crate::tree::file_root_id();
-    let scopes = BTreeMap::from([(String::new(), root.clone())]);
+    let referenced =
+        ProductDefinitionId::mint(format!("f3d:{XREF}archive:product-definition#0")).unwrap();
+    let scopes = BTreeMap::from([
+        (String::new(), root.clone()),
+        (XREF.to_owned(), referenced.clone()),
+    ]);
     let features = BTreeSet::from([OWNER]);
-    let projected = super::parameters::project(&legacy, &scopes, &features);
+    let mut losses = Vec::new();
+    let projected =
+        super::parameters::project(&legacy, &scopes, &BTreeSet::new(), &features, &mut losses);
+    assert!(losses.is_empty(), "{losses:?}");
     let by_name = projected
         .iter()
         .map(|parameter| (parameter.name.as_ref().unwrap().as_str(), parameter))
@@ -518,6 +531,7 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
         ["alias", "bare", "count", "d1", "d2", "shared", "turn"]
     );
     assert_eq!(by_name["shared"].owner, None);
+    assert_eq!(by_name["shared"].scope, referenced);
     let d1 = by_name["d1"];
     assert_eq!(d1.scope, root);
     assert_eq!(
@@ -578,6 +592,102 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
 }
 
 #[test]
+fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it() {
+    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::scalar::Length;
+    const FIRST: &str = "xref/role-1/reference-0/occurrence-0/";
+    const SECOND: &str = "xref/role-1/reference-1/occurrence-0/";
+    const OWNER: &str = "f3d:xref/role-1/reference-0/occurrence-0/model:feature#extrude:5";
+    let in_document = |prefix: &str, key: &str, name: &str, owner: &str| {
+        let mut parameter = parameter(
+            key,
+            Some(owner),
+            "4 mm",
+            Some(V10::Length(Length::new(4.0).unwrap())),
+            &[],
+            &[],
+        );
+        parameter.name = name.to_owned();
+        parameter.native_ref = Some(format!(
+            "f3d:{prefix}FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter#{key}"
+        ));
+        parameter
+    };
+    let legacy = [
+        in_document(
+            FIRST,
+            "first_width",
+            "width",
+            format!("f3d:{FIRST}model:document-parameters#0").as_str(),
+        ),
+        in_document(
+            SECOND,
+            "second_width",
+            "width",
+            format!("f3d:{SECOND}model:document-parameters#0").as_str(),
+        ),
+        in_document(FIRST, "depth", "depth", OWNER),
+        parameter(
+            "length",
+            None,
+            "8 mm",
+            Some(V10::Length(Length::new(8.0).unwrap())),
+            &[],
+            &[],
+        ),
+    ];
+    let root = crate::tree::file_root_id();
+    let scopes = BTreeMap::from([
+        (String::new(), root.clone()),
+        (FIRST.to_owned(), root.clone()),
+        (SECOND.to_owned(), root.clone()),
+    ]);
+    let hosted = BTreeSet::from([FIRST.to_owned(), SECOND.to_owned()]);
+    let mut losses = Vec::new();
+    let projected = super::parameters::project(
+        &legacy,
+        &scopes,
+        &hosted,
+        &BTreeSet::from([OWNER]),
+        &mut losses,
+    );
+    let stated = projected
+        .iter()
+        .map(|parameter| {
+            (
+                parameter.name.as_ref().unwrap().as_str(),
+                parameter.scope.clone(),
+                parameter.owner.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        stated,
+        [
+            (
+                "depth",
+                root.clone(),
+                Some(cadmpeg_ir::design::parameter::ParameterOwner::Feature(
+                    FeatureId::mint(OWNER).unwrap()
+                ))
+            ),
+            ("length", root, None),
+        ]
+    );
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::ParameterReferencedDesignUnscoped.kind()
+    );
+    let named = loss.message.split_whitespace().collect::<BTreeSet<_>>();
+    for unscoped in &legacy[..2] {
+        assert!(named.contains(unscoped.id.as_str()), "{}", loss.message);
+    }
+}
+
+#[test]
 fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
     use cadmpeg_ir::features::{
         ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
@@ -598,7 +708,9 @@ fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
             &[],
         )],
         &scopes,
+        &BTreeSet::new(),
         &features,
+        &mut Vec::new(),
     );
     let d1 = parameters[0].id.clone();
     let row = |key: &str, active: bool| LegacyConfiguration {

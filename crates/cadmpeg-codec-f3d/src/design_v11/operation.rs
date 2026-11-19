@@ -242,7 +242,7 @@ pub(super) fn kind_family(guid: &str) -> Family {
         Kind::ReplaceFace => OperationFamily::ReplaceFaces,
         Kind::SurfacePatch => OperationFamily::Patch,
         Kind::SurfaceStitch => OperationFamily::Knit,
-        Kind::UnStitch => OperationFamily::Unsew,
+        Kind::UnStitch => OperationFamily::UnsewFaces,
         Kind::SurfaceExtend | Kind::SurfaceUntrim => OperationFamily::Extend,
         Kind::SurfaceOffset => OperationFamily::Offset,
         Kind::SurfaceRuled => OperationFamily::ImplicitSweep,

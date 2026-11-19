@@ -29,10 +29,12 @@ use cadmpeg_ir::features::{
     DesignParameter as LegacyParameter, FeatureId, ParameterId, ParameterValue as LegacyValue,
 };
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 use super::timeline::document_prefix;
 use crate::ids::native_stream;
+use crate::loss::F3dLossCode;
 
 /// The v10 property that holds the role Fusion stores on a model parameter.
 const ROLE: &str = "source_kind";
@@ -46,12 +48,16 @@ const UNRESOLVED_OWNER: &str = "owner_record_index";
 /// The parameters of the scopes keyed by document prefix in `scopes`.
 /// `features` holds the ids of the scopes' features. A parameter owned by a
 /// document's parameter scope, the root's or a referenced design's, is a user
-/// parameter. A model parameter whose owner is no such feature has no owner
-/// the scope states, so it is no parameter here.
+/// parameter of that document's scope. A model parameter whose owner is no
+/// such feature has no owner the scope states, so it is no parameter here.
+/// A document in `hosted` has no scope of its own, so its user parameters
+/// stay v10 parameters and one loss in `losses` names each of them.
 pub(super) fn project(
     legacy: &[LegacyParameter],
     scopes: &BTreeMap<String, ProductDefinitionId>,
+    hosted: &BTreeSet<String>,
     features: &BTreeSet<&str>,
+    losses: &mut Vec<LossNote>,
 ) -> Vec<DesignParameter> {
     let document_parameters = crate::ids::document_parameter_scope_id();
     let referenced_document_parameters = document_parameters
@@ -66,11 +72,13 @@ pub(super) fn project(
                 .zip(referenced_document_parameters.as_deref())
                 .is_some_and(|(path, local)| path.ends_with(local))
     };
+    let mut unscoped = Vec::new();
     let scoped = legacy
         .iter()
         .filter_map(|parameter| {
             let stream = parameter.native_ref.as_deref().and_then(native_stream)?;
-            let scope = scopes.get(document_prefix(stream))?;
+            let prefix = document_prefix(stream);
+            let scope = scopes.get(prefix)?;
             let owner = match &parameter.owner {
                 Some(owner) if is_document_parameters(owner) => None,
                 Some(owner) if features.contains(owner.as_str()) => Some(owner),
@@ -78,10 +86,21 @@ pub(super) fn project(
                 None if parameter.properties.contains_key(UNRESOLVED_OWNER) => return None,
                 None => None,
             };
+            if owner.is_none() && hosted.contains(prefix) {
+                unscoped.push(parameter.id.as_str());
+                return None;
+            }
             let name = NonBlankString::new(parameter.name.clone())?;
             Some((parameter, scope, owner, name))
         })
         .collect::<Vec<_>>();
+    if !unscoped.is_empty() {
+        losses.push(F3dLossCode::ParameterReferencedDesignUnscoped.note(format!(
+            "{} user parameter(s) of referenced designs with no design scope of their own stay v10 parameters: {}",
+            unscoped.len(),
+            unscoped.join(" ")
+        )));
+    }
     let names = scoped
         .iter()
         .map(|(parameter, ..)| (&parameter.id, parameter.name.as_str()))

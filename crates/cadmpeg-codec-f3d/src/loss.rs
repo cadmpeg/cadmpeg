@@ -564,6 +564,8 @@ pub(crate) enum F3dLossCode {
     FaceAppearanceAmbiguous,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
+    /// User parameters of a referenced design without a design scope of its own stay v10 parameters.
+    ParameterReferencedDesignUnscoped,
     /// Feature history-state dependency links were not projected.
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
@@ -1512,6 +1514,7 @@ impl F3dLossCode {
         Self::MaterialDistanceUnitUntyped,
         Self::FaceAppearanceAmbiguous,
         Self::ParameterExpressionUnbound,
+        Self::ParameterReferencedDesignUnscoped,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
@@ -2409,6 +2412,7 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
+            Self::ParameterReferencedDesignUnscoped => "parameter.referenced-design-unscoped",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
@@ -3317,6 +3321,7 @@ impl F3dLossCode {
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
             | Self::ParameterExpressionUnbound
+            | Self::ParameterReferencedDesignUnscoped
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -3983,6 +3988,7 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
             | Self::ParameterExpressionUnbound
+            | Self::ParameterReferencedDesignUnscoped
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -4770,6 +4776,7 @@ mod tests {
                 "material.distance-unit-untyped",
                 "material.face-appearance-ambiguous",
                 "parameter.expression-unbound",
+                "parameter.referenced-design-unscoped",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",

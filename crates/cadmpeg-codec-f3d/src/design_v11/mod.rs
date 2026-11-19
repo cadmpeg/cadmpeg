@@ -17,7 +17,9 @@
 //! it; where it spans several, each feature names the component the decoder
 //! lists it under. The scope holds the parameters (§5.12) and configurations
 //! (§5.11) of its document, and its current state, at the end of its first
-//! timeline, holds the bodies of the definitions it spans.
+//! timeline, holds the bodies of the definitions it spans. The user
+//! parameters of a referenced design without a scope of its own belong to no
+//! scope here.
 
 mod configurations;
 mod operation;
@@ -36,6 +38,7 @@ use cadmpeg_ir::design::refs::Position;
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, Storage};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
@@ -46,8 +49,13 @@ const TIMELINES: &str = "design_feature_timelines";
 const TYPES: &str = "design_types";
 
 /// Project the design of a decoded Fusion document into `ir.design`, beside
-/// its v10 records. The root definition is already stated.
-pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+/// its v10 records, and push what it leaves unstated to `losses`. The root
+/// definition is already stated.
+pub(crate) fn project(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(());
     };
@@ -76,6 +84,10 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             None => hosted.push((prefix, projected)),
         }
     }
+    let hosted_prefixes = hosted
+        .iter()
+        .map(|(prefix, _)| prefix.clone())
+        .collect::<BTreeSet<_>>();
     let mut definitions = BTreeMap::new();
     for (prefix, projected) in hosted {
         let enclosing = host(&scopes, &prefix);
@@ -99,7 +111,13 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             .flat_map(|(_, projected)| &projected.features)
             .map(|feature| feature.id.as_str())
             .collect::<BTreeSet<_>>();
-        scoped_parameters = parameters::project(&ir.model.parameters, &definitions, &features);
+        scoped_parameters = parameters::project(
+            &ir.model.parameters,
+            &definitions,
+            &hosted_prefixes,
+            &features,
+            losses,
+        );
         scoped_configurations = configurations::project(
             &ir.model.configurations,
             &definitions,
