@@ -113,6 +113,7 @@ impl Inputs<'_> {
             "hole" => self.hole(record),
             "split_body" => self.split_body(record, dependencies),
             "split_face" => self.split_face(record, dependencies),
+            "body_transfer" => Self::body_transfer(record),
             "delete_face" => Some(json!({"kind": "delete_face", "value": {
                 "faces": picked(record, "faces", "face_names")?,
                 "heal": record.get("heal").and_then(Value::as_bool) != Some(false),
@@ -271,6 +272,27 @@ impl Inputs<'_> {
             value["designation"] = json!(designation);
         }
         Some(json!({"kind": "cosmetic_thread", "value": value}))
+    }
+
+    /// A body moved from one component to another. The cache already holds
+    /// the body in its final component, so this records the owner change
+    /// and its placement; the body names are not carried.
+    fn body_transfer(record: &Value) -> Option<Value> {
+        let source = record.get("from")?.as_u64()?;
+        let target = record.get("to")?.as_u64()?;
+        let placement = match record.get("transform") {
+            None | Some(Value::Null) => None,
+            Some(matrix) => Some(super::assembly::rows(matrix)?),
+        };
+        let mut transfer = json!({
+            "mode": "reparent",
+            "source_owner": id("product", &source.to_string()),
+            "target_owner": id("product", &target.to_string()),
+        });
+        if let Some(placement) = placement {
+            transfer["target_transform"] = placement;
+        }
+        Some(json!({"kind": "component_transfer", "value": transfer}))
     }
 
     fn fillet(&self, record: &Value) -> Option<Value> {

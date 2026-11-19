@@ -342,3 +342,13 @@ and its parameter names. Each is charged `solidcraft/history.features-undecoded`
 Their geometry is in the model cache, so the body they make decodes; only the
 operation is native. A neutral form needs an operation in the IR, which is a
 change to the shared feature schema and is not made by this codec.
+
+### 3.13 Body transfers
+
+A `body_transfer` records that the named `bodies` change owner from the
+component `from` to the component `to`, with a `transform` that converts
+their geometry into the destination frame. The cache already holds each body
+in its final component, so the owner is decoded from the cache. The record is
+a reparent of the body's owner: `source_owner` and `target_owner` name the
+two product definitions, and `target_transform` carries the placement. The
+body names are not carried by the neutral record.

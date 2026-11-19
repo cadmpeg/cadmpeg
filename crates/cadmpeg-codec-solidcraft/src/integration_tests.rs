@@ -925,6 +925,49 @@ fn values_the_document_does_not_state_are_not_byte_exact() {
 }
 
 #[test]
+fn a_body_transfer_reparents_the_body_to_its_component() {
+    let identity = json!([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]
+    ]);
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Transfer",
+        "units": "mm",
+        "params": [],
+        "components": [{"id": 4, "name": "Sub", "parent": 0}],
+        "occurrences": [{"id": 5, "component": 4, "parent": 0, "name": "Sub:1", "transform": identity, "grounded": false}],
+        "features": [
+            {"id": 1, "name": "Box1", "suppressed": false, "type": "box", "corner": [0, 0, 0],
+             "length": "4", "width": "4", "height": "4", "operation": "new_body", "body_names": ["Body1"]},
+            {"id": 2, "name": "Move", "suppressed": false, "type": "body_transfer",
+             "bodies": ["Body1"], "from": 0, "to": 4, "component": 4, "transform": identity}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let features = features(&bytes);
+    let transfer = &features[1]["definition"]["value"];
+    assert_eq!(features[1]["source_tag"], "body_transfer");
+    assert_eq!(transfer["kind"], "component_transfer");
+    assert_eq!(transfer["value"]["mode"], "reparent");
+    assert_eq!(
+        transfer["value"]["source_owner"],
+        "solidcraft:design:product#0"
+    );
+    assert_eq!(
+        transfer["value"]["target_owner"],
+        "solidcraft:design:product#4"
+    );
+    assert_eq!(
+        transfer["value"]["target_transform"][0],
+        json!([1.0, 0.0, 0.0, 0.0])
+    );
+    assert!(!loss_codes(&bytes).contains(&"solidcraft/history.features-undecoded".to_owned()));
+}
+
+#[test]
 fn body_and_face_looks_colour_the_cached_body() {
     let bytes = crate::test_support::cached_design_editing(|document| {
         document["appearances"] = json!({

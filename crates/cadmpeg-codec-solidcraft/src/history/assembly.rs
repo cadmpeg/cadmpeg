@@ -55,7 +55,7 @@ fn component_of(record: &Value) -> u64 {
 }
 
 /// The rows of a column-major 4×4 affine transform, as the neutral 3×4.
-fn rows(matrix: &Value) -> Option<Value> {
+pub(super) fn rows(matrix: &Value) -> Option<Value> {
     let columns: Vec<Vec<f64>> = matrix
         .as_array()?
         .iter()

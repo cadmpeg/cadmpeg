@@ -247,6 +247,7 @@ const TYPED: &[&str] = &[
     "hole",
     "split_body",
     "split_face",
+    "body_transfer",
     "draft",
     "thread",
 ];
