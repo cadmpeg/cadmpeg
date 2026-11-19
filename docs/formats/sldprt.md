@@ -2888,11 +2888,9 @@ instance, 0), `moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c`
 (132: one integer), `moCopySurfIdRep_c` (53: the copy's step for a Move/Copy
 Body), `moShellSurfIdRep_c` (65: none), and the derived, indirect and punch
 classes (55, 56, 96: one integer each). A wrapped list is longer than seven
-values; the partition reader does not keep it, so those faces have no name
-entry. Every other code is a role whose meaning is not known,
+values. Every other code is a role whose meaning is not known,
 `Other("sldprt:<code>")`. A face can carry several `FACE_ID_2001` lists where
-faces merged, and the pieces of a split face carry equal lists; the reader
-keeps no list for a face whose lists disagree.
+faces merged, and the pieces of a split face carry equal lists.
 
 A single-face component selection that supplies only the source and local
 identity selects a face only when that pair has one distinct current target.

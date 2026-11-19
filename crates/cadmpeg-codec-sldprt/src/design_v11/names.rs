@@ -8,7 +8,9 @@
 //! `mo*SurfIdRep_c` identity class, the producer the history feature that
 //! made the face, and a wrapping class is followed by the hop it wraps
 //! (`docs/formats/sldprt.md` §5). The partition reader keeps lists of four to
-//! seven values, which are single hops. A face whose producer is a feature of
+//! seven values, which are single hops, so a face of a pattern, mirror, copy
+//! or shell, whose list wraps a hop, has no name entry; nor has a face of
+//! merged faces whose lists disagree. A face whose producer is a feature of
 //! the timeline is named by that feature, its role and index read from the
 //! class: a side swept from a sketch entity, a start or end cap with its
 //! region as index, a fillet or chamfer face with its ordinal as index, a

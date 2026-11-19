@@ -33,7 +33,6 @@ use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
-use cadmpeg_ir::report::loss::LossNote;
 
 use crate::records::{FeatureHistory, FeatureInputLane};
 
@@ -45,8 +44,7 @@ pub(crate) use names::Persistent;
 /// `lanes` are the `ResolvedFeatures` lanes whose scalars type the v10
 /// parameters. `bodies` are the bodies of the current geometry: those of the
 /// active configuration. `persistent` holds the persistent ids of every
-/// decoded face and body. A configuration whose state cannot be stated
-/// charges a note to `losses`. Returns the number of records added.
+/// decoded face and body. Returns the number of records added.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -54,7 +52,6 @@ pub(crate) fn project(
     lanes: &[FeatureInputLane],
     bodies: Vec<BodyId>,
     persistent: Persistent<'_>,
-    losses: &mut Vec<LossNote>,
 ) -> Result<usize, CodecError> {
     let timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
@@ -89,7 +86,6 @@ pub(crate) fn project(
             current: &bodies,
         },
         &names,
-        losses,
     )?;
     let container = Container::Ordered {
         id,

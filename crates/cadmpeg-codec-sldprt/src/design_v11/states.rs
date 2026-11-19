@@ -39,12 +39,10 @@ use cadmpeg_ir::design::ops::surface::MeshKind;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
-use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
-use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
 use cadmpeg_ir::schema::{EntityKind, EntitySchema};
 
 use super::names::Names;
-use crate::loss::SldprtLossCode;
 
 /// The scope whose configurations' states are stated.
 pub(super) struct Scope<'a> {
@@ -59,15 +57,13 @@ pub(super) struct Scope<'a> {
 }
 
 /// The evaluation of each configuration that is not active and whose state
-/// the source stores or flags, and the number of records they hold. A
-/// configuration whose evaluation cannot be named has none and charges a
-/// note to `losses`; only a decode ceiling fails the projection.
+/// the source stores or flags, and the number of records they hold. Only a
+/// decode ceiling fails the projection.
 pub(super) fn configuration_states(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     scope: &Scope<'_>,
     names: &Names<'_>,
-    losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<Evaluation>, usize), CodecError> {
     let current = scope.current.iter().collect::<HashSet<_>>();
     let (at, depended) = end_of_tree(scope);
@@ -78,13 +74,6 @@ pub(super) fn configuration_states(
         if Some(&configuration.id) == scope.active {
             continue;
         }
-        let Some(id) = evaluation_id(&configuration.id) else {
-            losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
-                "configuration {} has no evaluation id; its state is not stated.",
-                configuration.id
-            )));
-            continue;
-        };
         let native = ir.model.configurations.iter().find(|native| {
             native.native_ref.is_some() && native.native_ref == configuration.native_ref
         });
@@ -119,7 +108,7 @@ pub(super) fn configuration_states(
             None => continue,
         };
         evaluations.push(Evaluation {
-            id,
+            id: evaluation_id(&configuration.id),
             scope: scope.definition.clone(),
             configuration: Some(configuration.id.clone()),
             of: Evaluated::State(at.clone()),
@@ -187,13 +176,12 @@ fn stateless(feature: &Feature) -> bool {
 }
 
 /// The evaluation id of a configuration's state, in the configuration id's
-/// key; `None` where that key is no id key.
-fn evaluation_id(configuration: &ConfigurationId) -> Option<EvaluationId> {
-    let key = configuration
-        .as_str()
-        .split_once('#')
-        .map_or(configuration.as_str(), |(_, key)| key);
-    EvaluationId::mint(format!("sldprt:model:evaluation#{key}")).ok()
+/// key.
+fn evaluation_id(configuration: &ConfigurationId) -> EvaluationId {
+    EvaluationId::from(Identity::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "model", "evaluation"),
+        Identity::from(configuration.clone()).key(),
+    ))
 }
 
 /// The arena kind of a record slice.
