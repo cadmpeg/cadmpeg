@@ -879,10 +879,12 @@ fn work_axis_damaged_counts_keep_neutral_input_occurrences_and_native_fields() {
         bytes.extend_from_slice(&paired);
         let result = read(&bytes, &carrier_types(1));
         assert!(result.axis().unwrap().geometry().is_some());
-        assert_eq!(
-            result.axis().unwrap().inputs().len(),
-            usize::from(reference[0])
-        );
+        let neutral = result.axis().unwrap().inputs();
+        assert_eq!(neutral.len(), usize::from(reference[0]) + 1);
+        assert!(matches!(
+            neutral.last().and_then(|input| input.reference.as_ref()),
+            Some(InputReference::Picks(selection)) if matches!(selection.picks, Picks::Unread)
+        ));
         let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) =
             &result.evidence.candidates[0].source
         else {
