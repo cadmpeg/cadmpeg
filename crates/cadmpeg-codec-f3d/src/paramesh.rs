@@ -1208,7 +1208,7 @@ fn inflate_stream_inner(
                     )),
                 },
             )?;
-            if component.descriptor != [("T".to_owned(), StreamDescriptorValue::Integer(3))]
+            if !split_component_descriptor(&component.descriptor, packed)
                 || component.bytes.len() % 4 != 0
             {
                 return Err(CodecError::malformed(
@@ -1333,6 +1333,27 @@ fn inflate_stream_inner(
         },
         bytes: writer.expansion.finalize_owned()?,
     })
+}
+
+/// A split component stores f32 values under `{T: 3}`. A component of a
+/// packed-direction split stream can also store `{T: 3, Z: true}` with the
+/// same payload layout.
+fn split_component_descriptor(
+    descriptor: &[(String, StreamDescriptorValue)],
+    packed: bool,
+) -> bool {
+    match descriptor {
+        [(name, StreamDescriptorValue::Integer(3))] => name == "T",
+        [first, second] if packed => {
+            let mut keys = [first, second];
+            keys.sort_by(|left, right| left.0.cmp(&right.0));
+            keys[0].0 == "T"
+                && keys[0].1 == StreamDescriptorValue::Integer(3)
+                && keys[1].0 == "Z"
+                && keys[1].1 == StreamDescriptorValue::Boolean(true)
+        }
+        _ => false,
+    }
 }
 
 /// Keeps the typed expansion error across the LZMA library's I/O boundary.
@@ -3712,6 +3733,41 @@ mod tests {
         assert_eq!(stream.bytes, expected);
         assert_eq!(stream.split_descriptor, Some(descriptor.to_vec()));
         assert!(require_version_2_descriptor(&stream).is_ok());
+    }
+
+    #[test]
+    fn split_direction_components_admit_the_z_flag() {
+        let component_descriptor = [0x82, 0xa1, b'T', 3, 0xa1, b'Z', 0xc3];
+        let part = |first: f32, second: f32| {
+            let mut payload = Vec::new();
+            payload.extend_from_slice(&first.to_le_bytes());
+            payload.extend_from_slice(&second.to_le_bytes());
+            raw_stream_body(&component_descriptor, 8, &payload)
+        };
+        let body = |descriptor: &[u8]| {
+            let mut body = Vec::new();
+            body.extend_from_slice(&u16::try_from(descriptor.len()).unwrap().to_le_bytes());
+            body.extend_from_slice(descriptor);
+            body.extend_from_slice(&part(1.0, 3.0));
+            body.extend_from_slice(&part(2.0, 4.0));
+            body
+        };
+        let packed = [
+            0x85, 0xa1, b'D', 3, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x92, 23, 23, 0xa1, b'T', 3, 0xa1,
+            b'U', 0xc3,
+        ];
+        let stream = inflate_stream(&body(&packed)).unwrap();
+        let expected = [1.0f32, 2.0, 3.0, 4.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(stream.bytes, expected);
+        assert!(require_version_2_descriptor(&stream).is_ok());
+
+        let unpacked = [
+            0x84, 0xa1, b'D', 2, 0xa1, b'I', 0xc3, 0xa1, b'S', 0x92, 23, 23, 0xa1, b'T', 3,
+        ];
+        assert!(inflate_stream(&body(&unpacked)).is_err());
     }
 
     #[test]
