@@ -2916,9 +2916,9 @@ An absent auxiliary identity uses the same primary-candidate fallback as an auxi
 
 #### Records of a sketch-and-extrude design
 
-This subsection gives the records that a Design stream holds when its timeline lists one `Sketch` item and one `Extrude` item. The current container generation writes the MetaStream header with serializer magic `1234` and writes every reference in the eleven-byte plain form. The container generation that writes 51-byte typed references is an earlier generation. Record indices in this subsection are local to one Design `BulkStream`.
+This subsection gives the records that a Design stream holds when its timeline lists exactly a `Sketch` item and then an `Extrude` item and its MetaStream header stores serializer magic `1234`. A stream with serializer magic `1234` writes every reference in the eleven-byte plain form. Record indices in this subsection are local to one Design `BulkStream`.
 
-**Type table.** The type table registers the types below with a nonempty entity-ID run. It also holds entries with an empty ID run, among them base types of these types. The type GUID is the stable identity; the class tag is `256` plus the table position.
+**Type table.** The type table of such a design registers every type of the first table below with a nonempty entity-ID run. The type GUID is the stable identity; the class tag is `256` plus the table position.
 
 | Type GUID | Base-type GUID | Version | Add-in | Role |
 |---|---|---|---|---|
@@ -3024,37 +3024,68 @@ This subsection gives the records that a Design stream holds when its timeline l
 | `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `Fusion` |  |
 | `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 1 | `Component` |  |
 
-**Feature item tail.** The tail of a timeline item's parameter scope starts after the LP-UTF16 feature-family name and ends at the paired header. In the current generation the tail is 78 bytes:
+The type table can also register the types below with a nonempty entity-ID run. It also holds entries with an empty ID run, among them the base types of the registered types.
 
-| Offset | Type | Field |
-|---|---|---|
-| 0 | u32 | family ordinal, `1` for the first item of a family |
-| 4 | u32 | `0` |
-| 8 | u32 | custom-label code-unit count `L`; `L` UTF-16LE code units follow, and every later offset moves by `2L` |
-| 12 | u32 | `0` |
-| 16 | 3 × u8 | state bytes, `00 00 00` on an item that is not suppressed |
-| 19 | reference | the item's tracked-results table (type `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA`) |
-| 30 | u8 | null reference slot `0` |
-| 31 | u32 | preceding history-state identity, `0xffffffff` for null |
-| 35 | u32 | evaluation epoch |
-| 39 | f64 | evaluation duration, finite and nonnegative |
-| 47 | u32 | second evaluation epoch |
-| 51 | reference | the item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) |
-| 62 | u8 | `1` |
-| 63 | u8 | suppressed flag `s0` |
-| 64 | u8 | rolled-back flag `s1` |
-| 65 | reference | the scope's record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) |
-| 76 | 2 × u8 | `00 00` |
+| Type GUID | Base-type GUID | Version | Add-in |
+|---|---|---|---|
+| `29F107C1-ADA2-4819-94C9-6AE1BB015249` | `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB` | 0 | `Scene` |
+| `4912A0EC-8A3D-4FE2-9F0F-A5C2CB493A07` | `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB` | 0 | `Scene` |
+| `7ACC2A03-0261-4879-A14A-A93D661A5BDC` | `70F5E801-1E8E-436E-8A09-36487F8A2859` | 3 | `EntityTracking` |
+| `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C` | `D0EDEF7C-5879-45A4-9651-900659CC4FDD` | 0 | `Scene` |
+| `BFB592FE-03DD-4DAA-A4AC-14D02ABB672A` | `5662F619-2281-4AD9-93DC-1FCFDA1062E7` | 0 | `Fusion` |
+| `CAEC057F-5A9D-4FBE-B0E2-1C97BF6567FF` | `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB` | 0 | `Scene` |
 
-The current history-state identity is the u32 immediately before the LP-UTF16 family name. The 77-byte tail of the earlier plain-reference generation omits the byte at offset 62: `s0` is at offset 62, `s1` at offset 63, and the record-timestamp reference at offset 64. The 196-byte typed tail has the same fields as the 77-byte tail with 51-byte references and no null reference slot: the tracked-results reference at offset 19, the preceding identity at offset 70, the epochs and duration at offsets 74, 78, and 86, the item-tail companion reference at offset 90, `s0` and `s1` at offsets 141 and 142, the record-timestamp reference at offset 143, and `00 00` at offset 194.
+**Feature item tail.** The tail of a timeline item's parameter scope starts after the LP-UTF16 feature-family name and ends at the paired header. Every `Sketch` and `Extrude` item of a stream with serializer magic `1234` stores the 78-byte tail. The 77-byte tail occurs in plain-reference streams whose MetaStream header stores one generation u32 after the serializer magic. The 196-byte tail is the typed-reference parameter-scope tail of §3.1 and stores each reference as a 51-byte typed reference. Each later offset moves by `2L` after a custom label of `L` code units.
+
+| Field | Type | 78-byte tail | 77-byte tail | 196-byte tail |
+|---|---|---|---|---|
+| family ordinal, `1` for the first item of a family | u32 | 0 | 0 | 0 |
+| `0` | u32 | 4 | 4 | 4 |
+| custom-label code-unit count `L`; `L` UTF-16LE code units follow | u32 | 8 | 8 | 8 |
+| `0` | u32 | 12 | 12 | 12 |
+| state bytes | 3 × u8 | 16 | 16 | 16 |
+| the item's tracked-results table (type `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA`) | reference | 19 | 19 | 19 |
+| null reference slot `0` | u8 | 30 | 30 | — |
+| preceding history-state identity, `0xffffffff` for null | u32 | 31 | 31 | 70 |
+| evaluation epoch | u32 | 35 | 35 | 74 |
+| evaluation duration, finite and nonnegative | f64 | 39 | 39 | 78 |
+| second evaluation epoch | u32 | 47 | 47 | 86 |
+| the item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) | reference | 51 | 51 | 90 |
+| `1` | u8 | 62 | — | — |
+| suppressed flag `s0` | u8 | 63 | 62 | 141 |
+| rolled-back flag `s1` | u8 | 64 | 63 | 142 |
+| the scope's record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) | reference | 65 | 64 | 143 |
+| `00 00` | 2 × u8 | 76 | 75 | 194 |
+
+In the 78-byte tail, the state bytes are `00 00 00` when `s0` is `0`. The current history-state identity is the u32 immediately before the LP-UTF16 family name.
 
 The paired scope record is the paired indexed header, eight zero bytes, and a reference to the owner collection (type `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C`). It is 30 bytes in the plain form.
 
 A `Sketch` item stores a null current identity and a null preceding identity, and its tracked-results table has no entries. An `Extrude` item stores the identity of the `delta_state` it commits as its current identity and the identity of the state it follows as its preceding identity. The first `Extrude` of a design follows the root state of the history.
 
-**Tracked-results table.** The record of type `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA`, type version `2`, add-in `Fusion`, stores ten zero bytes after its indexed header, a u32 entry count `n` at offset 21, and `n` entries. An entry is a reference and a u64 key. The keys increase by one from entry to entry. A u64 next key follows the entries and is one more than the last key. The paired indexed header and nine zero bytes end the record. A `Sketch` item's table has `n = 0` and next key `1`. The table of an `Extrude` with `k` side faces has `k` entries that reference records of type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A` with keys `3` to `k + 2`, then one entry that references a record of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77` with key `k + 3`; the next key is `k + 4`.
+**Tracked-results table.** The record of type `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA`, type version `2`, add-in `Fusion`, has this plain-form layout:
 
-**Item-tail companion.** The record of type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`, type version `0`, is 33 bytes: the indexed header, nine zero bytes, byte `1` at offset 20, eight zero bytes, and a u32 at offset 29. The u32 is `0` on a `Sketch` or `Extrude` item.
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | entry count `n` |
+| 25 | `n` × 19 bytes | entries: a reference and a u64 key |
+| 25 + 19n | u64 | next key |
+| 33 + 19n | header | paired indexed header |
+| 44 + 19n | 9 × u8 | zero |
+
+The keys increase by one from entry to entry, and the next key is one more than the last key. A `Sketch` item's table has `n = 0` and next key `1`. The table of the design's `Extrude`, with `k` side faces, has `k` entries that reference records of type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A` with keys `3` to `k + 2`, then one entry that references a record of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77` with key `k + 3`; the next key is `k + 4`.
+
+**Item-tail companion.** The record of type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`, type version `0`, is 33 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 9 × u8 | zero |
+| 20 | u8 | `1` |
+| 21 | 8 × u8 | zero |
+| 29 | u32 | item word |
 
 **Record-timestamp table and parameter companion.** The record-timestamp table of a `Sketch` or `Extrude` scope uses the prefix `01 01` and lists first the record of type `5D15E992-1E93-4D79-A553-10D2624148AE` that references the component aggregate. The parameter companion is also a record of type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`: its 58-byte prefix is the record-timestamp prefix with the bytes `00 00` in place of `01 01` and an entry count of `0`, followed by the owner entry.
 
@@ -3074,17 +3105,63 @@ A `Sketch` item stores a null current identity and a null preceding identity, an
 
 The paired header, eight zero bytes, and a reference to the component aggregate (type `E03784ED-5E19-4E14-B9F2-3B07017018CD`) end the record. A design with one `Sketch` and one `Extrude` stores the counters `DcExtrudeFeatureMetaType = 1` and `DcSketchMetaType = 1`.
 
-**Persistent-id table.** The record of type `5D89B935-3F04-4CAB-81F5-E7B309E7E13F` maps the persistent feature identities that face names reference to their scope records. Type version `1` stores the forward form after ten zero bytes: a u32 scope count, and for each scope a u64 scope record index, a u32 identity count, and that many u64 identities; then a u32 pair count and that many `(u64 identity, u64 scope record index)` pairs in ascending identity order; then a u32 count and that many u64 retired identities; then a reference to the timeline context. A retired identity is in no pair and is less than the greatest listed identity. Type version `0` stores the reverse form: the u32 pair count at offset 21, the pairs, the u32 retired count and identities, and the context reference. Identities come from a counter that starts at `300`. A `Sketch` scope owns one identity and an `Extrude` scope owns two. A design with one `Sketch` and one `Extrude` stores `Sketch → 300` and `Extrude → 301, 302`.
+**Persistent-id table.** The record of type `5D89B935-3F04-4CAB-81F5-E7B309E7E13F` maps the persistent feature identities that face names reference to their scope records. Type version `1` stores the forward form:
 
-**Origin.** The component's origin container has type GUID `2972A3B8-3627-49BC-8C3D-18707605EC44`, type version `1`, and add-in `Geometry`. It stores twelve zero bytes after its indexed header, u32 `7` at offset 23, and seven references from offset 27: the origin point (type `0E18EEF2-0D6F-480C-997E-5EBC7369AE5F`), three origin axes (type `19031004-3AB6-4D13-ABBF-C51EE214688D`), and the planes `XY`, `XZ`, and `YZ` (type `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`) in this order. A reference to the component aggregate ends the record. The three plane records have consecutive record indices and store their LP-UTF16 names `XY`, `XZ`, and `YZ`.
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | scope count `S` |
+| 25 | `S` entries | u64 scope record index, u32 identity count `c`, `c` × u64 identity |
+| — | u32 | pair count `P` |
+| — | `P` × 16 bytes | `(u64 identity, u64 scope record index)` pairs in ascending identity order |
+| — | u32 | retired count `R` |
+| — | `R` × u64 | retired identities |
+| — | reference | the timeline context |
 
-**Sketch placement.** The `Sketch` scope's prefix references its sketch entity container and its placement record (type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`). A `Sketch` with no dimension parameter has the two-entry ordered reference table `[placement path, placement]`. The placement references its placement path (type `5A1BF548-241F-46FD-9FB5-E4B05126EB9D`). The path's first reference names a tracked entity identity (type `90055C05-546C-4EE7-B3C9-3DD922AD0C9C`). The path also references the placement transform (type `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`), whose reference names a record of type `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C`, which references a second tracked entity identity. A tracked entity identity is 29 bytes: the indexed header, ten zero bytes, and the u64 Design entity ID of the tracked entity at offset 21. The two identities of a placement name the same entity, a record of the construction-plane type `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`: one of the three origin planes, or a construction plane of the design.
+Type version `0` stores the reverse form:
 
-**Owned parameters.** A one-sided distance `Extrude` owns two parameters, with source kinds `AlongDistance` and `TaperAngle`. A sketch dimension's source kind is a dimension kind with a numeric suffix, such as `Linear Dimension-2`. An owned parameter's name is `d<n>`. In the current generation each owner is the 104-byte scalar owner form with the repeated scope field `01 + u32 scope_record_index + six zero bytes + 01 + u8 variant` and the flag byte, and its companion is the 58-byte parameter companion.
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | pair count `P` |
+| 25 | `P` × 16 bytes | `(u64 identity, u64 scope record index)` pairs |
+| — | u32 | retired count `R` |
+| — | `R` × u64 | retired identities |
+| — | reference | the timeline context |
+
+A retired identity is in no pair and is less than the greatest listed identity. Identities come from a counter that starts at `300`. A `Sketch` scope owns one identity and an `Extrude` scope owns two. A design with one `Sketch` and one `Extrude` stores `Sketch → 300` and `Extrude → 301, 302`.
+
+**Origin.** The component's origin container has type GUID `2972A3B8-3627-49BC-8C3D-18707605EC44`, type version `1`, and add-in `Geometry`:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 12 × u8 | zero |
+| 23 | u32 | `7` |
+| 27 | reference | the origin point (type `0E18EEF2-0D6F-480C-997E-5EBC7369AE5F`) |
+| 38, 49, 60 | reference | the three origin axes (type `19031004-3AB6-4D13-ABBF-C51EE214688D`) |
+| 71, 82, 93 | reference | the planes `XY`, `XZ`, and `YZ` (type `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`) |
+| 104 | reference | the component aggregate |
+
+The three plane records have consecutive record indices and store their LP-UTF16 names `XY`, `XZ`, and `YZ`.
+
+**Sketch placement.** The `Sketch` scope's prefix references its sketch entity container and its placement record (type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`). The scope's ordered reference table holds the placement, the placement path that the placement references, and the owners of the sketch's dimension parameters. A placement path of type `5A1BF548-241F-46FD-9FB5-E4B05126EB9D` names a tracked entity identity (type `90055C05-546C-4EE7-B3C9-3DD922AD0C9C`) with its first reference. The path also references the placement transform (type `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`), whose reference names a record of type `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C`, which references a second tracked entity identity. A tracked entity identity is 29 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u64 | Design entity ID of the tracked entity |
+
+The two identities of a placement name the same entity, a record of the construction-plane type `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`: one of the three origin planes, or a construction plane of the design.
+
+**Owned parameters.** A one-sided distance `Extrude` owns two parameters, with source kinds `AlongDistance` and `TaperAngle`. A sketch dimension's source kind is a dimension kind with a numeric suffix, such as `Linear Dimension-2`. An owned parameter's name is `d<n>`. In a stream with serializer magic `1234`, the owner of an `Extrude` parameter is the 104-byte scalar owner form, and the owner of a sketch dimension is the 104-byte scalar owner form or the 108-byte tagged scalar variant owner form. Both forms store the repeated scope field `01 + u32 scope_record_index + six zero bytes + 01 + u8 variant` and the flag byte. Each owner's companion is the 58-byte parameter companion.
 
 **History of the first `Extrude`.** When the first `Extrude` is the only item that commits a state, the `.smbh` history is two `delta_state` records: the root state and the `Extrude`'s state, which is the head. The head state has one bulletin board with owner reference `0` and number `2`. Every change of that board is an insertion, and the insertions name every entity slot of the solved model except slot `0` once each.
 
-**Side faces.** A sketch line's first point reference names its end point and its second point reference names its start point, which is the start of the stored line geometry. The side face of an `Extrude` whose profile is one circle has the name group `(1, "3", [E])`, where `E` is the scope's first persistent identity.
+**Side faces.** A sketch line's first point reference names its end point and its second point reference names its start point, which is the start of the stored line geometry. When the identity record of an `Extrude`'s profile selection holds one region group whose region has one loop of one entry and no further region, the side face of the one-sided or two-sided `Extrude` has the name group `(1, "3", [E])`, where `E` is the scope's first persistent identity.
 
 ### 3.2 Materials
 
