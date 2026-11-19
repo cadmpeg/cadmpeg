@@ -9491,6 +9491,66 @@ pub(crate) mod align_constructor {
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
+/// Byte offsets for the `sketch_null_explicit_member_head` record.
+///
+/// Spec §3.1. Record length 152 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_null_explicit_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 152;
+    /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 22;
+    /// Offset of `padding` (`u8`). Spec §3.1.
+    pub(crate) const PADDING: usize = 150;
+    /// Offset of `closing_reference` (`u8`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 151;
+}
+
+/// Byte offsets for the `sketch_explicit_member_head` record.
+///
+/// Spec §3.1. Record length 162 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_explicit_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 162;
+    /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 22;
+    /// Offset of `padding` (`u8`). Spec §3.1.
+    pub(crate) const PADDING: usize = 150;
+    /// Offset of `closing_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 151;
+}
+
+/// Byte offsets for the `sketch_typed_explicit_member_head` record.
+///
+/// Spec §3.1. Record length 202 B.
+///
+/// ```text
+/// Offsets are relative to the indexed head-placement header.
+/// ```
+pub(crate) mod sketch_typed_explicit_member_head {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 202;
+    /// Offset of `zero_run` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 22;
+    /// Offset of `padding` (`u8`). Spec §3.1.
+    pub(crate) const PADDING: usize = 150;
+    /// Offset of `closing_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const CLOSING_REFERENCE: usize = 151;
+}
+
 /// Byte offsets for the `sketch_typed_compact_member_head` record.
 ///
 /// Spec §3.1. Record length 74 B.
@@ -10763,6 +10823,19 @@ pub(crate) mod captured_position_v4_identity_locator {
     pub(crate) const LEN: usize = 62;
     /// Stated value of `discriminator` (`u32`). Spec §Captured component positions.
     pub(crate) const DISCRIMINATOR_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `captured_position_v4_path_wrapper` record.
+///
+/// Spec §Captured component positions. Record length 37 B.
+pub(crate) mod captured_position_v4_path_wrapper {
+    /// Record length in bytes. Spec §Captured component positions.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 37;
+    /// Offset of `marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const MARKER: usize = 21;
+    /// Stated value of `marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const MARKER_VALUE: u8 = 0;
 }
 
 /// Byte offsets for the `unmarked_sphere_local_frame` record.

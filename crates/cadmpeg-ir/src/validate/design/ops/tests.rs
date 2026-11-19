@@ -8,6 +8,7 @@ use cadmpeg_core::text::NonBlankString;
 
 use super::super::fixture::{self, assert_finding, assert_no_design_finding, design_findings, id};
 use crate::design::construction::{Construction, FrameAxis, PostStep};
+use crate::design::container::Container;
 use crate::design::dimension::Dimension;
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::feature::{Driver, FeatureOperation, OperationFamily};
@@ -48,6 +49,7 @@ use crate::design::options::{
     BodyForm, Boolean, BooleanOp, NativeOption, SheetOutput, SolidOutput, Targets,
 };
 use crate::design::parameter::DesignParameter;
+use crate::design::refs::Member;
 use crate::design::selection::{
     Anchor, MemberOrder, Members, PickContext, PickTarget, Picked, Picks, Selection,
 };
@@ -61,7 +63,7 @@ use crate::report::Severity;
 use crate::scalar::{Angle, Fraction, Length, PositiveLength};
 use crate::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use crate::transform::Transform;
-use crate::units::FinitePoint2;
+use crate::units::{FinitePoint2, UnitVector3};
 
 fn feature(key: &str) -> FeatureId {
     fixture::feature(key)
@@ -150,10 +152,44 @@ fn extrude() -> Extrude {
     }
 }
 
+/// The sketch `sketch_pick` picks, owned by the extrude.
+fn profile_sketch() -> Sketch {
+    Sketch {
+        id: sketch_id("profile"),
+        owner: feature("extrude"),
+        name: None,
+        plane: SketchPlane::Block,
+        solve: SketchSolve {
+            state: None,
+            status: EvaluationStatus::Current,
+        },
+        native_options: BTreeMap::new(),
+        source_settings: BTreeMap::new(),
+        native_ref: None,
+    }
+}
+
 fn extruding(change: impl FnOnce(&mut Extrude)) -> CadIr {
     let mut operation = extrude();
     change(&mut operation);
-    with(FeatureOperation::Extrude(Box::new(operation)))
+    let picks_sketch = matches!(
+        &operation.profile.picks,
+        Picks::Named(picks) if picks.as_slice().contains(&sketch_pick())
+    );
+    let mut ir = with(FeatureOperation::Extrude(Box::new(operation)));
+    if picks_sketch {
+        let mut sketch = fixture::unresolved("sketch", OperationFamily::Sketch);
+        sketch.definition.operation = FeatureOperation::Sketch(sketch_id("profile"));
+        ir.design.features.push(sketch);
+        if let Container::Ordered { members, .. } = &mut ir.design.containers[0] {
+            members.insert(0, Member::Feature(feature("sketch")));
+        }
+        ir.design.sketches.push(Sketch {
+            owner: feature("sketch"),
+            ..profile_sketch()
+        });
+    }
+    ir
 }
 
 #[track_caller]
@@ -542,7 +578,10 @@ fn a_hole_has_a_wider_head_and_a_series_only_in_an_assembly_feature() {
 fn linear(sides: Option<RunSides<Length>>, count: u32) -> PatternLayout {
     PatternLayout::Linear {
         first: LinearRun {
-            direction: Construction::default(),
+            direction: Construction {
+                resolved: Some(UnitVector3::X_AXIS),
+                ..Construction::default()
+            },
             run: PatternRun {
                 spacing: Spacing::Pitch {
                     count: Dimension::Literal(count),
@@ -561,7 +600,7 @@ fn linear(sides: Option<RunSides<Length>>, count: u32) -> PatternLayout {
 fn pattern(layout: PatternLayout, overrides: Vec<InstanceOverride>) -> FeatureOperation {
     FeatureOperation::Pattern(Box::new(Pattern {
         seeds: PatternSeeds::Features {
-            features: named(vec![pick(PickTarget::FeatureResult(feature("fillet")))]),
+            features: named(vec![pick(PickTarget::FeatureResult(feature(seed)))]),
             method: None,
         },
         layout,
@@ -580,11 +619,22 @@ fn skipped(index: Vec<i32>) -> InstanceOverride {
 
 #[test]
 fn a_pattern_layout_and_its_indices_fit_its_runs() {
-    assert_no_design_finding(&with(pattern(linear(None, 3), vec![skipped(vec![1])])));
+    let mut ir = fixture::document();
+    ir.design.features[1].definition.operation =
+        pattern_of("extrude", linear(None, 3), vec![skipped(vec![1])]);
+    assert_no_design_finding(&ir);
     assert_finding(
         &with(pattern(linear(None, 0), Vec::new())),
         "a count is at least 1",
     );
+    pattern_of("fillet", layout, overrides)
+}
+
+fn pattern_of(
+    seed: &str,
+    layout: PatternLayout,
+    overrides: Vec<InstanceOverride>,
+) -> FeatureOperation {
     assert_finding(
         &with(pattern(linear(Some(RunSides::Against), 3), Vec::new())),
         "RunSides::Against occurs in a linear run",
@@ -1081,19 +1131,7 @@ fn operand(key: &str) -> Operand<Planar> {
 /// line and its two end points.
 fn sketched() -> CadIr {
     let mut ir = with(FeatureOperation::Sketch(sketch_id("profile")));
-    ir.design.sketches.push(Sketch {
-        id: sketch_id("profile"),
-        owner: feature("extrude"),
-        name: None,
-        plane: SketchPlane::Block,
-        solve: SketchSolve {
-            state: None,
-            status: EvaluationStatus::Current,
-        },
-        native_options: BTreeMap::new(),
-        source_settings: BTreeMap::new(),
-        native_ref: None,
-    });
+    ir.design.sketches.push(profile_sketch());
     let line = PlanarCurve::Line {
         start: point(0.0, 0.0),
         end: point(1.0, 0.0),
