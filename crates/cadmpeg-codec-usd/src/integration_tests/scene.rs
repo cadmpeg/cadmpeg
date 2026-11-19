@@ -378,6 +378,54 @@ fn a_turned_stage_turns_its_gravity_and_scales_its_magnitude() {
     );
 }
 
+/// A Z-up rigid body moving along +Z at 10 cm/s and turning about +Z at
+/// 90 degrees per second. Velocities are in the space that the prim's
+/// transform maps into: on the turned root prim `A` that is the Y-up stage,
+/// so both point along +Y; on `B` inside the turned root `Asm` it is the
+/// model's own space, so both keep +Z.
+#[test]
+fn a_turned_stage_turns_the_velocities_of_a_root_prim() {
+    let body = |name: &str| {
+        format!(
+            "def Xform \"{name}\" (\n    prepend apiSchemas = [\"PhysicsRigidBodyAPI\"]\n)\n{{\n    vector3f physics:velocity = (0, 0, 10)\n    vector3f physics:angularVelocity = (0, 0, 90)\n}}\n"
+        )
+    };
+    let header = "#usda 1.0\n(\n    metersPerUnit = 0.01\n    upAxis = \"Z\"\n)\n";
+    let y_up = SceneOptions {
+        up_axis: Some(UpAxis::Y),
+        meters_per_unit: Some(0.01),
+        ..SceneOptions::DEFAULT
+    };
+    let root = decode(&format!("{header}{}", body("A")));
+    let (text, _) = encode_with(root.ir(), y_up);
+    assert!(
+        text.contains("double xformOp:rotateX:upAxis = -90"),
+        "{text}"
+    );
+    assert!(
+        text.contains("vector3f physics:velocity = (0, 10, 0)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("vector3f physics:angularVelocity = (0, 90, 0)"),
+        "{text}"
+    );
+    let nested = decode(&format!("{header}def Xform \"Asm\"\n{{\n{}}}\n", body("B")));
+    let (text, _) = encode_with(nested.ir(), y_up);
+    assert!(
+        text.contains("double xformOp:rotateX:upAxis = -90"),
+        "{text}"
+    );
+    assert!(
+        text.contains("vector3f physics:velocity = (0, 0, 10)"),
+        "{text}"
+    );
+    assert!(
+        text.contains("vector3f physics:angularVelocity = (0, 0, 90)"),
+        "{text}"
+    );
+}
+
 #[test]
 fn metres_per_unit_is_a_finite_positive_number() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};

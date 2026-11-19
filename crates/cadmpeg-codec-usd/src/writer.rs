@@ -194,6 +194,17 @@ pub(crate) fn units_note(metres: f64) -> String {
     }
 }
 
+/// `vector` turned by the up-axis turn `turn` (degrees about X): a quarter
+/// turn about X.
+fn turned(turn: Option<f64>, vector: [f64; 3]) -> [f64; 3] {
+    let [x, y, z] = vector;
+    match turn {
+        Some(angle) if angle < 0.0 => [x, z, 0.0 - y],
+        Some(_) => [x, 0.0 - z, y],
+        None => vector,
+    }
+}
+
 /// Counts of records no prim carries.
 #[derive(Default)]
 struct Unwritten {
@@ -494,17 +505,6 @@ impl<'ir> Writer<'ir> {
         }
     }
 
-    /// `vector` turned from the up axis of the model to that of the layer:
-    /// a quarter turn about X.
-    fn turned(&self, vector: [f64; 3]) -> [f64; 3] {
-        let [x, y, z] = vector;
-        match self.turn {
-            Some(angle) if angle < 0.0 => [x, z, 0.0 - y],
-            Some(_) => [x, 0.0 - z, y],
-            None => vector,
-        }
-    }
-
     /// The model kind of the prim of `occurrence` (spec §4.4): `assembly`
     /// for a part above other parts, `component` for another part, and
     /// `group` for any other occurrence above a part.
@@ -697,9 +697,10 @@ impl<'ir> Writer<'ir> {
         self.stack.push(name.clone());
         self.paths
             .insert(occurrence.id.clone(), format!("/{}", self.stack.join("/")));
-        let (schemas, properties) = self.physics.occurrence(&occurrence.id);
+        let turn = self.turn.filter(|_| self.stack.len() == 1);
+        let (schemas, properties) = self.physics.occurrence(&occurrence.id, turn);
         let mut placement = Placement {
-            turn: self.turn.filter(|_| self.stack.len() == 1),
+            turn,
             transform: occurrence.transform.as_ref(),
             scale: [1.0; 3],
             hidden: occurrence.visible == Some(false),
@@ -1128,7 +1129,7 @@ impl<'ir> Writer<'ir> {
         let hidden = placement.hidden || body.visible == Some(false);
         let collider = self.physics.collider(&body.id);
         if body.transform.is_none() && prims.len() == 1 {
-            let (schemas, properties) = self.physics.body(&body.id);
+            let (schemas, properties) = self.physics.body(&body.id, placement.turn);
             let mut placement = Placement {
                 hidden,
                 ..placement.clone()
