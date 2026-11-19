@@ -1561,6 +1561,22 @@ Parsed by:
 | 42 | 8 | `direction_v_y` | `f64` | little | spec | Selector `d4 20` adds V's signed Y component |
 | 50 | 32 | `bounds` | `f64[4]` | little | spec | Selector `d4 20` adds V's signed Y component |
 
+## `sheet_plane_explicit_v_a0_payload`
+
+Spec §6.3 · layout: byte offsets · size: 82 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `header` | `u8[2]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 2 | 24 | `origin` | `f64[3]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 26 | 8 | `direction_u_x` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 34 | 8 | `direction_u_z` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 42 | 8 | `direction_v_y` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+| 50 | 32 | `bounds` | `f64[4]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
