@@ -2981,6 +2981,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             .set_arena(ctx, "legacy_v1_records", &direct_records)
             .map_err(CodecError::malformed)?;
     }
+    ir.state_root_definition(
+        ctx,
+        crate::product::root_definition_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     ir.finalize();
     let opaque_count = opaque_records.len();
     let opaque_bytes = opaque_records
@@ -4246,7 +4251,11 @@ mod tests {
             decode_v1(&source).expect("invalid BREP remains source-retained"),
             false,
         ));
-        assert_eq!(result.ir().entity_count(), 0);
+        let [root] = result.ir().model.product_definitions.as_slice() else {
+            panic!("only the root definition is a model entity");
+        };
+        assert!(root.is_document_root() && root.bodies.is_empty());
+        assert_eq!(result.ir().entity_count(), 1);
         assert!(result
             .source_fidelity()
             .retained_records()
