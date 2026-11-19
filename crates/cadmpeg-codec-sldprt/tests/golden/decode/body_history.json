@@ -19,10 +19,7 @@
                 "kind": "feature",
                 "value": "sldprt:model:feature#247:0"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],

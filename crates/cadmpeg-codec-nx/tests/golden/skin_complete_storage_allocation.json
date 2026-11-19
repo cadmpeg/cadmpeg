@@ -16,10 +16,7 @@
                   "kind": "feature",
                   "value": "nx:feature-history:feature#0000000000-0000000000"
                 }
-              ],
-              "rollback": {
-                "kind": "end"
-              }
+              ]
             }
           }
         ],
@@ -50,8 +47,8 @@
                 "at": {
                   "kind": "after",
                   "value": {
-                    "kind": "feature",
-                    "value": "nx:feature-history:feature#0000000000-0000000000"
+                    "kind": "container",
+                    "value": "nx:feature-history:timeline#root"
                   }
                 },
                 "bodies": [],

@@ -15,10 +15,7 @@
                 "kind": "feature",
                 "value": "creo:depdb:curve_expression_feature#7-125"
               }
-            ],
-            "rollback": {
-              "kind": "end"
-            }
+            ]
           }
         }
       ],
@@ -89,8 +86,8 @@
               "at": {
                 "kind": "after",
                 "value": {
-                  "kind": "feature",
-                  "value": "creo:depdb:curve_expression_feature#7-125"
+                  "kind": "container",
+                  "value": "creo:model:timeline#root"
                 }
               },
               "bodies": [],
