@@ -4183,7 +4183,7 @@ name = "surface_weight_row_prefix"
 parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
 kind = "byte"
 section = "6.1"
-anchor = "The three-byte weight-row prefix stores its command and mirror mask:"
+anchor = "The three-byte weight-row prefix stores its command and row control:"
 size = 3
 
 [[record.field]]
@@ -4198,7 +4198,7 @@ name = "mirror"
 offset = 1
 type = "u16"
 source = "spec"
-anchor = "mirror mask"
+anchor = "row control"
 
 [[record]]
 name = "surface_weight_repeat_row_prefix"
@@ -4221,7 +4221,7 @@ name = "mirror"
 offset = 1
 type = "u16"
 source = "spec"
-anchor = "mirror mask"
+anchor = "row control"
 
 [[record.field]]
 name = "leading_repeats"
