@@ -14,10 +14,11 @@
 //!
 //! A scope spans its definition and the embedded component definitions below
 //! it; where it spans several, each feature names the component the decoder
-//! lists it under. The scope holds the parameters (§5.12) of its document,
-//! and its current state, at the end of its first timeline, holds the bodies
-//! of the definitions it spans.
+//! lists it under. The scope holds the parameters (§5.12) and configurations
+//! (§5.11) of its document, and its current state, at the end of its first
+//! timeline, holds the bodies of the definitions it spans.
 
+mod configurations;
 mod operation;
 mod parameters;
 #[cfg(test)]
@@ -76,6 +77,7 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         .map(|(prefix, (definition, _))| (prefix.clone(), definition.clone()))
         .collect::<BTreeMap<_, _>>();
     let scoped_parameters;
+    let scoped_configurations;
     {
         let features = scopes
             .values()
@@ -83,6 +85,12 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             .map(|feature| feature.id.as_str())
             .collect::<BTreeSet<_>>();
         scoped_parameters = parameters::project(&ir.model.parameters, &definitions, &features);
+        scoped_configurations = configurations::project(
+            &ir.model.configurations,
+            &definitions,
+            &features,
+            &scoped_parameters,
+        );
     }
     let mut spans = span(&ir.model.product_definitions, &scopes);
     let owners = ir
@@ -123,13 +131,13 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             .collect();
         ctx.charge_entities(1, "project F3D v11 design scope")?;
         ir.design.scopes.push(DesignScope {
+            active_configuration: scoped_configurations.active.get(&definition).cloned(),
             definition,
             roots: projected
                 .containers
                 .iter()
                 .map(|container| container.id().clone())
                 .collect(),
-            active_configuration: None,
             active_arrangements: BTreeSet::new(),
             occurrences: BTreeMap::new(),
             current,
@@ -138,9 +146,9 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         ir.design.features.extend(projected.features);
     }
     ctx.charge_entities(
-        u64::try_from(scoped_parameters.len())
+        u64::try_from(scoped_parameters.len() + scoped_configurations.records.len())
             .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
-        "project F3D v11 parameters",
+        "project F3D v11 parameters and configurations",
     )?;
     ir.design.parameters.extend(scoped_parameters);
     ir.design

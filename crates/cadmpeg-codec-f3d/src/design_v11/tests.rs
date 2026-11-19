@@ -538,3 +538,86 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
         source(vec![ExpressionToken::Text("3".to_owned())])
     );
 }
+
+#[test]
+fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
+    use cadmpeg_ir::features::{
+        ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration as LegacyConfiguration, ParameterValue as V10,
+    };
+    use cadmpeg_ir::scalar::Length;
+    const OWNER: &str = "f3d:model:feature#extrude:20";
+    let root = crate::tree::file_root_id();
+    let scopes = BTreeMap::from([(String::new(), root.clone())]);
+    let features = BTreeSet::from([OWNER]);
+    let parameters = super::parameters::project(
+        &[parameter(
+            "d1",
+            Some(OWNER),
+            "10 mm",
+            Some(V10::Length(Length::new(10.0).unwrap())),
+            &[],
+            &[],
+        )],
+        &scopes,
+        &features,
+    );
+    let d1 = parameters[0].id.clone();
+    let row = |key: &str, active: bool| LegacyConfiguration {
+        id: ConfigurationId::mint(format!("f3d:configuration:variant#{key}")).unwrap(),
+        ordinal: 0,
+        active,
+        source_index: None,
+        name: Some(key.to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::from([(d1.clone(), "12 mm".to_owned())]),
+        bodies: None,
+        parameter_values: BTreeMap::from([(d1.clone(), V10::Length(Length::new(12.0).unwrap()))]),
+        feature_states: BTreeMap::from([(
+            FeatureId::mint(OWNER).unwrap(),
+            ConfigurationFeatureState {
+                evaluation: ConfigurationEvaluation::Suppressed {},
+                dependencies: Default::default(),
+                definition: LegacyDefinition::Operation(LegacyOperation::Unresolved {
+                    family: UnresolvedFamily::Extrude,
+                }),
+            },
+        )]),
+        native_ref: Some("f3d:configuration:entry#FusionAssetName[Active]/table".to_owned()),
+    };
+    let projected = super::configurations::project(
+        &[row("wide", true), row("narrow", false)],
+        &scopes,
+        &features,
+        &parameters,
+    );
+    assert_eq!(
+        projected.active[&root].as_str(),
+        "f3d:configuration:variant#wide"
+    );
+    let [wide, narrow] = projected.records.as_slice() else {
+        panic!("two configurations")
+    };
+    assert_eq!(wide.name, "wide");
+    assert_eq!(
+        wide.overrides,
+        cadmpeg_ir::design::configuration::Overrides::default()
+    );
+    assert_eq!(narrow.scope, root);
+    let parameter = &narrow.overrides.parameters[&d1];
+    assert_eq!(
+        parameter.expression,
+        Some(number(12.0, Some(UnitSymbol::Mm)))
+    );
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::design::parameter::ParameterValue::Number(
+            cadmpeg_ir::scalar::FiniteReal::new(12.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        narrow.overrides.features[&FeatureId::mint(OWNER).unwrap()].suppressed,
+        Some(true)
+    );
+}
