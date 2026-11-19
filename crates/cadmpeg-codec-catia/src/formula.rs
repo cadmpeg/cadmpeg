@@ -4105,18 +4105,15 @@ mod parser_tests {
             );
         }
 
-        for expression in [
-            "false and (1 / 0 > 2)",
-            "true or (1 / 0 > 2)",
-            "false ? 1 / 0 ; 5",
-            "true ? 5 ; 1 / 0",
-        ] {
+        for expression in ["false ? 1 / 0 ; 5", "true ? 5 ; 1 / 0"] {
             assert!(
                 evaluated_with_mode(expression, &bindings, false).is_some(),
                 "{expression}"
             );
         }
         for expression in [
+            "false and (1 / 0 > 2)",
+            "true or (1 / 0 > 2)",
             "#3_ > 1 and (1 / 0 > 2)",
             "#3_ > 1 ? 5 ; 1 / 0",
             "false ? 1 / 0 ; 1mm",
