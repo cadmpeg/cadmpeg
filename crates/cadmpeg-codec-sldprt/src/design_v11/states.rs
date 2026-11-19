@@ -11,11 +11,13 @@
 //! has an evaluation with no content and status `Stale`; a stored partition so
 //! flagged is a stale state.
 //!
-//! The states between features are not stated. Each feature's
-//! `moPMarkRecord_c` names the mark set after it, but which section of a
-//! Deltas stream holds the change of one mark is not established, so the
-//! decoder applies no stored delta and a state between two features is not
-//! read (interim, gap 20261119-SW2-1).
+//! The states between features are not stated yet (deferred). Each
+//! partition's Deltas stream replays, mark by mark along the main line, to
+//! the node set of every earlier state; a state joined to a feature is the
+//! state after it, `of: State(After(feature))`, its records those the
+//! partition's builder makes of that node set and its names those of
+//! [`Names::entries`], based on the next later stored state and the last one
+//! on `Current` (§5.4).
 
 use std::collections::{HashMap, HashSet};
 
