@@ -94,6 +94,7 @@ pub(crate) fn project(
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,
         bound: typed.bound,
+        measured: typed.measured,
     };
     let mut parameters = entries.parameters(&definition, &readings);
     let sketches = typed.sketches;

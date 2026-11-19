@@ -426,6 +426,7 @@ fn parameters_with_readings(
                 decoded,
                 length_unit,
                 bound: std::collections::HashMap::new(),
+                measured: std::collections::HashMap::new(),
             },
         );
     (ir, parameters)
@@ -879,6 +880,7 @@ fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
             <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
                 <Dimension Name="D1">50</Dimension>
                 <Dimension Name="D2">30</Dimension>
+                <Dimension Name="D3">&lt;MOD-DIAM&gt;10</Dimension>
             </Sketch>
             <Extrusion Name="Boss" Type="BossExtrude" id="7">
                 <Dimension Name="D1">10</Dimension>
@@ -918,6 +920,7 @@ fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
         parameter(&sketch_feature, "D1"),
         parameter(&sketch_feature, "D2"),
     );
+    let hole = parameter(&sketch_feature, "D3");
     let sketch = "sldprt:model:sketch#test";
     let entity = |key: &str| format!("sldprt:model:sketch-entity#test:{key}");
     let point = |key: &str, u: f64, v: f64| {
@@ -945,6 +948,9 @@ fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
         let to = corners[(index + 1) % corners.len()];
         entities.push(line(&format!("l{index}"), *from, to));
     }
+    entities.push(serde_json::json!({"id": entity("hole"), "sketch": sketch,
+        "construction": false, "endpoint_refs": [],
+        "geometry": {"kind": "circle", "center": {"u": 25.0, "v": 15.0}, "radius": 5.0}}));
     ir.model.sketch_entities = serde_json::from_value(serde_json::Value::Array(entities)).unwrap();
     ir.model.sketches = serde_json::from_value(serde_json::json!([{
         "id": sketch, "name": "Sketch1",
@@ -968,6 +974,9 @@ fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
                 "operands": [{"native_kind": "5681", "object_index": 1},
                     {"native_kind": "5681", "object_index": 2}]},
             "driving": true},
+        {"id": "sldprt:model:sketch-constraint#test:4", "sketch": sketch,
+            "definition": {"kind": "diameter", "entity": entity("hole"), "parameter": hole},
+            "driving": true},
         {"id": "sldprt:model:sketch-constraint#test:3", "sketch": sketch,
             "definition": {"kind": "native", "native_kind": "sldprt:sketch-relation:17",
                 "native_properties": {}, "entities": [entity("l2")], "operands": []}}
@@ -979,7 +988,8 @@ fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
                 "value": {"sketch": {"kind": "planar", "sketch": sketch}}}})
         } else if feature.id == boss {
             serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
-                "profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch}},
+                "profile": {"kind": "planar", "value": {"kind": "feature",
+                    "value": sketch_feature.as_str()}},
                 "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
                 "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 10.0}}},
                 "op": "join", "solid": true}}})
@@ -1140,6 +1150,7 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
             decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
             length_unit: Some(UnitSymbol::Mm),
             bound: typed.bound,
+            measured: typed.measured,
         },
     );
     for parameter in &parameters {
@@ -1150,6 +1161,18 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         );
         assert!(parameter.value.is_some(), "{parameter:#?}");
     }
+    let diameter = parameters
+        .iter()
+        .find(|parameter| {
+            parameter
+                .name
+                .as_ref()
+                .map(cadmpeg_core::text::NonBlankString::as_str)
+                == Some("D3")
+        })
+        .unwrap();
+    assert_eq!(expression_json(diameter)["value"]["text"], "10[mm]");
+    assert_eq!(diameter.display, None);
     ir.design.features = timeline.features;
     ir.design.parameters = parameters;
     ir.design.sketches = sketches.records;

@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::design::construction::InputReference;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation};
 use cadmpeg_ir::design::ops::datum::DatumElement;
+use cadmpeg_ir::design::parameter::DimensionDisplay;
 use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::document::Model;
@@ -26,6 +27,7 @@ use crate::records::{FeatureHistory, FeatureInputLane};
 pub(super) struct Typed {
     pub(super) sketches: Sketches,
     pub(super) bound: HashMap<ParameterId, Quantity>,
+    pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
     pub(super) loss: Option<LossNote>,
 }
 
@@ -39,7 +41,7 @@ pub(super) fn project(
     scope: &ProductDefinitionId,
 ) -> Typed {
     let supports = supports(histories, lanes, timeline);
-    let sketches = sketch::project(
+    let mut sketches = sketch::project(
         &mut timeline.features,
         &sketch::Context {
             model,
@@ -74,7 +76,9 @@ pub(super) fn project(
             .or_insert(Some(*quantity));
     }
     let loss = loss(&sketches.unprojected, &extrudes.unprojected);
+    let measured = std::mem::take(&mut sketches.measured);
     Typed {
+        measured,
         bound: bound
             .into_iter()
             .filter_map(|(parameter, quantity)| Some((parameter, quantity?)))

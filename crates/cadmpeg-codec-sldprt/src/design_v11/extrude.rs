@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrudes (§6.3), from the decoder's typed extrusions.
 //!
-//! An extrude whose profile is a whole sketch the design states, and whose
-//! limits are blind distances or through-all, is typed: the profile is a
-//! `Sketch` pick, a blind limit binds the dimension that holds its distance,
+//! An extrude whose profile is a whole sketch the design states, named by
+//! the sketch or by its feature, and whose limits are blind distances or
+//! through-all, is typed: the profile is a `Sketch` pick, a blind limit binds the dimension that holds its distance,
 //! and a merge into a part that holds no body yet is a new body (§6). An
 //! extrude whose start, limits, draft, or profile the decoder reads only in
 //! part stays `Unresolved`.
@@ -49,6 +49,13 @@ pub(super) struct Context<'a> {
 /// Type each `Unresolved` extrude of `features`, in member order.
 pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrudes {
     let mut out = Extrudes::default();
+    let sketch_of = features
+        .iter()
+        .filter_map(|feature| match &feature.definition.operation {
+            FeatureOperation::Sketch(sketch) => Some((feature.id.clone(), sketch.clone())),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
     let mut body_before = false;
     for feature in features.iter_mut() {
         let family = match &feature.definition.operation {
@@ -60,13 +67,15 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
             }
         };
         match family {
-            Some(OperationFamily::Extrude) => match extrude(feature, context, body_before) {
-                Ok((extrude, bound)) => {
-                    feature.definition.operation = FeatureOperation::Extrude(Box::new(extrude));
-                    out.bound.extend(bound);
+            Some(OperationFamily::Extrude) => {
+                match extrude(feature, context, &sketch_of, body_before) {
+                    Ok((extrude, bound)) => {
+                        feature.definition.operation = FeatureOperation::Extrude(Box::new(extrude));
+                        out.bound.extend(bound);
+                    }
+                    Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
                 }
-                Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
-            },
+            }
             Some(
                 OperationFamily::Datum | OperationFamily::Sketch | OperationFamily::SpatialSketch,
             )
@@ -87,6 +96,7 @@ type Bound = Vec<(ParameterId, Quantity)>;
 fn extrude(
     feature: &Feature,
     context: &Context<'_>,
+    sketch_of: &HashMap<FeatureId, SketchId>,
     body_before: bool,
 ) -> Result<(Extrude, Bound), &'static str> {
     let source = context
@@ -117,8 +127,12 @@ fn extrude(
     {
         return Err("the extrude states an option of another format");
     }
-    let ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) = profile else {
-        return Err("the extrude's profile is no whole sketch");
+    let sketch = match profile {
+        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) => sketch,
+        ProfileRef::Planar(PlanarProfileRef::Feature(owner)) => sketch_of
+            .get(owner)
+            .ok_or("the extrude's profile feature states no sketch")?,
+        _ => return Err("the extrude's profile is no whole sketch"),
     };
     if !context.sketches.contains(sketch) {
         return Err("the extrude's sketch is not stated");

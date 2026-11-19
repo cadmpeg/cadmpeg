@@ -29,7 +29,7 @@ use cadmpeg_ir::design::ops::sketch::{
 };
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
-    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+    DesignParameter, DimensionDisplay, ParameterDefinition, ParameterOwner, ParameterValue,
 };
 use cadmpeg_ir::design::selection::{
     Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, PrincipalEntity, Selection,
@@ -61,6 +61,9 @@ pub(super) struct Sketches {
     pub(super) driven: Vec<DesignParameter>,
     /// The quantity of each parameter a dimension binds.
     pub(super) bound: HashMap<ParameterId, Quantity>,
+    /// The parameters a radius or diameter dimension binds, by what it
+    /// measures.
+    pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
     /// The sketch features left `Unresolved`, with the reason.
     pub(super) unprojected: Vec<(FeatureId, &'static str)>,
 }
@@ -199,6 +202,24 @@ fn sketch(
         native_ref: record.native_ref.clone(),
     });
     out.entities.extend(sketch_entities);
+    out.measured.extend(
+        constraints
+            .iter()
+            .filter_map(|constraint| match &constraint.relation {
+                SketchRelation::Radial {
+                    measure,
+                    value: Dimension::Parameter(parameter),
+                    ..
+                } => Some((
+                    parameter.clone(),
+                    match measure {
+                        RadialMeasure::Diameter => DimensionDisplay::Diameter,
+                        _ => DimensionDisplay::Radius,
+                    },
+                )),
+                _ => None,
+            }),
+    );
     out.constraints.extend(constraints);
     out.driven.extend(driven);
     out.bound.extend(bound);

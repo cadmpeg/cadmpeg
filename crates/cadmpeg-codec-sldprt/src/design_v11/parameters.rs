@@ -231,6 +231,9 @@ pub(super) struct Readings<'a> {
     pub(super) decoded: Decoded<'a>,
     pub(super) length_unit: Option<UnitSymbol>,
     pub(super) bound: HashMap<ParameterId, Quantity>,
+    /// The parameters a radius or diameter dimension binds, by what it
+    /// measures: such a parameter states no display of that measure.
+    pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
 }
 
 /// The parameters of the timeline's features and of the equations folders,
@@ -424,7 +427,8 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         .map(|display| match display {
             cadmpeg_ir::features::DimensionDisplay::Diameter => DimensionDisplay::Diameter,
             cadmpeg_ir::features::DimensionDisplay::Radius => DimensionDisplay::Radius,
-        });
+        })
+        .filter(|display| readings.measured.get(&entry.id) != Some(display));
     if let Some(number) = bare.filter(|_| !user && !references) {
         if let Some((node, value)) =
             displayed_literal(number, &kind, value.as_ref(), readings.length_unit)
