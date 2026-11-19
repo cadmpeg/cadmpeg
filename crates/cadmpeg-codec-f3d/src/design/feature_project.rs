@@ -6433,9 +6433,19 @@ fn project_fixed_chamfer(
 
     let fixed = or_none!(scope.fixed_chamfer_parameters());
     let stream = or_none!(native_stream(&scope.id));
-    let group = unique_feature_match(construction_groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
-    }));
+    // Each edge or face group takes the one fixed specification.
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.extrude_role().is_none()
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    if scope.chamfer_sets().is_some() && groups.len() > 1 {
+        groups.clear();
+    }
     let spec = match fixed {
         crate::records::feature::fixed_parameters::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
@@ -6450,29 +6460,36 @@ fn project_fixed_chamfer(
         }
     };
     chamfer::note_orientation_assumptions(&format!("Chamfer scope {}", scope.id), spec, losses);
+    let mut projected = Vec::with_capacity(groups.len());
+    for group in groups {
+        projected.push(ChamferGroup {
+            edges: resolved_edge_treatment_group_with_corners(
+                group,
+                crate::design::edge_resolve::EdgeTreatmentInputs {
+                    groups: construction_groups,
+                    operands: edge_operands,
+                    identity_operands: edge_identity_operands,
+                    vertex_operands: edge_treatment_vertex_operands,
+                    histories,
+                    previous_state_id: scope.previous_history_state_id(),
+                    feature_id: &crate::ids::neutral_feature_id(scope),
+                    treatment_radius: None,
+                },
+                ctx,
+                losses,
+            )?,
+            spec,
+        });
+    }
+    let groups = projected.try_into().unwrap_or_else(|_| {
+        cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+            edges: chamfer::unresolved_selection(scope, None, losses),
+            spec,
+        })
+    });
     Ok(Some(FeatureDefinition::Operation(
         FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
-                edges: match group {
-                    None => chamfer::unresolved_selection(scope, None, losses),
-                    Some(group) => resolved_edge_treatment_group_with_corners(
-                        group,
-                        crate::design::edge_resolve::EdgeTreatmentInputs {
-                            groups: construction_groups,
-                            operands: edge_operands,
-                            identity_operands: edge_identity_operands,
-                            vertex_operands: edge_treatment_vertex_operands,
-                            histories,
-                            previous_state_id: scope.previous_history_state_id(),
-                            feature_id: &crate::ids::neutral_feature_id(scope),
-                            treatment_radius: None,
-                        },
-                        ctx,
-                        losses,
-                    )?,
-                },
-                spec,
-            }),
+            groups,
             flip_direction: false,
         },
     )))

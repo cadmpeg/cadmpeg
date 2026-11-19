@@ -743,6 +743,33 @@ fn fixed_two_distance_chamfer_names_reference_face_assumption() {
 }
 
 #[test]
+fn fixed_chamfer_face_and_edge_groups_take_the_one_specification() {
+    let mut scope = localized_chamfer_scope();
+    if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
+        payload.fixed = Some(
+            serde_json::from_value(serde_json::json!({
+                "kind":"equal_distance", "distance":{"value":0.2,"record_index":20,"value_offset":2020}
+            }))
+            .unwrap(),
+        );
+    }
+    let groups = [
+        localized_fillet_group_with_role(101, 2, vec![201], DesignOperandRole::ROLE_0X10),
+        localized_fillet_group(100, 0, vec![200]),
+    ];
+    let projected = project_scope(&scope, &[], &[], &groups);
+    let projected_groups = projected_groups(&projected);
+    assert_eq!(projected_groups.len(), 2);
+    assert!(matches!(&projected_groups[0].edges, EdgeSelection::Native(id) if id == &groups[1].id));
+    assert!(matches!(&projected_groups[1].edges, EdgeSelection::Native(id) if id == &groups[0].id));
+    assert!(projected_groups.iter().all(|group| matches!(
+        group.spec,
+        ChamferSpec::Distance { distance } if (distance.get() - 2.0).abs() < EPS_CHAMFER_DISTANCE_MM
+    )));
+    assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 0);
+}
+
+#[test]
 fn unresolved_chamfer_does_not_charge_resolved_orientation() {
     let scope = localized_chamfer_scope();
     let parameters = [
