@@ -17,8 +17,9 @@ use crate::features::ParameterId;
 ///
 /// The nearest override that states the parameter decides: its `value`, the
 /// cache of its expression, else its `expression`. With no override, the
-/// parameter's cached value holds where its expression reads no parameter
-/// the chain overrides; otherwise its expression decides.
+/// parameter's cached value holds where its definition reads nothing that
+/// may differ in the chain's configuration (§5.13); otherwise its expression
+/// decides.
 pub(super) fn boolean_in(
     index: &DesignRecords<'_>,
     chain: &[&DesignConfiguration],
@@ -74,9 +75,12 @@ const fn boolean(value: &ParameterValue) -> Option<bool> {
     }
 }
 
-/// Whether the expression of `parameter`, through the expressions of the
-/// parameters it reads, reads a parameter the chain overrides, or one whose
-/// value the chain does not decide (another scope's, or an external one).
+/// Whether the definition of `parameter`, through the definitions of the
+/// parameters it reads, reads what may differ in the chain's configuration
+/// (§5.13): a parameter the chain overrides, a measure, a parameter that is
+/// `Driven` or `Assigned`, or one whose value the chain does not decide
+/// (another scope's, or an external one). Nothing differs where the chain
+/// states nothing.
 fn reads_override(
     index: &DesignRecords<'_>,
     chain: &[&DesignConfiguration],
@@ -84,7 +88,7 @@ fn reads_override(
 ) -> bool {
     if chain
         .iter()
-        .all(|configuration| configuration.overrides.parameters.is_empty())
+        .all(|configuration| configuration.states_nothing())
     {
         return false;
     }
@@ -96,8 +100,11 @@ fn reads_override(
             .get(parameter.as_str())
             .map(|record| &record.definition)
         else {
-            continue;
+            return true;
         };
+        if reads_measure(expression) {
+            return true;
+        }
         for reference in references(expression) {
             let RefTarget::Parameter(target) = &reference.target else {
                 return true;
@@ -242,4 +249,29 @@ fn combine(op: BinaryOp, left: Option<bool>, right: Option<bool>) -> Option<bool
         | BinaryOp::Greater
         | BinaryOp::GreaterEqual => None,
     }
+}
+
+/// Whether a neutral expression reads a measure, walked without recursion.
+fn reads_measure(expression: &Expression) -> bool {
+    let Expression::Neutral(Neutral(root)) = expression else {
+        return false;
+    };
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        match node {
+            Node::Measure(_) => return true,
+            Node::Unary { operand, .. } => pending.push(operand),
+            Node::Binary { left, right, .. } => pending.extend([&**left, &**right]),
+            Node::Call { args, .. } => pending.extend(args),
+            Node::If(branches) => pending.extend(branches.iter()),
+            Node::Number { .. }
+            | Node::Constant(_)
+            | Node::Boolean(_)
+            | Node::Text(_)
+            | Node::Reference(_)
+            | Node::LawParameter
+            | Node::Bend(_) => {}
+        }
+    }
+    false
 }

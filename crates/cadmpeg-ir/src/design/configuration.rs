@@ -70,6 +70,16 @@ pub struct DesignConfiguration {
     pub native_ref: Option<String>,
 }
 
+impl DesignConfiguration {
+    /// Whether the configuration states nothing of its own: no override, no
+    /// arrangement put in force, and no material.
+    pub(crate) fn states_nothing(&self) -> bool {
+        self.overrides == Overrides::default()
+            && self.active_arrangements.is_empty()
+            && self.materials.is_empty()
+    }
+}
+
 /// A configuration's or an arrangement's own values.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

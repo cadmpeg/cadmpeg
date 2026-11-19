@@ -17,6 +17,7 @@ use super::eval::{
     cache_value, check_types, evaluate, kind_type, kind_value, EvalError, Type, Value,
 };
 use super::history::{currents, Context, Currents, Dependents, Graph, History, Node};
+use super::resolve::ParameterOverrides;
 use super::wire::{clear_measures, reads, rewrite};
 use super::{EditError, Literal, ParameterDrivers};
 use crate::design::configuration::{ArrangementRef, Overrides, ParameterOverride};
@@ -81,7 +82,9 @@ fn literal_node(literal: Literal) -> Result<ExprNode<ParameterRef>, String> {
 }
 
 /// Evaluates an expression of the declared kind. `value_of` gives a
-/// reference's cache; a reference to a parameter of `pending` blocks.
+/// reference's cache; a reference to a parameter of `pending` blocks. A
+/// reference `through` an occurrence path has no value: the edit resolves no
+/// path, so it clears what reads one.
 fn attempt(
     expression: &Expression,
     kind: &ValueKind,
@@ -95,6 +98,7 @@ fn attempt(
     let result = evaluate(
         node,
         &mut |reference: &ParameterRef| match &reference.target {
+            RefTarget::Parameter(_) if reference.through.is_some() => None,
             RefTarget::Parameter(target) if pending.contains(target) => {
                 blocked = true;
                 None
@@ -132,6 +136,7 @@ fn kind_refusal(
     let result = evaluate(
         node,
         &mut |reference: &ParameterRef| match &reference.target {
+            RefTarget::Parameter(_) if reference.through.is_some() => None,
             RefTarget::Parameter(target) => value_of(target),
             RefTarget::External { .. } => None,
         },
@@ -164,17 +169,49 @@ impl CadIr {
         cache_value(&record.kind, cache)
     }
 
-    /// The cache of a prototype parameter that an occurrence of `scope` does
-    /// not override: its value in the configuration of its scope that the
-    /// occurrence uses, and then in the arrangements in force there, of each
-    /// kind the one the occurrence names where it names one (§5.1, §5.11).
-    /// `None` where the occurrence uses a configuration or an arrangement
-    /// that the parameter's scope does not hold.
+    /// A parameter's cache where `levels` are the parameter overrides that
+    /// apply, nearest first, in a configuration that differs from the base.
+    fn cache_over_levels(
+        &self,
+        parameter: &ParameterId,
+        levels: &[&ParameterOverrides],
+    ) -> Option<Value> {
+        let record = self.design_parameter(parameter).ok()?;
+        cache_value(&record.kind, self.cache_over(record, levels, false)?)
+    }
+
+    /// The parameter overrides of a configuration and its ancestors, nearest
+    /// first; none for the base. `None` where the configuration does not
+    /// resolve.
+    fn override_levels(
+        &self,
+        configuration: Option<&ConfigurationId>,
+    ) -> Option<Vec<&ParameterOverrides>> {
+        let Some(configuration) = configuration else {
+            return Some(Vec::new());
+        };
+        Some(
+            self.configuration_chain(configuration)
+                .ok()?
+                .into_iter()
+                .map(|level| &level.overrides.parameters)
+                .collect(),
+        )
+    }
+
+    /// The cache of a prototype parameter in an occurrence of `scope` whose
+    /// own parameter overrides are `stated`: the value `stated` holds, else the
+    /// value in the configuration of its scope that the occurrence uses, and
+    /// then in the arrangements in force there, of each kind the one the
+    /// occurrence names where it names one (§5.1, §5.11, §5.13). `None` where
+    /// the occurrence uses a configuration or an arrangement that the
+    /// parameter's scope does not hold.
     fn occurrence_cache(
         &self,
         scope: &DesignScope,
         occurrence: &OccurrenceId,
         parameter: &ParameterId,
+        stated: &ParameterOverrides,
     ) -> Option<Value> {
         let record = self.design_parameter(parameter).ok()?;
         let prototype = &record.scope;
@@ -212,13 +249,14 @@ impl CadIr {
                 in_force.push(arrangement);
             }
         }
-        match in_force
-            .iter()
-            .find_map(|arrangement| arrangement.overrides.parameters.get(parameter))
-        {
-            Some(arranged) => cache_value(&record.kind, arranged.value.as_ref()?),
-            None => self.cache_in(parameter, configuration.as_ref()),
-        }
+        let mut levels = vec![stated];
+        levels.extend(
+            in_force
+                .iter()
+                .map(|arrangement| &arrangement.overrides.parameters),
+        );
+        levels.extend(self.override_levels(configuration.as_ref())?);
+        self.cache_over_levels(parameter, &levels)
     }
 
     /// Sets a parameter's value to a literal: its definition becomes a
@@ -542,20 +580,22 @@ impl CadIr {
         }
         order.sort_unstable();
         for (_, at) in order {
-            let parent = self.design.configurations[at].parent.clone();
+            let parent = self.design.configurations[at].parent.as_ref();
+            let parents = self.override_levels(parent);
             let updated = self.settle_overrides(
                 &self.design.configurations[at].overrides,
                 targets,
-                &|target| self.cache_in(target, parent.as_ref()),
+                &|target, own| self.cache_over_levels(target, &stack(own, parents.as_deref()?)),
             );
             self.design.configurations[at].overrides.parameters = updated;
         }
         for at in 0..self.design.arrangements.len() {
-            let configuration = self.design.arrangements[at].configuration.clone();
+            let configuration = self.design.arrangements[at].configuration.as_ref();
+            let below = self.override_levels(configuration);
             let updated = self.settle_overrides(
                 &self.design.arrangements[at].overrides,
                 targets,
-                &|target| self.cache_in(target, configuration.as_ref()),
+                &|target, own| self.cache_over_levels(target, &stack(own, below.as_deref()?)),
             );
             self.design.arrangements[at].overrides.parameters = updated;
         }
@@ -573,8 +613,8 @@ impl CadIr {
                     ..Overrides::default()
                 };
                 let holder = &self.design.scopes[scope];
-                let updated = self.settle_overrides(&overrides, targets, &|target| {
-                    self.occurrence_cache(holder, &occurrence, target)
+                let updated = self.settle_overrides(&overrides, targets, &|target, own| {
+                    self.occurrence_cache(holder, &occurrence, target, own)
                 });
                 if let Some(design) = self.design.scopes[scope].occurrences.get_mut(&occurrence) {
                     design.parameters = updated;
@@ -584,14 +624,14 @@ impl CadIr {
     }
 
     /// The parameter overrides of `overrides` after recomputing those of the
-    /// parameters of `targets`. A parameter that the map overrides reads its
-    /// own entry; any other reads `fallback`, the values the map's level
-    /// resolves over.
+    /// parameters of `targets`. A reference reads `cache`, given the map as
+    /// it stands: the map's own entry where it states the parameter, else the
+    /// value the map's level resolves over (§5.13).
     fn settle_overrides(
         &self,
         overrides: &Overrides,
         targets: &BTreeSet<ParameterId>,
-        fallback: &dyn Fn(&ParameterId) -> Option<Value>,
+        cache: &dyn Fn(&ParameterId, &ParameterOverrides) -> Option<Value>,
     ) -> BTreeMap<ParameterId, ParameterOverride> {
         let mut map = overrides.parameters.clone();
         let mut pending: BTreeSet<ParameterId> = map
@@ -622,13 +662,7 @@ impl CadIr {
                     done.push((parameter.clone(), None));
                     continue;
                 };
-                let value_of = |target: &ParameterId| match map.get(target) {
-                    Some(entry) => {
-                        let kind = self.design_parameter(target).ok()?.kind.clone();
-                        cache_value(&kind, entry.value.as_ref()?)
-                    }
-                    None => fallback(target),
-                };
+                let value_of = |target: &ParameterId| cache(target, &map);
                 if let Attempt::Done(value) = attempt(expression, kind, &pending, &value_of) {
                     done.push((parameter.clone(), value));
                 }
@@ -652,6 +686,16 @@ impl CadIr {
         map.retain(|_, entry| entry.expression.is_some() || entry.value.is_some());
         map
     }
+}
+
+/// `own` above `below`, nearest first.
+fn stack<'a>(
+    own: &'a ParameterOverrides,
+    below: &[&'a ParameterOverrides],
+) -> Vec<&'a ParameterOverrides> {
+    let mut levels = vec![own];
+    levels.extend_from_slice(below);
+    levels
 }
 
 /// Clears the cached value of every measure whose anchored state depends on

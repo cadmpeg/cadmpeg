@@ -6,12 +6,14 @@ use crate::design::configuration::{FeatureStateOverride, ParameterOverride};
 use crate::design::container::{Container, OrderedKind, Rollback};
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::expr::{parse, Expression, Neutral, Node};
+use crate::design::expr::{parse, Expression, Measure, MeasureKind, MeasureTarget, Neutral, Node};
 use crate::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
 use crate::design::parameter::{ParameterDefinition, ParameterValue};
 use crate::design::refs::{Evaluated, Member, Position};
+use crate::design::selection::{Anchor, Picks, Selection};
 use crate::design::units::ValueKind;
 use crate::document::CadIr;
+use crate::scalar::FiniteReal;
 use crate::validate::design::fixture::{
     after, assert_finding, assert_no_design_finding, body, configuration, design_findings,
     document, evaluation, feature, id, parameter, set_base, stored,
@@ -203,6 +205,60 @@ fn a_boolean_operator_with_an_undecided_operand_decides_no_suppression() {
         "if(false, true, false)",
     ] {
         assert_no_design_finding(&suppressed_by_text(text));
+    }
+}
+
+/// The baseline with feature `extrude` suppressed by parameter `flag`, whose
+/// cache is true and whose definition is `definition`; where `differs`, the
+/// base configuration that the evaluation after `extrude` names overrides
+/// the fillet's suppression.
+fn suppressed_by_cache(definition: ParameterDefinition, differs: bool) -> CadIr {
+    let mut ir = document();
+    let mut flag = parameter("flag", ValueKind::Boolean);
+    flag.definition = definition;
+    flag.value = Some(ParameterValue::Boolean(true));
+    ir.design.parameters.push(flag);
+    ir.design.features[0].suppressed = Some(Dimension::Parameter(id("parameter", "flag")));
+    if differs {
+        ir.design.configurations[0].overrides.features.insert(
+            feature("fillet"),
+            FeatureStateOverride {
+                suppressed: Some(false),
+                definition: None,
+            },
+        );
+    }
+    ir
+}
+
+#[test]
+fn a_cache_that_reads_a_measure_or_the_geometry_holds_only_where_nothing_differs() {
+    let measured = Measure {
+        kind: MeasureKind::Length,
+        of: MeasureTarget::Selection(Selection {
+            at: Anchor::Pinned(after("extrude")),
+            picks: Picks::Unread,
+            native: None,
+        }),
+        cached: Some(FiniteReal::new(2.0).unwrap()),
+    };
+    let reads_measure = || {
+        ParameterDefinition::Expression(Expression::Neutral(Neutral(
+            parse("@0 > 1[mm]", &[], &[measured.clone()]).unwrap(),
+        )))
+    };
+    for (name, definition) in [
+        ("a measure", reads_measure()),
+        ("the geometry", ParameterDefinition::Driven),
+    ] {
+        assert!(
+            reports_stateless(&suppressed_by_cache(definition.clone(), false)),
+            "{name}: the cache holds where the configuration states nothing"
+        );
+        assert!(
+            !reports_stateless(&suppressed_by_cache(definition, true)),
+            "{name}: the cache decides nothing where the configuration differs"
+        );
     }
 }
 

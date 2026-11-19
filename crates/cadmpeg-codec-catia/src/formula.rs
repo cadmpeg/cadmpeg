@@ -2541,16 +2541,10 @@ impl FormulaExpressionParser<'_, '_> {
             if !self.consume_keyword("or") {
                 return Some(value);
             }
-            let evaluate = self.evaluate;
-            let static_check = self.static_check;
             let left = value.boolean()?;
-            self.evaluate = evaluate && !left.value();
-            self.static_check = static_check && (!left.is_known() || !left.value());
             let right = self.conjunction(depth)?;
             let right = right.boolean()?;
-            self.evaluate = evaluate;
-            self.static_check = static_check;
-            value = EvaluatedFormulaValue::Boolean(if evaluate {
+            value = EvaluatedFormulaValue::Boolean(if self.evaluate {
                 EvaluatedFormulaBoolean::known(left.value() || right.value())
             } else {
                 left.or(right)
@@ -2565,16 +2559,10 @@ impl FormulaExpressionParser<'_, '_> {
             if !self.consume_keyword("and") {
                 return Some(value);
             }
-            let evaluate = self.evaluate;
-            let static_check = self.static_check;
             let left = value.boolean()?;
-            self.evaluate = evaluate && left.value();
-            self.static_check = static_check && (!left.is_known() || left.value());
             let right = self.comparison(depth)?;
             let right = right.boolean()?;
-            self.evaluate = evaluate;
-            self.static_check = static_check;
-            value = EvaluatedFormulaValue::Boolean(if evaluate {
+            value = EvaluatedFormulaValue::Boolean(if self.evaluate {
                 EvaluatedFormulaBoolean::known(left.value() && right.value())
             } else {
                 left.and(right)
@@ -4405,14 +4393,41 @@ mod parser_tests {
     }
 
     #[test]
-    fn formula_boolean_operators_and_ternaries_evaluate_lazily() {
+    fn formula_boolean_operators_evaluate_both_operands() {
+        let bindings = BTreeMap::new();
+        for expression in [
+            "false and (1 / 0 > 2)",
+            "true or (sqrt(-1) > 2)",
+            "false and (asin(2) > 0rad)",
+            "true or (exp(10000) > 0)",
+            "false and (1e308 * 1e308 > 0)",
+        ] {
+            assert!(evaluated(expression, &bindings).is_none(), "{expression}");
+            assert!(
+                evaluated_with_mode(expression, &bindings, false).is_none(),
+                "{expression}"
+            );
+        }
+        for (expression, expected) in [
+            ("false and (1 / 2 > 2)", false),
+            ("true or (sqrt(1) > 2)", true),
+            ("true and (2 > 1)", true),
+            ("false or (2 < 1)", false),
+        ] {
+            assert_eq!(
+                evaluated(expression, &bindings)
+                    .and_then(EvaluatedFormulaValue::boolean)
+                    .map(EvaluatedFormulaBoolean::value),
+                Some(expected),
+                "{expression}"
+            );
+        }
+    }
+
+    #[test]
+    fn formula_ternaries_evaluate_lazily() {
         let bindings = BTreeMap::new();
         for (expression, expected) in [
-            ("false and (1 / 0 > 2)", false),
-            ("true or (sqrt(-1) > 2)", true),
-            ("false and (asin(2) > 0rad)", false),
-            ("true or (exp(10000) > 0)", true),
-            ("false and (1e308 * 1e308 > 0)", false),
             ("true ? 5 ; 1 / 0", true),
             ("false ? sqrt(-1) ; 5", true),
             ("true ? 5 ; (-1) ** 0.5", true),
