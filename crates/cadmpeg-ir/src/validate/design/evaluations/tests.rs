@@ -8,7 +8,7 @@ use crate::design::configuration::{FeatureStateOverride, ParameterOverride};
 use crate::design::container::{Container, OrderedKind, Rollback};
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::evaluation::{CurrentState, EvaluationStatus, StateBase};
-use crate::design::expr::{parse, Expression, Neutral, Node};
+use crate::design::expr::{parse, Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
 use crate::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
 use crate::design::parameter::{ParameterDefinition, ParameterValue};
 use crate::design::refs::{Evaluated, Member, Position};
@@ -160,9 +160,12 @@ fn a_suppression_override_with_no_cache_resolves_through_its_expression() {
 fn suppressed_by_text(text: &str) -> CadIr {
     let mut ir = suppressed_by_override(false, false);
     ir.design.parameters[0].value = None;
-    ir.design
-        .parameters
-        .push(parameter("other", ValueKind::Boolean));
+    let mut undecided = parameter("other", ValueKind::Boolean);
+    undecided.definition = ParameterDefinition::Expression(Expression::Source {
+        dialect: ExpressionDialect::Fusion,
+        tokens: vec![ExpressionToken::Text("unread".into())],
+    });
+    ir.design.parameters.push(undecided);
     let other = ParameterRef {
         target: RefTarget::Parameter(id("parameter", "other")),
         through: None,
@@ -209,7 +212,7 @@ fn a_boolean_operator_with_an_undecided_operand_decides_no_suppression() {
     for text in [
         "true and false",
         "false or false",
-        "true == false",
+        "not (true or false)",
         "if(true, false, $0)",
         "if(false, true, false)",
     ] {

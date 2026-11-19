@@ -1909,7 +1909,7 @@ pub(crate) fn bind_feature_outputs(
             outputs,
         );
         if stored_bodies::bound_result_bodies(feature).is_some()
-            || stored_bodies::is_base_feature_copy(feature, scopes)
+            || stored_bodies::has_projection_bound_base_feature_outputs(feature, scopes)
         {
             continue;
         }
@@ -3349,7 +3349,7 @@ pub(crate) fn bind_feature_face_selections(
                         ..
                     },
                 ) => {
-                    shell_walls::bind_shell_removed_faces(
+                    losses.extend(shell_walls::bind_shell_removed_faces(
                         removed_faces,
                         feature_id,
                         scope,
@@ -3362,7 +3362,7 @@ pub(crate) fn bind_feature_face_selections(
                             input: history.topology(selection_previous_row),
                             output: history.topology(selection_state_row),
                         },
-                    );
+                    ));
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
@@ -5629,7 +5629,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     topology,
                     states: &states,
                 };
-                if let Err(error) = bind_historical_face_operand(
+                if let Err(error) = bind_historical_face_operand_candidates(
                     operand,
                     &transition,
                     operand_groups,
@@ -5638,6 +5638,13 @@ pub(crate) fn bind_face_operand_history_candidates(
                     &mut withdrawals,
                 ) {
                     keep_first_error(&mut first_error, position, error);
+                } else if let Some(loss) = face_recipe::bind_operation_operand(
+                    operand,
+                    &scope.kind(),
+                    topology,
+                    &mut caches.face_recipes,
+                ) {
+                    withdrawals.losses.push(loss);
                 }
             }
         },
@@ -5673,41 +5680,6 @@ struct FaceOperandCaches<'a> {
     topology_queries: TopologyQueryCache<'a>,
     recipe_topologies: RecipeTopologyCache<'a>,
     face_recipes: SnapshotCache<'a, AsmHistoricalTopology, face_recipe::FaceRecipeIndex>,
-}
-
-/// Bind one face operand to the preceding state of its scope. A bounded-face
-/// operand of a `MoveFace` or `OffsetFaces` scope selects the face its recipe
-/// resolves.
-fn bind_historical_face_operand<'a>(
-    operand: &mut crate::records::topology::face::DesignFaceOperand,
-    transition: &FaceOperandTransition<'a>,
-    operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
-    recipe_record_indices: &HashMap<&str, i32>,
-    caches: &mut FaceOperandCaches<'a>,
-    withdrawals: &mut fallback_face::Withdrawals,
-) -> Result<(), cadmpeg_core::CodecError> {
-    bind_historical_face_operand_candidates(
-        operand,
-        transition,
-        operand_groups,
-        recipe_record_indices,
-        caches,
-        withdrawals,
-    )?;
-    if matches!(
-        transition.scope.kind(),
-        crate::records::feature::scope::DesignFeatureKind::MoveFace
-            | crate::records::feature::scope::DesignFeatureKind::OffsetFaces
-    ) && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
-    {
-        operand.resolved_face_slots = caches
-            .face_recipes
-            .get(transition.topology, face_recipe::FaceRecipeIndex::new)
-            .resolve(operand)
-            .into_iter()
-            .collect();
-    }
-    Ok(())
 }
 
 fn bind_historical_face_operand_candidates<'a>(
