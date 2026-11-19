@@ -983,15 +983,17 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         let [(angle, angle_record_index, angle_offset)] = angle_candidates.as_slice() else {
             return None;
         };
-        let symmetric = exact_circular_pattern_symmetric(
+        let (symmetric, suppressed) = exact_circular_pattern_symmetric(
             bytes,
             records,
             scope,
             [*count_record_index, *angle_record_index, axis_record_index],
             *count,
-        );
+        )
+        .unzip();
         Some(Ok(DesignCircularPatternConstruction {
             symmetric,
+            suppressed,
             count: std::num::NonZeroU32::new(*count)?,
             count_record_index: *count_record_index,
             count_offset: *count_offset,
@@ -1350,21 +1352,28 @@ fn exact_extended_circular_pattern_axis(
     )
 }
 
-/// The symmetric byte of the one pattern payload that names the count owner,
-/// the total-angle owner, and the axis record of `scope`. The payload reads
-/// only when its reference, entry, and instance runs end at the suffix.
+/// The symmetric byte and the suppressed-instance keys of the one pattern
+/// payload that names the count owner, the total-angle owner, and the axis
+/// record of `scope`. The payload reads only when its reference, entry, and
+/// instance runs end at the suffix, and each key is distinct and names an
+/// instance other than the seed.
 fn exact_circular_pattern_symmetric(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     [count_owner, angle_owner, axis]: [u32; 3],
     count: u32,
-) -> Option<crate::records::identity::Located<bool>> {
+) -> Option<(
+    crate::records::identity::Located<bool>,
+    crate::records::identity::Located<Vec<u32>>,
+)> {
     use crate::layout::circular_pattern_payload_distribution as block;
     use crate::layout::circular_pattern_payload_prefix as prefix;
     use crate::layout::rectangular_pattern_payload_suffix as suffix;
     const ENTRY_LEN: usize = 16;
     const MARKED_REFERENCE_LEN: usize = 11;
+    /// Largest Compute option: `0` Optimized, `1` Identical, `2` Adjust.
+    const LAST_COMPUTE_OPTION: u32 = 2;
 
     let mut found = None;
     for (_, offsets) in records.records() {
@@ -1386,8 +1395,9 @@ fn exact_circular_pattern_symmetric(
                 let at = references
                     .checked_mul(MARKED_REFERENCE_LEN)?
                     .checked_add(start + prefix::LEN + 4)?;
-                if bytes.get(at + block::ZERO_RUN..at + block::FIXED_TWO) != Some(&[0; 8])
-                    || View::u32_le_at(bytes, at + block::FIXED_TWO) != Some(block::FIXED_TWO_VALUE)
+                if bytes.get(at + block::ZERO_RUN..at + block::COMPUTE_OPTION) != Some(&[0; 8])
+                    || View::u32_le_at(bytes, at + block::COMPUTE_OPTION)
+                        .is_none_or(|option| option > LAST_COMPUTE_OPTION)
                     || View::u32_le_at(bytes, at + block::SENTINEL) != Some(u32::MAX)
                     || bytes.get(at + block::FIXED_ONE) != Some(&block::FIXED_ONE_VALUE)
                 {
@@ -1405,7 +1415,26 @@ fn exact_circular_pattern_symmetric(
                     .ok()?
                     .checked_mul(MARKED_REFERENCE_LEN)?
                     .checked_add(instance_count_at + 4)?;
-                let end = tail.checked_add(suffix::LEN)?;
+                let suppressed_at = tail + suffix::SUPPRESSED_COUNT;
+                let keys_at = suppressed_at + 4;
+                let suppressed_count = bounded_len(
+                    u64::from(View::u32_le_at(bytes, suppressed_at)?),
+                    4,
+                    bytes.len().checked_sub(keys_at)?,
+                )?;
+                let suppressed = (0..suppressed_count)
+                    .map(|index| View::u32_le_at(bytes, keys_at + index * 4))
+                    .collect::<Option<Vec<_>>>()?;
+                if suppressed
+                    .iter()
+                    .enumerate()
+                    .any(|(at, key)| *key < 2 || *key > count || suppressed[..at].contains(key))
+                {
+                    return None;
+                }
+                let end = suffix::LEN
+                    .checked_add(suppressed.len().checked_mul(4)?)?
+                    .checked_add(tail)?;
                 let seed_group = marked_record_reference(bytes, tail + suffix::SEED_GROUP)?;
                 (marked_record_reference(bytes, tail + suffix::U_COUNT) == Some(count_owner)
                     && marked_record_reference(bytes, tail + suffix::SCOPE)
@@ -1414,17 +1443,22 @@ fn exact_circular_pattern_symmetric(
                         .reference_members()
                         .values()
                         .any(|index| *index == seed_group)
-                    && bytes.get(tail + suffix::SUPPRESSED_COUNT..end) == Some(&[0; 4])
                     && next_indexed_record_offset(bytes, start + prefix::LEN) == Some(end))
-                .then_some(())
+                .then_some(crate::records::identity::Located {
+                    value: suppressed,
+                    offset: u64::try_from(suppressed_at).ok()?,
+                })
             })();
-            if parsed.is_none() {
+            let Some(suppressed) = parsed else {
                 continue;
-            }
-            let candidate = crate::records::identity::Located {
-                value: symmetric,
-                offset: u64::try_from(start + prefix::SYMMETRIC).ok()?,
             };
+            let candidate = (
+                crate::records::identity::Located {
+                    value: symmetric,
+                    offset: u64::try_from(start + prefix::SYMMETRIC).ok()?,
+                },
+                suppressed,
+            );
             if found.replace(candidate).is_some() {
                 return None;
             }

@@ -9544,7 +9544,7 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 8 | `zero_run` | `bytes[8]` | little | spec | The circular distribution block comes next |
-| 8 | 4 | `fixed_two` | `u32` | little | spec | The circular distribution block comes next · value `2` |
+| 8 | 4 | `compute_option` | `u32` | little | spec | The circular distribution block comes next |
 | 12 | 4 | `seed_kind` | `u32` | little | spec | The circular distribution block comes next |
 | 16 | 4 | `sentinel` | `u32` | little | spec | The circular distribution block comes next |
 | 20 | 1 | `fixed_one` | `u8` | little | spec | The circular distribution block comes next · value `1` |

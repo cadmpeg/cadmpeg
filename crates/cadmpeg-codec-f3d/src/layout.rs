@@ -8494,10 +8494,8 @@ pub(crate) mod circular_pattern_payload_distribution {
     pub(crate) const LEN: usize = 25;
     /// Offset of `zero_run` (`bytes[8]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN: usize = 0;
-    /// Offset of `fixed_two` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO: usize = 8;
-    /// Stated value of `fixed_two` (`u32`). Spec §Assembly operands.
-    pub(crate) const FIXED_TWO_VALUE: u32 = 0x0000_0002;
+    /// Offset of `compute_option` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const COMPUTE_OPTION: usize = 8;
     /// Offset of `sentinel` (`u32`, little-endian). Spec §Assembly operands.
     pub(crate) const SENTINEL: usize = 16;
     /// Offset of `fixed_one` (`u8`). Spec §Assembly operands.

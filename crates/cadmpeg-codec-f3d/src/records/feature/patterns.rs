@@ -71,9 +71,23 @@ pub(crate) struct DesignCircularPatternConstruction {
         deserialize_with = "deserialize_symmetric"
     )]
     pub(crate) symmetric: Option<Located<bool>>,
+    /// Keys of the suppressed instances that the pattern payload stores,
+    /// with the offset of their count: instance `k` of a one-sided pattern
+    /// has key `k + 1`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_circular_suppressed"
+    )]
+    pub(crate) suppressed: Option<Located<Vec<u32>>>,
 }
 
 cadmpeg_core::named_optional_field!(deserialize_symmetric, Located<bool>, "symmetric");
+cadmpeg_core::named_optional_field!(
+    deserialize_circular_suppressed,
+    Located<Vec<u32>>,
+    "suppressed"
+);
 
 cadmpeg_core::named_optional_field!(
     deserialize_axis_separator_flag_offset,

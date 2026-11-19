@@ -127,6 +127,7 @@ fn circular_scope() -> DesignParameterScope {
         *slot = Some(DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
             symmetric: None,
+            suppressed: None,
             count: std::num::NonZeroU32::new(3).unwrap(),
             count_record_index: 11,
             count_offset: 0,
@@ -184,6 +185,76 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             pattern.definition(),
             PatternTransform::Circular { .. }
         ));
+    }
+}
+
+#[test]
+fn suppressed_circular_instances_leave_the_remaining_angles_or_are_charged() {
+    // `keys` suppressed in a pattern of `count` over `angle`; `symmetric` is
+    // the payload byte, and `separator` marks a 130-byte axis record.
+    let with =
+        |count: u32, angle: f64, symmetric: Option<bool>, separator: bool, keys: Vec<u32>| {
+            let mut scope = circular_scope();
+            if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(
+                construction,
+            )) = scope.payload_mut()
+            {
+                construction.count = std::num::NonZeroU32::new(count).unwrap();
+                construction.angle = cadmpeg_ir::scalar::PositiveAngle::new(angle).unwrap();
+                construction.symmetric =
+                    symmetric.map(|value| crate::records::identity::Located { value, offset: 21 });
+                construction.axis_separator_flag_offset = separator.then_some(40);
+                construction.suppressed = Some(crate::records::identity::Located {
+                    value: keys,
+                    offset: 170,
+                });
+            }
+            let mut losses = Vec::new();
+            let pattern = project_circular_pattern(
+                &scope,
+                &[group(10, 20, DesignOperandRole::BODIES_B)],
+                &[],
+                &[],
+                &[],
+                &listed(&[5]),
+                &mut losses,
+            )
+            .map(|definition| {
+                let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                    definition
+                else {
+                    panic!("circular pattern definition");
+                };
+                match pattern.definition() {
+                    PatternTransform::CircularAngles { angles, .. } => Ok(angles
+                        .iter()
+                        .map(|angle| angle.get().to_degrees() * 10.0)
+                        .map(f64::round)
+                        .collect::<Vec<_>>()),
+                    PatternTransform::Circular { count, .. } => Err(*count),
+                    other => panic!("circular pattern transform: {other:?}"),
+                }
+            });
+            (
+                pattern,
+                losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            )
+        };
+    let suppression =
+        crate::loss::F3dLossCode::FeatureCircularPatternSuppressionNotTransferred.kind();
+    // A full turn of six steps 60 degrees; instances 3 and 5 have keys 4 and 6.
+    let (pattern, losses) = with(6, std::f64::consts::TAU, Some(false), false, vec![4, 6]);
+    assert_eq!(pattern, Some(Ok(vec![0.0, 600.0, 1200.0, 2400.0])));
+    assert!(losses.is_empty());
+    // A partial turn of five over 90 degrees steps 22.5 degrees.
+    let (pattern, _) = with(5, std::f64::consts::FRAC_PI_2, Some(false), false, vec![2]);
+    assert_eq!(pattern, Some(Ok(vec![0.0, 450.0, 675.0, 900.0])));
+    // A symmetric pattern, or one about a 130-byte axis record, keeps every
+    // instance and charges the suppression.
+    for (symmetric, separator) in [(Some(true), false), (None, false), (Some(false), true)] {
+        let (pattern, losses) = with(6, std::f64::consts::TAU, symmetric, separator, vec![4]);
+        assert_eq!(pattern, Some(Err(6)), "{symmetric:?} {separator}");
+        assert_eq!(losses, [suppression.clone()], "{symmetric:?} {separator}");
     }
 }
 

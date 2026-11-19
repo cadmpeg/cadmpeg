@@ -376,6 +376,7 @@ fn run_pattern_constructions_fixture() {
         Some(DesignCircularPatternConstruction {
             axis_separator_flag_offset: None,
             symmetric: None,
+            suppressed: None,
             count: std::num::NonZeroU32::new(25).unwrap(),
             count_record_index,
             count_offset: u64_from_index(count_start + 40),

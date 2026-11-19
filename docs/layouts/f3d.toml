@@ -31196,10 +31196,9 @@ source = "spec"
 anchor = "The circular distribution block comes next"
 
 [[record.field]]
-name = "fixed_two"
+name = "compute_option"
 offset = 8
 type = "u32"
-value = 2
 source = "spec"
 anchor = "The circular distribution block comes next"
 

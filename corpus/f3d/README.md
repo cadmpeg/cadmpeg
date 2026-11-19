@@ -269,3 +269,23 @@ Fusion UI. Each pattern leaves 1 body.
   suppressed. 31560.18 mm³, 13 faces.
 - `suppressed_direction_two_only.f3d`: 4 along Y only; +6 and +18 mm suppressed.
   31874.34 mm³, 8 faces.
+
+# Fusion API fixtures: circular-pattern Compute option
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. A 40 × 40 × 5 mm plate has a 4 mm hole cut at
+(10, 20) mm, patterned around a construction axis normal to the top face at
+(20, 20, 5) mm with quantity 4. The API reported 1 body, 7748.67 mm³ and 10
+faces (four holes) for each.
+
+- `circular_compute_optimized.f3d`: 360°, Compute Optimized.
+- `circular_compute_identical.f3d`: 360°, Compute Identical.
+- `circular_symmetric_optimized.f3d`: 90° total, Symmetric, Compute Optimized.
+
+Suppressed circular instances. The same plate has a 4 mm hole at (55, 40) mm, patterned
+about an axis through (40, 40) mm normal to the top face, Compute Optimized.
+
+- `circular_suppressed.f3d`: 6 over 360°; the instances at 180° and 300° suppressed.
+  Holes at 0°, 60°, 120° and 240° remain. 31748.67 mm³, 10 faces.
+- `circular_suppressed_symmetric.f3d`: 5 over 90°, Symmetric; −22.5° and +45°
+  suppressed. Holes at −45°, 0° and +22.5° remain. 31811.50 mm³, 9 faces.
