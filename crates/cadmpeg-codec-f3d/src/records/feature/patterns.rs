@@ -791,10 +791,11 @@ impl DesignRectangularPatternConstruction {
         if self.secondary_direction.is_some() && directions.len() != 1 {
             return Err("payload V direction requires one U direction record");
         }
-        if directions
-            .windows(2)
-            .any(|pair| pair[0].distance_type != pair[1].distance_type)
-        {
+        if directions.windows(2).any(|pair| {
+            pair[0].distance_type != pair[1].distance_type
+                && pair[0].distance_type != 10
+                && pair[1].distance_type != 10
+        }) {
             return Err("direction records must use the same distance representation");
         }
         if !directions.is_empty() {
@@ -1436,6 +1437,45 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn a_distance_type_ten_record_can_pair_with_another_distance_type() {
+        let record =
+            |record_index, distance_type, displacement| super::DesignRectangularPatternDirection {
+                record_index,
+                selection_record_index: record_index + 3,
+                selection_kind: 8,
+                distance_type,
+                origin: crate::test_support::reals([0.0, 0.0, 0.0]),
+                origin_offset: 0,
+                displacement: crate::test_support::reals(displacement),
+                displacement_offset: 24,
+            };
+        let wire = |directions| {
+            let mut wire = DesignRectangularPatternConstructionWire {
+                directions,
+                ..DesignRectangularPatternConstructionWire::from(construction(None))
+            };
+            wire.v_count = 3;
+            wire.v_extent = 1.0;
+            wire
+        };
+        for (first, second) in [(10, 7), (7, 10), (10, 8)] {
+            assert!(
+                DesignRectangularPatternConstruction::try_from(wire(vec![
+                    record(20, first, [1.0, 0.0, 0.0]),
+                    record(30, second, [0.0, 1.0, 0.0]),
+                ]))
+                .is_ok(),
+                "{first} and {second}"
+            );
+        }
+        assert!(DesignRectangularPatternConstruction::try_from(wire(vec![
+            record(20, 7, [1.0, 0.0, 0.0]),
+            record(30, 8, [0.0, 1.0, 0.0]),
+        ]))
+        .is_err());
+    }
+
     #[test]
     fn rectangular_pattern_payload_direction_validates_wire_fields() {
         let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));

@@ -499,7 +499,7 @@ fn linear_direction(definition: FeatureDefinition) -> Option<cadmpeg_ir::math::V
 }
 
 #[test]
-fn a_single_direction_record_must_agree_with_the_instance_run() {
+fn a_disagreeing_single_direction_record_keeps_the_instance_run() {
     let run = linear_direction(
         project_rectangular_pattern_scalars(
             &single_direction_scope_with_run(Vec::new()),
@@ -528,16 +528,27 @@ fn a_single_direction_record_must_agree_with_the_instance_run() {
     .expect("agreeing direction");
     assert!((agreeing.x - 1.0).abs() < EPS_SPACING);
 
-    let disagreeing = project_rectangular_pattern_scalars(
-        &single_direction_scope_with_run(vec![direction_record(20, [0.0, 1.5, 0.0])]),
-        &[],
-        &[],
-        &[],
-        &[],
-        &mut Vec::new(),
+    let mut losses = Vec::new();
+    let disagreeing = linear_direction(
+        project_rectangular_pattern_scalars(
+            &single_direction_scope_with_run(vec![direction_record(20, [0.0, 1.5, 0.0])]),
+            &[],
+            &[],
+            &[],
+            &[],
+            &mut losses,
+        )
+        .expect("disagreeing pattern"),
     )
-    .expect("disagreeing pattern");
-    assert!(linear_direction(disagreeing).is_none());
+    .expect("instance-run direction kept");
+    assert!((disagreeing.x - 1.0).abs() < EPS_SPACING);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        [crate::loss::F3dLossCode::FeatureRectangularPatternDirectionRecordDisagrees.kind()]
+    );
 }
 
 pub(super) fn seed_scope(record_index: u32, history_state_id: Option<i64>) -> DesignParameterScope {

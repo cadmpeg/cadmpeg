@@ -447,8 +447,11 @@ pub(crate) enum F3dLossCode {
     /// readable distribution block is read as a seed-to-final-instance extent.
     FeatureRectangularPatternDistanceFormAssumed,
     /// A linear rectangular-pattern direction has no admitted direction
-    /// record and no generated-instance run, or the two disagree.
+    /// record and no generated-instance run.
     FeatureRectangularPatternDirectionUnresolved,
+    /// A single linear rectangular-pattern direction record disagrees with
+    /// the generated-instance run; the run direction is kept.
+    FeatureRectangularPatternDirectionRecordDisagrees,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -1453,6 +1456,7 @@ impl F3dLossCode {
         Self::FeaturePatternPayloadSeedUnconfirmed,
         Self::FeatureRectangularPatternDistanceFormAssumed,
         Self::FeatureRectangularPatternDirectionUnresolved,
+        Self::FeatureRectangularPatternDirectionRecordDisagrees,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -2194,6 +2198,9 @@ impl F3dLossCode {
             }
             Self::FeatureRectangularPatternDirectionUnresolved => {
                 "feature.rectangular-pattern-direction-unresolved"
+            }
+            Self::FeatureRectangularPatternDirectionRecordDisagrees => {
+                "feature.rectangular-pattern-direction-record-disagrees"
             }
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
@@ -3208,6 +3215,7 @@ impl F3dLossCode {
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternDirectionUnresolved
+            | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -3874,6 +3882,7 @@ impl F3dLossCode {
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternDirectionUnresolved
+            | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -4749,6 +4758,7 @@ mod tests {
                 "feature.pattern-payload-seed-unconfirmed",
                 "feature.rectangular-pattern-distance-form-assumed",
                 "feature.rectangular-pattern-direction-unresolved",
+                "feature.rectangular-pattern-direction-record-disagrees",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
