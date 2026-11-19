@@ -11,6 +11,7 @@ mod budgets;
 mod component_spaces;
 mod delete_face;
 mod draft;
+mod edge_loops;
 mod edge_operands;
 mod face_boundaries;
 mod fallback_faces;
