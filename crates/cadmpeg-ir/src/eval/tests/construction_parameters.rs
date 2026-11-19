@@ -147,5 +147,5 @@ fn extrusion_breaks_lie_at_the_directrix_knots_inside_the_domain() {
     };
     assert_eq!(breaks([0.0, 3.0]), [vec![1.0, 2.0], Vec::new()]);
     assert_eq!(breaks([0.5, 1.5]), [vec![1.0], Vec::new()]);
-    assert_eq!(breaks([1.0, 2.0]), [Vec::new(), Vec::new()]);
+    assert_eq!(breaks([1.0, 2.0]), [Vec::<f64>::new(), Vec::new()]);
 }
