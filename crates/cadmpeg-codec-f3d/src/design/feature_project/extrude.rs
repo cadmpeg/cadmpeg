@@ -283,7 +283,8 @@ pub(super) fn project_extrude(
     let parameter_along = match or_none!(unique("AlongDistance")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
         None => None,
-    };
+    }
+    .filter(|distance| distance.get() != 0.0 || !prologue.is_legacy_shifted_to_face());
     let fixed_along = scope
         .fixed_extrude_parameters()
         .as_ref()
