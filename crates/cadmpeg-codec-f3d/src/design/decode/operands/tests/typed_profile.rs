@@ -539,3 +539,59 @@ fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
     assert_eq!(loops[1].entries[0].primary_id, 12);
     assert!(!loops[1].outer);
 }
+
+/// The `chain` records with a sketchless chain record 101 that names
+/// selection record 100.
+fn sketchless_chain() -> Vec<u8> {
+    let plain = chain(false);
+    let chain_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'7'])
+        .unwrap();
+    let next_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'3'])
+        .unwrap();
+    let mut bytes = plain[..chain_at].to_vec();
+    header(&mut bytes, b"277", 101);
+    bytes.extend_from_slice(&[0; 14]);
+    bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0]);
+    typed_reference(&mut bytes, 100);
+    bytes.extend_from_slice(&[0x19, 0x87, 0x79, 0xee, 0xf1, 0x5c, 0x05, 0x00]);
+    bytes.extend_from_slice(&plain[next_at..]);
+    bytes
+}
+
+fn sketchless_owner(bytes: &[u8]) -> Option<String> {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:design-record-header#0".into(),
+        record_index: 100,
+        class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    super::super::sketchless_profile_selection_owner(bytes, &records, &header)
+}
+
+#[test]
+fn sketchless_chain_record_names_the_selection_and_no_sketch_scope() {
+    let bytes = sketchless_chain();
+    assert_eq!(sketchless_owner(&bytes).as_deref(), Some("75"));
+    assert!(parse(&bytes).is_none());
+}
+
+#[test]
+fn chain_record_with_a_sketch_scope_is_not_sketchless() {
+    assert!(sketchless_owner(&chain(false)).is_none());
+}
+
+#[test]
+fn sketchless_chain_record_must_name_its_own_selection() {
+    let mut bytes = sketchless_chain();
+    let marker_at = bytes
+        .windows(6)
+        .position(|window| window == [1, 1, 0, 0, 0, 0])
+        .unwrap();
+    bytes[marker_at + 7] = 99;
+    assert!(sketchless_owner(&bytes).is_none());
+}

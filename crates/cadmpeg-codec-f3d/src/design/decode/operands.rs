@@ -8031,3 +8031,103 @@ pub(crate) fn construction_closing_flag_losses(
         })
         .collect()
 }
+
+/// Chain-record bytes after its fourteen zero bytes and before the typed
+/// reference back to the selection record of a sketchless chain record.
+const SKETCHLESS_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 0, 0, 0, 0];
+
+/// The owner text of the typed-reference profile selection at `header` when
+/// its chain record is sketchless.
+fn sketchless_profile_selection_owner(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    header: &DesignRecordHeader,
+) -> Option<String> {
+    use crate::layout::typed_reference_sketchless_profile_chain_record as sketchless_chain;
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let record_index = header.record_index;
+    let chain_index = record_index.checked_add(1)?;
+    let identity_index = record_index.checked_add(3)?;
+    let typed_target = |at: usize| {
+        let mut end = at;
+        let reference = take_reference(bytes, &mut end)?;
+        let (target, inline_type) = reference.local()?;
+        inline_type.is_some().then_some((target, end))
+    };
+    let (target, after_reference) = typed_target(start + typed_selection::IDENTITY_REFERENCE)?;
+    if bytes.get(start + typed_selection::ZERO_RUN_10..start + typed_selection::IDENTITY_REFERENCE)
+        != Some(&[0; 10][..])
+        || target != u64::from(identity_index)
+        || after_reference != start + typed_selection::CONSTANT_ONE
+        || View::u32_le_at(bytes, start + typed_selection::CONSTANT_ONE) != Some(1)
+    {
+        return None;
+    }
+    let (_, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
+    let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
+    if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let &chain_at = records.offsets(chain_index).first()?;
+    if bytes
+        .get(chain_at + sketchless_chain::ZERO_RUN_14..chain_at + sketchless_chain::CHAIN_MARKER)
+        != Some(&[0; 14][..])
+        || bytes.get(
+            chain_at + sketchless_chain::CHAIN_MARKER
+                ..chain_at + sketchless_chain::SELECTION_REFERENCE,
+        ) != Some(&SKETCHLESS_PROFILE_CHAIN_MARKER[..])
+        || typed_target(chain_at + sketchless_chain::SELECTION_REFERENCE)?.0
+            != u64::from(record_index)
+    {
+        return None;
+    }
+    Some(owner_text)
+}
+
+/// One `feature.extrude-profile-sketch-absent` note for each Extrude profile
+/// member whose typed-reference selection has a sketchless chain record.
+pub(crate) fn sketchless_profile_selection_losses(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<LossNote>, CodecError> {
+    let headers = indexed_operand_headers(headers);
+    let extrude_scopes = scopes
+        .iter()
+        .filter(|scope| design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude))
+        .filter_map(|scope| Some((native_stream(&scope.id)?, scope.record_index)))
+        .collect::<HashSet<_>>();
+    let mut records_by_stream = HashMap::new();
+    let mut losses = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        if !extrude_scopes.contains(&(stream, group.scope_record_index)) {
+            continue;
+        }
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
+        else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for member in group.members() {
+            let Some(header) = headers.get(&(stream, member.value)) else {
+                continue;
+            };
+            let records = records_by_stream
+                .entry(stream)
+                .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+            let Some(owner_text) = sketchless_profile_selection_owner(bytes, records, header)
+            else {
+                continue;
+            };
+            losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileSketchAbsent.note(format!(
+                "Profile selection record {} of Extrude scope record {} has a sketchless chain record; its owner Sketch {owner_text} belongs to another design, and the profile stays native.",
+                header.record_index, group.scope_record_index,
+            )));
+        }
+    }
+    Ok(losses)
+}
