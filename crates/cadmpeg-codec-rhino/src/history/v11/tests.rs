@@ -164,7 +164,11 @@ fn a_document_without_history_states_no_design() {
     assert!(ir.design.scopes.is_empty());
     assert!(ir.design.containers.is_empty());
     assert!(ir.design.features.is_empty());
-    assert!(ir.model.product_definitions.is_empty());
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one root definition");
+    };
+    assert!(root.is_root());
+    assert_eq!(root.bodies, bodies_of(ir, id(0x40)));
 }
 
 #[test]
