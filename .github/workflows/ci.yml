@@ -379,6 +379,12 @@ jobs:
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
 
+      - name: Annex A
+        if: needs.changes.outputs.schema == 'true'
+        # Annex A of docs/cadir-v11.md states the schema of each type the
+        # specification names and does not state; it is generated, never edited.
+        run: python3 scripts/generate-annex-a.py --check
+
       - name: Single-codec CLI feature gate
         if: needs.changes.outputs.sldprt_cli == 'true'
         # Per-codec optional deps must keep a one-feature binary compiling.
