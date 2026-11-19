@@ -223,3 +223,59 @@ fn contains_in_source_scopes_slots_by_brep_and_retains_ambiguity() {
     assert!(active.contains_in_source(5, Some("selected.smbh")));
     assert!(!active.contains_in_source(7, Some("selected.smbh")));
 }
+
+#[test]
+fn an_inserting_paste_records_its_copies_as_its_result_bodies() {
+    use cadmpeg_ir::features::{
+        BodySelection, DistinctMembers, FeatureDefinition, FeatureOperation, InsertedBodies,
+    };
+    let copies = vec![
+        BodyId::mint("test:model:body#8").unwrap(),
+        BodyId::mint("test:model:body#9").unwrap(),
+    ];
+    let native = "f3d:Design/BulkStream.dat:design-parameter-scope#10".to_owned();
+    let (mut feature, scope) = base_feature_scope(FeatureDefinition::Operation(
+        FeatureOperation::InsertBodies {
+            bodies: InsertedBodies::Resolved {
+                native: native.clone(),
+            },
+        },
+    ));
+    feature
+        .evaluation
+        .set_outputs(DistinctMembers::try_from(copies.clone()).unwrap());
+    let scopes = std::slice::from_ref(&scope);
+    assert!(super::has_projection_bound_base_feature_outputs(
+        &feature, scopes
+    ));
+    assert_eq!(
+        super::base_feature_result_bodies(&feature, scopes),
+        Some(copies.as_slice())
+    );
+    let resolved = DistinctMembers::try_from(copies[..1].to_vec()).unwrap();
+    let (stored, _) = base_feature_scope(FeatureDefinition::Operation(
+        FeatureOperation::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: resolved,
+                native,
+            },
+        },
+    ));
+    assert_eq!(
+        super::base_feature_result_bodies(&stored, scopes),
+        Some(&copies[..1])
+    );
+    assert!(!super::has_projection_bound_base_feature_outputs(
+        &stored, scopes
+    ));
+    let other = crate::records::feature::scope::DesignParameterScope::empty(
+        &scope.id,
+        crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies,
+        10,
+    );
+    let others = std::slice::from_ref(&other);
+    assert!(!super::has_projection_bound_base_feature_outputs(
+        &feature, others
+    ));
+    assert_eq!(super::base_feature_result_bodies(&feature, others), None);
+}

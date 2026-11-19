@@ -298,7 +298,10 @@ fn check_order(
 
 /// An `Instance` name names a pattern with implicit instances by a valid
 /// index, a copying `TransformBodies` by `[k]` within its count, or an
-/// `Extract` by `[1]`.
+/// `Extract` by `[1]`. A name of a feature the document does not hold is not
+/// checked: a pick by it stays when that feature is removed, and no longer
+/// resolves (§4, D51), and a table name that mentions it breaks the order
+/// rule.
 fn check_instance(index: &DesignIndex<'_>, name: &TopoName, at: &str, findings: &mut Vec<Finding>) {
     let TopoName::Instance {
         feature, instance, ..
@@ -307,7 +310,7 @@ fn check_instance(index: &DesignIndex<'_>, name: &TopoName, at: &str, findings: 
         return;
     };
     let valid = match index.operation(feature.as_str()) {
-        None => Some(false),
+        None => None,
         Some(FeatureOperation::Unresolved { .. } | FeatureOperation::Native { .. }) => None,
         Some(FeatureOperation::Pattern(pattern)) => match &pattern.instances {
             PatternInstances::Implicit(_) => valid_pattern_index(&pattern.layout, instance),
@@ -520,6 +523,8 @@ fn spacing_count<Q>(spacing: &Spacing<Q>) -> Option<u32> {
 }
 
 /// `GenerationRole::Hole` occurs only in a `Generated` face name of a hole.
+/// As for `Instance` names, a name of a feature the document does not hold
+/// is not checked.
 fn check_hole_role(
     index: &DesignIndex<'_>,
     name: &TopoName,
@@ -536,11 +541,12 @@ fn check_hole_role(
         return;
     };
     let of_hole = match index.operation(feature.as_str()) {
+        None => return,
         Some(FeatureOperation::Hole(_) | FeatureOperation::Native { .. }) => true,
         Some(FeatureOperation::Unresolved { family }) => {
             *family == crate::design::feature::OperationFamily::Hole
         }
-        Some(_) | None => false,
+        Some(_) => false,
     };
     if *kind != NameKind::Face || !of_hole {
         super::error(

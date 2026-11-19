@@ -543,7 +543,7 @@ impl RigidGroupLocatorLayout {
         use crate::layout::assembly_wide_operand_path_locator as wide;
         use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
         let (guid, version) = registered?;
-        if !guid.eq_ignore_ascii_case("2E3AC990-483D-4A55-8662-C064B976A957") {
+        if !guid.eq_ignore_ascii_case(OPERAND_PATH_LOCATOR_TYPE_GUID) {
             return None;
         }
         let (
@@ -735,7 +735,36 @@ pub(crate) fn compact_placement_as_built_scope(scope: &DesignParameterScope) -> 
             == Some(u64_from_index(layout::REFERENCE_COUNT))
 }
 
+const OPERAND_PATH_LOCATOR_TYPE_GUID: &str = "2E3AC990-483D-4A55-8662-C064B976A957";
+
 pub(crate) const AS_BUILT_SCOPE_TYPE_GUID: &str = "AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0";
+
+fn as_built_wrapper_skips_index(locator: u32, path: u32, wrapper: u32) -> bool {
+    locator.checked_add(1) == Some(path) && path.checked_add(2) == Some(wrapper)
+}
+
+pub(crate) fn typed_as_built_path_wrapper_gap(
+    locator: u32,
+    path: u32,
+    wrapper: u32,
+    types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> bool {
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+    const PATH_WRAPPER_TYPE_GUID: &str = "FF415D89-A1DB-44AC-B824-E9A772B86ED4";
+
+    as_built_wrapper_skips_index(locator, path, wrapper)
+        && [
+            (locator, OPERAND_PATH_LOCATOR_TYPE_GUID, 3),
+            (path, TYPED_OCCURRENCE_PATH_TYPE_GUID, 4),
+            (wrapper, PATH_WRAPPER_TYPE_GUID, 1),
+        ]
+        .into_iter()
+        .all(|(index, guid, version)| {
+            types.get(&u64::from(index)).is_some_and(|(registered, v)| {
+                *v == version && guid.eq_ignore_ascii_case(registered)
+            })
+        })
+}
 
 pub(crate) fn as_built_additional_owner_count(scope: &DesignParameterScope) -> Option<usize> {
     if compact_placement_as_built_scope(scope) {
@@ -1647,22 +1676,24 @@ fn project_qualified_operands(
                             .collect(),
                     ));
                 }
-                let lookup_guid = root_guid.as_str().to_ascii_lowercase();
-                let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
                 let object = root_guid.as_str().to_ascii_lowercase();
-                let subelement_guids = &path.occurrence_guids()[1..];
-
-                let mut subelements = Vec::new();
-                for guid in subelement_guids {
-                    subelements.push(guid.value.as_str().to_ascii_lowercase());
-                }
+                let local_carrier = occurrences.get(&(stream, object.clone()));
+                let occurrence = local_carrier.copied().flatten();
                 let keys = path
                     .occurrence_guids()
                     .iter()
                     .map(|guid| guid.value.as_str().to_ascii_lowercase())
                     .collect::<Vec<_>>();
+                let link = path.link();
+                let require_complete_local_path = as_built_wrapper_skips_index(
+                    link.locator_record_index,
+                    path.record_index,
+                    link.wrapper_record_index,
+                ) && path.two_keys_in_one_typed_record();
                 if let Some((id, consumed)) = paths.resolve(stream, &keys) {
-                    if consumed != keys.len() && paths.refuses_residual_keys(stream, &id) {
+                    if consumed != keys.len()
+                        && paths.refuses_residual_keys(stream, &id, require_complete_local_path)
+                    {
                         return None;
                     }
                     return Some(JointOperand::occurrence(
@@ -1671,7 +1702,8 @@ fn project_qualified_operands(
                         keys[consumed..].to_vec(),
                     ));
                 }
-                if paths.requires_external_binding(stream)
+                if (require_complete_local_path && local_carrier.is_some())
+                    || paths.requires_external_binding(stream)
                     || paths.ambiguous(stream, &keys)
                     || require_carrier && occurrence.is_none()
                     || occurrence.is_none()
@@ -1680,6 +1712,7 @@ fn project_qualified_operands(
                 {
                     return None;
                 }
+                let subelements = keys[1..].to_vec();
                 Some(match occurrence {
                     Some(_) => JointOperand::occurrence(
                         crate::ids::neutral_component_occurrence_id(root_guid),
@@ -2315,40 +2348,58 @@ mod tests {
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            offset: 500,
+            offset: 200 + 4 + 2 * 36,
         });
-        let descendant = DesignAssemblyOperandPath::try_new_typed(
-            original.link().clone(),
-            11,
-            original.class_tag().clone(),
-            Some(
-                TYPED_OCCURRENCE_PATH_TYPE_GUID
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-            ),
-            original.byte_offset(),
-            keys,
-            original.identity_guids().to_vec(),
-        )
-        .unwrap();
-        let qualifier = DesignAssemblyOperandQualifier::OccurrencePath { path: descendant };
-        let continued = super::project_qualified_operands(
-            [&qualifier, &qualifier],
-            [false; 2],
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
-            &[],
-            &inserts,
-            &partial_bindings,
-        )
-        .unwrap();
-        assert!(continued.iter().all(|operand| {
+        let project_descendant = |wrapper_record_index, bindings| {
+            let mut link = original.link().clone();
+            link.wrapper_record_index = wrapper_record_index;
+            let path = DesignAssemblyOperandPath::try_new_typed(
+                link,
+                original.record_index,
+                original.class_tag().clone(),
+                Some(
+                    TYPED_OCCURRENCE_PATH_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .unwrap(),
+                ),
+                original.byte_offset(),
+                keys.clone(),
+                original.identity_guids().to_vec(),
+            )
+            .unwrap();
+            let qualifier = DesignAssemblyOperandQualifier::OccurrencePath { path };
+            super::project_qualified_operands(
+                [&qualifier, &qualifier],
+                [false; 2],
+                "f3d:Design/BulkStream.dat",
+                &BTreeMap::new(),
+                &[],
+                &inserts,
+                bindings,
+            )
+        };
+        let child = keys[1].value.as_str();
+        for wrapper in [12, 13] {
+            let continued = project_descendant(wrapper, &partial_bindings).unwrap();
+            assert!(continued.iter().all(|operand| {
+                matches!(
+                    &operand.container,
+                    cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                        if occurrence == &ancestor[0].id
+                ) && operand.subelements == [child]
+            }));
+        }
+        let no_bindings = super::super::components::paths::LocalOccurrencePaths::default();
+        let external = project_descendant(13, &no_bindings).unwrap();
+        assert!(external.iter().all(|operand| {
             matches!(
                 &operand.container,
-                cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
-                    if occurrence == &ancestor[0].id
-            ) && operand.subelements == ["99999999-9999-4999-8999-999999999999".to_owned()]
+                cadmpeg_ir::products::OperandContainer::External { external_document }
+                    if external_document == &cadmpeg_ir::products::ExternalDocument::document_id(
+                        original.identity_guids()[0].value.as_str().to_owned()
+                    )
+            ) && operand.subelements == [child]
         }));
 
         let mut other_document = restored.xref_references[0].clone();
