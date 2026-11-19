@@ -1773,10 +1773,7 @@ impl<'ir> Writer<'ir> {
             // A body named other than its prototype keeps its name on its
             // own prim inside the prototype prim.
             if let ([body], []) = (bodies.as_slice(), occurrences.as_slice()) {
-                if named_as(
-                    body,
-                    definition.source_name.as_deref().unwrap_or("Prototype"),
-                ) {
+                if named_as(body, &name) {
                     self.body(body, &mut names, &Placement::default(), Some(&name));
                     continue;
                 }
