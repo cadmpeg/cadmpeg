@@ -11,6 +11,10 @@ pub(crate) const SOLIDCRAFT_CONTAINER_1_V57: DialectId = cadmpeg_core::dialect_i
 pub(crate) const SOLIDCRAFT_CONTAINER_1_V1_56: DialectId = cadmpeg_core::dialect_id!("solidcraft:container-1-v1-56");
 /// Registry-owned dialect id `solidcraft:json-v57`.
 pub(crate) const SOLIDCRAFT_JSON_V57: DialectId = cadmpeg_core::dialect_id!("solidcraft:json-v57");
+/// Registry-owned dialect id `solidcraft:container-1-v58-pending`.
+pub(crate) const SOLIDCRAFT_CONTAINER_1_V58_PENDING: DialectId = cadmpeg_core::dialect_id!("solidcraft:container-1-v58-pending");
+/// Registry-owned dialect id `solidcraft:json-v58-pending`.
+pub(crate) const SOLIDCRAFT_JSON_V58_PENDING: DialectId = cadmpeg_core::dialect_id!("solidcraft:json-v58-pending");
 /// Registry-owned dialect id `solidcraft:json-v1-56`.
 pub(crate) const SOLIDCRAFT_JSON_V1_56: DialectId = cadmpeg_core::dialect_id!("solidcraft:json-v1-56");
 /// Registry-owned dialect id `solidcraft:drawing-container-1`.

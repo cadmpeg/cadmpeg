@@ -968,6 +968,27 @@ fn a_body_transfer_reparents_the_body_to_its_component() {
 }
 
 #[test]
+fn a_pending_format_names_only_the_changes_it_does_not_read() {
+    let mut document = box_document("solidcraft/58");
+    document["format_pending"] = json!(["joint-lateral-offsets", "sketch-3d-relations"]);
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let codes = loss_codes(&bytes);
+    let unread = codes
+        .iter()
+        .filter(|code| code.as_str() == "solidcraft/document.pending-change-unread")
+        .count();
+    assert_eq!(unread, 1, "one loss names the unread changes: {codes:?}");
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let report = serde_json::to_value(result.report()).unwrap();
+    assert_eq!(
+        report["identity"]["dialects"]["primary"]["dialect"],
+        "solidcraft:json-v58-pending"
+    );
+}
+
+#[test]
 fn body_and_face_looks_colour_the_cached_body() {
     let bytes = crate::test_support::cached_design_editing(|document| {
         document["appearances"] = json!({

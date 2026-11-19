@@ -78,6 +78,8 @@ pub(crate) enum SolidcraftLossCode {
     AssemblyJointUnresolved,
     /// Joint links and motion studies were retained without decoding.
     AssemblyLinksUndecoded,
+    /// A change the design lists as pending and the decoder does not read.
+    PendingChangeUnread,
 }
 
 impl SolidcraftLossCode {
@@ -112,6 +114,7 @@ impl SolidcraftLossCode {
         Self::SketchConstraintNative,
         Self::AssemblyJointUnresolved,
         Self::AssemblyLinksUndecoded,
+        Self::PendingChangeUnread,
     ];
 
     #[must_use]
@@ -146,6 +149,7 @@ impl SolidcraftLossCode {
             Self::SketchConstraintNative => "history.sketch-constraint-native",
             Self::AssemblyJointUnresolved => "assembly.joint-unresolved",
             Self::AssemblyLinksUndecoded => "assembly.links-undecoded",
+            Self::PendingChangeUnread => "document.pending-change-unread",
         }
     }
 
@@ -179,7 +183,8 @@ impl SolidcraftLossCode {
             | Self::SketchPlaneUnresolved
             | Self::SketchConstraintNative
             | Self::AssemblyJointUnresolved
-            | Self::AssemblyLinksUndecoded => Severity::Warning,
+            | Self::AssemblyLinksUndecoded
+            | Self::PendingChangeUnread => Severity::Warning,
             Self::DocumentUnreadable => Severity::Error,
         }
     }
@@ -200,6 +205,7 @@ impl SolidcraftLossCode {
             | Self::SketchConstraintNative => LossTaxonomy::FeatureHistoryRetained,
             Self::AssemblyJointUnresolved => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::AssemblyLinksUndecoded
+            | Self::PendingChangeUnread
             | Self::ParametersUndecoded
             | Self::DocumentSectionUndecoded
             | Self::EntryRetained
@@ -274,6 +280,7 @@ mod tests {
                 "history.sketch-constraint-native",
                 "assembly.joint-unresolved",
                 "assembly.links-undecoded",
+                "document.pending-change-unread",
             ]
         );
     }

@@ -47,10 +47,37 @@ enum State {
 enum Band {
     Current,
     Earlier,
+    /// The next format, which lists its pending changes; each is named here.
+    Pending,
 }
+
+/// The changes `SolidCraft` lists as pending after format 57. A design of the
+/// next format admits only when every change it lists is one of these, so an
+/// unknown change keeps the file on the residual path.
+const KNOWN_PENDING: &[&str] = &[
+    "bounding-solid-side-margins",
+    "joint-lateral-offsets",
+    "move-rotate-about-edge",
+    "render-coat-flakes",
+    "sketch-3d-constraints",
+    "sketch-3d-dimensions",
+    "sketch-3d-relations",
+    "sketch-reference-placements",
+    "step-import-solid-items",
+    "surface-sweep-exact-spline-path",
+    "whole-profile-holes-share-a-curve",
+];
 
 fn band(header: &Header) -> Result<Band, String> {
     if !header.pending.is_empty() {
+        let next = CURRENT_FORMAT + 1;
+        let known = header
+            .pending
+            .iter()
+            .all(|name| KNOWN_PENDING.contains(&name.as_str()));
+        if known && header.tag.version() == Some(next) {
+            return Ok(Band::Pending);
+        }
         return Err(format!(
             "the document lists changes past its format in format_pending: {}",
             header.pending.join(", ")
@@ -75,6 +102,7 @@ pub(crate) fn classify(encoding: Encoding<'_>, header: Option<&Header>) -> Diale
             .map(|band| match band {
                 Band::Current => SOLIDCRAFT_CONTAINER_1_V57,
                 Band::Earlier => SOLIDCRAFT_CONTAINER_1_V1_56,
+                Band::Pending => SOLIDCRAFT_CONTAINER_1_V58_PENDING,
             }),
         (Encoding::Container(Marker::Other(text)), _) => Err(format!(
             "the container marker {text:?} is not a version 1 marker"
@@ -88,6 +116,7 @@ pub(crate) fn classify(encoding: Encoding<'_>, header: Option<&Header>) -> Diale
         (Encoding::Json, Some(header)) => band(header).map(|band| match band {
             Band::Current => SOLIDCRAFT_JSON_V57,
             Band::Earlier => SOLIDCRAFT_JSON_V1_56,
+            Band::Pending => SOLIDCRAFT_JSON_V58_PENDING,
         }),
         (Encoding::Json, None) => Err("the document is unreadable".to_owned()),
     };

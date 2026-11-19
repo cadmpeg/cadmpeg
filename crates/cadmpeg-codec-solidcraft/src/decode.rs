@@ -187,6 +187,19 @@ const SECTION_RECORDS: &[&str] = &[
 /// decoding. The parameters decode with the history.
 fn document_losses(header: &Header, decodes_history: bool) -> Vec<LossNote> {
     let mut losses = Vec::new();
+    // The changes a design lists as pending that this decoder does not read.
+    let unread: Vec<&str> = header
+        .pending
+        .iter()
+        .map(String::as_str)
+        .filter(|change| *change != "joint-lateral-offsets")
+        .collect();
+    if !unread.is_empty() {
+        losses.push(SolidcraftLossCode::PendingChangeUnread.note(format!(
+            "the design lists pending changes this decoder does not read, which stay in the              retained document: {}",
+            unread.join(", ")
+        )));
+    }
     if header.params > 0 && !decodes_history {
         losses.push(SolidcraftLossCode::ParametersUndecoded.note(format!(
             "{} parameter records are retained without decoding",

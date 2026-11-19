@@ -1273,6 +1273,29 @@ steps that only mark stored names are not applied.
 design-json-v13-legacy-tag.sc pins the row"""
 
 [[support]]
+dialect = "solidcraft:container-1-v58-pending"
+read = "L4"
+write = "none"
+reason = """
+the next design format, which lists only changes this decoder knows by name.
+Features decode with their operation semantics and their history, and the
+bodies of the cache decode with their carriers. The pending changes that
+change no decoded field are charged by name. Three are not decoded: the 3D
+sketch constraints and dimensions, and the STEP solid items of an import, so
+the geometry and sketch relations are not complete (L5 and L6 do not hold).
+design-container-v58-pending.sc pins the row"""
+
+[[support]]
+dialect = "solidcraft:json-v58-pending"
+read = "L4"
+write = "none"
+reason = """
+the next design format as a plain JSON document, read as the container row is.
+The geometry is the evaluation of the history, which this codec does not
+compute, so L2 and L3 are inapplicable, as for json-v57. design-json-v58-pending.sc
+pins the row"""
+
+[[support]]
 dialect = "solidcraft:drawing-container-1"
 read = "detected"
 write = "none"

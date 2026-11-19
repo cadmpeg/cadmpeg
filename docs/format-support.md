@@ -634,14 +634,16 @@ These gaps remain:
 
 **Ladder: L5.**
 
-| Dialect                          | Read                   | Write |
-| -------------------------------- | ---------------------- | ----- |
-| `solidcraft:container-1-v57`     | L5                     | none  |
-| `solidcraft:container-1-v1-56`   | L5                     | none  |
-| `solidcraft:json-v57`            | L5                     | none  |
-| `solidcraft:json-v1-56`          | L5                     | none  |
-| `solidcraft:drawing-container-1` | detected               | none  |
-| `solidcraft:unknown`             | unclassified-recovered | none  |
+| Dialect                              | Read                   | Write |
+| ------------------------------------ | ---------------------- | ----- |
+| `solidcraft:container-1-v57`         | L5                     | none  |
+| `solidcraft:container-1-v1-56`       | L5                     | none  |
+| `solidcraft:json-v57`                | L5                     | none  |
+| `solidcraft:container-1-v58-pending` | L4                     | none  |
+| `solidcraft:json-v58-pending`        | L4                     | none  |
+| `solidcraft:json-v1-56`              | L5                     | none  |
+| `solidcraft:drawing-container-1`     | detected               | none  |
+| `solidcraft:unknown`                 | unclassified-recovered | none  |
 
 <!-- /generated: dialects solidcraft -->
 

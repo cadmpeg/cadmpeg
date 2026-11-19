@@ -1464,6 +1464,18 @@ discriminants = { encoding = "json", document_format = "57", format_pending = "a
 witness = "spec:docs/formats/solidcraft.md section 3"
 
 [[dialect]]
+id = "solidcraft:container-1-v58-pending"
+title = "SolidCraft design container 1, design format 58 with pending changes"
+discriminants = { encoding = "zip", container_format = "solidcraft-container/1 or solvecraft-container/1", document_format = "58", format_pending = "listed, every name a known pending change" }
+witness = "spec:docs/formats/solidcraft.md section 3.14"
+
+[[dialect]]
+id = "solidcraft:json-v58-pending"
+title = "SolidCraft plain JSON design, design format 58 with pending changes"
+discriminants = { encoding = "json", document_format = "58", format_pending = "listed, every name a known pending change" }
+witness = "spec:docs/formats/solidcraft.md section 3.14"
+
+[[dialect]]
 id = "solidcraft:json-v1-56"
 title = "SolidCraft plain JSON design, design formats 1 to 56"
 discriminants = { encoding = "json", document_format = "1 to 56", format_pending = "absent or empty" }

@@ -352,3 +352,20 @@ in its final component, so the owner is decoded from the cache. The record is
 a reparent of the body's owner: `source_owner` and `target_owner` name the
 two product definitions, and `target_transform` carries the placement. The
 body names are not carried by the neutral record.
+
+### 3.14 Pending changes
+
+A design that lists `format_pending` is written by a build whose next format
+has changes no release has shipped. The codec reads such a design as the
+format after the newest released one, when every listed change is one of the
+eleven it knows by name:
+
+`bounding-solid-side-margins`, `joint-lateral-offsets`,
+`move-rotate-about-edge`, `render-coat-flakes`, `sketch-3d-constraints`,
+`sketch-3d-dimensions`, `sketch-3d-relations`, `sketch-reference-placements`,
+`step-import-solid-items`, `surface-sweep-exact-spline-path`, and
+`whole-profile-holes-share-a-curve`.
+
+A listed change the decoder reads is applied: `joint-lateral-offsets` gives
+the joints their `offset_xy`. A change it does not read is named by a loss.
+A design listing any other change stays on the residual path.
