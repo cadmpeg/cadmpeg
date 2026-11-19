@@ -3418,14 +3418,14 @@ pub(crate) mod extrusion_compact_operation_trailer {
 
 /// Byte offsets for the `pmark_record_head` record.
 ///
-/// Spec §2.3. Record length 12 B.
+/// Spec §3.4. Record length 12 B.
 pub(crate) mod pmark_record_head {
-    /// Record length in bytes. Spec §2.3.
+    /// Record length in bytes. Spec §3.4.
     pub(crate) const LEN: usize = 12;
-    /// Offset of `mark` (`u32`, little-endian). Spec §2.3.
+    /// Offset of `mark` (`u32`, little-endian). Spec §3.4.
     pub(crate) const MARK: usize = 0;
-    /// Offset of `form` (`u32`, little-endian). Spec §2.3.
+    /// Offset of `form` (`u32`, little-endian). Spec §3.4.
     pub(crate) const FORM: usize = 4;
-    /// Offset of `form_word` (`u32`, little-endian). Spec §2.3.
+    /// Offset of `form_word` (`u32`, little-endian). Spec §3.4.
     pub(crate) const FORM_WORD: usize = 8;
 }
