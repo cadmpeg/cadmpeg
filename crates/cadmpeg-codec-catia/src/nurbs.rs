@@ -168,6 +168,12 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_plane_bounds_not_transferred(&mut self, face: usize, bounds: [[f64; 2]; 2]) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlaneBoundsNotTransferred.note(format!(
+            "The plane carrier for emitted native face {face} retains its origin and axes; native chart bounds {bounds:?} are omitted from the neutral plane support."
+        )));
+    }
+
     pub(crate) fn push_parameter_map_pcurve_accuracy(&mut self, source: usize, tolerance: f64) {
         self.notes.push(
             crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred.note(format!(

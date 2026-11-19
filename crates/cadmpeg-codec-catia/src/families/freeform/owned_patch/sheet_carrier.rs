@@ -67,6 +67,13 @@ impl Carrier<'_> {
         })
     }
 
+    pub(super) fn untransferred_plane_bounds(&self) -> Option<[[f64; 2]; 2]> {
+        match self {
+            Self::Plane(plane) => plane.bounds,
+            _ => None,
+        }
+    }
+
     pub(super) fn bounds(&self) -> Option<[[f64; 2]; 2]> {
         match self {
             Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
@@ -453,10 +460,6 @@ impl SpatialPlane {
             (0xb4, 0xd6 | 0xde, None) => (direction(mask)?, UnitVector3::Z_AXIS),
             (0x08, 0, Some(0x18)) => (direction(0)?, direction(0)?),
             (0x08, 0, Some(0x19)) => (direction(0)?, direction(0x10)?),
-            (0x08, 0, Some(0x1a)) => (direction(0)?, direction(0x20)?),
-            (0x08, 0x40 | 0x50 | 0x58 | 0xd0 | 0xd8, Some(0x1b)) => {
-                (direction(mask)?, direction(0x30 | ((mask & 0x80) >> 4))?)
-            }
             (0x08, 0x68 | 0xe8, Some(0x1d)) => {
                 (direction(mask)?, direction(0x50 | ((mask & 0x80) >> 4))?)
             }
@@ -777,6 +780,23 @@ mod tests {
             assert!(SpatialPlane::read(&bytes).is_none());
             bytes.truncate(explicit_v_a0::LEN - 1);
             assert!(SpatialPlane::read(&bytes).is_none());
+        }
+    }
+    #[test]
+    fn packed_plane_refuses_unestablished_frame_forms() {
+        for (prefix, axes) in [
+            ([0x08, 0x00, 0x1a], vec![1.0_f64, 0.0, 0.0, 0.0, 1.0]),
+            ([0x08, 0x40, 0x1b], vec![0.0, 1.0, 1.0]),
+            ([0x08, 0x50, 0x1b], vec![1.0, 1.0]),
+            ([0x08, 0x58, 0x1b], vec![1.0]),
+            ([0x08, 0xd0, 0x1b], vec![1.0]),
+            ([0x08, 0xd8, 0x1b], vec![]),
+        ] {
+            let mut bytes = prefix.to_vec();
+            for value in [3.0_f64, 4.0, 5.0].into_iter().chain(axes) {
+                bytes.extend(value.to_le_bytes());
+            }
+            assert!(SpatialPlane::read(&bytes).is_none(), "prefix {prefix:02x?}");
         }
     }
 }
