@@ -1686,8 +1686,13 @@ fn project_qualified_operands(
                     .iter()
                     .map(|guid| guid.value.as_str().to_ascii_lowercase())
                     .collect::<Vec<_>>();
+                let requires_complete_path = path.record_index.checked_add(2)
+                    == Some(path.link().wrapper_record_index)
+                    && path.two_keys_in_one_typed_record();
                 if let Some((id, consumed)) = paths.resolve(stream, &keys) {
-                    if consumed != keys.len() && paths.refuses_residual_keys(stream, &id) {
+                    if consumed != keys.len()
+                        && (requires_complete_path || paths.refuses_residual_keys(stream, &id))
+                    {
                         return None;
                     }
                     return Some(JointOperand::occurrence(
@@ -1696,7 +1701,8 @@ fn project_qualified_operands(
                         keys[consumed..].to_vec(),
                     ));
                 }
-                if paths.requires_external_binding(stream)
+                if requires_complete_path
+                    || paths.requires_external_binding(stream)
                     || paths.ambiguous(stream, &keys)
                     || require_carrier && occurrence.is_none()
                     || occurrence.is_none()
@@ -2340,34 +2346,38 @@ mod tests {
                 .to_owned()
                 .try_into()
                 .unwrap(),
-            offset: 500,
+            offset: 200 + 4 + 2 * 36,
         });
-        let descendant = DesignAssemblyOperandPath::try_new_typed(
-            original.link().clone(),
-            11,
-            original.class_tag().clone(),
-            Some(
-                TYPED_OCCURRENCE_PATH_TYPE_GUID
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-            ),
-            original.byte_offset(),
-            keys,
-            original.identity_guids().to_vec(),
-        )
-        .unwrap();
-        let qualifier = DesignAssemblyOperandQualifier::OccurrencePath { path: descendant };
-        let continued = super::project_qualified_operands(
-            [&qualifier, &qualifier],
-            [false; 2],
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
-            &[],
-            &inserts,
-            &partial_bindings,
-        )
-        .unwrap();
+        let project_descendant = |wrapper_record_index| {
+            let mut link = original.link().clone();
+            link.wrapper_record_index = wrapper_record_index;
+            let path = DesignAssemblyOperandPath::try_new_typed(
+                link,
+                original.record_index,
+                original.class_tag().clone(),
+                Some(
+                    TYPED_OCCURRENCE_PATH_TYPE_GUID
+                        .to_owned()
+                        .try_into()
+                        .unwrap(),
+                ),
+                original.byte_offset(),
+                keys.clone(),
+                original.identity_guids().to_vec(),
+            )
+            .unwrap();
+            let qualifier = DesignAssemblyOperandQualifier::OccurrencePath { path };
+            super::project_qualified_operands(
+                [&qualifier, &qualifier],
+                [false; 2],
+                "f3d:Design/BulkStream.dat",
+                &BTreeMap::new(),
+                &[],
+                &inserts,
+                &partial_bindings,
+            )
+        };
+        let continued = project_descendant(12).unwrap();
         assert!(continued.iter().all(|operand| {
             matches!(
                 &operand.container,
@@ -2375,6 +2385,7 @@ mod tests {
                     if occurrence == &ancestor[0].id
             ) && operand.subelements == ["99999999-9999-4999-8999-999999999999".to_owned()]
         }));
+        assert!(project_descendant(13).is_none());
 
         let mut other_document = restored.xref_references[0].clone();
         other_document.id =
