@@ -588,13 +588,14 @@ impl EntitySchema for crate::products::AssemblyJoint {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, sheet, curves, template_geometry, x_direction, parameters, assets, native_ref);
+impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation, sheet, curves, template_geometry, x_direction, scale_from, projection, perspective, hidden_line, parameters, assets, native_ref);
 impl_entity_schema!(
     crate::semantic_annotations::SemanticAnnotation,
     SemanticAnnotation,
     id;
-    id, object, kind, runtime_type, order, text, references, value, format, position,
-    reference_anchors, text_style, dimension_kind, text_override, upper_tolerance, lower_tolerance, parameters, assets, native_ref
+    id, object, kind, runtime_type, order, text, references, value, format, number_format, position,
+    reference_anchors, text_style, dimension_kind, text_override, upper_tolerance, lower_tolerance,
+    measured_on, basic, reflex, negated, line_directions, parameters, assets, native_ref
 );
 impl EntitySchema for crate::presentation::PresentationDocument {
     const KIND: EntityKind = EntityKind::PresentationDocument;
@@ -620,7 +621,7 @@ impl EntitySchema for crate::tessellation::Tessellation {
 impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
 impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels);
 impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values);
-impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition);
+impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition, native_ref, native_options, source_settings);
 impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,

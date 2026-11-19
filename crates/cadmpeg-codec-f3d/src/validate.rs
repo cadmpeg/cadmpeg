@@ -13,6 +13,7 @@ mod body_ownership;
 mod chamfer_sets;
 mod emboss;
 mod extrude_operands;
+mod images;
 mod path_pattern;
 mod sheet_metal_settings;
 mod sketch_scope;
@@ -1126,8 +1127,8 @@ fn validate_loaded(
     validate_act(&ctx, &mut findings)?;
     validate_body_bindings(&ctx, &mut findings)?;
     validate_body_bounds(&ctx, &mut findings);
-    validate_canvas_images(&ctx, &mut findings);
-    validate_decal_images(&ctx, &mut findings);
+    images::validate_canvas_images(&ctx, &mut findings);
+    images::validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
     validate_xref_placement_sources(&ctx, &mut findings)?;
@@ -1823,175 +1824,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Fusion Design mesh feature has an invalid frame or object graph",
                 Some(feature.id.clone()),
-            );
-        }
-    }
-}
-
-/// Validate Canvas scope and Design object joins.
-fn validate_canvas_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
-    let native = ctx.native;
-    let mut scope_bindings = HashSet::new();
-    let mut geometry_records = HashSet::new();
-    let geometry_entities = native
-        .design_types
-        .iter()
-        .filter(|design_type| {
-            matches!(
-                design_type.module.as_str(),
-                records::entity_header::DESIGN_MODULE_BODY
-                    | records::entity_header::DESIGN_MODULE_GEOMETRY
-            )
-        })
-        .flat_map(|design_type| {
-            let design_segment = ids::design_segment(design_type.id());
-            design_type
-                .entities
-                .values()
-                .map(move |suffix| (design_segment, *suffix))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    let component_entities = native
-        .design_types
-        .iter()
-        .filter(|design_type| {
-            matches!(
-                design_type.module.as_str(),
-                records::entity_header::DESIGN_MODULE_FUSION
-                    | records::entity_header::DESIGN_MODULE_COMPONENT
-            )
-        })
-        .flat_map(|design_type| {
-            let design_segment = ids::design_segment(design_type.id());
-            design_type
-                .entities
-                .values()
-                .map(move |suffix| (design_segment, *suffix))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    for image in &native.design_canvas_images {
-        let native_stream = design_stream(&image.id);
-        let design_segment = ids::design_segment(&image.id);
-        let scope = ctx
-            .scopes_by_index
-            .get(&(native_stream, image.scope_record_index));
-        let scope_valid = scope.is_some_and(|scope| {
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::Canvas
-        });
-        let scope_unique = if scope_valid {
-            scope_bindings.insert((native_stream, image.scope_record_index))
-        } else {
-            false
-        };
-        let geometry_unique = if scope_unique {
-            geometry_records.insert((native_stream, image.geometry().record_index()))
-        } else {
-            false
-        };
-        let valid = scope_valid
-            && scope_unique
-            && geometry_unique
-            && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
-            && image.plane_entity_suffix.is_none_or(|suffix| {
-                geometry_entities.contains(&(design_segment, u64::from(suffix)))
-            })
-            && component_entities
-                .contains(&(design_segment, u64::from(image.component_entity_suffix)));
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Canvas image has an invalid frame or Design object join",
-                Some(image.id.clone()),
-            );
-        }
-    }
-}
-
-/// Validate Decal native and neutral object joins.
-fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
-    const TARGET_ROLE: DesignOperandRole = DesignOperandRole::BODIES_A;
-    let mut scope_bindings = HashSet::new();
-    let mut asset_records = HashSet::new();
-    let fusion_entities = ctx
-        .native
-        .design_types
-        .iter()
-        .filter(|design_type| design_type.module == records::entity_header::DESIGN_MODULE_FUSION)
-        .flat_map(|design_type| {
-            let segment = ids::design_segment(design_type.id());
-            design_type
-                .entities
-                .values()
-                .map(move |suffix| (segment, *suffix))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    for image in &ctx.native.design_decal_images {
-        let native_stream = design_stream(&image.id);
-        let design_segment = ids::design_segment(&image.id);
-        let scope = ctx
-            .scopes_by_index
-            .get(&(native_stream, image.scope_record_index()));
-        let group = ctx
-            .operand_groups_by_index
-            .get(&(native_stream, image.target_group_record_index));
-        let neutral_is_valid = !ctx.holds_design_intent() || scope.is_some_and(|scope| {
-            let expected_faces = crate::design::decode::decal::DecalTargets {
-                groups: &ctx.native.design_construction_operand_groups,
-                operands: &ctx.native.design_body_recipe_operands,
-            }
-            .faces(scope, image.target_group_record_index)
-            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(scope.id.clone()));
-            ctx.ir
-                .model
-                .features
-                .iter()
-                .any(|feature| {
-                    feature.native_ref.as_deref() == Some(scope.id.as_str()) &&
-                    matches!(
-                        feature.evaluation.definition(),
-                        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
-                            asset,
-                            faces,
-                            mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
-                            opacity: None,
-                        }) if faces == &expected_faces
-                            && ctx.ir.model.assets.iter().any(|candidate| {
-                                candidate.id == *asset
-                                    && candidate.name.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == Some(image.asset.name())
-                            })
-                    )
-                })
-        });
-        let scope_valid = scope.is_some_and(|scope| {
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
-        });
-        let scope_unique = if scope_valid {
-            scope_bindings.insert((native_stream, image.scope_record_index()))
-        } else {
-            false
-        };
-        let asset_unique = if scope_unique {
-            asset_records.insert((native_stream, image.asset.record_index()))
-        } else {
-            false
-        };
-        let valid = scope_valid
-            && scope_unique
-            && asset_unique
-            && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
-            && fusion_entities.contains(&(design_segment, u64::from(image.asset.entity_suffix())))
-            && group.is_some_and(|group| {
-                group.scope_record_index == image.scope_record_index()
-                    && group.role() == TARGET_ROLE
-            })
-            && neutral_is_valid;
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Decal image has an invalid frame or Design object join",
-                Some(image.id.clone()),
             );
         }
     }
@@ -2880,14 +2712,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     generation.operand_path_locator_offsets();
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
+                                let counted_wrapper = variable_reference || wide_as_built || compact_as_built
+                                    || operand_frame_variant.is_some_and(
+                                        design::assembly::AssemblyOperandFrameVariant::is_wide_family,
+                                    );
                                 let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference || wide_as_built || compact_as_built
-                                        || operand_frame_variant.is_some_and(
-                                            design::assembly::AssemblyOperandFrameVariant::is_wide_family,
-                                        ) {
-                                        path.link()
-                                            .wrapper_record_index
-                                            .checked_sub(path.link().locator_record_index)?
+                                    let link = path.link();
+                                    let skipped_index = (rigid_as_built || compact_as_built)
+                                        && design::assembly::typed_as_built_path_wrapper_gap(
+                                            link.locator_record_index,
+                                            path.record_index,
+                                            link.wrapper_record_index,
+                                            stream_types,
+                                        )
+                                        && path.two_keys_in_one_typed_record();
+                                    let continuation_count = if counted_wrapper && !skipped_index {
+                                        link.wrapper_record_index
+                                            .checked_sub(link.locator_record_index)?
                                             .checked_sub(2)?
                                     } else {
                                         0
@@ -5169,6 +5010,8 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
 
 /// Validate construction operand groups and their role discriminators.
 fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    use crate::records::feature::scope::DesignFeatureKind;
+
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -5182,27 +5025,33 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             || frame.member_count_offset.checked_add(4),
             |member| member.offset.checked_add(10),
         );
-        let frame_valid = group
-            .byte_offset
-            .checked_add(
-                if scope.is_some_and(|scope| {
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::SplitFace
-                            && group.role() == DesignOperandRole::ROLE_0X21)
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::Split
-                            && matches!(
-                                group.role(),
-                                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
-                            ))
-                }) {
-                    88
-                } else {
-                    21
-                },
+        let member_count_offset = frame.member_count_offset.checked_sub(group.byte_offset);
+        let kind = scope.map(|scope| scope.kind());
+        let prefixed_tool = matches!(
+            (kind.as_ref(), group.role()),
+            (
+                Some(DesignFeatureKind::SplitFace),
+                DesignOperandRole::ROLE_0X21
+            ) | (
+                Some(DesignFeatureKind::Split),
+                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
             )
-            .is_some_and(|expected_offset| frame.member_count_offset == expected_offset)
+        );
+        let prefixed = kind == Some(DesignFeatureKind::SurfaceStitch) || prefixed_tool;
+        let compact_split_tool = kind == Some(DesignFeatureKind::Split)
+            && group.role() == DesignOperandRole::ROLE_0X21
+            && group.scope_reference_ordinal == 0
+            && !group.members().is_empty()
+            && frame.auxiliary_records.is_empty()
+            && frame.trailing_records().len() == 1
+            && !frame.variant
+            && !frame.closing_flag;
+        let compact_count = cadmpeg_core::decode::u64_from_index(
+            crate::layout::split_body_compact_group_prefix::MEMBER_COUNT,
+        );
+        let count_offset_valid = member_count_offset == Some(if prefixed { 88 } else { 21 })
+            || (compact_split_tool && member_count_offset == Some(compact_count));
+        let frame_valid = count_offset_valid
             && group.members().first().is_none_or(|member| {
                 frame
                     .member_count_offset

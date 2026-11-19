@@ -347,13 +347,14 @@ fn accepts_enumeration_metadata_and_registered_optional_carriers() {
             .map(|value| wire::value::<[f64; 3]>(&value)),
         Some([0.0, 0.0, 1.0])
     );
+    assert!(drawing
+        .rotation
+        .is_some_and(|rotation| (rotation.get().to_degrees() - 15.0).abs() < 1e-12));
+    assert!(!drawing.parameters.contains_key("ScaleType"));
     assert_eq!(
-        drawing
-            .rotation_degrees
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        Some(15.0)
+        drawing.scale_from,
+        Some(cadmpeg_ir::drawings::ScaleFrom::Own)
     );
-    assert_eq!(drawing.parameters["ScaleType"], r#"<Integer value="1"/>"#);
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
@@ -730,7 +731,7 @@ fn techdraw_sheet_units_title_block_and_dimension_fields() {
         let annotation = &result.ir().model.semantic_annotations[0];
         assert_eq!(
             annotation.dimension_kind,
-            Some(cadmpeg_ir::semantic_annotations::DimensionKind::Distance {})
+            Some(cadmpeg_ir::semantic_annotations::AnnotationDimensionKind::Distance)
         );
         assert_eq!(annotation.text_override.as_deref(), Some("CHECK"));
         assert_eq!(
@@ -808,9 +809,11 @@ fn techdraw_unknown_dimension_and_saved_shape_stay_native() {
         .unwrap();
     assert_eq!(
         result.ir().model.semantic_annotations[0].dimension_kind,
-        Some(cadmpeg_ir::semantic_annotations::DimensionKind::Other {
-            native_type: "99".into()
-        })
+        Some(
+            cadmpeg_ir::semantic_annotations::AnnotationDimensionKind::Other {
+                native_type: "99".into()
+            }
+        )
     );
     assert!(result.ir().model.semantic_annotations[0].value.is_none());
     assert!(result
@@ -827,14 +830,14 @@ fn techdraw_unknown_dimension_and_saved_shape_stay_native() {
 
 #[test]
 fn techdraw_dimension_custom_categories() {
-    use cadmpeg_ir::semantic_annotations::DimensionKind;
+    use cadmpeg_ir::semantic_annotations::AnnotationDimensionKind as DimensionKind;
     for (label, expected) in [
-        ("DistanceX", DimensionKind::HorizontalDistance {}),
-        ("DistanceY", DimensionKind::VerticalDistance {}),
-        ("Radius", DimensionKind::Radius {}),
-        ("Diameter", DimensionKind::Diameter {}),
-        ("Angle", DimensionKind::Angle {}),
-        ("Angle3Pt", DimensionKind::ThreePointAngle {}),
+        ("DistanceX", DimensionKind::HorizontalDistance),
+        ("DistanceY", DimensionKind::VerticalDistance),
+        ("Radius", DimensionKind::Radius),
+        ("Diameter", DimensionKind::Diameter),
+        ("Angle", DimensionKind::Angle),
+        ("Angle3Pt", DimensionKind::ThreePointAngle),
     ] {
         let document = format!(
             r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="1"><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="{label}"/></CustomEnumList></Property></Properties></Object></ObjectData></Document>"#
