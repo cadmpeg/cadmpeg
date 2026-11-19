@@ -351,7 +351,7 @@ pub(super) fn operation(
                             after: Vec::new(),
                             solution: None,
                             mode: None,
-                            resolved_in: Default::default(),
+                            resolved_in: BTreeMap::default(),
                         });
                     }
                     (new::HolePositions::Placed(points), drilling)

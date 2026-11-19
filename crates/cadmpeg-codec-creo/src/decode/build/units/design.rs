@@ -472,7 +472,7 @@ mod tests {
             inputs: Vec::new(),
             solution: None,
             mode: None,
-            resolved_in: Default::default(),
+            resolved_in: std::collections::BTreeMap::new(),
         };
         nested.resolved_in.insert(
             "test:design:configuration#other"

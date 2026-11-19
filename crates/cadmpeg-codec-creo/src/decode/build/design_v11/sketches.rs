@@ -251,7 +251,7 @@ fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
             after: Vec::new(),
             solution: None,
             mode: None,
-            resolved_in: Default::default(),
+            resolved_in: BTreeMap::new(),
         })),
         solve: SketchSolve {
             state: None,

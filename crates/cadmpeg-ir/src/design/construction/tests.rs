@@ -40,7 +40,7 @@ fn construction_serialization_borrows_its_resolved_value() {
         after: Vec::new(),
         solution: None,
         mode: None,
-        resolved_in: Default::default(),
+        resolved_in: std::collections::BTreeMap::new(),
     };
     let wire = serde_json::to_value(&construction).expect("serialize resolved construction");
     assert_eq!(clones.get(), 0);

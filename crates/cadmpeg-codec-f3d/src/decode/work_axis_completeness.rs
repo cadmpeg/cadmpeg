@@ -149,7 +149,7 @@ mod tests {
                             after: Vec::new(),
                             solution: None,
                             mode: None,
-                            resolved_in: Default::default(),
+                            resolved_in: std::collections::BTreeMap::new(),
                         },
                     )))),
                     value,
@@ -216,7 +216,7 @@ mod tests {
                             after: Vec::new(),
                             solution: None,
                             mode: None,
-                            resolved_in: Default::default(),
+                            resolved_in: std::collections::BTreeMap::new(),
                         })))
                     }),
                     reversed: None,

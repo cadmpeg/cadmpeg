@@ -34,7 +34,7 @@ pub(super) fn direction(
         after: Vec::new(),
         solution: None,
         mode: None,
-        resolved_in: Default::default(),
+        resolved_in: BTreeMap::default(),
     })
 }
 
@@ -51,7 +51,7 @@ pub(super) fn axis(
         after: Vec::new(),
         solution: None,
         mode: None,
-        resolved_in: Default::default(),
+        resolved_in: BTreeMap::default(),
     })
 }
 
@@ -81,7 +81,7 @@ pub(super) fn datum_plane(id: &old::FeatureId) -> Projected<Construction<kinds::
         solution: None,
         mode: None,
         resolved: None,
-        resolved_in: Default::default(),
+        resolved_in: BTreeMap::default(),
     })
 }
 
@@ -112,7 +112,7 @@ fn plane(
         }),
         after: Vec::new(),
         solution: None,
-        resolved_in: Default::default(),
+        resolved_in: BTreeMap::default(),
     })
 }
 
