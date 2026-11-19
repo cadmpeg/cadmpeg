@@ -198,6 +198,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A saved part whose `E7` or `E8` parameters have known values in the application, with formulas that read and define them.
 
+### DI-33. Evaluation order of `and` and `or`
+
+**Question.** Does CATIA evaluate the right operand of `and` when the left operand is false, and the right operand of `or` when the left operand is true?
+
+**Known.** `catia.md` §7.3 reads both operators as not evaluating the right operand in those cases. No stored file holds a guard whose right operand fails at the stored inputs. CADIR v11 §5.13 translates CATIA's `and` and `or` as themselves until a file settles the order (part 11, evaluation order of `and` and `or`). The decoder therefore evaluates both operands, and a failure in either operand leaves the formula without a transferable result.
+
+**Conflict.** `catia.md` §7.3 gives the operators as skipping the right operand. The decoder evaluates both operands.
+
+**Need.** A saved part whose `and` or `or` guards an operand that fails at the stored inputs, with the stored value of the result.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-02. Rolling-ball scalar-jet semantics and tail control

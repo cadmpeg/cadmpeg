@@ -2534,6 +2534,8 @@ impl FormulaExpressionParser<'_, '_> {
         }
     }
 
+    // `and` and `or` evaluate both operands, as CADIR v11 §5.13 translates
+    // them, until a stored file settles CATIA's order (DI-33).
     fn disjunction(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
         let mut value = self.conjunction(depth)?;
         loop {
