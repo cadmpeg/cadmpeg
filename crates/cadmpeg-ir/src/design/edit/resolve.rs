@@ -3,21 +3,20 @@
 //! own where it states one, else its parent's resolved value, else the
 //! base's.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
 
 use super::EditError;
 use crate::design::configuration::{
-    Arrangement, DesignConfiguration, Overrides, ParameterOverride,
+    own_value_holds, Arrangement, DesignConfiguration, Overrides, ParameterOverride, Stated,
 };
-use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
-use crate::design::expr::{print, Expression, ExpressionToken, Neutral};
+use crate::design::dimension::Dimension;
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use crate::design::ops::body::PatternInstances;
 use crate::design::ops::surface::MeshKind;
-use crate::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+use crate::design::parameter::{DesignParameter, ParameterValue};
 use crate::design::refs::ConfigurationRef;
 use crate::design::scope::DesignScope;
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
@@ -77,10 +76,9 @@ impl CadIr {
     /// A parameter's cache in a configuration (§5.13): the value of the
     /// nearest override that states the parameter, its own or an ancestor's.
     /// Where none states it, and in the base, it is the parameter's own
-    /// value, which holds in a configuration only where the configuration and
-    /// its ancestors state nothing, or the parameter's definition reads
-    /// nothing that varies there ([`CadIr::cache_over`]). `None` in
-    /// `configuration` reads the base.
+    /// value, which holds in a configuration only where nothing it rests on
+    /// can differ there from the base. `None` in `configuration` reads the
+    /// base.
     ///
     /// # Errors
     ///
@@ -102,67 +100,36 @@ impl CadIr {
             .iter()
             .map(|level| &level.overrides.parameters)
             .collect();
-        let base = chain.iter().all(|level| level.states_nothing());
-        Ok(self.cache_over(record, &levels, base))
+        Ok(self.cache_over(record, &levels, Stated::of(&chain)))
     }
 
     /// A parameter's cache where `levels` are the parameter overrides that
-    /// apply, nearest first: the value of the nearest that states the
-    /// parameter. Where none states it, the parameter's own value, which
-    /// holds where `base` holds (nothing differs from the base) or where its
-    /// definition, directly or through the definitions of the parameters it
-    /// references, reads no parameter that one of `levels` states, no
-    /// measure, no reference `through` an occurrence path, no `External`
-    /// reference, and no parameter that is `Driven` or `Assigned`.
+    /// apply, nearest first, and `stated` what else they state: the value of
+    /// the nearest that states the parameter, else the parameter's own value
+    /// where it holds there ([`own_value_holds`]).
     pub(super) fn cache_over<'a>(
         &'a self,
         record: &'a DesignParameter,
         levels: &[&'a ParameterOverrides],
-        base: bool,
+        stated: Stated,
     ) -> Option<&'a ParameterValue> {
-        if let Some(stated) = levels.iter().find_map(|level| level.get(&record.id)) {
-            return stated.value.as_ref();
+        if let Some(entry) = levels.iter().find_map(|level| level.get(&record.id)) {
+            return entry.value.as_ref();
         }
-        if base || !self.reads_varying(record, levels) {
-            record.value.as_ref()
-        } else {
-            None
-        }
-    }
-
-    /// Whether a parameter's own value may differ where `levels` apply; see
-    /// [`CadIr::cache_over`].
-    fn reads_varying(&self, record: &DesignParameter, levels: &[&ParameterOverrides]) -> bool {
-        let mut seen = BTreeSet::from([record.id.clone()]);
-        let mut pending = vec![record];
-        while let Some(record) = pending.pop() {
-            let ParameterDefinition::Expression(expression) = &record.definition else {
-                return true;
-            };
-            let Some((references, measured)) = expression_reads(expression) else {
-                return true;
-            };
-            if measured {
-                return true;
-            }
-            for reference in references {
-                let RefTarget::Parameter(target) = &reference.target else {
-                    return true;
-                };
-                if reference.through.is_some()
-                    || levels.iter().any(|level| level.contains_key(target))
-                {
-                    return true;
-                }
-                if seen.insert(target.clone()) {
-                    match self.design_parameter(target) {
-                        Ok(next) => pending.push(next),
-                        Err(_) => return true,
-                    }
-                }
-            }
-        }
-        false
+        own_value_holds(
+            record,
+            stated,
+            &|target| levels.iter().any(|level| level.contains_key(target)),
+            &|target| self.design_parameter(target).ok(),
+            &|program| {
+                self.design
+                    .programs
+                    .iter()
+                    .find(|candidate| &candidate.id == program)
+            },
+        )
+        .then_some(record.value.as_ref())
+        .flatten()
     }
 
     /// The configuration that the current geometry holds for a definition's
@@ -392,27 +359,6 @@ pub(super) fn stateless_operation(operation: &FeatureOperation) -> bool {
         FeatureOperation::Mesh(mesh) => matches!(mesh.kind, MeshKind::Section { .. }),
         _ => false,
     }
-}
-
-/// The references of an expression and whether it reads a measure; `None`
-/// where its neutral tree does not print.
-fn expression_reads(expression: &Expression) -> Option<(Vec<ParameterRef>, bool)> {
-    Some(match expression {
-        Expression::Neutral(Neutral(node)) => {
-            let printed = print(node).ok()?;
-            (printed.refs, !printed.measures.is_empty())
-        }
-        Expression::Source { tokens, .. } => (
-            tokens
-                .iter()
-                .filter_map(|token| match token {
-                    ExpressionToken::Reference(reference) => Some(reference.clone()),
-                    ExpressionToken::Text(_) => None,
-                })
-                .collect(),
-            false,
-        ),
-    })
 }
 
 /// Reads a cache as a value of `T`, negated where `negated` holds: a number

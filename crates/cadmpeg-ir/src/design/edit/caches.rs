@@ -22,7 +22,9 @@ use super::history::{currents, Context, Currents, Dependents, Graph, History, No
 use super::resolve::ParameterOverrides;
 use super::wire::{clear_measures, clear_transformations, reads, rewrite};
 use super::{EditError, Literal, ParameterDrivers};
-use crate::design::configuration::{ArrangementRef, Overrides, ParameterOverride};
+use crate::design::configuration::{
+    ArrangementRef, DesignConfiguration, Overrides, ParameterOverride, Stated,
+};
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::evaluation::EvaluationStatus;
 use crate::design::expr::{print, Expression, ExpressionToken, Neutral, Node as ExprNode, UnaryOp};
@@ -174,40 +176,35 @@ impl CadIr {
         cache_value(&record.kind, cache)
     }
 
-    /// A parameter's cache where `levels` are the parameter overrides that
-    /// apply, nearest first, in a configuration that differs from the base.
+    /// A parameter's cache as an expression value, where `levels` are the
+    /// parameter overrides that apply, nearest first, and `stated` what else
+    /// they state (§5.13).
     fn cache_over_levels(
         &self,
         parameter: &ParameterId,
         levels: &[&ParameterOverrides],
+        stated: Stated,
     ) -> Option<Value> {
         let record = self.design_parameter(parameter).ok()?;
-        cache_value(&record.kind, self.cache_over(record, levels, false)?)
+        cache_value(&record.kind, self.cache_over(record, levels, stated)?)
     }
 
-    /// The parameter overrides of a configuration and its ancestors, nearest
-    /// first; none for the base. `None` where the configuration does not
-    /// resolve.
-    fn override_levels(
+    /// A configuration and its ancestors, nearest first; none for the base.
+    /// `None` where the configuration does not resolve.
+    fn chain_of(
         &self,
         configuration: Option<&ConfigurationId>,
-    ) -> Option<Vec<&ParameterOverrides>> {
-        let Some(configuration) = configuration else {
-            return Some(Vec::new());
-        };
-        Some(
-            self.configuration_chain(configuration)
-                .ok()?
-                .into_iter()
-                .map(|level| &level.overrides.parameters)
-                .collect(),
-        )
+    ) -> Option<Vec<&DesignConfiguration>> {
+        match configuration {
+            Some(configuration) => self.configuration_chain(configuration).ok(),
+            None => Some(Vec::new()),
+        }
     }
 
     /// The cache of a prototype parameter in an occurrence of `scope` whose
-    /// own parameter overrides are `stated`: the value `stated` holds, else the
-    /// value in the configuration of its scope that the occurrence uses, and
-    /// then in the arrangements in force there, of each kind the one the
+    /// own parameter overrides are `entries`: the value `entries` holds, else
+    /// the value in the configuration of its scope that the occurrence uses,
+    /// and then in the arrangements in force there, of each kind the one the
     /// occurrence names where it names one (§5.1, §5.11, §5.13). `None` where
     /// the occurrence uses a configuration or an arrangement that the
     /// parameter's scope does not hold.
@@ -216,7 +213,7 @@ impl CadIr {
         scope: &DesignScope,
         occurrence: &OccurrenceId,
         parameter: &ParameterId,
-        stated: &ParameterOverrides,
+        entries: &ParameterOverrides,
     ) -> Option<Value> {
         let record = self.design_parameter(parameter).ok()?;
         let prototype = &record.scope;
@@ -254,14 +251,22 @@ impl CadIr {
                 in_force.push(arrangement);
             }
         }
-        let mut levels = vec![stated];
+        let chain = self.chain_of(configuration.as_ref())?;
+        let mut levels = vec![entries];
         levels.extend(
             in_force
                 .iter()
                 .map(|arrangement| &arrangement.overrides.parameters),
         );
-        levels.extend(self.override_levels(configuration.as_ref())?);
-        self.cache_over_levels(parameter, &levels)
+        levels.extend(parameter_levels(&chain));
+        let stated = Stated {
+            anything: true,
+            occurrences: Stated::of(&chain).occurrences
+                || in_force
+                    .iter()
+                    .any(|arrangement| !arrangement.overrides.occurrences.is_empty()),
+        };
+        self.cache_over_levels(parameter, &levels, stated)
     }
 
     /// [`Editor::set_dimension`](super::Editor::set_dimension) on the
@@ -608,23 +613,30 @@ impl CadIr {
         }
         order.sort_unstable();
         for (_, at) in order {
-            let parent = self.design.configurations[at].parent.as_ref();
-            let parents = self.override_levels(parent);
-            let updated = self.settle_overrides(
-                &self.design.configurations[at].overrides,
-                targets,
-                &|target, own| self.cache_over_levels(target, &stack(own, parents.as_deref()?)),
-            );
+            let configuration = &self.design.configurations[at];
+            let chain = self.chain_of(Some(&configuration.id));
+            let updated =
+                self.settle_overrides(&configuration.overrides, targets, &|target, entries| {
+                    let (_, parents) = chain.as_deref()?.split_first()?;
+                    let levels = stack(entries, &parameter_levels(parents));
+                    self.cache_over_levels(target, &levels, Stated::of(chain.as_deref()?))
+                });
             self.design.configurations[at].overrides.parameters = updated;
         }
         for at in 0..self.design.arrangements.len() {
-            let configuration = self.design.arrangements[at].configuration.as_ref();
-            let below = self.override_levels(configuration);
-            let updated = self.settle_overrides(
-                &self.design.arrangements[at].overrides,
-                targets,
-                &|target, own| self.cache_over_levels(target, &stack(own, below.as_deref()?)),
-            );
+            let arrangement = &self.design.arrangements[at];
+            let chain = self.chain_of(arrangement.configuration.as_ref());
+            let updated =
+                self.settle_overrides(&arrangement.overrides, targets, &|target, entries| {
+                    let chain = chain.as_deref()?;
+                    let stated = Stated {
+                        anything: true,
+                        occurrences: Stated::of(chain).occurrences
+                            || !arrangement.overrides.occurrences.is_empty(),
+                    };
+                    let levels = stack(entries, &parameter_levels(chain));
+                    self.cache_over_levels(target, &levels, stated)
+                });
             self.design.arrangements[at].overrides.parameters = updated;
         }
         for scope in 0..self.design.scopes.len() {
@@ -724,6 +736,14 @@ fn stack<'a>(
     let mut levels = vec![own];
     levels.extend_from_slice(below);
     levels
+}
+
+/// The parameter overrides of a configuration chain, nearest first.
+fn parameter_levels<'a>(chain: &[&'a DesignConfiguration]) -> Vec<&'a ParameterOverrides> {
+    chain
+        .iter()
+        .map(|level| &level.overrides.parameters)
+        .collect()
 }
 
 /// Clears the cached value of every measure whose anchored state depends on

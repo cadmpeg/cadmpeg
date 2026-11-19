@@ -168,6 +168,115 @@ fn a_measured_cache_holds_only_where_nothing_differs() {
     );
 }
 
+/// In a configuration that states something, a parameter's own value holds
+/// unless what it rests on can differ there (§5.13): a `Source` expression
+/// or program does not let it hold, an `Assigned` parameter reads what its
+/// `Neutral` program reads, and an `External` reference stops it only where
+/// an occurrence override is stated.
+#[test]
+fn an_own_value_holds_where_nothing_it_rests_on_differs() {
+    use cadmpeg_core::text::NonBlankString;
+
+    use crate::design::configuration::OccurrenceOverride;
+    use crate::design::dimension::RefTarget;
+    use crate::design::expr::{parse, Expression, ExpressionDialect, ExpressionToken, Neutral};
+    use crate::design::program::{ParameterProgram, ProgramBody, Statement};
+
+    let mut document = timeline();
+    let program = |key: u32, body: ProgramBody| ParameterProgram {
+        id: id("program", key),
+        scope: definition(),
+        owner: None,
+        stage: None,
+        name: None,
+        body,
+        native_ref: None,
+    };
+    let assigned = |key: u32, program: u32| crate::design::parameter::DesignParameter {
+        definition: ParameterDefinition::Assigned(id("program", program)),
+        ..length(key, neutral("0[mm]", &[], &[]), Some(10.0))
+    };
+    let neutral_of = |text: &str, refs: &[ParameterRef]| Neutral(parse(text, refs, &[]).unwrap());
+    let assign = |key: u32, text: &str| Statement::Assign {
+        target: reference(key),
+        value: neutral_of(text, &[reference(1)]),
+    };
+    document.design.programs = vec![
+        program(
+            1,
+            ProgramBody::Neutral(vec![Statement::If {
+                condition: neutral_of("true", &[]),
+                then: vec![assign(4, "$0")],
+                otherwise: Vec::new(),
+            }]),
+        ),
+        program(
+            2,
+            ProgramBody::Source {
+                dialect: ExpressionDialect::Creo,
+                tokens: vec![ExpressionToken::Text("p5 = 10".into())],
+            },
+        ),
+    ];
+    let external = ParameterRef {
+        target: RefTarget::External {
+            definition: id("product-definition", 2),
+            name: NonBlankString::new("width").unwrap(),
+        },
+        through: None,
+    };
+    let source = Expression::Source {
+        dialect: ExpressionDialect::Creo,
+        tokens: vec![ExpressionToken::Text("5".into())],
+    };
+    document.design.parameters.extend([
+        length(3, source, Some(5.0)),
+        assigned(4, 1),
+        assigned(5, 2),
+        length(6, neutral("$0 * 2", &[external], &[]), Some(4.0)),
+    ]);
+    let suppressing = BTreeMap::from([(
+        feature(3),
+        FeatureStateOverride {
+            suppressed: Some(true),
+            definition: None,
+        },
+    )]);
+    document
+        .design
+        .configurations
+        .push(configuration_with(2, BTreeMap::new(), suppressing));
+    let mut occurrence = configuration_with(3, BTreeMap::new(), BTreeMap::new());
+    occurrence.overrides.occurrences.insert(
+        id("occurrence", 1),
+        OccurrenceOverride {
+            suppressed: Some(true),
+            ..OccurrenceOverride::default()
+        },
+    );
+    document.design.configurations.push(occurrence);
+    let holds = |key: u32, configuration_key: u32| {
+        document
+            .parameter_cache(&parameter_id(key), Some(&configuration(configuration_key)))
+            .unwrap()
+            .is_some()
+    };
+    assert!(!holds(3, 2), "a Source expression");
+    assert!(
+        holds(4, 2),
+        "a Neutral program that reads nothing overridden"
+    );
+    assert!(!holds(5, 2), "a Source program");
+    assert!(
+        holds(6, 2),
+        "an External reference with no occurrence override"
+    );
+    assert!(
+        !holds(6, 3),
+        "an External reference under an occurrence override"
+    );
+}
+
 /// A reference `through` an occurrence path has no value in an edit, which
 /// clears what reads it rather than reading the target's base cache.
 #[test]
