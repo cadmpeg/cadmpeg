@@ -463,3 +463,19 @@ fn an_assembly_with_empty_model_maps_is_not_an_empty_design() {
     let report = classify(&empty_design_carriers(), true);
     assert!(!has_code(&report, F3dLossCode::EmptyDesign));
 }
+
+#[test]
+fn empty_model_maps_beside_an_undecoded_mesh_container_keep_the_geometry_losses() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            brep_entries: 1,
+            brep_streams: 1,
+            model_body_maps_explicitly_empty: true,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(!has_code(&report, F3dLossCode::EmptyDesign));
+}

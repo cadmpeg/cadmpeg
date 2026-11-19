@@ -5127,7 +5127,8 @@ pub(crate) fn apply_carrier_classification(
                 carriers.declared_bodies,
                 carriers.sketch_entities,
                 carriers.reference_images,
-                carriers.model_body_maps_explicitly_empty,
+                carriers.model_body_maps_explicitly_empty
+                    && untransferred_mesh_containers.is_none(),
             );
         }
     }
