@@ -74,7 +74,7 @@ impl<'a> HistoryMetadata<'a> {
     }
 }
 
-pub(super) fn feature_tree_node_role(
+pub(crate) fn feature_tree_node_role(
     feature: &Feature,
     history_features: &[Feature],
 ) -> Option<FeatureTreeNodeRole> {
@@ -415,7 +415,7 @@ pub(super) fn is_offset_plane(feature: &Feature) -> bool {
             .is_some()
 }
 
-pub(super) fn principal_plane_in_history(
+pub(crate) fn principal_plane_in_history(
     feature: &Feature,
     features_by_source: &HashMap<FeatureSource, &Feature>,
     history_features: &[Feature],
