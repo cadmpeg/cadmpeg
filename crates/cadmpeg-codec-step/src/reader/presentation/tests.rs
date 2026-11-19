@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 use super::{find_color, style_application_order, ColorResolution, StyleDomain};
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::BTreeSet;
 
 mod cache_storage;
@@ -1792,6 +1793,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             placement: Some(Transform::identity()),
             semantics: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     ir.model.presentation_layers.push(PresentationLayer {
         id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),

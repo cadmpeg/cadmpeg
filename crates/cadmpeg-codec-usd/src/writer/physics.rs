@@ -26,17 +26,9 @@ use super::{Writer, MILLIMETRES_PER_UNIT};
 
 /// Name of the scope that holds physical materials and joints.
 pub(super) const PHYSICS: &str = "Physics";
-/// Millimetres per metre.
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
-
-/// Metres per scene unit.
-fn meters_per_unit() -> f64 {
-    MILLIMETRES_PER_UNIT / MILLIMETRES_PER_METRE
-}
-
-/// Scene-unit density per kilogram per cubic metre.
+/// Scene-unit density per kilogram per cubic millimetre.
 fn density_scale() -> f64 {
-    meters_per_unit().powi(3)
+    MILLIMETRES_PER_UNIT.powi(3)
 }
 
 /// The schemas and properties of one prim.
@@ -294,12 +286,12 @@ impl Plan {
         let scope_path = String::new();
         for collider in &model.colliders {
             let approximation = match &collider.shape {
-                ColliderShape::Exact {} => None,
-                ColliderShape::ConvexHull {} => Some("convexHull"),
-                ColliderShape::ConvexDecomposition {} => Some("convexDecomposition"),
-                ColliderShape::BoundingBox {} => Some("boundingCube"),
-                ColliderShape::BoundingSphere {} => Some("boundingSphere"),
-                ColliderShape::Simplified {} => Some("meshSimplification"),
+                ColliderShape::Exact => None,
+                ColliderShape::ConvexHull => Some("convexHull"),
+                ColliderShape::ConvexDecomposition => Some("convexDecomposition"),
+                ColliderShape::BoundingBox => Some("boundingCube"),
+                ColliderShape::BoundingSphere => Some("boundingSphere"),
+                ColliderShape::Simplified => Some("meshSimplification"),
                 ColliderShape::Native { name } => Some(name.as_str()),
             };
             let mut lines = Vec::new();
@@ -715,15 +707,15 @@ impl Writer<'_> {
             let rotation = matches!(drive.axis, DriveAxis::Rotation { .. });
             let degrees = 180.0 / std::f64::consts::PI;
             // See the reader for the inverse factors.
-            let mpu = meters_per_unit();
+            let millimetres = MILLIMETRES_PER_UNIT;
             let (position, response, force) = if rotation {
                 (
                     degrees,
-                    1.0 / (mpu * mpu * MILLIMETRES_PER_METRE * degrees),
-                    1.0 / (mpu * mpu * MILLIMETRES_PER_METRE),
+                    1.0 / (millimetres * millimetres * degrees),
+                    1.0 / (millimetres * millimetres),
                 )
             } else {
-                (1.0, MILLIMETRES_PER_METRE, 1.0 / mpu)
+                (1.0, 1.0, 1.0 / millimetres)
             };
             let name = |field: &str| format!("drive:{instance}:physics:{field}");
             if drive.mode == DriveMode::Acceleration {
