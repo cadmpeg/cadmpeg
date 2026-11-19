@@ -54,9 +54,9 @@ fn physics_records_decode_in_ir_units() {
         drive.target_position.unwrap().get(),
         std::f64::consts::FRAC_PI_4
     ));
-    // Torque per degree in kilograms and centimetres, to newton millimetres
-    // per radian.
-    let expected = 10.0 * 2.0 * 0.01 * 0.01 * 1000.0 * 180.0 / std::f64::consts::PI;
+    // Torque per degree in kilograms and centimetres, to kilogram square
+    // millimetres per second squared per radian.
+    let expected = 10.0 * 2.0 * 10.0 * 10.0 * 180.0 / std::f64::consts::PI;
     assert!(close(drive.stiffness.unwrap().get(), expected));
 }
 
@@ -107,7 +107,7 @@ fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     ir.model.colliders.push(cadmpeg_ir::physics::Collider {
         id: crate::ids::collider("collider"),
         target: PhysicsTarget::Body { body }.into(),
-        shape: cadmpeg_ir::physics::ColliderShape::ConvexHull {},
+        shape: cadmpeg_ir::physics::ColliderShape::ConvexHull,
         enabled: true,
         material: None,
         native_ref: None,
@@ -135,7 +135,7 @@ fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     ));
     assert!(matches!(
         model.colliders[0].shape,
-        cadmpeg_ir::physics::ColliderShape::ConvexHull {}
+        cadmpeg_ir::physics::ColliderShape::ConvexHull
     ));
 }
 

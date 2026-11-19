@@ -1,7 +1,6 @@
 use super::dimension_nominal;
 use super::entity;
 use super::length;
-use super::pmi_value;
 use super::reference;
 use super::semantic_root;
 use crate::swift::approximately_equal;
@@ -20,10 +19,10 @@ use crate::swift::RenderedDimension;
 use crate::swift::RenderedDimensionKind;
 use crate::swift::ROOT_CLASS;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::pmi::DimensionKind;
-use cadmpeg_ir::pmi::DimensionTolerance;
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::pmi::PmiAnnotation;
 use cadmpeg_ir::pmi::PmiDefinition;
+use cadmpeg_ir::pmi::PmiDimensionKind as DimensionKind;
 use cadmpeg_ir::pmi::PmiQuantity;
 
 fn assert_dimension_kind(annotations: &[PmiAnnotation], id: &str, expected: &DimensionKind) {
@@ -34,7 +33,7 @@ fn assert_dimension_kind(annotations: &[PmiAnnotation], id: &str, expected: &Dim
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("dimension definition")
     };
-    assert_eq!(dimension.kind(), expected);
+    assert_eq!((&dimension.dimension), expected);
 }
 
 #[test]
@@ -299,17 +298,17 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
     let PmiDefinition::Dimension(relation) = &diameter.definition else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    let Some(DimensionTolerance::PlusMinus {
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    let Some(DimensionTolerance::Deviations(Deviations {
         lower: lower_deviation,
         upper: upper_deviation,
-    }) = relation.tolerance()
+    })) = relation.tolerance.as_ref()
     else {
         panic!("dimension tolerance");
     };
     assert!(approximately_equal(nominal.value.get(), 3.962_4));
-    assert!(approximately_equal(lower_deviation.value.get(), -0.162_4));
-    assert!(approximately_equal(upper_deviation.value.get(), 0.137_6));
+    assert!(approximately_equal(lower_deviation.get(), -0.162_4));
+    assert!(approximately_equal(upper_deviation.get(), 0.137_6));
 
     root.annotations
         .entities
@@ -326,7 +325,7 @@ fn rendered_diameter_resolves_rounded_applied_geometry() {
     let PmiDefinition::Dimension(relation) = &diameter.definition else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
+    let nominal = relation.literal_nominal().expect("dimension nominal");
     assert!(approximately_equal(nominal.value.get(), 3.962_4));
 }
 
@@ -375,8 +374,8 @@ fn numerically_equivalent_pattern_sizes_supply_diameter_without_rendered_text() 
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(5.0).expect("finite length"));
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    assert_eq!(nominal, length(5.0).expect("finite length"));
 }
 
 #[test]
@@ -453,8 +452,8 @@ fn counterbore_pattern_supplies_distinct_hole_diameter() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(6.0).expect("finite length"));
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    assert_eq!(nominal, length(6.0).expect("finite length"));
 }
 
 #[test]
@@ -510,8 +509,8 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(35.0).expect("finite length"));
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    assert_eq!(nominal, length(35.0).expect("finite length"));
 
     *root.features.entities.get_mut(1).expect("direct sphere") =
         feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 15.875);
@@ -537,8 +536,8 @@ fn direct_cylinder_and_sphere_supply_diameter_without_rendered_text() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(31.75).expect("finite length"));
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    assert_eq!(nominal, length(31.75).expect("finite length"));
 
     *root.features.entities.get_mut(2).expect("mixed cylinder") = cylinder_with_radius(15.875);
     root.annotations
@@ -663,17 +662,17 @@ fn directional_plane_distance_supplies_location_nominal() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    let Some(DimensionTolerance::PlusMinus {
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    let Some(DimensionTolerance::Deviations(Deviations {
         lower: lower_deviation,
         upper: upper_deviation,
-    }) = relation.tolerance()
+    })) = relation.tolerance.as_ref()
     else {
         panic!("dimension tolerance");
     };
-    assert_eq!(*nominal, length(20.0).expect("finite length"));
-    assert_eq!(*lower_deviation, length(-0.5).expect("finite length"));
-    assert_eq!(*upper_deviation, length(0.5).expect("finite length"));
+    assert_eq!(nominal, length(20.0).expect("finite length"));
+    assert_eq!(lower_deviation.get(), -0.5);
+    assert_eq!(upper_deviation.get(), 0.5);
 
     *root.features.entities.last_mut().expect("second plane") =
         plane_at([8.0, 9.0, 25.0], [1.0, 0.0, 0.0]);
@@ -720,8 +719,8 @@ fn directional_compound_hole_axes_supply_location_nominal() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(75.0).expect("finite length"));
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    assert_eq!(nominal, length(75.0).expect("finite length"));
 }
 
 #[test]
@@ -795,8 +794,8 @@ fn closed_slot_end_feature_supplies_length_location_nominal() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(25.4).expect("finite length"));
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    assert_eq!(nominal, length(25.4).expect("finite length"));
 
     root.features
         .entities
@@ -852,7 +851,7 @@ fn rendered_depth_resolves_axial_nominal_planes() {
     let PmiDefinition::Dimension(relation) = &depth.definition else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
+    let nominal = relation.literal_nominal().expect("dimension nominal");
     assert!(approximately_equal(nominal.value.get(), 7.62));
 }
 
@@ -882,7 +881,7 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
+    let nominal = relation.literal_nominal().expect("dimension nominal");
     assert!(approximately_equal(nominal.value.get(), 14.2875));
 
     root.annotations
@@ -908,8 +907,8 @@ fn direct_and_thread_cylinders_supply_depth_without_rendered_text() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(12.0).expect("finite length"));
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    assert_eq!(nominal, length(12.0).expect("finite length"));
 }
 
 #[test]
@@ -952,8 +951,8 @@ fn counterbore_bottom_plane_resolves_sibling_cylinder_depth() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(12.7).expect("finite length"));
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    assert_eq!(nominal, length(12.7).expect("finite length"));
 
     root.features
         .entities
@@ -1033,17 +1032,17 @@ fn semantic_slot_dimensions_resolve_exact_nominals() {
     let PmiDefinition::Dimension(relation) = &width.definition else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    let Some(DimensionTolerance::PlusMinus {
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    let Some(DimensionTolerance::Deviations(Deviations {
         lower: lower_deviation,
         upper: upper_deviation,
-    }) = relation.tolerance()
+    })) = relation.tolerance.as_ref()
     else {
         panic!("dimension tolerance");
     };
     assert!(approximately_equal(nominal.value.get(), 12.7));
-    assert!(approximately_equal(lower_deviation.value.get(), -0.2));
-    assert!(approximately_equal(upper_deviation.value.get(), 0.2));
+    assert!(approximately_equal(lower_deviation.get(), -0.2));
+    assert!(approximately_equal(upper_deviation.get(), 0.2));
     let length = annotations
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("Length 1"))
@@ -1051,7 +1050,7 @@ fn semantic_slot_dimensions_resolve_exact_nominals() {
     let PmiDefinition::Dimension(relation) = &length.definition else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
+    let nominal = relation.literal_nominal().expect("dimension nominal");
     assert!(approximately_equal(nominal.value.get(), 38.1));
 }
 
@@ -1120,8 +1119,8 @@ fn compound_hole_dimensions_use_direct_operation_geometry() {
         else {
             panic!("dimension definition");
         };
-        let nominal = relation.nominal().expect("dimension nominal");
-        assert_eq!(relation.kind(), &kind);
+        let nominal = relation.literal_nominal().expect("dimension nominal");
+        assert_eq!(relation.dimension, kind);
         assert_eq!(nominal.quantity, quantity);
         assert!(approximately_equal(nominal.value.get(), expected));
     }
@@ -1179,7 +1178,7 @@ fn semantic_slot_width_traverses_patterns_and_rejects_disagreement() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
+    let nominal = relation.literal_nominal().expect("dimension nominal");
     assert!(approximately_equal(nominal.value.get(), 9.525));
 
     root.features
@@ -1253,16 +1252,16 @@ fn semantic_radius_resolves_fillets_cylinders_and_spheres() {
     else {
         panic!("dimension definition");
     };
-    let nominal = relation.nominal().expect("dimension nominal");
-    let Some(DimensionTolerance::PlusMinus {
+    let nominal = relation.literal_nominal().expect("dimension nominal");
+    let Some(DimensionTolerance::Deviations(Deviations {
         upper: upper_deviation,
         ..
-    }) = relation.tolerance()
+    })) = relation.tolerance.as_ref()
     else {
         panic!("dimension tolerance");
     };
     assert!(approximately_equal(nominal.value.get(), 3.175));
-    assert_eq!(*upper_deviation, length(0.0).expect("finite length"));
+    assert_eq!(upper_deviation.get(), 0.0);
 
     *root.features.entities.get_mut(2).expect("second member") =
         feature_with_nominal_measurement("GdtSphere", "NomSphere", "GeoSphere", "R", 4.0);
@@ -1390,14 +1389,14 @@ fn zero_nominal_dimension_keeps_the_annotation_without_a_nominal() {
     let PmiDefinition::Dimension(relation) = &annotation.definition else {
         panic!("dimension definition");
     };
-    assert_eq!(relation.kind(), &DimensionKind::Angular);
-    assert_eq!(relation.nominal(), None);
+    assert_eq!(relation.dimension, DimensionKind::Angular);
+    assert_eq!(relation.literal_nominal(), None);
     assert_eq!(
-        relation.tolerance(),
-        Some(&DimensionTolerance::PlusMinus {
-            lower: pmi_value(-0.5, PmiQuantity::Angle).expect("finite angle"),
-            upper: pmi_value(0.5, PmiQuantity::Angle).expect("finite angle"),
-        })
+        relation.tolerance.as_ref(),
+        Some(&DimensionTolerance::Deviations(Deviations {
+            lower: cadmpeg_ir::scalar::FiniteReal::new(-0.5).expect("finite angle"),
+            upper: cadmpeg_ir::scalar::FiniteReal::new(0.5).expect("finite angle"),
+        }))
     );
 }
 
