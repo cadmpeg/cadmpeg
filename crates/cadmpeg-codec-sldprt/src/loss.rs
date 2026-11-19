@@ -313,6 +313,9 @@ pub(crate) enum SldprtLossCode {
     AssemblyEmbeddedDocumentsNotTransferred,
     /// An occurrence's exclusion from the bill of materials is not transferred.
     AssemblyBomExclusionNotTransferred,
+    /// Design features whose operation the decoder typed in its own records
+    /// state their family without operands.
+    DesignFeatureUnresolved,
 }
 
 impl SldprtLossCode {
@@ -446,6 +449,7 @@ impl SldprtLossCode {
         Self::AssemblyConfigurationsNotTransferred,
         Self::AssemblyEmbeddedDocumentsNotTransferred,
         Self::AssemblyBomExclusionNotTransferred,
+        Self::DesignFeatureUnresolved,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -601,6 +605,7 @@ impl SldprtLossCode {
                 "assembly.embedded-documents-not-transferred"
             }
             Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
+            Self::DesignFeatureUnresolved => "design.feature-unresolved",
         }
     }
 
@@ -734,7 +739,8 @@ impl SldprtLossCode {
             Self::AssemblyComponentsExternal
             | Self::AssemblySuppressedComponentsOmitted
             | Self::AssemblyConfigurationsNotTransferred
-            | Self::AssemblyBomExclusionNotTransferred => Severity::Info,
+            | Self::AssemblyBomExclusionNotTransferred
+            | Self::DesignFeatureUnresolved => Severity::Info,
         }
     }
 
@@ -779,6 +785,7 @@ impl SldprtLossCode {
             | Self::AssemblyBomExclusionNotTransferred => {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
+            Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1166,6 +1173,7 @@ mod tests {
                 "assembly.configurations-not-transferred",
                 "assembly.embedded-documents-not-transferred",
                 "assembly.bom-exclusion-not-transferred",
+                "design.feature-unresolved",
             ]
         );
     }

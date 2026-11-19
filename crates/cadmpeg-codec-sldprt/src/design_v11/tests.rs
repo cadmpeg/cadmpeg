@@ -387,6 +387,7 @@ fn parameters_with_readings(
         Option<&str>,
     )],
     classes: &[(&str, crate::records::ArchiveParameterClass)],
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
 ) -> (CadIr, Vec<cadmpeg_ir::design::parameter::DesignParameter>) {
     let ir = part_with_history(keywords, &[]);
     let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
@@ -417,13 +418,16 @@ fn parameters_with_readings(
             .collect(),
     };
     let timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let parameters = super::parameters::parameters(
-        &native.feature_histories,
-        &timeline,
-        &ir.design.scopes[0].definition,
-        &decoded,
-    )
-    .unwrap();
+    let parameters = super::parameters::Entries::new(&native.feature_histories, &timeline)
+        .unwrap()
+        .parameters(
+            &ir.design.scopes[0].definition,
+            &super::parameters::Readings {
+                decoded,
+                length_unit,
+                bound: std::collections::HashMap::new(),
+            },
+        );
     (ir, parameters)
 }
 
@@ -471,6 +475,7 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
             ("scalar-rounded", ArchiveParameterClass::Length),
             ("scalar-count", ArchiveParameterClass::Integer),
         ],
+        None,
     );
     let named = |feature: &str, name: &str| {
         let owner = cadmpeg_ir::design::parameter::ParameterOwner::Feature(
@@ -515,6 +520,82 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
     let unread = named("Pattern", "D2");
     assert!(matches!(&unread.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"));
     assert_eq!(unread.value, None);
+}
+
+#[test]
+fn a_length_display_is_a_literal_in_the_part_length_unit() {
+    use crate::records::ArchiveParameterClass;
+    use cadmpeg_ir::design::parameter::{DimensionDisplay, ParameterValue};
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::scalar::Length;
+
+    let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
+    let (ir, parameters) = parameters_with_readings(
+        br#"<Keywords Name="Bracket">
+            <Extrusion Name="Stored" Type="BossExtrude" id="7">
+                <Dimension Name="D1">1</Dimension>
+            </Extrusion>
+            <Extrusion Name="Rounded" Type="BossExtrude" id="9">
+                <Dimension Name="D1">14.39</Dimension>
+            </Extrusion>
+            <Extrusion Name="Display" Type="BossExtrude" id="10">
+                <Dimension Name="D1">12</Dimension>
+            </Extrusion>
+            <Fillet Name="Round" id="11">
+                <Dimension Name="D1">R0.25</Dimension>
+            </Fillet>
+            <Feature Name="Pattern" Type="LPattern" id="12">
+                <Dimension Name="D1">4</Dimension>
+            </Feature>
+        </Keywords>"#,
+        &[
+            ("Stored", "D1", length(25.4), None),
+            ("Rounded", "D1", length(365.4552), Some("scalar-rounded")),
+            ("Display", "D1", length(12.0), None),
+            ("Round", "D1", length(6.35), None),
+            ("Pattern", "D1", V10::Integer(4), Some("scalar-count")),
+        ],
+        &[
+            ("scalar-rounded", ArchiveParameterClass::Length),
+            ("scalar-count", ArchiveParameterClass::Integer),
+        ],
+        Some(UnitSymbol::In),
+    );
+    let named = |feature: &str| {
+        let owner = cadmpeg_ir::design::parameter::ParameterOwner::Feature(
+            feature_named(&ir, feature).id.clone(),
+        );
+        parameters
+            .iter()
+            .find(|parameter| parameter.owner.as_ref() == Some(&owner))
+            .unwrap_or_else(|| panic!("{feature}: {parameters:#?}"))
+    };
+    for (feature, literal, millimetres) in [
+        ("Stored", "1[in]", 25.4),
+        ("Rounded", "14.388[in]", 365.4552),
+        ("Display", "12[in]", 12.0 * 25.4),
+        ("Round", "0.25[in]", 6.35),
+    ] {
+        let parameter = named(feature);
+        assert_eq!(
+            parameter.kind,
+            ValueKind::Quantity(Quantity::LENGTH),
+            "{feature}"
+        );
+        let expression = expression_json(parameter);
+        assert_eq!(expression["kind"], "neutral", "{feature}");
+        assert_eq!(expression["value"]["text"], literal, "{feature}");
+        let Some(ParameterValue::Number(value)) = parameter.value else {
+            panic!("{feature} has no value");
+        };
+        assert!(
+            (value.get() - millimetres).abs() <= 1e-9 * millimetres,
+            "{feature}"
+        );
+    }
+    assert_eq!(named("Round").display, Some(DimensionDisplay::Radius));
+    assert_eq!(expression_json(named("Pattern"))["kind"], "source");
 }
 
 #[test]
@@ -783,4 +864,346 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
     assert_eq!(evaluation.status, EvaluationStatus::Stale);
     assert!(evaluation.content.is_none());
     assert_no_design_findings(&ir);
+}
+
+/// A part with the three built-in planes, a sketch on the Top plane, and an
+/// extrude of it, whose v10 records state a rectangle sketch with a
+/// horizontal and a vertical dimension and a blind extrusion.
+fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
+    let mut ir = part_with_history(
+        br#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                <Dimension Name="D1">50</Dimension>
+                <Dimension Name="D2">30</Dimension>
+            </Sketch>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">10</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+        &[
+            ("moRefPlane_c", "Front", 2),
+            ("moRefPlane_c", "Top", 3),
+            ("moRefPlane_c", "Right", 4),
+            ("moOriginProfileFeature_c", "Origin", 106),
+            ("moProfileFeature_c", "Sketch1", 8),
+            ("moExtrusion_c", "Boss", 7),
+        ],
+    );
+    let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let id = |name: &str| {
+        ir.model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap()
+            .id
+            .clone()
+    };
+    let (sketch_feature, boss) = (id("Sketch1"), id("Boss"));
+    let parameter = |owner: &cadmpeg_ir::features::FeatureId, name: &str| {
+        ir.model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.owner.as_ref() == Some(owner) && parameter.name == name)
+            .unwrap()
+            .id
+            .as_str()
+            .to_owned()
+    };
+    let (width, height) = (
+        parameter(&sketch_feature, "D1"),
+        parameter(&sketch_feature, "D2"),
+    );
+    let sketch = "sldprt:model:sketch#test";
+    let entity = |key: &str| format!("sldprt:model:sketch-entity#test:{key}");
+    let point = |key: &str, u: f64, v: f64| {
+        serde_json::json!({"id": entity(key), "sketch": sketch, "construction": false,
+            "native_ref": format!("native:{key}"), "endpoint_refs": [],
+            "geometry": {"kind": "point", "position": {"u": u, "v": v}}})
+    };
+    let line = |key: &str, from: (&str, f64, f64), to: (&str, f64, f64)| {
+        serde_json::json!({"id": entity(key), "sketch": sketch, "construction": false,
+            "endpoint_refs": [format!("native:{}", from.0), format!("native:{}", to.0)],
+            "geometry": {"kind": "line", "start": {"u": from.1, "v": from.2},
+                "end": {"u": to.1, "v": to.2}}})
+    };
+    let corners = [
+        ("a", 0.0, 0.0),
+        ("b", 50.0, 0.0),
+        ("c", 50.0, 30.0),
+        ("d", 0.0, 30.0),
+    ];
+    let mut entities = corners
+        .iter()
+        .map(|(key, u, v)| point(key, *u, *v))
+        .collect::<Vec<_>>();
+    for (index, from) in corners.iter().enumerate() {
+        let to = corners[(index + 1) % corners.len()];
+        entities.push(line(&format!("l{index}"), *from, to));
+    }
+    ir.model.sketch_entities = serde_json::from_value(serde_json::Value::Array(entities)).unwrap();
+    ir.model.sketches = serde_json::from_value(serde_json::json!([{
+        "id": sketch, "name": "Sketch1",
+        "placement": {"kind": "resolved", "frame": {"origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "normal": {"x": 0.0, "y": 1.0, "z": 0.0}, "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}}},
+        "profiles": []
+    }]))
+    .unwrap();
+    ir.model.sketch_constraints = serde_json::from_value(serde_json::json!([
+        {"id": "sldprt:model:sketch-constraint#test:0", "sketch": sketch,
+            "definition": {"kind": "coincident_loci", "loci": [
+                {"kind": "end", "value": entity("l0")}, {"kind": "start", "value": entity("l1")}]}},
+        {"id": "sldprt:model:sketch-constraint#test:1", "sketch": sketch,
+            "definition": {"kind": "horizontal_distance",
+                "first": {"kind": "start", "value": entity("l1")},
+                "second": {"kind": "start", "value": entity("l0")}, "parameter": width},
+            "driving": true},
+        {"id": "sldprt:model:sketch-constraint#test:2", "sketch": sketch,
+            "definition": {"kind": "native", "native_kind": "sgPntPntVertDist",
+                "native_properties": {}, "entities": [], "parameter": height,
+                "operands": [{"native_kind": "5681", "object_index": 1},
+                    {"native_kind": "5681", "object_index": 2}]},
+            "driving": true},
+        {"id": "sldprt:model:sketch-constraint#test:3", "sketch": sketch,
+            "definition": {"kind": "native", "native_kind": "sldprt:sketch-relation:17",
+                "native_properties": {}, "entities": [entity("l2")], "operands": []}}
+    ]))
+    .unwrap();
+    for feature in &mut ir.model.features {
+        let definition = if feature.id == sketch_feature {
+            serde_json::json!({"kind": "operation", "value": {"kind": "sketch",
+                "value": {"sketch": {"kind": "planar", "sketch": sketch}}}})
+        } else if feature.id == boss {
+            serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {
+                "profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch}},
+                "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
+                "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 10.0}}},
+                "op": "join", "solid": true}}})
+        } else {
+            continue;
+        };
+        let definition = serde_json::from_value(definition).unwrap();
+        feature.evaluation.edit(|current, _| *current = definition);
+    }
+    (ir, native)
+}
+
+#[test]
+fn principal_planes_are_datums_on_the_principal_planes() {
+    use cadmpeg_ir::design::construction::InputReference;
+    use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
+
+    let (ir, _) = sketch_and_extrude();
+    for (name, entity) in [
+        ("Front", PrincipalEntity::XyPlane),
+        ("Top", PrincipalEntity::XzPlane),
+        ("Right", PrincipalEntity::YzPlane),
+    ] {
+        let FeatureOperation::Datum(datum) = &feature_named(&ir, name).definition.operation else {
+            panic!("{name} is no datum");
+        };
+        let DatumElement::Plane(plane) = &datum.element else {
+            panic!("{name} is no plane");
+        };
+        let [input] = plane.inputs.as_slice() else {
+            panic!("{name} has one input");
+        };
+        let Some(InputReference::Picks(selection)) = &input.reference else {
+            panic!("{name} picks");
+        };
+        let Picks::Named(picks) = &selection.picks else {
+            panic!("{name} names its pick");
+        };
+        assert!(matches!(
+            picks.as_slice(),
+            [pick] if pick.target == PickTarget::Principal { entity, container: None }
+        ));
+    }
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::design::ops::shared::{Limit, Span};
+    use cadmpeg_ir::design::ops::sketch::{DefiningRole, DistanceAxis, Operand, SketchRelation};
+    use cadmpeg_ir::design::options::Boolean;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
+
+    let (mut ir, native) = sketch_and_extrude();
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    let definition = ir.design.scopes[0].definition.clone();
+    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let typed = super::typed::project(
+        &ir.model,
+        &native.feature_histories,
+        &[],
+        &mut timeline,
+        &entries,
+        &definition,
+    );
+    assert!(typed.loss.is_none(), "{:?}", typed.loss);
+    let sketches = typed.sketches;
+    let [sketch] = sketches.records.as_slice() else {
+        panic!("one sketch");
+    };
+    let feature = |name: &str| {
+        timeline
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap()
+    };
+    assert_eq!(
+        feature("Sketch1").definition.operation,
+        FeatureOperation::Sketch(sketch.id.clone())
+    );
+    let corner = sketches
+        .entities
+        .iter()
+        .find(|entity| entity.id.as_str().ends_with(":b"))
+        .unwrap();
+    assert_eq!(corner.roles.len(), 2);
+    assert!(corner
+        .roles
+        .iter()
+        .any(|role| role.role == DefiningRole::End && role.of.as_str().ends_with(":l0")));
+    let relation = |index: usize| {
+        &sketches
+            .constraints
+            .iter()
+            .find(|constraint| constraint.id.as_str().ends_with(&format!(":{index}")))
+            .unwrap_or_else(|| panic!("constraint {index}"))
+            .relation
+    };
+    assert!(sketches
+        .constraints
+        .iter()
+        .all(|constraint| !constraint.id.as_str().ends_with(":0")));
+    let point = |key: &str| {
+        Operand::Entity(
+            sketches
+                .entities
+                .iter()
+                .find(|entity| entity.id.as_str().ends_with(key))
+                .unwrap()
+                .id
+                .clone(),
+        )
+    };
+    let width = entries.owned(&feature("Sketch1").id, "D1").unwrap().clone();
+    assert_eq!(
+        relation(1),
+        &SketchRelation::Distance {
+            a: point(":a"),
+            b: point(":b"),
+            along: Some(DistanceAxis::Horizontal),
+            doubled: None,
+            value: Dimension::Parameter(width.clone()),
+        }
+    );
+    assert!(
+        matches!(relation(2), SketchRelation::Native { kind, values, .. }
+        if kind.as_str() == "sldprt:sgPntPntVertDist" && values.len() == 1)
+    );
+    assert!(
+        matches!(relation(3), SketchRelation::Native { kind, operands, .. }
+        if kind.as_str() == "sldprt:sketch-relation:17" && operands.len() == 1)
+    );
+
+    let FeatureOperation::Extrude(extrude) = &feature("Boss").definition.operation else {
+        panic!(
+            "the extrude is typed: {:?}",
+            feature("Boss").definition.operation
+        );
+    };
+    let depth = entries.owned(&feature("Boss").id, "D1").unwrap().clone();
+    assert_eq!(
+        extrude.span,
+        Some(Span::Between {
+            start: Box::new(Limit::AtOrigin),
+            end: Box::new(Limit::Amount(Dimension::Parameter(depth.clone()))),
+        })
+    );
+    assert_eq!(extrude.output.boolean, Some(Boolean::NewBody));
+    for parameter in [&width, &depth] {
+        assert_eq!(typed.bound.get(parameter), Some(&Quantity::LENGTH));
+    }
+
+    let parameters = entries.parameters(
+        &definition,
+        &super::parameters::Readings {
+            decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            length_unit: Some(UnitSymbol::Mm),
+            bound: typed.bound,
+        },
+    );
+    for parameter in &parameters {
+        assert_eq!(
+            expression_json(parameter)["kind"],
+            "neutral",
+            "{parameter:#?}"
+        );
+        assert!(parameter.value.is_some(), "{parameter:#?}");
+    }
+    ir.design.features = timeline.features;
+    ir.design.parameters = parameters;
+    ir.design.sketches = sketches.records;
+    ir.design.sketch_entities = sketches.entities;
+    ir.design.sketch_constraints = sketches.constraints;
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_sketch_and_an_extrude_left_unresolved_are_reported() {
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(native_envelope_fixture(&with_history(
+                sldprt_with_body(&triangle_body()),
+                br#"<Keywords Name="Bracket">
+                    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                        <Dimension Name="D1">12.5mm</Dimension>
+                        <Sketch Name="Sketch1" Type="ProfileFeature" id="8"/>
+                    </Extrusion>
+                </Keywords>"#,
+                &[],
+            ))),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let notes = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code.namespace() == "sldprt"
+                && loss.code.local_code() == "design.feature-unresolved"
+        })
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one note: {:#?}", result.report().losses);
+    };
+    assert!(
+        note.message.starts_with("1 sketch and 1 extrude features"),
+        "{}",
+        note.message
+    );
+    for name in ["Sketch1", "Boss"] {
+        let feature = result
+            .ir()
+            .design
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        assert!(matches!(
+            feature.definition.operation,
+            FeatureOperation::Unresolved { .. }
+        ));
+        assert!(note.message.contains(feature.id.as_str()));
+    }
 }

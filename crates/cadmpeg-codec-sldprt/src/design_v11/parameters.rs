@@ -11,11 +11,16 @@
 //! that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
-//! in degrees, with no unit (`docs/formats/sldprt.md`). The root definition
-//! states no authoring unit, so such a display is no cache (§5.13). A
-//! dimension's kind is the quantity its stored record states: the archive
-//! class of the `ResolvedFeatures` scalar it is bound to, or the kind the
-//! decoder's own parameter took from a record, a relation, or the feature.
+//! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
+//! definition states its length unit, a length dimension whose text is such
+//! a display is a literal in that unit, and an angle dimension's a literal
+//! in degrees (§5.12): the stored value where a record stores one, else the
+//! displayed number. Where it states none, a length display is no cache
+//! (§5.13). A dimension's kind is the quantity its stored record states: the
+//! archive class of the `ResolvedFeatures` scalar it is bound to, the kind
+//! the decoder's own parameter took from a record, a relation, or the
+//! feature, or the quantity of the sketch or feature dimension that binds
+//! it.
 
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroI8;
@@ -219,13 +224,74 @@ struct Entry<'a> {
     text: &'a str,
 }
 
-/// The parameters of the timeline's features and of the equations folders.
-pub(super) fn parameters(
-    histories: &[FeatureHistory],
+/// What the decoder read beside a parameter's text: its own parameters and
+/// scalar classes, the definition's length unit, and the quantity of each
+/// dimension that binds a parameter.
+pub(super) struct Readings<'a> {
+    pub(super) decoded: Decoded<'a>,
+    pub(super) length_unit: Option<UnitSymbol>,
+    pub(super) bound: HashMap<ParameterId, Quantity>,
+}
+
+/// The parameters of the timeline's features and of the equations folders,
+/// before their expressions are read.
+pub(super) struct Entries<'a> {
+    list: Vec<Entry<'a>>,
+    by_owner: HashMap<(FeatureId, String), ParameterId>,
+    ids: HashSet<ParameterId>,
+}
+
+impl<'a> Entries<'a> {
+    pub(super) fn new(
+        histories: &'a [FeatureHistory],
+        timeline: &Timeline,
+    ) -> Result<Self, CodecError> {
+        let entries = entries(histories, timeline)?;
+        let by_owner = entries
+            .iter()
+            .filter_map(|entry| {
+                Some((
+                    (entry.owner.clone()?, entry.name.as_str().to_owned()),
+                    entry.id.clone(),
+                ))
+            })
+            .collect();
+        let ids = entries.iter().map(|entry| entry.id.clone()).collect();
+        Ok(Self {
+            list: entries,
+            by_owner,
+            ids,
+        })
+    }
+
+    /// The parameter of `owner` named `name`.
+    pub(super) fn owned(&self, owner: &FeatureId, name: &str) -> Option<&ParameterId> {
+        self.by_owner.get(&(owner.clone(), name.to_owned()))
+    }
+
+    /// Whether `id` is one of these parameters.
+    pub(super) fn contains(&self, id: &ParameterId) -> bool {
+        self.ids.contains(id)
+    }
+
+    /// The parameters, their expressions read.
+    pub(super) fn parameters(
+        &self,
+        scope: &ProductDefinitionId,
+        readings: &Readings<'_>,
+    ) -> Vec<DesignParameter> {
+        let aliases = Aliases::new(&self.list);
+        self.list
+            .iter()
+            .map(|entry| parameter(entry, &aliases, scope, readings))
+            .collect()
+    }
+}
+
+fn entries<'a>(
+    histories: &'a [FeatureHistory],
     timeline: &Timeline,
-    scope: &ProductDefinitionId,
-    decoded: &Decoded<'_>,
-) -> Result<Vec<DesignParameter>, CodecError> {
+) -> Result<Vec<Entry<'a>>, CodecError> {
     let mut entries = Vec::new();
     let mut user_names = HashSet::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
@@ -253,20 +319,16 @@ pub(super) fn parameters(
             });
         }
     }
-    let aliases = Aliases::new(&entries);
-    Ok(entries
-        .iter()
-        .map(|entry| parameter(entry, &aliases, scope, decoded))
-        .collect())
+    Ok(entries)
 }
 
 fn parameter(
     entry: &Entry<'_>,
     aliases: &Aliases,
     scope: &ProductDefinitionId,
-    decoded: &Decoded<'_>,
+    readings: &Readings<'_>,
 ) -> DesignParameter {
-    let reading = read(entry, aliases, decoded);
+    let reading = read(entry, aliases, readings);
     DesignParameter {
         id: entry.id.clone(),
         scope: scope.clone(),
@@ -293,7 +355,8 @@ struct Reading {
     display: Option<DimensionDisplay>,
 }
 
-fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading {
+fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Reading {
+    let decoded = &readings.decoded;
     let user = entry.owner.is_none();
     let (feature, name, text) = (entry.feature, entry.name.as_str(), entry.text);
     if let Some((node, kind, value)) = literal(text, user) {
@@ -338,6 +401,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
                 | cadmpeg_ir::features::ParameterValue::Real(_)
         )
     });
+    let bound = readings.bound.get(&entry.id).copied();
     let (kind, value) = match parsed.and_then(cache) {
         Some((kind, value)) => (kind, Some(value)),
         None if user => (ValueKind::Quantity(Quantity::REAL), None),
@@ -346,10 +410,13 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
             None if native_parameter_is_length(feature, name, Some(text)) => {
                 (ValueKind::Quantity(Quantity::LENGTH), None)
             }
-            None => (
-                ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
-                None,
-            ),
+            None => match bound {
+                Some(quantity) => (ValueKind::Quantity(quantity), None),
+                None => (
+                    ValueKind::Native(cadmpeg_core::nonblank_const!(UNREAD_KIND)),
+                    None,
+                ),
+            },
         },
     };
     let display = display
@@ -358,6 +425,18 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
             cadmpeg_ir::features::DimensionDisplay::Diameter => DimensionDisplay::Diameter,
             cadmpeg_ir::features::DimensionDisplay::Radius => DimensionDisplay::Radius,
         });
+    if let Some(number) = bare.filter(|_| !user && !references) {
+        if let Some((node, value)) =
+            displayed_literal(number, &kind, value.as_ref(), readings.length_unit)
+        {
+            return Reading {
+                kind,
+                expression: Expression::Neutral(Neutral(node)),
+                value: Some(value),
+                display,
+            };
+        }
+    }
     Reading {
         kind,
         expression: Expression::Source {
@@ -367,6 +446,68 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, decoded: &Decoded<'_>) -> Reading 
         value,
         display,
     }
+}
+
+/// The literal of a dimension whose text is the bare display `number`, and
+/// its value: a length in the definition's length unit `length_unit`, an
+/// angle in degrees. The literal's number is the stored value `cache` in that
+/// unit, to 15 significant digits, where a record stores one, else the
+/// displayed number (§5.12).
+fn displayed_literal(
+    number: f64,
+    kind: &ValueKind,
+    cache: Option<&ParameterValue>,
+    length_unit: Option<UnitSymbol>,
+) -> Option<(Node<ParameterRef>, ParameterValue)> {
+    let symbol = match kind {
+        ValueKind::Quantity(Quantity::LENGTH) => length_unit?,
+        ValueKind::Quantity(Quantity::ANGLE) => UnitSymbol::Deg,
+        _ => return None,
+    };
+    let (_, scale) = canonical(symbol)?;
+    let (number, value) = match cache {
+        Some(ParameterValue::Number(value)) => (significant(value.get() / scale)?, value.get()),
+        Some(_) => return None,
+        None => (number, number * scale),
+    };
+    Some((
+        number_node(number, Some(symbol))?,
+        ParameterValue::Number(FiniteReal::new(value)?),
+    ))
+}
+
+/// Significant decimal digits of a literal read from a stored value (§5.12).
+const LITERAL_DIGITS: usize = 15;
+
+/// `value` rounded to [`LITERAL_DIGITS`] significant decimal digits.
+fn significant(value: f64) -> Option<f64> {
+    format!("{value:.*e}", LITERAL_DIGITS - 1)
+        .parse::<f64>()
+        .ok()
+        .filter(|rounded| rounded.is_finite())
+}
+
+/// The tree of the literal `signed` with the unit `symbol`.
+fn number_node(signed: f64, symbol: Option<UnitSymbol>) -> Option<Node<ParameterRef>> {
+    let unit = match symbol {
+        Some(symbol) => Unit(vec![UnitFactor {
+            symbol,
+            power: NonZeroI8::new(1)?,
+        }]),
+        None => Unit::default(),
+    };
+    let number = Node::Number {
+        value: NonNegativeReal::new(signed.abs())?,
+        unit,
+    };
+    Some(if signed.is_sign_negative() && signed != 0.0 {
+        Node::Unary {
+            op: UnaryOp::Negate,
+            operand: Box::new(number),
+        }
+    } else {
+        number
+    })
 }
 
 /// The kind and canonical cache of a value the v10 literal reader parsed. A
@@ -448,7 +589,6 @@ fn literal(text: &str, user: bool) -> Option<(Node<ParameterRef>, ValueKind, Par
         .parse::<f64>()
         .ok()
         .filter(|value| value.is_finite())?;
-    let magnitude = NonNegativeReal::new(signed.abs())?;
     let (kind, value) = match unit {
         Some(symbol) => {
             let (quantity, scale) = canonical(symbol)?;
@@ -463,26 +603,7 @@ fn literal(text: &str, user: bool) -> Option<(Node<ParameterRef>, ValueKind, Par
         ),
         None => return None,
     };
-    let unit = match unit {
-        Some(symbol) => Unit(vec![UnitFactor {
-            symbol,
-            power: NonZeroI8::new(1)?,
-        }]),
-        None => Unit::default(),
-    };
-    let number = Node::Number {
-        value: magnitude,
-        unit,
-    };
-    let node = if signed.is_sign_negative() && signed != 0.0 {
-        Node::Unary {
-            op: UnaryOp::Negate,
-            operand: Box::new(number),
-        }
-    } else {
-        number
-    };
-    Some((node, kind, value))
+    Some((number_node(signed, unit)?, kind, value))
 }
 
 /// Millimetres in one nanometre.

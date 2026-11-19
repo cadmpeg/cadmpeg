@@ -3369,6 +3369,7 @@ fn build_geometry_ir(
     admitted_entities: &mut u64,
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
+    let length_unit = crate::design_v11::length_unit(scan);
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -4230,13 +4231,17 @@ fn build_geometry_ir(
         project_design(
             ctx,
             &mut ir,
-            &native.feature_histories,
-            &native.feature_input_lanes,
-            current_bodies,
-            crate::design_v11::Persistent {
-                faces: &brep.native_face_identities,
-                bodies: &brep.native_body_identities,
+            crate::design_v11::Part {
+                histories: &native.feature_histories,
+                lanes: &native.feature_input_lanes,
+                bodies: current_bodies,
+                persistent: crate::design_v11::Persistent {
+                    faces: &brep.native_face_identities,
+                    bodies: &brep.native_body_identities,
+                },
+                length: length_unit,
             },
+            &mut pmi_losses,
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
@@ -4251,12 +4256,10 @@ fn build_geometry_ir(
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    histories: &[crate::records::FeatureHistory],
-    lanes: &[crate::records::FeatureInputLane],
-    bodies: Vec<cadmpeg_ir::ids::BodyId>,
-    persistent: crate::design_v11::Persistent<'_>,
+    part: crate::design_v11::Part<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ctx, ir, histories, lanes, bodies, persistent)?;
+    let added = crate::design_v11::project(ctx, ir, part, losses)?;
     ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
 }
 
@@ -4655,6 +4658,7 @@ fn build_metadata_ir(
     transfer_display: bool,
     part: bool,
 ) -> Result<BuiltIr, CodecError> {
+    let length_unit = crate::design_v11::length_unit(scan);
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
     let mut unknowns = Vec::new();
@@ -5114,13 +5118,17 @@ fn build_metadata_ir(
         project_design(
             ctx,
             &mut ir,
-            &native.feature_histories,
-            &native.feature_input_lanes,
-            bodies,
-            crate::design_v11::Persistent {
-                faces: &[],
-                bodies: &[],
+            crate::design_v11::Part {
+                histories: &native.feature_histories,
+                lanes: &native.feature_input_lanes,
+                bodies,
+                persistent: crate::design_v11::Persistent {
+                    faces: &[],
+                    bodies: &[],
+                },
+                length: length_unit,
             },
+            &mut pmi_losses,
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
