@@ -5,7 +5,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, Folder, OrderedKind};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::datum::DatumElement;
@@ -113,7 +113,7 @@ fn feature_tree_is_one_timeline_of_the_root_definition() {
         kind: OrderedKind::Timeline,
         members,
         folders,
-        rollback: Rollback::End,
+        rollback: None,
         placement: None,
     }] = ir.design.containers.as_slice()
     else {
@@ -181,10 +181,7 @@ fn feature_tree_is_one_timeline_of_the_root_definition() {
     let [current] = scope.current.as_slice() else {
         panic!("one current state");
     };
-    assert_eq!(
-        current.at,
-        Position::After(Member::Feature(feature_named(&ir, "Odd").id.clone()))
-    );
+    assert_eq!(current.at, Position::After(Member::Container(id.clone())));
     assert_eq!(
         current
             .bodies

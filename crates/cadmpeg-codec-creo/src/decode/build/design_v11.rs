@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ids::ContainerId;
@@ -115,8 +115,9 @@ fn definition_bodies(ir: &CadIr, definition: &ProductDefinitionId) -> Vec<BodyId
 }
 
 /// One ordered timeline holding every model feature in regeneration order.
-/// The decoder reads no insert position, so the timeline ends at its last
-/// member, which holds the current geometry.
+/// The decoder reads no insert position (part 11, entry B.95), so the
+/// timeline's rollback is unstated and the current geometry is its current
+/// state at `After(Container(timeline))` (§5.3).
 fn project_timeline(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -130,10 +131,7 @@ fn project_timeline(
         .iter()
         .map(|feature| Member::Feature(feature.id.clone()))
         .collect::<Vec<_>>();
-    let at = members.last().map_or_else(
-        || Position::Start(timeline.clone()),
-        |last| Position::After(last.clone()),
-    );
+    let at = Position::After(Member::Container(timeline.clone()));
     let mut features = Vec::new();
     for feature in &ordered {
         ctx.charge_entities(1, "project Creo v11 feature")?;
@@ -154,7 +152,7 @@ fn project_timeline(
         kind: OrderedKind::Timeline,
         members,
         folders: Vec::new(),
-        rollback: Rollback::End,
+        rollback: None,
         placement: None,
     });
     ir.design.scopes.push(DesignScope {

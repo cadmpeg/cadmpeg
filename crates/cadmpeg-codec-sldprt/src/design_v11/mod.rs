@@ -5,7 +5,9 @@
 //!
 //! The part is one design scope over its root definition, which owns the
 //! bodies of the current geometry. The feature tree is one ordered timeline
-//! whose current state, at its end, holds those bodies; the scope holds the
+//! whose rollback bar the decoder does not read (part 11, entry B.94), so its
+//! rollback is unstated and its current state, at `After(Container(timeline))`
+//! (§5.3), holds those bodies; the scope holds the
 //! part's parameters and configurations. A part whose history holds no
 //! feature, or that has no history the decoder reads, states no design.
 
@@ -19,10 +21,10 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, OrderedKind};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::ids::ContainerId;
-use cadmpeg_ir::design::refs::Position;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
@@ -53,10 +55,7 @@ pub(crate) fn project(
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
-    let at = members
-        .last()
-        .cloned()
-        .map_or_else(|| Position::Start(id.clone()), Position::After);
+    let at = Position::After(Member::Container(id.clone()));
     let current = (!bodies.is_empty())
         .then(|| current_state(at, bodies.clone()))
         .into_iter()
@@ -66,7 +65,7 @@ pub(crate) fn project(
         kind: OrderedKind::Timeline,
         members,
         folders: timeline.folders,
-        rollback: Rollback::End,
+        rollback: None,
         placement: None,
     };
     let features = timeline.features;

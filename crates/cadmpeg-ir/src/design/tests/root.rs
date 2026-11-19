@@ -217,6 +217,28 @@ fn optional_fields_lists_and_unknown_keys() {
     );
 }
 
+/// §5.2: an unstated rollback is omitted and refuses `null`; an ordered
+/// geometrical set has its own kind.
+#[test]
+fn an_unstated_rollback_is_omitted() {
+    let unstated = root::containers().remove(4);
+    let value = to_value(&unstated);
+    assert_eq!(
+        value,
+        json!({"kind": "ordered", "value": {
+            "id": "test:design:container#5",
+            "kind": "geometrical_set",
+            "members": [{"kind": "feature", "value": "test:design:feature#7"}],
+            "folders": []
+        }})
+    );
+    let mut null = value;
+    null["value"]["rollback"] = serde_json::Value::Null;
+    refuses::<Container>(&null.to_string());
+    let stated = to_value(&root::containers().remove(1));
+    assert_eq!(stated["value"]["rollback"], json!({"kind": "end"}));
+}
+
 #[test]
 fn a_set_refuses_a_repeated_member_and_an_unsorted_array() {
     let member = json!({"kind": "feature", "value": "test:design:feature#1"});
