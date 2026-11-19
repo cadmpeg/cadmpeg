@@ -11,13 +11,14 @@
 //! has an evaluation with no content and status `Stale`; a stored partition so
 //! flagged is a stale state.
 //!
-//! The states between features are not stated yet (deferred). Each
-//! partition's Deltas stream replays, mark by mark along the main line, to
-//! the node set of every earlier state; a state joined to a feature is the
-//! state after it, `of: State(After(feature))`, its records those the
-//! partition's builder makes of that node set and its names those of
-//! [`Names::entries`], based on the next later stored state and the last one
-//! on `Current` (§5.4).
+//! The states between features are not stated yet. Each partition's Deltas
+//! stream replays, mark by mark along the main line, to the node set of every
+//! earlier state; once the Parasolid reader replays it, a state joined to a
+//! feature is the state after it, `of: State(After(feature))`, its records
+//! those the partition's builder makes of that node set and its names those
+//! of [`Names::entries`], based on the next later stored state and the last
+//! one on `Current` (§5.4). Until then a state between two features has no
+//! evaluation, which §5.4 reads as not read.
 
 use std::collections::{HashMap, HashSet};
 
