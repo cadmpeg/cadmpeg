@@ -2307,6 +2307,7 @@ pub(crate) fn bind_feature_body_selections(
                             _ => None,
                         }
                     };
+                    let mut binding_losses = Vec::new();
                     let refusal =
                         combine_selection::refine(operands, feature_id, |target, tools| {
                             combine_binding::bind_combine_operands(
@@ -2316,8 +2317,10 @@ pub(crate) fn bind_feature_body_selections(
                                 pattern_bodies,
                                 inputs,
                                 &mut body_candidates,
+                                &mut binding_losses,
                             );
                         });
+                    losses.extend(binding_losses);
                     if let Some(loss) = refusal {
                         losses.push(loss);
                     }
@@ -2685,71 +2688,119 @@ fn combine_recipe_family_tool_slots(
 
 /// Bind an operand-list `Combine` through the browser node of each operand.
 ///
-/// Leaves both selections native unless every node names a distinct body of the
-/// preceding history state.
+/// The target binds when its node names a body of the preceding history
+/// state. The tools bind when every tool node names a distinct body of that
+/// state. A body that both sides name leaves both selections native.
 fn bind_operand_list_combine_bodies(
-    target: &mut cadmpeg_ir::features::BodySelection,
-    tools: &mut cadmpeg_ir::features::BodySelection,
+    (target, tools): (
+        &mut cadmpeg_ir::features::BodySelection,
+        &mut cadmpeg_ir::features::BodySelection,
+    ),
     scope: &crate::records::feature::scope::DesignParameterScope,
     operation: &crate::records::feature::combine::DesignCombineOperation,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
+    (feature_id, previous_state_id): (&cadmpeg_ir::features::FeatureId, i64),
     (histories, scopes): (
         &[AsmHistory],
         &[crate::records::feature::scope::DesignParameterScope],
     ),
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Option<()> {
+    use crate::records::feature::combine::DesignCombineBodyNode;
     use cadmpeg_ir::features::{BodyMembers, BodySelection};
 
     let stream = crate::ids::native_stream(&scope.id)?;
     let (history, _, previous) =
         unique_history_state_pair(histories, scope.history_state_id()?, previous_state_id)?;
     let input = history.topology(previous)?;
-    let body_slot = |node: Option<crate::records::feature::combine::DesignCombineBodyNode>| {
-        let node = node?;
-        let creator = scopes.iter().find(|candidate| {
-            candidate.record_index == node.creating_scope_record_index
-                && crate::ids::native_stream(&candidate.id) == Some(stream)
-        })?;
-        let creator_state = creator.history_state_id()?;
+    let body_slot = |node: Option<DesignCombineBodyNode>| -> Result<i64, &'static str> {
+        let node = node.ok_or("it has no browser body node")?;
+        let creator = scopes
+            .iter()
+            .find(|candidate| {
+                candidate.record_index == node.creating_scope_record_index
+                    && crate::ids::native_stream(&candidate.id) == Some(stream)
+            })
+            .ok_or("its creating scope is not decoded")?;
+        let creator_state = creator
+            .history_state_id()
+            .ok_or("its creating scope has no history state")?;
         let mut states = history
             .states()
             .iter()
             .filter(|state| state.state_id == creator_state);
         let (Some(state), None) = (states.next(), states.next()) else {
-            return None;
+            return Err("its creating history state is not unique");
         };
-        let [slot] = state.transition.as_ref()?.topology.bodies.inserted[..] else {
-            return None;
+        let [slot] = state.transition.as_ref().map_or(&[][..], |transition| {
+            &transition.topology.bodies.inserted[..]
+        }) else {
+            return Err("its creating state does not insert exactly one body");
         };
-        input.bodies.contains(&slot).then_some(slot)
-    };
-    let target_slot = body_slot(operation.target_body_node)?;
-    let mut tool_slots = Vec::new();
-    for tool in operation.tools.iter() {
-        let slot = body_slot(tool.body_node)?;
-        if slot == target_slot {
-            return None;
+        if input.bodies.contains(slot) {
+            Ok(*slot)
+        } else {
+            Err("its body is absent from the preceding history state")
         }
-        tool_slots.push(slot);
+    };
+    let mut refuse = |operand: &str, record_index: u32, reason: &str| {
+        losses.push(crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
+            "feature {feature_id} does not bind Combine {operand} {stream}:design-record#{record_index} through its browser node: {reason}"
+        )));
+    };
+    let target_slot = match body_slot(operation.target_body_node) {
+        Ok(slot) => Some(slot),
+        Err(reason) => {
+            refuse("target", operation.target_record_index, reason);
+            None
+        }
+    };
+    let mut tool_slots = Some(Vec::new());
+    for tool in operation.tools.iter() {
+        match body_slot(tool.body_node) {
+            Ok(slot) if Some(slot) == target_slot => {
+                refuse(
+                    "tool",
+                    tool.record_index,
+                    "its body is also the target body",
+                );
+                return None;
+            }
+            Ok(slot) => {
+                if let Some(slots) = tool_slots.as_mut() {
+                    slots.push(slot);
+                }
+            }
+            Err(reason) => {
+                refuse("tool", tool.record_index, reason);
+                tool_slots = None;
+            }
+        }
     }
     let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
     let design_record = |record_index| format!("{stream}:design-record#{record_index}");
+    if let Some(target_slot) = target_slot {
+        *target = BodySelection::historical(
+            crate::ids::history_input_state_id(&prefix),
+            vec![crate::ids::history_input_body_id(&prefix, target_slot)],
+            design_record(operation.target_record_index),
+        )
+        .ok()?;
+    }
     let mut rows = Vec::new();
-    for (slot, tool) in tool_slots.into_iter().zip(operation.tools.iter()) {
+    for (slot, tool) in tool_slots?.into_iter().zip(operation.tools.iter()) {
         rows.push(body_member(
             crate::ids::history_input_body_id(&prefix, slot),
             design_record(tool.record_index),
         )?);
     }
-    let members = BodyMembers::try_from_rows(rows).ok()?;
-    let target_selection = BodySelection::historical(
-        crate::ids::history_input_state_id(&prefix),
-        vec![crate::ids::history_input_body_id(&prefix, target_slot)],
-        design_record(operation.target_record_index),
-    )
-    .ok()?;
-    *target = target_selection;
+    let Ok(members) = BodyMembers::try_from_rows(rows) else {
+        refuse(
+            "tools",
+            operation.tools.first.record_index,
+            "two tools name one body",
+        );
+        return None;
+    };
     *tools = BodySelection::HistoricalSet {
         state: crate::ids::history_input_state_id(&prefix),
         members,
