@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 TEST_LINE_LIMIT = 2000
 PRODUCTION_LINE_LIMIT = 10000
 GENERATED_LAYOUT_LINE_LIMIT = 20000
+# Files that take no new content, with the line count each had when it froze.
+FROZEN_LINE_LIMITS = {"crates/cadmpeg-ir/src/features.rs": 9756}
 
 
 # Parsing results belong to one checker invocation. A new invocation reads the
@@ -1666,6 +1668,23 @@ def scan_measurement_dependency() -> list[Finding]:
     return findings
 
 
+def scan_frozen_files(sources: dict[Path, str]) -> list[Finding]:
+    """Report a frozen file that is longer than its recorded line limit."""
+    findings: list[Finding] = []
+    for path, limit in FROZEN_LINE_LIMITS.items():
+        size = line_count(sources.get((ROOT / path).resolve(), ""))
+        if size > limit:
+            findings.append(Finding(
+                "frozen_file_size", path, limit + 1,
+                f"{size} lines, over the frozen limit of {limit}. The v10 design layer takes no new "
+                "type, arm or field (AGENTS.md); a fact with no v11 home stays in the codec's native "
+                "record, and the pull request names the v11 section that will hold it. A unit that "
+                "must lengthen this file raises its limit in FROZEN_LINE_LIMITS "
+                "(scripts/check-source-policy.py) in the same pull request and says why.",
+            ))
+    return findings
+
+
 def is_main_guard(node: ast.AST) -> bool:
     """Whether one statement is the ``if __name__ == "__main__":`` block."""
     if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
@@ -2374,6 +2393,7 @@ SOURCE_SCANS = {
     "module_visibility": lambda sources: scan_module_visibility(sources),
     "authoring_paths": lambda sources: scan_authoring_paths(),
     "measurement_dependency": lambda sources: scan_measurement_dependency(),
+    "frozen_files": lambda sources: scan_frozen_files(sources),
     "script_tests": lambda sources: scan_script_tests(),
 }
 _TASK_SOURCES: dict[Path, str] = {}
