@@ -524,3 +524,132 @@ fn a_loop_that_splits_a_boundary_segment_keeps_the_sheet_a_shell() {
     assert_eq!(decoded.ir().geometry.edges.len(), 2);
     assert_eq!(decoded.ir().geometry.vertices.len(), 2);
 }
+
+/// A ring of outer radius 5 with a hole of radius 2, and a disc of radius
+/// 2 that fills the hole, in one shell: the disc's loop and the ring's
+/// hole use one edge on the shared boundary circle.
+fn ring_and_disc_sharing_an_edge() -> CadIr {
+    let source = ring_and_disc_set().replace(
+        "#19=OUTER_BOUNDARY_CURVE('',(#18),.F.);",
+        "#19=OUTER_BOUNDARY_CURVE('',(#15),.F.);",
+    );
+    let source = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = source.ir().clone();
+    let geometry = &mut ir.geometry;
+    let ring = geometry
+        .faces
+        .iter()
+        .find(|face| face.loops.len() == 2)
+        .unwrap()
+        .clone();
+    let disc_index = geometry
+        .faces
+        .iter()
+        .position(|face| face.loops.len() == 1)
+        .unwrap();
+    let disc = geometry.faces[disc_index].clone();
+    let loop_coedges = |geometry: &cadmpeg_ir::document::Topology,
+                        face: &cadmpeg_ir::topology::Face| {
+        geometry
+            .loops
+            .iter()
+            .filter(|face_loop| face.loops.contains(&face_loop.id))
+            .flat_map(|face_loop| face_loop.coedges().to_vec())
+            .collect::<Vec<_>>()
+    };
+    let coedge = |geometry: &cadmpeg_ir::document::Topology, id: &cadmpeg_ir::ids::CoedgeId| {
+        geometry
+            .coedges
+            .iter()
+            .find(|candidate| &candidate.id == id)
+            .unwrap()
+            .clone()
+    };
+    let edge = |geometry: &cadmpeg_ir::document::Topology, id: &cadmpeg_ir::ids::EdgeId| {
+        geometry
+            .edges
+            .iter()
+            .find(|candidate| &candidate.id == id)
+            .unwrap()
+            .clone()
+    };
+    let disc_coedges = loop_coedges(geometry, &disc);
+    let [disc_coedge] = disc_coedges.as_slice() else {
+        panic!("one disc coedge: {disc_coedges:#?}");
+    };
+    let disc_coedge = coedge(geometry, disc_coedge);
+    let disc_edge = edge(geometry, &disc_coedge.edge);
+    let hole_coedge = loop_coedges(geometry, &ring)
+        .iter()
+        .map(|id| coedge(geometry, id))
+        .find(|candidate| edge(geometry, &candidate.edge).curve() == disc_edge.curve())
+        .expect("the ring's hole coedge on the disc's circle");
+    for candidate in &mut geometry.coedges {
+        if candidate.id == disc_coedge.id {
+            candidate.edge = hole_coedge.edge.clone();
+            candidate.radial_next = hole_coedge.id.clone();
+        } else if candidate.id == hole_coedge.id {
+            candidate.radial_next = disc_coedge.id.clone();
+        }
+    }
+    geometry
+        .edges
+        .retain(|candidate| candidate.id != disc_edge.id);
+    let used: std::collections::BTreeSet<_> = geometry
+        .edges
+        .iter()
+        .flat_map(|candidate| candidate.vertices().cloned().collect::<Vec<_>>())
+        .collect();
+    geometry.vertices.retain(|vertex| used.contains(&vertex.id));
+    geometry.faces[disc_index].shell = ring.shell.clone();
+    geometry.shells.retain(|shell| shell.id != disc.shell);
+    for region in &mut geometry.regions {
+        region.shells.retain(|shell| shell != &disc.shell);
+    }
+    ir.finalize();
+    ir
+}
+
+/// Two curve-bounded faces that share an edge: set members state no
+/// edge, so the writer keeps the sheet a shell, and the shared edge and
+/// the one shell survive a round trip.
+#[test]
+fn curve_bounded_faces_that_share_an_edge_keep_the_sheet_a_shell() {
+    let ir = ring_and_disc_sharing_an_edge();
+    assert_eq!(sheet_loop_counts(&ir), [1, 2]);
+    assert_eq!(ir.geometry.shells.len(), 1);
+    assert_eq!(ir.geometry.edges.len(), 2);
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= OPEN_SHELL(").count(), 1, "{text}");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .unwrap();
+    let geometry = &decoded.ir().geometry;
+    assert_eq!(sheet_loop_counts(decoded.ir()), [1, 2]);
+    assert_eq!(geometry.shells.len(), 1, "{:#?}", geometry.shells);
+    assert_eq!(geometry.edges.len(), 2, "{:#?}", geometry.edges);
+    let shared = geometry
+        .edges
+        .iter()
+        .filter(|edge| {
+            geometry
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge.id)
+                .count()
+                == 2
+        })
+        .count();
+    assert_eq!(shared, 1, "{:#?}", geometry.coedges);
+}

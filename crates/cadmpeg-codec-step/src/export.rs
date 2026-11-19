@@ -2274,6 +2274,7 @@ impl<'a> Builder<'a> {
             || !faces
                 .iter()
                 .all(|face| whole_bounded(face) || curve_bounded(face))
+            || self.faces_share_an_edge_or_curve(&faces)
         {
             return None;
         }
@@ -2291,6 +2292,40 @@ impl<'a> Builder<'a> {
             self.emitter
                 .emit("GEOMETRIC_SET", &format!("'',{}", refs(&members))),
         )
+    }
+
+    /// Whether two of `faces` share an edge, or the curve of an edge. A set
+    /// member states its own boundaries and no edge, so the members of a
+    /// geometric set read back with their own edges and shells, and the
+    /// adjacency of such faces would be lost.
+    fn faces_share_an_edge_or_curve(&self, faces: &[&Face]) -> bool {
+        let mut edges: HashMap<&str, usize> = HashMap::new();
+        let mut curves: HashMap<&str, usize> = HashMap::new();
+        for (index, face) in faces.iter().enumerate() {
+            for coedge in face
+                .loops
+                .iter()
+                .filter_map(|id| self.loops.get(id.as_str()))
+                .flat_map(|face_loop| face_loop.coedges())
+            {
+                let Some(edge) = self
+                    .coedges
+                    .get(coedge.as_str())
+                    .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+                else {
+                    continue;
+                };
+                if *edges.entry(edge.id.as_str()).or_insert(index) != index {
+                    return true;
+                }
+                if let Some(curve) = edge.curve() {
+                    if *curves.entry(curve.as_str()).or_insert(index) != index {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Whether `face` has a curve-bounded surface whose boundary curves

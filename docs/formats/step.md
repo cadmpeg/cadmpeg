@@ -1770,7 +1770,10 @@ a rectangular parameter subset surface (written as a
 curves pair one to one with its loops, each loop holding one coedge per segment
 of its boundary, on that segment's curve, in the segments' order or its
 reverse, and that no PMI annotation targets, through the face, an edge of its
-loops, or a vertex of those edges. The writer
+loops, or a vertex of those edges. A set member states its own boundaries and
+no edge, and each member reads back in its own shell, so a region in which two
+faces share an edge, or the curve of an edge, takes the `OPEN_SHELL` path and
+keeps the shared edge and the shell. The writer
 states a curve-bounded face as a `CURVE_BOUNDED_SURFACE` on its support,
 with each boundary composite curve of the construction as a member of its
 boundary list. A boundary that shares a segment curve with the face's outer
