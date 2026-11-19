@@ -205,3 +205,28 @@ vendor. See the [clean-room and legal policy][legal].
 The native `f3d.display_poses` arena retains root-design scene override rows. Each record has `stream`, `byte_offset` relative to that stream, an alternating component-definition/carrier `path`, a row-major 4×4 `transform` in millimetres, and `binding`. A bound row has `binding = {"state":"bound","occurrence":"…"}`. Ambiguous and unbound rows have their respective state and carry no occurrence id. Neutral occurrence transforms retain their stored-pose projection. Consumers can select either pose source.
 
 Binding runs after archive composition. Synthetic member roots can share the placing occurrence's path; their rows retain an ambiguous state. Member scene states remain separate from the root design's displayed state. The reader reports counted grammar refusals once per stream and counted ambiguous or unbound rows after binding.
+
+## Manufacture definitions
+
+The reader locates `Toolpath/Iron.Document/*.irondoc` in a document and in
+F3Z members. `CadIr.manufacturing` holds setups, stock and WCS parameters,
+tools and holders, operations in setup order, and stored parameter text with
+units. Strategy names retain their source text and have a normalized family.
+Computed-path descriptors supply presence and validity flags.
+
+Native geometry selections retain XML and produce `f3d/cam.selection-unresolved`.
+Record XML, member paths, and byte ranges preserve source provenance. The
+shared XML reader bounds allocation, nesting depth, and element storage.
+Unreadable records produce `f3d/cam.*` losses. Resource refusals propagate.
+
+Not read:
+
+- Computed toolpaths (`Iron.Toolpath` and `Iron.ToolpathPreEdit`).
+- NC code (`Iron.NcCode`).
+- Machine definitions (`Iron.Machine`).
+- Post configuration.
+- Slice data and process simulation results.
+
+`f3d/cam.structure-assumed` records the source-definition reading of section
+ownership and parameter metadata. Volunteer fixture recipes supply the
+validation cases for these associations.

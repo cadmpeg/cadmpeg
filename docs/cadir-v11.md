@@ -33,6 +33,7 @@ CadIr
 │                       publications, evaluations, names
 ├── process             setups, operations, machining features, tools, presets,
 │                       machines, programs, parameters, toolpaths, process states (part 7)
+├── manufacturing?      source CAM setups, ordered operations, tools, native selections
 └── native              codec id → arena name → ID-sorted records
 SourceFidelity sidecar   a digest per source file, the content digest, codec digests, unrepresented, annotations, retained records
 ```
@@ -50,6 +51,7 @@ pub struct CadIr {
     pub model: Model,
     pub design: Design,
     pub process: Process,
+    pub manufacturing: Manufacturing,
     pub native: Native,
 }
 pub struct CanonicalUnits { pub length: CanonicalLength, pub angle: CanonicalAngle, pub mass: CanonicalMass, pub time: CanonicalTime }
@@ -5719,6 +5721,15 @@ Each fact below is open in its meaning, or is a target application's behaviour; 
 234. **A STEP instance's or part's style, and an IGES owner's colour.** Whether a STEP context-dependent overriding style on a component instance shows over the styles of that component's own solids and faces (the recommended practice states the top-down rule for an assembly node, and for an instance only that it overrides the component's own style item, §5.1), and whether a style on a part's shape representation ranks below that part's solids (§4.2.1's priority list puts the component part above solids; the SolidWorks exports measured show the body's appearance). And which entities the colour of an IGES subfigure instance reaches under each value of its hierarchy status (applied to its subordinates, deferred to them, or set per attribute by a hierarchy property). Decides the `precedence` of the STEP decoder's instance bindings, the rank of its `Definition` bindings, and whether the IGES decoder states an instance's colour as an `Occurrence` binding. Until then the STEP decoder states `Outer` for an instance's style and a part's style as a `Definition` binding, and the IGES decoder states none. Would settle it: for STEP, one file with an instance style over a component whose faces are styled, and one with a styled part and styled solids, each shown in two systems whose source is public and that implement the practice; for IGES, one file whose coloured instance applies its attributes to a definition with coloured members.
 235. **ASM support pcurve fit.** Whether the support pcurves of an ACIS intersection curve lie within the curve's stored fit tolerance of the intersection, and whether a support surface's fit tolerance bounds the distance between points of one parameter or only between the surfaces (§5.6, part 10 Coincidence). In Fusion and Inventor files a support pcurve that states no fit tolerance can end farther from the solved curve than the sum of the stated fits. Decides whether the ACIS-family decoders state a fit tolerance on an intersection curve's support pcurves; until then they state none, and the end-point check is a Warning there. Would settle it: intersection curves both of whose supports the IR holds in closed form, each support pcurve's image measured along its length against the intersection of the two surfaces and set against the curve's fit tolerance.
 
+## Source manufacturing definitions
+
+`manufacturing` holds ordered source definitions with typed setup, operation,
+and tool identities. The process scope controls this section. Empty sections
+are omitted and absent sections read as empty. Parameters retain stored text,
+units, native types, repeated names, and XML. Record byte ranges and native
+XML retain provenance. The section's fields and strategy families are stated
+in [Manufacturing source definitions](cad-ir.md#manufacturing-source-definitions).
+
 ## Annex A. Record types stated by schema
 
 Each type below is given by the JSON Schema of its wire form, generated from the reference implementation when this document was released and frozen with it; a change to it is a change of wire (§3.6). Each type's description states every condition a reader enforces on its values (§2.8). §5.6 states the evaluation of the analytic, NURBS, polyline, and placed carriers. A procedural definition is stated by its fields: this document states no evaluation for it beyond the solved carrier its record caches (D23).
@@ -7716,6 +7727,36 @@ Each type below is given by the JSON Schema of its wire form, generated from the
 }
 ```
 
+### `Exactness`
+
+```json
+{
+  "description": "How an entity or field value was established from its source.",
+  "oneOf": [
+    {
+      "description": "Read verbatim from the source stream with no transformation beyond\ndocumented unit conversion.",
+      "type": "string",
+      "const": "byte_exact"
+    },
+    {
+      "description": "Computed deterministically from byte-exact inputs.",
+      "type": "string",
+      "const": "derived"
+    },
+    {
+      "description": "Filled in from context or convention rather than an explicit source field.",
+      "type": "string",
+      "const": "inferred"
+    },
+    {
+      "description": "Origin or trustworthiness could not be established.",
+      "type": "string",
+      "const": "unknown"
+    }
+  ]
+}
+```
+
 ### `FinitePoint2`
 
 ```json
@@ -9634,6 +9675,511 @@ Each type below is given by the JSON Schema of its wire form, generated from the
   "required": [
     "parameters",
     "columns"
+  ]
+}
+```
+
+### `Manufacturing`
+
+```json
+{
+  "description": "Manufacturing definitions retained before geometry selection resolution.",
+  "type": "object",
+  "properties": {
+    "operations": {
+      "description": "Operations in source order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingOperation"
+      }
+    },
+    "setups": {
+      "description": "Setups in source order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingSetup"
+      }
+    },
+    "tools": {
+      "description": "Cutting tools in source order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingTool"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "setups",
+    "operations",
+    "tools"
+  ]
+}
+```
+
+### `ManufacturingOperation`
+
+```json
+{
+  "description": "A source machining operation.",
+  "type": "object",
+  "properties": {
+    "computed_path_present": {
+      "description": "A computed-path descriptor is present.",
+      "type": "boolean"
+    },
+    "computed_path_valid": {
+      "description": "Source computed-path validity flag.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "family": {
+      "description": "Normalized strategy family.",
+      "$ref": "#/$defs/ManufacturingStrategy"
+    },
+    "geometry": {
+      "description": "Native geometry selections.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingSelection"
+      }
+    },
+    "id": {
+      "description": "Typed operation identity.",
+      "$ref": "#/$defs/OperationId"
+    },
+    "name": {
+      "description": "Source name.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "order": {
+      "description": "Zero-based order within the setup.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "parameters": {
+      "description": "All source parameters in order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    },
+    "setup": {
+      "description": "Owning setup.",
+      "$ref": "#/$defs/SetupId"
+    },
+    "source": {
+      "description": "Source byte range and exact XML.",
+      "$ref": "#/$defs/ManufacturingSource"
+    },
+    "strategy": {
+      "description": "Strategy name as stored.",
+      "type": "string"
+    },
+    "tool": {
+      "description": "Referenced cutting tool, when resolved.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "setup",
+    "order",
+    "strategy",
+    "family",
+    "parameters",
+    "geometry",
+    "computed_path_present",
+    "source"
+  ]
+}
+```
+
+### `ManufacturingParameter`
+
+```json
+{
+  "description": "A named parameter with its exact stored representation.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "description": "Source value type.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "description": "Source parameter name.",
+      "type": "string"
+    },
+    "native_xml": {
+      "description": "Complete XML for this parameter, including additional attributes.",
+      "type": "string"
+    },
+    "unit": {
+      "description": "Source unit symbol; absent units remain absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "value": {
+      "description": "Source value text, including expressions.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "value",
+    "native_xml"
+  ]
+}
+```
+
+### `ManufacturingSelection`
+
+```json
+{
+  "description": "Unresolved source geometry selection.",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "description": "Native selection element name.",
+      "type": "string"
+    },
+    "native_xml": {
+      "description": "Exact XML containing the native references.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "native_xml"
+  ]
+}
+```
+
+### `ManufacturingSetup`
+
+```json
+{
+  "description": "A source setup.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "description": "Typed setup identity.",
+      "$ref": "#/$defs/SetupId"
+    },
+    "model_refs": {
+      "description": "Native model and fixture selections.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingSelection"
+      }
+    },
+    "name": {
+      "description": "Source name.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parameters": {
+      "description": "All source parameters, in order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    },
+    "source": {
+      "description": "Source byte range and exact XML.",
+      "$ref": "#/$defs/ManufacturingSource"
+    },
+    "stock": {
+      "description": "Stock shape, dimensions, and offsets.",
+      "$ref": "#/$defs/ManufacturingStock"
+    },
+    "wcs": {
+      "description": "WCS orientation, origin mode, and point.",
+      "$ref": "#/$defs/ManufacturingWcs"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "stock",
+    "wcs",
+    "model_refs",
+    "parameters",
+    "source"
+  ]
+}
+```
+
+### `ManufacturingSource`
+
+```json
+{
+  "description": "Byte provenance of one native XML record.",
+  "type": "object",
+  "properties": {
+    "end": {
+      "description": "Exclusive end byte in the XML stream.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "exactness": {
+      "description": "Exactness of the source record interpretation.",
+      "$ref": "#/$defs/Exactness"
+    },
+    "member": {
+      "description": "Archive member path, including an enclosing document when present.",
+      "type": "string"
+    },
+    "native_xml": {
+      "description": "Complete source record XML.",
+      "type": "string"
+    },
+    "start": {
+      "description": "Start byte in the XML stream.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "exactness",
+    "member",
+    "start",
+    "end",
+    "native_xml"
+  ]
+}
+```
+
+### `ManufacturingStock`
+
+```json
+{
+  "description": "Stock dimensions and offsets in source units.",
+  "type": "object",
+  "properties": {
+    "dimensions": {
+      "description": "Box sizes, round diameters, and stock lengths, with units.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    },
+    "kind": {
+      "description": "Source stock mode or shape selector.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "offsets": {
+      "description": "Stock offsets, with units.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    },
+    "parameters": {
+      "description": "Complete stock parameters in source order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "dimensions",
+    "offsets",
+    "parameters"
+  ]
+}
+```
+
+### `ManufacturingStrategy`
+
+```json
+{
+  "description": "Normalized machining strategy.",
+  "oneOf": [
+    {
+      "description": "Planar adaptive clearing.",
+      "type": "string",
+      "const": "adaptive2d"
+    },
+    {
+      "description": "Planar pocket milling.",
+      "type": "string",
+      "const": "pocket2d"
+    },
+    {
+      "description": "Planar contour milling.",
+      "type": "string",
+      "const": "contour2d"
+    },
+    {
+      "description": "Drilling cycles.",
+      "type": "string",
+      "const": "drilling"
+    },
+    {
+      "description": "Spatial adaptive clearing.",
+      "type": "string",
+      "const": "adaptive3d"
+    },
+    {
+      "description": "Parallel finishing.",
+      "type": "string",
+      "const": "parallel"
+    },
+    {
+      "description": "Scallop finishing.",
+      "type": "string",
+      "const": "scallop"
+    },
+    {
+      "description": "Another source strategy.",
+      "type": "string",
+      "const": "other"
+    }
+  ]
+}
+```
+
+### `ManufacturingTool`
+
+```json
+{
+  "description": "A source cutting tool and holder.",
+  "type": "object",
+  "properties": {
+    "holder": {
+      "description": "Holder geometry and source parameters.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    },
+    "id": {
+      "description": "Typed tool identity.",
+      "$ref": "#/$defs/ToolId"
+    },
+    "number": {
+      "description": "Source tool number text.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parameters": {
+      "description": "Tool geometry, cutting data, and remaining source parameters.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    },
+    "product": {
+      "description": "Product identifier.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source": {
+      "description": "Source byte range and exact XML.",
+      "$ref": "#/$defs/ManufacturingSource"
+    },
+    "tool_type": {
+      "description": "Source tool type.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "vendor": {
+      "description": "Vendor text.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "parameters",
+    "holder",
+    "source"
+  ]
+}
+```
+
+### `ManufacturingWcs`
+
+```json
+{
+  "description": "A source work coordinate system definition.",
+  "type": "object",
+  "properties": {
+    "orientation": {
+      "description": "Orientation mode, axes, and frame parameters in source order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    },
+    "origin": {
+      "description": "Origin point and placement parameters, with units.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    },
+    "origin_mode": {
+      "description": "Source origin mode.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "parameters": {
+      "description": "Complete WCS parameters in source order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManufacturingParameter"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "orientation",
+    "origin",
+    "parameters"
   ]
 }
 ```

@@ -17,6 +17,8 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("export");
 pub(crate) enum ExportLossCode {
     /// The write path does not represent a non-empty model arena.
     ArenaOmitted(EntityKind),
+    /// The write path omits source manufacturing definitions.
+    ManufacturingOmitted,
 }
 
 impl ExportLossCode {
@@ -24,18 +26,21 @@ impl ExportLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ArenaOmitted(_) => "arena.omitted",
+            Self::ManufacturingOmitted => "manufacturing.omitted",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
-            Self::ArenaOmitted(_) => Severity::Warning,
+            Self::ArenaOmitted(_) | Self::ManufacturingOmitted => Severity::Warning,
         }
     }
 
     /// Shared category of the omitted arena's content.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::ArenaOmitted(kind) = self;
+        let Self::ArenaOmitted(kind) = self else {
+            return LossTaxonomy::ProcessRecordOmitted;
+        };
         match kind {
             EntityKind::Body
             | EntityKind::Region

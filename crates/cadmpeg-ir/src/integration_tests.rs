@@ -314,3 +314,5 @@ mod wire_form_census;
 
 #[cfg(feature = "schema")]
 mod repro;
+
+mod manufacturing;

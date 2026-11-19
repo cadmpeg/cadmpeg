@@ -3641,3 +3641,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Paired saves with different property targets or entry widths, and the corresponding final body geometry.
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
+
+### CAM-1. Manufacture record associations and parameter metadata
+
+**Question.** How do Iron.Document versions encode section ownership, strategy metadata, tool links, and parameter value metadata?
+
+**Known.** Manufacture XML contains `section`, `tool`, `holder`, `toolpath`, and named `Parameter` elements. The decoder reads setup ownership from section nesting, `setup` or `job` tags, setup type attributes, and `job_` parameter names. It reads strategies and tool links from attributes and named parameters. It reads parameter values from a `value` attribute or element text, units from `unit` or `units`, and kinds from `type` or `kind`. Complete record XML retains the source fields.
+
+**Need.** Controlled saves from volunteer fixture recipes that vary setup ownership, strategy, tool reuse, expression values, and units independently.
+
+**Note.** This reading reports `cam.structure-assumed`. A tool number selects the nearest preceding tool definition, or the first following definition, with `cam.tool-number-reference-assumed`. Native geometry selections report `cam.selection-unresolved`.

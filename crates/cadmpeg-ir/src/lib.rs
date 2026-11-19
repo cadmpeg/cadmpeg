@@ -65,6 +65,8 @@ pub mod history_body;
 
 pub mod ids;
 pub mod index;
+/// Source manufacturing definitions.
+pub mod manufacturing;
 pub mod math;
 pub mod native;
 pub mod physics;

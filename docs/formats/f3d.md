@@ -2998,3 +2998,20 @@ Material records store a visual preset (`Prism-###`), visual token, protein phra
 A preset reference is library-qualified: a library identifier paired with the name of an entry in that library. `BA5EE55E-9982-449B-9D66-9F036540E140` identifies the appearance library and `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C` the physical-material library; a user library is identified by its content path instead of a GUID. In a Design `BulkStream` presentation envelope and in a per-face assignment entry the library identifier immediately precedes the name it qualifies. In an `InstanceProperties` record the pair is the asset name and `AssetLibID`. The qualified name is either a preset token or the library entry's display name in the authoring session's locale. A material record carries its own schema, every parameter with its unit tag, and its full texture graph, so the appearance it denotes is determined without reading the library. The library resources that a `TextureURI` kind `0` path names are outside the container.
 
 ---
+
+## Manufacture XML
+
+`Toolpath/Iron.Document/*.irondoc` contains XML with a `document` root and a
+`model` tree. `section` elements group setups and machining operations.
+`Parameters/Parameter` elements hold named values.
+
+Setup parameters use the `job_` prefix. Stock parameters use `job_stock`;
+WCS orientation and origin parameters use `wcs_orientation_` and
+`wcs_origin_`. Tool parameters use `tool_`, and holder parameters use
+`holder_`. `toolpath` descriptors carry a `valid` Boolean. Strategy names
+identify machining families. `CadRef`, `CadChain`, and `CadContours2D`
+contain native model and geometry selections.
+
+Computed toolpaths, NC code, slice data, simulation results, and machine
+definitions occupy separate `Iron.Toolpath`, `Iron.NcCode`,
+`Iron.ToolpathSliceData`, `Iron.ProcessSimResults`, and `Iron.Machine` data.
