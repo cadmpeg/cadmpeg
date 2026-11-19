@@ -28,7 +28,7 @@ fn solved_frame(
     let placement = matches.next()?;
     let supported_version = match construction {
         Some(_) => matches!(placement.type_version, 4 | 6 | 8 | 9),
-        None => matches!(placement.type_version, 8 | 9),
+        None => matches!(placement.type_version, 8 | 9 | 16),
     };
     if matches.next().is_some()
         || !supported_version
@@ -38,7 +38,7 @@ fn solved_frame(
         return None;
     }
     let frame = super::checked_solved_frame(placement)?;
-    if construction.is_some() || placement.type_version == 8 {
+    if construction.is_some() || matches!(placement.type_version, 8 | 16) {
         let [x, y, z, _] = frame.value.rows();
         cadmpeg_ir::features::FeatureRigidPlacement::new(
             cadmpeg_ir::transform::Transform::affine([x, y, z])?,
@@ -97,7 +97,7 @@ pub(crate) fn bind(
             }
         } else if transform.is_none() {
             losses.push(F3dLossCode::CylinderPlacementUnbound.note(format!(
-                "CylinderPrimitive {} retains its native placement because its references require one checked version-8 or version-9 placement operand.",
+                "CylinderPrimitive {} retains its native placement because its references require one checked version-8, version-9, or version-16 placement operand.",
                 scope.id
             )));
         }

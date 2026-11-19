@@ -147,9 +147,9 @@ fn wide_parameter_with_discriminator_0_reads_after_the_narrow_form_fails() {
     assert_eq!(localized.source_kind(), "Paramètre utilisateur");
     assert!(parse_design_parameter_record(&localize(&document, "Expression")).is_none());
 
-    // Discriminators 5 and 6 also store the eleven-byte document trailer.
+    // Discriminators 4, 5 and 6 also store the eleven-byte document trailer.
     let mut other = document;
-    for discriminator in [5u64, 6] {
+    for discriminator in [4u64, 5, 6] {
         other[26..34].copy_from_slice(&discriminator.to_le_bytes());
         let parameter = parse_design_parameter_record(&other).expect("discriminated document");
         assert_eq!(parameter.kind(), DesignParameterKind::User);
@@ -160,7 +160,7 @@ fn wide_parameter_with_discriminator_0_reads_after_the_narrow_form_fails() {
             Some(discriminator)
         );
     }
-    other[26..34].copy_from_slice(&4u64.to_le_bytes());
+    other[26..34].copy_from_slice(&3u64.to_le_bytes());
     assert!(parse_design_parameter_record(&other).is_none());
 
     // The narrow reading wins when it closes.

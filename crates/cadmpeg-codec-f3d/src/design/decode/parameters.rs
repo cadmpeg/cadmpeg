@@ -504,7 +504,7 @@ fn parse_header_form(
         && payload.get(expression_end..expression_end + 10)
             == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
     let wide_flags = (shift == WIDE_DISCRIMINATED_SHIFT
-        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 5 | 6)))
+        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 4 | 5 | 6)))
     .then(|| wide_expression_trailer_flags(payload.get(expression_end..)?))
     .flatten()
     .filter(|wide| wide.document == owner_record_index.is_none());

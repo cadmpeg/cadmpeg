@@ -493,7 +493,7 @@ pub(crate) mod design_parameter_tail {
 /// Spec §3.1. Record length 11 B.
 ///
 /// ```text
-/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 5 or 6.
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 4, 5 or 6.
 /// ```
 pub(crate) mod design_parameter_wide_expression_trailer {
     /// Record length in bytes. Spec §3.1.
