@@ -797,29 +797,29 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** When a `Combine` scope stores no preceding history state, the decoder binds its operands in the predecessor that the history header names. An operand that this binding leaves native binds through its direct body recipe.
 
-### DR-881. Tracked-results entry records
+### DR-881. Tracked-entry record variants
 
-**Question.** What are the layouts of the records that the entries of a tracked-results table reference (types `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`, `2DEE34BE-FA70-4D54-979C-164D86FDA786`, and `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`), and does the key of a side-face entry equal the side token of the face that it tracks?
+**Question.** What selects the 37-byte or the 33-byte form of a side-face entry and the token-string form of a body entry (type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`), what does the nullable reference of a body entry (type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`) name, and what do the two operands after the sense word of a curve-record entry (type `2DEE34BE-FA70-4D54-979C-164D86FDA786`) encode?
 
-**Known.** `f3d.md` §3.1 "**Tracked-results table.**" gives the table, its keys, and the entry types of a `Sketch` and an `Extrude`. A `2DEE34BE` record holds integers that equal sketch-curve persistent identities. An `ABA79BE7` record holds the result body's browser-node GUID.
+**Known.** `f3d.md` §3.1 "**Tracked entries of an `Extrude`.**" gives the three records and the key of a side-face entry. Streams with serializer magic `1234` store both side-face forms. A body entry can also store each side token as its own LP-ASCII string, with no offset list, and other body-entry prefixes occur. The GUID of a body entry is the browser-node GUID of the result body.
 
-**Need.** A writer of an `Extrude` must write these records for each side face and for the result body.
+**Need.** A writer must choose the side-face form and fill the body entry's reference and the curve entries' operands.
 
 ### DR-882. Timeline-context counters and context value
 
 **Question.** What do the `Dc<Family>MetaType` counters and the u64 context value of the timeline context record count?
 
-**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`.
+**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters.
 
-**Need.** A writer must write correct values for designs with other item sets.
+**Need.** A writer must write correct values for designs with other item sets. The counters against the ordinals of deleted items, and the context value against the rolled-back position and the deleted items, would settle it.
 
-### DR-883. Extrude side-face loop orientation
+### DR-883. Extrude side-face walk outside loops of lines
 
-**Question.** Which stored fields give the loop direction and the extrusion sense that order the side tokens of a one-sided `Extrude` whose profile is one closed loop of lines?
+**Question.** Which curve starts the side-face walk of a loop that contains arcs or other curves, how do the loops of a profile with several loops or regions take their side tokens, and how do a Cut and a symmetric or two-sided `Extrude` orient the walk?
 
-**Known.** The token-3 face's curve is the loop curve with the largest persistent identity or the loop curve that shares that curve's start point. The side tokens follow the loop in one direction. Both start curves and both directions occur. `f3d.md` §3.1 "**Side faces.**" gives the drawn start point of a line and the side token of a one-sided or two-sided `Extrude` whose profile is one loop of one entry. A symmetric `Extrude` of such a profile can carry side token `5` without side token `3`.
+**Known.** `f3d.md` §3.1 "**Side-face walk.**" gives the walk of a one-sided distance join or new-body `Extrude` and its start on a loop of lines. The side tokens of one loop form one contiguous range. The loops of a region whose exterior loop is stored first take their ranges in the stored loop order. The side face of a one-sided or two-sided `Extrude` whose profile is one loop of one entry has side token `3`. A symmetric `Extrude` of such a profile can carry side token `5` without side token `3`.
 
-**Need.** The profile-region entry order of the profile selection record (type `4BD53E5A-0B3E-45E5-AE8B-02044306485A`) and the `Extrude` direction fields against the order of the token-3 and token-4 curves. A writer names side faces by this order.
+**Need.** The start point of an arc as drawn, from its point references and analytic payload, and the walk of loops whose largest-identity curve is an arc. The start and direction of each loop of a profile with hole loops, and the region order of multi-region profiles against the stored region order and the region geometry. Cap-loop orientation of Cut, symmetric, and two-sided `Extrude` faces against the extrusion direction. A writer names side faces by the walk.
 
 ### DR-884. Sketch placement without a tracked identity
 
@@ -828,14 +828,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Known.** `f3d.md` §3.1 "**Sketch placement.**" gives the path of a sketch on a construction plane. A placement can also reference a path of type `5662F619-2281-4AD9-93DC-1FCFDA1062E7`.
 
 **Need.** The placement of a sketch on a body face.
-
-### DR-885. Persistent-id table forward and reverse disagreement
-
-**Question.** Why do the forward run and the reverse pairs of some type-version-1 persistent-id tables list different identities?
-
-**Known.** `f3d.md` §3.1 "**Persistent-id table.**" gives both runs. In most tables the pairs list exactly the identities of the forward run.
-
-**Need.** A reader that resolves a face name through the table must know which run is authoritative.
 
 ### DR-886. Item-tail companion word
 

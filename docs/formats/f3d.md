@@ -3077,6 +3077,53 @@ A `Sketch` item stores a null current identity and a null preceding identity, an
 
 The keys increase by one from entry to entry, and the next key is one more than the last key. A `Sketch` item's table has `n = 0` and next key `1`. The table of the design's `Extrude`, with `k` side faces, has `k` entries that reference records of type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A` with keys `3` to `k + 2`, then one entry that references a record of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77` with key `k + 3`; the next key is `k + 4`.
 
+**Tracked entries of an `Extrude`.** A side-face entry with key `t` tracks the side face whose name group has token `t`. Its record has type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`, type version `0`, add-in `EntityTracking`, and one of two plain forms:
+
+| Field | Type | 37-byte form | 33-byte form |
+|---|---|---|---|
+| indexed header | header | 0 | 0 |
+| zero | bytes | 11 to 19 | 11 to 20 |
+| `1` | u8 | 20 | — |
+| `0` | u32 | 21 | — |
+| the curve record (type `2DEE34BE-FA70-4D54-979C-164D86FDA786`) | reference | 25 | 21 |
+| `0` | u8 | 36 | 32 |
+
+The curve record of type `2DEE34BE-FA70-4D54-979C-164D86FDA786`, type version `2`, add-in `EntityTracking`, names the sketch curve of the side face and its neighbours in the loop:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | `1` |
+| 25 | u32 | `0` |
+| 29 | u32 | curve count `n` |
+| 33 | `n` × 40 bytes | curve entries in the profile-loop entry form: u32 kind, u64 sketch-curve primary identity, u64 secondary identity, u32 sense, two u32 operands, eight zero bytes |
+| 33 + 40n | u32, then that many u64 | the curve identities that meet the entry curve at its first end |
+| — | u32, then that many u64 | the curve identities that meet the entry curve at its second end |
+
+The primary identity of the entry is the sketch curve of the tracked side face. For a line with sense `1`, the first end is the start point of the stored line geometry and the second end is its end point; sense `0xffffffff` exchanges them. The side-face entries of the design's `Extrude` use the 37-byte form, and each of their curve records holds one entry of kind `3` with sense `1` and operands `1` and `1`, and one curve identity in each list.
+
+The body entry is a record of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`, type version `4`, add-in `Fusion`. The body entry of the design's `Extrude` has this layout:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 11 × u8 | zero |
+| 22 | LP-UTF16 | GUID of 36 code units |
+| 98 | u32 | `0` |
+| 102 | u32 | `1` |
+| 106 | LP-ASCII | token string: the decimal side tokens, concatenated in ascending byte order of their decimal strings |
+| — | u32 | offset count `m`, one more than the number of tokens |
+| — | `m` × u32 | the offset of each token in the token string, then the length of the token string |
+| — | u64 | the `Extrude` scope's first persistent identity |
+| — | u8 | `0` |
+| — | u32 | `1` |
+| — | reference | nullable reference: `0`, or the eleven-byte form |
+| — | u8 | `0` |
+| — | header | paired indexed header, followed by nine zero bytes |
+
+Its token string lists the `k` side tokens `3` to `k + 2`. A body entry for side tokens `3`, `4`, `5`, and `6` stores the string `3456` and the offsets `0, 1, 2, 3, 4`.
+
 **Item-tail companion.** The record of type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`, type version `0`, is 33 bytes:
 
 | Offset | Type | Field |
@@ -3131,7 +3178,7 @@ Type version `0` stores the reverse form:
 | — | `R` × u64 | retired identities |
 | — | reference | the timeline context |
 
-A retired identity is in no pair and is less than the greatest listed identity. Identities come from a counter that starts at `300`. A `Sketch` scope owns one identity and an `Extrude` scope owns two. A design with one `Sketch` and one `Extrude` stores `Sketch → 300` and `Extrude → 301, 302`.
+The pairs of the forward form list every identity of the forward run, with the same scope. They can also list identities whose scopes have no forward entry; each of these identities is greater than every identity of the forward run. The pairs resolve an identity to its scope. A retired identity is in no pair and is less than the greatest listed identity. Identities come from a counter that starts at `300`. A `Sketch` scope owns one identity and an `Extrude` scope owns two. A design with one `Sketch` and one `Extrude` stores `Sketch → 300` and `Extrude → 301, 302`.
 
 **Origin.** The component's origin container has type GUID `2972A3B8-3627-49BC-8C3D-18707605EC44`, type version `1`, and add-in `Geometry`:
 
@@ -3162,6 +3209,8 @@ The two identities of a placement name the same entity, a record of the construc
 **History of the first `Extrude`.** When the first `Extrude` is the only item that commits a state, the `.smbh` history is two `delta_state` records: the root state and the `Extrude`'s state, which is the head. The head state has one bulletin board with owner reference `0` and number `2`. Every change of that board is an insertion, and the insertions name every entity slot of the solved model except slot `0` once each.
 
 **Side faces.** A sketch line's first point reference names its end point and its second point reference names its start point, which is the start of the stored line geometry. When the identity record of an `Extrude`'s profile selection holds one region group whose region has one loop of one entry and no further region, the side face of the one-sided or two-sided `Extrude` has the name group `(1, "3", [E])`, where `E` is the scope's first persistent identity.
+
+**Side-face walk.** The side faces of an `Extrude` whose profile identity record holds one region of one loop take side tokens by a walk of the loop: the `k`-th curve of the walk generates side token `k + 2`. Let `N` be the unit profile normal stored in the `Extrude` scope. For a one-sided distance `Extrude` whose operation is join or new body, the extrusion direction `D` is `N` when the `AlongDistance` value is positive and `-N` when it is negative, and the walk runs counterclockwise about `D`. When the loop consists of lines, let `C` be the loop curve with the largest persistent identity and `P` the start point of `C`. The first curve of the walk is the curve that leaves `P` when the loop is traversed counterclockwise about `N`. When `D` is `N`, the walk therefore starts at `P`. When `D` is `-N`, the walk starts with the same curve, runs back to `P`, and continues with the other loop curve at `P`.
 
 ### 3.2 Materials
 
