@@ -11,12 +11,14 @@
 //! has an evaluation with no content and status `Stale`; a stored partition so
 //! flagged is a stale state.
 //!
-//! The states between features are deferred to the unit that joins each
-//! feature to its mark. A partition's Deltas stream replays as data, mark by
-//! mark along the main line, to the node set of every earlier state (§3.1,
-//! Stored states), and the first word of a feature's `moPMarkRecord_c` is
-//! the PMARK id of the mark set after it. Once the Parasolid reader exposes
-//! that replay, a state joined to a feature is the state after it,
+//! The states between features are deferred to unit `SW2b`, which builds on
+//! the Parasolid reader's delta replay (unit PS-R, #1634). The replay is
+//! established: a partition's Deltas stream replays as data, mark by mark
+//! along the main line, to the node set of every earlier state (§3.1, Stored
+//! states). What is not yet established is the join of a feature to its
+//! mark; the first word of a feature's `moPMarkRecord_c` matching a PMARK id
+//! of the chain is the candidate. Once both hold, a state joined to a feature
+//! is the state after it,
 //! `of: State(After(feature))`, its records those the partition's builder
 //! makes of that node set and its names those of [`Names::entries`], based on
 //! the next later stored state and the last one on `Current` (§5.4). Until
@@ -39,9 +41,9 @@ use cadmpeg_ir::design::ops::surface::MeshKind;
 use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
-use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
+use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::schema::EntitySchema;
+use cadmpeg_ir::schema::{EntityKind, EntitySchema};
 
 use super::names::Names;
 use crate::loss::SldprtLossCode;
@@ -60,8 +62,10 @@ pub(super) struct Scope<'a> {
 
 /// The evaluation of each configuration that is not active and whose state
 /// the source stores or flags, and the number of records they hold. A
-/// configuration whose evaluation cannot be named has none and charges a
-/// note to `losses`; only a decode ceiling fails the projection.
+/// configuration whose stored bodies share ids with the current bodies has
+/// no evaluation, because its records cannot be told from the current
+/// state's, and charges a note to `losses`; only a decode ceiling fails the
+/// projection.
 pub(super) fn configuration_states(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -78,13 +82,6 @@ pub(super) fn configuration_states(
         if Some(&configuration.id) == scope.active {
             continue;
         }
-        let Some(id) = evaluation_id(&configuration.id) else {
-            losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
-                "configuration {} has no evaluation id; its state is not stated.",
-                configuration.id
-            )));
-            continue;
-        };
         let native = ir.model.configurations.iter().find(|native| {
             native.native_ref.is_some() && native.native_ref == configuration.native_ref
         });
@@ -114,12 +111,25 @@ pub(super) fn configuration_states(
                     },
                 })
             }
-            Some(_) => continue,
+            Some(bodies) => {
+                let shared = bodies
+                    .iter()
+                    .filter(|body| current.contains(body))
+                    .map(BodyId::as_str)
+                    .collect::<Vec<_>>();
+                losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
+                    "configuration {}: its stored bodies share {} id(s) with the current bodies ({}); its state is not stated.",
+                    configuration.id,
+                    shared.len(),
+                    shared.join(", ")
+                )));
+                continue;
+            }
             None if stale => None,
             None => continue,
         };
         evaluations.push(Evaluation {
-            id,
+            id: evaluation_id(&configuration.id),
             scope: scope.definition.clone(),
             configuration: Some(configuration.id.clone()),
             of: Evaluated::State(at.clone()),
@@ -187,29 +197,26 @@ fn stateless(feature: &Feature) -> bool {
 }
 
 /// The evaluation id of a configuration's state, in the configuration id's
-/// key; `None` where that key is no id key.
-fn evaluation_id(configuration: &ConfigurationId) -> Option<EvaluationId> {
-    let key = configuration
-        .as_str()
-        .split_once('#')
-        .map_or(configuration.as_str(), |(_, key)| key);
-    EvaluationId::mint(format!("sldprt:model:evaluation#{key}")).ok()
+/// key.
+fn evaluation_id(configuration: &ConfigurationId) -> EvaluationId {
+    EvaluationId::from(Identity::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "model", "evaluation"),
+        Identity::from(configuration.clone()).key(),
+    ))
+}
+
+/// The arena kind of a record slice.
+fn kind_of<T: EntitySchema>(_: &[T]) -> EntityKind {
+    T::KIND
 }
 
 macro_rules! topology_arenas {
     ($($field:ident),* $(,)?) => {
-        /// A `Topology` arena.
-        #[allow(non_camel_case_types)]
-        #[derive(Clone, Copy)]
-        enum Arena {
-            $($field,)*
-        }
-
         /// The records of a `Topology` by id, and the records that reference
         /// each of them.
         struct Reach<'g> {
             geometry: &'g Topology,
-            slots: HashMap<&'g str, (Arena, usize)>,
+            slots: HashMap<&'g str, (EntityKind, usize)>,
             referrers: HashMap<&'g str, Vec<&'g str>>,
         }
 
@@ -217,7 +224,7 @@ macro_rules! topology_arenas {
             fn new(ctx: &DecodeContext<'_>, geometry: &'g Topology) -> Result<Self, CodecError> {
                 let mut slots = HashMap::new();
                 $(for (at, record) in geometry.$field.iter().enumerate() {
-                    slots.entry(record.identity()).or_insert((Arena::$field, at));
+                    slots.entry(record.identity()).or_insert((kind_of(&geometry.$field), at));
                 })*
                 let mut reach = Self {
                     geometry,
@@ -245,7 +252,7 @@ macro_rules! topology_arenas {
                 id: &str,
                 found: &mut Vec<&'g str>,
             ) -> Result<(), CodecError> {
-                let Some(&(arena, at)) = self.slots.get(id) else {
+                let Some(&(kind, at)) = self.slots.get(id) else {
                     return Ok(());
                 };
                 let mut visit = |target: &str| {
@@ -254,9 +261,10 @@ macro_rules! topology_arenas {
                     }
                     Ok(())
                 };
-                match arena {
-                    $(Arena::$field => self.geometry.$field[at].visit_references(ctx, &mut visit),)*
-                }
+                $(if kind == kind_of(&self.geometry.$field) {
+                    return self.geometry.$field[at].visit_references(ctx, &mut visit);
+                })*
+                Ok(())
             }
 
             /// The records that belong to the state of `bodies`, each arena

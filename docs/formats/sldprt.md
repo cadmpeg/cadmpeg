@@ -2881,19 +2881,20 @@ sequence, and through the hops a consuming feature's face reference stores
 Code 72 names fillet and chamfer faces alike; which edge takes which ordinal is
 not known. A cap's region is nonzero on each cap of an end with several
 regions, and mostly 0 on the one cap of an end with one; the rule that assigns
-it is not known. The sketch entity id, the producer and the timestamp are
-allocations: they stay in the native name. Wrapping classes are
-`moLPatternSurfIdRep_c` (57: two instance indices), `moCirPatternSurfIdRep2_c`
-(124: instance, 0), `moCurvePatternSurfIdRep_c` (54: instance, 0),
-`moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c` (132: one
-integer), `moCopySurfIdRep_c` (53: the copy's step for a Move/Copy Body),
-`moShellSurfIdRep_c` (65: none), and the derived, indirect and punch classes
-(55, 56, 96: one integer each). A wrapped list is longer than seven values; the
-partition reader does not keep it, so those faces have no name entry. Every
-other code is a role whose meaning is not known, `Other("sldprt:<code>")`. A
-face can carry several `FACE_ID_2001` lists where faces merged, and the pieces
-of a split face carry equal lists; the reader keeps no list for a face whose
-lists disagree.
+it is not known. Some code-81 caps carry 1 as their third field; what it states
+is not known, and such a cap is `Other("sldprt:81")`. The producer and the
+timestamp are allocations: they stay in the native name. The sketch entity id
+stays there too, and the name states no generating entity, because that it is
+the sketch segment's id is not established.
+Wrapping classes are `moLPatternSurfIdRep_c` (57: two instance indices),
+`moCirPatternSurfIdRep2_c` (124: instance, 0), `moCurvePatternSurfIdRep_c` (54:
+instance, 0), `moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c`
+(132: one integer), `moCopySurfIdRep_c` (53: the copy's step for a Move/Copy
+Body), `moShellSurfIdRep_c` (65: none), and the derived, indirect and punch
+classes (55, 56, 96: one integer each). A wrapped list is longer than seven
+values. Every other code is a role whose meaning is not known,
+`Other("sldprt:<code>")`. A face can carry several `FACE_ID_2001` lists where
+faces merged, and the pieces of a split face carry equal lists.
 
 A single-face component selection that supplies only the source and local
 identity selects a face only when that pair has one distinct current target.

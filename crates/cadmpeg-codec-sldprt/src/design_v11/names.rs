@@ -8,15 +8,21 @@
 //! `mo*SurfIdRep_c` identity class, the producer the history feature that
 //! made the face, and a wrapping class is followed by the hop it wraps
 //! (`docs/formats/sldprt.md` §5). The partition reader keeps lists of four to
-//! seven values, which are single hops. A face whose producer is a feature of
+//! seven values, which are single hops, so a face of a pattern, mirror, copy
+//! or shell, whose list wraps a hop, has no name entry; nor has a face of
+//! merged faces whose lists disagree. A face whose producer is a feature of
 //! the timeline is named by that feature, its role and index read from the
 //! class: a side swept from a sketch entity, a start or end cap with its
 //! region as index, a fillet or chamfer face with its ordinal as index, a
 //! feature-scoped set that names no role; every other class is a role whose
-//! meaning is not established, `Other("sldprt:<class>")`. The producer id,
-//! time stamp and sketch-entity id are allocations and stay in the native
-//! name. A face whose producer is no feature of the document, and a body,
-//! whose list is one identity that names no feature, have no structured name.
+//! meaning is not established, `Other("sldprt:<class>")`. The producer id and
+//! time stamp are allocations and stay in the native name. The sketch-entity
+//! id also stays there, and the name states no generator: that it is the
+//! sketch segment's id is not established. A face whose producer is no
+//! feature of the document, one the state does not depend on, or one whose
+//! source id several history records carry, and a body, whose list is one
+//! identity that names no feature, keep their native name and have no
+//! structured name.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -41,7 +47,8 @@ mod class {
     pub(super) const FROM_SKETCH_ENTITY_3INT: u32 = 83;
     /// `moEndFaceSurfIdRep_c`: a cap, by its end (0 start, 1 end) and region.
     pub(super) const END_FACE: u32 = 40;
-    /// `moEndFace3IntSurfIdRep_c`: the same, with a zero field after them.
+    /// `moEndFace3IntSurfIdRep_c`: the same, with a zero field after them;
+    /// what a nonzero third field states is not established.
     pub(super) const END_FACE_3INT: u32 = 81;
     /// `moFilletSurfIdRep_c`: a fillet or chamfer face, by its ordinal.
     pub(super) const FILLET: u32 = 72;
@@ -117,7 +124,8 @@ impl<'a> Names<'a> {
     /// The name entries of `bodies` and of the faces of `topology` that
     /// belong to them. A face whose producer is a feature `depends` does not
     /// admit, one the state does not depend on (§5.7, Order), or whose source
-    /// id several history records carry, has no entry.
+    /// id several history records carry, keeps its native name and has no
+    /// structured name.
     pub(super) fn entries(
         &self,
         topology: &Topology,
@@ -147,8 +155,7 @@ impl<'a> Names<'a> {
                 Some(Producer::Feature(feature)) if depends(feature) => {
                     Some(face_name(feature, code, fields))
                 }
-                None | Some(Producer::Node) => None,
-                Some(Producer::Feature(_) | Producer::Ambiguous) => continue,
+                _ => None,
             };
             table.insert(
                 EntityRef::Face(face.clone()),
