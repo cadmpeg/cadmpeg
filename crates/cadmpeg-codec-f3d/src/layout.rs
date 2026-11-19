@@ -528,10 +528,8 @@ pub(crate) mod design_parameter_wide_expression_trailer {
 pub(crate) mod design_parameter_compact_owned_expression_trailer {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 5;
-    /// Offset of `reserved_0` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_0: usize = 0;
-    /// Stated value of `reserved_0` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_0_VALUE: u8 = 0;
+    /// Offset of `opaque_flag` (`u8`). Spec §3.1.
+    pub(crate) const OPAQUE_FLAG: usize = 0;
     /// Offset of `driven` (`u8`). Spec §3.1.
     pub(crate) const DRIVEN: usize = 1;
     /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
@@ -3509,6 +3507,22 @@ pub(crate) mod timeline_owned_paste_source_pairs {
     pub(crate) const PAIR_COUNT: usize = 5;
 }
 
+/// Byte offsets for the `timeline_paste_name_prefix` record.
+///
+/// Spec §3.1. Record length 7 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the null removal key of a paste object that keeps its sources. The same-segment references start at the end of this prefix.
+/// ```
+pub(crate) mod timeline_paste_name_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 7;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 0;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 3;
+}
+
 /// Byte offsets for the `base_feature_wide_zero_body` record.
 ///
 /// Spec §3.1. Record length 63 B.
@@ -6314,6 +6328,16 @@ pub(crate) mod modify_marker_one_prologue {
     pub(crate) const BODY_COUNT: usize = 36;
     /// Offset of `first_body_group` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_BODY_GROUP: usize = 40;
+}
+
+/// Byte offsets for the `legacy_extrude_group_tail_marker` record.
+///
+/// Spec §3.1. Record length 29 B.
+pub(crate) mod legacy_extrude_group_tail_marker {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_payload` (`bytes[18]`). Spec §3.1.
+    pub(crate) const ZERO_PAYLOAD: usize = 11;
 }
 
 /// Byte offsets for the `component_insert_identity_scope_compact` record.
@@ -10825,6 +10849,19 @@ pub(crate) mod captured_position_v4_identity_locator {
     pub(crate) const DISCRIMINATOR_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `captured_position_v4_path_wrapper` record.
+///
+/// Spec §Captured component positions. Record length 37 B.
+pub(crate) mod captured_position_v4_path_wrapper {
+    /// Record length in bytes. Spec §Captured component positions.
+    #[cfg(test)]
+    pub(crate) const LEN: usize = 37;
+    /// Offset of `marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const MARKER: usize = 21;
+    /// Stated value of `marker` (`u8`). Spec §Captured component positions.
+    pub(crate) const MARKER_VALUE: u8 = 0;
+}
+
 /// Byte offsets for the `unmarked_sphere_local_frame` record.
 ///
 /// Spec §3.1. Record length 128 B.
@@ -11043,6 +11080,18 @@ pub(crate) mod split_body_extension {
     pub(crate) const FOLLOWING_WORD: usize = 1;
     /// Stated value of `following_word` (`u32`). Spec §3.1.
     pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `split_body_compact_group_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Counted member references follow this prefix.
+/// ```
+pub(crate) mod split_body_compact_group_prefix {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 21;
 }
 
 /// Byte offsets for the `mesh_plane_cut_scope_prefix` record.

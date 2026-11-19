@@ -50,6 +50,9 @@ impl Annotations {
                 .collect(),
             visible: draft.visible,
             definition: draft.definition,
+            native_ref: None,
+            native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+            source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
         });
         self.indices.insert(id, index);
         index

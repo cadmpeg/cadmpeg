@@ -1928,6 +1928,30 @@ fn structured_value_properties(
     Ok(())
 }
 
+/// The identity key of each record: its UUID where no earlier record holds
+/// it and it is not nil, else its source offset.
+fn record_keys(records: &[HistoryRecord]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    records
+        .iter()
+        .map(|record| {
+            if !record.id.is_nil() && seen.insert(record.id) {
+                format!("{}", record.id)
+            } else {
+                format!("offset-{}", record.source_range.start)
+            }
+        })
+        .collect()
+}
+
+fn feature_id_text(key: &str) -> String {
+    format!("rhino:history:feature#{key}")
+}
+
+fn native_record_id(key: &str) -> String {
+    format!("rhino:history:record#{key}")
+}
+
 /// Projects source history into ordered neutral native operations.
 /// Projects history records into native features and carrier geometry.
 ///
@@ -1956,19 +1980,10 @@ pub(crate) fn project(
     };
     let mut ids = Vec::new();
     let mut native_ids = Vec::new();
-    let mut seen_record_ids = HashSet::new();
 
-    for record in records {
-        let unique = !record.id.is_nil() && seen_record_ids.insert(record.id);
-        let key = if unique {
-            Ok(format!("{}", record.id))
-        } else {
-            Ok(format!("offset-{}", record.source_range.start))
-        }
-        .map_err(ProjectionError::Codec)?;
-        let feature_id = format!("rhino:history:feature#{key}");
-        ids.push(FeatureId::mint(feature_id).map_err(|error| error.to_string())?);
-        native_ids.push(format!("rhino:history:record#{key}"));
+    for key in record_keys(records) {
+        ids.push(FeatureId::mint(feature_id_text(&key)).map_err(|error| error.to_string())?);
+        native_ids.push(native_record_id(&key));
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in records.iter().enumerate() {
@@ -2145,6 +2160,8 @@ pub(crate) fn project(
         sink.redundant_repairs,
     ))
 }
+
+pub(crate) mod v11;
 
 #[cfg(test)]
 pub(crate) mod tests;
