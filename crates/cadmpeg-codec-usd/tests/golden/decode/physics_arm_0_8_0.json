@@ -141,9 +141,9 @@
                 "axis": "z",
                 "kind": "translation"
               },
-              "damping": 0.002,
+              "damping": 2.0,
               "mode": "force",
-              "stiffness": 0.02
+              "stiffness": 20.0
             }
           ],
           "id": "usd:stage:joint#/Arm/Joints/Rail",
@@ -236,10 +236,10 @@
                 "axis": "z",
                 "kind": "rotation"
               },
-              "damping": 28.647889756541165,
-              "max_force": 100.0,
+              "damping": 28647.88975654116,
+              "max_force": 100000.0,
               "mode": "force",
-              "stiffness": 572.9577951308233,
+              "stiffness": 572957.7951308233,
               "target_position": 0.5235987755982988
             }
           ],
@@ -648,7 +648,7 @@
       "parameters": [],
       "physical_materials": [
         {
-          "density": 7849.999703466891,
+          "density": 7.849999703466892e-6,
           "dynamic_friction": 0.4000000059604645,
           "id": "usd:stage:physical-material#/Arm/Looks/Steel",
           "name": "Steel",

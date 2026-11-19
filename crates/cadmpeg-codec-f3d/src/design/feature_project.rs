@@ -1636,6 +1636,17 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         {
                             inserted_bodies.extend(copies);
                             definition
+                        } else if let Some((definition, copies)) =
+                            scope.base_feature_construction().and_then(|construction| {
+                                paste_copy::cross_component_paste(
+                                    scope,
+                                    construction,
+                                    body_bindings,
+                                )
+                            })
+                        {
+                            inserted_bodies.extend(copies);
+                            definition
                         } else if let Some(construction) = scope.base_feature_construction() {
                             if let Some(offset) = construction.null_reference_flag_offset() {
                                 projection_losses.push(crate::loss::F3dLossCode::FeatureBaseFeatureNullFlagAssumed.note(format!(
@@ -1702,7 +1713,15 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         .as_deref()
                         .or_else(|| scope.label.as_ref().map(|l| l.value.as_str()))
                         .map_or_else(
-                            || format!("{} {}", scope.source_kind_name(), scope.feature_ordinal),
+                            || {
+                                paste_copy::timeline_name(scope).unwrap_or_else(|| {
+                                    format!(
+                                        "{} {}",
+                                        scope.source_kind_name(),
+                                        scope.feature_ordinal
+                                    )
+                                })
+                            },
                             str::to_owned,
                         ),
                 ),

@@ -268,7 +268,7 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Question.** Where does a pasted copy sit relative to its source body?
 
-**Known.** `f3d.md` §3.1 "In the scope that a paste object owns" gives the copy form. The object and scope frames store the copy bodies, their parameter-body records and the source GUID pairs. In the copy saves whose sources survive, each copy has its source's bounding box and volume. The decoder projects the copy as `MoveBody` with zero translation and no rotation.
+**Known.** `f3d.md` §3.1 "In the scope that a paste object owns" gives the copy form. The object and scope frames store the copy bodies, their parameter-body records and the source GUID pairs. In the copy saves whose sources survive, each copy has its source's bounding box and volume. The decoder projects a paste whose sources and copies lie in one component as `MoveBody` with zero translation and no rotation. A paste whose copies lie in one component that holds none of its sources projects as `InsertBodies`, with the copies as its outputs, which their stored geometry places.
 
 **Need.** A paste that places a copy at an offset or a rotation from its source, and the bytes that hold that placement.
 
@@ -1775,13 +1775,13 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Conflict.** None.
 
-### DR-251. Compact null-owner parameters: owner and trailer byte 3
+### DR-251. Compact parameter ownership and expression trailer flags
 
-**Question.** Does the null owner of a compact null-owner dimension parameter mean that the parameter has no owner or that the frame does not store it, and what does byte 3 of the five-byte compact expression trailer state when it is `1`?
+**Question.** Does the null owner of a compact null-owner dimension parameter mean that the parameter has no owner or that the frame does not store it, and what does byte 3 of that trailer state when it is `1`? What does byte 0 of the ordinary compact owned trailer state?
 
-**Known.** The specification states the compact null-owner parameter form and the class-`287` form, which both admit the trailers `00 00 00 00 00` and `00 00 00 01 00`. Five Linear Dimension parameters in the compact null-owner form store `00 00 00 01 00`; their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. These frames store the null owner `u8 0` at offset 30 while their source kind names a Linear Dimension. The decoder reads them without an owner binding and reports `parameter.owner-unstored` for each stream with such a parameter. It keeps the parameter flags at their defaults and reports `parameter.trailer-flag-uninterpreted` for each stream with a decoded parameter whose byte 3 is `1`.
+**Known.** The specification states the compact null-owner parameter form and the class-`287` form, which both admit the trailers `00 00 00 00 00` and `00 00 00 01 00`. Five Linear Dimension parameters in the compact null-owner form store `00 00 00 01 00`; their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. These frames store the null owner `u8 0` at offset 30 while their source kind names a Linear Dimension. The decoder reads them without an owner binding and reports `parameter.owner-unstored` for each stream with such a parameter. It keeps the parameter flags at their defaults and reports `parameter.trailer-flag-uninterpreted` for each stream with a decoded parameter whose byte 3 is `1`. An ordinary compact owned `Side1Offset` can set byte 0 with the driven flag clear. The decoder retains the offset and reports the same loss.
 
-**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form or a compact trailer that sets byte 3.
+**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form or a compact trailer that sets byte 3. A controlled owned parameter save must identify the setting that changes byte 0.
 
 **Conflict.** None.
 
@@ -2057,11 +2057,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-657. Referenced-angle Revolve direction kind 1 and second tail reference
 
-**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361-byte referenced-angle frame name?
+**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361- or 379-byte referenced-angle frame name?
 
-**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361-byte frame the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and records `feature.revolve-layout-assumed` with the target.
+**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361- and 379-byte frames the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and the 379-byte frame with the 369-byte fields, and records `feature.revolve-layout-assumed` with the target.
 
-**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and a 361-byte referenced-angle scope with the record that its second tail reference names.
+**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and 361- and 379-byte referenced-angle scopes with the records that their second tail references name.
 
 **Conflict.** None.
 
@@ -3628,3 +3628,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Paired saves that vary this word and identify the Extrude setting or record that supplies it.
 
 **Note.** The decoder retains the word and its offset. Neutral projection uses the stored blind distance and reports `feature.extrude-opaque-distance-word-assumed`.
+
+### DR-880. Typed timeline-owned Base Feature body pairing
+
+**Question.** How do the typed body records' passive-reference properties bind the parameter-body and result-body runs when their targets differ from the run positions?
+
+**Known.** A one-body typed frame has a `BASEFEAT_PM_BODY_REF` property on the first body record that names the second body record and a `BASEFEAT_DM_BODY_REF` property on the second record that names the first. The reader pairs the two counted runs by position and uses the first entry's width for both runs.
+
+**Need.** Paired saves with different property targets or entry widths, and the corresponding final body geometry.
+
+**Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.

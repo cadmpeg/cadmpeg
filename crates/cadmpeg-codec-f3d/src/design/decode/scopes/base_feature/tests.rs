@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use super::{
     exact_base_feature_construction, exact_timeline_owned_base_feature, timeline_body_owners,
-    timeline_owned_base_feature, TimelineBodyOwner,
+    timeline_owned_base_feature, PasteNodes, TimelineBodyOwner,
 };
 use crate::loss::F3dLossCode;
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
@@ -357,7 +357,7 @@ fn owned_body_runs(
             View::over_retained(bytes),
             scope,
             owner,
-            &HashMap::new(),
+            &PasteNodes::default(),
         )
         .unwrap()
     })
@@ -436,7 +436,10 @@ fn paired_body_to_component_owner_reads_typed_body_runs() {
     );
     let owner = owners[&51][0];
     let (construction, loss) = owned_body_runs(&bytes, &scope, owner).unwrap();
-    assert!(loss.is_none());
+    assert_eq!(
+        loss.unwrap().code,
+        F3dLossCode::FeatureOwnedBodyPairingAssumed.kind()
+    );
     let DesignBaseFeatureConstruction::TimelineOwnedBodies {
         owner_record,
         owner_reference_offset: stored_owner_reference_offset,
@@ -555,11 +558,16 @@ fn two_source_pairs() -> Vec<u8> {
     source_pairs(2, &[(SOURCE_A, PARAMETER_A), (SOURCE_B, PARAMETER_B)])
 }
 
-fn source_nodes() -> HashMap<String, Option<u64>> {
-    HashMap::from([
-        (SOURCE_A.to_owned(), Some(41)),
-        (SOURCE_B.to_owned(), Some(42)),
-    ])
+/// Sources 41 and 42; the copies' parameter-body presentations 71 and 72
+/// store the scene-node GUIDs `PARAMETER_A` and `PARAMETER_B`.
+fn source_nodes() -> PasteNodes {
+    PasteNodes {
+        sources: HashMap::from([
+            (SOURCE_A.to_owned(), Some(41)),
+            (SOURCE_B.to_owned(), Some(42)),
+        ]),
+        copies: HashMap::from([(71, PARAMETER_A.to_owned()), (72, PARAMETER_B.to_owned())]),
+    }
 }
 
 /// The owned construction of `scope` among `owners`, and the loss codes its
@@ -568,7 +576,7 @@ fn owned_with_losses(
     bytes: &[u8],
     scope: &DesignParameterScope,
     owners: &[TimelineBodyOwner],
-    nodes: &HashMap<String, Option<u64>>,
+    nodes: &PasteNodes,
 ) -> (Option<DesignBaseFeatureConstruction>, Vec<LossKind>) {
     let mut losses = Vec::new();
     let construction = crate::test_support::with_decode_context(|ctx| {
@@ -595,7 +603,7 @@ fn owned_construction(
     owner_type: &str,
     owner_tail: &[u8],
     trailer: &[u8],
-    nodes: &HashMap<String, Option<u64>>,
+    nodes: &PasteNodes,
 ) -> (Option<DesignBaseFeatureConstruction>, Vec<LossKind>) {
     let (bytes, scope) = owned_frames_with(&[(71, 61), (72, 62)], 4, &[0; 10], owner_tail, trailer);
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
@@ -606,11 +614,7 @@ fn owned_construction(
 
 /// The copy sources a two-body paste object names when `after_reference` and
 /// then the object's paired header close its envelope.
-fn copy_sources(
-    after_reference: &[u8],
-    trailer: &[u8],
-    nodes: &HashMap<String, Option<u64>>,
-) -> Vec<u64> {
+fn copy_sources(after_reference: &[u8], trailer: &[u8], nodes: &PasteNodes) -> Vec<u64> {
     let mut owner_tail = after_reference.to_vec();
     owner_tail.extend(owner_paired_header());
     owner_tail_copy_sources(PASTE_OBJECT, &owner_tail, trailer, nodes)
@@ -622,7 +626,7 @@ fn owner_tail_copy_sources(
     owner_type: &str,
     owner_tail: &[u8],
     trailer: &[u8],
-    nodes: &HashMap<String, Option<u64>>,
+    nodes: &PasteNodes,
 ) -> Vec<u64> {
     let construction = owned_construction(owner_type, owner_tail, trailer, nodes)
         .0
@@ -731,7 +735,7 @@ fn a_timeline_object_registered_twice_is_one_owner() {
     let owners = timeline_body_owners(&bytes, &records, types.iter());
     assert_eq!(owners[&51].len(), 1);
     assert_eq!(
-        owned_with_losses(&bytes, &scope, &owners[&51], &HashMap::new()).1,
+        owned_with_losses(&bytes, &scope, &owners[&51], &PasteNodes::default()).1,
         []
     );
 }
@@ -798,9 +802,9 @@ fn source_pairs_end_before_the_scope_reference_table() {
 fn every_copy_source_needs_one_browser_node() {
     let key = removal_key(29, NULL_KEY);
     let mut missing = source_nodes();
-    missing.remove(SOURCE_B);
+    missing.sources.remove(SOURCE_B);
     let mut ambiguous = source_nodes();
-    ambiguous.insert(SOURCE_B.to_owned(), None);
+    ambiguous.sources.insert(SOURCE_B.to_owned(), None);
     let mut owner_tail = key.clone();
     owner_tail.extend(owner_paired_header());
     for nodes in [missing, ambiguous] {
@@ -1357,4 +1361,109 @@ fn a_scope_that_two_timeline_objects_name_belongs_to_the_lowest_readable_record(
     );
     assert_eq!(construction.and_then(|c| c.timeline_owner()), Some(52));
     assert_eq!(losses, [F3dLossCode::FeatureTimelineOwnerCompeting.kind()]);
+}
+
+#[test]
+fn each_pair_names_its_copy_through_the_copy_guid() {
+    let key = removal_key(29, NULL_KEY);
+    // Stored in the reverse of body order, the pairs still give each copy
+    // its own source.
+    let reversed = source_pairs(2, &[(SOURCE_B, PARAMETER_B), (SOURCE_A, PARAMETER_A)]);
+    assert_eq!(copy_sources(&key, &reversed, &source_nodes()), [41, 42]);
+    let upper = source_pairs(
+        2,
+        &[
+            (SOURCE_A, &PARAMETER_A.to_ascii_uppercase()),
+            (SOURCE_B, PARAMETER_B),
+        ],
+    );
+    assert_eq!(copy_sources(&key, &upper, &source_nodes()), [41, 42]);
+    // A copy GUID that names no copy, two pairs naming one copy, and a copy
+    // GUID that two presentations store name no source.
+    let unknown = source_pairs(2, &[(SOURCE_A, PARAMETER_A), (SOURCE_B, NULL_KEY)]);
+    let repeated = source_pairs(2, &[(SOURCE_A, PARAMETER_A), (SOURCE_B, PARAMETER_A)]);
+    let mut shared = source_nodes();
+    shared.copies.insert(72, PARAMETER_A.to_owned());
+    for (trailer, nodes) in [
+        (&unknown, source_nodes()),
+        (&repeated, source_nodes()),
+        (&two_source_pairs(), shared),
+    ] {
+        assert!(copy_sources(&key, trailer, &nodes).is_empty());
+    }
+}
+
+#[test]
+fn a_paste_object_names_its_timeline_item() {
+    // The null removal key, three zero bytes, an empty reference table,
+    // u32 0xffffffff, the kind, and the ordinal.
+    let tail = |kind: &str, sentinel: u32, ordinal: &[u8]| {
+        let mut owner_tail = removal_key(29, NULL_KEY);
+        owner_tail.extend_from_slice(&[0, 0, 0]);
+        owner_tail.extend_from_slice(&0u32.to_le_bytes());
+        owner_tail.extend_from_slice(&sentinel.to_le_bytes());
+        crate::test_support::lp_utf16(&mut owner_tail, kind);
+        owner_tail.extend_from_slice(ordinal);
+        owner_tail.extend(owner_paired_header());
+        owned_construction(
+            PASTE_OBJECT,
+            &owner_tail,
+            &two_source_pairs(),
+            &source_nodes(),
+        )
+        .0
+        .expect("owned two-body scope")
+    };
+    let construction = tail("CopyPasteBodies", u32::MAX, &3u32.to_le_bytes());
+    let name = construction.owner_timeline_name().expect("timeline name");
+    assert_eq!(
+        (name.kind.value.as_str(), name.ordinal.value),
+        ("CopyPasteBodies", 3)
+    );
+    // Another value in place of 0xffffffff names nothing.
+    assert!(tail("CopyPasteBodies", 0, &3u32.to_le_bytes())
+        .owner_timeline_name()
+        .is_none());
+    // An ordinal that the paired header would supply names nothing.
+    assert!(tail("CopyPasteBodies", u32::MAX, &[])
+        .owner_timeline_name()
+        .is_none());
+    // Without the tail after the key, the paste names nothing.
+    let mut bare = removal_key(29, NULL_KEY);
+    bare.extend(owner_paired_header());
+    let construction =
+        owned_construction(PASTE_OBJECT, &bare, &two_source_pairs(), &source_nodes()).0;
+    assert!(construction
+        .expect("owned two-body scope")
+        .owner_timeline_name()
+        .is_none());
+}
+
+#[test]
+fn the_one_pair_of_a_one_body_paste_belongs_to_its_body() {
+    let mut owner_tail = removal_key(29, NULL_KEY);
+    owner_tail.extend(owner_paired_header());
+    let mut unjoined = source_nodes();
+    unjoined.copies.clear();
+    for nodes in [source_nodes(), unjoined] {
+        let (bytes, scope) = owned_frames_with(
+            &[(71, 61)],
+            2,
+            &[0; 10],
+            &owner_tail,
+            &source_pairs(1, &[(SOURCE_B, NULL_KEY)]),
+        );
+        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+        let types = owner_types(PASTE_OBJECT);
+        let owners = timeline_body_owners(&bytes, &records, types.iter());
+        let (construction, losses) = owned_with_losses(&bytes, &scope, &owners[&51], &nodes);
+        assert_eq!(
+            construction
+                .expect("owned one-body scope")
+                .copy_source_suffixes()
+                .collect::<Vec<_>>(),
+            [42]
+        );
+        assert_eq!(losses, []);
+    }
 }
