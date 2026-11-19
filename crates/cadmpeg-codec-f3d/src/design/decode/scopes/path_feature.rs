@@ -447,7 +447,7 @@ pub(super) fn loft_reference_loss(
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     let target = construction.reference_target?;
     Some(crate::loss::F3dLossCode::FeatureLoftReferenceUnresolved.note(format!(
-        "Loft scope {} stores a non-null marked reference with target {target} at prefix offset 33; the Loft setting it selects is unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.",
+        "Loft scope {} stores a non-null marked reference with target {target} at prefix offset 33; the Loft setting it selects is unresolved (DR-268), and a Loft projected from the scope uses closed false, ruled false, and linearize false.",
         scope.id
     )))
 }
@@ -468,7 +468,7 @@ pub(super) fn three_flag_loft_settings_loss(
         return None;
     };
     Some(crate::loss::F3dLossCode::FeatureLoftSettingsAssumed.note(format!(
-        "Loft scope {} stores the three-flag {form} prefix with flag bytes {first:02x} {second:02x} {third:02x} at prefix offset {flags}; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.",
+        "Loft scope {} stores the three-flag {form} prefix with flag bytes {first:02x} {second:02x} {third:02x} at prefix offset {flags}; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, ruled false, and linearize false.",
         scope.id
     )))
 }

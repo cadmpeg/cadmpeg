@@ -162,3 +162,17 @@ each component. Every normal turns from (0, −1, 0) to (0, +1, 0).
 - `reverse_normal_three_components.f3d`: one surface body in each of the
   components C1, C2 and C3, at y = 0, 30 and 60 mm.
 - `reverse_normal_two_plus_one.f3d`: two surface bodies in C1 and one in C2.
+
+
+# Fusion API fixtures: surface Loft
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Sketch1 has a circle of radius 10 mm on the XY
+plane, and Sketch2 has a circle of radius 6 mm on a plane offset 20 mm from XY.
+Loft1 is a new-body Loft of the two profiles with isSolid false. The API
+reported the body count, volume, area and face count after each timeline item.
+
+- `reverse_normal_loft_control.f3d`: Loft1 gives 1 surface body, 0 mm³,
+  1025.2187 mm², 1 cone face.
+- `reverse_normal_loft.f3d`: Loft1, then Reverse Normal of the Loft body.
+  1 surface body, 0 mm³, 1025.2187 mm², 1 cone face.

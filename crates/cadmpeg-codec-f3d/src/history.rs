@@ -39,6 +39,7 @@ mod generated_bodies;
 pub(crate) mod history_bodies;
 mod hole_support;
 pub(crate) mod linked_states;
+pub(crate) mod loft_solid;
 mod loop_index;
 mod move_face;
 mod output_blob;

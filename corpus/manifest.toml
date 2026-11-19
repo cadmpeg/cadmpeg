@@ -1194,3 +1194,28 @@ acquisition_date = "2026-11-16"
 license = "CC0-1.0"
 sha256 = "3c58536c344c8424410ad9523adce4f0ee47202ec53b6231d4899b4b62117b66"
 notes = "CC0 Fusion save, built through the API and edited in the Fusion UI. One Reverse Normal of two surface bodies of one component and one of another."
+
+
+[[file]]
+filename = "f3d/reverse_normal_loft_control.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "ZorbaTHut"
+authoring_app = "Autodesk Fusion"
+authoring_app_version = "2706.1.17"
+acquisition_date = "2026-11-18"
+license = "CC0-1.0"
+sha256 = "ec59c2b5edac4a5628a3b2e9ed316cff3a3bf3c06b573f1c903eb1d8fb8a195e"
+notes = "CC0 Fusion API save. New-body surface Loft of two circles, r10 mm on XY and r6 mm on a plane offset 20 mm; isSolid false."
+
+[[file]]
+filename = "f3d/reverse_normal_loft.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "ZorbaTHut"
+authoring_app = "Autodesk Fusion"
+authoring_app_version = "2706.1.17"
+acquisition_date = "2026-11-18"
+license = "CC0-1.0"
+sha256 = "b5a549fa9fead89ca30354e4e244dde882b81cd73e6ec4448a1cabf12045c352"
+notes = "CC0 Fusion API save. The surface Loft of reverse_normal_loft_control.f3d, then Reverse Normal of the Loft body."
