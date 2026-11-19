@@ -148,6 +148,8 @@
           },
           "id": "step:presentation:pmi#8",
           "name": "surface note",
+          "native_options": {},
+          "source_settings": {},
           "targets": []
         }
       ],

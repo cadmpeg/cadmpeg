@@ -79,10 +79,14 @@ fn two_sided_revolve_construction(
             bytes.get(start + two_sided_revolve::PROJECT_AXIS),
             Some(0 | 1)
         )
-        || bytes.get(start + two_sided_revolve::SOLID) != Some(&1)
     {
         return None;
     }
+    let solid = match bytes.get(start + two_sided_revolve::SOLID)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let opposite_record_index = marked_record_reference(
         bytes,
         start + two_sided_revolve::OPPOSITE_ANGLE_REFERENCE_MARKER,
@@ -113,7 +117,7 @@ fn two_sided_revolve_construction(
                 angle_record_index: opposite_record_index,
                 angle_offset: opposite.evaluated_value_offset(),
             }),
-            solid: None,
+            solid: Some(solid),
             reversed: false,
         },
     ))
