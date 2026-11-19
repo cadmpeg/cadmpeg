@@ -373,7 +373,6 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
             output.to_str().unwrap(),
             "--to",
             "ap242e3",
-            "--allow-errors",
         ])
         .assert()
         .code(1)
@@ -392,7 +391,6 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
             input.to_str().unwrap(),
             "-o",
             native_input.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -409,7 +407,6 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
             "9.9",
             "--report",
             report.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .code(1)
@@ -442,7 +439,6 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
             "8.8",
             "--report",
             report.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .code(2)
@@ -476,13 +472,7 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
     // encoder receives the token after the colon unchanged.
     Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args([
-            "convert",
-            input.to_str().unwrap(),
-            "-f",
-            "step:ap999",
-            "--allow-errors",
-        ])
+        .args(["convert", input.to_str().unwrap(), "-f", "step:ap999"])
         .assert()
         .code(1)
         .stderr(
@@ -512,7 +502,6 @@ fn rhino_word_5_is_refused_with_the_encoder_catalog() {
             output.to_str().unwrap(),
             "--to",
             "5",
-            "--allow-errors",
         ])
         .assert()
         .code(1)

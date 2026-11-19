@@ -48,12 +48,12 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | start | resolve target / destination | existing output and no `--force` | refused before decode | continue |
 | open | `load_artifact` | native / CADIR / sidecar | `Decoded` / `Restored` / `Neutral` | operational error |
 | decoded | `--reject-lossy` decode | any decode loss | `decode_loss_rejected` | continue |
-| decoded | `validate_loaded` | error findings and no `--allow-errors` | `check_failed` | continue |
-| checked | `encoder.plan` | plan `Err` and carried errors | `check_failed` preferred | plan refusal |
+| decoded | `validate_loaded` | `--reject-errors` and error findings in the payload | `check_failed` | continue |
+| checked | `encoder.plan` | plan `Err`, `--reject-errors`, and error findings | `check_failed` preferred | plan refusal |
 | planned | export losses and reject-lossy | nonempty export losses | `export_loss_rejected` | write |
 | write | `NamedTempFile` then rename | persist fails | operational error | `ok` |
 
-`--allow-errors` writes after check errors. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
+Convert writes after check errors and reports them; `--reject-errors` refuses. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
 
 No CLI retry loop exists.
 

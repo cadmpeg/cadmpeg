@@ -30,6 +30,7 @@ mod carried;
 mod coverage;
 pub mod edge_recovery;
 mod loss;
+mod scene;
 pub mod subset_lowering;
 pub mod target;
 
@@ -39,6 +40,7 @@ pub use coverage::{
     ProcessArenaDispositions,
 };
 pub use loss::{carried_source_losses, TargetLossCode, WriterLossCode};
+pub use scene::{SceneOptions, UpAxis};
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// Implementation surface for one output format.
@@ -167,6 +169,8 @@ pub struct EncodeInput<'a> {
     /// The source of the files that external assets of the document name,
     /// for an encoder that writes their content into its output.
     pub assets: Option<&'a dyn Companions>,
+    /// Scene settings for an encoder of a scene format.
+    pub scene: SceneOptions,
 }
 
 impl<'a> EncodeInput<'a> {
@@ -177,6 +181,7 @@ impl<'a> EncodeInput<'a> {
             ir,
             fidelity,
             assets: None,
+            scene: SceneOptions::DEFAULT,
         }
     }
 
@@ -184,6 +189,13 @@ impl<'a> EncodeInput<'a> {
     #[must_use]
     pub const fn with_assets(mut self, assets: &'a dyn Companions) -> Self {
         self.assets = Some(assets);
+        self
+    }
+
+    /// Selects the scene settings of the export.
+    #[must_use]
+    pub const fn with_scene(mut self, scene: SceneOptions) -> Self {
+        self.scene = scene;
         self
     }
 }
