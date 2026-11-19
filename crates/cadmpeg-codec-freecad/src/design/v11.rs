@@ -142,7 +142,7 @@ pub(crate) fn project(
 /// What the projection reads from the document's object records beside the
 /// decoded features.
 struct Source<'a> {
-    /// The objects FreeCAD marks `Touched`, out of date.
+    /// The objects `FreeCAD` marks `Touched`, out of date.
     touched: BTreeSet<&'a str>,
     /// The properties each object stores, by object and name.
     stored: BTreeSet<(&'a str, &'a str)>,
@@ -279,7 +279,7 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Result<Feature, Codec
             source.stores(legacy, "Refine").then_some(*refine),
             source
                 .stores(legacy, "FuzzyTolerance")
-                .then(|| match fuzzy_tolerance {
+                .then_some(match fuzzy_tolerance {
                     LegacyFuzzyTolerance::KernelDefault => FuzzyTolerance::KernelDefault,
                     LegacyFuzzyTolerance::Automatic => FuzzyTolerance::Automatic,
                     LegacyFuzzyTolerance::Explicit(value) => {
