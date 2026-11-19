@@ -3035,7 +3035,7 @@ The type table can also register the types below with a nonempty entity-ID run. 
 | `BFB592FE-03DD-4DAA-A4AC-14D02ABB672A` | `5662F619-2281-4AD9-93DC-1FCFDA1062E7` | 0 | `Fusion` |
 | `CAEC057F-5A9D-4FBE-B0E2-1C97BF6567FF` | `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB` | 0 | `Scene` |
 
-**Feature item tail.** The tail of a timeline item's parameter scope starts after the LP-UTF16 feature-family name and ends at the paired header. Every `Sketch` and `Extrude` item of a stream with serializer magic `1234` stores the 78-byte tail. The 77-byte tail occurs in plain-reference streams whose MetaStream header stores one generation u32 after the serializer magic. The 196-byte tail is the typed-reference parameter-scope tail of §3.1 and stores each reference as a 51-byte typed reference. Each later offset moves by `2L` after a custom label of `L` code units.
+**Feature item tail.** The tail of a timeline item's parameter scope starts after the LP-UTF16 feature-family name and ends at the paired header. Every `Sketch` and `Extrude` item of a stream with serializer magic `1234` stores the 78-byte tail. The 77-byte tail occurs in plain-reference streams whose MetaStream header stores one u32 between the serializer magic and the capability-registry count. The 196-byte tail is the typed-reference parameter-scope tail of §3.1 and stores each reference as a 51-byte typed reference. Each later offset moves by `2L` after a custom label of `L` code units.
 
 | Field | Type | 78-byte tail | 77-byte tail | 196-byte tail |
 |---|---|---|---|---|
