@@ -5,7 +5,8 @@ The commands come from `.github/workflows/ci.yml`: every `python3` line of
 the `static` job, and the `cargo fmt` line of the `lint` job, so the list
 follows CI. The Python tooling tests run only when `scripts/` changed.
 Formatting covers every crate, including ones the branch did not mean to
-touch. None of these commands compiles Rust.
+touch. A command that reads a variable of the CI event (`$NAME`) has its own
+preflight check. None of these commands compiles Rust.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ def job_commands(workflow: str, job: str, prefix: str) -> list[str]:
 
 
 def commands(workflow: str, scripts_changed: bool) -> list[str]:
-    found = job_commands(workflow, "static", "python3 ")
+    found = [command for command in job_commands(workflow, "static", "python3 ") if "$" not in command]
     if not scripts_changed:
         found = [command for command in found if "unittest" not in command]
     return found + job_commands(workflow, "lint", "cargo fmt")

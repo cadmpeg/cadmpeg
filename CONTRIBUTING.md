@@ -95,6 +95,8 @@ Annex A of [`docs/cadir-v11.md`](docs/cadir-v11.md) states the schema of each ty
 python3 scripts/generate-annex-a.py --write
 ```
 
+The specification changes in a specification-only pull request from the errata process ([#209](https://github.com/cadmpeg/cadmpeg/issues/209)). A pull request that changes `docs/cadir-v11.md` outside the generated Annex A body changes no file under `crates/`. The `static checks` job runs `python3 scripts/check-spec-change.py --base <base commit>` on each pull request, and the preflight runs the same rule against the merge base.
+
 The excluded fuzz crate uses Rust nightly and `cargo-fuzz`. The scheduled [fuzz smoke workflow](.github/workflows/fuzz-smoke.yml) compiles every fuzz target without running it:
 
 ```sh
