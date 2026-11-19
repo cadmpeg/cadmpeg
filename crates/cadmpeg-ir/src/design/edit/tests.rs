@@ -34,7 +34,7 @@ use crate::design::parameter::{
 };
 use crate::design::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Position};
 use crate::design::scope::{DesignScope, OccurrenceDesign};
-use crate::design::selection::{Anchor, Picks, Selection};
+use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use crate::features::{ConfigurationId, FeatureId, FinitePoint3, ParameterId};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
@@ -1430,6 +1430,45 @@ fn removal_strips_the_names_that_mention_a_deleted_feature() {
             (EntityRef::Body(id("body", 7)), None),
         ]),
         "a kept state's entry loses the name, and one left with nothing goes"
+    );
+}
+
+#[test]
+fn removal_keeps_a_pick_whose_name_mentions_the_deleted_feature() {
+    let mut document = timeline();
+    let picked = Picked {
+        target: PickTarget::Entity(generated_by(2)),
+        context: None,
+        native: None,
+        domain: None,
+        witness: None,
+        resolved: None,
+    };
+    let lost = Measure {
+        kind: MeasureKind::Length,
+        of: MeasureTarget::Selection(Selection {
+            at: Anchor::Current,
+            picks: Picks::Named(Members::new(vec![picked]).unwrap()),
+            native: None,
+        }),
+        cached: None,
+    };
+    document
+        .design
+        .parameters
+        .push(length(8, neutral("@0", &[], &[lost]), None));
+    let kept = document.design.parameters[2].clone();
+
+    document
+        .edit()
+        .unwrap()
+        .remove_member(&Member::Feature(feature(2)))
+        .unwrap();
+
+    assert_eq!(
+        document.design_parameter(&parameter_id(8)).unwrap(),
+        &kept,
+        "the pick stays, and no longer resolves (D51)"
     );
 }
 
