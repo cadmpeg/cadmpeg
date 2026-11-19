@@ -140,7 +140,7 @@ fn header_strings_leave_out_control_characters() {
 }
 
 #[test]
-fn header_strings_and_lists_are_capped() {
+fn header_strings_are_capped_and_lists_are_kept_whole() {
     let long = "x".repeat(10_000);
     let authors = (0..100)
         .map(|index| format!("'a{index}'"))
@@ -156,7 +156,7 @@ fn header_strings_and_lists_are_capped() {
         .keys()
         .filter(|key| key.starts_with("file_name.author."))
         .count();
-    assert_eq!(author_keys, 64);
-    assert_eq!(attributes["file_name.author.63"], "a63");
-    assert!(!attributes.contains_key("file_name.author.64"));
+    assert_eq!(author_keys, 100);
+    assert_eq!(attributes["file_name.author.64"], "a64");
+    assert_eq!(attributes["file_name.author.99"], "a99");
 }

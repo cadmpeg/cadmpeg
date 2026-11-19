@@ -710,8 +710,8 @@ attribute:
 | `file_name.authorization`                | `FILE_NAME.authorization`               |
 | `file_schema.schema_identifiers.<n>`     | `FILE_SCHEMA.schema_identifiers[n]`     |
 
-`<n>` is the zero-based position in the source list, and the first 64 list
-members supply attributes. A value is the string after §4 escape decoding,
+`<n>` is the zero-based position in the source list, and every list member
+supplies an attribute. A value is the string after §4 escape decoding,
 with control characters left out, at most 256 characters, and 1024 characters
 for a schema identifier. A string that is omitted, does not decode, or holds no
 non-whitespace character supplies no attribute.

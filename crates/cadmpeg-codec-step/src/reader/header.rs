@@ -11,8 +11,6 @@ use crate::parse::{Exchange, HeaderRecord, Value};
 const MAX_METADATA_CHARS: usize = 256;
 /// Effective length limit of a `FILE_SCHEMA` identifier.
 const MAX_SCHEMA_IDENTIFIER_CHARS: usize = 1024;
-/// Largest number of list members kept from one header list.
-const MAX_LIST_MEMBERS: usize = 64;
 
 /// One header attribute: its record, its parameter position, and its key.
 struct Field {
@@ -104,7 +102,7 @@ pub(super) fn add_source_attributes(
                 }
             }
             Some(Value::List(members)) => {
-                for (position, member) in members.iter().enumerate().take(MAX_LIST_MEMBERS) {
+                for (position, member) in members.iter().enumerate() {
                     let Value::String(bytes) = member else {
                         continue;
                     };
