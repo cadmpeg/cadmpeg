@@ -41,6 +41,7 @@ use crate::writer::{refs, string, Emitter, Ref};
 mod closed_surfaces;
 mod edge_split;
 mod implicit_outer;
+mod instances;
 mod non_manifold;
 mod ownership;
 mod representations;
@@ -395,6 +396,8 @@ pub(crate) struct Builder<'a> {
     body_shape_refs: HashMap<String, Ref>,
     pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
     advanced_brep_items: std::collections::HashSet<Ref>,
+    /// Geometric sets of bounded surfaces that stand for sheet bodies.
+    surface_set_items: std::collections::HashSet<Ref>,
     body_step_item_refs: HashMap<String, Vec<Ref>>,
     product_step_refs: HashMap<String, Ref>,
     occurrence_step_refs: HashMap<String, Ref>,
@@ -637,6 +640,7 @@ impl<'a> Builder<'a> {
             body_shape_refs: HashMap::new(),
             body_item_refs: HashMap::new(),
             advanced_brep_items: std::collections::HashSet::new(),
+            surface_set_items: std::collections::HashSet::new(),
             body_step_item_refs: HashMap::new(),
             product_step_refs: HashMap::new(),
             occurrence_step_refs: HashMap::new(),
@@ -1435,17 +1439,45 @@ impl<'a> Builder<'a> {
         );
 
         let ir = self.ir;
+        let graph = instances::lower(ir);
+        for path in &graph.split {
+            self.loss(
+                StepLossCode::InstanceDefinitionSplit,
+                format!("instance '{path}' was written as an occurrence of a product definition of its own"),
+            );
+        }
+        for path in &graph.unresolved {
+            self.loss(
+                StepLossCode::InstancePathUnresolved,
+                format!("instance path '{path}' names no occurrence of the document; its bodies and placement were not applied"),
+            );
+        }
+        for (definition, bodies) in &graph.omitted {
+            if !bodies.is_empty() {
+                self.loss(
+                    StepLossCode::InstancePrototypeBodiesOmitted,
+                    format!(
+                        "definition '{definition}' is placed only by instances that show bodies of their own; its {} body record(s) were not written in a product",
+                        bodies.len()
+                    ),
+                );
+            }
+        }
         // A definition of a document that was not read has no product here.
-        let (external_products, products): (Vec<_>, Vec<_>) = ir
-            .model
-            .product_definitions
+        let (external_products, products): (Vec<_>, Vec<_>) = graph
+            .definitions
             .iter()
+            .map(|product| &**product)
             .partition(|product| matches!(product.storage, Storage::External(_)));
         let external_products = external_products
             .into_iter()
             .map(|product| &product.id)
             .collect::<HashSet<_>>();
-        let occurrences = &ir.model.occurrences;
+        let occurrences = graph
+            .occurrences
+            .iter()
+            .map(|occurrence| &**occurrence)
+            .collect::<Vec<_>>();
         let emitted_product_definitions = products
             .iter()
             .map(|product| product.id.clone())
@@ -1458,7 +1490,7 @@ impl<'a> Builder<'a> {
         // Each occurrence's owning definition and its place among the
         // definition's occurrences.
         let mut owners = HashMap::<OccurrenceId, (ProductDefinitionId, usize)>::new();
-        for product in &ir.model.product_definitions {
+        for product in &graph.definitions {
             for (position, occurrence) in product.occurrences.iter().enumerate() {
                 owners
                     .entry(occurrence.clone())
@@ -1508,7 +1540,7 @@ impl<'a> Builder<'a> {
         }
         let mut representation_placements = HashMap::<ProductDefinitionId, Vec<Ref>>::new();
         let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
-        for occurrence in occurrences {
+        for occurrence in &occurrences {
             let Some(parent_product) = owners
                 .get(&occurrence.id)
                 .map(|(owner, _)| owner)
@@ -1541,6 +1573,7 @@ impl<'a> Builder<'a> {
         }
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
         let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
+        let mut formations = HashMap::<ProductDefinitionId, Ref>::new();
         for (&product, &name) in products.iter().zip(&product_names) {
             let product_id = product
                 .part_number
@@ -1548,26 +1581,42 @@ impl<'a> Builder<'a> {
                 .or(product.source_name.as_deref())
                 .unwrap_or(product.id.as_str());
             let description = product.description.as_deref().unwrap_or("");
-            let product_ref = self.emitter.emit(
-                "PRODUCT",
-                &format!(
-                    "{},{},{},({product_context})",
-                    string(product_id),
-                    string(name),
-                    string(description)
-                ),
-            );
-            self.product_step_refs
-                .insert(product.id.as_str().to_owned(), product_ref);
-            let formation = self.emitter.emit(
-                "PRODUCT_DEFINITION_FORMATION",
-                &format!("'','',{product_ref}"),
-            );
+            // A split instance's definition is a further definition of its
+            // prototype's product.
+            // When every instance of the prototype was split, the first of
+            // those definitions states the product and keeps its identifier.
+            let base = graph
+                .shared_products
+                .get(&product.id)
+                .unwrap_or(&product.id);
+            let (formation, definition_id) = if let Some(&formation) = formations.get(base) {
+                (formation, product.id.as_str())
+            } else {
+                let product_ref = self.emitter.emit(
+                    "PRODUCT",
+                    &format!(
+                        "{},{},{},({product_context})",
+                        string(product_id),
+                        string(name),
+                        string(description)
+                    ),
+                );
+                self.product_step_refs
+                    .insert(product.id.as_str().to_owned(), product_ref);
+                self.product_step_refs
+                    .insert(base.as_str().to_owned(), product_ref);
+                let formation = self.emitter.emit(
+                    "PRODUCT_DEFINITION_FORMATION",
+                    &format!("'','',{product_ref}"),
+                );
+                formations.insert(base.clone(), formation);
+                (formation, product_id)
+            };
             let definition = self.emitter.emit(
                 "PRODUCT_DEFINITION",
                 &format!(
                     "{},{},{formation},{definition_context}",
-                    string(product_id),
+                    string(definition_id),
                     string(description)
                 ),
             );
@@ -1608,7 +1657,20 @@ impl<'a> Builder<'a> {
             .or_else(|| (occurrences.is_empty() && products.len() == 1).then(|| &products[0].id))
             .and_then(|product| representations.get(product))
             .copied();
-        self.emit_unclaimed_body_representation(context, root_representation);
+        // An omitted prototype's bodies are charged below, not written at
+        // the root.
+        let owned = graph
+            .definitions
+            .iter()
+            .flat_map(|product| product.bodies.iter().cloned())
+            .chain(
+                graph
+                    .omitted
+                    .iter()
+                    .flat_map(|(_, bodies)| bodies.iter().cloned()),
+            )
+            .collect::<BTreeSet<_>>();
+        self.emit_unclaimed_body_representation(context, root_representation, &owned);
 
         let mut emission_order = occurrences
             .iter()
@@ -1700,14 +1762,12 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_unclaimed_body_representation(&mut self, context: Ref, root: Option<Ref>) {
-        let owned = self
-            .ir
-            .model
-            .product_definitions
-            .iter()
-            .flat_map(|product| &product.bodies)
-            .collect::<BTreeSet<_>>();
+    fn emit_unclaimed_body_representation(
+        &mut self,
+        context: Ref,
+        root: Option<Ref>,
+        owned: &BTreeSet<cadmpeg_ir::ids::BodyId>,
+    ) {
         let bodies = self
             .ir
             .geometry
@@ -1865,6 +1925,29 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
+            if let Some(item) = (!closed && !mixed_wire)
+                .then(|| self.emit_surface_set_region(region))
+                .flatten()
+            {
+                self.surface_set_items.insert(item);
+                let shape_item = self.place_body_item(&region.body, item, context);
+                items.push(shape_item);
+                self.body_shape_refs
+                    .entry(region.body.as_str().to_owned())
+                    .or_insert(shape_item);
+                self.body_step_refs
+                    .entry(region.body.as_str().to_owned())
+                    .or_insert(item);
+                self.body_item_refs
+                    .entry(region.body.as_str().to_owned())
+                    .or_default()
+                    .push(shape_item);
+                self.body_step_item_refs
+                    .entry(region.body.as_str().to_owned())
+                    .or_default()
+                    .push(item);
+                continue;
+            }
             let Some((outer_id, void_ids)) = region.shells.split_first() else {
                 self.empty_regions.insert(region.id.as_str().to_owned());
                 continue;
@@ -2143,6 +2226,49 @@ impl<'a> Builder<'a> {
             .push(item);
     }
 
+    /// A `GEOMETRIC_SET` of the surfaces of a region whose faces are whole
+    /// bounded surfaces: forward faces with no loops on a surface with no
+    /// procedural construction whose solved geometry is NURBS, or on a
+    /// rectangular parameter subset. An exact NURBS can be written wider than
+    /// its face, and a sub-surface is written by its solved carrier, not a
+    /// trim to its ranges, so neither qualifies.
+    fn emit_surface_set_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
+        let children = &self.children;
+        let faces = region
+            .shells
+            .iter()
+            .flat_map(|shell| children.shell_faces(shell).iter().copied())
+            .collect::<Vec<_>>();
+        let whole_bounded = |face: &&Face| {
+            face.loops.is_empty()
+                && face.sense == Sense::Forward
+                && match self.procedural_surfaces.get(face.surface.as_str()) {
+                    Some(procedural) => matches!(
+                        procedural.definition(),
+                        ProceduralSurfaceDefinition::Subset(_)
+                    ),
+                    None => self
+                        .surfaces
+                        .get(face.surface.as_str())
+                        .and_then(|surface| surface.geometry.solved())
+                        .is_some_and(|geometry| {
+                            matches!(geometry, SolvedSurfaceGeometry::Nurbs(_))
+                        }),
+                }
+        };
+        if faces.is_empty() || !faces.iter().all(whole_bounded) {
+            return None;
+        }
+        let members = faces
+            .iter()
+            .map(|face| self.emit_surface(face.surface.as_str()))
+            .collect::<Option<Vec<_>>>()?;
+        Some(
+            self.emitter
+                .emit("GEOMETRIC_SET", &format!("'',{}", refs(&members))),
+        )
+    }
+
     fn place_body_item(
         &mut self,
         body_id: &cadmpeg_ir::ids::BodyId,
@@ -2188,6 +2314,8 @@ impl<'a> Builder<'a> {
         if self.advanced_brep_items.contains(&item) {
             self.advanced_brep_items.insert(mapped);
         }
+        // A placed set's mapped item stays in the product's plain shape
+        // representation: its map already names the bounded-surface one.
         mapped
     }
 
@@ -6142,7 +6270,15 @@ impl<'a> Builder<'a> {
                 usize::from(occurrence.visible.is_some())
                     + usize::from(occurrence.suppressed.is_some())
                     + usize::from(occurrence.representation.is_some())
-                    + occurrence.overrides.len()
+                    + occurrence
+                        .overrides
+                        .iter()
+                        .map(|nested| {
+                            usize::from(nested.suppressed.is_some())
+                                + usize::from(nested.visible.is_some())
+                                + usize::from(nested.representation.is_some())
+                        })
+                        .sum::<usize>()
             })
             .sum::<usize>();
         if occurrence_metadata > 0 {
