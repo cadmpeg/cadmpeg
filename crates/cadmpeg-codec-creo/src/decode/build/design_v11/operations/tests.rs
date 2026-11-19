@@ -306,6 +306,69 @@ fn a_round_picks_its_edges_by_their_producing_feature() {
 }
 
 #[test]
+fn a_round_picks_the_edges_a_preceding_feature_generates_by_name() {
+    let edges = cadmpeg_ir::features::EdgeSelection::generated(
+        vec![
+            cadmpeg_ir::features::GeneratedEdgeRef::new(feature(10), "curve#9".to_owned())
+                .expect("edge"),
+        ],
+        "creo:allfeatur:edgs_affected#50:9".to_owned(),
+    )
+    .expect("generated edges");
+    let operation = legacy(
+        "fillet",
+        json!({"groups": [{
+            "edges": serde_json::to_value(&edges).expect("edges"),
+            "radius": {"kind": "constant", "radius": 2.0},
+        }]}),
+    );
+    let Some(FeatureOperation::Fillet(fillet)) = project(&operation) else {
+        panic!("fillet");
+    };
+    let FilletSet::Edges { edges, .. } = &fillet.sets[0] else {
+        panic!("edge set");
+    };
+    let Picks::Named(picks) = &edges.picks else {
+        panic!("named edges");
+    };
+    assert_eq!(
+        picks.as_slice()[0].target,
+        PickTarget::Entity(TopoName::Generated {
+            kind: NameKind::Edge,
+            feature: feature(10),
+            role: None,
+            generator: None,
+            index: None,
+        })
+    );
+    assert!(edges.native.is_some());
+}
+
+#[test]
+fn a_merge_is_not_typed_while_its_role_codes_are_unread() {
+    let faces = cadmpeg_ir::features::FaceSelection::generated(
+        vec![
+            cadmpeg_ir::features::GeneratedFaceRef::new(feature(10), "surface#7".to_owned())
+                .expect("face"),
+        ],
+        "creo:allfeatur:quilts#50:3".to_owned(),
+    )
+    .expect("generated faces");
+    for faces in [
+        faces,
+        cadmpeg_ir::features::FaceSelection::Native("creo:allfeatur:quilts#50:3".to_owned()),
+    ] {
+        let operation = LegacyOperation::KnitSurface {
+            faces,
+            merge_entities: Some(true),
+            create_solid: Some(false),
+            gap_tolerance: None,
+        };
+        assert_eq!(project(&operation), None);
+    }
+}
+
+#[test]
 fn a_hole_starts_on_a_face_its_own_feature_makes_by_native_name() {
     use cadmpeg_ir::features::holes;
     let operation = LegacyOperation::Hole {

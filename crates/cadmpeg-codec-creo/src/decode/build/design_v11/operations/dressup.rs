@@ -39,6 +39,11 @@ pub(super) fn controls() -> BlendControls {
     }
 }
 
+/// Prefixes of the feature-local ids of a generated edge (its curve-topology
+/// id) and face (its surface id) in the v10 selection.
+const GENERATED_EDGE: &str = "curve#";
+const GENERATED_FACE: &str = "surface#";
+
 /// Picks of entities by their geometry ids, with the source's record of the
 /// selection; `None` where a record id carries no geometry id.
 fn by_ids<'a, O: MemberOrder>(
@@ -63,8 +68,8 @@ fn by_ids<'a, O: MemberOrder>(
 }
 
 /// An edge operand: the edges the round or chamfer lists in the current
-/// model, each by its name, and by the selection's native record where the
-/// listed edges are not all current.
+/// model or in their producers' results, each by its name, and by the
+/// selection's native record where the listed edges are neither.
 pub(super) fn edges(
     value: &old::EdgeSelection,
     holder: &FeatureId,
@@ -81,12 +86,21 @@ pub(super) fn edges(
         )
         .or_else(|| selections::unread(native)),
         old::EdgeSelection::Native(native) => selections::unread(native),
-        old::EdgeSelection::Generated { native, .. } => selections::unread(native.as_str()),
+        old::EdgeSelection::Generated { edges, native } => by_ids(
+            edges.iter().map(|edge| edge.local_id.as_str()),
+            GENERATED_EDGE,
+            NameKind::Edge,
+            native.as_str(),
+            holder,
+            stated,
+        )
+        .or_else(|| selections::unread(native.as_str())),
         _ => None,
     }
 }
 
-/// A face operand: the face of the surface the source names, by its name.
+/// A face operand: the faces of the surfaces the source names, by their
+/// names.
 pub(super) fn faces(
     value: &old::FaceSelection,
     holder: &FeatureId,
@@ -111,7 +125,15 @@ pub(super) fn faces(
             stated,
         )
         .or_else(|| selections::unread(native)),
-        old::FaceSelection::Generated { native, .. } => selections::unread(native.as_str()),
+        old::FaceSelection::Generated { faces, native } => by_ids(
+            faces.iter().map(|face| face.local_id.as_str()),
+            GENERATED_FACE,
+            NameKind::Face,
+            native.as_str(),
+            holder,
+            stated,
+        )
+        .or_else(|| selections::unread(native.as_str())),
         _ => None,
     }
 }

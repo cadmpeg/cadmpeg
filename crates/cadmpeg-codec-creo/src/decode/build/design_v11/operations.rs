@@ -71,9 +71,7 @@ pub(super) fn typed(
         LegacyOperation::Fillet { .. }
         | LegacyOperation::Chamfer { .. }
         | LegacyOperation::Hole { .. } => dressup::operation(operation, holder, stated),
-        LegacyOperation::FilledSurface { .. } | LegacyOperation::KnitSurface { .. } => {
-            surfacing::operation(operation, stated)
-        }
+        LegacyOperation::FilledSurface { .. } => surfacing::operation(operation, stated),
         _ => None,
     }
 }

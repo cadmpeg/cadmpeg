@@ -176,6 +176,19 @@ fn operations_keep_their_family_or_their_native_kind() {
         operation(&LegacyOperation::StoredGeometry {}, &BTreeSet::new()).expect("stored"),
         native("stored_geometry").expect("native")
     );
+    assert_eq!(
+        operation(
+            &LegacyOperation::KnitSurface {
+                faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                merge_entities: Some(true),
+                create_solid: Some(false),
+                gap_tolerance: None,
+            },
+            &BTreeSet::new()
+        )
+        .expect("merge"),
+        native("merge").expect("native")
+    );
 }
 
 #[test]

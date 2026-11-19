@@ -328,9 +328,10 @@ fn operation(
             OperationFamily::Pattern
         }
         LegacyOperation::Thicken { .. } => OperationFamily::Thicken,
-        LegacyOperation::KnitSurface { .. } | LegacyOperation::SewBodies { .. } => {
-            OperationFamily::Knit
-        }
+        // A Creo merge is a knit in join mode and a mutual split in intersect
+        // mode; its role codes are not read, so it stays native (§6.6 Knit).
+        LegacyOperation::KnitSurface { .. } => return native("merge"),
+        LegacyOperation::SewBodies { .. } => OperationFamily::Knit,
         LegacyOperation::UnstitchFaces { .. } => OperationFamily::UnsewFaces,
         LegacyOperation::TrimSurface { .. }
         | LegacyOperation::CutWithSurface { .. }
