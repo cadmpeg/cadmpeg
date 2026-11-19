@@ -271,7 +271,7 @@ pub(super) enum ThreadPrefix {
 pub(super) struct ExtendedThreadPrefix {
     external: bool,
     modeled: bool,
-    /// Count of the 16-byte entries: one for each modeled face.
+    /// Count of the 16-byte entries.
     entry_count: usize,
     class: String,
     designation_copy: String,
