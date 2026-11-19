@@ -3698,7 +3698,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which carrier binds an Extrude construction member to its Sketch boundary when its indexed references have no paired loop identity record?
 
-**Known.** `f3d.md` "A typed-reference profile selection is a construction-operand group member" gives the loop carrier. The IR Probe Mount member 258 has the primary prefix, an inline type GUID `0D57BD2F-D09B-43FC-AD57-1E89A118C453`, asset GUID `58fd6d71-6435-4a8e-9d6f-5344c0c14631`, and decimal text `46396`. Its referenced index is 261. The indexed Design record headers contain 258; indices 259, 260, and 261 have no record headers. The Front Panel PS group 3229 lists unbound members 3232, 3236, 3240, and 3244. The Duct Printed Mount Adapter group 204 lists unbound member 214.
+**Known.** `f3d.md` "A typed-reference profile selection is a construction-operand group member" gives the loop carrier. The Front Panel PS group 3229 lists unbound members 3232, 3236, 3240, and 3244. The Duct Printed Mount Adapter group 204 lists unbound member 214.
 
 **Need.** The relation from the asset-qualified member to a Sketch boundary, with the selected region proved against its Extrude end caps.
 
