@@ -1,6 +1,6 @@
 A task brief or issue that states its own rule for its work takes precedence over this file.
 
-cadmpeg decodes as much of each file as current format knowledge allows. When the format allows more than one reading, the decoder applies the most likely reading and charges a loss code that names the assumption. Dropping a value that the most likely reading decodes is a regression, also when a loss code reports the drop. A value kept in the codec's native record is not dropped. The v10 design layer (`crates/cadmpeg-ir/src/features.rs`) takes no new type, arm or field. A fact with no v11 home stays native, and the pull request names the v11 section that will hold it.
+cadmpeg decodes as much of each file as current format knowledge allows. When the format allows more than one reading, the decoder applies the most likely reading and charges a loss code that names the assumption. Dropping a value that the most likely reading decodes is a regression, also when a loss code reports the drop. A value kept in the codec's native record is not dropped. The v10 design layer (`crates/cadmpeg-ir/src/features.rs`) takes no new type, arm or field. A fact the v11 types cannot state yet stays in the codec's native record.
 
 Writing:
 
@@ -9,6 +9,7 @@ Writing:
   - Bad: "the value is observed, not required"; "reads the word only into `outer_version` and never compares it"; "`sldprt.md` §8 gives no prose for reused class tags".
   - Good: "every value decodes"; "the decoder stores the word in `outer_version`"; cut the tail.
 - Specifications state the settled format model as fact: byte semantics and invariants only. They carry no corpus, sample, experiment, or provenance qualifiers, and no research history, project status, implementation bugs, or export behavior.
+- `docs/cadir-v11.md` changes only in a specification pull request from the errata process (#209).
 - Genuine unknowns go in `docs/formats/*-open-items.md`, with the fields Question, Known, Need, Conflict, and Note only. Finite evidence is not an unknown. When an item is settled, write the answer into the specification and delete the item in the same change.
 - Fixed byte offsets live in `docs/layouts/<format>.toml`. Read the table before you derive an offset, and record a settled fixed-offset layout there. `docs/layouts/README.md` gives the check and regeneration commands.
 

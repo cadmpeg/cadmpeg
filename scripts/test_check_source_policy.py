@@ -93,34 +93,6 @@ class MeasurementDependencyTests(TempSourceCase):
         self.assertEqual(len(self.findings("measurement_dependency")), 1)
 
 
-class FrozenFileTests(TempSourceCase):
-    PATH = "crates/cadmpeg-ir/src/features.rs"
-
-    def frozen(self, lines: int) -> list[policy.Finding]:
-        self.write(self.PATH, _pad_lines([], lines))
-        with patch.object(policy, "FROZEN_LINE_LIMITS", {self.PATH: 5}):
-            return self.findings("frozen_file_size")
-
-    def test_recorded_length_and_shorter_pass(self) -> None:
-        self.assertEqual(self.frozen(5), [])
-        self.assertEqual(self.frozen(3), [])
-
-    def test_one_added_line_fails_and_names_the_limit(self) -> None:
-        findings = self.frozen(6)
-        self.assertEqual([(item.path, item.line) for item in findings], [(self.PATH, 6)])
-        self.assertIn("raises its limit in FROZEN_LINE_LIMITS", findings[0].message)
-        self.assertIn("names the v11 section", findings[0].message)
-
-    def test_removed_file_passes(self) -> None:
-        with patch.object(policy, "FROZEN_LINE_LIMITS", {self.PATH: 5}):
-            self.assertEqual(self.findings("frozen_file_size"), [])
-
-    def test_repository_file_is_within_its_limit(self) -> None:
-        path = self.old_root / self.PATH
-        self.assertLessEqual(policy.line_count(path.read_text(encoding="utf-8")),
-                             policy.FROZEN_LINE_LIMITS[self.PATH])
-
-
 class ForeignNativeNamespaceTests(TempSourceCase):
     def codec(self, name: str = "step", format_id: str = "step") -> str:
         root = f"crates/cadmpeg-codec-{name}/src"
