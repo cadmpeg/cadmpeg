@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use cadmpeg_core::text::NonBlankString;
 use serde_json::json;
 
-use super::eval::{check_types, Type};
+use super::eval::{check_types, ExpressionSite, Type};
 use super::wire::{clear_transformations, exchange_constructions, positions, re_anchor, retarget};
 use super::{evaluate, EditError, EvalError, Literal, ParameterDrivers, Value};
 use crate::design::configuration::{
@@ -282,6 +282,15 @@ fn timeline() -> CadIr {
         bound(2, 2),
         unresolved(3),
     ];
+    document.design.spreadsheets = vec![crate::design::spreadsheet::Spreadsheet::new(
+        id("spreadsheet", 1),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
+    .unwrap()];
     document.design.parameters = vec![
         length(1, neutral("10[mm]", &[], &[]), Some(10.0)),
         length(2, neutral("$0 * 2", &[reference(1)], &[]), Some(20.0)),
@@ -404,7 +413,7 @@ fn a_deep_tree_evaluates_on_a_small_thread() {
     let handle = std::thread::Builder::new()
         .stack_size(256 * 1024)
         .spawn(move || {
-            let checked = check_types(&node, &|_| Ok(Type::Unknown));
+            let checked = check_types(&node, ExpressionSite::Parameter, &|_| Ok(Type::Unknown));
             let result = evaluate(&node, &mut |_| None);
             drop(node);
             (checked, result)
@@ -1669,6 +1678,7 @@ fn grouped() -> CadIr {
         members: (1..=3).map(|key| Member::Feature(feature(key))).collect(),
     };
     document.design.features = (1..=3).map(unresolved).collect();
+    document.design.spreadsheets.clear();
     document.design.parameters.clear();
     document.design.scopes[0].current = (1..=3)
         .map(|key| CurrentState {
@@ -2082,6 +2092,7 @@ fn point_datum(key: u32) -> Feature {
 fn switching_exchanges_the_constructions_of_feature_overrides() {
     let mut document = configured();
     document.design.features[0] = point_datum(1);
+    document.design.spreadsheets.clear();
     let state = FeatureStateOverride {
         suppressed: None,
         definition: Some(document.design.features[0].definition.clone()),
