@@ -1,7 +1,8 @@
 use super::{datum_names, specimen, MM_PER_INCH, VALUE_TOLERANCE};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::pmi::{
-    DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiTarget,
+    GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiDimensionKind as DimensionKind,
+    PmiTarget,
 };
 use cadmpeg_ir::CadIr;
 
@@ -42,9 +43,9 @@ fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("Width4 dimension")
     };
-    assert_eq!(dimension.kind(), &DimensionKind::Size);
+    assert_eq!(dimension.dimension, DimensionKind::Size);
     assert!(
-        (dimension.nominal().expect("nominal").value.get() - 1.1 * MM_PER_INCH).abs()
+        (dimension.literal_nominal().expect("nominal").value.get() - 1.1 * MM_PER_INCH).abs()
             < VALUE_TOLERANCE
     );
 
