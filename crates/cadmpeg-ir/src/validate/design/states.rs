@@ -211,13 +211,16 @@ impl<'a> States<'a> {
         };
         let mut at = self.layers.get(evaluation)?;
         for _ in 0..=self.layers.len() {
-            let content = at.evaluation.content.as_ref()?;
+            let evaluation = at.evaluation;
+            let content = evaluation.content.as_ref()?;
             chain.layers.push((&content.delta.records, &at.removed));
-            match self.bottom_or_next(at)? {
-                Ok(next) => at = next,
-                Err(Bottom::Empty) => return Some(chain),
-                Err(Bottom::Current(extent)) => {
-                    chain.bottom = Some(extent);
+            match &content.base {
+                StateBase::Empty => return Some(chain),
+                StateBase::Evaluation(base) => at = self.layers.get(base.as_str())?,
+                StateBase::Current(position) => {
+                    chain.bottom = Some(
+                        self.extent(evaluation.scope.as_str(), PositionKey::of(position))?,
+                    );
                     return Some(chain);
                 }
             }

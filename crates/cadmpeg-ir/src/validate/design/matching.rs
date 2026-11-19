@@ -152,7 +152,7 @@ impl<'a> StateTopology<'a> {
         let chain = states.chain(evaluation)?;
         let mut collected = Collected::default();
         let mut hidden: BTreeSet<&'a str> = BTreeSet::new();
-        for (records, removed) in &chain.layers {
+        for &(records, removed) in &chain.layers {
             collected.add(records, &|id| !hidden.contains(id), &|id| {
                 !hidden.contains(id)
             });
@@ -406,7 +406,7 @@ fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> boo
                 && role == other_role
                 && match (generator, other_generator) {
                     (Some(Generator::Entity(left)), Some(Generator::Entity(right))) => {
-                        inner(left, right)
+                        inner(&**left, &**right)
                     }
                     (left, right) => left == right,
                 }
@@ -422,7 +422,7 @@ fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> boo
                 instance: other_instance,
                 of: other_of,
             },
-        ) => feature == other_feature && instance == other_instance && inner(of, other_of),
+        ) => feature == other_feature && instance == other_instance && inner(&**of, &**other_of),
         (
             TopoName::Blend {
                 feature,
@@ -467,7 +467,7 @@ fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> boo
                 feature: other_feature,
                 from: other_from,
             },
-        ) => feature == other_feature && inner(from, other_from),
+        ) => feature == other_feature && inner(&**from, &**other_from),
         (
             TopoName::Split {
                 feature,
@@ -479,7 +479,7 @@ fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> boo
                 from: other_from,
                 piece: other_piece,
             },
-        ) => feature == other_feature && piece == other_piece && inner(from, other_from),
+        ) => feature == other_feature && piece == other_piece && inner(&**from, &**other_from),
         (
             TopoName::Merged { feature, from },
             TopoName::Merged {

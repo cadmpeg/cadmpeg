@@ -12,6 +12,7 @@ use std::collections::BTreeSet;
 use crate::design::construction::{InputReference, Relation};
 use crate::design::refs::EntityRef;
 use crate::design::selection::{PickTarget, Picked, Picks};
+use crate::ids::VertexId;
 use crate::math::{Point3, Vector3};
 use crate::report::check::Finding;
 use crate::topology::{Edge, EdgeCarrier};
@@ -84,7 +85,7 @@ fn check_fold(matcher: &Matcher<'_>, picks: &[Picked], linear: f64) -> Option<&'
     }
     let mut shared: Option<BTreeSet<&str>> = None;
     for edge in &edges {
-        let ends: BTreeSet<&str> = edge.vertices().map(|vertex| vertex.as_str()).collect();
+        let ends: BTreeSet<&str> = edge.vertices().map(VertexId::as_str).collect();
         shared = Some(match shared {
             None => ends,
             Some(shared) => shared.intersection(&ends).copied().collect(),
