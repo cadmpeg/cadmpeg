@@ -208,6 +208,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_MEASURE_PASS_WORK_PER_ITEM_SERVICE` | `1 << 18`                                              | 4    | The same per-item allowance under `--limits service`. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_COMPARE_PAIR_WORK_PER_BODY`         | `1 << 12`                                              | N    | Pair allowance of an ID-free comparison (`diff --geometry`) per body of both documents under `--limits desktop`. The allowance is `max(COMPARE_PAIR_WORK_FLOOR, k × bodies)`, `COMPARE_PAIR_WORK_FLOOR = 1 << 20`. Each evaluation of a body pair that can be compatible charges one unit. Exhaustion refuses the comparison at the `measure` stage; it is not a decode bound. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_COMPARE_PAIR_WORK_PER_BODY_SERVICE` | `1 << 8`                                               | N    | The same per-body pair allowance under `--limits service`. |
+| `cadmpeg-measure`        | `src/compare/instances.rs`                        | `MAX_COMPARE_INSTANCES`                  | `1 << 20`                                              | N    | Instances one document's ID-free comparison (`diff --geometry`) enumerates through its occurrence placements. More leave out the instance rows and add the cause `compare.occurrence-placement`; it is not a decode bound. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_FACE_MEASURE_WORK`                  | `1 << 26`                                              | 4    | One face's slice of the pass allowance. Exhaustion makes the face's remaining quantities `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/budget.rs`                                   | `MAX_EDGE_MEASURE_WORK`                  | `1 << 22`                                              | 4    | One edge's slice of the pass allowance. Exhaustion makes the edge's remaining quantities `evaluation.work-exhausted`; measurement continues. |
 | `cadmpeg-measure`        | `src/quadrature/gauss_kronrod.rs`                 | `MAX_QUADRATURE_INTERVALS`               | `1 << 12`                                              | 4    | Panels of one adaptive integral. At the cap the subdivision stops; an estimate above the acceptance limit makes the quantity `quadrature.not-converged`; measurement continues. |
@@ -568,7 +569,7 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 346.
+Production `MAX_*` constants: 347.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
@@ -576,13 +577,13 @@ Production `MAX_*` constants: 346.
 | 2    | Per-input bound            | 77    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 174   |
-| N    | Not a decode bound         | 53    |
-|      | Total                      | 346   |
+| N    | Not a decode bound         | 54    |
+|      | Total                      | 347   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 30,

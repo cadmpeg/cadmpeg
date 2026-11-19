@@ -172,12 +172,19 @@ impl<'ir> Measurer<'ir> {
         let geometry = &self.input.ir.geometry;
         let space = match &selection.occurrence {
             None => None,
-            Some(id) => Some(crate::occurrence::space(self.input.ir, id).ok_or_else(|| {
-                MeasureError::UnknownEntity {
-                    arena: "model.occurrences",
-                    id: id.as_str().to_owned(),
-                }
-            })?),
+            Some(id) => Some(
+                crate::occurrence::space(self.input.ir, &selection.occurrence_above, id)
+                    .ok_or_else(|| MeasureError::UnknownEntity {
+                        arena: "model.occurrences",
+                        id: selection
+                            .occurrence_above
+                            .iter()
+                            .chain([id])
+                            .map(cadmpeg_ir::ids::OccurrenceId::as_str)
+                            .collect::<Vec<_>>()
+                            .join(" / "),
+                    })?,
+            ),
         };
         let scope = self.scope(selection, space.as_ref())?;
         let face_level = selection.face_level();

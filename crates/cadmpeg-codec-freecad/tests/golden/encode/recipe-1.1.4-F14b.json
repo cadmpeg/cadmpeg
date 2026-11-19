@@ -125,7 +125,7 @@
         "process.states": 0,
         "process.toolpaths": 0,
         "process.tools": 0,
-        "product_definitions": 0,
+        "product_definitions": 1,
         "regions": 4,
         "rigid_bodies": 0,
         "semantic_annotations": 0,

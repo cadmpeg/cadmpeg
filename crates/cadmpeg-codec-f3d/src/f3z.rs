@@ -201,6 +201,11 @@ fn finalize_result(
     body.losses
         .extend(crate::tree::own_once(ctx, &mut ir, instance_scopes)?);
     crate::design::owners::release_unbound(&mut ir.model);
+    ir.state_root_definition(
+        ctx,
+        crate::tree::file_root_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
         ctx,
