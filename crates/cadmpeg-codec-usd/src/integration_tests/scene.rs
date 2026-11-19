@@ -193,6 +193,62 @@ fn a_twice_placed_body_keeps_its_name_in_its_prototype() {
 }
 
 #[test]
+fn a_once_placed_body_keeps_its_name_under_its_occurrence() {
+    let mut ir = twice_placed_body();
+    let placements: Vec<_> = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.name.as_deref() == Some("B"))
+        .map(|occurrence| occurrence.id.clone())
+        .collect();
+    ir.model
+        .occurrences
+        .retain(|occurrence| !placements.contains(&occurrence.id));
+    for definition in &mut ir.model.product_definitions {
+        definition
+            .occurrences
+            .retain(|occurrence| !placements.contains(occurrence));
+    }
+    let (text, _) = encode(&ir);
+    let placement = text.split("def Xform \"A\"").nth(1).expect("the A prim");
+    assert!(placement.contains("def Mesh \"Plate\""), "{text}");
+    assert_eq!(text.matches("def Mesh").count(), 1, "{text}");
+}
+
+/// The count of face bindings that the export reports as not written.
+fn unwritten_face_bindings(report: &cadmpeg_ir::report::export::ExportReport) -> Option<String> {
+    report
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("appearance bindings to faces"))
+        .map(|loss| loss.message.clone())
+}
+
+#[test]
+fn a_written_face_binding_is_no_loss() {
+    let r#box = decode(&fixture("brep_array_box.usda"));
+    let (text, report) = encode(r#box.ir());
+    assert_eq!(unwritten_face_bindings(&report), None, "{text}");
+}
+
+/// With no `BrepArray` and a mesh from the document, no prim carries the
+/// six face bindings of the box.
+#[test]
+fn a_face_binding_with_no_prim_is_a_loss() {
+    let r#box = decode(&fixture("brep_array_box.usda"));
+    let (_, report) = encode_with(
+        r#box.ir(),
+        SceneOptions {
+            exact_brep: false,
+            ..SceneOptions::DEFAULT
+        },
+    );
+    let message = unwritten_face_bindings(&report).expect("a face-binding loss");
+    assert!(message.starts_with("6 "), "{message}");
+}
+
+#[test]
 fn without_materialx_a_material_has_its_preview_surface_only() {
     let materials = decode(&fixture("materials.usda"));
     let (default, _) = encode(materials.ir());
