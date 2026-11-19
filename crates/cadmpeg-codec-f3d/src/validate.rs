@@ -2142,8 +2142,11 @@ fn placement_ordered_references_hold(
         return false;
     };
     let table = scope.reference_members();
+    let compact_shift = design::assembly::compact_placement_as_built_prefix_shift(scope);
+    let shift = compact_shift.unwrap_or_default();
     usize::try_from(run.count.value) == Ok(count)
-        && run.count.offset == scope.byte_offset() + u64_from_index(layout::ADDITIONAL_OWNER_COUNT)
+        && run.count.offset
+            == scope.byte_offset() + u64_from_index(layout::ADDITIONAL_OWNER_COUNT + shift)
         && run.references.len() == count
         && owners.len() == 4 + count
         && owners
@@ -2156,7 +2159,7 @@ fn placement_ordered_references_hold(
             .iter()
             .zip(owners)
             .all(|(reference, (_, index))| reference.value == *index)
-        && (design::assembly::compact_placement_as_built_scope(scope)
+        && (compact_shift.is_some()
             || (table.len() == 9 + count
                 && (count != 0
                     || table.values_in(5..9).is_some_and(|values| {
@@ -2171,7 +2174,9 @@ fn placement_ordered_references_hold(
                 reference.value == *index
                     && reference.offset
                         == scope.byte_offset()
-                            + u64_from_index(layout::ADDITIONAL_OWNER_REFERENCES + 11 * ordinal)
+                            + u64_from_index(
+                                layout::ADDITIONAL_OWNER_REFERENCES + shift + 11 * ordinal,
+                            )
                     && table.values().any(|value| value == index)
             })
         && (0..table.len())

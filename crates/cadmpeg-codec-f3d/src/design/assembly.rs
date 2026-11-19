@@ -158,14 +158,14 @@ impl AssemblyScopeGeneration {
                     layout.first_reference + layout.stride,
                 ]),
             }
-        } else if compact_placement_as_built_scope(scope) {
+        } else if let Some(shift) = compact_placement_as_built_prefix_shift(scope) {
             use crate::layout::assembly_as_built_scope_378 as layout;
             Self {
                 operand_frame: None,
                 alignment: AssemblyAlignmentLanes::Fixed(Some((4, 0, 4))),
                 locator_offsets: Some([
-                    layout::FIRST_LOCATOR_REFERENCE,
-                    layout::SECOND_LOCATOR_REFERENCE,
+                    layout::FIRST_LOCATOR_REFERENCE + shift,
+                    layout::SECOND_LOCATOR_REFERENCE + shift,
                 ]),
             }
         } else {
@@ -720,19 +720,30 @@ pub(crate) fn placement_ordered_as_built_scope(scope: &DesignParameterScope) -> 
 }
 
 pub(crate) fn compact_placement_as_built_scope(scope: &DesignParameterScope) -> bool {
+    compact_placement_as_built_prefix_shift(scope).is_some()
+}
+
+pub(crate) fn compact_placement_as_built_prefix_shift(
+    scope: &DesignParameterScope,
+) -> Option<usize> {
     use crate::layout::assembly_as_built_scope_378 as layout;
-    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-        && matches!(
-            (
-                scope.canonical_name_frame_length(),
-                scope.reference_members().len()
-            ),
-            (Some(355), 7) | (Some(377), 9)
-        )
-        && scope
-            .reference_count_offset()
-            .checked_sub(scope.byte_offset())
-            == Some(u64_from_index(layout::REFERENCE_COUNT))
+    use crate::layout::assembly_as_built_scope_381_403_prefix as shifted;
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::AsBuilt {
+        return None;
+    }
+    let count_offset = match (
+        scope.canonical_name_frame_length()?,
+        scope.reference_members().len(),
+    ) {
+        (355, 7) | (377, 9) => layout::REFERENCE_COUNT,
+        (381, 9) | (403, 11) => shifted::REFERENCE_COUNT,
+        _ => return None,
+    };
+    (scope
+        .reference_count_offset()
+        .checked_sub(scope.byte_offset())
+        == Some(u64_from_index(count_offset)))
+    .then_some(count_offset - layout::REFERENCE_COUNT)
 }
 
 pub(crate) const AS_BUILT_SCOPE_TYPE_GUID: &str = "AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0";
