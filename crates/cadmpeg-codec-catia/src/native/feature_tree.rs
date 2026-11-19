@@ -19,14 +19,23 @@ const COMPACT_CLASS_OFFSET: usize = 2;
 
 const CONTAINER_CLASSES: [&str; 4] = ["MechanicalPart", "MechanicalTool", "HybridBody", "GSMTool"];
 
-/// Class named by the one-byte tag of a compact definition prefix.
+/// Stored class token of a compact definition prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum CatiaCompactClassToken {
+    /// One-byte tag: the entry's one-based ordinal plus `33`.
+    Tag(u8),
+    /// Wide `32 <ordinal:u32le>` selector: the entry's one-based ordinal.
+    Selector(u32),
+}
+
+/// Class named by a compact definition prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaCompactClass {
-    /// Byte offset of the class tag within the definition prefix.
+    /// Byte offset of the class token within the definition prefix.
     pub(crate) offset: u64,
-    /// Stored class tag.
-    pub(crate) tag: u8,
-    /// Zero-based catalog ordinal selected by the tag.
+    /// Stored class token.
+    pub(crate) token: CatiaCompactClassToken,
+    /// Zero-based catalog ordinal selected by the token.
     pub(crate) ordinal: u32,
     /// Selected catalog entry.
     pub(crate) entry: String,
@@ -134,29 +143,42 @@ pub(crate) struct CatiaFeatureContainer {
     pub(crate) unsegmented_payload_offset: Option<u64>,
 }
 
-/// Class of a compact definition prefix `00 <flags> <tag> <second>`.
+/// Class of a compact definition prefix `00 <flags> <tag> <second>` or
+/// `00 <flags> 32 <ordinal:u32le> 32 <second:u32le>`.
 ///
 /// `flags` admits only bits `04` and `08`. The tag selects zero-based catalog
-/// ordinal `tag − 34`; the second tag byte is not assigned.
+/// ordinal `tag − 34` and the wide selector ordinal `ordinal − 1`; the second
+/// token is not assigned.
 pub(crate) fn compact_class(
     ctx: &DecodeContext<'_>,
     definition_prefix: &[u8],
     catalog: Option<&CatiaCatalog>,
 ) -> Result<Option<CatiaCompactClass>, CodecError> {
-    let [0x00, flags, tag, _] = *definition_prefix else {
-        return Ok(None);
+    let (flags, token) = match *definition_prefix {
+        [0x00, flags, tag, _] => (flags, CatiaCompactClassToken::Tag(tag)),
+        [0x00, flags, 0x32, a0, a1, a2, a3, 0x32, _, _, _, _] => (
+            flags,
+            CatiaCompactClassToken::Selector(u32::from_le_bytes([a0, a1, a2, a3])),
+        ),
+        _ => return Ok(None),
     };
     if flags & !0x0c != 0 {
         return Ok(None);
     }
-    let Some(entry) = catalog.and_then(|catalog| tag_entry(catalog, tag)) else {
+    let entry = catalog.and_then(|catalog| match token {
+        CatiaCompactClassToken::Tag(tag) => tag_entry(catalog, tag),
+        CatiaCompactClassToken::Selector(ordinal) => catalog
+            .entries
+            .get(usize::try_from(ordinal.checked_sub(1)?).ok()?),
+    });
+    let Some(entry) = entry else {
         return Ok(None);
     };
     retain_text(ctx, &entry.id)?;
     retain_text(ctx, &entry.value)?;
     Ok(Some(CatiaCompactClass {
         offset: u64_from_index(COMPACT_CLASS_OFFSET),
-        tag,
+        token,
         ordinal: entry.ordinal,
         entry: entry.id.clone(),
         name: entry.value.clone(),
