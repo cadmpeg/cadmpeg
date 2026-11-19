@@ -134,10 +134,13 @@ fn class_330_blind_cut_reads_adjacent_extents_after_the_exact_slots() {
     }
     let slots_at = bytes.len();
     bytes.extend_from_slice(&[0; 2]);
-    for ordinal in [4, 6, 5] {
-        push_marked_reference(&mut bytes, references[ordinal]);
-    }
-    bytes.extend_from_slice(&[0; 2]);
+    push_marked_reference(&mut bytes, references[4]);
+    push_marked_reference(&mut bytes, references[6]);
+    let interleaved_null = bytes.len();
+    bytes.push(0);
+    push_marked_reference(&mut bytes, references[5]);
+    let taper_end = bytes.len();
+    bytes.push(0);
     assert_eq!(bytes.len() - start, frame::FIRST_SIDE_EXTENT);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
@@ -163,6 +166,10 @@ fn class_330_blind_cut_reads_adjacent_extents_after_the_exact_slots() {
     assert!(decode(&bytes, "331", paired_at, &references).is_none());
     assert!(decode(&bytes, "330", paired_at - 1, &references).is_none());
     assert!(decode(&bytes, "330", paired_at, &[11, 11, 15, 17, 20, 23, 26]).is_none());
+
+    let mut adjacent_references = bytes.clone();
+    adjacent_references[interleaved_null..taper_end].rotate_left(1);
+    assert!(decode(&adjacent_references, "330", paired_at, &references).is_none());
 
     for at in [
         start + prefix::ZERO_RUN_12,

@@ -115,8 +115,8 @@ fn exact_class_330_blind_cut(
         None,
         Some(*distance),
         Some(*auxiliary),
-        Some(*taper),
         None,
+        Some(*taper),
         None,
     ] {
         if let Some(reference) = reference {
