@@ -399,7 +399,7 @@ impl DesignThreadAngle {
         self.0
     }
 
-    fn is_sixty(self) -> bool {
+    pub(crate) fn is_sixty(self) -> bool {
         self.0.to_bits() == Self::SIXTY.0.to_bits()
     }
 }

@@ -388,6 +388,12 @@ pub(crate) enum F3dLossCode {
     ThreadConstructionUnresolved,
     /// A Thread start offset is retained by its native parameter owner.
     ThreadOffsetNative,
+    /// A Thread profile angle other than 60 degrees is retained by the native
+    /// Thread construction.
+    ThreadAngleNative,
+    /// The nominal diameter of a Thread with a fractional nominal size is
+    /// read as its stored major diameter.
+    ThreadFractionalSizeDiameterAssumed,
     /// A stored-body operation has an empty proven body set.
     FeatureStoredBodiesEmpty,
     /// A decoded body snapshot supplies no construction recipe.
@@ -1403,6 +1409,8 @@ impl F3dLossCode {
         Self::ThreadModeledEntriesAbsent,
         Self::ThreadConstructionUnresolved,
         Self::ThreadOffsetNative,
+        Self::ThreadAngleNative,
+        Self::ThreadFractionalSizeDiameterAssumed,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureHistoryBodyBounded,
@@ -2317,6 +2325,10 @@ impl F3dLossCode {
             Self::ThreadModeledEntriesAbsent => "feature.thread-modeled-entries-absent",
             Self::ThreadConstructionUnresolved => "feature.thread-construction-unresolved",
             Self::ThreadOffsetNative => "feature.thread-offset-native",
+            Self::ThreadAngleNative => "feature.thread-angle-native",
+            Self::ThreadFractionalSizeDiameterAssumed => {
+                "feature.thread-fractional-size-diameter-assumed"
+            }
             Self::FeatureMeshSeparateScopeUnparsed => "feature.mesh-separate-scope-unparsed",
             Self::FeatureMeshSeparateTailPartial => "feature.mesh-separate-tail-partial",
             Self::FeatureMeshSeparateReferenceUnresolved => {
@@ -3303,6 +3315,8 @@ impl F3dLossCode {
             | Self::ThreadModeledEntriesAbsent
             | Self::ThreadConstructionUnresolved
             | Self::ThreadOffsetNative
+            | Self::ThreadAngleNative
+            | Self::ThreadFractionalSizeDiameterAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -3976,6 +3990,8 @@ impl F3dLossCode {
             | Self::ThreadModeledEntriesAbsent
             | Self::ThreadConstructionUnresolved
             | Self::ThreadOffsetNative
+            | Self::ThreadAngleNative
+            | Self::ThreadFractionalSizeDiameterAssumed
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
             | Self::HoleCarrierAxisAssumed
@@ -4675,6 +4691,8 @@ mod tests {
                 "feature.thread-modeled-entries-absent",
                 "feature.thread-construction-unresolved",
                 "feature.thread-offset-native",
+                "feature.thread-angle-native",
+                "feature.thread-fractional-size-diameter-assumed",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.history-body-bounded",

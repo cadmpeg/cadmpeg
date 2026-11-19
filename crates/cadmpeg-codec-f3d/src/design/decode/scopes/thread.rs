@@ -179,8 +179,7 @@ pub(super) fn exact_thread_construction(
 ///
 /// The trailer's length and offset references each name one scope reference,
 /// the owner with local ordinal `1` and `0`. The other references are the
-/// ordered `(group, member)` pairs. A modeled prefix holds one entry for each
-/// pair.
+/// ordered `(group, member)` pairs.
 fn extended_standard_face_groups(
     bytes: &[u8],
     scope: &DesignParameterScope,

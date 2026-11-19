@@ -1251,12 +1251,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
                 Some(DesignFeatureFamily::Thread) => {
                     let resolved = scope.thread_construction().and_then(|construction| {
-                        let size = if construction.nominal_size.is_decimal() {
-                            construction.nominal_size.value()?
-                        } else {
-                            construction.diameters.major() * DESIGN_LENGTH_TO_MILLIMETRE
-                        };
-                        cadmpeg_ir::scalar::PositiveLength::new(size)
+                        thread_nominal_diameter(&scope.id, construction, &mut projection_losses)
                             .map(|size| (construction, size))
                     });
                     if resolved.is_none() {
@@ -7779,6 +7774,36 @@ fn project_rectangular_pattern_scalars(
         seeds,
         pattern,
     }))
+}
+
+/// The nominal diameter of a Thread construction in millimetres, with the
+/// losses of the values the neutral thread does not carry.
+fn thread_nominal_diameter(
+    scope_id: &str,
+    construction: &crate::records::feature::thread::DesignThreadConstruction,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<cadmpeg_ir::scalar::PositiveLength> {
+    let size = if construction.nominal_size.is_decimal() {
+        cadmpeg_ir::scalar::PositiveLength::new(construction.nominal_size.value()?)?
+    } else {
+        let size = cadmpeg_ir::scalar::PositiveLength::new(
+            construction.diameters.major() * DESIGN_LENGTH_TO_MILLIMETRE,
+        )?;
+        losses.push(
+            crate::loss::F3dLossCode::ThreadFractionalSizeDiameterAssumed.note(format!(
+                "Thread {scope_id} reads the diameter of its fractional nominal size as its stored major diameter, {} mm.",
+                size.get()
+            )),
+        );
+        size
+    };
+    if !construction.angle.is_sixty() {
+        losses.push(crate::loss::F3dLossCode::ThreadAngleNative.note(format!(
+            "Thread {scope_id} retains its {}-degree profile angle in its native construction.",
+            construction.angle.degrees()
+        )));
+    }
+    Some(size)
 }
 
 /// Tap type of a simple Hole.
