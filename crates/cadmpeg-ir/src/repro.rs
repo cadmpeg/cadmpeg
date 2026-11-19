@@ -226,8 +226,8 @@ pub fn retain(value: &mut Value, rows: &[Row], keep: &BTreeSet<usize>) {
 /// native namespace, and each state's delta. Stripping rewrites ids, and a
 /// document reads only with its arenas in strictly increasing order (§2.8).
 fn sort_arena_rows(document: &mut Value) {
-    fn sort_home(home: Option<&mut Value>) {
-        let Some(Value::Object(arenas)) = home else {
+    fn sort_home(home: &mut Value) {
+        let Value::Object(arenas) = home else {
             return;
         };
         for rows in arenas.values_mut() {
@@ -243,16 +243,18 @@ fn sort_arena_rows(document: &mut Value) {
     }
     fn sort_deltas(states: Option<&mut Value>) {
         for state in states.and_then(Value::as_array_mut).into_iter().flatten() {
-            sort_home(state.pointer_mut("/content/delta/records"));
+            if let Some(records) = state.pointer_mut("/content/delta/records") {
+                sort_home(records);
+            }
         }
     }
     for home in ["geometry", "model", "design", "process"] {
-        sort_home(document.get_mut(home));
+        if let Some(home) = document.get_mut(home) {
+            sort_home(home);
+        }
     }
     if let Some(Value::Object(namespaces)) = document.get_mut("native") {
-        for namespace in namespaces.values_mut() {
-            sort_home(Some(namespace));
-        }
+        namespaces.values_mut().for_each(sort_home);
     }
     sort_deltas(document.pointer_mut("/design/evaluations"));
     sort_deltas(document.pointer_mut("/process/states"));
