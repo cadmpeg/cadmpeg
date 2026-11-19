@@ -11,6 +11,7 @@ use cadmpeg_ir::report::loss::LossNote;
 
 const ROOT_HISTORY: &str = "f3d:Breps.BlobParts/BREP.root.smbh:asm-history#1";
 const COMPONENT_HISTORY: &str = "f3d:Breps.BlobParts/BREP.component.smbh:asm-history#1";
+const OTHER_HISTORY: &str = "f3d:Breps.BlobParts/BREP.other.smbh:asm-history#1";
 const FIRST: &str = "f3d:test:feature#first";
 const SECOND: &str = "f3d:test:feature#second";
 const COMPONENT: &str = "f3d:test:feature#component";
@@ -23,12 +24,16 @@ const GROUP: &str = "f3d:Design/BulkStream.dat:design-construction-operand-group
 /// Reverse Normal (scope 8, ordinal 3, state 80 from 78) selects `slots` in
 /// its input state 78 and inserts `own_inserts`. History `COMPONENT_HISTORY`,
 /// of source `component.smbh`, holds states 89 and 90: feature `COMPONENT`
-/// (scope 9, state 90 from 89) inserts slot 3.
+/// (scope 9, state 90 from 89) inserts slot 3. With `duplicate_pair`, history
+/// `OTHER_HISTORY`, of source `other.smbh`, also holds states 78 and 80, and
+/// with `bound` the Reverse Normal scope is bound to `ROOT_HISTORY`.
 struct ReverseCase<'a> {
     model_bodies: &'a [&'a str],
     slots: &'a [i64],
     first_ordinal: u64,
     own_inserts: &'a [i64],
+    duplicate_pair: bool,
+    bound: bool,
 }
 
 impl Default for ReverseCase<'_> {
@@ -38,6 +43,8 @@ impl Default for ReverseCase<'_> {
             slots: &[1],
             first_ordinal: 0,
             own_inserts: &[],
+            duplicate_pair: false,
+            bound: false,
         }
     }
 }
@@ -140,7 +147,7 @@ fn reverse_case(case: &ReverseCase<'_>) -> (Feature, Vec<FeatureResultTopology>,
         .into_iter()
         .chain(case.own_inserts.iter().copied())
         .collect();
-    let histories = [
+    let mut histories = vec![
         crate::test_support::history::history(
             ROOT_HISTORY.into(),
             0,
@@ -161,6 +168,19 @@ fn reverse_case(case: &ReverseCase<'_>) -> (Feature, Vec<FeatureResultTopology>,
             vec![state(90, vec![3]), state(89, Vec::new())],
         ),
     ];
+    if case.duplicate_pair {
+        histories.push(crate::test_support::history::history(
+            OTHER_HISTORY.into(),
+            0,
+            None,
+            false,
+            vec![state(80, vec![1]), state(78, vec![1])],
+        ));
+    }
+    let mut scope_histories = std::collections::HashMap::new();
+    if case.bound {
+        scope_histories.insert(scopes[2].id.clone(), ROOT_HISTORY.to_owned());
+    }
     let bodies = case
         .model_bodies
         .iter()
@@ -190,7 +210,7 @@ fn reverse_case(case: &ReverseCase<'_>) -> (Feature, Vec<FeatureResultTopology>,
     let results = crate::history::bind_generated_body_selections(
         &mut features,
         &inputs,
-        &std::collections::HashMap::new(),
+        &scope_histories,
         None,
         &mut losses,
     );
@@ -404,6 +424,37 @@ fn an_absent_reversed_slot_that_the_reverse_normal_inserts_stays_in_its_input_st
 fn an_absent_reversed_slot_of_another_history_stays_in_its_input_state() {
     assert_kept(&ReverseCase {
         slots: &[3],
+        ..ReverseCase::default()
+    });
+}
+
+#[test]
+fn a_state_pair_of_several_histories_reads_the_bound_history() {
+    let (reverse, _, losses) = reverse_case(&ReverseCase {
+        model_bodies: &[
+            "f3d:brep/other.smbh/brep:entity#1",
+            "f3d:brep/root.smbh/brep:entity#1",
+        ],
+        duplicate_pair: true,
+        bound: true,
+        ..ReverseCase::default()
+    });
+    assert_eq!(
+        resolved_bodies(&reverse),
+        ["f3d:brep/root.smbh/brep:entity#1"]
+    );
+    assert_eq!(dependencies(&reverse), [FIRST]);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn an_unbound_state_pair_of_several_histories_stays_in_its_input_state() {
+    assert_kept(&ReverseCase {
+        model_bodies: &[
+            "f3d:brep/other.smbh/brep:entity#1",
+            "f3d:brep/root.smbh/brep:entity#1",
+        ],
+        duplicate_pair: true,
         ..ReverseCase::default()
     });
 }
