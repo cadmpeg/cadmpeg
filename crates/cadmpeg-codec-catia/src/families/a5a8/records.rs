@@ -2205,67 +2205,59 @@ fn a5_weights(
     end: usize,
 ) -> Option<Vec<NonZeroReal>> {
     let count = rows.checked_mul(cols)?;
-    if bytes.get(*at) == Some(&0x00) {
-        *at += 1;
-        if count
-            .checked_mul(8)
-            .and_then(|width| at.checked_add(width))
-            .is_none_or(|last| last > end)
-        {
+    let mut view = View::over_retained(bytes.get(*at..end)?);
+    let first = view.u8()?;
+    let mut weights = Vec::new();
+    if first == 0x00 {
+        if count.checked_mul(8)? > view.remaining() {
             return None;
         }
-        let mut weights = Vec::new();
-
         for _ in 0..count {
-            let weight = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))?;
-            weights.push(weight);
-            *at += 8;
+            weights.push(NonZeroReal::new(view.f64_le()?)?);
         }
-        return Some(weights);
-    }
-    if bytes.get(*at) != Some(&0x01) {
-        return None;
-    }
-    let seed_count = cols.div_ceil(2);
-    let mut weights = Vec::new();
-
-    for _ in 0..rows {
-        if bytes.get(*at) == Some(&0x02) {
-            *at += 1;
-            let previous_start = weights.len().checked_sub(cols)?;
-
-            for index in 0..cols {
-                let value = weights[previous_start + index];
+    } else {
+        for row in 0..rows {
+            let command = if row == 0 { first } else { view.u8()? };
+            let row_start = weights.len();
+            if command == 0x02 {
+                let previous_start = row_start.checked_sub(cols)?;
+                for column in 0..cols {
+                    weights.push(weights[previous_start + column]);
+                }
+                continue;
+            }
+            if !matches!(command, 0x01 | 0x05) {
+                return None;
+            }
+            let mirror = view.u16_le()?;
+            let repeat = if command == 0x05 {
+                usize::from(view.u16_le()?)
+            } else {
+                0
+            };
+            if repeat >= cols {
+                return None;
+            }
+            for column in 0..cols {
+                let reflected = cols - 1 - column;
+                let mirrored = reflected < column
+                    && mirror
+                        .checked_shr(u32::try_from(reflected).ok()?)
+                        .unwrap_or(0)
+                        & 1
+                        != 0;
+                let value = if column > 0 && column <= repeat {
+                    weights[row_start]
+                } else if mirrored {
+                    weights[row_start + reflected]
+                } else {
+                    NonZeroReal::new(view.f64_le()?)?
+                };
                 weights.push(value);
             }
-            continue;
-        }
-        if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
-            return None;
-        }
-        *at += 3;
-        if seed_count
-            .checked_mul(8)
-            .and_then(|width| at.checked_add(width))
-            .is_none_or(|last| last > end)
-        {
-            return None;
-        }
-        let row_start = weights.len();
-
-        for _ in 0..seed_count {
-            let weight = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))?;
-            weights.push(weight);
-            *at += 8;
-        }
-
-        for offset in (0..cols / 2).rev() {
-            weights.push(weights[row_start + offset]);
-        }
-        if weights.len() != row_start + cols {
-            return None;
         }
     }
+    *at = end.checked_sub(view.remaining())?;
     Some(weights)
 }
 
