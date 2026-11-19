@@ -857,3 +857,42 @@ fn a_move_without_a_prologue_selects_only_a_version_two_record() {
         );
     }
 }
+
+#[test]
+fn a_version_three_omitted_matrix_frame_is_an_identity_free_move() {
+    let mut bytes = vec![0; 128];
+    bytes[..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"500");
+    bytes[7..11].copy_from_slice(&71u32.to_le_bytes());
+    bytes[43..47].copy_from_slice(&5u32.to_le_bytes());
+    bytes[47] = 1;
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&71u32.to_le_bytes());
+    let start = bytes.len();
+    bytes.resize(start + 200, 0);
+    bytes[start + 21] = 1;
+    bytes[start + 22..start + 26].copy_from_slice(&71u32.to_le_bytes());
+    bytes[start + 32..start + 36].copy_from_slice(&1u32.to_le_bytes());
+    bytes[start + 36] = 1;
+    bytes[start + 37..start + 41].copy_from_slice(&50u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#17", DesignFeatureKind::Move, 17);
+    lay_out_move_face(&mut scope, start, 126, vec![50, 60, 71]);
+    let decoded = decoded_move(&bytes, &scope).expect("identity move");
+    assert_eq!(decoded.transform_record_index, 71);
+    assert_eq!(
+        decoded.transform,
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+    );
+    assert!(decoded
+        .prefix
+        .as_ref()
+        .is_some_and(|prefix| prefix.matrix_omitted));
+    assert_eq!(marked_move_loss_of(&bytes, &scope, 3), None);
+    assert!(marked_move_loss_of(&bytes, &scope, 2).is_some_and(|loss| loss.contains("128-byte")));
+    let mut longer = bytes.clone();
+    longer.insert(60, 0);
+    let mut longer_scope = scope.clone();
+    lay_out_move_face(&mut longer_scope, start + 1, 126, vec![50, 60, 71]);
+    assert!(decoded_move(&longer, &longer_scope).is_none());
+}

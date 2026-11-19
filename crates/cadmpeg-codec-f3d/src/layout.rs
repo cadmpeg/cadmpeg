@@ -11303,6 +11303,14 @@ pub(crate) mod move_transform_omitted_matrix_frame_126 {
     pub(crate) const LEN: usize = 126;
 }
 
+/// Byte offsets for the `move_transform_omitted_matrix_frame_128` record.
+///
+/// Spec §3.1. Record length 128 B.
+pub(crate) mod move_transform_omitted_matrix_frame_128 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 128;
+}
+
 /// Byte offsets for the `rigid_transform_leading_prefix` record.
 ///
 /// Spec §3.1. Record length 29 B.

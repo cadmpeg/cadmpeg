@@ -43059,6 +43059,98 @@ size = 78
 note = "The common native tail precedes the same-index paired header."
 
 [[record]]
+name = "move_transform_omitted_matrix_frame_128"
+kind = "byte"
+section = "3.1"
+anchor = "A version-3 rigid-transform record with this layout has a 128-byte omitted-matrix frame"
+size = 128
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs"
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+
+[[record.field]]
+name = "header_zero"
+offset = 11
+type = "bytes[20]"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_reference"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_reference"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "third_reference"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "first_code"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "fourth_reference"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "second_code"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 0
+
+[[record.field]]
+name = "form"
+offset = 43
+type = "u32"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 5
+
+[[record.field]]
+name = "matrix_omitted"
+offset = 47
+type = "u8"
+source = "spec"
+anchor = "With four null reference slots, form five, and an omitted matrix"
+value = 1
+
+[[record.gap]]
+offset = 48
+size = 80
+note = "The common native tail precedes the same-index paired header."
+
+[[record]]
 name = "rigid_transform_leading_prefix"
 kind = "byte"
 section = "3.1"
