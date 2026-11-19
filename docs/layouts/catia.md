@@ -1465,6 +1465,18 @@ Parsed by:
 | 1 | 3 | `ordinal` | `u24` | little | spec | \| `+1` \| `u24le` \| forward allocation ordinal \| |
 | 4 | 1 | `terminal` | `u8` | little | spec | \| `+4` \| `u8` \| roster-reference terminal `00` \| · value `0` |
 
+## `sphere_pcurve_coordinate_selector`
+
+Spec §6.7 · layout: byte offsets · size: 27 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/trim_curves.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `tag` | `bytes[3]` | little | spec | 27-byte coordinate selector |
+| 3 | 24 | `coefficients` | `f64[3]` | little | spec | 27-byte coordinate selector |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

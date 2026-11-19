@@ -608,8 +608,8 @@ The frame carries no inline persistent object id. Its byte offset in the object 
 
 The A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses flags `01 01 01` or `05 05 01`, eight finite continuation f64 values, and suffix `01 00 01 00 07 07`, `01 00 09 00 07 07`, or `09 00 09 00 07 07`. The flag lane and suffix choice are independent. The 142-byte form uses either flag lane, eight finite continuation f64 values, and suffix `<4n+1> 00 (01|05|09|0d|11|15|19) 01 <4n+1> 07 07`. The frame ends after the suffix.
 
-In an A5 sheet-owned surface, the distinct-knot counts use compact unsigned
-integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its array marker also admits `0x08 0x19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
+In an A5 sheet-owned surface, a degree-one axis with two distinct knots also admits the one-byte array marker `0e`. Two increasing f64 knot values follow that marker, and the axis has two poles. The distinct-knot counts use compact unsigned
+integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its two-byte array marker is `08 <control:4n+1>`, where the compact control occupies one byte. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
 `05 00 09 00 07 07`, and `09 00 01 00 07 07`. In the 142-byte tail
 the second control pair can begin with `01` and the V limits can descend.
 The pole grid and its increasing knot vectors define the carrier chart.
@@ -763,6 +763,8 @@ is the constant 3463. The surrounding source-closed production supplies the
 representation identity and geometric placement.
 
 A compact class-`24` definition has payload `81 <compact operand d> 0f 87` and no scalar lane. A source-closed edge-use production has use vectors `(1,d+1)` and `(2,d+2)` and senses `88` and `84`. The contiguous sequence is either `24,06,06,5e`, with node parameter selectors `(2,1)`, or `5e,24,06,06`, with selectors `(1,2)`. The compact operand supplies an edge-use relation.
+
+A sheet-owned class-`24` map retains allocation-reference operands in target-then-source order. Its source relation maps the second representation to the first.
 
 A scalar class-`24` domain relation begins with marker `82`, two compact operands in source-then-target order, and `0a <selector:u16le>` or `0b <selector:u16le>`:
 
@@ -1462,6 +1464,8 @@ with unresolved references, endpoint lifts, or chain sense remain outside the
 connected graph.
 
 ---
+
+- An equator-reflected sphere class-`1d` pcurve stores the same four chart bounds, followed by two coordinate expressions. Each expression begins with the 27-byte coordinate selector `41 11 82 a:f64le b:f64le c:f64le`. The U selector is `(a,b,c)=(1,0,0)`, and the V selector is `(0,-1,0)`. Each selector is followed by the complete `41 05 81` affine expression and `41 1d` circle expression of the principal-branch form. The two copies of these inner expressions are byte-identical. The affine expression maps intrinsic station `t` to chart coordinate `U = chart_shift + direction·t`. Incidence stations and parameter-map intervals use `t`; the first stored bound pair uses `U`. Inverting the affine expression gives the intrinsic interval, with endpoint order reversed when `direction = -1`. The latitude is `−atan(slope·cos(reciprocal_scale·t + phase))`, and the length-valued V coordinate is that latitude times `chart_scale`. The complete second expression exhausts the payload.
 
 ### 6.8 Reference-closed object-stream graphs
 
