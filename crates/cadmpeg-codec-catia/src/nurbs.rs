@@ -168,6 +168,17 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_surface_parameters_not_transferred(
+        &mut self,
+        source: usize,
+        parameters: [f64; 8],
+    ) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceParametersNotTransferred.note(format!(
+            "Surface record at offset {source}: local U limits {:?}, local V limits {:?}, and affine map coefficients {:?} are omitted from the neutral NURBS carrier, which retains its full knot domains.",
+            &parameters[..2], &parameters[2..4], &parameters[4..],
+        )));
+    }
+
     pub(crate) fn push_parameter_map_pcurve_accuracy(&mut self, source: usize, tolerance: f64) {
         self.notes.push(
             crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred.note(format!(
