@@ -1,6 +1,6 @@
 A task brief or issue that states its own rule for its work takes precedence over this file.
 
-cadmpeg decodes as much of each file as current format knowledge allows. When the format allows more than one reading, the decoder applies the most likely reading and charges a loss code that names the assumption. Dropping a value that the most likely reading decodes is a regression, also when a loss code reports the drop.
+cadmpeg decodes as much of each file as current format knowledge allows. When the format allows more than one reading, the decoder applies the most likely reading and charges a loss code that names the assumption. Dropping a value that the most likely reading decodes is a regression, also when a loss code reports the drop. A value kept in the codec's native record is not dropped. The v10 design layer (`crates/cadmpeg-ir/src/features.rs`) takes no new type, arm or field. A fact with no v11 home stays native, and the pull request names the v11 section that will hold it.
 
 Writing:
 
