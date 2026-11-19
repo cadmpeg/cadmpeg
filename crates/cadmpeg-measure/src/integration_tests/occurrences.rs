@@ -553,7 +553,8 @@ fn in_occurrence_through(ir: &CadIr, above: &[&str], key: &str) -> MeasureReport
 /// its centroid at (107, 51.5, −1). Through `again`, the identity, the
 /// centroid is `inner`'s own (7, 51.5, −1). Without a listed occurrence the
 /// owner of `inner` is placed twice and the chain is broken; through
-/// `single`, which does not place that owner, it is broken too.
+/// `single`, which does not place that owner, it is broken too, and a
+/// listed occurrence that repeats breaks it.
 #[test]
 fn listed_occurrences_select_one_instance_of_a_reused_subassembly() {
     let ir = assembly_placed_twice();
@@ -572,7 +573,7 @@ fn listed_occurrences_select_one_instance_of_a_reused_subassembly() {
             ]
         );
     }
-    for above in [&[][..], &["single"][..]] {
+    for above in [&[][..], &["single"][..], &["top", "inner"][..]] {
         assert_no_rows(
             &in_occurrence_through(&ir, above, "inner"),
             UnavailableReason::PlacementOccurrenceChainBroken,

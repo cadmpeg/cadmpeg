@@ -208,7 +208,7 @@ impl SelectionArgs {
             cadmpeg_ir::ids::SurfaceId::as_str,
             &mut errors,
         );
-        let mut occurrence_above = resolve_all(
+        let mut occurrence_above = resolve_each(
             self.occurrence.as_slice(),
             "model.occurrences",
             &ir.model.occurrences.iter().map(|occurrence| &occurrence.id),
@@ -263,8 +263,27 @@ impl SelectionArgs {
     }
 }
 
-/// Resolve each request against the arena's IDs, recording each failure.
+/// Resolve each request against the arena's IDs, once per distinct ID,
+/// recording each failure.
 fn resolve_all<'a, T: Clone + 'a>(
+    requests: &[String],
+    arena: &str,
+    ids: &(impl Iterator<Item = &'a T> + Clone),
+    name: fn(&T) -> &str,
+    errors: &mut Vec<String>,
+) -> Vec<T> {
+    let mut resolved: Vec<T> = Vec::new();
+    for id in resolve_each(requests, arena, ids, name, errors) {
+        if !resolved.iter().any(|existing| name(existing) == name(&id)) {
+            resolved.push(id);
+        }
+    }
+    resolved
+}
+
+/// Resolve each request against the arena's IDs in request order, one ID
+/// per request, recording each failure.
+fn resolve_each<'a, T: Clone + 'a>(
     requests: &[String],
     arena: &str,
     ids: &(impl Iterator<Item = &'a T> + Clone),
@@ -280,12 +299,7 @@ fn resolve_all<'a, T: Clone + 'a>(
         match resolve_one(request, indexed) {
             Ok(index) => {
                 if let Some(id) = ids.clone().nth(index) {
-                    if !resolved
-                        .iter()
-                        .any(|existing: &T| name(existing) == name(id))
-                    {
-                        resolved.push(id.clone());
-                    }
+                    resolved.push(id.clone());
                 }
             }
             Err(ResolveError::Ambiguous(matches)) => {

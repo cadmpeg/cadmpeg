@@ -60,6 +60,11 @@ fn chain<'ir>(
     let model = &ir.model;
     let mut listed: Vec<&'ir Occurrence> = above.to_vec();
     listed.push(occurrence);
+    for (index, entry) in listed.iter().enumerate() {
+        if listed[..index].iter().any(|earlier| earlier.id == entry.id) {
+            return None;
+        }
+    }
     for pair in listed.windows(2) {
         let owner = cadmpeg_ir::products::owner(&model.product_definitions, &pair[1].id)?;
         if owner.id != pair[0].prototype {

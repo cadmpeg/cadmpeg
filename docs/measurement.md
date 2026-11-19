@@ -554,7 +554,8 @@ occurrence, and the values before it, outermost first, are the chain's
 occurrences above it, which select one of its instances where a definition
 above it is placed more than once. Each listed occurrence places the
 definition that owns the next one, and the chain climbs from the first one
-as from a single occurrence. `T` is an occurrence's transform, the identity where it
+as from a single occurrence. Every value keeps its place, so a repeated
+value repeats the chain. `T` is an occurrence's transform, the identity where it
 states none; for an instance below the chain's top-level occurrence it is
 the transform an override of that occurrence states for the instance's
 path, where one does. The subtree of the occurrence is in the same space:
