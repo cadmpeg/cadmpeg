@@ -252,3 +252,27 @@ fn a_one_clause_node_names_its_lanes() {
     operand.recipe_nodes = vec![node(0, two_clause), node(12, one_clause)];
     assert_eq!(fit_of(&operand, &[10]), LaneFit::Apart(2));
 }
+
+#[test]
+fn a_parsed_node_with_an_ordinal_outside_the_operands_names_no_lane() {
+    use crate::records::topology::face::DesignFaceRecipeNode;
+    // Lane 0 touches the top 10; lane 1 names the bottom 40.
+    let mut operand = operand(&[&[20], &[40]]);
+    assert_eq!(fit_of(&operand, &[10]), LaneFit::Apart(1));
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::face_recipe_structure(
+            ctx,
+            &[2, -1, 2, -1, 1, -1, 2, 0, -1, 1, -1, 0, 0, -1],
+        )
+        .unwrap()
+        .unwrap()
+    });
+    assert!(!structure.has_valid_boundary_edge_ordinals(&operand.recipe_references));
+    operand.recipe_nodes = vec![DesignFaceRecipeNode {
+        byte_offset: 0,
+        end_byte_offset: 12,
+        program: Vec::new(),
+        recipe_structure: Some(structure),
+    }];
+    assert_eq!(fit_of(&operand, &[10]), LaneFit::Touches);
+}
