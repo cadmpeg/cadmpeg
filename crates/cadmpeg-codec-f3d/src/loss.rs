@@ -836,6 +836,9 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeTerminationMissing,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
+    /// A Revolve scope frame matches no admitted Revolve form; its
+    /// construction stays undecoded.
+    FeatureRevolveFrameUnmatched,
     /// A marked `Move` or `Modify` transform record breaks a type, frame-length, or form-word rule of the rigid-transform record, or a `MoveFace` transform record breaks a frame-length or form-word rule.
     FeatureMoveTransformAssumed,
     /// A form-2 rigid-transform record stores four references whose effect on its stored motion is unresolved.
@@ -1685,6 +1688,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeExtentNative,
         Self::FeatureExtrudeTerminationMissing,
         Self::FeatureRevolveLayoutAssumed,
+        Self::FeatureRevolveFrameUnmatched,
         Self::FeatureMoveTransformAssumed,
         Self::FeatureMoveTransformReferencesAssumed,
         Self::FeatureMoveScopeReferencesAssumed,
@@ -2698,6 +2702,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureExtrudeTerminationMissing => "feature.extrude-termination-missing",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
+            Self::FeatureRevolveFrameUnmatched => "feature.revolve-frame-unmatched",
             Self::FeatureMoveTransformAssumed => "feature.move-transform-assumed",
             Self::FeatureMoveTransformReferencesAssumed => {
                 "feature.move-transform-references-assumed"
@@ -3489,6 +3494,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeatureRevolveFrameUnmatched
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureMoveScopeReferencesAssumed
@@ -4154,6 +4160,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureExtrudeTerminationMissing
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeatureRevolveFrameUnmatched
             | Self::FeatureMoveTransformAssumed
             | Self::FeatureMoveTransformReferencesAssumed
             | Self::FeatureMoveScopeReferencesAssumed
@@ -4943,6 +4950,7 @@ mod tests {
                 "feature.extrude-extent-native",
                 "feature.extrude-termination-missing",
                 "feature.revolve-layout-assumed",
+                "feature.revolve-frame-unmatched",
                 "feature.move-transform-assumed",
                 "feature.move-transform-references-assumed",
                 "feature.move-scope-references-assumed",
