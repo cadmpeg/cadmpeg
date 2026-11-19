@@ -688,7 +688,7 @@ fn an_entity_pick_matches_a_name_of_its_anchored_state() {
         &mut ir,
         current_pick(PickTarget::Entity(generated("face", "b"))),
     );
-    assert_finding(&ir, Check::Design, Severity::Error, "matches no entity");
+    assert_finding(&ir, Check::Design, Severity::Warning, "a lost operand");
 
     let mut ir = named_cube();
     let mut pick = current_pick(PickTarget::Entity(generated("face", "a")));

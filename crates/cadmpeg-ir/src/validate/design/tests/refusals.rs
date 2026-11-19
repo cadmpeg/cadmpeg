@@ -15,8 +15,9 @@ use crate::report::check::Check;
 use crate::report::Severity;
 
 use super::{
-    assert_clean, assert_finding, construction, datum_pick, feature, findings, from, generated, id,
-    input, input_anchor, key, length, named, named_cube, plane_datum, planes, principal, timeline,
+    assert_clean, assert_finding, construction, current_pick, datum_pick, feature, findings, from,
+    generated, id, input, input_anchor, key, length, named, named_cube, plane_datum, planes,
+    principal, publish, timeline,
 };
 
 #[track_caller]
@@ -127,7 +128,7 @@ fn a_pick_at_the_end_of_an_ordered_container_resolves_at_its_rollback() {
     assert_finding(
         &rolled_back(&face_of("ghost")),
         Check::Design,
-        Severity::Error,
+        Severity::Warning,
         "matches no entity of its anchored state",
     );
 }
@@ -393,5 +394,147 @@ fn a_linear_instance_index_lies_in_its_run() {
         Check::Design,
         Severity::Error,
         refused,
+    );
+}
+
+/// A datum pick of feature `target` in the definition `definition`.
+fn datum_in(target: &str, definition: &str) -> Value {
+    json!({
+        "target": {"kind": "datum", "value": {"feature": key("feature", target)}},
+        "context": {"kind": "definition", "value": {"definition": key("product_definition", definition)}}
+    })
+}
+
+/// The plane `a`, then the plane `b` offset from `pick` as anchored at
+/// `anchor`, in scope `part`; and a second scope `other`, whose timeline
+/// holds `c` then `d`, rolled back before `d`, its current state after `c`.
+fn across(anchor: Value, pick: Value) -> CadIr {
+    use crate::design::evaluation::CurrentState;
+    use crate::products::{ProductDefinition, Storage};
+    let mut features = planes();
+    features[1] = feature(
+        "b",
+        plane_datum(construction(vec![input(
+            "offset",
+            Some(named(anchor, vec![pick])),
+            Some(length(1.0)),
+        )])),
+    );
+    let mut ir = timeline(features);
+    for name in ["c", "d"] {
+        ir.design.features.push(feature(
+            name,
+            json!({"kind": "unresolved", "value": {"family": "extrude"}}),
+        ));
+    }
+    ir.design.containers.push(from(json!({
+        "kind": "ordered",
+        "value": {
+            "id": key("container", "other"),
+            "kind": "timeline",
+            "members": [
+                {"kind": "feature", "value": key("feature", "c")},
+                {"kind": "feature", "value": key("feature", "d")}
+            ],
+            "folders": [],
+            "rollback": {"kind": "before", "value": {"kind": "feature", "value": key("feature", "d")}}
+        }
+    })));
+    ir.design.scopes.push(DesignScope {
+        definition: id("product_definition", "other"),
+        roots: vec![id("container", "other")],
+        active_configuration: None,
+        active_arrangements: BTreeSet::new(),
+        occurrences: BTreeMap::new(),
+        current: vec![CurrentState {
+            at: from(after_feature("c")),
+            bodies: Vec::new(),
+            poses: BTreeMap::new(),
+            status: EvaluationStatus::Current,
+            native_ref: None,
+        }],
+    });
+    ir.model.product_definitions = ["other", "part"]
+        .map(|name| ProductDefinition::new(id("product_definition", name), Storage::Embedded))
+        .into();
+    ir
+}
+
+const UNRESOLVED: &str = "the pick does not resolve (D51)";
+const UNORDERED: &str = "does not depend-order before its anchor";
+
+#[test]
+fn a_pick_into_another_scope_past_its_current_state_does_not_resolve() {
+    assert_finding(
+        &across(input_anchor(), datum_in("d", "other")),
+        Check::Design,
+        Severity::Warning,
+        UNRESOLVED,
+    );
+    let ir = across(input_anchor(), datum_in("c", "other"));
+    assert_no_finding(&ir, UNRESOLVED);
+    assert_no_finding(&ir, UNORDERED);
+}
+
+#[test]
+fn a_pick_pinned_in_another_scope_is_ordered_against_that_position() {
+    let pinned = json!({"kind": "pinned", "value": after_feature("c")});
+    assert_finding(
+        &across(pinned.clone(), datum_in("d", "other")),
+        Check::Design,
+        Severity::Error,
+        UNORDERED,
+    );
+    assert_no_finding(&across(pinned, datum_in("c", "other")), UNORDERED);
+}
+
+#[test]
+fn a_pick_of_its_own_scope_is_ordered_whatever_its_context() {
+    let ir = across(input_anchor(), datum_in("a", "part"));
+    assert_no_finding(&ir, UNORDERED);
+    let mut ir = across(input_anchor(), datum_in("a", "part"));
+    ir.design.features[0] = feature(
+        "a",
+        plane_datum(construction(vec![input(
+            "offset",
+            Some(named(input_anchor(), vec![datum_in("b", "part")])),
+            Some(length(1.0)),
+        )])),
+    );
+    ir.design.features[1] = feature(
+        "b",
+        plane_datum(construction(vec![input(
+            "coincident",
+            Some(named(input_anchor(), vec![principal("xy_plane")])),
+            None,
+        )])),
+    );
+    assert_finding(&ir, Check::Design, Severity::Error, UNORDERED);
+}
+
+#[test]
+fn an_entity_pick_with_a_context_is_matched_in_its_anchored_state() {
+    use crate::design::selection::{DefinitionRef, PickContext, PickTarget};
+    use crate::products::{ProductDefinition, Storage};
+    let with_context = |name: &str| {
+        let mut ir = named_cube();
+        ir.model.product_definitions.push(ProductDefinition::new(
+            id("product_definition", "part"),
+            Storage::Embedded,
+        ));
+        let mut pick = current_pick(PickTarget::Entity(generated("face", name)));
+        pick.context = Some(PickContext::Definition(DefinitionRef {
+            definition: id("product_definition", "part"),
+            configuration: None,
+        }));
+        publish(&mut ir, pick);
+        ir
+    };
+    assert_no_finding(&with_context("a"), "a lost operand");
+    assert_finding(
+        &with_context("b"),
+        Check::Design,
+        Severity::Warning,
+        "a lost operand",
     );
 }
