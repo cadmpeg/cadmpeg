@@ -4,9 +4,7 @@
 use super::{append_header, append_transform_record};
 use crate::design::decode::scopes::pattern::{exact_rectangular_pattern_instances, InstanceSearch};
 use crate::records::feature::patterns::RectangularPatternSearchCap;
-use crate::records::feature::patterns::{
-    MAX_RECTANGULAR_PATTERN_INSTANCES, MAX_RECTANGULAR_PATTERN_RECORD_BYTES,
-};
+use crate::records::feature::patterns::MAX_RECTANGULAR_PATTERN_INSTANCES;
 use crate::records::feature::scope::DesignParameterScope;
 
 fn rectangular_instance_fixture() -> (
@@ -61,9 +59,26 @@ fn rectangular_instance_fixture() -> (
     (bytes, records, scope, construction)
 }
 
+/// The instance search over `bytes` under the caps that `limit` gives.
+fn instance_search(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    construction: &crate::records::feature::patterns::DesignRectangularPatternConstruction,
+    limit: fn(RectangularPatternSearchCap) -> usize,
+) -> InstanceSearch {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    exact_rectangular_pattern_instances(bytes, &records, scope, construction, limit)
+}
+
 #[test]
 fn rectangular_pattern_local_search_ceilings_cap_the_search() {
-    let (bytes, records, scope, construction) = rectangular_instance_fixture();
+    // The fixture's records span 139 bytes or fewer.
+    const RECORD_BYTES: usize = 256;
+    let record_bytes = |cap: RectangularPatternSearchCap| match cap {
+        RectangularPatternSearchCap::RecordBytes => RECORD_BYTES,
+        cap => RectangularPatternSearchCap::limit(cap),
+    };
+    let (bytes, _, scope, construction) = rectangular_instance_fixture();
     let mut wire =
         crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(
             construction,
@@ -73,18 +88,24 @@ fn rectangular_pattern_local_search_ceilings_cap_the_search() {
         crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(wire)
             .unwrap();
     assert_eq!(
-        exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction),
+        instance_search(
+            &bytes,
+            &scope,
+            &construction,
+            RectangularPatternSearchCap::limit
+        ),
         InstanceSearch::Capped(RectangularPatternSearchCap::Instances),
         "instances past the local count ceiling stay unresolved"
     );
     let (mut bytes, _, scope, construction) = rectangular_instance_fixture();
-    bytes.splice(
-        139..139,
-        std::iter::repeat_n(0, MAX_RECTANGULAR_PATTERN_RECORD_BYTES),
+    assert_ne!(
+        instance_search(&bytes, &scope, &construction, record_bytes),
+        InstanceSearch::Capped(RectangularPatternSearchCap::RecordBytes),
+        "records within the record-span ceiling pass it"
     );
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    bytes.splice(139..139, std::iter::repeat_n(0, RECORD_BYTES));
     assert_eq!(
-        exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction),
+        instance_search(&bytes, &scope, &construction, record_bytes),
         InstanceSearch::Capped(RectangularPatternSearchCap::RecordBytes),
         "instances past the local record-span ceiling stay unresolved"
     );
@@ -114,7 +135,7 @@ fn rectangular_pattern_run_search_stops_at_its_work_cap() {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
     }
-    let decoyed_instances = |decoys: u32| {
+    let decoyed_instances = |decoys: u32, limit: fn(RectangularPatternSearchCap) -> usize| {
         let (_, _, scope, construction) = rectangular_instance_fixture();
         let mut wire =
             crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(
@@ -139,15 +160,21 @@ fn rectangular_pattern_run_search_stops_at_its_work_cap() {
             append_translation(&mut bytes, [-10. - f64::from(decoy), 0., 0.]);
         }
         append_header(&mut bytes, 140);
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-        exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction)
+        instance_search(&bytes, &scope, &construction, limit)
     };
     assert!(
-        matches!(decoyed_instances(8), InstanceSearch::Resolved(_)),
+        matches!(
+            decoyed_instances(8, RectangularPatternSearchCap::limit),
+            InstanceSearch::Resolved(_)
+        ),
         "one endpoint pair spans the extent"
     );
+    // Nine candidates at each end make 81 endpoint pairs.
     assert_eq!(
-        decoyed_instances(1024),
+        decoyed_instances(8, |cap| match cap {
+            RectangularPatternSearchCap::RunWork => 16,
+            cap => RectangularPatternSearchCap::limit(cap),
+        }),
         InstanceSearch::Capped(RectangularPatternSearchCap::RunWork),
         "endpoint pairs past the local work cap leave the instances unresolved"
     );
@@ -156,7 +183,7 @@ fn rectangular_pattern_run_search_stops_at_its_work_cap() {
 #[test]
 fn rectangular_pattern_aggregate_search_span_caps_the_search() {
     const INSTANCE_COUNT: u32 = 17;
-    const RECORD_SPAN: usize = MAX_RECTANGULAR_PATTERN_RECORD_BYTES;
+    const RECORD_SPAN: usize = 256;
     let (_, _, mut scope, construction) = rectangular_instance_fixture();
     let mut references = vec![100, 50, 51, 52, 53, 110];
     references.extend(1000..1000 + INSTANCE_COUNT - 1);
@@ -183,7 +210,6 @@ fn rectangular_pattern_aggregate_search_span_caps_the_search() {
         bytes.resize(start + RECORD_SPAN, 0);
     }
     append_header(&mut bytes, 2000);
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let mut wire =
         crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(
             construction,
@@ -192,8 +218,14 @@ fn rectangular_pattern_aggregate_search_span_caps_the_search() {
     let construction =
         crate::records::feature::patterns::DesignRectangularPatternConstruction::try_from(wire)
             .unwrap();
+    // Each of the 17 instance records spans RECORD_SPAN bytes, and 16 of
+    // them fill the aggregate ceiling.
     assert_eq!(
-        exact_rectangular_pattern_instances(&bytes, &records, &scope, &construction),
+        instance_search(&bytes, &scope, &construction, |cap| match cap {
+            RectangularPatternSearchCap::RecordBytes => RECORD_SPAN,
+            RectangularPatternSearchCap::ScannedBytes => 16 * RECORD_SPAN,
+            cap => RectangularPatternSearchCap::limit(cap),
+        }),
         InstanceSearch::Capped(RectangularPatternSearchCap::ScannedBytes),
         "instances past the aggregate span ceiling stay unresolved"
     );

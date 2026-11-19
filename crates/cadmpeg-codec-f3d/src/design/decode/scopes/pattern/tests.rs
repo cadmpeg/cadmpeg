@@ -9,6 +9,7 @@ use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from
 use crate::design::decode::scopes::pattern::select_circular_pattern_axis;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::patterns::DesignCircularPatternConstruction;
+use crate::records::feature::patterns::RectangularPatternSearchCap;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
@@ -48,7 +49,13 @@ fn tested_rectangular_pattern_instances(
     scope: &DesignParameterScope,
     construction: &crate::records::feature::patterns::DesignRectangularPatternConstruction,
 ) -> Option<crate::records::feature::patterns::DesignRectangularPatternInstances> {
-    match super::exact_rectangular_pattern_instances(bytes, records, scope, construction) {
+    match super::exact_rectangular_pattern_instances(
+        bytes,
+        records,
+        scope,
+        construction,
+        RectangularPatternSearchCap::limit,
+    ) {
         super::InstanceSearch::Resolved(instances) => Some(*instances),
         super::InstanceSearch::Unresolved | super::InstanceSearch::Capped(_) => None,
     }

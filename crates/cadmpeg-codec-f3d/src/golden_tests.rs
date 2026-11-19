@@ -12,6 +12,7 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
@@ -76,9 +77,15 @@ use crate::test_support::zip_test::{
 };
 use cadmpeg_core::CodecError;
 
-/// Covering fixture set as `(golden name, full .f3d bytes)`.
+/// Covering fixture set as `(golden name, full .f3d bytes)`, built once per
+/// test binary.
+fn fixtures() -> &'static [(&'static str, Vec<u8>)] {
+    static FIXTURES: LazyLock<Vec<(&'static str, Vec<u8>)>> = LazyLock::new(build_fixtures);
+    &FIXTURES
+}
+
 #[allow(clippy::vec_init_then_push)]
-fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
+fn build_fixtures() -> Vec<(&'static str, Vec<u8>)> {
     vec![
         (
             "display_scene_poses",
@@ -739,12 +746,12 @@ fn golden_snapshots_are_byte_identical() {
     let update = update_requested();
     let root = golden_root();
     let mut failures = Vec::new();
-    for (name, builder_bytes) in fixtures() {
+    for &(name, ref builder_bytes) in fixtures() {
         if fixture_update_requested() {
             let fixture_path = root.join("fixtures").join(format!("{name}.f3d"));
             std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
                 .expect("create fixtures dir");
-            std::fs::write(&fixture_path, &builder_bytes)
+            std::fs::write(&fixture_path, builder_bytes)
                 .unwrap_or_else(|error| panic!("write fixture {name}: {error}"));
         }
         let input = match read_fixture(name) {
@@ -805,17 +812,17 @@ fn golden_snapshots_are_byte_identical() {
 
 #[test]
 fn golden_output_is_deterministic() {
-    for (name, bytes) in fixtures() {
-        let decode_first = decode_snapshot(&bytes);
-        let decode_second = decode_snapshot(&bytes);
+    for &(name, ref bytes) in fixtures() {
+        let decode_first = decode_snapshot(bytes);
+        let decode_second = decode_snapshot(bytes);
         if decode_first != decode_second {
             let (line, first, second) = first_line_diff(&decode_first, &decode_second);
             panic!(
                 "fixture `{name}`: nondeterministic decode at line {line}\n    run 1: {first}\n    run 2: {second}"
             );
         }
-        let inspect_first = inspect_snapshot(&bytes);
-        let inspect_second = inspect_snapshot(&bytes);
+        let inspect_first = inspect_snapshot(bytes);
+        let inspect_second = inspect_snapshot(bytes);
         if inspect_first != inspect_second {
             let (line, first, second) = first_line_diff(&inspect_first, &inspect_second);
             panic!(
@@ -823,18 +830,18 @@ fn golden_output_is_deterministic() {
             );
         }
         assert_eq!(
-            replay_outcome(&bytes),
-            replay_outcome(&bytes),
+            replay_outcome(bytes),
+            replay_outcome(bytes),
             "fixture `{name}`: nondeterministic replay"
         );
         assert_eq!(
-            generate_outcome(&bytes),
-            generate_outcome(&bytes),
+            generate_outcome(bytes),
+            generate_outcome(bytes),
             "fixture `{name}`: nondeterministic generate"
         );
         assert_eq!(
-            patch_outcome(&bytes),
-            patch_outcome(&bytes),
+            patch_outcome(bytes),
+            patch_outcome(bytes),
             "fixture `{name}`: nondeterministic patch"
         );
     }
@@ -843,7 +850,7 @@ fn golden_output_is_deterministic() {
 /// Every committed fixture replays its retained bytes back to itself.
 #[test]
 fn fixtures_replay_verbatim() {
-    for (name, _) in fixtures() {
+    for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
         verbatim_replay_holds(&F3dCodec, name, &input);
     }
@@ -852,7 +859,7 @@ fn fixtures_replay_verbatim() {
 /// Write path requires a decode baseline.
 #[test]
 fn fixtures_refuse_to_write_without_a_baseline() {
-    for (name, _) in fixtures() {
+    for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
         semantic_roundtrip(&F3dCodec, name, &input, |outcome| {
             match outcome {
@@ -897,7 +904,7 @@ fn an_edit_survives_the_patch_writer() {
     let mut edited_count = 0usize;
     let mut measured_count = 0usize;
     let mut skipped: Vec<&str> = Vec::new();
-    for (name, _) in fixtures() {
+    for &(name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
         let ran = mutation_roundtrip(
             &F3dCodec,
@@ -979,12 +986,12 @@ fn golden_fixtures_match_builders() {
         return;
     }
     let mut failures: Vec<String> = Vec::new();
-    for (name, builder_bytes) in fixtures() {
+    for &(name, ref builder_bytes) in fixtures() {
         match read_fixture(name) {
-            Ok(bytes) if bytes == builder_bytes => {}
+            Ok(bytes) if bytes == *builder_bytes => {}
             Ok(bytes) => failures.push(format!(
                 "fixture `{name}`: {}",
-                first_byte_diff(&bytes, &builder_bytes)
+                first_byte_diff(&bytes, builder_bytes)
             )),
             Err(message) => failures.push(message),
         }
@@ -1116,8 +1123,8 @@ fn a_revision_cached_surface_refuses_a_record_level_cache_fit_tolerance() {
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
     let inputs = fixtures()
-        .into_iter()
-        .map(|(name, _)| (name, read_fixture(name).expect("committed fixture")))
+        .iter()
+        .map(|&(name, _)| (name, read_fixture(name).expect("committed fixture")))
         .collect::<Vec<_>>();
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(&F3dCodec, &inputs);
     assert_eq!(summary.cut, summary.inputs - summary.refused, "{summary:?}");

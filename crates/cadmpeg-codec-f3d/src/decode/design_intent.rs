@@ -1012,7 +1012,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.sketch_curve_identities,
         &design.sketch_surfaces,
         &design.sketch_relations,
-        geometry.tolerances.linear.get(),
+        crate::design::feature_project::SpatialProfileSearch {
+            linear_tolerance: geometry.tolerances.linear.get(),
+            work: crate::design::feature_project::SPATIAL_PROFILE_SEARCH_WORK,
+        },
     )?;
     model.spatial_sketches = spatial.sketches;
     model.spatial_sketch_entities = spatial.entities;
