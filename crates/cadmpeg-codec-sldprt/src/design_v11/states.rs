@@ -11,12 +11,14 @@
 //! has an evaluation with no content and status `Stale`; a stored partition so
 //! flagged is a stale state.
 //!
-//! The states between features are deferred to the unit that joins each
-//! feature to its mark. A partition's Deltas stream replays as data, mark by
-//! mark along the main line, to the node set of every earlier state (§3.1,
-//! Stored states), and the first word of a feature's `moPMarkRecord_c` is
-//! the PMARK id of the mark set after it. Once the Parasolid reader exposes
-//! that replay, a state joined to a feature is the state after it,
+//! The states between features are deferred to unit SW2b, which builds on
+//! the Parasolid reader's delta replay (unit PS-R, #1634). The replay is
+//! established: a partition's Deltas stream replays as data, mark by mark
+//! along the main line, to the node set of every earlier state (§3.1, Stored
+//! states). What is not yet established is the join of a feature to its
+//! mark; the first word of a feature's `moPMarkRecord_c` matching a PMARK id
+//! of the chain is the candidate. Once both hold, a state joined to a feature
+//! is the state after it,
 //! `of: State(After(feature))`, its records those the partition's builder
 //! makes of that node set and its names those of [`Names::entries`], based on
 //! the next later stored state and the last one on `Current` (§5.4). Until
