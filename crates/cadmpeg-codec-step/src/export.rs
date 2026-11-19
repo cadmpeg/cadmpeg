@@ -8,6 +8,9 @@ use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::write::approximation;
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::options::NativeOption;
+use cadmpeg_ir::design::parameter::{FitDeviations, Tolerance};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
     analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
@@ -18,9 +21,10 @@ use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId, ShellId,
     VertexId,
 };
+use cadmpeg_ir::pmi::zones::ToleranceZoneForm;
 use cadmpeg_ir::pmi::{
-    DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
-    PmiQuantity, PmiTarget, PmiValue,
+    DatumTargetForm, DimensionModifier, FitStandard, FitZone, GeometricToleranceKind,
+    PmiDefinition, PmiDimensionKind, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::presentation::PresentationItem;
 use cadmpeg_ir::products::Storage;
@@ -4665,8 +4669,7 @@ impl<'a> Builder<'a> {
         }
         for annotation in &annotations {
             let zone_targets = match &annotation.definition {
-                PmiDefinition::GeometricTolerance { constraints, .. } => constraints
-                    .zones
+                PmiDefinition::GeometricTolerance { zones, .. } => zones
                     .iter()
                     .flat_map(|zone| &zone.projections)
                     .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
@@ -4979,69 +4982,128 @@ impl<'a> Builder<'a> {
         for annotation in &annotations {
             match &annotation.definition {
                 PmiDefinition::Dimension(relation) => {
-                    let dimension = relation.kind();
-                    let nominal = relation.nominal();
-                    let tolerance = relation.tolerance();
+                    let dimension = &relation.dimension;
+                    let nominal = relation.literal_nominal();
+                    let tolerance = relation.tolerance.as_ref();
+                    let quantity = relation.quantity().unwrap_or(PmiQuantity::Length);
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let name = annotation.name.as_deref().unwrap_or("");
                     let (entity, kind_exact) = match dimension {
-                        DimensionKind::Size => ("DIMENSIONAL_SIZE", true),
-                        DimensionKind::Location => ("DIMENSIONAL_LOCATION", true),
-                        DimensionKind::Angular => ("ANGULAR_SIZE", true),
+                        PmiDimensionKind::Size => ("DIMENSIONAL_SIZE", true),
+                        PmiDimensionKind::Location => ("DIMENSIONAL_LOCATION", true),
+                        PmiDimensionKind::DirectedLocation => {
+                            ("DIRECTED_DIMENSIONAL_LOCATION", true)
+                        }
+                        PmiDimensionKind::Angular => ("ANGULAR_SIZE", true),
                         // AP242 represents diameter and radius as a
                         // DIMENSIONAL_SIZE whose name identifies the size
                         // category; DIAMETER_SIZE and RADIUS_SIZE are not
                         // entity types.
-                        DimensionKind::Diameter
-                        | DimensionKind::Radius
-                        | DimensionKind::SphericalDiameter
-                        | DimensionKind::SphericalRadius => ("DIMENSIONAL_SIZE", true),
-                        DimensionKind::Other(_) => ("DIMENSIONAL_SIZE", false),
+                        PmiDimensionKind::Diameter
+                        | PmiDimensionKind::Radius
+                        | PmiDimensionKind::SphericalDiameter
+                        | PmiDimensionKind::SphericalRadius => ("DIMENSIONAL_SIZE", true),
+                        PmiDimensionKind::CurveLength | PmiDimensionKind::Other(_) => {
+                            ("DIMENSIONAL_SIZE", false)
+                        }
                     };
                     let characteristic_name = match dimension {
-                        DimensionKind::Diameter => "diameter",
-                        DimensionKind::Radius => "radius",
-                        DimensionKind::SphericalDiameter => "spherical diameter",
-                        DimensionKind::SphericalRadius => "spherical radius",
+                        PmiDimensionKind::Diameter => "diameter",
+                        PmiDimensionKind::Radius => "radius",
+                        PmiDimensionKind::SphericalDiameter => "spherical diameter",
+                        PmiDimensionKind::SphericalRadius => "spherical radius",
                         _ => name,
                     };
                     let parameters = match dimension {
-                        DimensionKind::Location => {
+                        PmiDimensionKind::Location | PmiDimensionKind::DirectedLocation => {
                             format!("{},$,{aspect},{aspect}", string(characteristic_name))
                         }
-                        DimensionKind::Angular => {
+                        PmiDimensionKind::Angular => {
                             format!("{aspect},{},.SMALL.", string(characteristic_name))
                         }
                         _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
-                    let mut items = if let Some(DimensionTolerance::Limits { lower, upper }) =
-                        tolerance
-                    {
-                        let mut items = Vec::new();
-                        if let Some(value) = nominal {
-                            items.push(
-                                self.emit_pmi_measure_representation_item(*value, "nominal value"),
-                            );
+                    let limits_display = annotation
+                        .source_settings
+                        .get("step:tolerance_display")
+                        .is_some_and(|value| {
+                            matches!(value, NativeOption::Text(Dimension::Literal(text)) if text.as_str() == "limits")
+                        });
+                    let mut items = match (nominal, tolerance) {
+                        (Some(value), Some(Tolerance::Deviations(deviations)))
+                            if limits_display =>
+                        {
+                            let limit = |deviation: cadmpeg_ir::scalar::FiniteReal| {
+                                PmiValue::new(value.value.get() + deviation.get(), quantity)
+                            };
+                            let mut items =
+                                vec![self
+                                    .emit_pmi_measure_representation_item(value, "nominal value")];
+                            if let (Some(lower), Some(upper)) =
+                                (limit(deviations.lower), limit(deviations.upper))
+                            {
+                                items.push(
+                                    self.emit_pmi_measure_representation_item(lower, "lower limit"),
+                                );
+                                items.push(
+                                    self.emit_pmi_measure_representation_item(upper, "upper limit"),
+                                );
+                            }
+                            items
                         }
-                        items
-                            .push(self.emit_pmi_measure_representation_item(*lower, "lower limit"));
-                        items
-                            .push(self.emit_pmi_measure_representation_item(*upper, "upper limit"));
-                        items
-                    } else {
-                        nominal
-                            .map(|value| self.emit_pmi_measure_representation_item(*value, name))
-                            .into_iter()
-                            .collect()
+                        _ => {
+                            let mut items: Vec<_> = nominal
+                                .map(|value| self.emit_pmi_measure_representation_item(value, name))
+                                .into_iter()
+                                .collect();
+                            let native_limit = |key: &str| match annotation.native_options.get(key)
+                            {
+                                Some(NativeOption::Length(Dimension::Literal(value))) => {
+                                    PmiValue::new(value.get(), PmiQuantity::Length)
+                                }
+                                Some(NativeOption::Angle(Dimension::Literal(value))) => {
+                                    PmiValue::new(value.get(), PmiQuantity::Angle)
+                                }
+                                Some(NativeOption::Real(Dimension::Literal(value))) => {
+                                    Some(PmiValue::from_parts(*value, PmiQuantity::Ratio))
+                                }
+                                _ => None,
+                            };
+                            if let (None, Some(lower), Some(upper)) = (
+                                nominal,
+                                native_limit("step:lower_limit"),
+                                native_limit("step:upper_limit"),
+                            ) {
+                                items.push(
+                                    self.emit_pmi_measure_representation_item(lower, "lower limit"),
+                                );
+                                items.push(
+                                    self.emit_pmi_measure_representation_item(upper, "upper limit"),
+                                );
+                            }
+                            items
+                        }
                     };
+                    if matches!(tolerance, Some(Tolerance::Basic)) {
+                        items.push(self.emitter.emit(
+                            "DESCRIPTIVE_REPRESENTATION_ITEM",
+                            "'dimensional note','theoretical'",
+                        ));
+                    }
                     let mut secondary_modifiers = Vec::new();
-                    for modifier in relation.modifiers() {
+                    for modifier in &relation.modifiers {
+                        let note = match modifier {
+                            DimensionModifier::Reference => "auxiliary",
+                            DimensionModifier::Statistical => "statistical",
+                            DimensionModifier::ControlledRadius => "controlled radius",
+                            DimensionModifier::Other(text) => text.as_str(),
+                        };
                         let item = self.emitter.emit(
                             "DESCRIPTIVE_REPRESENTATION_ITEM",
-                            &format!("'dimensional note',{}", string(modifier)),
+                            &format!("'dimensional note',{}", string(note)),
                         );
-                        if matches!(modifier.as_str(), "auxiliary" | "theoretical") {
+                        if matches!(modifier, DimensionModifier::Reference) {
                             items.push(item);
                         } else {
                             secondary_modifiers.push(item);
@@ -5063,13 +5125,26 @@ impl<'a> Builder<'a> {
                             &format!("{characteristic},{representation}"),
                         );
                     }
-                    if let Some(
-                        DimensionTolerance::PlusMinus { lower, upper }
-                        | DimensionTolerance::PlusMinusFit { lower, upper, .. },
-                    ) = tolerance
-                    {
-                        let lower = self.emit_pmi_measure(*lower);
-                        let upper = self.emit_pmi_measure(*upper);
+                    let deviations = match tolerance {
+                        Some(Tolerance::Deviations(deviations)) if !limits_display => {
+                            Some(deviations)
+                        }
+                        Some(Tolerance::Fit {
+                            deviations:
+                                Some(
+                                    FitDeviations::Cell(deviations)
+                                    | FitDeviations::Own(deviations)
+                                    | FitDeviations::Unchecked(deviations),
+                                ),
+                            ..
+                        }) => Some(deviations),
+                        _ => None,
+                    };
+                    if let Some(deviations) = deviations {
+                        let lower =
+                            self.emit_pmi_measure(PmiValue::from_parts(deviations.lower, quantity));
+                        let upper =
+                            self.emit_pmi_measure(PmiValue::from_parts(deviations.upper, quantity));
                         let tolerance = self
                             .emitter
                             .emit("TOLERANCE_VALUE", &format!("{lower},{upper}"));
@@ -5078,26 +5153,39 @@ impl<'a> Builder<'a> {
                             &format!("{tolerance},{characteristic}"),
                         );
                     }
-                    if let Some(
-                        DimensionTolerance::Fit { fit }
-                        | DimensionTolerance::PlusMinusFit { fit, .. },
-                    ) = tolerance
-                    {
+                    if let Some(Tolerance::Fit { fit, .. }) = tolerance {
+                        let form_variance = match fit.zone {
+                            FitZone::Hole => fit.form_variance.to_ascii_uppercase(),
+                            FitZone::Shaft => fit.form_variance.to_ascii_lowercase(),
+                        };
+                        let zone_variance =
+                            match annotation.native_options.get("step:zone_variance") {
+                                Some(NativeOption::Text(Dimension::Literal(text))) => text.as_str(),
+                                _ => "",
+                            };
+                        let source = match &fit.source {
+                            Some(FitStandard::Iso286) => "ISO 286",
+                            Some(FitStandard::AnsiB41) => "ANSI B4.1",
+                            Some(FitStandard::Native(name)) => name.as_str(),
+                            None => "",
+                        };
                         let fit = self.emitter.emit(
                             "LIMITS_AND_FITS",
                             &format!(
                                 "{},{},{},{}",
-                                string(&fit.form_variance),
-                                string(&fit.zone_variance),
+                                string(&form_variance),
+                                string(zone_variance),
                                 string(&fit.grade),
-                                string(&fit.source)
+                                string(source)
                             ),
                         );
                         self.emitter
                             .emit("PLUS_MINUS_TOLERANCE", &format!("{fit},{characteristic}"));
                     }
                     annotation_refs.insert(annotation.id.clone(), characteristic);
-                    self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
+                    let nominal_exact = relation.nominal.is_none() || nominal.is_some();
+                    self.written_pmi +=
+                        usize::from(targets_exact(annotation) && kind_exact && nominal_exact);
                 }
                 PmiDefinition::GeometricTolerance {
                     tolerance,
@@ -5107,12 +5195,14 @@ impl<'a> Builder<'a> {
                     defined_area_second_unit,
                     datum_system,
                     modifiers,
-                    constraints,
+                    displacement,
+                    maximum_upper,
+                    zones,
                 } => {
                     if unsupported_all_around.contains(&annotation.id) {
                         continue;
                     }
-                    if constraints.zones.iter().flat_map(|zone| &zone.projections)
+                    if zones.iter().flat_map(|zone| &zone.projections)
                         .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
                         .any(|target| !matches!(&target.entity, PmiTarget::ShapeAspect { source_id } if aspects.contains_key(source_id.as_str())))
                     {
@@ -5163,8 +5253,8 @@ impl<'a> Builder<'a> {
                         && !has_modifiers
                         && defined_unit.is_none()
                         && area_unit.is_none()
-                        && constraints.displacement.is_none()
-                        && constraints.maximum.is_none()
+                        && displacement.is_none()
+                        && maximum_upper.is_none()
                     {
                         self.emitter.emit(
                             entity,
@@ -5206,14 +5296,14 @@ impl<'a> Builder<'a> {
                             parts
                                 .push(format!("GEOMETRIC_TOLERANCE_WITH_MODIFIERS(({modifiers}))"));
                         }
-                        if let Some(displacement) = constraints.displacement {
+                        if let Some(displacement) = displacement {
                             let value = self.emit_pmi_measure(PmiValue::from_parts(
                                 displacement.magnitude(),
                                 PmiQuantity::Length,
                             ));
                             parts.push(format!("UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE({value})"));
                         }
-                        if let Some(maximum) = constraints.maximum {
+                        if let Some(maximum) = maximum_upper {
                             let value = self.emit_pmi_measure(PmiValue::from_parts(
                                 maximum.magnitude(),
                                 PmiQuantity::Length,
@@ -5228,10 +5318,13 @@ impl<'a> Builder<'a> {
                             .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
                     };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
-                    for zone in &constraints.zones {
-                        let form = self
-                            .emitter
-                            .emit("TOLERANCE_ZONE_FORM", &string(zone.form.as_str()));
+                    for zone in zones {
+                        let form_name = match &zone.form {
+                            ToleranceZoneForm::CylindricalOrCircular => "cylindrical or circular",
+                            ToleranceZoneForm::Spherical => "spherical",
+                            ToleranceZoneForm::Other(name) => name.as_str(),
+                        };
+                        let form = self.emitter.emit("TOLERANCE_ZONE_FORM", &string(form_name));
                         let zone_ref = self.emitter.emit(
                             "TOLERANCE_ZONE",
                             &format!("'','',{pds},.F.,({tolerance_ref}),{form}"),
@@ -6653,6 +6746,8 @@ fn datum_target_form_text(form: &DatumTargetForm) -> &str {
         DatumTargetForm::Rectangle => "rectangle",
         DatumTargetForm::Circle => "circle",
         DatumTargetForm::CircularCurve => "circular curve",
+        DatumTargetForm::Area => "area",
+        DatumTargetForm::Curve => "curve",
         DatumTargetForm::Other(value) => value,
     }
 }
