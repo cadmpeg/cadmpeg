@@ -50,6 +50,7 @@ use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
 pub(crate) mod primitive_placement;
 mod sketch_cache;
+pub(crate) mod v11;
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 /// Endpoint relations that profile chaining may examine in one
@@ -9205,18 +9206,9 @@ fn is_fillet(kind: &str) -> bool {
 fn is_chamfer(kind: &str) -> bool {
     matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
 }
-/// Mark the bodies a document keeps only as intermediate shapes as not
-/// displayed: a feature's tool shape (any shape property other than `Shape`)
-/// and the shape of every member of a `PartDesign::Body`, including its `Tip`.
-/// A body shows its `Tip` result through its own `Shape`. This runs after GUI
-/// transfer, so these structural roles win over stored member visibility.
-pub(crate) fn hide_intermediate_bodies(
-    ir: &mut cadmpeg_ir::CadIr,
-    objects: &[ObjectRecord],
-    properties: &[PropertyRecord],
-    payloads: &[ShapePayloadRecord],
-) {
-    let mut members = std::collections::HashSet::new();
+/// The objects a `PartDesign::Body` lists as its members.
+fn body_members(objects: &[ObjectRecord], properties: &[PropertyRecord]) -> HashSet<String> {
+    let mut members = HashSet::new();
     for object in objects.iter().filter(|object| is_body(&object.type_name)) {
         let owned = properties
             .iter()
@@ -9232,6 +9224,188 @@ pub(crate) fn hide_intermediate_bodies(
             );
         }
     }
+    members
+}
+
+/// The `Shape` bodies of the objects outside every `PartDesign::Body` other
+/// than the Bodies, which no definition owns.
+pub(crate) struct TopLevelShapes {
+    pub(crate) bodies: Vec<cadmpeg_ir::ids::BodyId>,
+    /// Whether a Body outside every other Body lists a member that is a
+    /// feature of the v11 design, so that the document states a scope.
+    pub(crate) has_design_member: bool,
+}
+
+/// State the document's root definition where the decoder holds none, and
+/// give it the `Shape` of each `PartDesign::Body` outside every other Body
+/// that no definition owns.
+///
+/// Returns the shapes of the other objects outside every Body, which the
+/// root owns where the document states no design scope ([`own_at_root`]).
+/// In a scoped document they are no current state's and the scope has no
+/// `unproduced` list to hold them yet: interim, errata A1. Whether a Body's
+/// members state a scope is read from the objects, so a geometry decode owns
+/// what a full decode owns.
+pub(crate) fn state_root_definition(
+    ir: &mut cadmpeg_ir::CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+) -> Result<TopLevelShapes, CodecError> {
+    let members = body_members(objects, properties);
+    let mut feature_ids = HashMap::new();
+    for object in objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+    {
+        if let Ok(id) = feature_id(object) {
+            feature_ids.insert(object.id().as_str(), id);
+        }
+    }
+    let not_features = multi_transform_stages(objects, properties)
+        .into_iter()
+        .chain(
+            objects
+                .iter()
+                .filter(|object| is_body(&object.type_name))
+                .map(|object| object.id().as_str()),
+        )
+        .collect::<HashSet<_>>();
+    let mut bodies = HashSet::new();
+    let mut others = HashSet::new();
+    let mut has_design_member = false;
+    for object in objects
+        .iter()
+        .filter(|object| !members.contains(object.id().as_str()))
+    {
+        let owned = properties
+            .iter()
+            .filter(|property| property.owner == *object.id())
+            .collect::<Vec<_>>();
+        if is_body(&object.type_name) && body_definition(&owned, &feature_ids)?.is_some() {
+            bodies.insert(object.id().as_str());
+            has_design_member |= body_membership_property(&owned).is_some_and(|group| {
+                group
+                    .links()
+                    .iter()
+                    .filter_map(|link| link.as_ref()?.object())
+                    .any(|member| {
+                        feature_ids.contains_key(member) && !not_features.contains(member)
+                    })
+            });
+        } else {
+            others.insert(object.id().as_str());
+        }
+    }
+    let shape_bodies = |owners: &HashSet<&str>| {
+        let shapes = properties
+            .iter()
+            .filter(|property| property.name == "Shape" && owners.contains(property.owner.as_str()))
+            .map(|property| property.id.as_str())
+            .collect::<HashSet<_>>();
+        crate::gui::select_shape_bodies(
+            ir,
+            payloads
+                .iter()
+                .filter(|payload| shapes.contains(payload.property.as_str()))
+                .map(|payload| payload.id.as_str()),
+        )
+    };
+    let candidates = shape_bodies(&bodies);
+    let other_candidates = shape_bodies(&others);
+    let mut owned = ir
+        .model
+        .product_definitions
+        .iter()
+        .flat_map(|definition| {
+            definition.bodies.iter().chain(
+                definition
+                    .instance_bodies
+                    .iter()
+                    .flat_map(|instance| &instance.bodies),
+            )
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let bodies = candidates
+        .into_iter()
+        .filter(|body| owned.insert(body.clone()))
+        .collect::<Vec<_>>();
+    let others = other_candidates
+        .into_iter()
+        .filter(|body| owned.insert(body.clone()))
+        .collect::<Vec<_>>();
+    let definitions = &mut ir.model.product_definitions;
+    let index = match definitions
+        .iter()
+        .position(cadmpeg_ir::products::ProductDefinition::is_root)
+    {
+        Some(index) => index,
+        None => {
+            let id = crate::product::document_definition_id()?;
+            let at = definitions.partition_point(|definition| definition.id < id);
+            definitions.insert(
+                at,
+                cadmpeg_ir::products::ProductDefinition::root(
+                    id,
+                    cadmpeg_ir::products::ExternalDocument::default(),
+                ),
+            );
+            at
+        }
+    };
+    definitions[index].bodies.extend(bodies);
+    Ok(TopLevelShapes {
+        bodies: others,
+        has_design_member,
+    })
+}
+
+/// The objects a `PartDesign::MultiTransform` lists in `Transformations`: the
+/// stages of its layout, which are no features of their own (§6.5).
+pub(crate) fn multi_transform_stages<'a>(
+    objects: &'a [ObjectRecord],
+    properties: &'a [PropertyRecord],
+) -> BTreeSet<&'a str> {
+    let transforms = objects
+        .iter()
+        .filter(|object| object.type_name.ends_with("MultiTransform"))
+        .map(|object| object.id().as_str())
+        .collect::<BTreeSet<_>>();
+    properties
+        .iter()
+        .filter(|property| {
+            property.name == "Transformations" && transforms.contains(property.owner.as_str())
+        })
+        .flat_map(PropertyRecord::links)
+        .filter_map(|link| link.as_ref()?.object())
+        .collect()
+}
+
+/// Give the document's root definition `bodies`.
+pub(crate) fn own_at_root(ir: &mut cadmpeg_ir::CadIr, bodies: Vec<cadmpeg_ir::ids::BodyId>) {
+    if let Some(root) = ir
+        .model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.is_root())
+    {
+        root.bodies.extend(bodies);
+    }
+}
+
+/// Mark the bodies a document keeps only as intermediate shapes as not
+/// displayed: a feature's tool shape (any shape property other than `Shape`)
+/// and the shape of every member of a `PartDesign::Body`, including its `Tip`.
+/// A body shows its `Tip` result through its own `Shape`. This runs after GUI
+/// transfer, so these structural roles win over stored member visibility.
+pub(crate) fn hide_intermediate_bodies(
+    ir: &mut cadmpeg_ir::CadIr,
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
+    payloads: &[ShapePayloadRecord],
+) {
+    let members = body_members(objects, properties);
     let hidden = payloads.iter().filter_map(|payload| {
         let property = properties
             .iter()

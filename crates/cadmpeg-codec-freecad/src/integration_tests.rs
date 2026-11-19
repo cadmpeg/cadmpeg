@@ -9,6 +9,7 @@ mod authored_drawing;
 mod authored_gui;
 mod authored_history;
 mod authored_operations;
+mod design_v11;
 mod geometry_topology;
 mod gui_expand;
 mod measured_geometry;
