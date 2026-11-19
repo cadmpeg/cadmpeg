@@ -40,6 +40,7 @@ mod group_union;
 mod region_members;
 mod spatial_regions;
 mod stored_loop_cap;
+mod text_picks;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
@@ -816,6 +817,17 @@ pub(crate) fn bind_extrude_profile_selections(
                         *profile = ProfileRef::Planar(PlanarProfileRef::Native(id.to_owned()));
                         break 'feature_edit;
                     };
+                    if let Some((selected, note)) = text_picks::text_glyph_selection(
+                        feature.id.as_str(),
+                        sketch,
+                        &matching_groups,
+                        members,
+                        scoped_resolution,
+                    )? {
+                        *profile = ProfileRef::Planar(selected);
+                        losses.push(note);
+                        break 'feature_edit;
+                    }
                     if let (Some(state_id), Some(prev_state_id)) = (
                         scope.history_state_id(),
                         effective_previous_history_state_id,
