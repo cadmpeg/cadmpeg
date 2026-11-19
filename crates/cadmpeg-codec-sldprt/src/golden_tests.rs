@@ -20,8 +20,8 @@ use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
-    MutationOutcome, SemanticOutcome,
+    mutation_roundtrip, semantic_roundtrip, unrepresented_source_is_reported,
+    verbatim_replay_holds, ExpectedWritePath, MutationOutcome, SemanticOutcome,
 };
 
 use super::SldprtCodec;
@@ -138,15 +138,33 @@ fn golden_output_is_deterministic() {
 }
 
 /// Every fixture survives a decode and comes back byte for byte through the
-/// verbatim-replay path.
+/// verbatim-replay path. A fixture whose decode keeps bytes it did not decode
+/// replays too, and its report carries `export:source.carried`.
 #[test]
 fn fixtures_replay_verbatim() {
+    let mut marked = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
             continue;
         }
-        verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+        if decodes_unrepresented(&bytes) {
+            unrepresented_source_is_reported(&SldprtCodec, &name, &bytes);
+            marked += 1;
+        } else {
+            verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+        }
     }
+    assert!(marked > 0, "no fixture keeps bytes it did not decode");
+}
+
+/// Whether the decode of `bytes` marks a retained record `untyped`.
+fn decodes_unrepresented(bytes: &[u8]) -> bool {
+    !SldprtCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .expect("committed fixture decodes")
+        .source_fidelity()
+        .unrepresented()
+        .is_empty()
 }
 
 /// The semantic write path either reproduces a fixture's document or declares
@@ -474,7 +492,11 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
         !depths(&mut ir).is_empty(),
         "legacy blind-depth coverage remains explicit"
     );
-    verbatim_replay_holds(&SldprtCodec, "body_history", bytes);
+    if decodes_unrepresented(bytes) {
+        unrepresented_source_is_reported(&SldprtCodec, "body_history", bytes);
+    } else {
+        verbatim_replay_holds(&SldprtCodec, "body_history", bytes);
+    }
 }
 
 /// Independently authored, complete sources retain positive geometry coverage

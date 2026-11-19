@@ -193,7 +193,7 @@ pub(crate) enum RefusalCode {
     ExportLossRejected,
     /// The encoder cannot write the dialect `--to` named.
     UnsupportedTarget,
-    /// The document records less of its source than the encoder plans from.
+    /// The document records less of its source than measurement needs.
     InsufficientDepth,
     /// The selected format has no encoder in this build.
     UnsupportedOutputFormat,
@@ -358,17 +358,6 @@ pub(crate) enum ConversionRefusal {
         /// Validation report available for an optional `--report`.
         validation: ValidationReport,
     },
-    /// The document records less of its source than the encoder plans from.
-    InsufficientDepth {
-        /// Output format of the refusing encoder.
-        format: &'static str,
-        /// The depth the encoder needs and the depth the document records.
-        depth: DepthReport,
-        /// Decode report available for an optional `--report`.
-        decode_report: Option<DecodeReport>,
-        /// Validation report available for an optional `--report`.
-        validation: ValidationReport,
-    },
     /// Binary container would write to stdout without an override.
     BinaryStdoutRejected {
         /// Human-readable message.
@@ -417,7 +406,7 @@ enum RefusalDetail<'a> {
     Dialects(&'a DialectLayers),
     /// The encoder's typed target refusal and catalog.
     Target(&'a TargetRefusal),
-    /// The depth the encoder needs and the depth the document records.
+    /// The depth measurement needs and the depth the document records.
     Depth(DepthReport),
 }
 
@@ -626,24 +615,6 @@ impl ConversionRefusal {
                     export: None,
                 },
             },
-            Self::InsufficientDepth {
-                format,
-                depth,
-                decode_report,
-                validation,
-            } => RefusalEvidence {
-                code: RefusalCode::InsufficientDepth,
-                message: Cow::Owned(format!(
-                    "the {format} encoder needs a {}-depth decode, but the document records {} depth",
-                    depth.needed, depth.recorded
-                )),
-                detail: Some(RefusalDetail::Depth(*depth)),
-                reports: RefusalReports {
-                    decode: decode_report.as_ref(),
-                    check: Some(validation),
-                    export: None,
-                },
-            },
             Self::BinaryStdoutRejected { message } => RefusalEvidence {
                 code: RefusalCode::BinaryStdoutRejected,
                 message: Cow::Borrowed(message),
@@ -792,34 +763,6 @@ mod tests {
             report["target"]["available"][0]["id"],
             "iges:5.3-fixed-ascii"
         );
-    }
-
-    #[test]
-    fn an_insufficient_depth_refusal_reports_both_depths_at_plan() {
-        let refusal = ConversionRefusal::InsufficientDepth {
-            format: "f3d",
-            depth: DepthReport {
-                needed: DecodeDepth::Full,
-                recorded: DecodeDepth::Geometry,
-            },
-            decode_report: None,
-            validation: ValidationReport {
-                entity_counts: BTreeMap::new(),
-                findings: Vec::new(),
-                losses: Vec::new(),
-            },
-        };
-        assert_eq!(refusal.code(), RefusalCode::InsufficientDepth);
-        assert_eq!(refusal.exit_code(), 1);
-        assert_eq!(
-            refusal.to_string(),
-            "the f3d encoder needs a full-depth decode, but the document records geometry depth"
-        );
-        let report = report_value(&refusal);
-        assert_eq!(report["code"], "insufficient_depth");
-        assert_eq!(report["stage"], "plan");
-        assert_eq!(report["depth"]["needed"], "full");
-        assert_eq!(report["depth"]["recorded"], "geometry");
     }
 
     #[test]

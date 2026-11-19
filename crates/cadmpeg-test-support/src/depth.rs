@@ -12,7 +12,9 @@
 //! - every validation finding over the geometry document, neutral and
 //!   codec-native, is also a finding over the full one, so each of its
 //!   references, `native_ref` included, resolves wherever the full one's does;
-//! - the geometry decode's loss codes are a subset of the full decode's.
+//! - the geometry decode's loss codes are a subset of the full decode's;
+//! - where the geometry decode keeps the whole file's bytes, each class it
+//!   cut is marked `untyped` in its sidecar.
 //!
 //! The comparison is exact. Both decodes run in one process over the same
 //! bytes, so a cut that leaves geometry untouched reproduces it bit for bit.
@@ -20,7 +22,8 @@
 //! only design projection derives. Source attributes holding a local digest
 //! are not compared either: they fingerprint the whole document, design arenas
 //! included, as the replay baseline of the source format's own writer. A cut
-//! is therefore sound only in a codec whose own encoder needs `Full`.
+//! is sound because the cut marks the bytes it keeps undecoded, and that
+//! writer reports each file that carries them (`export:source.carried`).
 //!
 //! A codec without a cut delivers `Full` for the geometry request and passes on
 //! the same terms; [`DepthSummary::cut`] counts the inputs where it did not.
@@ -174,6 +177,7 @@ fn compare(
             ));
         }
     }
+    failures.extend(unmarked_cut_classes(bytes, full, geometry));
     if let Some(path) = first_difference(&outside_design(full.ir()), &outside_design(geometry.ir()))
     {
         failures.push(format!(
@@ -209,6 +213,43 @@ fn compare(
         ));
     }
     failures
+}
+
+/// Each class the geometry decode cut and left unmarked although it keeps the
+/// whole file's bytes.
+///
+/// A class is cut where the geometry document's scope lacks it and the full
+/// decode holds a record of it or marks it. Bytes a decode keeps but does not
+/// decode carry the `untyped` mark, so the source format's writer reports
+/// content the document does not hold when it carries those bytes.
+fn unmarked_cut_classes(bytes: &[u8], full: &DecodeResult, geometry: &DecodeResult) -> Vec<String> {
+    let whole_file = cadmpeg_core::decode::u64_from_index(bytes.len());
+    let keeps_whole_file = geometry
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .any(|record| {
+            record.data().is_some() && record.offset() == 0 && record.byte_len() == whole_file
+        });
+    if !keeps_whole_file {
+        return Vec::new();
+    }
+    let full_marks = full.source_fidelity().unrepresented();
+    let geometry_marks = geometry.source_fidelity().unrepresented();
+    ArenaClass::ALL
+        .into_iter()
+        .filter(|class| {
+            !geometry.ir().scope().holds(*class)
+                && (full.ir().populated_arena(*class).is_some() || full_marks.contains(class))
+                && !geometry_marks.contains(class)
+        })
+        .map(|class| {
+            format!(
+                "the geometry decode keeps the whole file's bytes but neither holds nor marks \
+                 the {class} class the full decode holds"
+            )
+        })
+        .collect()
 }
 
 /// The document as JSON without its scope, design and process arenas, native

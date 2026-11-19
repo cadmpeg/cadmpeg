@@ -13,6 +13,8 @@
 //!
 //! - [`verbatim_replay_holds`] covers the copy. It asserts the copy happened and
 //!   that the copy is faithful. It says nothing about the writer.
+//!   [`unrepresented_source_is_reported`] is the same copy of a decode that
+//!   kept bytes it did not decode, and also asserts the report says so.
 //! - [`semantic_roundtrip`] covers the writer with the baseline taken away, so
 //!   the copy is not available, and asserts the copy did not happen.
 //! - [`mutation_roundtrip`] covers the writer with the baseline left in place
@@ -89,6 +91,38 @@ where
         written == fixture,
         "{label}: verbatim replay produced different bytes: {}",
         describe_byte_difference(fixture, &written)
+    );
+    report
+}
+
+/// [`verbatim_replay_holds`] over a fixture whose decode marks a retained
+/// record `untyped`, asserting the replay report carries
+/// `export:source.carried`.
+///
+/// # Panics
+///
+/// Panics as [`verbatim_replay_holds`] does, when the decode marks no retained
+/// record `untyped`, or when the report carries no `export:source.carried`.
+pub fn unrepresented_source_is_reported<C>(codec: &C, label: &str, fixture: &[u8]) -> ExportReport
+where
+    C: Codec + Encoder,
+{
+    let decoded = Codec::decode(
+        codec,
+        &mut std::io::Cursor::new(fixture.to_vec()),
+        &DecodeOptions::default(),
+    )
+    .unwrap_or_else(|error| panic!("{label}: decode failed: {error}"));
+    assert!(
+        !decoded.into_parts().2.unrepresented().is_empty(),
+        "{label}: the decode marks no retained record `untyped`; use `verbatim_replay_holds`"
+    );
+    let report = verbatim_replay_holds(codec, label, fixture);
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code.namespace() == "export" && loss.code.local_code() == "source.carried"
+        }),
+        "{label}: the replay carries untyped bytes, but its report has no export:source.carried"
     );
     report
 }

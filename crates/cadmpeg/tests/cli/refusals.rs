@@ -168,35 +168,81 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .any(|loss| { loss["code"]["value"]["code"] == "export.no-geometry-written" }));
 }
 
-/// A container-only document is shallower than a geometry encoder plans from.
+/// A container-only document converts to STEP: the writer writes what the
+/// document holds, charges its empty-output loss, and notes the depth it plans
+/// from.
 #[cfg(all(feature = "creo", feature = "step"))]
 #[test]
-fn convert_refuses_container_only_geometry_at_its_depth() {
+fn convert_writes_a_container_only_document_to_step() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
+    let output = dir.path().join("empty.step");
     let report = dir.path().join("depth.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
             "convert",
             input.to_str().unwrap(),
-            "-f",
-            "step",
+            "-o",
+            output.to_str().unwrap(),
             "--container-only",
             "--report",
             report.to_str().unwrap(),
         ])
         .assert()
-        .code(1)
-        .stdout(predicate::str::is_empty())
-        .stderr(predicate::str::contains(
-            "the step encoder needs a geometry-depth decode, but the document records container depth",
-        ));
+        .success();
+    assert!(fs::read(&output).unwrap().starts_with(b"ISO-10303-21"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-    assert_eq!(value["refusal"]["stage"], "plan");
-    assert_eq!(value["refusal"]["code"], "insufficient_depth");
-    assert_eq!(value["refusal"]["depth"]["needed"], "geometry");
-    assert_eq!(value["refusal"]["depth"]["recorded"], "container");
+    assert!(value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
+    assert!(value["export"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains(
+            "the document records container depth; the step writer plans from geometry"
+        )));
+}
+
+/// A same-format container-only F3Z conversion replays the archive, whose
+/// members the decode kept undecoded, and reports the carried bytes.
+#[cfg(feature = "f3d")]
+#[test]
+fn convert_replays_a_container_only_f3z_and_reports_the_carried_source() {
+    let dir = tempdir().unwrap();
+    let source = include_bytes!("../../../../corpus/f3d/F30a.f3z");
+    let input = dir.path().join("source.f3z");
+    fs::write(&input, source).unwrap();
+    let output = dir.path().join("written.f3z");
+    let report = dir.path().join("report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--to",
+            "f3d",
+            "--container-only",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::read(&output).unwrap(), source.as_slice());
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(value["export"]["write_path"]["kind"], "verbatim_replay");
+    assert!(value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["value"]["namespace"] == "export"
+            && loss["code"]["value"]["code"] == "source.carried"
+            && loss["severity"] == "info"));
 }
 
 /// The format half of `--to` is checked before the input is opened.
