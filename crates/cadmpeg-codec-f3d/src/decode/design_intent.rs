@@ -938,6 +938,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         .extend(crate::history::bind_generated_body_selections(
             &mut model.features,
             &body_selection_inputs,
+            &mut losses,
         ));
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,

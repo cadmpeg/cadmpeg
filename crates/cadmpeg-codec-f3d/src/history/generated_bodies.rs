@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Body selections of bodies that the final model leaves out.
+//! Body selections that name the bodies of earlier features.
 
 use super::{historical_body_slot, stable_ref, FeatureBodySelectionInputs};
 use crate::history_records::AsmHistory;
+use crate::loss::F3dLossCode;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{HashMap, HashSet};
 
-/// Re-express body selections of bodies that the final model leaves out as
-/// bodies that an earlier feature generates.
+/// Re-express body selections of ASM body slots as bodies of the features
+/// that generate them.
 ///
-/// A body pattern seed resolved in its input state, and a body deletion whose
-/// operands resolved through their recipe identity, name ASM body slots. When
-/// every selected slot is absent from the model bodies, the one feature whose
-/// history transition inserts that slot generates the body, and the selection
-/// names it there.
-/// The producer becomes a dependency of the selecting feature. Returns the
-/// result states of the producers, each listing every body slot that the
-/// producer's transition inserts.
+/// A body pattern seed resolved in its input state, a body deletion whose
+/// operands resolved through their recipe identity, and a Reverse Normal
+/// resolved in its input state name ASM body slots. When every selected slot
+/// is absent from the model bodies, the one feature whose history transition
+/// inserts that slot generates the body, and the selection names it there.
+/// When every slot of a Reverse Normal is the entity number of exactly one
+/// model body and has such a generating feature, the selection names those
+/// model bodies. The generating feature becomes a dependency of the selecting
+/// feature. Returns the result states of the producers of generated bodies,
+/// each listing every body slot that the producer's transition inserts.
 pub(crate) fn bind_generated_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     inputs: &FeatureBodySelectionInputs<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Vec<cadmpeg_ir::features::FeatureResultTopology> {
     use cadmpeg_ir::features::{
         patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef,
@@ -89,12 +94,45 @@ pub(crate) fn bind_generated_body_selections(
             }) => scope
                 .and_then(|scope| group_operand_body_slots(inputs, group_id, scope))
                 .map(|slots| (slots, group_id.clone())),
+            FeatureDefinition::Operation(FeatureOperation::ReverseShape {
+                source: BodySelection::Historical { bodies, native, .. },
+            }) => bodies
+                .iter()
+                .map(|body| historical_body_slot(body.as_str()))
+                .collect::<Option<Vec<_>>>()
+                .map(|slots| (slots, native.as_str().to_owned())),
             _ => continue,
         };
+        let reverse = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::ReverseShape { .. })
+        );
         let Some((slots, native)) = selected else {
+            if reverse {
+                losses.push(F3dLossCode::FeatureReverseNormalBodyProducerUnresolved.note(format!(
+                    "Reverse Normal {} keeps its input-state bodies: a body names no ASM body slot.",
+                    feature.id
+                )));
+            }
             continue;
         };
-        if slots.is_empty() || slots.iter().any(|slot| live.contains(slot)) {
+        if slots.is_empty() {
+            continue;
+        }
+        let live_count = slots.iter().filter(|slot| live.contains(slot)).count();
+        let keep_input_state = |losses: &mut Vec<LossNote>, reason: &str| {
+            if reverse {
+                losses.push(F3dLossCode::FeatureReverseNormalBodyProducerUnresolved.note(format!(
+                    "Reverse Normal {} keeps body slots {slots:?} of {native} in its input state: {reason}.",
+                    feature.id
+                )));
+            }
+        };
+        if live_count != 0 && !(reverse && live_count == slots.len()) {
+            keep_input_state(
+                losses,
+                "the final model keeps some of the slots and omits the others",
+            );
             continue;
         }
         let Some(producers) = slots
@@ -102,8 +140,40 @@ pub(crate) fn bind_generated_body_selections(
             .map(|slot| producer(*slot))
             .collect::<Option<Vec<_>>>()
         else {
+            keep_input_state(
+                losses,
+                "a slot has no unique history state and scope that insert it",
+            );
             continue;
         };
+        if live_count != 0 {
+            let Some(bodies) = slots
+                .iter()
+                .map(|slot| model_body(inputs, *slot))
+                .collect::<Option<Vec<_>>>()
+            else {
+                keep_input_state(
+                    losses,
+                    "a slot is the entity number of several model bodies",
+                );
+                continue;
+            };
+            let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(bodies) else {
+                keep_input_state(losses, "the model bodies form no body set");
+                continue;
+            };
+            feature.evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::ReverseShape { source }) =
+                    definition
+                {
+                    *source = BodySelection::Resolved { bodies, native };
+                }
+            });
+            for (producer, _, _) in producers {
+                feature.dependencies.insert(producer);
+            }
+            continue;
+        }
         let Some(refs) = producers
             .iter()
             .zip(&slots)
@@ -112,9 +182,11 @@ pub(crate) fn bind_generated_body_selections(
             })
             .collect::<Option<Vec<_>>>()
         else {
+            keep_input_state(losses, "a generated body has no feature-local identity");
             continue;
         };
-        let Ok(generated) = BodySelection::generated(refs, native) else {
+        let Ok(generated) = BodySelection::generated(refs, native.clone()) else {
+            keep_input_state(losses, "the generated bodies form no body set");
             continue;
         };
         feature.evaluation.edit(|definition, _| match definition {
@@ -123,7 +195,10 @@ pub(crate) fn bind_generated_body_selections(
                     *selection = generated;
                 }
             }
-            FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => {
+            FeatureDefinition::Operation(
+                FeatureOperation::DeleteBody { bodies, .. }
+                | FeatureOperation::ReverseShape { source: bodies },
+            ) => {
                 *bodies = generated;
             }
             _ => {}
@@ -160,6 +235,19 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect()
+}
+
+/// The model body whose entity number is `slot`, when exactly one has it.
+fn model_body(
+    inputs: &FeatureBodySelectionInputs<'_>,
+    slot: i64,
+) -> Option<cadmpeg_ir::ids::BodyId> {
+    let mut bodies = inputs
+        .bodies
+        .iter()
+        .filter(|body| stable_ref(body.id.as_str()) == Some(slot));
+    let body = bodies.next()?;
+    bodies.next().is_none().then(|| body.id.clone())
 }
 
 /// The body slots that the body recipe operands of construction-operand group
