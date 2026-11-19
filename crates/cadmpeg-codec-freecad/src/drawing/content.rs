@@ -11,7 +11,7 @@ use cadmpeg_ir::drawings::{
     TitleBlockField,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::loss::FreecadLossCode;
@@ -147,7 +147,7 @@ fn sheet(root: roxmltree::Node<'_, '_>, fields: Vec<TitleBlockField>) -> Option<
     sheet.is_valid().then_some(sheet)
 }
 
-fn svg_length(text: &str) -> Option<PositiveReal> {
+fn svg_length(text: &str) -> Option<PositiveLength> {
     let text = text.trim();
     for (unit, factor) in [
         ("mm", 1.0),
@@ -158,7 +158,7 @@ fn svg_length(text: &str) -> Option<PositiveReal> {
         ("px", 25.4 / 96.0),
     ] {
         if let Some(number) = text.strip_suffix(unit) {
-            return PositiveReal::new(number.trim().parse::<f64>().ok()? * factor);
+            return PositiveLength::new(number.trim().parse::<f64>().ok()? * factor);
         }
     }
     None
@@ -223,7 +223,7 @@ fn cosmetic(node: roxmltree::Node<'_, '_>, source: CurveSource) -> Option<Drawin
     let geometry = match scalar(node, "GeometryType")? {
         1.0 => DrawingCurveGeometry::Circle {
             center: point(child(node, "Center")?)?,
-            radius: PositiveReal::new(scalar(node, "Radius")?)?,
+            radius: PositiveLength::new(scalar(node, "Radius")?)?,
         },
         7.0 => {
             let points: Vec<_> = child(node, "Points")?
