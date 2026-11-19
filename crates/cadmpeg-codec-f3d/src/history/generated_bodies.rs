@@ -11,9 +11,9 @@ use std::collections::{HashMap, HashSet};
 /// Re-express body selections of ASM body slots as bodies of the features
 /// that generate them.
 ///
-/// A body pattern seed resolved in its input state, a body deletion whose
-/// operands resolved through their recipe identity, and a Reverse Normal
-/// resolved in its input state name ASM body slots. When every selected slot
+/// A body pattern seed and a body move resolved in their input states, a body
+/// deletion whose operands resolved through their recipe identity, and a
+/// Reverse Normal resolved in its input state name ASM body slots. When every selected slot
 /// is absent from the model bodies, the one feature whose history transition
 /// inserts that slot generates the body, and the selection names it there.
 /// A Reverse Normal reads its slots in its bound history: see
@@ -98,6 +98,14 @@ pub(crate) fn bind_generated_body_selections(
                     .collect::<Option<Vec<_>>>()
                     .map(|slots| (slots, native.as_str().to_owned()))
             }
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies: BodySelection::Historical { bodies, native, .. },
+                ..
+            }) => bodies
+                .iter()
+                .map(|body| historical_body_slot(body.as_str()))
+                .collect::<Option<Vec<_>>>()
+                .map(|slots| (slots, native.as_str().to_owned())),
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Native(group_id),
                 ..
@@ -197,6 +205,7 @@ pub(crate) fn bind_generated_body_selections(
             }
             FeatureDefinition::Operation(
                 FeatureOperation::DeleteBody { bodies, .. }
+                | FeatureOperation::MoveBody { bodies, .. }
                 | FeatureOperation::ReverseShape { source: bodies },
             ) => {
                 *bodies = generated;
