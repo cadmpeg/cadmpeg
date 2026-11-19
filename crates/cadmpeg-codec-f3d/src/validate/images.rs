@@ -116,6 +116,23 @@ pub(super) fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findin
             .operand_groups_by_index
             .get(&(native_stream, image.target_group_record_index));
         let neutral_is_valid = !ctx.holds_design_intent() || scope.is_some_and(|scope| {
+            if image.placement.is_some() {
+                return ctx.ir.model.assets.iter().any(|candidate| {
+                    candidate
+                        .name
+                        .as_ref()
+                        .map(cadmpeg_core::text::NonBlankString::as_str)
+                        == Some(image.asset.name())
+                }) && ctx.ir.model.features.iter().any(|feature| {
+                    feature.native_ref.as_deref() == Some(scope.id.as_str())
+                        && !matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Decal { .. }
+                            )
+                        )
+                });
+            }
             let expected_faces = crate::design::decode::decal::DecalTargets {
                 groups: &ctx.native.design_construction_operand_groups,
                 operands: &ctx.native.design_body_recipe_operands,

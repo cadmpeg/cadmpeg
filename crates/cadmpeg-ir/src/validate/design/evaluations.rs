@@ -18,7 +18,7 @@ use crate::report::check::Finding;
 
 /// A position names an existing member of a container, or the start of an
 /// existing ordered container (§5.3). Returns whether it does.
-pub(super) fn check_position(
+pub(in crate::validate) fn check_position(
     index: &DesignRecords<'_>,
     position: PositionKey<'_>,
     entity: &str,
@@ -280,14 +280,16 @@ pub(super) fn check_evaluations(
 /// evaluation its base names, or one where its base is another arm or names
 /// no evaluation. The walk is iterative.
 #[derive(Default)]
-struct StateChains<'a> {
-    cyclic: BTreeSet<&'a str>,
-    depths: BTreeMap<&'a str, u64>,
+pub(in crate::validate) struct StateChains<'a> {
+    pub(in crate::validate) cyclic: BTreeSet<&'a str>,
+    pub(in crate::validate) depths: BTreeMap<&'a str, u64>,
 }
 
 /// Walks every chain of state bases. Returns the evaluation whose depth
 /// overflows, if one does.
-fn state_chains<'a>(index: &DesignRecords<'a>) -> Result<StateChains<'a>, &'a str> {
+pub(in crate::validate) fn state_chains<'a>(
+    index: &DesignRecords<'a>,
+) -> Result<StateChains<'a>, &'a str> {
     #[derive(Clone, Copy)]
     enum Mark {
         OnChain,

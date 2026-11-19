@@ -1704,20 +1704,34 @@ mod operand_list_combine {
         history: &crate::history_records::AsmHistory,
         scopes: &[DesignParameterScope],
     ) -> (BodySelection, BodySelection) {
+        bind_with_losses(operation, history, scopes).0
+    }
+
+    fn bind_with_losses(
+        operation: DesignCombineOperation,
+        history: &crate::history_records::AsmHistory,
+        scopes: &[DesignParameterScope],
+    ) -> (
+        (BodySelection, BodySelection),
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) {
         let combine_state = i64::try_from(history.states().len()).unwrap() - 1;
         let combine = scope(400, combine_state);
         let mut target = BodySelection::Native(format!("{STREAM}:design-record#11"));
         let mut tools = BodySelection::Native(format!("{STREAM}:design-record#12"));
+        let mut losses = Vec::new();
         super::super::super::bind_operand_list_combine_bodies(
-            &mut target,
-            &mut tools,
+            (&mut target, &mut tools),
             &combine,
             &operation,
-            &FeatureId::mint("test:model:feature#combine").unwrap(),
-            combine_state - 1,
+            (
+                &FeatureId::mint("test:model:feature#combine").unwrap(),
+                combine_state - 1,
+            ),
             (std::slice::from_ref(history), scopes),
+            &mut losses,
         );
-        (target, tools)
+        ((target, tools), losses)
     }
 
     fn input_body_slots(selection: &BodySelection) -> Vec<i64> {
@@ -1762,38 +1776,81 @@ mod operand_list_combine {
         assert_eq!(input_body_slots(&tools), [3, 1]);
     }
 
+    fn assert_target_only(selections: &(BodySelection, BodySelection), slot: i64) {
+        assert_eq!(input_body_slots(&selections.0), [slot], "{selections:?}");
+        assert!(
+            matches!(selections.1, BodySelection::Native(_)),
+            "{selections:?}"
+        );
+    }
+
+    fn operand_refusals(losses: &[cadmpeg_ir::report::loss::LossNote]) -> usize {
+        losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.kind()
+            })
+            .count()
+    }
+
     #[test]
-    fn every_operand_must_resolve_or_both_selections_stay_native() {
+    fn the_target_and_the_tools_bind_independently() {
         let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
-        for (target, tools) in [
-            (None, vec![node(300), node(100)]),
-            (node(200), vec![None, node(100)]),
-            (node(200), vec![node(300), None]),
-            (node(999), vec![node(300), node(100)]),
-            (node(200), vec![node(300), node(999)]),
-            (node(200), vec![node(200), node(100)]),
-            (node(200), vec![node(300), node(200)]),
-            (node(200), vec![node(300), node(300)]),
+        for (target, tools, target_slot) in [
+            (node(200), vec![None, node(100)], 2),
+            (node(200), vec![node(300), None], 2),
+            (node(200), vec![node(300), node(999)], 2),
+            (node(200), vec![node(300), node(300)], 2),
         ] {
-            assert_native(&bind(operation(target, &tools), &history, &creators()));
+            let (selections, losses) =
+                bind_with_losses(operation(target, &tools), &history, &creators());
+            assert_target_only(&selections, target_slot);
+            assert_eq!(operand_refusals(&losses), 1);
+        }
+        for target in [None, node(999)] {
+            let ((target, tools), losses) = bind_with_losses(
+                operation(target, &[node(300), node(100)]),
+                &history,
+                &creators(),
+            );
+            assert!(matches!(target, BodySelection::Native(_)), "{target:?}");
+            assert_eq!(input_body_slots(&tools), [3, 1]);
+            assert_eq!(operand_refusals(&losses), 1);
+        }
+    }
+
+    #[test]
+    fn a_tool_that_names_the_target_body_leaves_both_selections_native() {
+        let history = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
+        for tools in [vec![node(200), node(100)], vec![node(300), node(200)]] {
+            let (selections, losses) =
+                bind_with_losses(operation(node(200), &tools), &history, &creators());
+            assert_native(&selections);
+            assert_eq!(operand_refusals(&losses), 1);
         }
     }
 
     #[test]
     fn a_creator_must_insert_one_body_that_reaches_the_input_state() {
         let two_inserted = history(&[&[], &[1], &[1, 2, 3], &[1, 2, 3, 4], &[1]]);
-        assert_native(&bind(
-            operation(node(100), &[node(200)]),
-            &two_inserted,
-            &creators(),
-        ));
+        assert_target_only(
+            &bind(
+                operation(node(100), &[node(200)]),
+                &two_inserted,
+                &creators(),
+            ),
+            1,
+        );
 
         let removed_before_input = history(&[&[], &[1], &[1, 2], &[1], &[1]]);
-        assert_native(&bind(
-            operation(node(100), &[node(200)]),
-            &removed_before_input,
-            &creators(),
-        ));
+        assert_target_only(
+            &bind(
+                operation(node(100), &[node(200)]),
+                &removed_before_input,
+                &creators(),
+            ),
+            1,
+        );
 
         let mut no_previous_state = creators();
         no_previous_state[1]
@@ -1827,10 +1884,13 @@ mod operand_list_combine {
             scopes
         };
         let ordinary = history(&[&[], &[1], &[1, 2], &[1, 2, 3], &[2]]);
-        assert_native(&bind(
-            operation(node(100), &[node(200)]),
-            &ordinary,
-            &scope_in_other_stream,
-        ));
+        assert_target_only(
+            &bind(
+                operation(node(100), &[node(200)]),
+                &ordinary,
+                &scope_in_other_stream,
+            ),
+            1,
+        );
     }
 }

@@ -134,7 +134,7 @@ cites.
 | `mass.principal-axes-degenerate` | undefined | A principal moment agrees with another within their separation, so its principal axis is not determined. |
 | `placement.occurrence-scale` | placement | An occurrence of the `--occurrence` chain or of its subtree has a transform that scales an axis. |
 | `placement.prototype-unresolved` | placement | The prototype of the `--occurrence` occurrence or of an occurrence of its subtree is a definition of `External` storage, or does not resolve. |
-| `placement.occurrence-chain-broken` | input | The `--occurrence` chain does not reach the root definition: a definition on the way is placed by no occurrence or by more than one, or the chain repeats. |
+| `placement.occurrence-chain-broken` | input | The `--occurrence` chain does not reach the root definition: a definition on the way is placed by no occurrence or by more than one, a listed occurrence does not place the definition that owns the next one, or the chain repeats. |
 | `placement.occurrence-body-repeated` | placement | Two occurrences of the `--occurrence` subtree place the same body; a pass has one row per body. |
 | `placement.occurrence-empty` | undefined | Neither the `--occurrence` prototype nor a prototype of its subtree lists a body. |
 | `boundary.period-unresolved` | input | A loop's parameter values are so large that a shift by one period does not change them. |
@@ -549,7 +549,13 @@ occurrence chain: `T(top) ∘ … ∘ T(ID) ∘ Body.transform`. The chain climb
 from the occurrence to the definition that owns it, then to the one
 occurrence that places that definition, until it reaches the root
 definition (`docs/cadir-v11.md` §8.1); each occurrence applies inside the
-one above it. `T` is an occurrence's transform, the identity where it
+one above it. `--occurrence` is repeatable: the last value is the
+occurrence, and the values before it, outermost first, are the chain's
+occurrences above it, which select one of its instances where a definition
+above it is placed more than once. Each listed occurrence places the
+definition that owns the next one, and the chain climbs from the first one
+as from a single occurrence. Every value keeps its place, so a repeated
+value repeats the chain. `T` is an occurrence's transform, the identity where it
 states none; for an instance below the chain's top-level occurrence it is
 the transform an override of that occurrence states for the instance's
 path, where one does. The subtree of the occurrence is in the same space:
@@ -569,8 +575,9 @@ placement from the root) and
 bodies, the report has no row, every document quantity that applies to the
 selection is unavailable with the same reason, `transform` is absent, and
 `occurrence.unavailable` states why: `placement.occurrence-chain-broken`
-(a definition on the chain is placed by no occurrence or by several, or the
-chain repeats), `placement.occurrence-scale` (an occurrence of the chain or
+(a definition on the chain is placed by no occurrence or by several, a
+listed occurrence does not place the definition that owns the next one, or
+the chain repeats), `placement.occurrence-scale` (an occurrence of the chain or
 of the subtree has a transform that scales an axis; `entity` names it),
 `placement.prototype-unresolved` (a prototype of `External` storage, or a
 definition that does not resolve),

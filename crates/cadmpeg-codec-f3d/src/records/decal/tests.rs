@@ -1,32 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#[test]
-fn decal_mapping_modes_preserve_all_bytes_with_canonical_known_mode() {
-    use crate::records::decal::{DesignDecalMappingMode, UnrecognizedDecalMappingMode};
-    assert_eq!(
-        DesignDecalMappingMode::from_code(0x60),
-        DesignDecalMappingMode::FitToFaces
-    );
-    assert!(UnrecognizedDecalMappingMode::try_from(0x60).is_err());
-    for code in 0..=u8::MAX {
-        let mode = DesignDecalMappingMode::from_code(code);
-        let wire = code.to_string();
-        assert_eq!(serde_json::to_string(&mode).expect("Decal mode wire"), wire);
-        assert_eq!(
-            serde_json::from_str::<DesignDecalMappingMode>(&wire).expect("Decal mode"),
-            mode
-        );
-        if code != 0x60 {
-            let unknown = UnrecognizedDecalMappingMode::try_from(code).expect("unrecognized mode");
-            assert_eq!(DesignDecalMappingMode::Unknown(unknown), mode);
-        }
-    }
-}
-
 fn decal_wire_fixture() -> serde_json::Value {
     let base = serde_json::json!({
         "id": "decal", "scope_record_index": 23, "scope_layout": "compact", "asset_reference_offset": 222,
-        "mapping_mode": 96, "mapping_mode_offset": 232, "target_group_record_index": 24,
+        "scope_code": 96, "scope_code_offset": 232, "target_group_record_index": 24,
         "target_group_reference_offset": 234, "asset_class_tag": "258", "asset_record_index": 17,
         "asset_byte_offset": 100, "asset_frame_length": 30, "asset_entity_suffix": 50,
         "asset_entity_reference_offset": 120, "name_class_tag": "279", "name_record_index": 18,
@@ -86,9 +63,9 @@ fn decal_image_native_retained_limit_refuses_before_record_clone() {
 #[test]
 fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
     let base = decal_wire_fixture();
-    for mode in [0, 0x60, 0x61, 0xff] {
+    for code in [0, 0x60, 0x61, 0xff] {
         let mut value = base.clone();
-        value["mapping_mode"] = serde_json::json!(mode);
+        value["scope_code"] = serde_json::json!(code);
         let wire: crate::records::decal::DesignDecalImageWire =
             serde_json::from_value(value).expect("Decal wire");
         let expected = serde_json::to_string(&wire).expect("Decal wire bytes");
@@ -116,7 +93,7 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
     );
     for field in [
         "asset_reference_offset",
-        "mapping_mode_offset",
+        "scope_code_offset",
         "target_group_reference_offset",
         "asset_frame_length",
         "asset_entity_reference_offset",
@@ -160,7 +137,7 @@ fn decal_image_wire_derives_consecutive_records_and_scope_offsets() {
 #[test]
 fn decal_scope_layouts_place_references_and_asset_frames() {
     use crate::records::decal::DesignDecalScopeLayout;
-    for (layout, wire, asset_reference, mapping_mode, target_group_reference, len, asset_frame) in [
+    for (layout, wire, asset_reference, scope_code, target_group_reference, len, asset_frame) in [
         (
             DesignDecalScopeLayout::Compact,
             "compact",
@@ -200,7 +177,7 @@ fn decal_scope_layouts_place_references_and_asset_frames() {
     ] {
         assert_eq!(serde_json::to_value(layout).unwrap(), wire);
         assert_eq!(layout.asset_reference(), asset_reference);
-        assert_eq!(layout.mapping_mode(), mapping_mode);
+        assert_eq!(layout.scope_code(), scope_code);
         assert_eq!(layout.target_group_reference(), target_group_reference);
         assert_eq!(layout.len(), len);
         assert_eq!(layout.asset_frame_length(), asset_frame);
@@ -211,10 +188,76 @@ fn decal_scope_layouts_place_references_and_asset_frames() {
 fn decal_image_wire_refuses_an_asset_frame_of_another_layout() {
     let mut value = decal_wire_fixture();
     value["scope_layout"] = serde_json::json!("typed_compact");
-    value["mapping_mode_offset"] = serde_json::json!(272);
+    value["scope_code_offset"] = serde_json::json!(272);
     value["target_group_reference_offset"] = serde_json::json!(274);
     let error = serde_json::from_value::<crate::records::decal::DesignDecalImage>(value)
         .expect_err("typed layout with a 30-byte asset frame")
         .to_string();
     assert!(error.contains("asset_frame_length"));
+}
+
+#[test]
+fn decal_image_wire_admits_a_placement_frame_before_the_asset_record() {
+    let placement = serde_json::json!({
+        "byte_offset": 40, "class_tag": "267", "vertex_count": 3, "ordinal": 1,
+        "u_axis": [0.5, 0.0, 0.0], "v_axis": [0.0, -0.5, 0.0], "flag_bytes": "010000", "reference_separator": 1, "normal_gap": 4,
+        "normal": [0.0, 0.0, -1.0], "origin": [1.0, 2.0, 0.0], "image_name": "mark",
+        "triangle_index_count": 3
+    });
+    let mut value = decal_wire_fixture();
+    value["placement"] = placement.clone();
+    let image: crate::records::decal::DesignDecalImage =
+        serde_json::from_value(value.clone()).expect("Decal binding with a placement");
+    assert_eq!(serde_json::to_value(&image).expect("Decal wire"), value);
+    let asset_at = value["asset_byte_offset"].clone();
+    for (field, bad) in [
+        ("byte_offset", asset_at),
+        ("class_tag", serde_json::json!("")),
+        ("image_name", serde_json::json!("")),
+        ("normal", serde_json::json!([0.0, 0.0, 2.0])),
+        ("reference_separator", serde_json::json!(2)),
+        ("normal_gap", serde_json::json!(3)),
+        ("normal_gap", serde_json::json!(6)),
+    ] {
+        let mut refused = value.clone();
+        refused["placement"][field] = bad;
+        assert!(
+            serde_json::from_value::<crate::records::decal::DesignDecalImage>(refused).is_err(),
+            "{field}"
+        );
+    }
+    let mut null = value;
+    null["placement"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<crate::records::decal::DesignDecalImage>(null).is_err());
+}
+
+#[test]
+fn placement_normal_is_parallel_to_the_axes_within_the_tolerance() {
+    let u = [1.0f64, 2.0, 0.5];
+    let v = [-0.3f64, 0.4, 2.0];
+    let cross = [3.8f64, -2.15, 1.0];
+    let length = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let unit = cross.map(|value| value / length);
+    let u_length = u.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let in_plane = u.map(|value| value / u_length);
+    let placement = |normal: [f64; 3], u_axis: [f64; 3]| {
+        serde_json::from_value::<crate::records::decal::DesignDecalPlacement>(serde_json::json!({
+            "byte_offset": 40, "class_tag": "267", "vertex_count": 3, "ordinal": 1,
+            "u_axis": u_axis, "v_axis": v, "flag_bytes": "010000",
+            "reference_separator": 1, "normal_gap": 4,
+            "normal": normal, "origin": [1.0, 2.0, 0.0], "image_name": "mark",
+            "triangle_index_count": 3
+        }))
+        .expect("placement wire")
+    };
+    let tilted = |degrees: f64| {
+        let angle = degrees.to_radians();
+        [0, 1, 2].map(|lane| angle.cos() * unit[lane] + angle.sin() * in_plane[lane])
+    };
+    assert!(placement(unit, u).normal_is_parallel_to_axes());
+    assert!(placement(unit.map(|value| -value), u).normal_is_parallel_to_axes());
+    assert!(placement(tilted(0.01), u).normal_is_parallel_to_axes());
+    assert!(!placement(tilted(0.2), u).normal_is_parallel_to_axes());
+    assert!(!placement(in_plane, u).normal_is_parallel_to_axes());
+    assert!(!placement(unit, v).normal_is_parallel_to_axes());
 }

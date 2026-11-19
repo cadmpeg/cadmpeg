@@ -667,7 +667,7 @@ impl Builder<'_, '_, '_, '_> {
                             .filter(|body| bodies.contains(&body.id))
                         {
                             body.transform = local;
-                            body.name = Some(prim.name.clone());
+                            body.name = Some(definition_name(prim, key).to_owned());
                         }
                         bodies
                     }
@@ -809,7 +809,7 @@ impl Builder<'_, '_, '_, '_> {
             id: crate::ids::body(key),
             kind,
             transform: None,
-            name: Some(prim.name.clone()),
+            name: Some(definition_name(prim, key).to_owned()),
             color,
             visible: None,
             native_ref: None,

@@ -314,8 +314,8 @@ impl DestinationPolicy {
 pub(crate) struct ConversionPolicy {
     /// Decode and export loss refusal.
     pub(crate) losses: LossPolicy,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
+    /// Refuse export when validation reports an error in what the output writes.
+    pub(crate) reject_errors: bool,
     /// Output destination rules.
     pub(crate) destination: DestinationPolicy,
 }
@@ -348,7 +348,7 @@ pub(crate) struct PreparedConversion {
     assets: loader::companions::Directory,
     destination: ResolvedDestination,
     loss_policy: LossPolicy,
-    allow_errors: bool,
+    reject_errors: bool,
 }
 
 /// Loads and validates a conversion without planning or writing it.
@@ -385,14 +385,15 @@ pub(crate) fn prepare(
         assets: loader::companions::Directory::beside(source.path),
         destination,
         loss_policy: policy.losses,
-        allow_errors: policy.allow_errors,
+        reject_errors: policy.reject_errors,
     })
 }
 
 impl PreparedConversion {
     /// Plans the export before applying check and export-loss refusals.
-    /// A failed plan counts every error as carried, then applies plan refusal.
-    /// A completed plan checks carried errors, then applies export-loss refusal.
+    /// Under `reject_errors`, a failed plan counts every error as carried and
+    /// refuses on them before the plan refusal, and a completed plan refuses
+    /// on carried errors before export-loss refusal.
     pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
@@ -405,7 +406,7 @@ impl PreparedConversion {
             Ok(plan) => plan,
             Err(error) => {
                 let carried = self.validation.error_count();
-                if carried > 0 && !self.allow_errors {
+                if carried > 0 && self.reject_errors {
                     return Err(self.check_refusal(carried));
                 }
                 return Err(plan_refusal(
@@ -418,7 +419,7 @@ impl PreparedConversion {
         let carried = plan
             .carried_errors(&self.document.ir, &self.validation)
             .len();
-        if carried > 0 && !self.allow_errors {
+        if carried > 0 && self.reject_errors {
             return Err(self.check_refusal(carried));
         }
         if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {

@@ -401,6 +401,11 @@ fn build_extent_extrusion(
             },
         ),
     ];
+    properties.retain(|property| {
+        extra
+            .iter()
+            .all(|other| other.identity.record_ordinal != property.identity.record_ordinal)
+    });
     properties.extend(extra);
     for property in &mut properties {
         let type_id = match property.kind {
@@ -1344,6 +1349,81 @@ fn native_profile_refuses_unequal_patch_references_and_zero_blind_length() {
         Vec::new(),
         |index| index.sketch_ids.clear(),
         |_, _, _, feature| assert!(feature.is_none())
+    )
+    .is_none());
+}
+
+#[test]
+fn fixed_distance_cut_with_zero_length_keeps_native_operands_and_loss() {
+    let case = ExtentCase {
+        output: Output::Solid,
+        operation: 2,
+        extent: 1,
+        symmetric: false,
+        solid_input: SolidInput::None,
+    };
+    let reversed = || {
+        vec![test_property(
+            4,
+            PmDcFeaturePropertyKind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value: true,
+            },
+        )]
+    };
+    let positive = build_extent_extrusion(
+        case,
+        &[],
+        reversed(),
+        IDENTITY_MATRIX,
+        |_| {},
+        |_, _, _, _| {},
+    )
+    .expect("positive fixed-distance cut");
+    assert!(matches!(
+        positive.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: BooleanOp::Cut,
+            ..
+        })
+    ));
+    assert!(build_extent_extrusion(
+        case,
+        &[(4, 74)],
+        reversed(),
+        IDENTITY_MATRIX,
+        |_| {},
+        |source, label, index, projected| {
+            assert!(projected.is_none());
+            assert!(!crate::feature::extrusion::matches(
+                index,
+                source,
+                label,
+                positive.evaluation.definition()
+            ));
+            assert!(crate::feature::extrusion::indexed_operands(
+                source,
+                label,
+                index,
+                Output::Solid
+            )
+            .is_none());
+            let arena = DecodeArena::new();
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                .expect("projection context");
+            let mut losses = Vec::new();
+            assert!(
+                crate::feature::extrusion::project(&ctx, source, label, index, &mut losses)
+                    .is_none()
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].code.namespace(), "inventor");
+            assert_eq!(
+                losses[0].code.local_code(),
+                "feature.extrusion-operands-native"
+            );
+        }
     )
     .is_none());
 }

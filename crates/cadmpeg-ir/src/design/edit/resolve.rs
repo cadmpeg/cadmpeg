@@ -17,6 +17,7 @@ use crate::design::ops::surface::MeshKind;
 use crate::design::parameter::{DesignParameter, ParameterValue};
 use crate::design::refs::ConfigurationRef;
 use crate::design::scope::DesignScope;
+use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::{ConfigurationId, FeatureId, ParameterId};
 use crate::ids::{OccurrenceId, ProductDefinitionId};
 use crate::CadIr;
@@ -177,7 +178,18 @@ impl CadIr {
         scope: &DesignScope,
         occurrence: &OccurrenceId,
     ) -> Result<Option<ConfigurationRef>, EditError> {
-        let active = scope.active_configuration.as_ref();
+        self.occurrence_configuration_in(scope, occurrence, scope.active_configuration.as_ref())
+    }
+
+    /// As [`CadIr::occurrence_configuration`], with `active` the
+    /// configuration of the scope that applies in place of the scope's
+    /// active one: the configuration an ancestor occurrence selects.
+    fn occurrence_configuration_in(
+        &self,
+        scope: &DesignScope,
+        occurrence: &OccurrenceId,
+        active: Option<&ConfigurationId>,
+    ) -> Result<Option<ConfigurationRef>, EditError> {
         let chain = match active {
             Some(configuration) => self.configuration_chain(configuration)?,
             None => Vec::new(),
@@ -199,6 +211,79 @@ impl CadIr {
                 .get(occurrence)
                 .and_then(|design| design.configuration.clone())
         }))
+    }
+
+    /// The cache a reference `through` an occurrence path reads (§5.13): the
+    /// occurrence the path reaches states its own override of the parameter
+    /// (`OccurrenceDesign.parameters`, §5.1), else the parameter's cache in
+    /// the configuration that occurrence uses. Each step uses its own
+    /// `configuration`, else the one its scope resolves for it (§5.1) in the
+    /// configuration the step above uses, the first step in its scope's
+    /// active one, else its prototype's active configuration. `None` where
+    /// no cache is stated: an empty path, a `Native` step, and an occurrence
+    /// whose configuration is `Named` or whose override states no value.
+    ///
+    /// # Errors
+    ///
+    /// As [`CadIr::parameter_cache`].
+    pub fn through_cache(
+        &self,
+        parameter: &ParameterId,
+        path: &OccurrencePath,
+    ) -> Result<Option<&ParameterValue>, EditError> {
+        let mut level: Option<Option<ConfigurationId>> = None;
+        let mut reached = None;
+        for step in &path.0 {
+            let StepRef::Occurrence(occurrence) = &step.occurrence else {
+                return Ok(None);
+            };
+            let scope = self
+                .design
+                .scopes
+                .iter()
+                .find(|scope| scope.occurrences.contains_key(occurrence));
+            let resolved = match (&step.configuration, scope) {
+                (Some(stated), _) => Some(stated.clone()),
+                (None, Some(scope)) => {
+                    let active = match &level {
+                        Some(selected) => selected.as_ref(),
+                        None => scope.active_configuration.as_ref(),
+                    };
+                    self.occurrence_configuration_in(scope, occurrence, active)?
+                }
+                (None, None) => None,
+            };
+            let uses = resolved.or_else(|| {
+                self.model
+                    .occurrences
+                    .iter()
+                    .find(|candidate| &candidate.id == occurrence)
+                    .and_then(|record| self.active_configuration_of(&record.prototype))
+                    .cloned()
+                    .map(ConfigurationRef::Local)
+            });
+            level = Some(match &uses {
+                Some(ConfigurationRef::Local(id)) => Some(id.clone()),
+                Some(ConfigurationRef::Named(_)) | None => None,
+            });
+            reached = Some((occurrence, scope, uses));
+        }
+        let Some((occurrence, scope, uses)) = reached else {
+            return Ok(None);
+        };
+        if let Some(own) = scope
+            .and_then(|scope| scope.occurrences.get(occurrence))
+            .and_then(|design| design.parameters.get(parameter))
+        {
+            return Ok(own.value.as_ref());
+        }
+        match uses {
+            Some(ConfigurationRef::Named(_)) => Ok(None),
+            Some(ConfigurationRef::Local(configuration)) => {
+                self.parameter_cache(parameter, Some(&configuration))
+            }
+            None => self.parameter_cache(parameter, None),
+        }
     }
 
     /// Resolves a dimension: a literal is its own value, and a bound

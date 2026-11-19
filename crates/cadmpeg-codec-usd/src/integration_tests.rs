@@ -317,6 +317,7 @@ mod intrinsics;
 mod layers;
 mod losses;
 mod physics;
+mod scene;
 mod subsets;
 mod textures;
 mod usdc;

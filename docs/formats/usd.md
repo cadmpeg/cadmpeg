@@ -1312,7 +1312,7 @@ A surface of `BrepSurfaceNurbAPI` has `uOrder`, `vOrder`, `uVertexCount`, and `v
 
 ### 17.4 Geometry subsets
 
-A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects faces by their position in the face arrays; one with `elementType = "brep"` selects B-reps by their position. A subset that applies `MaterialBindingAPI` binds its material to the elements it selects.
+A `GeomSubset` child of a `BrepArray` prim with `elementType = "face"` selects faces by their position in the face arrays; one with `elementType = "brep"` selects B-reps by their position. A subset that applies `MaterialBindingAPI` belongs to the family `materialBind` and binds its material to the elements it selects.
 
 ### 17.5 Fallback prims
 

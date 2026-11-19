@@ -185,7 +185,7 @@ pub(crate) enum RefusalCode {
     UnsupportedDialect,
     /// Strict decode policy rejected a reported loss.
     StrictDecodeRejected,
-    /// The check found errors and `--allow-errors` was not set.
+    /// The check found errors under `--reject-errors`.
     CheckFailed,
     /// Decode reported losses under `--reject-lossy`.
     DecodeLossRejected,
@@ -319,7 +319,7 @@ pub(crate) enum ConversionRefusal {
         /// Completed decode report bound to the loss that caused refusal.
         rejection: cadmpeg_ir::codec::StrictDecodeRejection,
     },
-    /// The check found errors and `--allow-errors` was not set.
+    /// The check found errors under `--reject-errors`.
     CheckFailed {
         /// Operation rejected by validation.
         operation: CheckOperation,
@@ -550,11 +550,11 @@ impl ConversionRefusal {
                         format!("check found {} error(s)", validation.error_count())
                     }
                     CheckOperation::Export { carried } if *carried == validation.error_count() => format!(
-                        "check found {} error(s); refusing to export (use --allow-errors to override)",
+                        "check found {} error(s); refusing to export under --reject-errors",
                         validation.error_count()
                     ),
                     CheckOperation::Export { carried } => format!(
-                        "check found {} error(s), {carried} in what the export writes; refusing to export (use --allow-errors to override)",
+                        "check found {} error(s), {carried} in what the export writes; refusing to export under --reject-errors",
                         validation.error_count()
                     ),
                 }),

@@ -469,8 +469,10 @@
           "sketch": "f3d:model:sketch#f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat@277",
           "definition": {
             "kind": "native",
-            "native_kind": "Linear Dimension-1",
-            "native_properties": {},
+            "native_kind": "Linear Dimension",
+            "native_properties": {
+              "instance_name": "Linear Dimension-1"
+            },
             "entities": [
               "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p501",
               "f3d:model:sketch-entity#81:f3d%3Amodel%3Asketch%23f3d%253AFusionAssetName[Active]/Design1/BulkStream.dat@277p503",

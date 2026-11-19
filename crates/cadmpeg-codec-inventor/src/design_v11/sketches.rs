@@ -5,13 +5,16 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::construction::{Construction, FrameValue};
+use cadmpeg_ir::design::construction::{
+    Construction, ConstructionInput, FrameValue, InputReference,
+};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::sketch::{
     DefiningRole, EntityDefinition, EntityForm, EntityRole, Planar, PlanarCurve, Sketch,
     SketchEntity, SketchPlane, SketchSolve,
 };
+use cadmpeg_ir::design::selection::{Anchor, Picks, Selection};
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;
 use cadmpeg_ir::sketches::{SketchGeometryDefinition as Geometry, SketchPlacement};
 use cadmpeg_ir::units::{UnitVector2, UnitVector3};
@@ -39,7 +42,7 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             continue;
         };
         ctx.charge_entities(1, "project Inventor v11 sketch")?;
-        let resolved = match source.placement {
+        let (inputs, resolved) = match source.placement {
             SketchPlacement::Resolved { .. } => {
                 let (origin, normal, u_axis) = source
                     .placement
@@ -49,15 +52,28 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
                     .ok_or_else(|| CodecError::malformed("Inventor sketch x axis"))?;
                 let z_axis = UnitVector3::normalized_nonzero(normal)
                     .ok_or_else(|| CodecError::malformed("Inventor sketch normal"))?;
-                Some(FrameValue {
+                let frame = FrameValue {
                     origin,
                     x_axis,
                     z_axis,
                     y_axis: UnitVector3::normalized(z_axis.as_raw().cross(*x_axis.as_raw()))
                         .ok_or_else(|| CodecError::malformed("Inventor sketch y axis"))?,
-                })
+                };
+                (Vec::new(), Some(frame))
             }
-            SketchPlacement::Unresolved {} => None,
+            SketchPlacement::Unresolved {} => (
+                vec![ConstructionInput {
+                    role: None,
+                    reference: Some(InputReference::Picks(Selection {
+                        at: Anchor::Input,
+                        picks: Picks::Unread,
+                        native: None,
+                    })),
+                    value: None,
+                    reversed: None,
+                }],
+                None,
+            ),
         };
         ir.design.sketches.push(Sketch {
             id: source.id.clone(),
@@ -67,7 +83,7 @@ pub(super) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
                 SketchPlane::Block
             } else {
                 SketchPlane::Placed(Box::new(Construction {
-                    inputs: Vec::new(),
+                    inputs,
                     after: Vec::new(),
                     solution: None,
                     mode: None,

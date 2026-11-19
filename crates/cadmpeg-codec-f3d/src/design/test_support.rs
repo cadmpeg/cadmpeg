@@ -21,6 +21,52 @@ pub(crate) fn indexed_record_offsets_for_test(
     crate::design::decode::sketch::IndexedRecordOffsets::build(bytes)
 }
 
+pub(crate) fn legacy_symmetric_extrude_scope(
+    scope: crate::records::feature::scope::DesignParameterScope,
+    references: [u32; 5],
+) -> crate::records::feature::scope::DesignParameterScope {
+    use crate::layout::legacy_class_330_symmetric_extrude_frame as layout;
+    use crate::layout::shifted_extrude_prologue as prefix;
+    use crate::records::feature::extrude::{
+        DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+    };
+    use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
+    use crate::records::identity::ReferenceRun;
+
+    let mut draft = scope.into_draft();
+    let at = |relative| draft.byte_offset + u64_from_index(relative);
+    draft.class_tag = "330".to_owned().try_into().unwrap();
+    draft.paired_class_tag = "262".to_owned().try_into().unwrap();
+    draft.frame_length = u64_from_index(layout::LEN);
+    draft.reference_count_offset = at(layout::REFERENCE_COUNT);
+    draft.reference_members = ReferenceRun::unlocated(references.to_vec());
+    let DesignScopePayload::Extrude(extrude) = &mut draft.payload else {
+        panic!("Extrude scope");
+    };
+    extrude
+        .get_or_insert_with(Default::default)
+        .extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker_offset: None,
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: at(prefix::OPERATION),
+        direction_face_extend_values: [3, 2],
+        side_extent_discriminators: [1, 0],
+        side_extent_discriminator_offsets: [
+            at(layout::FIRST_SIDE_EXTENT),
+            at(layout::SECOND_SIDE_EXTENT),
+        ],
+        extent: Some(DesignExtrudeExtent::SymmetricDistance),
+        direction_face_extend_offsets: [at(prefix::DIRECTION), at(prefix::FACE_EXTEND)],
+        direction_reversed: false,
+        direction_reversed_offset: at(prefix::DIRECTION_REVERSED),
+        solid_operation: true,
+        solid_operation_offset: at(prefix::GEOMETRY_KIND),
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: at(prefix::START_SUPPORT),
+    });
+    DesignParameterScope::try_new(draft.with_fixture_layout()).expect("legacy symmetric Extrude")
+}
+
 pub(crate) fn parameter_record(
     owner: Option<u32>,
     expression: &str,

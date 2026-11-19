@@ -42,6 +42,9 @@ const ARRANGEMENT_TANGENT_TOLERANCE: f64 = 1.0e-9;
 /// Inverse millimetres between the signed curvatures of two arrangement
 /// edges that leave a node with the same tangent and bend alike.
 const ARRANGEMENT_CURVATURE_TOLERANCE: f64 = 1.0e-12;
+/// Fraction of a piece's coordinate magnitude that widens its bounds in
+/// the separation sweep.
+const CERTIFIED_SWEEP_BOUNDS_SLACK: f64 = 1.0e-9;
 
 /// Local work cap for arrangement edge retention walks, shared by every walk
 /// of one decode. An exhausted cap skips the arrangement.
@@ -3848,11 +3851,11 @@ impl CertifiedProfileLoop {
     }
 
     fn strictly_contains(&self, inner: &Self) -> bool {
-        certified_pieces_separated(&self.pieces, &inner.pieces)
-            && inner
-                .pieces
-                .first()
-                .is_some_and(|piece| self.contains_point(piece.start()))
+        inner
+            .pieces
+            .first()
+            .is_some_and(|piece| self.contains_point(piece.start()))
+            && certified_pieces_separated(&self.pieces, &inner.pieces)
     }
 }
 
@@ -3961,9 +3964,62 @@ impl CertifiedPiece {
     }
 }
 
+/// Tests only the piece pairs whose widened bounds overlap, by a sweep
+/// along `u`.
 fn certified_pieces_separated(left: &[CertifiedPiece], right: &[CertifiedPiece]) -> bool {
-    left.iter()
-        .all(|left| right.iter().all(|right| left.separated_from(right)))
+    let mut events = Vec::with_capacity(left.len() + right.len());
+    for (side, pieces) in [(0_usize, left), (1, right)] {
+        for piece in pieces {
+            let Some(bounds) = sweep_bounds(piece) else {
+                return left
+                    .iter()
+                    .all(|left| right.iter().all(|right| left.separated_from(right)));
+            };
+            events.push((side, bounds, piece));
+        }
+    }
+    events.sort_by(|first, second| first.1[0].u.total_cmp(&second.1[0].u));
+    let mut active: [Vec<([Point2; 2], &CertifiedPiece)>; 2] = [Vec::new(), Vec::new()];
+    for (side, bounds, piece) in events {
+        let [low, high] = bounds;
+        let others = &mut active[1 - side];
+        others.retain(|([_, other_high], _)| other_high.u >= low.u);
+        let touches = others.iter().any(|([other_low, other_high], other)| {
+            other_low.v <= high.v
+                && low.v <= other_high.v
+                && !if side == 0 {
+                    piece.separated_from(other)
+                } else {
+                    other.separated_from(piece)
+                }
+        });
+        if touches {
+            return false;
+        }
+        active[side].push((bounds, piece));
+    }
+    true
+}
+
+/// The bounds of `piece` widened by `CERTIFIED_SWEEP_BOUNDS_SLACK` of their
+/// magnitude, so that a pair the sweep skips is apart by more than the
+/// rounding of `CertifiedPiece::separated_from`; `None` for a bound that
+/// is not finite.
+fn sweep_bounds(piece: &CertifiedPiece) -> Option<[Point2; 2]> {
+    let [low, high] = piece.bounds();
+    let magnitude = [low.u, low.v, high.u, high.v]
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0_f64, f64::max);
+    let slack = CERTIFIED_SWEEP_BOUNDS_SLACK * magnitude;
+    let widened = [
+        Point2::new(low.u - slack, low.v - slack),
+        Point2::new(high.u + slack, high.v + slack),
+    ];
+    widened
+        .iter()
+        .all(|point| point.u.is_finite() && point.v.is_finite())
+        .then_some(widened)
 }
 
 /// Whether each of `points` lies inside the closed profile loop `profile`;
