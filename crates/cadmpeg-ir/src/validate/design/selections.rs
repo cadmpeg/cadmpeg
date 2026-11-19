@@ -675,8 +675,8 @@ fn check_datum_part(index: &DesignIndex<'_>, pick: &Picked, at: &str, findings: 
     }
 }
 
-/// `Principal.container` names an ordered container of the pick's
-/// definition.
+/// `Principal.container` names an ordered container of the scope that spans
+/// the definition the pick resolves in (§5.1, §5.2).
 fn check_principal(
     index: &DesignIndex<'_>,
     site: Site<'_>,
@@ -696,9 +696,11 @@ fn check_principal(
     let ordered = matches!(record, crate::design::container::Container::Ordered { .. });
     let definition = resolving_definition(index, site.owner, pick);
     let scope = index.scope_of(MemberKey::Container(container.as_str()));
-    let elsewhere = matches!((definition, scope), (Some(definition), Some(scope)) if definition != scope.as_str());
+    let elsewhere = matches!((definition, scope), (Some(definition), Some(scope))
+        if definition != scope.as_str()
+            && !index.records.spanned_definitions(scope.as_str()).contains(definition));
     if !ordered || elsewhere {
-        super::error(findings, site.holder.record(), format_args!("a Principal pick names container {}, which is not an ordered container of its definition", container.as_str()),
+        super::error(findings, site.holder.record(), format_args!("a Principal pick names container {}, which is not an ordered container of the scope that spans its definition", container.as_str()),
         );
     }
 }
