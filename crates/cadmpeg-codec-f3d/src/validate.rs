@@ -5169,6 +5169,8 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
 
 /// Validate construction operand groups and their role discriminators.
 fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    use crate::records::feature::scope::DesignFeatureKind;
+
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -5182,27 +5184,33 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             || frame.member_count_offset.checked_add(4),
             |member| member.offset.checked_add(10),
         );
-        let frame_valid = group
-            .byte_offset
-            .checked_add(
-                if scope.is_some_and(|scope| {
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::SplitFace
-                            && group.role() == DesignOperandRole::ROLE_0X21)
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::Split
-                            && matches!(
-                                group.role(),
-                                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
-                            ))
-                }) {
-                    88
-                } else {
-                    21
-                },
+        let member_count_offset = frame.member_count_offset.checked_sub(group.byte_offset);
+        let kind = scope.map(|scope| scope.kind());
+        let prefixed_tool = matches!(
+            (kind.as_ref(), group.role()),
+            (
+                Some(DesignFeatureKind::SplitFace),
+                DesignOperandRole::ROLE_0X21
+            ) | (
+                Some(DesignFeatureKind::Split),
+                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
             )
-            .is_some_and(|expected_offset| frame.member_count_offset == expected_offset)
+        );
+        let prefixed = kind == Some(DesignFeatureKind::SurfaceStitch) || prefixed_tool;
+        let compact_split_tool = kind == Some(DesignFeatureKind::Split)
+            && group.role() == DesignOperandRole::ROLE_0X21
+            && group.scope_reference_ordinal == 0
+            && !group.members().is_empty()
+            && frame.auxiliary_records.is_empty()
+            && frame.trailing_records().len() == 1
+            && !frame.variant
+            && !frame.closing_flag;
+        let compact_count = cadmpeg_core::decode::u64_from_index(
+            crate::layout::split_body_compact_group_prefix::MEMBER_COUNT,
+        );
+        let count_offset_valid = member_count_offset == Some(if prefixed { 88 } else { 21 })
+            || (compact_split_tool && member_count_offset == Some(compact_count));
+        let frame_valid = count_offset_valid
             && group.members().first().is_none_or(|member| {
                 frame
                     .member_count_offset

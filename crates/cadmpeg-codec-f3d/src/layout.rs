@@ -11066,6 +11066,18 @@ pub(crate) mod split_body_extension {
     pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0001;
 }
 
+/// Byte offsets for the `split_body_compact_group_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Counted member references follow this prefix.
+/// ```
+pub(crate) mod split_body_compact_group_prefix {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 21;
+}
+
 /// Byte offsets for the `mesh_plane_cut_scope_prefix` record.
 ///
 /// Spec §3.1. Record length 162 B.
