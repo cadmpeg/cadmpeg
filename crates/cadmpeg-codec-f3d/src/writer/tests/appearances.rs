@@ -111,7 +111,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
 }
 
 #[test]
-fn generated_source_less_rejects_material_assignment_without_presentation_graph() {
+fn generated_source_less_drops_material_assignment_without_presentation_graph() {
     use crate::records::references::DesignMaterialAssignment;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
@@ -136,17 +136,16 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
         visual_preset: None,
     }];
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("an incomplete generated presentation graph must be refused");
-    assert!(error
-        .to_string()
-        .contains("requires a typed body-presentation B-rep and scene graph"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "requires a typed body-presentation B-rep and scene graph",
+    );
 }
 
 #[test]
-fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
+fn generated_source_less_drops_collapsed_visibility_body_bindings() {
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.geometry.bodies[0].visible = Some(false);
     let body = source_less.geometry.bodies[0].id.clone();
@@ -170,17 +169,16 @@ fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
         })
         .collect();
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("conflicting body-map rows must not collapse");
-    assert!(error
-        .to_string()
-        .contains("conflicts with the body-map key/suffix bijection"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "F3D body visibility",
+    );
 }
 
 #[test]
-fn generated_f3d_rejects_material_assignment_divergence() {
+fn generated_f3d_regenerates_on_material_assignment_divergence() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -194,13 +192,18 @@ fn generated_f3d_rejects_material_assignment_divergence() {
             .value = "PrismMaterial-019".into();
     });
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("divergent assignment and appearance must fail");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    crate::test_support::assert_written_with_loss(
+        &edited,
+        Some(&fidelity),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "",
+    );
 }
 
 #[test]
-fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
+fn generated_f3d_regenerates_on_partial_material_assignment_identity_edit() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
@@ -213,15 +216,18 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
                 .expect("valid entity ID");
     });
 
-    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
-        .expect_err("a partial presentation-graph identity edit must fail");
-    assert!(error.to_string().contains(
-        "requires synchronized body-presentation, browser-node, B-rep, and scene graphs"
-    ));
+    crate::test_support::assert_written_with_loss(
+        &edited,
+        Some(&fidelity),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "",
+    );
 }
 
 #[test]
-fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
+fn generated_f3d_regenerates_on_invalid_or_structural_protein_property_edits() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = EditableDecodeResult::from(
         F3dCodec
@@ -234,14 +240,13 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         cadmpeg_core::nonblank_literal!("refraction_index"),
         cadmpeg_ir::scalar::FiniteReal::HALF,
     );
-    let error = crate::test_support::plan_inherited_write(
+    crate::test_support::assert_written_with_loss(
         &invalid,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("out-of-range refraction must be refused");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("refraction_index"))
+        Some(decoded.source_fidelity()),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "refraction_index",
     );
 
     let (mut structural, _, fidelity) = decoded.into_parts();
@@ -249,10 +254,13 @@ fn generated_f3d_rejects_invalid_or_structural_protein_property_edits() {
         cadmpeg_core::nonblank_literal!("unserialized_property"),
         cadmpeg_ir::scalar::FiniteReal::HALF,
     );
-    let error = crate::test_support::plan_inherited_write(&structural, &fidelity, &mut Vec::new())
-        .expect_err("new Protein property must be refused");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message) if message.contains("unchanged property set"))
+    crate::test_support::assert_written_with_loss(
+        &structural,
+        Some(&fidelity),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "unchanged property set",
     );
 }
 

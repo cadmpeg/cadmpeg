@@ -57,6 +57,10 @@ pub(crate) const TARGETS: &[TargetDescriptor] = &[TargetDescriptor {
     aliases: &["3-2-0-0"],
 }];
 
+/// The dialects this writer reaches only by replaying a retained archive of
+/// that dialect. An explicit request for one is written as [`TARGETS`]' row.
+pub(crate) const REPLAY_ROWS: &[DialectId] = &[F3D_F3Z_MULTI_DOCUMENT];
+
 /// Key of the top-level `Manifest.dat` version field in
 /// [`DialectMatch::declared`], recorded as the manifest cursor read it.
 ///

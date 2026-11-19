@@ -79,6 +79,35 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// Write `ir` under an inherited target, with `fidelity` or source-less, and
+/// assert that the file is written, decodes again, and charges a loss whose
+/// code is `code` (`namespace/code`) and whose message holds `fragment`.
+pub(crate) fn assert_written_with_loss(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    code: &str,
+    fragment: &str,
+) -> cadmpeg_ir::report::export::ExportReport {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes what it can encode");
+    F3dCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the written file decodes");
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == code && loss.message.contains(fragment)),
+        "expected a {code} loss naming {fragment:?}: {:#?}",
+        report.losses
+    );
+    report
+}
+
 /// A finite test value as the checked scalar a record holds.
 pub(crate) fn real(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).expect("a finite test value")
