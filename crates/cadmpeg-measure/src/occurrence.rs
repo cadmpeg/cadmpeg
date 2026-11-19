@@ -48,13 +48,32 @@ impl Space<'_> {
     }
 }
 
-/// The occurrences from the root to `occurrence`, or `None` when an owning
-/// definition on the way is placed by no occurrence or by several, or the
-/// chain repeats.
-fn chain<'ir>(ir: &'ir CadIr, occurrence: &'ir Occurrence) -> Option<Vec<&'ir Occurrence>> {
+/// The occurrences from the root to `occurrence` through `above`, or `None`
+/// when a listed occurrence does not place the owner of the next, an owning
+/// definition above the first is placed by no occurrence or by several, or
+/// the chain repeats.
+fn chain<'ir>(
+    ir: &'ir CadIr,
+    above: &[&'ir Occurrence],
+    occurrence: &'ir Occurrence,
+) -> Option<Vec<&'ir Occurrence>> {
     let model = &ir.model;
-    let mut chain = vec![occurrence];
-    let mut current = occurrence;
+    let mut listed: Vec<&'ir Occurrence> = above.to_vec();
+    listed.push(occurrence);
+    for (index, entry) in listed.iter().enumerate() {
+        if listed[..index].iter().any(|earlier| earlier.id == entry.id) {
+            return None;
+        }
+    }
+    for pair in listed.windows(2) {
+        let owner = cadmpeg_ir::products::owner(&model.product_definitions, &pair[1].id)?;
+        if owner.id != pair[0].prototype {
+            return None;
+        }
+    }
+    let first = listed[0];
+    let mut chain = vec![first];
+    let mut current = first;
     loop {
         let owner = cadmpeg_ir::products::owner(&model.product_definitions, &current.id)?;
         if owner.is_root() {
@@ -67,6 +86,7 @@ fn chain<'ir>(ir: &'ir CadIr, occurrence: &'ir Occurrence) -> Option<Vec<&'ir Oc
         chain.push(current);
     }
     chain.reverse();
+    chain.extend(listed.into_iter().skip(1));
     Some(chain)
 }
 
@@ -139,9 +159,14 @@ struct Member<'ir> {
     placement: Option<Transform>,
 }
 
-/// The instance space of `id`, or `None` when the document has no such
-/// occurrence.
-pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>> {
+/// The instance space of `id` reached through `above` (outermost first), or
+/// `None` when the document has no such occurrence or holds no occurrence
+/// of `above`.
+pub(crate) fn space<'ir>(
+    ir: &'ir CadIr,
+    above: &[OccurrenceId],
+    id: &OccurrenceId,
+) -> Option<Space<'ir>> {
     let model = &ir.model;
     let definitions = model.product_definitions.as_slice();
     let by_id: HashMap<&str, &'ir Occurrence> = model
@@ -164,9 +189,13 @@ pub(crate) fn space<'ir>(ir: &'ir CadIr, id: &OccurrenceId) -> Option<Space<'ir>
         })
         .collect();
     let occurrence = *by_id.get(id.as_str())?;
+    let above = above
+        .iter()
+        .map(|id| by_id.get(id.as_str()).copied())
+        .collect::<Option<Vec<_>>>()?;
     let name = occurrence.id.as_str();
     let prototype = definition(definitions, occurrence);
-    let chain = chain(ir, occurrence);
+    let chain = chain(ir, &above, occurrence);
     let mut failure = FirstFailure::default();
     let mut world = None;
     let top = chain.as_ref().and_then(|chain| chain.first().copied());
