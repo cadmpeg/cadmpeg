@@ -369,8 +369,6 @@ pub(crate) fn bind(
     }
     // Expand shared definitions so that each insertion has its own path,
     // and bind each path to the occurrence the definition owns.
-    let original_parents =
-        crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
     // A refused expansion binds on the unexpanded tree, as before expansion.
     let expanded = match crate::tree::expand(
         &ctx.policy().limits,
@@ -381,6 +379,7 @@ pub(crate) fn bind(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => crate::tree::Expanded {
             definitions: ir.model.product_definitions.clone(),
+            parents: crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences),
             occurrences: ir.model.occurrences.clone(),
             occurrence_of: ir
                 .model
@@ -395,7 +394,7 @@ pub(crate) fn bind(
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
-    let parents = crate::tree::parent_ids(&expanded.definitions, &expanded.occurrences);
+    let parents = &expanded.parents;
     let mut paths = BTreeMap::<Vec<u64>, Option<OccurrenceId>>::new();
     for occurrence in &expanded.occurrences {
         let Some(target) = expanded.occurrence_of.get(&occurrence.id) else {
@@ -414,21 +413,6 @@ pub(crate) fn bind(
         let mut current = Some(occurrence);
         let mut valid = true;
         while let Some(record) = current {
-            // Reject an expansion that places an occurrence under another
-            // insertion than the one its identity names.
-            if let Some(expected) = expanded
-                .occurrence_of
-                .get(&record.id)
-                .and_then(|id| original_parents.get(id))
-            {
-                let actual = parents
-                    .get(&record.id)
-                    .and_then(|id| expanded.occurrence_of.get(id));
-                if actual != Some(expected) {
-                    valid = false;
-                    break;
-                }
-            }
             if !seen.insert(record.id.as_str()) {
                 valid = false;
                 break;

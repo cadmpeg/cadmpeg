@@ -725,3 +725,104 @@ fn scene_expansion_refusal_binds_children_listed_per_placement() {
     }
     assert!(losses.is_empty());
 }
+
+fn children_per_placement(placements: usize) -> (cadmpeg_ir::CadIr, Sources, Vec<DisplayPose>) {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut parents = Vec::new();
+    let mut sources = Sources::new();
+    let mut world = Vec::new();
+    for index in 0..placements {
+        let top = format!("top-{index}");
+        let child = format!("{top}:child");
+        ir.model.occurrences.push(occurrence(
+            &format!("f3d:test:occurrence#{top}"),
+            Some(&top),
+        ));
+        ir.model.occurrences.push(occurrence(
+            &format!("f3d:test:occurrence#{child}"),
+            Some(&child),
+        ));
+        parents.extend([None, Some(2 * index)]);
+        let carrier = u64::try_from(index).unwrap();
+        sources.insert(top, [3, carrier]);
+        sources.insert(child, [23, carrier]);
+        world.extend(encoded(&[3, carrier]));
+        world.extend(encoded(&[3, carrier, 23, carrier]));
+    }
+    place(&mut ir, &parents);
+    let shared = ir.model.occurrences[0].prototype.clone();
+    for index in 1..placements {
+        let other = ir.model.occurrences[2 * index].prototype.clone();
+        ir.model.occurrences[2 * index].prototype = shared.clone();
+        let moved = ir
+            .model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id == other)
+            .map(|definition| std::mem::take(&mut definition.occurrences))
+            .unwrap();
+        ir.model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id == shared)
+            .unwrap()
+            .occurrences
+            .extend(moved);
+    }
+    let (rows, losses) = decode(&world);
+    assert!(losses.is_empty());
+    (ir, sources, rows)
+}
+
+#[test]
+fn scene_expansion_keeps_each_placements_child_and_binds_every_row() {
+    const PLACEMENTS: usize = 300;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let (mut ir, sources, rows) = children_per_placement(PLACEMENTS);
+    let expanded = crate::tree::expand(
+        &policy.limits,
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+    )
+    .unwrap();
+    assert_eq!(expanded.occurrences.len(), 2 * PLACEMENTS);
+    assert_eq!(expanded.parents.len(), PLACEMENTS);
+    let expected = ir
+        .model
+        .occurrences
+        .chunks_exact(2)
+        .enumerate()
+        .flat_map(|(index, pair)| {
+            let carrier = u64::try_from(index).unwrap();
+            [
+                (vec![3, carrier], pair[0].id.clone()),
+                (vec![3, carrier, 23, carrier], pair[1].id.clone()),
+            ]
+        })
+        .collect::<BTreeMap<_, _>>();
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(&ctx, "display_poses", &rows)
+        .unwrap();
+    let mut losses = Vec::new();
+    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    let rows: Vec<DisplayPose> = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as_for_decode(&ctx, "display_poses")
+        .unwrap();
+    assert_eq!(rows.len(), 2 * PLACEMENTS);
+    for row in &rows {
+        assert_eq!(
+            row.binding,
+            SceneBinding::Bound {
+                occurrence: expected[&row.path.0].clone()
+            }
+        );
+    }
+    assert!(losses.is_empty());
+    assert!(validate(&rows, &ir.model).is_empty());
+}

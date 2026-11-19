@@ -193,6 +193,14 @@ fn extends(child: &OccurrenceId, parent: &OccurrenceId) -> bool {
         .is_some_and(|rest| rest.starts_with(':'))
 }
 
+fn belongs_to_placement<T: PartialEq + Copy>(
+    assigned: Option<T>,
+    placement: T,
+    first: Option<T>,
+) -> bool {
+    assigned.or(first).is_none_or(|parent| parent == placement)
+}
+
 /// The archive member instance scope of an identity rescoped into it
 /// (`f3d:xref/<scope>/<identity>`), or `None` outside an archive member.
 fn instance_scope(id: &str) -> Option<&str> {
@@ -398,11 +406,8 @@ pub(crate) fn own_once(
             let Some(&child) = occurrence_at.get(child.as_str()) else {
                 continue;
             };
-            let belongs = !several
-                || match assigned.get(&child) {
-                    Some(&placement) => placement == occurrence,
-                    None => first.is_none_or(|first| first == occurrence),
-                };
+            let belongs =
+                !several || belongs_to_placement(assigned.get(&child).copied(), occurrence, first);
             if belongs && !visited[child] {
                 stack.push((child, Some(node), prototype));
             }
@@ -853,6 +858,7 @@ pub(crate) struct Expanded {
     pub(crate) occurrences: Vec<Occurrence>,
     /// The occurrence each expanded instance is an instance of.
     pub(crate) occurrence_of: BTreeMap<OccurrenceId, OccurrenceId>,
+    pub(crate) parents: BTreeMap<OccurrenceId, OccurrenceId>,
 }
 
 /// Expands the instance tree of `definitions` and `occurrences` as
@@ -880,10 +886,12 @@ pub(crate) fn expand(
         .enumerate()
         .map(|(index, definition)| (definition.id.as_str(), index))
         .collect::<HashMap<_, _>>();
+    let original_parents = parent_ids(definitions, occurrences);
     let mut expanded = Expanded {
         definitions: definitions.to_vec(),
         occurrences: Vec::new(),
         occurrence_of: BTreeMap::new(),
+        parents: BTreeMap::new(),
     };
     for definition in &mut expanded.definitions {
         if !definition.is_root() {
@@ -951,10 +959,16 @@ pub(crate) fn expand(
         expanded
             .occurrence_of
             .insert(instance.clone(), occurrence.id.clone());
+        if let Some(parent) = pending.parent {
+            expanded.parents.insert(instance.clone(), parent);
+        }
         expanded.occurrences.push(copy);
         let top = pending.top.unwrap_or(occurrence);
         if let Some(&prototype) = definition_at.get(occurrence.prototype.as_str()) {
             for child in definitions[prototype].occurrences.iter().rev() {
+                if !belongs_to_placement(original_parents.get(child), &occurrence.id, None) {
+                    continue;
+                }
                 let mut path = pending.path.clone();
                 path.push(child.clone());
                 stack.push(Pending {
@@ -994,7 +1008,7 @@ pub(crate) fn world_poses(model: &Model) -> BTreeMap<OccurrenceId, Transform> {
         &model.occurrences,
     )
     .expect("expand");
-    let parents = parent_ids(&expanded.definitions, &expanded.occurrences);
+    let parents = &expanded.parents;
     let local = expanded
         .occurrences
         .iter()

@@ -316,9 +316,7 @@ fn expanding_restates_the_decoder_instances() {
         "f3d:model:occurrence#bolt"
     );
     assert_eq!(
-        super::parent_ids(&expanded.definitions, &expanded.occurrences)
-            [&occurrence_id("f3d:model:occurrence#b:bolt")]
-            .as_str(),
+        expanded.parents[&occurrence_id("f3d:model:occurrence#b:bolt")].as_str(),
         "f3d:model:occurrence#b"
     );
 }
