@@ -1288,13 +1288,15 @@ fn member_ring_regions(
     let mut candidates = Vec::new();
     for (index, face) in faces.iter().enumerate() {
         if let Some(ring) = face.ring.without_unnamed(unnamed) {
-            let (ring, curves, joined) = member_ring_candidate(ring, counted.is_some());
-            candidates.push((index, None, ring, curves, joined));
+            for (ring, curves, joined) in member_ring_candidates(ring, counted.is_some()) {
+                candidates.push((index, None, ring, curves, joined));
+            }
         }
         for (hole, ring) in face.holes.iter().flatten().enumerate() {
             if let Some(ring) = ring.without_unnamed(unnamed) {
-                let (ring, curves, joined) = member_ring_candidate(ring, counted.is_some());
-                candidates.push((index, Some(hole), ring, curves, joined));
+                for (ring, curves, joined) in member_ring_candidates(ring, counted.is_some()) {
+                    candidates.push((index, Some(hole), ring, curves, joined));
+                }
             }
         }
     }
@@ -1377,17 +1379,21 @@ fn member_ring_regions(
     }))
 }
 
-/// A candidate face ring for member rings, its curve count, and whether
-/// its fragments were joined for counted members.
-fn member_ring_candidate(
+/// The candidate rings of a face ring for member rings: the ring itself
+/// and, for counted members, its joined form. Each comes with its curve
+/// count and whether its fragments were joined.
+fn member_ring_candidates(
     ring: std::borrow::Cow<'_, ArrangementRing>,
     counted: bool,
-) -> (std::borrow::Cow<'_, ArrangementRing>, usize, bool) {
+) -> Vec<(std::borrow::Cow<'_, ArrangementRing>, usize, bool)> {
     let joined = counted.then(|| ring.joined_at_foreign_nodes()).flatten();
-    let is_joined = joined.is_some();
-    let ring = joined.map_or(ring, std::borrow::Cow::Owned);
     let curves = ring.curves().count();
-    (ring, curves, is_joined)
+    let mut candidates = vec![(ring, curves, false)];
+    if let Some(joined) = joined {
+        let curves = joined.curves().count();
+        candidates.push((std::borrow::Cow::Owned(joined), curves, true));
+    }
+    candidates
 }
 
 /// Member rings, each member with its piece ordinal and piece count.
