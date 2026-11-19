@@ -107,16 +107,67 @@ pub(crate) fn native_procedural_surface(
     Ok(written)
 }
 
+/// The procedural constructions `surface` owns: those its geometry names,
+/// where no other surface names the same construction.
+fn surface_constructions<'a>(
+    target: &'a CadIr,
+    surface: &cadmpeg_ir::ids::SurfaceId,
+) -> impl Iterator<Item = &'a cadmpeg_ir::geometry::ProceduralSurface> + 'a {
+    let geometry = &target.geometry;
+    let construction = geometry
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == *surface)
+        .and_then(|carrier| carrier.geometry.procedural_construction())
+        .filter(|construction| {
+            geometry
+                .surfaces
+                .iter()
+                .filter(|candidate| {
+                    candidate.geometry.procedural_construction() == Some(*construction)
+                })
+                .count()
+                == 1
+        });
+    geometry
+        .procedural_surfaces
+        .iter()
+        .filter(move |procedural| Some(&procedural.id) == construction)
+}
+
+/// The procedural constructions `curve` owns: those its geometry names, where
+/// no other curve names the same construction.
+fn curve_constructions<'a>(
+    target: &'a CadIr,
+    curve: &cadmpeg_ir::ids::CurveId,
+) -> impl Iterator<Item = &'a cadmpeg_ir::geometry::ProceduralCurve> + 'a {
+    let geometry = &target.geometry;
+    let construction = geometry
+        .curves
+        .iter()
+        .find(|candidate| candidate.id == *curve)
+        .and_then(|carrier| carrier.geometry.procedural_construction())
+        .filter(|construction| {
+            geometry
+                .curves
+                .iter()
+                .filter(|candidate| {
+                    candidate.geometry.procedural_construction() == Some(*construction)
+                })
+                .count()
+                == 1
+        });
+    geometry
+        .procedural_curves
+        .iter()
+        .filter(move |procedural| Some(&procedural.id) == construction)
+}
+
 /// Emit the four optional record-level U/V bound fields retained on the
 /// surface's procedural construction, after its subtype scope closes.
 fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_ir::ids::SurfaceId) {
-    let bounds = target
-        .geometry
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| {
-            target.geometry.procedural_surface_owner(&procedural.id) == Some(surface)
-        })
+    let bounds = surface_constructions(target, surface)
+        .next()
         .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds);
     if let Some(bounds) = bounds {
         for bound in bounds.get() {
@@ -131,13 +182,7 @@ fn native_procedural_surface_definition(
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .geometry
-        .procedural_surfaces
-        .iter()
-        .filter(|procedural| {
-            target.geometry.procedural_surface_owner(&procedural.id) == Some(&solved_surface.id)
-        });
+    let mut definitions = surface_constructions(target, &solved_surface.id);
     let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
@@ -1955,13 +2000,7 @@ fn native_cacheless_procedural_surface_definition(
     target: &CadIr,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .geometry
-        .procedural_surfaces
-        .iter()
-        .filter(|procedural| {
-            target.geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
-        });
+    let mut definitions = surface_constructions(target, &surface.id);
     let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
@@ -4970,13 +5009,7 @@ pub(crate) fn native_procedural_curve(
     curve_id: &cadmpeg_ir::ids::CurveId,
     solved_cache: &NurbsCurve,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .geometry
-        .procedural_curves
-        .iter()
-        .filter(|procedural| {
-            target.geometry.procedural_curve_owner(&procedural.id) == Some(curve_id)
-        });
+    let mut definitions = curve_constructions(target, curve_id);
     let Some(procedural) = definitions.next() else {
         return Ok(false);
     };
@@ -5786,13 +5819,7 @@ pub(super) fn native_cacheless_procedural_curve(
     target: &CadIr,
     curve_id: &cadmpeg_ir::ids::CurveId,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .geometry
-        .procedural_curves
-        .iter()
-        .filter(|procedural| {
-            target.geometry.procedural_curve_owner(&procedural.id) == Some(curve_id)
-        });
+    let mut definitions = curve_constructions(target, curve_id);
     let Some(procedural) = definitions.next() else {
         return Ok(false);
     };

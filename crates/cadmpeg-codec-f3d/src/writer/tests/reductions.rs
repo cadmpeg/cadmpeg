@@ -327,3 +327,36 @@ fn a_pole_loop_is_dropped_and_its_face_written() {
     );
     assert_eq!(decoded.geometry.faces.len(), faces);
 }
+
+#[test]
+fn an_open_edge_with_no_stated_range_is_written_between_its_vertices() {
+    let mut ir = source_less(&synthetic_wire_body_smbh());
+    ir.native = cadmpeg_ir::native::Native::default();
+    let stated = ir
+        .geometry
+        .edges
+        .iter()
+        .map(|edge| {
+            (
+                edge.id.to_string(),
+                edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert!(stated.iter().all(|(_, range)| range.is_some()));
+    for edge in &mut ir.geometry.edges {
+        edge.carrier =
+            EdgeCarrier::new(edge.curve().cloned(), None).expect("a curve without a range");
+    }
+    let (report, decoded) = write(&ir);
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    for ((_, expected), edge) in stated.iter().zip(&decoded.geometry.edges) {
+        let [low, high] = expected.expect("stated");
+        let [written_low, written_high] = edge.param_range().expect("written").get();
+        assert!(
+            (low - written_low).abs() < 1e-9 && (high - written_high).abs() < 1e-9,
+            "{expected:?} != {:?}",
+            [written_low, written_high]
+        );
+    }
+}
