@@ -14,10 +14,12 @@
 //!
 //! A scope spans its definition and the embedded component definitions below
 //! it; where it spans several, each feature names the component the decoder
-//! lists it under. Its current state, at the end of its first timeline, holds
-//! the bodies of the definitions it spans.
+//! lists it under. The scope holds the parameters (§5.12) of its document,
+//! and its current state, at the end of its first timeline, holds the bodies
+//! of the definitions it spans.
 
 mod operation;
+mod parameters;
 #[cfg(test)]
 mod tests;
 mod timeline;
@@ -69,6 +71,19 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
             Some((prefix, (definition, projected)))
         })
         .collect::<BTreeMap<_, _>>();
+    let definitions = scopes
+        .iter()
+        .map(|(prefix, (definition, _))| (prefix.clone(), definition.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let scoped_parameters;
+    {
+        let features = scopes
+            .values()
+            .flat_map(|(_, projected)| &projected.features)
+            .map(|feature| feature.id.as_str())
+            .collect::<BTreeSet<_>>();
+        scoped_parameters = parameters::project(&ir.model.parameters, &definitions, &features);
+    }
     let mut spans = span(&ir.model.product_definitions, &scopes);
     let owners = ir
         .model
@@ -122,6 +137,15 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         ir.design.containers.extend(projected.containers);
         ir.design.features.extend(projected.features);
     }
+    ctx.charge_entities(
+        u64::try_from(scoped_parameters.len())
+            .map_err(|_| CodecError::malformed("F3D v11 design record count exceeds u64"))?,
+        "project F3D v11 parameters",
+    )?;
+    ir.design.parameters.extend(scoped_parameters);
+    ir.design
+        .configurations
+        .extend(scoped_configurations.records);
     Ok(())
 }
 

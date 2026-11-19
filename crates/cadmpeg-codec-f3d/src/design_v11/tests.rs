@@ -5,9 +5,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
-use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::dimension::{Dimension, ParameterRef, RefTarget};
+use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken, Neutral, Node};
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::features::{
     Feature as LegacyFeature, FeatureDefinition as LegacyDefinition, FeatureEvaluation, FeatureId,
     FeatureOperation as LegacyOperation, UnresolvedFamily,
@@ -348,4 +350,191 @@ fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
             FeatureOperation::Native { kind, .. } if kind.as_str() == "f3d:base_feature"
         ));
     }
+}
+
+fn parameter(
+    key: &str,
+    owner: Option<&str>,
+    expression: &str,
+    value: Option<cadmpeg_ir::features::ParameterValue>,
+    dependencies: &[&str],
+    properties: &[(&str, &str)],
+) -> cadmpeg_ir::features::DesignParameter {
+    cadmpeg_ir::features::DesignParameter {
+        product_definition: None,
+        id: cadmpeg_ir::features::ParameterId::mint(format!("f3d:model:parameter#{key}")).unwrap(),
+        owner: owner.map(|owner| FeatureId::mint(owner).unwrap()),
+        ordinal: 0,
+        name: key.to_owned(),
+        expression: expression.to_owned(),
+        display: None,
+        value,
+        dependencies: dependencies
+            .iter()
+            .map(|key| {
+                cadmpeg_ir::features::ParameterId::mint(format!("f3d:model:parameter#{key}"))
+                    .unwrap()
+            })
+            .collect(),
+        properties: properties
+            .iter()
+            .map(|(key, value)| {
+                (
+                    cadmpeg_core::text::NonBlankString::new((*key).to_owned()).unwrap(),
+                    (*value).to_owned(),
+                )
+            })
+            .collect(),
+        pmi: None,
+        native_ref: Some(format!("{STREAM}:design-parameter#{key}")),
+    }
+}
+
+fn number(value: f64, unit: Option<cadmpeg_ir::design::units::UnitSymbol>) -> Expression {
+    use cadmpeg_ir::design::units::{Unit, UnitFactor};
+    Expression::Neutral(Neutral(Node::Number {
+        value: cadmpeg_ir::scalar::NonNegativeReal::new(value).unwrap(),
+        unit: Unit(
+            unit.into_iter()
+                .map(|symbol| UnitFactor {
+                    symbol,
+                    power: std::num::NonZeroI8::new(1).unwrap(),
+                })
+                .collect(),
+        ),
+    }))
+}
+
+fn source(tokens: Vec<ExpressionToken<ParameterRef>>) -> Expression {
+    Expression::Source {
+        dialect: ExpressionDialect::Fusion,
+        tokens,
+    }
+}
+
+#[test]
+fn parameters_state_literals_and_source_text_in_their_scope() {
+    use cadmpeg_ir::features::ParameterValue as V10;
+    use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
+    const OWNER: &str = "f3d:model:feature#extrude:20";
+    let legacy = [
+        parameter(
+            "d1",
+            Some(OWNER),
+            "10 mm",
+            Some(V10::Length(Length::new(10.0).unwrap())),
+            &[],
+            &[("source_kind", "Linear Dimension-1"), ("comment", "depth")],
+        ),
+        parameter(
+            "d2",
+            Some(OWNER),
+            "d1 * 2",
+            Some(V10::Length(Length::new(20.0).unwrap())),
+            &["d1"],
+            &[],
+        ),
+        parameter(
+            "turn",
+            None,
+            "45 deg",
+            Some(V10::Angle(Angle::new(std::f64::consts::FRAC_PI_4).unwrap())),
+            &[],
+            &[],
+        ),
+        parameter(
+            "count",
+            None,
+            "3",
+            Some(V10::Real(FiniteReal::new(3.0).unwrap())),
+            &[],
+            &[],
+        ),
+        parameter(
+            "bare",
+            None,
+            "3",
+            Some(V10::Length(Length::new(3.0).unwrap())),
+            &[],
+            &[],
+        ),
+        parameter(
+            "lost",
+            None,
+            "1 mm",
+            None,
+            &[],
+            &[("owner_record_index", "77")],
+        ),
+        parameter(
+            "other",
+            Some("f3d:model:feature#other:9"),
+            "1 mm",
+            None,
+            &[],
+            &[],
+        ),
+    ];
+    let root = crate::tree::file_root_id();
+    let scopes = BTreeMap::from([(String::new(), root.clone())]);
+    let features = BTreeSet::from([OWNER]);
+    let projected = super::parameters::project(&legacy, &scopes, &features);
+    let by_name = projected
+        .iter()
+        .map(|parameter| (parameter.name.as_ref().unwrap().as_str(), parameter))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        by_name.keys().copied().collect::<Vec<_>>(),
+        ["bare", "count", "d1", "d2", "turn"]
+    );
+    let d1 = by_name["d1"];
+    assert_eq!(d1.scope, root);
+    assert_eq!(
+        d1.owner,
+        Some(cadmpeg_ir::design::parameter::ParameterOwner::Feature(
+            FeatureId::mint(OWNER).unwrap()
+        ))
+    );
+    assert_eq!(
+        d1.value,
+        Some(cadmpeg_ir::design::parameter::ParameterValue::Number(
+            FiniteReal::new(10.0).unwrap()
+        ))
+    );
+    assert_eq!(d1.comment.as_deref(), Some("depth"));
+    assert_eq!(
+        d1.source_settings,
+        BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("f3d:role"),
+            cadmpeg_ir::design::options::NativeOption::Text(Dimension::Literal(
+                cadmpeg_core::nonblank_literal!("Linear Dimension-1")
+            )),
+        )])
+    );
+    let definition = |name: &str| {
+        let cadmpeg_ir::design::parameter::ParameterDefinition::Expression(expression) =
+            &by_name[name].definition
+        else {
+            panic!("expression")
+        };
+        expression.clone()
+    };
+    assert_eq!(definition("d1"), number(10.0, Some(UnitSymbol::Mm)));
+    assert_eq!(
+        definition("d2"),
+        source(vec![
+            ExpressionToken::Reference(ParameterRef {
+                target: RefTarget::Parameter(by_name["d1"].id.clone()),
+                through: None,
+            }),
+            ExpressionToken::Text(" * 2".to_owned()),
+        ])
+    );
+    assert_eq!(by_name["turn"].owner, None);
+    assert_eq!(definition("turn"), number(45.0, Some(UnitSymbol::Deg)));
+    assert_eq!(definition("count"), number(3.0, None));
+    assert_eq!(
+        definition("bare"),
+        source(vec![ExpressionToken::Text("3".to_owned())])
+    );
 }
