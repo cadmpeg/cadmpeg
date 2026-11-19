@@ -3659,8 +3659,8 @@ pub(crate) mod base_feature_null_reference_count {
     pub(crate) const NULL_REFERENCE: usize = 1;
     /// Offset of `null_reference_flag` (`u8`). Spec §3.1.
     pub(crate) const NULL_REFERENCE_FLAG: usize = 9;
-    /// Offset of `null_reference_zero` (`u8`). Spec §3.1.
-    pub(crate) const NULL_REFERENCE_ZERO: usize = 10;
+    /// Offset of `null_reference_terminal` (`u8`). Spec §3.1.
+    pub(crate) const NULL_REFERENCE_TERMINAL: usize = 10;
     /// Offset of `body_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const BODY_COUNT: usize = 11;
 }
