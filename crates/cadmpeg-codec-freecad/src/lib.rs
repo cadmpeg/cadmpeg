@@ -1166,8 +1166,8 @@ impl CodecBackend for FcstdCodec {
             )?;
             let scoped = ctx.depth() >= DecodeDepth::Design
                 && design::v11::project(&mut ir, &graph.objects, &graph.properties)?;
-            if !scoped {
-                design::own_at_root(&mut ir, top_level);
+            if !top_level.has_design_member && !scoped {
+                design::own_at_root(&mut ir, top_level.bodies);
             }
             gui_losses = std::mem::take(&mut gui_graph.losses);
             ctx.admit_entities(

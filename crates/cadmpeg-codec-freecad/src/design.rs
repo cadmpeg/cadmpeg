@@ -9227,20 +9227,31 @@ fn body_members(objects: &[ObjectRecord], properties: &[PropertyRecord]) -> Hash
     members
 }
 
+/// The `Shape` bodies of the objects outside every `PartDesign::Body` other
+/// than the Bodies, which no definition owns.
+pub(crate) struct TopLevelShapes {
+    pub(crate) bodies: Vec<cadmpeg_ir::ids::BodyId>,
+    /// Whether a Body outside every other Body lists a member that is a
+    /// feature of the v11 design, so that the document states a scope.
+    pub(crate) has_design_member: bool,
+}
+
 /// State the document's root definition where the decoder holds none, and
 /// give it the `Shape` of each `PartDesign::Body` outside every other Body
 /// that no definition owns.
 ///
-/// Returns the unowned bodies of the `Shape` of every other object outside
-/// every Body, which the root owns where the document states no design scope
-/// ([`own_at_root`]). In a scoped document they are no current state's and
-/// the scope has no `unproduced` list to hold them yet: interim, errata A1.
+/// Returns the shapes of the other objects outside every Body, which the
+/// root owns where the document states no design scope ([`own_at_root`]).
+/// In a scoped document they are no current state's and the scope has no
+/// `unproduced` list to hold them yet: interim, errata A1. Whether a Body's
+/// members state a scope is read from the objects, so a geometry decode owns
+/// what a full decode owns.
 pub(crate) fn state_root_definition(
     ir: &mut cadmpeg_ir::CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
-) -> Result<Vec<cadmpeg_ir::ids::BodyId>, CodecError> {
+) -> Result<TopLevelShapes, CodecError> {
     let members = body_members(objects, properties);
     let mut feature_ids = HashMap::new();
     for object in objects
@@ -9249,8 +9260,18 @@ pub(crate) fn state_root_definition(
     {
         feature_ids.insert(object.id().as_str(), feature_id(object)?);
     }
+    let not_features = multi_transform_stages(objects, properties)
+        .into_iter()
+        .chain(
+            objects
+                .iter()
+                .filter(|object| is_body(&object.type_name))
+                .map(|object| object.id().as_str()),
+        )
+        .collect::<HashSet<_>>();
     let mut bodies = HashSet::new();
     let mut others = HashSet::new();
+    let mut has_design_member = false;
     for object in objects
         .iter()
         .filter(|object| !members.contains(object.id().as_str()))
@@ -9261,6 +9282,15 @@ pub(crate) fn state_root_definition(
             .collect::<Vec<_>>();
         if is_body(&object.type_name) && body_definition(&owned, &feature_ids)?.is_some() {
             bodies.insert(object.id().as_str());
+            has_design_member |= body_membership_property(&owned).is_some_and(|group| {
+                group
+                    .links()
+                    .iter()
+                    .filter_map(|link| link.as_ref()?.object())
+                    .any(|member| {
+                        feature_ids.contains_key(member) && !not_features.contains(member)
+                    })
+            });
         } else {
             others.insert(object.id().as_str());
         }
@@ -9323,7 +9353,31 @@ pub(crate) fn state_root_definition(
         }
     };
     definitions[index].bodies.extend(bodies);
-    Ok(others)
+    Ok(TopLevelShapes {
+        bodies: others,
+        has_design_member,
+    })
+}
+
+/// The objects a `PartDesign::MultiTransform` lists in `Transformations`: the
+/// stages of its layout, which are no features of their own (§6.5).
+pub(crate) fn multi_transform_stages<'a>(
+    objects: &'a [ObjectRecord],
+    properties: &'a [PropertyRecord],
+) -> BTreeSet<&'a str> {
+    let transforms = objects
+        .iter()
+        .filter(|object| object.type_name.ends_with("MultiTransform"))
+        .map(|object| object.id().as_str())
+        .collect::<BTreeSet<_>>();
+    properties
+        .iter()
+        .filter(|property| {
+            property.name == "Transformations" && transforms.contains(property.owner.as_str())
+        })
+        .flat_map(PropertyRecord::links)
+        .filter_map(|link| link.as_ref()?.object())
+        .collect()
 }
 
 /// Give the document's root definition `bodies`.

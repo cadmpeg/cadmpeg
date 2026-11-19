@@ -42,9 +42,6 @@
       "features": [
         {
           "definition": {
-            "fuzzy_tolerance": {
-              "kind": "kernel_default"
-            },
             "operation": {
               "kind": "unresolved",
               "value": {
@@ -63,9 +60,6 @@
         },
         {
           "definition": {
-            "fuzzy_tolerance": {
-              "kind": "kernel_default"
-            },
             "operation": {
               "kind": "unresolved",
               "value": {
@@ -97,9 +91,6 @@
         },
         {
           "definition": {
-            "fuzzy_tolerance": {
-              "kind": "kernel_default"
-            },
             "operation": {
               "kind": "unresolved",
               "value": {

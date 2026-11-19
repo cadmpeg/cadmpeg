@@ -161,23 +161,10 @@ impl<'a> Source<'a> {
             .iter()
             .map(|property| (property.owner.as_str(), property.name.as_str()))
             .collect();
-        let transforms = objects
-            .iter()
-            .filter(|object| object.type_name.ends_with("MultiTransform"))
-            .map(|object| object.id().as_str())
-            .collect::<BTreeSet<_>>();
-        let stages = properties
-            .iter()
-            .filter(|property| {
-                property.name == "Transformations" && transforms.contains(property.owner.as_str())
-            })
-            .flat_map(|property| property.links())
-            .filter_map(|link| link.as_ref()?.object())
-            .collect();
         Self {
             touched,
             stored,
-            stages,
+            stages: super::multi_transform_stages(objects, properties),
         }
     }
 

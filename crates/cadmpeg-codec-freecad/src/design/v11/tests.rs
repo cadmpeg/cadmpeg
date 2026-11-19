@@ -26,6 +26,10 @@ const CORE_OPERATIONS: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
 ));
+const BINARY_EXACT_SHAPE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd"
+));
 
 fn decode(bytes: &[u8], depth: DecodeDepth) -> CadIr {
     let decoded = FcstdCodec
@@ -321,7 +325,7 @@ fn a_native_kind_uses_the_codec_id() {
 }
 
 #[test]
-fn the_root_owns_top_level_shapes_only_where_no_scope_is_stated() {
+fn a_scoped_root_owns_only_its_current_states_at_every_depth() {
     let design = decode(CORE_OPERATIONS, DecodeDepth::Design);
     let [scope] = design.design.scopes.as_slice() else {
         panic!("{:?}", design.design.scopes);
@@ -333,9 +337,19 @@ fn the_root_owns_top_level_shapes_only_where_no_scope_is_stated() {
         .map(|body| body.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     assert_eq!(root_bodies(&design), current);
-    let geometry = root_bodies(&decode(CORE_OPERATIONS, DecodeDepth::Geometry));
-    assert!(geometry.is_superset(&current));
-    assert!(geometry
+    assert_eq!(
+        root_bodies(&decode(CORE_OPERATIONS, DecodeDepth::Geometry)),
+        current
+    );
+}
+
+#[test]
+fn an_unscoped_root_owns_every_top_level_shape() {
+    let ir = decode(BINARY_EXACT_SHAPE, DecodeDepth::Design);
+    assert!(ir.design.scopes.is_empty());
+    let bodies = root_bodies(&ir);
+    assert!(!bodies.is_empty());
+    assert!(bodies
         .iter()
-        .any(|body| body.starts_with("fcstd:model:body#Revolution:Shape:")));
+        .all(|body| body.starts_with("fcstd:model:body#BinaryCarrier:Shape:")));
 }

@@ -80,9 +80,6 @@
       "features": [
         {
           "definition": {
-            "fuzzy_tolerance": {
-              "kind": "kernel_default"
-            },
             "operation": {
               "kind": "unresolved",
               "value": {
@@ -124,9 +121,6 @@
         },
         {
           "definition": {
-            "fuzzy_tolerance": {
-              "kind": "kernel_default"
-            },
             "operation": {
               "kind": "unresolved",
               "value": {
@@ -181,9 +175,6 @@
         },
         {
           "definition": {
-            "fuzzy_tolerance": {
-              "kind": "kernel_default"
-            },
             "operation": {
               "kind": "unresolved",
               "value": {
@@ -202,9 +193,6 @@
         },
         {
           "definition": {
-            "fuzzy_tolerance": {
-              "kind": "kernel_default"
-            },
             "operation": {
               "kind": "unresolved",
               "value": {
@@ -448,7 +436,7 @@
               "value": {
                 "measures": [],
                 "refs": [],
-                "text": "5.751842036105048[mm]"
+                "text": "5.75184203610505[mm]"
               }
             }
           },

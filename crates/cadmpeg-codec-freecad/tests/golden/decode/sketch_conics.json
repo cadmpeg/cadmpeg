@@ -684,7 +684,9 @@
       "presentation_layers": [],
       "product_definitions": [
         {
-          "bodies": [],
+          "bodies": [
+            "fcstd:model:body#ConicWitness:Shape:ConicWitness.Shape.brp:23%40location1"
+          ],
           "bom_properties": {},
           "id": "fcstd:model:product_definition#document:root",
           "instance_bodies": [],

@@ -3268,7 +3268,9 @@
       "presentation_layers": [],
       "product_definitions": [
         {
-          "bodies": [],
+          "bodies": [
+            "fcstd:model:body#ColoredModel:Shape:ColoredModel.Shape.brp:45%40location1"
+          ],
           "bom_properties": {},
           "id": "fcstd:model:product_definition#document:root",
           "instance_bodies": [],

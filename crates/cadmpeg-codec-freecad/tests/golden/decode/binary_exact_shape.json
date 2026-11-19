@@ -872,7 +872,9 @@
       "presentation_layers": [],
       "product_definitions": [
         {
-          "bodies": [],
+          "bodies": [
+            "fcstd:model:body#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:17%40location1"
+          ],
           "bom_properties": {},
           "id": "fcstd:model:product_definition#document:root",
           "instance_bodies": [],
