@@ -17,7 +17,7 @@ pub(super) fn resolve(
     resolution: ScopedExtrudeProfileResolution<'_>,
     allow_assumptions: bool,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
-    let Some(selection) = &profile.region_selection else {
+    let Some(selection) = profile.planar_region_selection() else {
         return Ok(None);
     };
     let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
@@ -96,7 +96,17 @@ fn unnamed_curves(
         .collect()
 }
 
-pub(super) fn resolve_stale(
+/// The regions that the certified Extrude transition selects, when every
+/// curve that the counted member rings name bounds one of them.
+///
+/// A ring names the curves of one face of the arrangement that omits the
+/// curves with tail marker `1`; a face that such a curve splits is several
+/// atomic regions, and no atomic region has the ring's curves. The transition
+/// certificate (the far cap of a Join or `NewBody`, the removed planes of a
+/// Cut) fixes the atomic regions that the Extrude takes; each named curve
+/// has to bound one of them. A selection that names a curve identity the
+/// Sketch no longer holds is left to the stale-identity rule.
+pub(super) fn resolve_certified(
     stream: &str,
     profile: &DesignSketchProfileOperand,
     sketch: &Sketch,
@@ -106,6 +116,54 @@ pub(super) fn resolve_stale(
     sweep: super::cap_regions::compact::Sweep<'_>,
 ) -> Result<Option<PlanarProfileRef>, CodecError> {
     let Some(selection) = &profile.region_selection else {
+        return Ok(None);
+    };
+    let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {
+        return Ok(None);
+    };
+    let Some(regions) = selection.resolution_regions() else {
+        return Ok(None);
+    };
+    let mut named = Vec::new();
+    for region in regions {
+        for member in &region.members {
+            let has_identity = curves.iter().any(|curve| {
+                crate::ids::native_stream(&curve.id) == Some(stream)
+                    && curve.owner_reference == Some(owner)
+                    && curve.primary_id.get() == u64::from(member.curve_primary_id.get())
+            });
+            if !has_identity {
+                return Ok(None);
+            }
+            let Some(entity) = sketch_profile_member_entity(
+                stream,
+                owner,
+                member,
+                sketch,
+                curves,
+                resolution.entities,
+            ) else {
+                return Ok(None);
+            };
+            named.push(entity.clone());
+        }
+    }
+    if named.is_empty() {
+        return Ok(None);
+    }
+    super::stored_loop_cap::certified_regions_bounded_by(sketch, &named, resolution, states, sweep)
+}
+
+pub(super) fn resolve_stale(
+    stream: &str,
+    profile: &DesignSketchProfileOperand,
+    sketch: &Sketch,
+    curves: &[SketchCurveIdentity],
+    resolution: ScopedExtrudeProfileResolution<'_>,
+    states: (i64, i64),
+    sweep: super::cap_regions::compact::Sweep<'_>,
+) -> Result<Option<PlanarProfileRef>, CodecError> {
+    let Some(selection) = profile.planar_region_selection() else {
         return Ok(None);
     };
     let Ok(owner) = u32::try_from(profile.entity_id.suffix()) else {

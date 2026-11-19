@@ -15,6 +15,7 @@ use cadmpeg_ir::ids::{
     PointId, ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Fraction;
 use cadmpeg_ir::topology::Color;
@@ -225,7 +226,7 @@ pub(super) fn decode(
             name,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
-            items,
+            items: items.into_iter().map(InstanceTarget::new).collect(),
         });
         typed.insert(layer_id);
     }
@@ -403,7 +404,7 @@ pub(super) fn decode(
                             .dash(target_ordinal),
                     )
                     .into(),
-                    target,
+                    target: target.into(),
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),
                     object_type: None,
@@ -1516,6 +1517,35 @@ fn surface_transparency(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Fraction>, CodecError> {
+    // `surface_style_element_select` admits a transparency only through a
+    // rendering's properties.
+    for transparent_id in record
+        .partials
+        .iter()
+        .filter(|partial| partial.name == "SURFACE_SIDE_STYLE")
+        .flat_map(|partial| {
+            partial
+                .parameters
+                .iter()
+                .flat_map(|value| references(value, ctx))
+        })
+    {
+        let transparent_id = transparent_id?;
+        let misplaced = exchange
+            .records()
+            .get(&transparent_id)
+            .is_some_and(|style| {
+                style
+                    .partials
+                    .iter()
+                    .any(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
+            });
+        if misplaced {
+            losses.push(StepLossCode::SurfaceTransparencyMisplaced.note(format!(
+                "SURFACE_SIDE_STYLE #{id} lists SURFACE_STYLE_TRANSPARENT #{transparent_id} outside a rendering; transparency omitted"
+            )));
+        }
+    }
     let mut candidates = Vec::new();
     for property_id in record
         .partials

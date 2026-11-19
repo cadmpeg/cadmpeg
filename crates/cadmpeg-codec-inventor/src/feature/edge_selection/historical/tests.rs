@@ -799,32 +799,34 @@ fn ambiguous_owner_loss_counts_features_that_use_such_an_edge() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
-    for owners in [1, 2] {
-        let (mut inventory, mut feature) = fixture(&ctx, false);
-        let token = inventory.features[0]
-            .identity
-            .segment_token
-            .as_str()
-            .to_owned();
-        inventory
-            .edge_inputs
-            .historical
-            .get_mut(&(token, 9))
-            .expect("revision")
-            .owners = owners;
-        let states =
-            project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("projection");
-        assert_eq!(states.len(), 1);
-        let losses = ambiguous_owner_losses(&inventory, std::slice::from_ref(&feature));
-        assert_eq!(losses.len(), usize::from(owners == 2));
-        if let Some(loss) = losses.first() {
-            assert_eq!(
-                loss.code,
-                crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry
-                    .note("expected")
-                    .code
-            );
-            assert!(loss.message.starts_with("1 edge-treatment feature(s)"));
+    for chamfer in [false, true] {
+        for owners in [1, 2] {
+            let (mut inventory, mut feature) = fixture(&ctx, chamfer);
+            let token = inventory.features[0]
+                .identity
+                .segment_token
+                .as_str()
+                .to_owned();
+            inventory
+                .edge_inputs
+                .historical
+                .get_mut(&(token, 9))
+                .expect("revision")
+                .owners = owners;
+            let states =
+                project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("projection");
+            assert_eq!(states.len(), 1);
+            let losses = ambiguous_owner_losses(&inventory, std::slice::from_ref(&feature));
+            assert_eq!(losses.len(), usize::from(owners == 2));
+            if let Some(loss) = losses.first() {
+                assert_eq!(
+                    loss.code,
+                    crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry
+                        .note("expected")
+                        .code
+                );
+                assert!(loss.message.starts_with("1 feature(s)"));
+            }
         }
     }
 }
@@ -835,28 +837,30 @@ fn a_selector_with_more_than_two_generators_states_the_assumption() {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("context");
-    for generators in [1, 2, 3, 4] {
-        let (mut inventory, mut feature) = fixture(&ctx, false);
-        let token = inventory.features[0]
-            .identity
-            .segment_token
-            .as_str()
-            .to_owned();
-        inventory
-            .edge_inputs
-            .historical
-            .get_mut(&(token, 9))
-            .expect("revision")
-            .generators = generators;
-        assert!(generator_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
-        project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("projection");
-        let losses = generator_losses(&inventory, std::slice::from_ref(&feature));
-        assert_eq!(losses.len(), usize::from(generators > 2));
-        if let Some(loss) = losses.first() {
-            assert_eq!(
-                loss.code.local_code(),
-                "feature.edge-selector-generators-assumed"
-            );
+    for chamfer in [false, true] {
+        for generators in [1, 2, 3, 4] {
+            let (mut inventory, mut feature) = fixture(&ctx, chamfer);
+            let token = inventory.features[0]
+                .identity
+                .segment_token
+                .as_str()
+                .to_owned();
+            inventory
+                .edge_inputs
+                .historical
+                .get_mut(&(token, 9))
+                .expect("revision")
+                .generators = generators;
+            assert!(generator_losses(&inventory, std::slice::from_ref(&feature)).is_empty());
+            project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("projection");
+            let losses = generator_losses(&inventory, std::slice::from_ref(&feature));
+            assert_eq!(losses.len(), usize::from(generators > 2));
+            if let Some(loss) = losses.first() {
+                assert_eq!(
+                    loss.code.local_code(),
+                    "feature.edge-selector-generators-assumed"
+                );
+            }
         }
     }
 }
@@ -875,6 +879,112 @@ fn selector_list_counts_are_bounded_before_allocation() {
         parse(View::over_retained(&bytes), 29),
         Err(CodecError::Malformed(_))
     ));
+}
+
+fn attachment_features(ctx: &DecodeContext<'_>) -> [Feature; 3] {
+    use cadmpeg_ir::features::{PlanarProfileRef, SheetMetalCornerEffect};
+    let fixture = crate::test_support::sheet_metal::Fixture::new();
+    let values = fixture.values();
+    let make = |source: &crate::feature::PmDcFeature, operation| {
+        let mut feature = crate::feature::native_feature(ctx, &source.identity, None, source.id())
+            .expect("feature");
+        feature.evaluation =
+            FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation));
+        feature
+    };
+    let attachment = |source: &crate::feature::PmDcFeature| {
+        EdgeSelection::historical(
+            state_id(source).expect("state"),
+            vec![edge_id("fixture", 9).expect("edge")],
+            "inventor:pmdc:feature-property#fixture-10".to_owned(),
+        )
+        .expect("attachment")
+    };
+    let plate = make(
+        &fixture.plate,
+        FeatureOperation::SheetMetalAttachedPlate {
+            profile: PlanarProfileRef::Sketch(
+                cadmpeg_ir::sketches::SketchId::mint("test:design:sketch#plate").expect("sketch"),
+            ),
+            thickness: values.thickness,
+            side: values.side,
+            attachment: attachment(&fixture.plate),
+        },
+    );
+    let bend = make(
+        &fixture.bend,
+        FeatureOperation::SheetMetalBend {
+            plate: plate.id.clone(),
+            attachment: attachment(&fixture.bend),
+            inside_radius: values.inside_radius,
+            relief: values.relief,
+            transition: values.transition,
+        },
+    );
+    let corner = make(
+        &crate::test_support::sheet_metal::feature(102, &[]),
+        FeatureOperation::SheetMetalCorner {
+            bend: bend.id.clone(),
+            effect: SheetMetalCornerEffect::Unchanged,
+        },
+    );
+    [plate, bend, corner]
+}
+
+#[test]
+fn attachment_losses_count_plate_and_bend_once_with_an_inherited_corner() {
+    let ctx = crate::native::test_ctx();
+    let features = attachment_features(&ctx);
+    for owners in [1, 2] {
+        for generators in [
+            &[31][..],
+            &[31, 37][..],
+            &[31, 37, 41][..],
+            &[31, 37, 41, 43][..],
+        ] {
+            let bytes = selector_bytes(generators, &[], 29);
+            let selector = parse(View::over_retained(&bytes), 29)
+                .expect("framed")
+                .expect("selector");
+            let mut records = records(44, generators);
+            if owners == 2 {
+                second_owner(&mut records, 44, 0.0, "straight");
+            }
+            let edges = selected(&ctx, &records, &[selector], 44).expect("matched edges");
+            assert_eq!((edges[&9].owner, edges[&9].owners), (1, owners));
+            assert_eq!(edges[&9].generators, generators.len());
+            let mut inventory = crate::feature::FeatureInventory::default();
+            inventory.edge_inputs.historical = edges
+                .into_iter()
+                .map(|(source, edge)| (("fixture".to_owned(), source), edge))
+                .collect();
+            for (selected_features, count) in [
+                (&features[..1], 1),
+                (&features[1..2], 1),
+                (&features[..], 2),
+                (&features[2..], 0),
+            ] {
+                for (losses, expected, code) in [
+                    (
+                        ambiguous_owner_losses(&inventory, selected_features),
+                        owners > 1,
+                        "feature.edge-owner-identical-geometry",
+                    ),
+                    (
+                        generator_losses(&inventory, selected_features),
+                        generators.len() > 2,
+                        "feature.edge-selector-generators-assumed",
+                    ),
+                ] {
+                    assert_eq!(losses.len(), usize::from(expected && count > 0));
+                    if let Some(loss) = losses.first() {
+                        assert_eq!(loss.code.local_code(), code);
+                        assert!(loss.message.starts_with(&format!("{count} feature(s)")));
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn carrier(schema: u32) -> crate::native::ActiveCarrierRecord {

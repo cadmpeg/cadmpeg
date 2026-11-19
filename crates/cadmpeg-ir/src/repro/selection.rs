@@ -160,6 +160,7 @@ pub fn select(
     selected.geometry = document.geometry.repro_select(&ids);
     selected.model = document.model.repro_select(&ids);
     selected.design = document.design.repro_select(&ids);
+    selected.process = document.process.repro_select(&ids);
     let mut streams: BTreeSet<String> = finding
         .entity
         .iter()
@@ -253,6 +254,7 @@ pub fn select(
         selected.geometry = document.geometry.repro_select(&ids);
         selected.model = document.model.repro_select(&ids);
         selected.design = document.design.repro_select(&ids);
+        selected.process = document.process.repro_select(&ids);
     }
     if let Err(error) = super::projection_size(&selected, options) {
         match &error {
@@ -288,7 +290,7 @@ pub fn select(
             }
         }
     }
-    serde_json::from_value(value)
+    serde_json::from_str(&value.to_string())
         .map(Some)
         .map_err(CodecError::malformed)
 }

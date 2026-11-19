@@ -704,6 +704,29 @@ fn carrier_is_open(
     ))
 }
 
+/// Whether `edge`, which has no vertex, lies on an open carrier: it states no
+/// parameter range and `curve` is open within the edge's allowance, which
+/// the fit tolerance of the curve's procedural cache widens.
+pub(super) fn vertexless_edge_on_open_carrier(
+    ctx: &DecodeContext<'_>,
+    linear: crate::scalar::PositiveLength,
+    edge: &crate::topology::Edge,
+    curve: &crate::geometry::Curve,
+    cache_fit_tolerance: Option<crate::geometry::FitTolerance>,
+) -> Result<bool, CodecError> {
+    if edge.param_range().is_some() {
+        return Ok(false);
+    }
+    let bound = allowance(
+        linear,
+        &[
+            edge.tolerance.map(crate::scalar::PositiveReal::get),
+            cache_fit_tolerance.map(crate::geometry::FitTolerance::get),
+        ],
+    );
+    carrier_is_open(ctx, &curve.geometry, bounded_curve_domain(curve), bound)
+}
+
 /// An edge's curve evaluated at its parameter range must land on the edge's
 /// start and end vertex positions within the topology tolerances or the
 /// evaluated curve cache's fit tolerance. An edge with no range on an open
@@ -716,7 +739,7 @@ pub(super) fn check_edge_endpoint_consistency(
 ) -> Result<(), CodecError> {
     let curves = BorrowedIdentities::build(|add| {
         for curve in &ir.geometry.curves {
-            add(curve.id.as_str(), &curve.geometry);
+            add(curve.id.as_str(), curve);
         }
     });
     let curve_domains = BorrowedIdentities::build(|add| {
@@ -739,29 +762,22 @@ pub(super) fn check_edge_endpoint_consistency(
         let Some(curve_id) = edge.curve() else {
             continue;
         };
-        let Some(geometry) = curves.get(curve_id.as_str()) else {
+        let Some(curve) = curves.get(curve_id.as_str()).copied() else {
             continue;
         };
+        let geometry = &curve.geometry;
         let Some(ends) = &edge.ends else {
-            let bound = allowance(
+            let cache_fit_tolerance = curve_cache_tolerances
+                .get(curve_id.as_str())
+                .copied()
+                .flatten();
+            if vertexless_edge_on_open_carrier(
+                ctx,
                 ir.tolerances.linear,
-                &[
-                    edge.tolerance.map(crate::scalar::PositiveReal::get),
-                    curve_cache_tolerances
-                        .get(curve_id.as_str())
-                        .copied()
-                        .flatten()
-                        .map(crate::geometry::FitTolerance::get),
-                ],
-            );
-            if edge.param_range().is_none()
-                && carrier_is_open(
-                    ctx,
-                    geometry,
-                    curve_domains.get(curve_id.as_str()).copied(),
-                    bound,
-                )?
-            {
+                edge,
+                curve,
+                cache_fit_tolerance,
+            )? {
                 super::record_finding(
                     findings,
                     Check::GeometricConsistency,
@@ -850,7 +866,7 @@ pub(super) fn check_edge_endpoint_consistency(
         };
         let [start_t, end_t] = use_curve.parameter_range.endpoints();
         let curve_id = &use_curve.curve;
-        let Some(geometry) = curves.get(curve_id.as_str()) else {
+        let Some(geometry) = curves.get(curve_id.as_str()).map(|curve| &curve.geometry) else {
             continue;
         };
         let Some(edge) = edges.get(coedge.edge.as_str()) else {

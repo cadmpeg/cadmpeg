@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode modes, resource ceilings, and input-proportional allowances.
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -9,7 +10,7 @@ const MIB: u64 = 1024 * 1024;
 const GIB: u64 = 1024 * MIB;
 
 /// Whether a successful decode may report mandatory transfer losses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -58,8 +59,9 @@ pub struct ResourceLimits {
     #[serde(default = "default_max_construction_depth")]
     pub max_construction_depth: u64,
     /// Maximum depth of a chain of state bases that reading CADIR admits:
-    /// the evaluations with content that a chain of `StateBase::Evaluation`
-    /// bases passes through, counting the evaluation it starts from.
+    /// the process states and evaluations with content that a chain of
+    /// `ProcessBase::State` and `StateBase::Evaluation` bases passes through,
+    /// counting the state it starts from.
     #[serde(default = "default_max_state_chain_depth")]
     pub max_state_chain_depth: u64,
 }

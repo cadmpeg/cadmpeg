@@ -2,13 +2,14 @@
 //! Direct identity walks for native record fields.
 
 use super::{
-    DesignPatchContinuity, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
-    DesignRuledSurfaceOperation, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport, DesignSurfacePatchBoundary, DesignSurfacePatchNormalState,
-    DesignSurfacePatchScope, DesignSurfaceStitchOperation, DesignSurfaceUntrimLoops,
-    DesignSurfaceUntrimOperation,
+    DesignPatchContinuity, DesignReplaceFaceOperation, DesignRuledSurfaceCorner,
+    DesignRuledSurfaceMethod, DesignRuledSurfaceOperation, DesignSurfaceExtendOperation,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfacePatchBoundary,
+    DesignSurfacePatchNormalState, DesignSurfacePatchScope, DesignSurfaceStitchOperation,
+    DesignSurfaceUntrimLoops, DesignSurfaceUntrimOperation,
 };
 
+rewrite_native_record!(DesignReplaceFaceOperation, []; {tangent_chain, flagged_prefix_word, replacement_group_record_indices, target_group_record_indices, trailing_identity});
 rewrite_native_scalar!(DesignPatchContinuity);
 rewrite_native_scalar!(DesignRuledSurfaceCorner);
 rewrite_native_scalar!(DesignRuledSurfaceMethod);
@@ -20,6 +21,7 @@ rewrite_native_record!(DesignSurfaceUntrimOperation, []; {loops, loops_offset, e
 rewrite_native_enum!(DesignSurfaceOffsetSupport, []; {
     BoundaryCarrier {boundary_record_index, boundary_reference_record_index, boundary_reference_offset, edge_record_indices, tolerance, tolerance_offset},
     FaceGroups {group_record_indices},
+    BodyCarrier {boundary_record_index, boundary_reference_record_index, boundary_reference_offset, body_record_index, tolerance, tolerance_offset},
 });
 rewrite_native_record!(DesignSurfacePatchBoundary, []; {scope_reference_ordinal, record_index, is_seed_selection, continuity, flip, scale, model_reference});
 rewrite_native_record!(DesignSurfaceStitchOperation, []; {gap_tolerance, gap_tolerance_offset, tolerance_record_index, settings_record_index});

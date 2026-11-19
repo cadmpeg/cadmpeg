@@ -6,6 +6,28 @@ use crate::records::{
 };
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignReplaceFaceOperation {
+    pub(crate) tangent_chain: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_replace_face_flagged_prefix_word"
+    )]
+    pub(crate) flagged_prefix_word: Option<u32>,
+    pub(crate) replacement_group_record_indices: Vec<u32>,
+    pub(crate) target_group_record_indices: Vec<u32>,
+    pub(crate) trailing_identity: DesignRelaxedGuidText,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_replace_face_flagged_prefix_word,
+    u32,
+    "flagged_prefix_word"
+);
+
 /// Fixed operation records named by a `SurfaceStitch` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSurfaceStitchOperation {
@@ -40,6 +62,40 @@ pub(crate) struct DesignSurfaceExtendOperation {
     pub(crate) tolerance: cadmpeg_ir::scalar::PositiveReal,
     /// Byte offset of `tolerance`.
     pub(crate) tolerance_offset: u64,
+    /// Extension-method code of the scope prologue.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_extend_method_code"
+    )]
+    pub(crate) method_code: Option<u32>,
+    /// Byte offset of `method_code`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_extend_method_code_offset"
+    )]
+    pub(crate) method_code_offset: Option<u64>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_extend_method_code, u32, "method_code");
+cadmpeg_core::named_optional_field!(
+    deserialize_extend_method_code_offset,
+    u64,
+    "method_code_offset"
+);
+
+impl DesignSurfaceExtendOperation {
+    /// The extension law that `method_code` names.
+    pub(crate) fn extension(&self) -> cadmpeg_ir::features::SurfaceExtension {
+        use cadmpeg_ir::features::SurfaceExtension;
+        match self.method_code {
+            Some(0) => SurfaceExtension::Perpendicular,
+            Some(1) => SurfaceExtension::Natural,
+            Some(2) => SurfaceExtension::Linear,
+            _ => SurfaceExtension::Unresolved,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -132,6 +188,14 @@ pub(crate) enum DesignSurfaceOffsetSupport {
     FaceGroups {
         /// Ordered construction-group records named by the scope.
         group_record_indices: Vec<u32>,
+    },
+    BodyCarrier {
+        boundary_record_index: u32,
+        boundary_reference_record_index: u32,
+        boundary_reference_offset: u64,
+        body_record_index: u32,
+        tolerance: cadmpeg_ir::scalar::PositiveReal,
+        tolerance_offset: u64,
     },
 }
 

@@ -3,7 +3,7 @@
 
 mod schema;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -605,7 +605,7 @@ fn transfer_schema_one(
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{provider_key}:{index}"
                 ))?,
-                target: AppearanceTarget::Body(body.clone()),
+                target: AppearanceTarget::Body(body.clone()).into(),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some("ViewProvider".into()),
@@ -721,6 +721,65 @@ fn transfer_neutral_presentation(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut state_losses = Vec::new();
+    let expand_present = graph
+        .documents
+        .iter()
+        .flat_map(|document| &document.states)
+        .any(|state| state.kind == "Expand");
+    let mut expanded_names = BTreeSet::new();
+    for value in graph
+        .documents
+        .iter()
+        .flat_map(|document| &document.states)
+        .filter(|state| state.kind == "Expand")
+        .flat_map(|state| &state.values)
+        .filter(|value| value.tag == "Expand")
+    {
+        match value.attributes.get("name") {
+            Some(name) => {
+                expanded_names.insert(name.as_str());
+            }
+            None => state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(
+                "GUI Expand holds an item without a name; the item stays in the native GUI document record",
+            )),
+        }
+    }
+    let resolved_names = graph
+        .providers
+        .iter()
+        .filter(|provider| provider.object.is_some())
+        .map(|provider| provider.name.as_str())
+        .collect::<HashSet<_>>();
+    for name in expanded_names
+        .iter()
+        .filter(|name| !resolved_names.contains(**name))
+    {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand names {name}, which names no view provider of an object; the name stays in the native GUI document record"
+        )));
+    }
+    for provider in graph.providers.iter().filter(|provider| {
+        provider.object.is_some()
+            && provider.expanded == Some(false)
+            && expanded_names.contains(provider.name.as_str())
+    }) {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand names {}, whose view provider stores expanded=false; the item is read as expanded",
+            provider.name
+        )));
+    }
+    for provider in graph.providers.iter().filter(|provider| {
+        expand_present
+            && provider.object.is_some()
+            && provider.expanded == Some(true)
+            && !expanded_names.contains(provider.name.as_str())
+    }) {
+        state_losses.push(FreecadLossCode::SourceGuiMetadataUnresolved.note(format!(
+            "GUI Expand does not name {}, whose view provider of an object stores expanded=true; the item is read as expanded",
+            provider.name
+        )));
+    }
+    expanded_names.retain(|name| resolved_names.contains(name));
     for document in &graph.documents {
         let mut presentation = PresentationDocument::new(PresentationId::compose(
             &cadmpeg_ir::identity_namespace!("fcstd", "presentation", "document"),
@@ -735,6 +794,9 @@ fn transfer_neutral_presentation(
             .filter(|state| state.kind == "Camera")
             .count();
         for (order, state) in document.states.iter().enumerate() {
+            if state.kind == "Expand" {
+                continue;
+            }
             let (attributes, refused) = gui_named_entries(
                 || format!("the gui {} state", state.kind),
                 state
@@ -842,7 +904,11 @@ fn transfer_neutral_presentation(
                     provider.order
                 ))
             })?,
-            expanded: provider.expanded,
+            expanded: if expanded_names.contains(provider.name.as_str()) {
+                Some(true)
+            } else {
+                provider.expanded
+            },
             visible: property_value("Visibility", "App::PropertyBool").and_then(parse_bool),
             display_mode: property_value("DisplayMode", "App::PropertyEnumeration")
                 .map(ToOwned::to_owned),
@@ -1140,7 +1206,7 @@ fn transfer_primitive_appearance(
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#{binding_key}:{provider_key}:{index}"
             ))?,
-            target,
+            target: target.into(),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some(object_type.into()),
@@ -3827,7 +3893,7 @@ fn transfer_shape_appearances(
                         id: binding_id(format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
                         ))?,
-                        target: AppearanceTarget::Body(body.clone()),
+                        target: AppearanceTarget::Body(body.clone()).into(),
                         appearance: appearance_id.clone(),
                         source_entity_id: Some(object_id.to_owned()),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
@@ -4119,7 +4185,7 @@ fn bind_material_faces(
             id: binding_id(format_args!(
                 "fcstd:appearance:binding#shape-material:{provider_key}:{binding_index}"
             ))?,
-            target: AppearanceTarget::Face(face),
+            target: AppearanceTarget::Face(face).into(),
             appearance: appearance_id.clone(),
             source_entity_id: Some(object_id.to_owned()),
             object_type: Some("ViewProvider ShapeAppearance".into()),
@@ -4236,7 +4302,7 @@ fn transfer_topology_colors(
             if binding.appearance != default_appearance {
                 return true;
             }
-            let topology_id = match &binding.target {
+            let topology_id = match &binding.target.entity {
                 AppearanceTarget::Edge(id) => id.as_str(),
                 AppearanceTarget::Vertex(id) => id.as_str(),
                 _ => return true,
@@ -4320,7 +4386,7 @@ fn transfer_topology_colors(
                     "fcstd:appearance:binding#{kind_key}:{provider_key}:{}:{topology_key}",
                     index + 1,
                 ))?,
-                target,
+                target: target.into(),
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
                 object_type: Some(format!("ViewProvider {}", kind.name())),

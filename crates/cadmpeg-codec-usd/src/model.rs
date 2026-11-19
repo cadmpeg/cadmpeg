@@ -28,8 +28,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::products::{
-    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
-    PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, Length};
@@ -274,6 +273,11 @@ struct Builder<'s, 'l, 'c, 'a> {
     tallies: Tallies,
     /// Definitions written, by key.
     definitions: BTreeSet<String>,
+    /// The occurrences each definition places, by definition key; the stage's
+    /// under `None`.
+    owned: BTreeMap<Option<String>, Vec<cadmpeg_ir::ids::OccurrenceId>>,
+    /// Definitions of the documents external arcs name, by identity.
+    externals: BTreeMap<cadmpeg_ir::ids::ProductDefinitionId, ProductDefinition>,
     /// Group prims folded into the B-rep of one `BrepArray` child, with the
     /// child, by path.
     folded: BTreeMap<String, usize>,
@@ -312,6 +316,8 @@ pub(crate) fn build<'a>(
         issues: Issues::default(),
         tallies: Tallies::default(),
         definitions: BTreeSet::new(),
+        owned: BTreeMap::new(),
+        externals: BTreeMap::new(),
         folded: BTreeMap::new(),
         prototypes: BTreeMap::new(),
         appearances: BTreeSet::new(),
@@ -322,14 +328,10 @@ pub(crate) fn build<'a>(
         admitted,
         transferred: false,
     };
-    let mut ordinal = 0_u32;
     for root in stage.roots.clone() {
-        if builder.prim(root, None, &IDENTITY, ordinal)? {
-            ordinal = ordinal
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("root occurrence ordinal exceeds u32"))?;
-        }
+        builder.prim(root, None, &IDENTITY)?;
     }
+    builder.own_occurrences()?;
     let pending = std::mem::take(&mut builder.pending_joints);
     builder.joints(pending)?;
     builder.finish_physx()?;
@@ -369,6 +371,35 @@ pub(crate) fn build<'a>(
 }
 
 impl Builder<'_, '_, '_, '_> {
+    /// Lists each definition's occurrences on it, and adds the stage, which
+    /// places the root prims, and the documents external arcs name.
+    fn own_occurrences(&mut self) -> Result<(), CodecError> {
+        let mut owned = std::mem::take(&mut self.owned);
+        let roots = owned.remove(&None);
+        let by_id: BTreeMap<_, _> = owned
+            .into_iter()
+            .filter_map(|(key, occurrences)| Some((crate::ids::definition(&key?), occurrences)))
+            .collect();
+        for definition in &mut self.ir.model.product_definitions {
+            if let Some(occurrences) = by_id.get(&definition.id) {
+                definition.occurrences.clone_from(occurrences);
+            }
+        }
+        if let Some(roots) = roots {
+            let mut stage =
+                ProductDefinition::root(crate::ids::stage(), ExternalDocument::default());
+            stage.occurrences = roots;
+            self.ir.model.product_definitions.push(stage);
+            self.admit("usd_definition")?;
+        }
+        let externals = std::mem::take(&mut self.externals);
+        self.ir
+            .model
+            .product_definitions
+            .extend(externals.into_values());
+        Ok(())
+    }
+
     fn admit(&mut self, operation: &'static str) -> Result<(), CodecError> {
         self.ctx.admit_entities(
             u64_from_index(self.ir.entity_count()),
@@ -401,14 +432,15 @@ impl Builder<'_, '_, '_, '_> {
         }
     }
 
-    /// Adds the occurrence of prim `index` and its descendants. Returns
-    /// whether an occurrence was added.
+    /// Adds the occurrence of prim `index`, which the definition `owner` (the
+    /// stage when `None`) places, and, the first time its definition is
+    /// written, the occurrences of its descendants. Returns whether an
+    /// occurrence was added.
     fn prim(
         &mut self,
         index: usize,
-        parent: Option<&str>,
+        owner: Option<&str>,
         parent_world: &Affine,
-        ordinal: u32,
     ) -> Result<bool, CodecError> {
         let stage = self.stage;
         let Some(prim) = stage.prims.get(index) else {
@@ -510,83 +542,77 @@ impl Builder<'_, '_, '_, '_> {
         let visible = (visibility.as_deref() == Some("invisible")
             || matches!(purpose.as_deref(), Some("guide" | "proxy")))
         .then_some(false);
-        if self.definitions.insert(definition.clone()) {
+        let first = self.definitions.insert(definition.clone());
+        if first {
             self.definition(prim, role, &definition)?;
         }
         let folded = self.folded.contains_key(&prim.path);
         self.ctx
             .retain_bytes(u64_from_index(prim.name.len()), RETAIN_NAME)?;
-        self.ir.model.occurrences.push(Occurrence {
-            id: crate::ids::occurrence(&prim.path),
-            prototype: PrototypeReference::Local {
-                definition: crate::ids::definition(&definition),
-            },
-            parent: match parent {
-                None => OccurrenceParent::Root {},
-                Some(parent) => OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(parent),
-                },
-            },
-            ordinal,
-            transform,
-            linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
-            name: Some(display_name(prim).to_owned()),
-            visible,
-            link: None,
-            native_ref: Some(prim.path.clone()),
-        });
+        let id = crate::ids::occurrence(&prim.path);
+        let mut occurrence = Occurrence::new(
+            id.clone(),
+            crate::ids::definition(&definition),
+            Some(transform),
+        );
+        occurrence.name = Some(display_name(prim).to_owned());
+        occurrence.visible = visible;
+        occurrence.native_ref = Some(prim.path.clone());
+        self.ir.model.occurrences.push(occurrence);
+        self.owned
+            .entry(owner.map(str::to_owned))
+            .or_default()
+            .push(id);
         self.admit("usd_occurrence")?;
         let bodied = self.bodied.contains(&definition);
         self.physics_apis(prim, &definition, bodied)?;
-        let mut child_ordinal = 0_u32;
+        // A definition another instance already wrote states its prototype's
+        // descendants once, in it.
+        if !first {
+            return Ok(true);
+        }
         for (arc, external) in prim.external.iter().enumerate() {
-            let document = NonBlankString::new(external.asset.clone())
-                .map_or(ExternalDocument::Missing {}, |path| {
-                    ExternalDocument::Path { path }
-                });
-            self.ir.model.occurrences.push(Occurrence {
-                id: crate::ids::external_occurrence(&prim.path, arc),
-                prototype: PrototypeReference::External {
-                    document,
-                    object: external.prim_path.clone(),
+            let prototype =
+                crate::ids::external_definition(&external.asset, external.prim_path.as_deref());
+            if !self.externals.contains_key(&prototype) {
+                let mut document = ExternalDocument::path(external.asset.clone());
+                if let Some(object) = &external.prim_path {
+                    document = document.with_object(object.clone());
+                }
+                let mut definition =
+                    ProductDefinition::new(prototype.clone(), Storage::External(document));
+                definition.source_name = NonBlankString::new(external.asset.clone())
+                    .map(|asset| asset.as_str().to_owned());
+                self.externals.insert(prototype.clone(), definition);
+                self.admit("usd_definition")?;
+            }
+            let id = crate::ids::external_occurrence(&prim.path, arc);
+            let mut occurrence =
+                Occurrence::new(id.clone(), prototype, Some(Transform::identity()));
+            occurrence.name = Some(external.asset.clone());
+            occurrence.native_ref = Some(format!(
+                "{} {} @{}@",
+                prim.path,
+                if external.payload {
+                    "payload"
+                } else {
+                    "reference"
                 },
-                parent: OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(&prim.path),
-                },
-                ordinal: child_ordinal,
-                transform: Transform::identity(),
-                linked_prototype: None,
-                scale: [FiniteReal::ONE; 3],
-                name: Some(external.asset.clone()),
-                visible: None,
-                link: None,
-                native_ref: Some(format!(
-                    "{} {} @{}@",
-                    prim.path,
-                    if external.payload {
-                        "payload"
-                    } else {
-                        "reference"
-                    },
-                    external.asset
-                )),
-            });
+                external.asset
+            ));
+            self.ir.model.occurrences.push(occurrence);
+            self.owned
+                .entry(Some(definition.clone()))
+                .or_default()
+                .push(id);
             self.tallies.external += 1;
-            child_ordinal = child_ordinal
-                .checked_add(1)
-                .ok_or_else(|| CodecError::malformed("child occurrence ordinal exceeds u32"))?;
             self.admit("usd_occurrence")?;
         }
         for child in prim.children.clone() {
             if folded {
                 break;
             }
-            if self.prim(child, Some(&prim.path), &world, child_ordinal)? {
-                child_ordinal = child_ordinal
-                    .checked_add(1)
-                    .ok_or_else(|| CodecError::malformed("child occurrence ordinal exceeds u32"))?;
-            }
+            self.prim(child, Some(&definition), &world)?;
         }
         Ok(true)
     }
@@ -665,7 +691,7 @@ impl Builder<'_, '_, '_, '_> {
         }
         self.ir.model.product_definitions.push(ProductDefinition {
             id: crate::ids::definition(key),
-            kind,
+            kind: Some(kind),
             source_name: Some(definition_name(prim, key).to_owned()),
             label: None,
             description: prim.metadata_text("documentation").map(str::to_owned),
@@ -673,7 +699,16 @@ impl Builder<'_, '_, '_, '_> {
             bom_properties: BTreeMap::new(),
             bodies,
             sketches: Vec::new(),
+            tessellations: Vec::new(),
             native_ref: Some(prim.path.clone()),
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
         self.admit("usd_definition")
     }
@@ -954,7 +989,8 @@ impl Builder<'_, '_, '_, '_> {
         let appearance = self.appearance(&surface)?;
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(key),
-            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string()),
+            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string())
+                .into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,
@@ -1008,7 +1044,8 @@ impl Builder<'_, '_, '_, '_> {
             target: AppearanceTarget::TriangleGroup {
                 tessellation: crate::ids::tessellation(key).to_string(),
                 group: path.to_owned(),
-            },
+            }
+            .into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,

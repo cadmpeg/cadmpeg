@@ -12,7 +12,7 @@ use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::math::Point3;
 
 use crate::face::Refusal;
-use crate::plane::{contains, signed_area, Uv};
+use crate::plane::{contains, cross, length, signed_area, sub, Uv};
 
 /// Ratio to a period, or to the extent of a loop, below which a closure
 /// displacement is zero.
@@ -20,6 +20,9 @@ const CLOSURE_RATIO: f64 = 1e-6;
 /// Ratio to a period cell's area within which a ring encloses the whole
 /// cell.
 const CELL_RATIO: f64 = 1e-6;
+/// Ratio of a hole node's distance from a side of the parameter domain to
+/// the domain span along that axis below which the hole reaches the side.
+const DOMAIN_CONTACT_RATIO: f64 = 1e-3;
 
 /// One polygon vertex.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,6 +58,9 @@ pub(crate) struct Frame {
     /// parameters; a wrapping strip with one loop runs to one of them or to
     /// a domain end.
     pub(crate) poles: Vec<(Uv, Option<Point3>)>,
+    /// Width below which a loop that does not close in the parameter plane
+    /// encloses nothing a mesh can show.
+    pub(crate) narrow: f64,
 }
 
 enum Kind {
@@ -103,6 +109,57 @@ fn kind(ring: &Ring, frame: &Frame) -> Result<Kind, Refusal> {
     )))
 }
 
+/// The kind of `ring`, absent for a ring that does not close in the
+/// parameter plane and whose samples enclose a strip narrower than
+/// `frame.narrow`.
+fn kind_unless_narrow(ring: &Ring, frame: &Frame) -> Result<Option<Kind>, Refusal> {
+    match kind(ring, frame) {
+        Ok(kind) => Ok(Some(kind)),
+        Err(_) if narrow(ring, frame) => Ok(None),
+        Err(refusal) => Err(refusal),
+    }
+}
+
+/// Whether the samples of `ring` enclose a strip narrower than
+/// `frame.narrow`: twice the enclosed vector area over the perimeter.
+fn narrow(ring: &Ring, frame: &Frame) -> bool {
+    let Some(points) = ring
+        .nodes
+        .iter()
+        .map(|node| node.point)
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let Some(&first) = points.first() else {
+        return false;
+    };
+    let mut twice_area = [0.0_f64; 3];
+    let mut perimeter = 0.0_f64;
+    for (at, &point) in points.iter().enumerate() {
+        let next = points[(at + 1) % points.len()];
+        let normal = cross(sub(point, first), sub(next, first));
+        twice_area[0] += normal.x;
+        twice_area[1] += normal.y;
+        twice_area[2] += normal.z;
+        perimeter += length(sub(next, point));
+    }
+    let [x, y, z] = twice_area;
+    perimeter > 0.0 && (x * x + y * y + z * z).sqrt() < frame.narrow * perimeter
+}
+
+/// Whether `ring` closes in the parameter plane of a surface with no
+/// periodic parameter and runs clockwise there.
+pub(crate) fn clockwise_on_open_carrier(ring: &Ring, frame: &Frame) -> Result<bool, Refusal> {
+    if frame.periods.iter().any(Option::is_some) || ring.nodes.len() < 3 {
+        return Ok(false);
+    }
+    Ok(
+        matches!(kind_unless_narrow(ring, frame)?, Some(Kind::Closed))
+            && signed_area(&uvs(&ring.nodes)) < 0.0,
+    )
+}
+
 /// Maps a point into the frame of a strip that wraps along `axis`: the first
 /// coordinate runs along the wrap, and the face lies above a rising loop.
 fn to_strip(axis: usize, uv: Uv) -> Uv {
@@ -140,13 +197,18 @@ pub(crate) fn reversed(nodes: &[Node]) -> Vec<Node> {
 pub(crate) fn regions(rings: Vec<Ring>, frame: &Frame) -> Result<Vec<Region>, Refusal> {
     let mut closed = Vec::new();
     let mut wraps: Vec<(usize, Ring)> = Vec::new();
+    // A loop whose samples run out and back along one chord, or enclose a
+    // strip narrower than the frame's width, bounds no area.
+    let mut flat = false;
     for ring in rings {
         if ring.nodes.len() < 2 {
+            flat = true;
             continue;
         }
-        match kind(&ring, frame)? {
-            Kind::Closed => closed.push(ring.nodes),
-            Kind::Wrap { axis } => wraps.push((axis, ring)),
+        match kind_unless_narrow(&ring, frame)? {
+            Some(Kind::Closed) => closed.push(ring.nodes),
+            Some(Kind::Wrap { axis }) => wraps.push((axis, ring)),
+            None => flat = true,
         }
     }
     let mut outers = Vec::new();
@@ -159,6 +221,7 @@ pub(crate) fn regions(rings: Vec<Ring>, frame: &Frame) -> Result<Vec<Region>, Re
     };
     for mut nodes in closed {
         if nodes.len() < 3 {
+            flat = true;
             continue;
         }
         // Twice the signed area, as `signed_area` returns it.
@@ -183,15 +246,35 @@ pub(crate) fn regions(rings: Vec<Ring>, frame: &Frame) -> Result<Vec<Region>, Re
         let rings = wraps.into_iter().map(|(_, ring)| ring).collect();
         outers.extend(strips(rings, axis, frame, &holes)?);
     }
+    if outers.is_empty() && holes.is_empty() && flat {
+        return Ok(Vec::new());
+    }
     if outers.is_empty() {
         let Some(domain) = frame.domain else {
-            return Err(Refusal::new(
+            return Err(Refusal::misoriented(
                 "the face has no outer loop and its surface no bounded domain",
             ));
         };
+        if frame.periods.iter().all(Option::is_none) && reaches_side(domain, &holes) {
+            return Err(Refusal::misoriented(
+                "a loop running against the face reaches a side of its surface's domain",
+            ));
+        }
         outers.push(rectangle(domain, frame, &holes));
     }
     assign(outers, holes, frame)
+}
+
+/// Whether a node of `holes` lies on a side of `domain`, where the whole
+/// domain less the holes splits apart.
+fn reaches_side(domain: [[f64; 2]; 2], holes: &[Vec<Node>]) -> bool {
+    holes.iter().flatten().any(|node| {
+        (0..2).any(|axis| {
+            let [low, high] = domain[axis];
+            let limit = DOMAIN_CONTACT_RATIO * (high - low);
+            node.uv[axis] - low <= limit || high - node.uv[axis] <= limit
+        })
+    })
 }
 
 /// The whole parameter domain as one polygon whose sides are open.
@@ -264,10 +347,50 @@ fn assign(
             }
         }
         if !placed {
-            return Err(Refusal::new("an inner loop lies outside every outer loop"));
+            placed = place_by_periods(&mut regions, hole, probe, frame);
+        }
+        if !placed {
+            return Err(Refusal::misoriented(
+                "an inner loop lies outside every outer loop",
+            ));
         }
     }
     Ok(regions)
+}
+
+/// Gives `hole` to the first region that contains `probe` after a move by
+/// whole periods to the low side of the region's extent in each periodic
+/// parameter, or one period above it.
+fn place_by_periods(regions: &mut [Region], hole: Vec<Node>, probe: Uv, frame: &Frame) -> bool {
+    for region in regions.iter_mut() {
+        let outer = uvs(&region.outer);
+        let shifts = |axis: usize| -> Vec<f64> {
+            frame.periods[axis].map_or_else(
+                || vec![0.0],
+                |period| {
+                    let low = outer
+                        .iter()
+                        .map(|uv| uv[axis])
+                        .fold(f64::INFINITY, f64::min);
+                    let base = ((low - probe[axis]) / period).ceil() * period;
+                    vec![base, base + period]
+                },
+            )
+        };
+        for du in shifts(0) {
+            for dv in shifts(1) {
+                if contains(&outer, [probe[0] + du, probe[1] + dv]) {
+                    let mut hole = hole;
+                    for node in &mut hole {
+                        node.uv = [node.uv[0] + du, node.uv[1] + dv];
+                    }
+                    region.holes.push(hole);
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The strips between wrapping rings that run along `axis`.
@@ -299,6 +422,25 @@ fn strips(
         entries.push((mean, rising, nodes));
     }
     entries.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Across a periodic parameter, a falling ring with nothing below it
+    // bounds the strip that runs up through the seam to the next rising
+    // ring: it moves up one period.
+    if let Some(cross) = frame.periods[1 - axis] {
+        let mut moved = 0;
+        while moved < entries.len()
+            && entries.first().is_some_and(|entry| !entry.1)
+            && entries.iter().any(|entry| entry.1)
+        {
+            let mut entry = entries.remove(0);
+            entry.0 += cross;
+            for node in &mut entry.2 {
+                node.uv[1] += cross;
+            }
+            entries.push(entry);
+            entries.sort_by(|a, b| a.0.total_cmp(&b.0));
+            moved += 1;
+        }
+    }
     let hole_ranges: Vec<[f64; 2]> = holes
         .iter()
         .map(|hole| {

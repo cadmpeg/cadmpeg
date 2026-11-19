@@ -984,10 +984,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 0.35995, 0.293, 0.3166,
             )
             .unwrap(),
+            modeled: true,
             extended: Some(crate::records::feature::thread::DesignThreadExtended {
                 class: "6g".into(),
                 external: true,
-                modeled: true,
                 full_length: Some(true),
                 right_handed: Some(true),
             }),
@@ -1084,7 +1084,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert!(ruled_projection.unruled_flange_thickness_loss().is_none());
     assert!(ruled_projection.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness, .. })
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness: Some(thickness), .. })
             if thickness.get() == 2.5
     )));
     let definition = |kind: &str| {
@@ -1101,8 +1101,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("BaseFlange"),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(neutral_sketch_id(&placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-            side: SheetMetalThicknessSide::Forward,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0),
+            side: Some(SheetMetalThicknessSide::Forward),
         })
     );
     assert_eq!(
@@ -1184,7 +1184,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     else {
         panic!("the Thread scope carries its construction");
     };
-    cosmetic.extended.as_mut().expect("extended fields").modeled = false;
+    cosmetic.modeled = false;
     let cosmetic = project(&cosmetic_scopes, &[]);
     assert!(cosmetic.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
@@ -1312,9 +1312,8 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::form_cages::project_forms(
+            crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                 ctx,
-                scan,
                 std::slice::from_ref(&scope),
                 &mut features,
                 &cages,
@@ -1456,9 +1455,8 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
 
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
-                crate::design::feature_project::form_cages::project_forms(
+                crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                     ctx,
-                    scan,
                     std::slice::from_ref(&scope),
                     &mut features,
                     &cages,

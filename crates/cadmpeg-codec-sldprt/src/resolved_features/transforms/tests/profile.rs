@@ -578,6 +578,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut features,
         &mut sketches,
         &mut entities,
+        &mut Vec::new(),
         &histories,
         &lanes,
     )
@@ -628,6 +629,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut configured_features,
         &mut sketches,
         &mut entities,
+        &mut Vec::new(),
         &histories,
         &lanes,
     )
@@ -668,6 +670,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &mut replacement_features,
         &mut replacement_sketches,
         &mut replacement_entities,
+        &mut Vec::new(),
         &histories,
         &lanes,
     )
@@ -756,6 +759,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         &mut features,
         &mut sketches,
         &mut entities,
+        &mut Vec::new(),
         &histories,
         &lanes,
     )

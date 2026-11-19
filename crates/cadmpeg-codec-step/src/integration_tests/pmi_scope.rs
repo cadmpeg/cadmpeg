@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
@@ -19,7 +20,7 @@ fn profile(id: &str, targets: Vec<PmiTarget>, modifiers: Vec<String>) -> PmiAnno
         id: PmiId::mint(format!("test:scope:pmi#{id}")).expect("fixture identity"),
         name: Some(id.into()),
         visible: None,
-        targets,
+        targets: targets.into_iter().map(Into::into).collect(),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
             magnitude: PmiMagnitude::new(
@@ -31,8 +32,13 @@ fn profile(id: &str, targets: Vec<PmiTarget>, modifiers: Vec<String>) -> PmiAnno
             defined_area_second_unit: None,
             datum_system: None,
             modifiers,
-            constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
+            displacement: None,
+            maximum_upper: None,
+            zones: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     }
 }
 
@@ -125,7 +131,7 @@ fn all_around_scope_round_trips_components_without_sibling_leakage() {
             annotation
                 .targets
                 .iter()
-                .filter_map(|target| match target {
+                .filter_map(|target| match &target.entity {
                     PmiTarget::Face { face } => Some(face.clone()),
                     _ => None,
                 })
@@ -168,7 +174,8 @@ fn all_around_scope_reports_an_insufficient_component_graph() {
 
 #[test]
 fn independent_size_dimensions_keep_disjoint_geometric_targets() {
-    use cadmpeg_ir::pmi::{DimensionKind, PmiDimension};
+    use cadmpeg_ir::design::dimension::Dimension;
+    use cadmpeg_ir::pmi::{PmiDimension, PmiDimensionKind};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.pmi = ["first", "second"]
@@ -180,15 +187,18 @@ fn independent_size_dimensions_keep_disjoint_geometric_targets() {
             visible: None,
             targets: vec![PmiTarget::Face {
                 face: ir.geometry.faces[index].id.clone(),
-            }],
-            definition: PmiDefinition::Dimension(
-                PmiDimension::new(
-                    DimensionKind::Size,
-                    Some(PmiValue::new(1.0, PmiQuantity::Length).unwrap()),
-                    None,
-                )
-                .unwrap(),
-            ),
+            }
+            .into()],
+            definition: PmiDefinition::Dimension({
+                let mut dimension = PmiDimension::new(PmiDimensionKind::Size);
+                dimension.nominal = Some(Dimension::Literal(
+                    PmiValue::new(1.0, PmiQuantity::Length).unwrap(),
+                ));
+                dimension
+            }),
+            native_ref: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
         })
         .collect();
     let mut output = Vec::new();
@@ -216,7 +226,7 @@ fn independent_size_dimensions_keep_disjoint_geometric_targets() {
             .unwrap()
             .targets
             .iter()
-            .filter_map(|target| match target {
+            .filter_map(|target| match &target.entity {
                 PmiTarget::Face { face } => Some(face.clone()),
                 _ => None,
             })

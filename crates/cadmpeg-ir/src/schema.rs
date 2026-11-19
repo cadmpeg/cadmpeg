@@ -119,6 +119,18 @@ pub enum EntityKind {
     DesignContainer,
     /// Feature of the `design` home.
     DesignFeature,
+    /// Planar sketch of the `design` home.
+    DesignSketch,
+    /// Planar sketch entity of the `design` home.
+    DesignSketchEntity,
+    /// Planar sketch constraint of the `design` home.
+    DesignSketchConstraint,
+    /// Spatial sketch of the `design` home.
+    DesignSpatialSketch,
+    /// Spatial sketch entity of the `design` home.
+    DesignSpatialSketchEntity,
+    /// Spatial sketch constraint of the `design` home.
+    DesignSpatialSketchConstraint,
     /// Parameter of the `design` home.
     DesignParameter,
     /// Spreadsheet of the `design` home.
@@ -135,6 +147,28 @@ pub enum EntityKind {
     DesignPublication,
     /// Evaluation.
     DesignEvaluation,
+    /// Setup.
+    ProcessSetup,
+    /// Operation.
+    ProcessOperation,
+    /// Machining feature.
+    ProcessFeature,
+    /// Process group.
+    ProcessGroup,
+    /// Tool.
+    ProcessTool,
+    /// Tool preset.
+    ProcessPreset,
+    /// Machine.
+    ProcessMachine,
+    /// NC program.
+    ProcessProgram,
+    /// Process parameter.
+    ProcessParameter,
+    /// Toolpath.
+    ProcessToolpath,
+    /// Process state.
+    ProcessState,
 }
 
 impl EntityKind {
@@ -195,19 +229,36 @@ impl EntityKind {
             Self::DesignScope => 51,
             Self::DesignContainer => 52,
             Self::DesignFeature => 53,
-            Self::DesignParameter => 54,
-            Self::DesignSpreadsheet => 55,
-            Self::DesignSheetMetalRule => 56,
-            Self::DesignProgram => 57,
-            Self::DesignConfiguration => 58,
-            Self::DesignArrangement => 59,
-            Self::DesignPublication => 60,
-            Self::DesignEvaluation => 61,
+            Self::DesignSketch => 54,
+            Self::DesignSketchEntity => 55,
+            Self::DesignSketchConstraint => 56,
+            Self::DesignSpatialSketch => 57,
+            Self::DesignSpatialSketchEntity => 58,
+            Self::DesignSpatialSketchConstraint => 59,
+            Self::DesignParameter => 60,
+            Self::DesignSpreadsheet => 61,
+            Self::DesignSheetMetalRule => 62,
+            Self::DesignProgram => 63,
+            Self::DesignConfiguration => 64,
+            Self::DesignArrangement => 65,
+            Self::DesignPublication => 66,
+            Self::DesignEvaluation => 67,
+            Self::ProcessSetup => 68,
+            Self::ProcessOperation => 69,
+            Self::ProcessFeature => 70,
+            Self::ProcessGroup => 71,
+            Self::ProcessTool => 72,
+            Self::ProcessPreset => 73,
+            Self::ProcessMachine => 74,
+            Self::ProcessProgram => 75,
+            Self::ProcessParameter => 76,
+            Self::ProcessToolpath => 77,
+            Self::ProcessState => 78,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 62] = [
+    pub const ALL: [Self; 79] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -262,6 +313,12 @@ impl EntityKind {
         Self::DesignScope,
         Self::DesignContainer,
         Self::DesignFeature,
+        Self::DesignSketch,
+        Self::DesignSketchEntity,
+        Self::DesignSketchConstraint,
+        Self::DesignSpatialSketch,
+        Self::DesignSpatialSketchEntity,
+        Self::DesignSpatialSketchConstraint,
         Self::DesignParameter,
         Self::DesignSpreadsheet,
         Self::DesignSheetMetalRule,
@@ -270,14 +327,25 @@ impl EntityKind {
         Self::DesignArrangement,
         Self::DesignPublication,
         Self::DesignEvaluation,
+        Self::ProcessSetup,
+        Self::ProcessOperation,
+        Self::ProcessFeature,
+        Self::ProcessGroup,
+        Self::ProcessTool,
+        Self::ProcessPreset,
+        Self::ProcessMachine,
+        Self::ProcessProgram,
+        Self::ProcessParameter,
+        Self::ProcessToolpath,
+        Self::ProcessState,
     ];
 }
 
 /// The kind and identity of a record of any registered arena.
 ///
-/// Every [`EntitySchema`] record has them. A record of the `design` home has
-/// them without the identity rewrite of [`EntitySchema`], and shares the id
-/// of the `model` record it restates.
+/// Every [`EntitySchema`] record has them. A record of the `design` or
+/// `process` home has them without the identity rewrite of [`EntitySchema`];
+/// a design record shares the id of the `model` record it restates.
 pub trait ArenaRecord {
     /// The record's canonical arena kind.
     const KIND: EntityKind;
@@ -294,7 +362,7 @@ impl<T: EntitySchema> ArenaRecord for T {
     }
 }
 
-macro_rules! impl_design_record {
+macro_rules! impl_arena_record {
     ($type:ty, $kind:ident, $($identity:tt)+) => {
         impl ArenaRecord for $type {
             const KIND: EntityKind = EntityKind::$kind;
@@ -306,41 +374,86 @@ macro_rules! impl_design_record {
     };
 }
 
-impl_design_record!(crate::design::scope::DesignScope, DesignScope, definition);
-impl_design_record!(crate::design::container::Container, DesignContainer, id());
-impl_design_record!(crate::design::feature::Feature, DesignFeature, id);
-impl_design_record!(
+impl_arena_record!(crate::design::scope::DesignScope, DesignScope, definition);
+impl_arena_record!(crate::design::container::Container, DesignContainer, id());
+impl_arena_record!(crate::design::feature::Feature, DesignFeature, id);
+impl_arena_record!(crate::design::ops::sketch::Sketch, DesignSketch, id);
+impl_arena_record!(
+    crate::design::ops::sketch::SketchEntity<crate::design::ops::sketch::Planar>,
+    DesignSketchEntity,
+    id
+);
+impl_arena_record!(
+    crate::design::ops::sketch::SketchConstraint<crate::design::ops::sketch::Planar>,
+    DesignSketchConstraint,
+    id
+);
+impl_arena_record!(
+    crate::design::ops::sketch::SpatialSketch,
+    DesignSpatialSketch,
+    id
+);
+impl_arena_record!(
+    crate::design::ops::sketch::SketchEntity<crate::design::ops::sketch::Spatial>,
+    DesignSpatialSketchEntity,
+    id
+);
+impl_arena_record!(
+    crate::design::ops::sketch::SketchConstraint<crate::design::ops::sketch::Spatial>,
+    DesignSpatialSketchConstraint,
+    id
+);
+impl_arena_record!(
     crate::design::parameter::DesignParameter,
     DesignParameter,
     id
 );
-impl_design_record!(
+impl_arena_record!(
     crate::design::spreadsheet::Spreadsheet,
     DesignSpreadsheet,
     id
 );
-impl_design_record!(
+impl_arena_record!(
     crate::design::ops::sheet_metal::SheetMetalRule,
     DesignSheetMetalRule,
     id
 );
-impl_design_record!(crate::design::program::ParameterProgram, DesignProgram, id);
-impl_design_record!(
+impl_arena_record!(crate::design::program::ParameterProgram, DesignProgram, id);
+impl_arena_record!(
     crate::design::configuration::DesignConfiguration,
     DesignConfiguration,
     id
 );
-impl_design_record!(
+impl_arena_record!(
     crate::design::configuration::Arrangement,
     DesignArrangement,
     id
 );
-impl_design_record!(
+impl_arena_record!(
     crate::design::configuration::Publication,
     DesignPublication,
     id
 );
-impl_design_record!(crate::design::evaluation::Evaluation, DesignEvaluation, id);
+impl_arena_record!(crate::design::evaluation::Evaluation, DesignEvaluation, id);
+impl_arena_record!(crate::process::setup::Setup, ProcessSetup, id);
+impl_arena_record!(crate::process::operation::Operation, ProcessOperation, id);
+impl_arena_record!(
+    crate::process::feature::MachiningFeature,
+    ProcessFeature,
+    id
+);
+impl_arena_record!(crate::process::groups::ProcessGroup, ProcessGroup, id);
+impl_arena_record!(crate::process::tool::Tool, ProcessTool, id);
+impl_arena_record!(crate::process::tool::Preset, ProcessPreset, id);
+impl_arena_record!(crate::process::tool::Machine, ProcessMachine, id);
+impl_arena_record!(crate::process::setup::Program, ProcessProgram, id);
+impl_arena_record!(
+    crate::process::groups::ProcessParameter,
+    ProcessParameter,
+    id
+);
+impl_arena_record!(crate::process::toolpath::Toolpath, ProcessToolpath, id);
+impl_arena_record!(crate::process::state::ProcessState, ProcessState, id);
 
 /// Schema behavior required for every entity admitted to a model arena.
 pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {
@@ -466,8 +579,8 @@ impl EntitySchema for crate::spreadsheets::Spreadsheet {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, bodies, sketches, native_ref);
-impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref);
+impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, generated_from, storage, bodies, tessellations, occurrences, instance_bodies, representations, sketches, units, general_tolerance, active, native_ref);
+impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, transform, suppressed, visible, representation, overrides, name, native_ref);
 impl EntitySchema for crate::products::AssemblyJoint {
     const KIND: EntityKind = EntityKind::AssemblyJoint;
 
@@ -475,13 +588,14 @@ impl EntitySchema for crate::products::AssemblyJoint {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, sheet, curves, template_geometry, x_direction, parameters, assets, native_ref);
+impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation, sheet, curves, template_geometry, x_direction, scale_from, projection, perspective, hidden_line, parameters, assets, native_ref);
 impl_entity_schema!(
     crate::semantic_annotations::SemanticAnnotation,
     SemanticAnnotation,
     id;
-    id, object, kind, runtime_type, order, text, references, value, format, position,
-    reference_anchors, text_style, dimension_kind, text_override, upper_tolerance, lower_tolerance, parameters, assets, native_ref
+    id, object, kind, runtime_type, order, text, references, value, format, number_format, position,
+    reference_anchors, text_style, dimension_kind, text_override, upper_tolerance, lower_tolerance,
+    measured_on, basic, reflex, negated, line_directions, parameters, assets, native_ref
 );
 impl EntitySchema for crate::presentation::PresentationDocument {
     const KIND: EntityKind = EntityKind::PresentationDocument;
@@ -507,7 +621,7 @@ impl EntitySchema for crate::tessellation::Tessellation {
 impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
 impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels);
 impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values);
-impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition);
+impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition, native_ref, native_options, source_settings);
 impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,

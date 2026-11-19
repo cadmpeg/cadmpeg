@@ -4,6 +4,7 @@
 use cadmpeg_ir::report::check::{Check, Finding};
 
 use super::{finding, unique, NativeData};
+use crate::feature::sheet_metal::unfold;
 
 pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
     let raw = cadmpeg_core::decode::unique_index(data.records.iter().map(|record| {
@@ -26,6 +27,20 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|r| (r.identity.segment_token.as_str(), r.identity.record_ordinal)),
         "Inventor sheet-metal flange",
     );
+    unique(
+        findings,
+        data.pm_app_sheet_metal_unfold_rules
+            .iter()
+            .map(|r| (r.identity.segment_token.as_str(), r.identity.record_ordinal)),
+        "Inventor unfold rule",
+    );
+    unique(
+        findings,
+        data.pm_app_sheet_metal_unfold_selections
+            .iter()
+            .map(|r| (r.identity.segment_token.as_str(), r.identity.record_ordinal)),
+        "Inventor unfold-rule selection",
+    );
     for style in &data.pm_dc_sheet_metal_styles {
         if !crate::feature::sheet_metal::style::valid(style, |ordinal| {
             raw.get(&(style.identity.segment_token.as_str(), ordinal))
@@ -36,6 +51,29 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Inventor sheet-metal style has an invalid prefix or operand type".into(),
                 Some(style.id()),
+            ));
+        }
+    }
+    let unfold_records = data
+        .pm_app_sheet_metal_unfold_rules
+        .iter()
+        .map(|rule| (&rule.identity, rule.id(), unfold::RULE_TYPE))
+        .chain(
+            data.pm_app_sheet_metal_unfold_selections
+                .iter()
+                .map(|selection| (&selection.identity, selection.id(), unfold::SELECTION_TYPE)),
+        );
+    for (identity, id, expected) in unfold_records {
+        let expected = crate::pmdc::type_id_string(expected);
+        let raw_type = raw
+            .get(&(identity.segment_token.as_str(), identity.record_ordinal))
+            .copied()
+            .flatten();
+        if identity.type_id.as_str() != expected || raw_type != Some(expected.as_str()) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor unfold-rule record has an invalid type".into(),
+                Some(id),
             ));
         }
     }
@@ -55,7 +93,7 @@ pub(super) fn records(data: &NativeData, findings: &mut Vec<Finding>) {
 }
 
 pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
-    use crate::feature::sheet_metal::{operands, projection};
+    use crate::feature::sheet_metal::{contour, flange::FlangeKind, fold, operands, projection};
     use cadmpeg_ir::features::{
         EdgeSelection, FeatureDefinition, FeatureOperation, ParameterValue, PlanarProfileRef,
     };
@@ -221,8 +259,115 @@ pub(super) fn definitions(ir: &cadmpeg_ir::CadIr, data: &NativeData, findings: &
         }
         Some((parent, expected))
     };
+    let direction_record = |token: &str, reference: crate::pmdc::PmDcReference| {
+        let mut directions = data.pm_dc_directions.iter().filter(|d| {
+            d.identity.segment_token.as_str() == token
+                && Some(d.identity.record_ordinal) == reference.record_ordinal()
+        });
+        let direction = directions.next()?;
+        directions.next().is_none().then_some(direction)
+    };
+    let contour_valid = |feature: &cadmpeg_ir::features::Feature,
+                         construction: &cadmpeg_ir::features::sheet_metal::SheetMetalContourFlangeConstruction| {
+        let source = source_of(feature)?;
+        let token = source.identity.segment_token.as_str();
+        let mut parents = data.pm_dc_sheet_metal_flanges.iter().filter_map(|flange| {
+            if flange.identity.segment_token.as_str() != token
+                || FlangeKind::of(flange) != Some(FlangeKind::Contour)
+            {
+                return None;
+            }
+            let member = projection::members(
+                flange,
+                &data.pm_dc_features,
+                &data.pm_dc_feature_labels,
+                |ordinal| {
+                    data.pm_dc_sketches
+                        .iter()
+                        .filter(|s| {
+                            s.identity.segment_token.as_str() == token
+                                && s.identity.record_ordinal == ordinal
+                        })
+                        .count()
+                        == 1
+                },
+            )?;
+            (member.plate == source.identity.record_ordinal).then_some(member)
+        });
+        let parent = parents.next()?;
+        if parents.next().is_some() {
+            return None;
+        }
+        let children = contour::children(&data.pm_dc_features, token, parent)?;
+        let native_sketch = data.pm_dc_sketches.iter().find(|s| {
+            s.identity.segment_token.as_str() == token && s.identity.record_ordinal == parent.sketch
+        })?;
+        let profile = construction.profile.as_ref()?;
+        let PlanarProfileRef::SketchEntities { sketch, .. } = profile else {
+            return None;
+        };
+        let mut sketches = ir.model.sketches.iter().filter(|s| {
+            s.id == *sketch && s.native_ref.as_deref() == Some(native_sketch.id().as_str())
+        });
+        let neutral_sketch = sketches.next()?;
+        if sketches.next().is_some() {
+            return None;
+        }
+        let (_, normal, _) = neutral_sketch.resolved_placement()?;
+        let values = contour::operands(
+            children,
+            projection::style(&data.pm_dc_sheet_metal_styles, token),
+            |r| property(token, r),
+            contour::plate_lengths(
+                children.plate,
+                |r| {
+                    let parameter = parameters
+                        .get(&(token.to_owned(), r.record_ordinal()?))?
+                        .as_ref()?;
+                    values.get(parameter.id().as_str())?.as_ref()?.value.as_ref()
+                },
+                |r| length(token, r),
+            ),
+            |r| {
+                let direction = direction_record(token, r)?;
+                cadmpeg_ir::units::UnitVector3::normalized(cadmpeg_ir::math::Vector3::new(
+                    direction.direction[0].get(),
+                    direction.direction[1].get(),
+                    direction.direction[2].get(),
+                ))
+            },
+            |r| direction_record(token, r).is_some(),
+            cadmpeg_ir::units::UnitVector3::normalized(*normal.as_raw())?,
+        )
+        .ok()?;
+        (values.construction(profile.clone())? == *construction).then_some(())
+    };
+    let fold_valid = |feature: &cadmpeg_ir::features::Feature| {
+        let source = source_of(feature)?;
+        let token = source.identity.segment_token.as_str();
+        let mut labels = data.pm_dc_feature_labels.iter().filter(|label| {
+            label.identity.segment_token.as_str() == token
+                && label.header.owner.record_ordinal() == Some(source.identity.record_ordinal)
+        });
+        let label = labels.next()?;
+        if labels.next().is_some() {
+            return None;
+        }
+        let kind = fold::FoldKind::of(label.class_id())?;
+        let operands = fold::operands(source, kind, |r| property(token, r)).ok()?;
+        let FeatureDefinition::Operation(actual) = feature.evaluation.definition() else {
+            return None;
+        };
+        (*actual == fold::operation(kind, &operands)).then_some(())
+    };
     for feature in &ir.model.features {
         let valid = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(
+                FeatureOperation::SheetMetalUnfold { .. } | FeatureOperation::SheetMetalRefold { .. },
+            ) => fold_valid(feature).is_some(),
+            FeatureDefinition::Operation(FeatureOperation::SheetMetalContourFlange {
+                construction,
+            }) => contour_valid(feature, construction).is_some(),
             FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate { .. }) => {
                 source_of(feature)
                     .and_then(|source| attached(feature, source))

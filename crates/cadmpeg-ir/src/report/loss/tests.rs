@@ -159,6 +159,7 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
         LossTaxonomy::ParametricRecordOmitted,
         LossTaxonomy::AppearanceReduced,
         LossTaxonomy::PreservedSourceUnavailable,
+        LossTaxonomy::ProcessRecordOmitted,
     ] {
         assert_eq!(
             serde_json::to_value(taxonomy).unwrap(),
@@ -209,6 +210,21 @@ fn assembly_losses_belong_to_the_product_domain() {
     assert_eq!(
         LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred).to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/assembly_placements_not_transferred")
+    );
+}
+
+#[test]
+fn process_losses_belong_to_the_process_category() {
+    let kind = LossKind::shared(LossTaxonomy::ProcessRecordOmitted);
+    assert_eq!(kind.category(), LossCategory::Process);
+    assert_eq!(LossCategory::Process.to_string(), "process");
+    assert_eq!(
+        serde_json::to_value(LossCategory::Process).unwrap(),
+        serde_json::Value::String("process".to_owned())
+    );
+    assert_eq!(
+        serde_json::from_value::<LossCategory>(serde_json::json!("process")).unwrap(),
+        LossCategory::Process
     );
 }
 

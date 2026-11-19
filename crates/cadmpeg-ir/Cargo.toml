@@ -23,6 +23,7 @@ schema = ["dep:schemars", "cadmpeg-core/schema"]
 
 [dependencies]
 cadmpeg-core.workspace = true
+cadmpeg-derive.workspace = true
 libm.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -44,6 +45,10 @@ cadmpeg-test-support = { workspace = true }
 [[example]]
 name = "emit_cube"
 required-features = ["examples"]
+
+[[example]]
+name = "emit_schema"
+required-features = ["schema"]
 
 [lints]
 workspace = true

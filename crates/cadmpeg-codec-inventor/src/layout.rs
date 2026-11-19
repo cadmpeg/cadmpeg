@@ -270,7 +270,7 @@ pub(crate) mod pm_dc_spline_curve_prefix {
 /// Spec §13.5. Record length 90 B.
 ///
 /// ```text
-/// Prefix of the segment-major-29 and segment-major-31 sheet-metal style record; the record continues after this prefix.
+/// Prefix of the segment-major-29, segment-major-30, and segment-major-31 sheet-metal style record; the record continues after this prefix.
 /// ```
 pub(crate) mod pm_dc_sheet_metal_style_operand_prefix {
     /// Offset of `thickness` (`u32`, little-endian). Spec §13.5.

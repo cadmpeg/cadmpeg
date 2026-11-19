@@ -460,17 +460,20 @@ impl<'ir> FaceFrame<'_, 'ir> {
     }
 
     /// The whole periods to add to the `u` jump `jump` of a junction at a
-    /// sphere pole, so that the segment along the pole keeps the region on
-    /// its left: `−u` at the north pole and `+u` at the south pole for loops
-    /// oriented with the region on their left, reversed for a face whose
-    /// declared normal is reversed, by an amount in `[0, 2π)`. `None` when
-    /// the junction is not at a sphere pole, or when the amount lies within
-    /// the angular allowance of 0 or a full turn, where the nearest lift
-    /// stands.
+    /// pole of a sphere or spindle-torus sheet, so that the segment along
+    /// the pole keeps the region on its left: `−u` at the upper pole and
+    /// `+u` at the lower pole for loops oriented with the region on their
+    /// left, reversed for a face whose declared normal is reversed, by an
+    /// amount in `[0, 2π)`. `None` when the junction is not at a pole, or
+    /// when the amount lies within the angular allowance of 0 or a full
+    /// turn, where the nearest lift stands.
     fn pole_turn(&self, from: [f64; 2], points: [Point3; 2], jump: f64) -> Option<f64> {
-        let Chart::Sphere(sphere) = self.chart else {
-            return None;
+        let radius = match self.chart {
+            Chart::Sphere(sphere) => sphere.radius,
+            Chart::Torus(torus) => torus.minor,
+            _ => return None,
         };
+        let [(low, _), (high, _)] = self.chart.poles()?;
         if !points
             .iter()
             .all(|point| self.chart.singular_at(*point, self.alpha))
@@ -482,7 +485,11 @@ impl<'ir> FaceFrame<'_, 'ir> {
             NormalReading::Reversed => -1.0,
             _ => 1.0,
         };
-        let direction = if from[1] > 0.0 { -keeping } else { keeping };
+        let direction = if from[1] > low.midpoint(high) {
+            -keeping
+        } else {
+            keeping
+        };
         let amount = (direction * jump).rem_euclid(period);
         let allowance = self
             .owners
@@ -490,7 +497,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
             .tolerances
             .angular
             .get()
-            .max(self.alpha / sphere.radius.abs());
+            .max(self.alpha / radius.abs());
         if amount <= allowance || period - amount <= allowance {
             return None;
         }
@@ -675,10 +682,10 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 ),
             });
         };
-        let piece = Piece::inverted(
+        let pieces = Piece::inverted(
             eval,
             self.chart,
-            curve,
+            &curve,
             interval,
             CoedgeUse {
                 coedge,
@@ -688,7 +695,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
         )
         .map_err(|failure| failure.at(entity))?;
         Ok(CoedgePieces::Pieces {
-            pieces: vec![piece],
+            pieces,
             directed: true,
             listed_backward: false,
         })

@@ -343,8 +343,8 @@ fn slotted_prologue_reads_two_face_targets_outside_the_dedicated_shifted_frame()
 }
 
 #[test]
-fn seventh_slot_record_is_read_when_the_slot_run_ends_at_the_first_side_extent() {
-    use super::super::extrude_seventh_slot_record_index;
+fn marked_slots_are_read_when_the_slot_run_ends_at_the_first_side_extent() {
+    use super::super::extrude_marked_reference_slots;
     use crate::layout::current_extrude_operation_fields as extrude_fields;
     const OPERATION: usize = 26;
     let slots_at = OPERATION + extrude_fields::PROFILE_NORMAL + 24;
@@ -383,19 +383,35 @@ fn seventh_slot_record_is_read_when_the_slot_run_ends_at_the_first_side_extent()
 
     let (bytes, extent_at) = build([true, false, false, true, false, true, true]);
     assert_eq!(
-        extrude_seventh_slot_record_index(&bytes, prologue(extent_at)),
-        Some(7_006)
+        extrude_marked_reference_slots(&bytes, prologue(extent_at)),
+        Some([
+            Some(7_000),
+            None,
+            None,
+            Some(7_003),
+            None,
+            Some(7_005),
+            Some(7_006)
+        ])
     );
 
     let (bytes, extent_at) = build([true, false, false, true, false, true, false]);
     assert_eq!(
-        extrude_seventh_slot_record_index(&bytes, prologue(extent_at)),
-        None
+        extrude_marked_reference_slots(&bytes, prologue(extent_at)),
+        Some([
+            Some(7_000),
+            None,
+            None,
+            Some(7_003),
+            None,
+            Some(7_005),
+            None
+        ])
     );
 
     let (bytes, extent_at) = build([true, false, false, true, false, true, true]);
     assert_eq!(
-        extrude_seventh_slot_record_index(&bytes, prologue(extent_at + 5)),
+        extrude_marked_reference_slots(&bytes, prologue(extent_at + 5)),
         None
     );
 }

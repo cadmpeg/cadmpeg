@@ -74,18 +74,14 @@ fn position_resolves_unique_complete_paths_despite_ambiguous_prefixes_and_the_co
     const CHILD: &str = "22222222-3333-4444-8555-666666666666";
     let occurrence = cadmpeg_ir::products::Occurrence {
         id: cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#one").unwrap(),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:definition#one")
-                .unwrap(),
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
+        prototype: cadmpeg_ir::ids::ProductDefinitionId::mint("synthetic:test:definition#one")
+            .unwrap(),
+        transform: Some(Transform::identity()),
+        suppressed: None,
         visible: None,
-        link: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
         native_ref: Some("f3d:Design/BulkStream.dat:occurrence#key".into()),
     };
     let carrier = crate::records::feature::assembly_features::DesignComponentOccurrence::try_new(
@@ -118,9 +114,6 @@ fn position_resolves_unique_complete_paths_despite_ambiguous_prefixes_and_the_co
     child_carrier.occurrence_guid = CHILD.to_owned().try_into().unwrap();
     child.native_ref = Some(child_carrier.id.clone());
     child.id = cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#child").unwrap();
-    child.parent = cadmpeg_ir::products::OccurrenceParent::Occurrence {
-        occurrence: root.id.clone(),
-    };
     for ambiguous_full in [false, true] {
         let mut other = if ambiguous_full {
             child.clone()
@@ -128,10 +121,16 @@ fn position_resolves_unique_complete_paths_despite_ambiguous_prefixes_and_the_co
             root.clone()
         };
         other.id = cadmpeg_ir::ids::OccurrenceId::mint("synthetic:test:occurrence#other").unwrap();
+        let mut occurrences = vec![root.clone(), child.clone(), other];
+        let definitions = crate::tree::owned_by(
+            &mut occurrences,
+            &[None, Some(0), ambiguous_full.then_some(0)],
+        );
         let paths = LocalOccurrencePaths::new(
             &[carrier.clone(), child_carrier.clone()],
             &[],
-            &[root.clone(), child.clone(), other],
+            &definitions,
+            &occurrences,
             &[],
         );
         let keys = [OCCURRENCE_KEY.to_owned(), CHILD.to_owned()];

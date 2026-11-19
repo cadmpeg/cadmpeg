@@ -171,14 +171,14 @@ fn form_completeness_requires_complete_membership_with_a_committed_cage() {
                     "observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#1"}}],
                     "membership":{"kind":"partial","cardinality":2,"order":"unknown","members":members}
                 }},
-                "inputs": {"parameters": {}, "references": [], "lists": []}
+                "inputs": cadmpeg_ir::features::form::FormInputs::default()
             }}})
         )));
     }
     assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({"kind": "operation", "value": {"kind": "form", "value": {
             "cages": {"kind": "complete", "value": ["test:model:subd#1"]},
-            "inputs": {"parameters": {}, "references": [], "lists": []},
+            "inputs": cadmpeg_ir::features::form::FormInputs::default(),
             "cage_inputs":{"observations":[{"paths":[],"binding":{"kind":"decoded","cage":"test:model:subd#1"}}],"membership":{"kind":"complete","members":[0],"order":"assumed","certainty":"assumed"}}}}})
     )));
 }
@@ -280,22 +280,21 @@ fn datum_axes_require_a_finite_nonzero_direction() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     assert!(!feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                .unwrap(),
-        })
+        &FeatureDefinition::Operation(FeatureOperation::datum_axis(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+        ))
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
-            direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+        &FeatureDefinition::Operation(FeatureOperation::datum_axis(
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+            cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
                 f64::EPSILON / 2.0,
                 0.0,
                 0.0
             ))
             .unwrap(),
-        })
+        ))
     ));
 }
 
@@ -353,7 +352,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     };
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 resolved("target"),
                 resolved("replacement"),
             )
@@ -362,7 +361,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 FaceSelection::Native("native:target".into()),
                 resolved("replacement"),
             )
@@ -371,7 +370,7 @@ fn replace_face_requires_resolved_target_and_replacement_faces() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 resolved("target"),
                 FaceSelection::Native("native:replacement".into()),
             )

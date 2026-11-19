@@ -3798,7 +3798,7 @@ fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>,
             _ => {
                 return Err(CodecError::malformed(
                     "constraint entity and position must both be present",
-                ))
+                ));
             }
         }
     }
@@ -7068,10 +7068,10 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
         "PartDesign::Plane" => FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, z_axis, x_axis)?,
         }),
-        "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
-        }),
+        "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::datum_axis(
+            cadmpeg_ir::features::FinitePoint3::new(origin)?,
+            cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
+        )),
         "PartDesign::Point" => FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: cadmpeg_ir::features::FinitePoint3::new(origin)?,
             construction: None,
