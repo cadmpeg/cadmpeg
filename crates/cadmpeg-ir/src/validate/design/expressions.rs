@@ -159,11 +159,14 @@ pub(super) fn check_expression(
     }
 }
 
-/// `Source` tokens are nonempty and hold at least one `Text` token.
+/// `Source` tokens hold at least one `Text` token. An empty token list, a
+/// parameter whose value and text the decoder did not read, is left
+/// unchecked (interim, gap 20261119-X3-1).
 fn check_tokens<R>(entity: &str, tokens: &[ExpressionToken<R>], findings: &mut Vec<Finding>) {
-    if !tokens
-        .iter()
-        .any(|token| matches!(token, ExpressionToken::Text(_)))
+    if !tokens.is_empty()
+        && !tokens
+            .iter()
+            .any(|token| matches!(token, ExpressionToken::Text(_)))
     {
         super::error(
             findings,

@@ -226,6 +226,11 @@ fn expressions_type_check_and_resolve() {
         tokens: vec![ExpressionToken::Reference(reference("width"))],
     });
     assert_finding(&ir, "source expression holds no text token");
+    ir.design.parameters[0].definition = ParameterDefinition::Expression(Expression::Source {
+        dialect: ExpressionDialect::Fusion,
+        tokens: Vec::new(),
+    });
+    assert_no_finding_containing(&ir, "source expression");
     let mut ir = with_width();
     let mut flag = parameter("flag", ValueKind::Boolean);
     flag.definition = expression("$0", &[reference("width")]);
