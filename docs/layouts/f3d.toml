@@ -41186,6 +41186,27 @@ source = "spec"
 anchor = "A u32 with value one and a nullable local record reference follow the Boolean."
 
 [[record]]
+name = "split_body_compact_group_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A compact `Split` construction group uses Fusion type"
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+note = "Counted member references follow this prefix."
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Indexed header and ten zero bytes."
+
+[[record.field]]
+name = "member_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The u32 member count starts at offset 21."
+
+[[record]]
 name = "mesh_plane_cut_scope_prefix"
 kind = "byte"
 section = "3.1"
