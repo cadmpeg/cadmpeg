@@ -540,6 +540,50 @@ fn a_counterbore_hole_maps_to_the_neutral_hole() {
 }
 
 #[test]
+fn a_split_by_a_construction_plane_maps_to_the_neutral_split() {
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Splits",
+        "units": "mm",
+        "params": [],
+        "features": [
+            {"id": 1, "name": "Base", "suppressed": false, "type": "box",
+             "corner": [0, 0, 0], "length": "40", "width": "20", "height": "10", "operation": "new_body"},
+            {"id": 2, "name": "Plane1", "suppressed": false, "type": "construction_plane",
+             "plane": {"type": "offset", "base": {"type": "origin", "name": "YZ"}, "distance": "20"}},
+            {"id": 3, "name": "SplitBody1", "suppressed": false, "type": "split_body",
+             "body": "Body1", "plane": {"type": "construction", "feature": 2}},
+            {"id": 4, "name": "SplitFace1", "suppressed": false, "type": "split_face",
+             "faces": [[20.0, 10.0, 10.0]], "face_names": ["F1:top"],
+             "plane": {"type": "construction", "feature": 2}},
+            {"id": 5, "name": "SplitBody2", "suppressed": false, "type": "split_body",
+             "body": "Body1", "plane": {"type": "origin", "name": "XY"}},
+            {"id": 6, "name": "SplitFace2", "suppressed": false, "type": "split_face",
+             "faces": [[20.0, 10.0, 10.0]], "face_names": ["F1:top"],
+             "plane": {"type": "construction", "feature": 99}}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let features = features(&bytes);
+    let kind = |index: usize| features[index]["definition"]["value"]["kind"].clone();
+    assert_eq!(kind(2), "split_body");
+    assert_eq!(kind(3), "split_face");
+    assert_eq!(kind(4), "native");
+    assert_eq!(kind(5), "native");
+    let split_body = &features[2]["definition"]["value"]["value"];
+    assert_eq!(split_body["targets"]["kind"], "native");
+    assert_eq!(split_body["tool"]["kind"], "plane");
+    assert_eq!(
+        features[2]["dependencies"],
+        json!(["solidcraft:design:feature#2"])
+    );
+    assert_eq!(
+        features[3]["definition"]["value"]["value"]["tool"]["kind"],
+        "plane"
+    );
+}
+
+#[test]
 fn components_occurrences_and_joints_form_the_product_structure() {
     let identity = json!([
         [1.0, 0.0, 0.0, 0.0],

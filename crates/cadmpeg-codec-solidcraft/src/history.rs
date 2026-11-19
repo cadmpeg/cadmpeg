@@ -240,6 +240,8 @@ const TYPED: &[&str] = &[
     "offset_face",
     "delete_face",
     "hole",
+    "split_body",
+    "split_face",
 ];
 
 impl Walk<'_, '_> {

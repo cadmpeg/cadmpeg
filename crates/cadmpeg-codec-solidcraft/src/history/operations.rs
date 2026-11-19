@@ -108,6 +108,8 @@ impl Inputs<'_> {
             "sweep" => self.sweep(record, dependencies),
             "coil" => self.coil(record),
             "hole" => self.hole(record),
+            "split_body" => self.split_body(record, dependencies),
+            "split_face" => self.split_face(record, dependencies),
             "delete_face" => Some(json!({"kind": "delete_face", "value": {
                 "faces": picked(record, "faces", "face_names")?,
                 "heal": record.get("heal").and_then(Value::as_bool) != Some(false),
@@ -169,6 +171,35 @@ impl Inputs<'_> {
             },
             "extent": extent,
         }}))
+    }
+
+    /// A construction plane named as the splitting tool, as a feature
+    /// reference. Any other plane, or a tool given by faces or a point, has
+    /// no neutral form here and stays native.
+    fn split_plane(&self, reference: &Value, dependencies: &mut BTreeSet<u64>) -> Option<Value> {
+        if reference.get("type")?.as_str()? != "construction" {
+            return None;
+        }
+        let feature = reference.get("feature")?.as_u64()?;
+        if !self.planes.contains_key(&feature) {
+            return None;
+        }
+        dependencies.insert(feature);
+        Some(json!({"kind": "plane", "value": {"plane": id("feature", &feature.to_string())}}))
+    }
+
+    /// A body split by a construction plane.
+    fn split_body(&self, record: &Value, dependencies: &mut BTreeSet<u64>) -> Option<Value> {
+        let targets = bodies(record.get("body")?)?;
+        let tool = self.split_plane(record.get("plane")?, dependencies)?;
+        Some(json!({"kind": "split_body", "value": {"targets": targets, "tool": tool}}))
+    }
+
+    /// Faces split by a construction plane, with the picked faces native.
+    fn split_face(&self, record: &Value, dependencies: &mut BTreeSet<u64>) -> Option<Value> {
+        let targets = picked(record, "faces", "face_names")?;
+        let tool = self.split_plane(record.get("plane")?, dependencies)?;
+        Some(json!({"kind": "split_face", "value": {"targets": targets, "tool": tool}}))
     }
 
     fn fillet(&self, record: &Value) -> Option<Value> {
