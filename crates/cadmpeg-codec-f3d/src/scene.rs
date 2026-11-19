@@ -371,33 +371,25 @@ pub(crate) fn bind(
     // and bind each path to the occurrence the definition owns.
     let original_parents =
         crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
-    let (expanded, refusal) = match crate::tree::expand(
+    // A refused expansion binds on the unexpanded tree, as before expansion.
+    let expanded = match crate::tree::expand(
         &ctx.policy().limits,
         &ir.model.product_definitions,
         &ir.model.occurrences,
     ) {
-        Ok(expanded) => (expanded, None),
+        Ok(expanded) => expanded,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(error) => (
-            crate::tree::Expanded {
-                definitions: ir.model.product_definitions.clone(),
-                occurrences: ir.model.occurrences.clone(),
-                occurrence_of: ir
-                    .model
-                    .occurrences
-                    .iter()
-                    .map(|record| (record.id.clone(), record.id.clone()))
-                    .collect(),
-            },
-            Some(error),
-        ),
+        Err(_) => crate::tree::Expanded {
+            definitions: ir.model.product_definitions.clone(),
+            occurrences: ir.model.occurrences.clone(),
+            occurrence_of: ir
+                .model
+                .occurrences
+                .iter()
+                .map(|record| (record.id.clone(), record.id.clone()))
+                .collect(),
+        },
     };
-    let mut placements = BTreeMap::new();
-    if refusal.is_some() {
-        for record in &ir.model.occurrences {
-            *placements.entry(&record.prototype).or_insert(0_usize) += 1;
-        }
-    }
     let occurrences = expanded
         .occurrences
         .iter()
@@ -405,7 +397,6 @@ pub(crate) fn bind(
         .collect::<BTreeMap<_, _>>();
     let parents = crate::tree::parent_ids(&expanded.definitions, &expanded.occurrences);
     let mut paths = BTreeMap::<Vec<u64>, Option<OccurrenceId>>::new();
-    let mut shared_paths = BTreeSet::new();
     for occurrence in &expanded.occurrences {
         let Some(target) = expanded.occurrence_of.get(&occurrence.id) else {
             continue;
@@ -422,17 +413,7 @@ pub(crate) fn bind(
         let mut seen = BTreeSet::new();
         let mut current = Some(occurrence);
         let mut valid = true;
-        let mut shared = false;
         while let Some(record) = current {
-            // A child of a definition placed more than once is listed once
-            // for every placement, so its path names no single instance.
-            if !std::ptr::eq(record, occurrence)
-                && placements
-                    .get(&record.prototype)
-                    .is_some_and(|count| *count > 1)
-            {
-                shared = true;
-            }
             // Reject an expansion that places an occurrence under another
             // insertion than the one its identity names.
             if let Some(expected) = expanded
@@ -473,10 +454,6 @@ pub(crate) fn bind(
         }
         if valid && !chain.is_empty() {
             let path = chain.into_iter().rev().flatten().collect::<Vec<_>>();
-            if shared {
-                shared_paths.insert(path);
-                continue;
-            }
             paths
                 .entry(path)
                 .and_modify(|id| *id = None)
@@ -486,9 +463,7 @@ pub(crate) fn bind(
     let mut unbound = 0;
     let mut ambiguous = 0;
     for record in &mut rows {
-        if record.tagged_from.is_some_and(|first| first != 0)
-            || shared_paths.contains(&record.path.0)
-        {
+        if record.tagged_from.is_some_and(|first| first != 0) {
             unbound += 1;
             record.binding = SceneBinding::Unbound {};
             continue;
@@ -508,11 +483,7 @@ pub(crate) fn bind(
         };
     }
     if unbound > 0 {
-        let message = match refusal {
-            Some(error) => format!("{unbound} display override row(s) stay unbound: the instance tree was not expanded ({error}); fallback requires a carrier chain through definitions placed once"),
-            None => format!("{unbound} display override row(s) have no neutral occurrence at their alternating record-index path"),
-        };
-        losses.push(F3dLossCode::SceneOverrideUnbound.note(message));
+        losses.push(F3dLossCode::SceneOverrideUnbound.note(format!("{unbound} display override row(s) have no neutral occurrence at their alternating record-index path")));
     }
     if ambiguous > 0 {
         losses.push(F3dLossCode::SceneOverrideAmbiguous.note(format!("{ambiguous} display override row(s) share their alternating record-index path with multiple neutral occurrences")));

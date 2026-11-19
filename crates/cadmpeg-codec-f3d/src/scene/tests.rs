@@ -592,7 +592,7 @@ fn scene_carrierless_children_leave_their_insertion_path_to_the_insertion() {
 }
 
 #[test]
-fn scene_expansion_refusal_binds_unique_chains_and_unbinds_shared_definitions() {
+fn scene_expansion_refusal_binds_on_the_unexpanded_tree() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_entities = 5;
@@ -651,16 +651,77 @@ fn scene_expansion_refusal_binds_unique_chains_and_unbinds_shared_definitions() 
             }
         );
     }
-    assert!(rows[3..]
-        .iter()
-        .all(|row| row.binding == SceneBinding::Unbound {}));
-    assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].code, F3dLossCode::SceneOverrideUnbound.kind());
-    assert!(losses[0].message.starts_with("2 display override row(s)"));
-    assert!(losses[0]
-        .message
-        .contains("the instance tree was not expanded"));
     assert!(validate(&rows, &ir.model).is_empty());
     assert_eq!(ir.model.occurrences, occurrences);
     assert_eq!(ir.model.product_definitions, definitions);
+}
+
+#[test]
+fn scene_expansion_refusal_binds_children_listed_per_placement() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_entities = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.occurrences = vec![
+        occurrence("f3d:test:occurrence#first", Some("first")),
+        occurrence("f3d:test:occurrence#second", Some("second")),
+        occurrence("f3d:test:occurrence#first:child", Some("first-child")),
+        occurrence("f3d:test:occurrence#second:child", Some("second-child")),
+    ];
+    place(&mut ir, &[None, None, Some(0), Some(1)]);
+    // One definition placed twice lists the children of both placements.
+    let shared = ir.model.occurrences[0].prototype.clone();
+    let other = ir.model.occurrences[1].prototype.clone();
+    ir.model.occurrences[1].prototype = shared.clone();
+    let moved = ir
+        .model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.id == other)
+        .map(|definition| std::mem::take(&mut definition.occurrences))
+        .unwrap();
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.id == shared)
+        .unwrap()
+        .occurrences
+        .extend(moved);
+    let occurrences = ir.model.occurrences.clone();
+    assert!(crate::tree::expand(
+        &policy.limits,
+        &ir.model.product_definitions,
+        &ir.model.occurrences
+    )
+    .is_err());
+    let sources = Sources::from([
+        ("first".to_owned(), [3, 17]),
+        ("second".to_owned(), [3, 19]),
+        ("first-child".to_owned(), [23, 29]),
+        ("second-child".to_owned(), [23, 31]),
+    ]);
+    let mut world = encoded(&[3, 17, 23, 29]);
+    world.extend(encoded(&[3, 19, 23, 31]));
+    let (rows, mut losses) = decode(&world);
+    ir.native
+        .namespace_mut("f3d")
+        .set_arena(&ctx, "display_poses", &rows)
+        .unwrap();
+    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    let rows: Vec<DisplayPose> = ir
+        .native
+        .namespace("f3d")
+        .unwrap()
+        .arena_as_for_decode(&ctx, "display_poses")
+        .unwrap();
+    for (row, occurrence) in rows.iter().zip(&occurrences[2..]) {
+        assert_eq!(
+            row.binding,
+            SceneBinding::Bound {
+                occurrence: occurrence.id.clone()
+            }
+        );
+    }
+    assert!(losses.is_empty());
 }
