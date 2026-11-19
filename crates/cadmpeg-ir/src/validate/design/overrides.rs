@@ -395,6 +395,56 @@ enum Fields<'c> {
     Skipped,
 }
 
+impl Fields<'_> {
+    fn field<T: Serialize + ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<(), Unsupported> {
+        match self {
+            Fields::Plain { into, pushed } => {
+                if key == "kind" {
+                    if let Ok(tag) = value.serialize(Text) {
+                        into.path.push(tag);
+                        *pushed += 1;
+                        return Ok(());
+                    }
+                }
+                into.nested(key.to_owned(), value)
+            }
+            Fields::Dimension {
+                arm, value: held, ..
+            } => {
+                match key {
+                    "kind" => *arm = value.serialize(Text).ok(),
+                    "value" => *held = serde_value::to_value(value).ok(),
+                    _ => {}
+                }
+                Ok(())
+            }
+            Fields::Skipped => Ok(()),
+        }
+    }
+
+    fn finish(self) {
+        match self {
+            Fields::Plain { into, pushed } => {
+                for _ in 0..pushed {
+                    into.path.pop();
+                }
+            }
+            Fields::Dimension {
+                into,
+                arm: Some(arm),
+                value: Some(value),
+            } if matches!(arm.as_str(), "literal" | "parameter" | "negated") => {
+                into.found.insert(into.path.clone(), Found { arm, value });
+            }
+            Fields::Dimension { .. } | Fields::Skipped => {}
+        }
+    }
+}
+
 macro_rules! fields_impl {
     ($trait:ident) => {
         impl ser::$trait for Fields<'_> {
@@ -406,47 +456,11 @@ macro_rules! fields_impl {
                 key: &'static str,
                 value: &T,
             ) -> Result<(), Unsupported> {
-                match self {
-                    Fields::Plain { into, pushed } => {
-                        if key == "kind" {
-                            if let Ok(tag) = value.serialize(Text) {
-                                into.path.push(tag);
-                                *pushed += 1;
-                                return Ok(());
-                            }
-                        }
-                        into.nested(key.to_owned(), value)
-                    }
-                    Fields::Dimension {
-                        arm, value: held, ..
-                    } => {
-                        match key {
-                            "kind" => *arm = value.serialize(Text).ok(),
-                            "value" => *held = serde_value::to_value(value).ok(),
-                            _ => {}
-                        }
-                        Ok(())
-                    }
-                    Fields::Skipped => Ok(()),
-                }
+                self.field(key, value)
             }
 
             fn end(self) -> Result<(), Unsupported> {
-                match self {
-                    Fields::Plain { into, pushed } => {
-                        for _ in 0..pushed {
-                            into.path.pop();
-                        }
-                    }
-                    Fields::Dimension {
-                        into,
-                        arm: Some(arm),
-                        value: Some(value),
-                    } if matches!(arm.as_str(), "literal" | "parameter" | "negated") => {
-                        into.found.insert(into.path.clone(), Found { arm, value });
-                    }
-                    Fields::Dimension { .. } | Fields::Skipped => {}
-                }
+                self.finish();
                 Ok(())
             }
         }
