@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::drawings::{DrawingCurveGeometry, DrawingSheet, TemplateGeometry, TemplateText};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{PositiveLength, PositiveReal};
+use cadmpeg_ir::scalar::PositiveLength;
 use cadmpeg_ir::units::FiniteVector;
 use roxmltree::{Document, Node};
 
@@ -220,7 +220,7 @@ fn circle(node: Node<'_, '_>, height: f64) -> Option<DrawingCurveGeometry> {
             number(node, "cy", Some(0.0))?,
             height,
         )?,
-        radius: PositiveReal::new(number(node, "r", None)?)?,
+        radius: PositiveLength::new(number(node, "r", None)?)?,
     })
 }
 
@@ -427,7 +427,7 @@ fn circular_arc(
     }
     Some(DrawingCurveGeometry::Arc {
         center: point(center[0], center[1], height)?,
-        radius: PositiveReal::new(radius)?,
+        radius: PositiveLength::new(radius)?,
         start: point(start[0], start[1], height)?,
         middle: FiniteVector::new([
             center[0] + radius * (first + angle / 2.0).to_radians().cos(),
