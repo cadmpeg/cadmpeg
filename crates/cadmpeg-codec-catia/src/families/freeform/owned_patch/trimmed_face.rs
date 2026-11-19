@@ -475,7 +475,7 @@ where
         ) {
             return None;
         }
-        Carrier::extended_rolling_ball(a5_extended_rolling_curve(self.bytes, record)?)
+        Carrier::extended_rolling_ball(&a5_extended_rolling_curve(self.bytes, record)?)
     }
 
     fn mapped_rolling_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {
@@ -505,7 +505,7 @@ where
         }
         let jet = a5_extended_rolling_curve(self.bytes, record)?;
         (jet.extended_v_end == Some(jet.chart_v_end)).then_some(())?;
-        Carrier::extended_rolling_ball(jet)
+        Carrier::extended_rolling_ball(&jet)
     }
 
     fn mapped_sphere_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {

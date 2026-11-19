@@ -1512,9 +1512,9 @@ fn rolling_ball_construction_radius_admits_small_rail_correction() {
         .map(|value| super::FiniteReal::new(value).expect("finite station"))
     };
     let (site, shift) =
-        super::project_rolling_ball_rails(positions(1.000001), 1.0).expect("rail correction");
+        super::project_rolling_ball_rails(positions(1.000_001), 1.0).expect("rail correction");
     assert!((site.limit2.distance(site.center.get()) - 1.0).abs() < 1e-12);
-    assert!((shift - 0.000001).abs() < 1e-12);
+    assert!((shift - 0.000_001).abs() < 1e-12);
     assert!(super::project_rolling_ball_rails(positions(1.00001), 1.0).is_none());
 }
 

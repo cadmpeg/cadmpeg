@@ -26,7 +26,7 @@ const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
 const EPS_OWNED_ROLLING_BALL_RADIUS: f64 = 5.0e-7;
 const EPS_OWNED_ROLLING_BALL_ANGLE: f64 = 5.0e-7;
 const COLLAPSED_RAIL_TOLERANCE_MM: f64 = 0.00005;
-const CONSTRUCTION_RAIL_PROJECTION_MM: f64 = 0.000002;
+const CONSTRUCTION_RAIL_PROJECTION_MM: f64 = 0.000_002;
 
 /// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]

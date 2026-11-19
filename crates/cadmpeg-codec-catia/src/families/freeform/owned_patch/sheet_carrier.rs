@@ -79,7 +79,7 @@ impl Carrier<'_> {
         })
     }
 
-    pub(super) fn extended_rolling_ball(jet: A5FreeformCurve) -> Option<Self> {
+    pub(super) fn extended_rolling_ball(jet: &A5FreeformCurve) -> Option<Self> {
         let upper = jet.extended_v_end?;
         let first = &jet.sites.first()?.site;
         let radius = first.limit1.distance(first.center.get());
