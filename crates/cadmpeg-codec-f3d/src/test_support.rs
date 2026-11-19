@@ -94,9 +94,10 @@ pub(crate) fn assert_written_with_loss(
         .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes what it can encode");
-    F3dCodec
+    let decoded = F3dCodec
         .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
         .expect("the written file decodes");
+    assert_decodes_back(&report, decoded.report());
     assert!(
         report
             .losses
@@ -106,6 +107,30 @@ pub(crate) fn assert_written_with_loss(
         report.losses
     );
     report
+}
+
+/// The written file's B-rep frames, and a write that charged no
+/// `export:output.empty` decodes with no blocking loss.
+pub(crate) fn assert_decodes_back(
+    written: &cadmpeg_ir::report::export::ExportReport,
+    decoded: &cadmpeg_ir::report::decode::DecodeReport,
+) {
+    let empty = written
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty");
+    for loss in &decoded.losses {
+        assert!(
+            !loss.message.contains("not a decodable"),
+            "the written B-rep frames: {}",
+            loss.message
+        );
+        assert!(
+            empty || loss.severity < cadmpeg_ir::report::Severity::Blocking,
+            "the written file decodes without a blocking loss: {:#?}",
+            decoded.losses
+        );
+    }
 }
 
 /// A finite test value as the checked scalar a record holds.

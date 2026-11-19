@@ -55,6 +55,9 @@ pub(super) fn encode_smbh(
         && geometry.faces.is_empty()
     {
         let mut bytes = native_smbh_header(target)?;
+        native_ident(&mut bytes, "asmheader")?;
+        native_string(&mut bytes, "231.6.3.65535")?;
+        bytes.push(0x11);
         native_history_tail(&mut bytes, &F3dNative::default())?;
         return Ok(bytes);
     }

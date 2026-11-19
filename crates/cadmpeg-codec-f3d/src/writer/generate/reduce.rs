@@ -159,6 +159,7 @@ impl<'a> Reduction<'a> {
         self.drop_unwritten_arenas();
         self.strip_carrier_metadata();
         self.complete_vertex_free_edges()?;
+        self.drop_pole_loops();
         self.write_attributes_in_their_native_form();
         self.reduce_procedural_carriers();
         self.drop_unwritable_pcurves();
@@ -432,6 +433,70 @@ impl<'a> Reduction<'a> {
             "direct colour transparency",
             "the F3D colour attribute holds opaque RGB; the colour is written opaque",
             made_opaque,
+        ));
+    }
+
+    /// A loop that is one vertex at a surface singularity has no ASM record:
+    /// the face's surface states the pole. Each such loop that is not a face's
+    /// classified outer loop is dropped, with its vertex where nothing else
+    /// uses it, and a loss naming the loops.
+    fn drop_pole_loops(&mut self) {
+        let geometry = &self.ir.geometry;
+        let outer = geometry
+            .faces
+            .iter()
+            .filter_map(|face| match &face.loops {
+                FaceLoops::Classified { outer, .. } => Some(outer.as_str()),
+                FaceLoops::Unspecified { .. } => None,
+            })
+            .collect::<HashSet<_>>();
+        let poles = geometry
+            .loops
+            .iter()
+            .filter(|row| {
+                matches!(row.boundary, LoopBoundary::Vertex { .. })
+                    && !outer.contains(row.id.as_str())
+            })
+            .map(|row| row.id.clone())
+            .collect::<HashSet<_>>();
+        if poles.is_empty() {
+            return;
+        }
+        let geometry = &mut self.ir.to_mut().geometry;
+        for face in &mut geometry.faces {
+            match &mut face.loops {
+                FaceLoops::Unspecified { loops } => loops.retain(|id| !poles.contains(id)),
+                FaceLoops::Classified { inner, .. } => inner.retain(|id| !poles.contains(id)),
+            }
+        }
+        geometry.loops.retain(|row| !poles.contains(&row.id));
+        let used = geometry
+            .edges
+            .iter()
+            .flat_map(|edge| edge.vertices().cloned().collect::<Vec<_>>())
+            .chain(
+                geometry
+                    .shells
+                    .iter()
+                    .flat_map(|shell| shell.free_vertices().cloned().collect::<Vec<_>>()),
+            )
+            .chain(geometry.loops.iter().filter_map(|row| match &row.boundary {
+                LoopBoundary::Vertex { vertex, .. } => Some(vertex.clone()),
+                LoopBoundary::Ring(_) => None,
+            }))
+            .collect::<HashSet<_>>();
+        geometry.vertices.retain(|vertex| used.contains(&vertex.id));
+        let points = geometry
+            .vertices
+            .iter()
+            .map(|vertex| vertex.point.clone())
+            .collect::<HashSet<_>>();
+        geometry.points.retain(|point| points.contains(&point.id));
+        self.losses.extend(named_loss(
+            F3dLossCode::WriterGeometryOmitted,
+            "pole loop",
+            "ASM states a surface singularity by its surface and stores no vertex loop for it",
+            poles.iter().map(ToString::to_string),
         ));
     }
 
