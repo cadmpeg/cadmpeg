@@ -80,11 +80,6 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   `[dev-dependencies]`. The registry composes document checks. A decoder or encoder selects its layout, carrier,
   sense, units, and interpretation from format semantics. Codec round-trip
   tests use measurement as an oracle.
-- A frozen file is no longer than the line count `FROZEN_LINE_LIMITS` records
-  for it (`frozen_file_size`). `crates/cadmpeg-ir/src/features.rs`, the v10
-  design layer, is frozen: it takes no new type, arm or field. A unit that must
-  lengthen a frozen file raises its limit in the same pull request and states
-  why. Shortening a frozen file passes.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and
