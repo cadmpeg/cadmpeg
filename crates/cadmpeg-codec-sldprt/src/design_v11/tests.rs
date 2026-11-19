@@ -213,7 +213,18 @@ fn part_without_a_history_states_no_design() {
     assert!(ir.design.scopes.is_empty());
     assert!(ir.design.containers.is_empty());
     assert!(ir.design.features.is_empty());
-    assert!(ir.model.product_definitions.is_empty());
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one root definition");
+    };
+    assert!(root.is_root());
+    assert_eq!(
+        root.bodies,
+        ir.geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>()
+    );
 }
 
 fn parameter_named<'a>(

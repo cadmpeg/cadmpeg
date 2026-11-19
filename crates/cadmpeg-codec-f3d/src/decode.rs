@@ -2423,11 +2423,9 @@ fn report_design_projection_gaps(
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
             && prologue.distance_tail().is_none()
         {
-            let fixed_lane_only = scope
-                .fixed_extrude_parameters()
-                .is_some_and(|fixed| fixed.along_distance.is_some())
-                && !crate::ids::native_stream(&scope.id)
-                    .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let indexed_along = crate::ids::native_stream(&scope.id)
+                .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let each_side = scope.assumes_symmetric_distance_each_side(indexed_along);
             let reading = matches!(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -2437,7 +2435,7 @@ fn report_design_projection_gaps(
                     },
                 )
             ) && prologue.side_extent_discriminators() != Some([1, 1]);
-            let reading = reading.then_some(if fixed_lane_only {
+            let reading = reading.then_some(if each_side {
                 "each side"
             } else {
                 "the whole travel"
@@ -4115,6 +4113,11 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
+            decoded.ir.state_root_definition(
+                ctx,
+                crate::tree::file_root_id(),
+                cadmpeg_ir::products::ExternalDocument::default(),
+            )?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,

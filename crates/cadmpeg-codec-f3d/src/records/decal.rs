@@ -5,58 +5,97 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::{identity::Located, references::DesignClassTag};
 use serde::{Deserialize, Serialize};
-const DESIGN_DECAL_FIT_TO_FACES_CODE: u8 = 0x60;
 
-/// A Decal mapping byte other than the fit-to-faces code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct UnrecognizedDecalMappingMode(u8);
+cadmpeg_core::named_optional_field!(deserialize_placement, DesignDecalPlacement, "placement");
 
-impl TryFrom<u8> for UnrecognizedDecalMappingMode {
-    type Error = String;
-    fn try_from(code: u8) -> Result<Self, Self::Error> {
-        if code == DESIGN_DECAL_FIT_TO_FACES_CODE {
-            Err("mapping_mode unknown payload must exclude the fit-to-faces code".into())
-        } else {
-            Ok(Self(code))
+/// Largest deviation of the squared placement normal length from one.
+pub(crate) const PLACEMENT_UNIT_NORMAL_TOLERANCE: f64 = 1.0e-9;
+
+/// Largest deviation from one of the absolute cosine between the placement normal and `U x V`.
+pub(crate) const PLACEMENT_NORMAL_PARALLEL_TOLERANCE: f64 = 1.0e-6;
+
+/// Placement frame stored by a Decal placement record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignDecalPlacement {
+    /// Byte offset of the placement record.
+    pub(crate) byte_offset: u64,
+    /// Dynamic class tag of the placement record.
+    pub(crate) class_tag: String,
+    /// Count of the (u, v) pairs, one for each display-mesh vertex of the target body.
+    pub(crate) vertex_count: u32,
+    /// Decal ordinal.
+    pub(crate) ordinal: u32,
+    /// Image width axis in Design length units.
+    pub(crate) u_axis: [f64; 3],
+    /// Image height axis in Design length units.
+    pub(crate) v_axis: [f64; 3],
+    /// The three bytes that follow `V`.
+    pub(crate) flag_bytes: cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>,
+    /// Count of the zero bytes between the two trailing references.
+    pub(crate) reference_separator: u8,
+    /// Count of the zero bytes between the second trailing reference and the normal.
+    pub(crate) normal_gap: u8,
+    /// Unit normal of the image plane.
+    pub(crate) normal: [f64; 3],
+    /// Image centre in Design length units.
+    pub(crate) origin: [f64; 3],
+    /// Name of the source image.
+    pub(crate) image_name: String,
+    /// Count of the covered-triangle vertex indices.
+    pub(crate) triangle_index_count: u32,
+}
+
+impl DesignDecalPlacement {
+    /// Whether the normal is parallel to `U x V`, in either direction.
+    pub(crate) fn normal_is_parallel_to_axes(&self) -> bool {
+        let (u, v, n) = (self.u_axis, self.v_axis, self.normal);
+        let cross = [
+            u[1] * v[2] - u[2] * v[1],
+            u[2] * v[0] - u[0] * v[2],
+            u[0] * v[1] - u[1] * v[0],
+        ];
+        let length = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
+        let projection: f64 = cross.iter().zip(n).map(|(a, b)| a * b).sum();
+        length > 0.0
+            && (projection.abs() / length - 1.0).abs() <= PLACEMENT_NORMAL_PARALLEL_TOLERANCE
+    }
+
+    /// Whether one zero byte separates the trailing references and four precede the normal.
+    pub(crate) fn has_stated_layout(&self) -> bool {
+        (self.reference_separator, self.normal_gap) == (1, 4)
+    }
+
+    /// Admit a frame that precedes the image-asset record at `asset_byte_offset`.
+    pub(crate) fn admit(&self, asset_byte_offset: u64) -> Result<(), String> {
+        if self.byte_offset >= asset_byte_offset {
+            return Err("placement byte_offset must precede the image-asset record".into());
         }
-    }
-}
-
-/// Decal image mapping-mode byte.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "u8", into = "u8")]
-pub(crate) enum DesignDecalMappingMode {
-    FitToFaces,
-    Unknown(UnrecognizedDecalMappingMode),
-}
-
-impl DesignDecalMappingMode {
-    #[must_use]
-    pub(crate) fn from_code(code: u8) -> Self {
-        match code {
-            DESIGN_DECAL_FIT_TO_FACES_CODE => Self::FitToFaces,
-            code => Self::Unknown(UnrecognizedDecalMappingMode(code)),
+        if self.class_tag.is_empty() || !self.class_tag.bytes().all(|byte| byte.is_ascii_graphic())
+        {
+            return Err("placement class_tag must contain printable ASCII characters".into());
         }
-    }
-
-    #[must_use]
-    pub(crate) fn code(self) -> u8 {
-        match self {
-            Self::FitToFaces => DESIGN_DECAL_FIT_TO_FACES_CODE,
-            Self::Unknown(code) => code.0,
+        if self.image_name.is_empty() {
+            return Err("placement image_name must be nonempty".into());
         }
-    }
-}
-
-impl From<u8> for DesignDecalMappingMode {
-    fn from(code: u8) -> Self {
-        Self::from_code(code)
-    }
-}
-
-impl From<DesignDecalMappingMode> for u8 {
-    fn from(mode: DesignDecalMappingMode) -> Self {
-        mode.code()
+        if self.reference_separator > 1 {
+            return Err("placement reference_separator must be 0 or 1".into());
+        }
+        if !matches!(self.normal_gap, 4 | 5) {
+            return Err("placement normal_gap must be 4 or 5".into());
+        }
+        if [self.u_axis, self.v_axis, self.normal, self.origin]
+            .iter()
+            .flatten()
+            .any(|value| !value.is_finite())
+        {
+            return Err("placement vectors must be finite".into());
+        }
+        let squared_length: f64 = self.normal.iter().map(|value| value * value).sum();
+        if (squared_length - 1.0).abs() > PLACEMENT_UNIT_NORMAL_TOLERANCE {
+            return Err("placement normal must have unit length".into());
+        }
+        Ok(())
     }
 }
 
@@ -96,13 +135,13 @@ impl DesignDecalScopeLayout {
         }
     }
 
-    pub(crate) const fn mapping_mode(self) -> usize {
+    pub(crate) const fn scope_code(self) -> usize {
         match self {
-            Self::Compact => crate::layout::design_decal_scope_prefix::MAPPING_MODE,
-            Self::Extended => crate::layout::design_decal_scope_extended_prefix::MAPPING_MODE,
-            Self::TypedCompact => crate::layout::design_decal_scope_typed_prefix::MAPPING_MODE,
+            Self::Compact => crate::layout::design_decal_scope_prefix::SCOPE_CODE,
+            Self::Extended => crate::layout::design_decal_scope_extended_prefix::SCOPE_CODE,
+            Self::TypedCompact => crate::layout::design_decal_scope_typed_prefix::SCOPE_CODE,
             Self::TypedExtended => {
-                crate::layout::design_decal_scope_typed_extended_prefix::MAPPING_MODE
+                crate::layout::design_decal_scope_typed_extended_prefix::SCOPE_CODE
             }
         }
     }
@@ -195,6 +234,9 @@ impl DesignDecalAsset {
     pub(crate) fn record_index(&self) -> u32 {
         self.record_index
     }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
     pub(crate) fn entity_suffix(&self) -> u32 {
         self.entity_suffix
     }
@@ -236,8 +278,10 @@ pub(crate) struct DesignDecalImage {
     pub(crate) id: String,
     scope: Located<u32>,
     layout: DesignDecalScopeLayout,
-    /// Source mapping-mode byte.
-    pub(crate) mapping_mode: DesignDecalMappingMode,
+    /// Scope code byte between the image-asset and target-group references.
+    pub(crate) scope_code: u8,
+    /// Frame of the Decal placement record.
+    pub(crate) placement: Option<DesignDecalPlacement>,
     /// Target construction-group record index.
     pub(crate) target_group_record_index: u32,
     /// Consecutive asset and image-name records.
@@ -257,7 +301,8 @@ impl Clone for DesignDecalImage {
             id: self.id.clone(),
             scope: self.scope,
             layout: self.layout,
-            mapping_mode: self.mapping_mode,
+            scope_code: self.scope_code,
+            placement: self.placement.clone(),
             target_group_record_index: self.target_group_record_index,
             asset: self.asset.clone(),
         }
@@ -269,7 +314,7 @@ impl DesignDecalImage {
         id: String,
         scope: Located<u32>,
         layout: DesignDecalScopeLayout,
-        mapping_mode: DesignDecalMappingMode,
+        scope_code: u8,
         target_group_record_index: u32,
         asset: DesignDecalAsset,
     ) -> Result<Self, String> {
@@ -284,7 +329,8 @@ impl DesignDecalImage {
             id,
             scope,
             layout,
-            mapping_mode,
+            scope_code,
+            placement: None,
             target_group_record_index,
             asset,
         })
@@ -302,8 +348,8 @@ impl DesignDecalImage {
     fn asset_reference_offset(&self) -> u64 {
         self.scope.offset + u64_from_index(self.layout.asset_reference()) + 1
     }
-    fn mapping_mode_offset(&self) -> u64 {
-        self.scope.offset + u64_from_index(self.layout.mapping_mode())
+    fn scope_code_offset(&self) -> u64 {
+        self.scope.offset + u64_from_index(self.layout.scope_code())
     }
     fn target_group_reference_offset(&self) -> u64 {
         self.scope.offset + u64_from_index(self.layout.target_group_reference()) + 1
@@ -320,10 +366,10 @@ struct DesignDecalImageWire {
     scope_layout: DesignDecalScopeLayout,
     /// Byte offset of the scope's marked image-asset reference.
     asset_reference_offset: u64,
-    /// Source mapping-mode byte.
-    mapping_mode: DesignDecalMappingMode,
-    /// Byte offset of `mapping_mode`.
-    mapping_mode_offset: u64,
+    /// Scope code byte between the image-asset and target-group references.
+    scope_code: u8,
+    /// Byte offset of `scope_code`.
+    scope_code_offset: u64,
     /// Target construction-group record index.
     target_group_record_index: u32,
     /// Byte offset of the scope's marked target-group reference.
@@ -352,6 +398,13 @@ struct DesignDecalImageWire {
     asset_name: String,
     /// Byte offset of the asset name's UTF-16LE code units.
     asset_name_offset: u64,
+    /// Frame of the Decal placement record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_placement"
+    )]
+    placement: Option<DesignDecalPlacement>,
 }
 
 #[derive(Serialize)]
@@ -360,8 +413,8 @@ struct DesignDecalImageWireRef<'a> {
     scope_record_index: u32,
     scope_layout: DesignDecalScopeLayout,
     asset_reference_offset: u64,
-    mapping_mode: DesignDecalMappingMode,
-    mapping_mode_offset: u64,
+    scope_code: u8,
+    scope_code_offset: u64,
     target_group_record_index: u32,
     target_group_reference_offset: u64,
     asset_class_tag: &'a str,
@@ -376,6 +429,8 @@ struct DesignDecalImageWireRef<'a> {
     name_frame_length: u64,
     asset_name: &'a str,
     asset_name_offset: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    placement: Option<&'a DesignDecalPlacement>,
 }
 
 impl Serialize for DesignDecalImage {
@@ -386,8 +441,8 @@ impl Serialize for DesignDecalImage {
             scope_record_index: self.scope_record_index(),
             scope_layout: self.layout,
             asset_reference_offset: self.asset_reference_offset(),
-            mapping_mode: self.mapping_mode,
-            mapping_mode_offset: self.mapping_mode_offset(),
+            scope_code: self.scope_code,
+            scope_code_offset: self.scope_code_offset(),
             target_group_record_index: self.target_group_record_index,
             target_group_reference_offset: self.target_group_reference_offset(),
             asset_class_tag,
@@ -402,6 +457,7 @@ impl Serialize for DesignDecalImage {
             name_frame_length: self.asset.name_frame_length(),
             asset_name: &self.asset.name,
             asset_name_offset: self.asset.name_offset(),
+            placement: self.placement.as_ref(),
         }
         .serialize(serializer)
     }
@@ -422,22 +478,22 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
             wire.asset_entity_suffix,
             wire.asset_name,
         )?;
-        let image = Self::new(
+        let mut image = Self::new(
             wire.id,
             Located {
                 value: wire.scope_record_index,
                 offset: scope_offset,
             },
             wire.scope_layout,
-            wire.mapping_mode,
+            wire.scope_code,
             wire.target_group_record_index,
             asset,
         )?;
         for (name, declared, derived) in [
             (
-                "mapping_mode_offset",
-                wire.mapping_mode_offset,
-                image.mapping_mode_offset(),
+                "scope_code_offset",
+                wire.scope_code_offset,
+                image.scope_code_offset(),
             ),
             (
                 "target_group_reference_offset",
@@ -474,6 +530,10 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
                 return Err(format!("{name} must match the Decal record layout"));
             }
         }
+        if let Some(placement) = &wire.placement {
+            placement.admit(image.asset.byte_offset())?;
+        }
+        image.placement = wire.placement;
         Ok(image)
     }
 }
@@ -483,7 +543,7 @@ impl From<DesignDecalImage> for DesignDecalImageWire {
     fn from(value: DesignDecalImage) -> Self {
         let scope_record_index = value.scope_record_index();
         let asset_reference_offset = value.asset_reference_offset();
-        let mapping_mode_offset = value.mapping_mode_offset();
+        let scope_code_offset = value.scope_code_offset();
         let target_group_reference_offset = value.target_group_reference_offset();
         let asset_record_index = value.asset.record_index;
         let asset_byte_offset = value.asset.byte_offset;
@@ -500,8 +560,8 @@ impl From<DesignDecalImage> for DesignDecalImageWire {
             scope_record_index,
             scope_layout: value.layout,
             asset_reference_offset,
-            mapping_mode: value.mapping_mode,
-            mapping_mode_offset,
+            scope_code: value.scope_code,
+            scope_code_offset,
             target_group_record_index: value.target_group_record_index,
             target_group_reference_offset,
             asset_class_tag,
@@ -516,6 +576,7 @@ impl From<DesignDecalImage> for DesignDecalImageWire {
             name_frame_length,
             asset_name: value.asset.name,
             asset_name_offset,
+            placement: value.placement,
         }
     }
 }
