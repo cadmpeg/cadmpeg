@@ -6,14 +6,12 @@ use crate::design::configuration::{FeatureStateOverride, ParameterOverride};
 use crate::design::container::{Container, OrderedKind, Rollback};
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::expr::{parse, Expression, Measure, MeasureKind, MeasureTarget, Neutral, Node};
+use crate::design::expr::{parse, Expression, Neutral, Node};
 use crate::design::feature::{FeatureOperation, OperationFamily, StoredOrigin};
 use crate::design::parameter::{ParameterDefinition, ParameterValue};
 use crate::design::refs::{Evaluated, Member, Position};
-use crate::design::selection::{Anchor, Picks, Selection};
 use crate::design::units::ValueKind;
 use crate::document::CadIr;
-use crate::scalar::FiniteReal;
 use crate::validate::design::fixture::{
     after, assert_finding, assert_no_design_finding, body, configuration, design_findings,
     document, evaluation, feature, id, parameter, set_base, stored,
@@ -233,6 +231,10 @@ fn suppressed_by_cache(definition: ParameterDefinition, differs: bool) -> CadIr 
 
 #[test]
 fn a_cache_that_reads_a_measure_or_the_geometry_holds_only_where_nothing_differs() {
+    use crate::design::expr::{Measure, MeasureKind, MeasureTarget};
+    use crate::design::selection::{Anchor, Picks, Selection};
+    use crate::scalar::FiniteReal;
+
     let measured = Measure {
         kind: MeasureKind::Length,
         of: MeasureTarget::Selection(Selection {
