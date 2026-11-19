@@ -14,7 +14,9 @@ use crate::design::configuration::{
     Arrangement, ArrangementKind, ArrangementRef, DesignConfiguration, FeatureStateOverride,
     Overrides, ParameterOverride,
 };
-use crate::design::construction::{Construction, ConstructionInput, InputRole, Relation, Subject};
+use crate::design::construction::{
+    Construction, ConstructionInput, InputReference, InputRole, Relation, Subject,
+};
 use crate::design::container::{Container, Folder, OrderedKind, Rollback, UnorderedKind};
 use crate::design::dimension::{Dimension, ParameterRef, RefTarget};
 use crate::design::evaluation::{
@@ -1888,7 +1890,11 @@ fn point_datum(key: u32) -> Feature {
                         subject: Subject::Whole,
                         relation: Relation::Coincident,
                     }),
-                    reference: None,
+                    reference: Some(InputReference::Picks(Selection {
+                        at: Anchor::Input,
+                        picks: Picks::Unread,
+                        native: None,
+                    })),
                     value: None,
                     reversed: None,
                 }],
