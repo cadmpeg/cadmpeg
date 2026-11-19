@@ -210,6 +210,19 @@ fn a_referenced_design_is_a_document_of_its_own() {
     );
 }
 
+#[test]
+fn a_referenced_design_without_a_definition_is_hosted_by_its_enclosing_scope() {
+    const OUTER: &str = "xref/role-1/reference-0/occurrence-0/";
+    let scopes = BTreeMap::from([(String::new(), ()), (OUTER.to_owned(), ())]);
+    let inner = format!("{OUTER}xref/role-2/reference-0/occurrence-1/");
+    assert_eq!(super::host(&scopes, &inner), OUTER);
+    assert_eq!(
+        super::host(&scopes, "xref/role-3/reference-0/occurrence-0/"),
+        ""
+    );
+    assert_eq!(super::host(&BTreeMap::<String, ()>::new(), OUTER), "");
+}
+
 fn definition(id: &str, storage: Storage, bodies: &[&str]) -> ProductDefinition {
     let mut definition = ProductDefinition::root(
         ProductDefinitionId::mint(id).unwrap(),

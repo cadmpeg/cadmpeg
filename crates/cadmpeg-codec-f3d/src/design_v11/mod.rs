@@ -9,7 +9,8 @@
 //! a root of that scope, and each item is one feature of it (§5.2). A design
 //! that the document references keeps its own Design streams under an
 //! occurrence path and is one scope of its own, at the definition that stands
-//! for it. A stream that lists no item states no container, and a document
+//! for it; where the decode states no such definition, its timelines are roots
+//! of the scope that encloses it. A stream that lists no item states no container, and a document
 //! whose streams state none has no scope.
 //!
 //! A scope spans its definition and the embedded component definitions below
@@ -65,17 +66,31 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         .map(|body| body.id.as_str())
         .collect::<BTreeSet<_>>();
     let documents = timeline::project(ctx, &ir.model.features, &timelines, &types, &current)?;
-    let scopes = documents
-        .into_iter()
-        .filter_map(|(prefix, projected)| {
-            let definition = scope_definition(&ir.model.product_definitions, &prefix)?;
-            Some((prefix, (definition, projected)))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let definitions = scopes
-        .iter()
-        .map(|(prefix, (definition, _))| (prefix.clone(), definition.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let mut scopes = BTreeMap::new();
+    let mut hosted = Vec::new();
+    for (prefix, projected) in documents {
+        match scope_definition(&ir.model.product_definitions, &prefix) {
+            Some(definition) => {
+                scopes.insert(prefix, (definition, projected));
+            }
+            None => hosted.push((prefix, projected)),
+        }
+    }
+    let mut definitions = BTreeMap::new();
+    for (prefix, projected) in hosted {
+        let enclosing = host(&scopes, &prefix);
+        let (definition, into) = scopes
+            .entry(enclosing)
+            .or_insert_with(|| (crate::tree::file_root_id(), timeline::Projected::default()));
+        definitions.insert(prefix, definition.clone());
+        into.containers.extend(projected.containers);
+        into.features.extend(projected.features);
+    }
+    definitions.extend(
+        scopes
+            .iter()
+            .map(|(prefix, (definition, _))| (prefix.clone(), definition.clone())),
+    );
     let scoped_parameters;
     let scoped_configurations;
     {
@@ -155,6 +170,18 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         .configurations
         .extend(scoped_configurations.records);
     Ok(())
+}
+
+/// The scope that holds the timelines of the document at `prefix`, which has
+/// no definition of its own: the scope of the longest document prefix that
+/// begins it, else the root scope.
+fn host<T>(scopes: &BTreeMap<String, T>, prefix: &str) -> String {
+    scopes
+        .keys()
+        .filter(|scoped| prefix.starts_with(scoped.as_str()))
+        .max_by_key(|scoped| scoped.len())
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// The definition whose design the document at `prefix` holds: the root
