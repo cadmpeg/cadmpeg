@@ -312,3 +312,113 @@ fn a_sheet_of_curve_bounded_surfaces_round_trips_as_one_geometric_set() {
         .unwrap();
     assert_eq!(sheet_loop_counts(decoded.ir()), [1, 2]);
 }
+
+/// A surface profile tolerance on `target`.
+fn profile_on(target: cadmpeg_ir::pmi::PmiTarget) -> cadmpeg_ir::pmi::PmiAnnotation {
+    use cadmpeg_ir::design::options::NativeOptions;
+    use cadmpeg_ir::ids::PmiId;
+    use cadmpeg_ir::pmi::{
+        GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiMagnitude, PmiQuantity, PmiValue,
+    };
+    PmiAnnotation {
+        id: PmiId::mint("test:surface-set:pmi#profile").unwrap(),
+        name: Some("profile".into()),
+        visible: None,
+        targets: vec![target.into()],
+        definition: PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::SurfaceProfile,
+            magnitude: PmiMagnitude::new(PmiValue::new(0.5, PmiQuantity::Length).unwrap()).unwrap(),
+            defined_unit: None,
+            defined_area_unit: None,
+            defined_area_second_unit: None,
+            datum_system: None,
+            modifiers: Vec::new(),
+            displacement: None,
+            maximum_upper: None,
+            zones: Vec::new(),
+        },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+    }
+}
+
+/// A PMI annotation on a curve-bounded face, on an edge of its loops, or
+/// on a vertex of those edges needs that face, edge, or vertex as a written
+/// item. The sheet is then written as a shell of faces, and the annotation
+/// names its target through a `GEOMETRIC_ITEM_SPECIFIC_USAGE`.
+#[test]
+fn a_pmi_target_on_a_curve_bounded_face_keeps_the_sheet_a_shell() {
+    use cadmpeg_ir::pmi::PmiTarget;
+    let source = StepCodec::default()
+        .decode(
+            &mut Cursor::new(ring_and_disc_set()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let ring = source
+        .ir()
+        .geometry
+        .faces
+        .iter()
+        .find(|face| face.loops.len() == 2)
+        .unwrap();
+    let edge = source
+        .ir()
+        .geometry
+        .loops
+        .iter()
+        .find(|face_loop| ring.loops.contains(&face_loop.id))
+        .and_then(|face_loop| face_loop.coedges().first())
+        .and_then(|coedge| {
+            source
+                .ir()
+                .geometry
+                .coedges
+                .iter()
+                .find(|candidate| &candidate.id == coedge)
+        })
+        .map(|coedge| coedge.edge.clone())
+        .unwrap();
+    let mut targets = vec![
+        PmiTarget::Face {
+            face: ring.id.clone(),
+        },
+        PmiTarget::Edge { edge: edge.clone() },
+    ];
+    if let Some(vertex) = source
+        .ir()
+        .geometry
+        .edges
+        .iter()
+        .find(|candidate| candidate.id == edge)
+        .and_then(|edge| edge.vertices().next())
+    {
+        targets.push(PmiTarget::Vertex {
+            vertex: vertex.clone(),
+        });
+    }
+    for target in targets {
+        let mut ir = source.ir().clone();
+        ir.model.pmi = vec![profile_on(target.clone())];
+        let mut output = Vec::new();
+        write_step(
+            &ir,
+            &mut output,
+            StepSchema::Ap242Edition3,
+            &StepWriteOptions::default(),
+        )
+        .unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{target:?}");
+        assert_eq!(
+            text.matches("= SHELL_BASED_SURFACE_MODEL(").count(),
+            1,
+            "{target:?}"
+        );
+        assert!(
+            text.contains("= GEOMETRIC_ITEM_SPECIFIC_USAGE("),
+            "{target:?}\n{text}"
+        );
+    }
+}

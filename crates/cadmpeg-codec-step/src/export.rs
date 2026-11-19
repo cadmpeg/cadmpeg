@@ -2265,8 +2265,11 @@ impl<'a> Builder<'a> {
                         }),
                 }
         };
-        let curve_bounded =
-            |face: &&Face| face.sense == Sense::Forward && self.bounded_by_its_boundaries(face);
+        let curve_bounded = |face: &&Face| {
+            face.sense == Sense::Forward
+                && self.bounded_by_its_boundaries(face)
+                && !self.pmi_targets_topology_of(face)
+        };
         if faces.is_empty()
             || !faces
                 .iter()
@@ -2333,6 +2336,50 @@ impl<'a> Builder<'a> {
             }
         }
         edge_curves == segment_curves
+    }
+
+    /// Whether a PMI annotation targets `face`, an edge of its loops, or a
+    /// vertex of those edges. A `CURVE_BOUNDED_SURFACE` member states none
+    /// of them as an item that the annotation can name.
+    fn pmi_targets_topology_of(&self, face: &Face) -> bool {
+        let mut edges = BTreeSet::new();
+        let mut vertices = BTreeSet::new();
+        for coedge in face
+            .loops
+            .iter()
+            .filter_map(|id| self.loops.get(id.as_str()))
+            .flat_map(|face_loop| face_loop.coedges())
+        {
+            let Some(edge) = self
+                .coedges
+                .get(coedge.as_str())
+                .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+            else {
+                continue;
+            };
+            edges.insert(edge.id.as_str());
+            vertices.extend(edge.vertices().map(VertexId::as_str));
+        }
+        self.ir.model.pmi.iter().any(|annotation| {
+            let zone_targets = match &annotation.definition {
+                PmiDefinition::GeometricTolerance { zones, .. } => zones
+                    .iter()
+                    .flat_map(|zone| &zone.projections)
+                    .flat_map(cadmpeg_ir::pmi::zones::ToleranceProjection::targets)
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            annotation
+                .targets
+                .iter()
+                .chain(zone_targets)
+                .any(|target| match &target.entity {
+                    PmiTarget::Face { face: target } => target == &face.id,
+                    PmiTarget::Edge { edge } => edges.contains(edge.as_str()),
+                    PmiTarget::Vertex { vertex } => vertices.contains(vertex.as_str()),
+                    _ => false,
+                })
+        })
     }
 
     /// A face bounded by the boundary curves of its curve-bounded surface,

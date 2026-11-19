@@ -1768,7 +1768,8 @@ no procedural construction and has a solved NURBS geometry, has no loops and
 a rectangular parameter subset surface (written as a
 `RECTANGULAR_TRIMMED_SURFACE`), or has a curve-bounded surface and one loop
 per boundary curve of it, whose edges run on exactly the boundaries' segment
-curves. The writer
+curves, and that no PMI annotation targets, through the face, an edge of its
+loops, or a vertex of those edges. The writer
 states a curve-bounded face as a `CURVE_BOUNDED_SURFACE` on its support,
 with each boundary composite curve of the construction as a member of its
 boundary list. A boundary that shares a segment curve with the face's outer
