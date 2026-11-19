@@ -90,11 +90,23 @@ pub(in crate::writer::generate) struct GeneratedBrowserNodes {
     pub(super) class_tag: crate::records::references::DesignClassTag,
 }
 
+/// Which bodies the body map and the browser nodes list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BodySelection {
+    /// The bodies whose visibility the document states.
+    Stated,
+    /// Every body; an unstated visibility is written as shown, Fusion's
+    /// default.
+    Every,
+}
+
 /// The common registry consumed by both generated Design streams.
 pub(super) struct GeneratedDesignRegistry {
     pub(super) types: Vec<GeneratedDesignType>,
     pub(super) body_map: Option<GeneratedBodyMap>,
     pub(super) browser_nodes: Option<GeneratedBrowserNodes>,
+    used_record_indices: BTreeSet<u32>,
+    next_record_index: u32,
 }
 
 impl GeneratedDesignRegistry {
@@ -102,6 +114,7 @@ impl GeneratedDesignRegistry {
         target: &CadIr,
         bindings: DesignBindingsValidated<'_>,
         attributes: &AttributeIndex<'_>,
+        selection: BodySelection,
     ) -> Result<Self, CodecError> {
         let native = bindings.native();
         let visibility_by_body = native
@@ -114,8 +127,10 @@ impl GeneratedDesignRegistry {
         let mut pending = Vec::new();
 
         for body in &target.geometry.bodies {
-            let Some(visible) = body.visible else {
-                continue;
+            let visible = match (body.visible, selection) {
+                (Some(visible), _) => visible,
+                (None, BodySelection::Every) => true,
+                (None, BodySelection::Stated) => continue,
             };
             let metadata = visibility_by_body.get(body.id.as_str()).copied();
             let asm_body_key = match metadata {
@@ -240,7 +255,49 @@ impl GeneratedDesignRegistry {
             types,
             body_map,
             browser_nodes,
+            used_record_indices,
+            next_record_index,
         })
+    }
+
+    /// A registry of `types` alone, with no body map or browser node.
+    #[cfg(test)]
+    pub(super) fn from_types(types: Vec<GeneratedDesignType>) -> Self {
+        Self {
+            types,
+            body_map: None,
+            browser_nodes: None,
+            used_record_indices: BTreeSet::new(),
+            next_record_index: 0,
+        }
+    }
+
+    /// A record index no record of the stream uses. Index `0` is never
+    /// allocated: a reference to it is the null reference.
+    pub(super) fn allocate(&mut self) -> Result<u32, CodecError> {
+        self.next_record_index = self.next_record_index.max(1);
+        allocate_record_index(&mut self.used_record_indices, &mut self.next_record_index)
+    }
+
+    /// Register `entity_ids` under the type `type_guid` and return the type's
+    /// class tag, `256` plus its row.
+    pub(super) fn register(
+        &mut self,
+        type_guid: &str,
+        base_type_guid: &str,
+        version: u32,
+        module: &str,
+        entity_ids: &[u32],
+    ) -> Result<crate::records::references::DesignClassTag, CodecError> {
+        let row = register_generated_type(
+            &mut self.types,
+            type_guid,
+            base_type_guid,
+            version,
+            module,
+            entity_ids.iter().copied().map(u64::from).collect(),
+        )?;
+        dynamic_class_tag(row)
     }
 }
 
@@ -531,7 +588,7 @@ mod tests {
         let attributes = super::AttributeIndex::new(&target, &native);
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("synthetic body bindings");
-        GeneratedDesignRegistry::new(&target, bindings, &attributes)
+        GeneratedDesignRegistry::new(&target, bindings, &attributes, super::BodySelection::Stated)
             .expect("generated Design registry")
             .browser_nodes
             .into_iter()
@@ -567,8 +624,13 @@ mod tests {
         let attributes = super::AttributeIndex::new(&target, &native);
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("empty Design bindings");
-        let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
-            .expect("generated Design registry");
+        let registry = GeneratedDesignRegistry::new(
+            &target,
+            bindings,
+            &attributes,
+            super::BodySelection::Stated,
+        )
+        .expect("generated Design registry");
         let Some(super::GeneratedBrowserNodes { nodes, .. }) = &registry.browser_nodes else {
             panic!("generated browser nodes")
         };
@@ -595,8 +657,13 @@ mod tests {
         let attributes = super::AttributeIndex::new(&target, &native);
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("empty Design bindings");
-        let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
-            .expect("generated Design registry");
+        let registry = GeneratedDesignRegistry::new(
+            &target,
+            bindings,
+            &attributes,
+            super::BodySelection::Stated,
+        )
+        .expect("generated Design registry");
         let Some(body_map) = &registry.body_map else {
             panic!("generated body map")
         };
@@ -626,8 +693,13 @@ mod tests {
         let attributes = super::AttributeIndex::new(&target, &native);
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("empty Design bindings");
-        let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
-            .expect("generated Design registry");
+        let registry = GeneratedDesignRegistry::new(
+            &target,
+            bindings,
+            &attributes,
+            super::BodySelection::Stated,
+        )
+        .expect("generated Design registry");
         let Some(super::GeneratedBrowserNodes { nodes, .. }) = &registry.browser_nodes else {
             panic!("generated browser nodes")
         };
@@ -658,8 +730,13 @@ mod tests {
         let attributes = super::AttributeIndex::new(&target, &native);
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("empty Design bindings");
-        let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
-            .expect("no browser-node allocation is needed");
+        let registry = GeneratedDesignRegistry::new(
+            &target,
+            bindings,
+            &attributes,
+            super::BodySelection::Stated,
+        )
+        .expect("no browser-node allocation is needed");
         assert!(registry.browser_nodes.is_none());
     }
 }

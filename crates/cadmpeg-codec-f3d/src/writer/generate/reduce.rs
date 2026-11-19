@@ -9,14 +9,15 @@
 //! failed, and [`Reduction::degrade`] takes the next fallback for that stage:
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
-//! form; only a failure to write that is returned.
+//! form; only a failure to write that is returned. A failure of the design
+//! scope's records takes one fallback: the design scope is not written.
 
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{native_records_omitted, output_empty};
+use cadmpeg_ir::codec::write::{evaluation_missing, native_records_omitted, output_empty};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
@@ -76,6 +77,8 @@ pub(super) enum Stage {
     Brep,
     /// The Design, configuration and appearance streams.
     Design,
+    /// The records of the root definition's design scope.
+    NeutralDesign,
     /// The archive itself: nothing in the document can avoid it.
     Archive,
 }
@@ -102,6 +105,13 @@ impl Failure {
         }
     }
 
+    pub(super) fn neutral_design(error: CodecError) -> Self {
+        Self {
+            stage: Stage::NeutralDesign,
+            error,
+        }
+    }
+
     pub(super) fn archive(error: CodecError) -> Self {
         Self {
             stage: Stage::Archive,
@@ -115,6 +125,7 @@ pub(super) struct Reduction<'a> {
     ir: Cow<'a, CadIr>,
     losses: Vec<LossNote>,
     design_dropped: bool,
+    neutral_dropped: bool,
 }
 
 impl<'a> Reduction<'a> {
@@ -123,6 +134,7 @@ impl<'a> Reduction<'a> {
             ir: Cow::Borrowed(ir),
             losses: Vec::new(),
             design_dropped: false,
+            neutral_dropped: false,
         }
     }
 
@@ -134,6 +146,15 @@ impl<'a> Reduction<'a> {
     /// `f3d` namespace and no fallback has dropped them.
     pub(super) fn writes_design(&self) -> bool {
         !self.design_dropped && self.ir.native.namespace("f3d").is_some()
+    }
+
+    /// Whether the root definition's design scope is written: no native
+    /// Design record is, the document holds the scope, and no fallback has
+    /// dropped it.
+    pub(super) fn writes_neutral_design(&self) -> bool {
+        !self.writes_design()
+            && !self.neutral_dropped
+            && super::design::root_scope(&self.ir).is_some()
     }
 
     /// The losses, with `export:output.empty` when no geometry is written.
@@ -185,6 +206,7 @@ impl<'a> Reduction<'a> {
         let reason = error.to_string();
         let progressed = match stage {
             Stage::Archive => false,
+            Stage::NeutralDesign => self.drop_neutral_design(&reason),
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
                     || self.drop_native_design(&reason)
@@ -225,6 +247,8 @@ impl<'a> Reduction<'a> {
     }
 
     /// Neutral records the generator writes only from native Design records.
+    /// A row that a parameter of the written design scope restates is written
+    /// or charged with that parameter.
     fn drop_design_only_arenas(&mut self) {
         let model = &self.ir.model;
         if model.parameters.is_empty()
@@ -233,6 +257,14 @@ impl<'a> Reduction<'a> {
         {
             return;
         }
+        let restated = if self.writes_neutral_design() {
+            super::design::restated_parameters(&self.ir)
+                .into_iter()
+                .map(str::to_owned)
+                .collect()
+        } else {
+            BTreeSet::new()
+        };
         let model = &mut self.ir.to_mut().model;
         let parameters = std::mem::take(&mut model.parameters);
         let configurations = std::mem::take(&mut model.configurations);
@@ -242,7 +274,10 @@ impl<'a> Reduction<'a> {
             F3dLossCode::WriterParameterOmitted,
             "parameter",
             reason,
-            parameters.iter().map(|row| row.id.to_string()),
+            parameters
+                .iter()
+                .map(|row| row.id.to_string())
+                .filter(|id| !restated.contains(id)),
         ));
         self.losses.extend(named_loss(
             F3dLossCode::WriterConfigurationOmitted,
@@ -820,6 +855,27 @@ impl<'a> Reduction<'a> {
         true
     }
 
+    /// Write no design scope: its features and parameters are charged.
+    fn drop_neutral_design(&mut self, reason: &str) -> bool {
+        if !self.writes_neutral_design() {
+            return false;
+        }
+        let (features, parameters) = super::design::scope_records(&self.ir);
+        self.neutral_dropped = true;
+        self.losses.extend(evaluation_missing(
+            "F3D",
+            &format!("stores no design for these features ({reason})"),
+            features,
+        ));
+        self.losses.extend(named_loss(
+            F3dLossCode::WriterParameterOmitted,
+            "parameter",
+            &format!("the F3D writer writes no design ({reason})"),
+            parameters,
+        ));
+        true
+    }
+
     /// W1 for every native record: write the neutral document alone.
     fn drop_native(&mut self, reason: &str) -> bool {
         if self.ir.native.namespace("f3d").is_none() {
@@ -1170,7 +1226,7 @@ fn mentions(value: &Value, removed: &BTreeSet<String>) -> bool {
 }
 
 /// One loss listing every id of a dropped family, sorted after the count.
-fn named_loss<I: IntoIterator<Item = String>>(
+pub(super) fn named_loss<I: IntoIterator<Item = String>>(
     code: F3dLossCode,
     family: &str,
     reason: &str,
