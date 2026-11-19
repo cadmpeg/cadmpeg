@@ -539,7 +539,7 @@ pub(crate) enum F3dLossCode {
     ParameterUnprojected,
     /// Typed compact parameter frames match no parameter grammar.
     ParameterRecordUnparsed,
-    /// Decoded parameters set byte 3 of the compact expression trailer.
+    /// Decoded parameters set an uninterpreted flag in the compact expression trailer.
     ParameterTrailerFlagUninterpreted,
     /// Decoded parameter owners store a set final flag byte in the compact trailer.
     ParameterOwnerTrailerFlagUninterpreted,

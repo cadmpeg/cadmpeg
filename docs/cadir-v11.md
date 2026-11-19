@@ -1772,7 +1772,7 @@ pub enum SolveState { Full, Under, NotFull, Over, Inconsistent, Native(NonBlankS
 ```
 
 - **Owner.** `owner` is the feature whose definition holds the sketch; a sketch is part of its owner's definition (§5.8). A sketch that is a history member of its own is owned by a feature whose operation is `Sketch(s)` (planar) or `SpatialSketch(s)`, which names the sketch and carries no other operand. A sketch the source keeps inside another feature (a Creo section; a CATIA hole's internal sketch) is owned by that feature and is no member of a container, as an inline construction is (§5.9). The sketch's selections are part of its owner's definition: an `Input` anchor in a sketch evaluates in the state entering the owner. A configuration that places a sketch on another plane or changes its entities overrides the owner's definition with one that names another sketch record of the same owner, which then swaps the sketch in that configuration (§5.11; SolidWorks configurations).
-- **Placement.** `Placed` holds the plane frame as a `Construction<Frame>` (§5.9). The support is a `Whole` `Coincident` input that picks a datum plane, a principal plane, a planar face, or another sketch's plane (`SketchFrame`); the origin is an `Origin` `Coincident` input; the in-plane x axis is an `XAxis` input `Parallel` to an edge or axis, and a vertical reference is a `YAxis` input; an offset distance or angle from the support is a `Whole` `Offset` or `Angle` input with its dimension. CATIA's swap of the H and V directions puts the orientation input on `YAxis`; its reverse flags and NX's reference-direction flip set the input's `reversed`. `mode` keeps the source method (a FreeCAD attachment mode, the CATIA support, origin, and orientation modes, a Fusion `refType`, CATIA sliding or positioned). The construction's `after` holds, in the source's order, its flip of the normal as a `Flip` step (Creo `plane_flip`, FreeCAD `MapReversed`, NX reverse normal) and its displacement in the attached frame as `Translate` and `Rotate` steps (FreeCAD `AttachmentOffset`, Fusion `OffsetX/Y/Z` and `AngleZ`). `resolved` is the solved frame, a cache (K2). A sketch with free placement (FreeCAD) has no inputs and a resolved frame. A Creo sketch-plane datum that nothing else references is inline: its constraints are the sketch's inputs (§5.9).
+- **Placement.** `Placed` holds the plane frame as a `Construction<Frame>` (§5.9). The support is a `Whole` `Coincident` input that picks a datum plane, a principal plane, a planar face, or another sketch's plane (`SketchFrame`); the origin is an `Origin` `Coincident` input; the in-plane x axis is an `XAxis` input `Parallel` to an edge or axis, and a vertical reference is a `YAxis` input; an offset distance or angle from the support is a `Whole` `Offset` or `Angle` input with its dimension. CATIA's swap of the H and V directions puts the orientation input on `YAxis`; its reverse flags and NX's reference-direction flip set the input's `reversed`. `mode` keeps the source method (a FreeCAD attachment mode, the CATIA support, origin, and orientation modes, a Fusion `refType`, CATIA sliding or positioned). The construction's `after` holds, in the source's order, its flip of the normal as a `Flip` step (Creo `plane_flip`, FreeCAD `MapReversed`, NX reverse normal) and its displacement in the attached frame as `Translate` and `Rotate` steps (FreeCAD `AttachmentOffset`, Fusion `OffsetX/Y/Z` and `AngleZ`). `resolved` is the solved frame, a cache (K2). A sketch with free placement (FreeCAD) has no inputs and a resolved frame. A Creo sketch whose frame the decoder does not read has one input whose `role` is `None` and whose reference is an `Unread` selection of its support, and no resolved value, as a helix whose axis the decoder cannot resolve has (§6.6). A Creo sketch-plane datum that nothing else references is inline: its constraints are the sketch's inputs (§5.9).
 - **Block.** `Block` marks a block definition: a sketch with no plane, whose entities are placed by block instances in other sketches (SolidWorks, Inventor). A block definition the source keeps outside its history is owned by a feature in a root `Group` container of the scope (§5.2), which gives it no place in any history order: the feature is stateless (§5.4) and, as a member of an unordered container, has no result (§5.3); a SolidWorks block definition, a history feature, stays in the timeline. Inventor keeps its definitions so: each is a participant of a folder record of type `d5260222` (the Blocks folder), which is participant 0 of the part's root label, ahead of every feature, and of no other label, though a definition may have been created after features it precedes there. The Inventor decoder takes that folder as the root `Group`, and gives it no place in its history order.
 - **Solve state.** `state` is the source's record of how far the constraints determine the geometry: `Full` (FreeCAD `FullyConstrained` true), `NotFull` (FreeCAD false: under-constrained or unsolvable, the source does not say which), `Under`, `Over`, `Inconsistent` (CATIA `SolvingStatus`, NX `Sketch.Status`). `None` means not stated.
 - **Solve status.** `status` is the status of the sketch's solved values (entity geometry, the resolved frame): `Current` where the source does not flag them, `Stale` (FreeCAD `Touched`), `Failed` (a recorded solve failure). The edit helpers mark it `Stale` when they edit a dimension of the sketch or a referent of its selections (§4).
@@ -5626,3 +5626,13095 @@ Each fact below is open in its meaning, or is a target application's behaviour; 
 ## Annex A. Record types stated by schema
 
 Each type below is given by the JSON Schema of its wire form, generated from the reference implementation when this document was released and frozen with it; a change to it is a change of wire (§3.6). Each type's description states every condition a reader enforces on its values (§2.8). §5.6 states the evaluation of the analytic, NURBS, polyline, and placed carriers. A procedural definition is stated by its fields: this document states no evaluation for it beyond the solved carrier its record caches (D23).
+
+### `BlendCrossSection`
+
+```json
+{
+  "description": "Cross-section family of a procedural blend.",
+  "oneOf": [
+    {
+      "description": "Constant-radius circular cross-section.",
+      "type": "string",
+      "const": "circular"
+    },
+    {
+      "description": "Conic (non-circular quadric) cross-section.",
+      "type": "string",
+      "const": "conic"
+    },
+    {
+      "description": "Free-form polynomial cross-section.",
+      "type": "string",
+      "const": "polynomial"
+    }
+  ]
+}
+```
+
+### `BlendRadiusLaw`
+
+```json
+{
+  "description": "Radius law for a procedural blend.",
+  "oneOf": [
+    {
+      "description": "Constant blend radius along the whole spine.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "constant"
+        },
+        "signed_radius": {
+          "description": "Signed radius, in document length units; sign selects the support offset side.",
+          "$ref": "#/$defs/Length"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "signed_radius"
+      ]
+    },
+    {
+      "description": "Radius varying linearly from `start` to `end` along the spine.",
+      "type": "object",
+      "properties": {
+        "end": {
+          "description": "Signed radius at the spine end, in document length units.",
+          "$ref": "#/$defs/Length"
+        },
+        "kind": {
+          "type": "string",
+          "const": "linear"
+        },
+        "start": {
+          "description": "Signed radius at the spine start, in document length units.",
+          "$ref": "#/$defs/Length"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "start",
+        "end"
+      ]
+    },
+    {
+      "description": "Radius varying along the spine per an explicit law curve.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Curve whose parameterization gives the signed radius along the spine.",
+          "$ref": "#/$defs/NurbsCurve"
+        },
+        "kind": {
+          "type": "string",
+          "const": "law"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve"
+      ]
+    }
+  ]
+}
+```
+
+### `BlendSupport`
+
+```json
+{
+  "description": "One oriented support of a procedural blend.",
+  "type": "object",
+  "properties": {
+    "reversed": {
+      "description": "Selects the opposite surface-normal side when true.",
+      "type": "boolean"
+    },
+    "surface": {
+      "description": "The support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface",
+    "reversed"
+  ]
+}
+```
+
+### `CacheContract`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/RevisionSurfaceForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheContract2`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/LoftRevisionForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheContract3`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/SweepRevisionForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheContract4`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/RollingBallConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheContract5`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/CacheFirstCurveForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheFirstCurveForm`
+
+```json
+{
+  "description": "Cache-first shared-context fields absent from the context-first layout.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared context enum.",
+      "$ref": "#/$defs/RevisionCacheForm2"
+    },
+    "extension": {
+      "description": "Native integer ASM extension following the discontinuity arrays.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer selecting the cache-first layout.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "solved_range": {
+      "description": "Optional solved-curve interval endpoints; absent endpoints inherit the\nsolved NURBS domain.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following each ordered support surface.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "maxItems": 4,
+        "minItems": 4
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "cache",
+    "support_bounds",
+    "solved_range",
+    "extension"
+  ]
+}
+```
+
+### `CompositeCurveSegment`
+
+```json
+{
+  "description": "One directed child use in a composite curve.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Referenced child curve carrier.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "same_sense": {
+      "description": "Whether the child parameter direction is retained.",
+      "type": "boolean"
+    },
+    "transition": {
+      "description": "Required continuity from the preceding segment to this segment.",
+      "$ref": "#/$defs/CompositeCurveTransition"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "curve",
+    "same_sense",
+    "transition"
+  ]
+}
+```
+
+### `CompositeCurveSegments`
+
+```json
+{
+  "description": "Non-empty ordered child uses of a composite curve.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/CompositeCurveSegment"
+  }
+}
+```
+
+### `CompositeCurveTransition`
+
+```json
+{
+  "description": "STEP composite-curve transition continuity.",
+  "oneOf": [
+    {
+      "description": "No positional continuity is asserted.",
+      "type": "string",
+      "const": "discontinuous"
+    },
+    {
+      "description": "Positional continuity.",
+      "type": "string",
+      "const": "continuous"
+    },
+    {
+      "description": "Positional and tangent continuity.",
+      "type": "string",
+      "const": "cont_same_gradient"
+    },
+    {
+      "description": "Positional, tangent, and curvature continuity.",
+      "type": "string",
+      "const": "cont_same_gradient_same_curvature"
+    }
+  ]
+}
+```
+
+### `CompoundComponent`
+
+```json
+{
+  "description": "One component and its native construction scalar.",
+  "type": "object",
+  "properties": {
+    "component": {
+      "description": "Component geometry or its resolved identity.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "parameter": {
+      "description": "Scalar paired with this component.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "component"
+  ]
+}
+```
+
+### `CompoundComponent2`
+
+```json
+{
+  "description": "One component and its native construction scalar.",
+  "type": "object",
+  "properties": {
+    "component": {
+      "description": "Component geometry or its resolved identity.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "parameter": {
+      "description": "Scalar paired with this component.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "component"
+  ]
+}
+```
+
+### `CompoundLoftConstruction`
+
+```json
+{
+  "description": "Complete native compound-loft construction graph.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "description": "Two flags before the tail kind.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "scales": {
+      "description": "Present scales, up to the five native slots.",
+      "$ref": "#/$defs/CompoundLoftScales_5"
+    },
+    "tail": {
+      "description": "Kind-specific trailing graph.",
+      "$ref": "#/$defs/CompoundLoftTail"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "scales",
+    "flags",
+    "tail"
+  ]
+}
+```
+
+### `CompoundLoftDirection`
+
+```json
+{
+  "description": "Direction carrier in the zero-kind compound-loft tail.",
+  "oneOf": [
+    {
+      "description": "Inline direction vector. This form has no native selector.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "vector"
+        },
+        "value": {
+          "description": "Stored direction.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "BS3 direction curve and its nonzero native selector.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Stored curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "curve"
+        },
+        "selector": {
+          "description": "Exact nonzero native selector retained for byte-faithful export.",
+          "type": "integer",
+          "format": "int64",
+          "not": {
+            "const": 0
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve",
+        "selector"
+      ]
+    }
+  ]
+}
+```
+
+### `CompoundLoftScale`
+
+```json
+{
+  "description": "Complete `_readScaleClLoft` payload.",
+  "type": "object",
+  "properties": {
+    "auxiliaries": {
+      "description": "Ordered BS3 auxiliary curves.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CurveId"
+      }
+    },
+    "members": {
+      "description": "Ordered scale members.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CompoundLoftScaleMember"
+      }
+    },
+    "path": {
+      "description": "Scale path curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "tail": {
+      "description": "Two native trailing integers.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "members",
+    "path",
+    "auxiliaries",
+    "tail"
+  ]
+}
+```
+
+### `CompoundLoftScaleMember`
+
+```json
+{
+  "description": "One member of a compound-loft scale block.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Member curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "data": {
+      "description": "Native loft constraint data.",
+      "$ref": "#/$defs/LoftProfileData"
+    },
+    "type_code": {
+      "description": "Native member integer.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "type_code",
+    "curve",
+    "data"
+  ]
+}
+```
+
+### `CompoundLoftScales_3`
+
+```json
+{
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/CompoundLoftScale"
+  },
+  "maxItems": 3
+}
+```
+
+### `CompoundLoftScales_5`
+
+```json
+{
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/CompoundLoftScale"
+  },
+  "maxItems": 5
+}
+```
+
+### `CompoundLoftTail`
+
+```json
+{
+  "description": "Structurally selected tail of `cl_loft_spl_sur`.",
+  "oneOf": [
+    {
+      "description": "Native kind `6` tail.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "BS3 tail curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "direction": {
+          "description": "Stored direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "flags": {
+          "description": "Two leading flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "six"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "scale": {
+          "description": "Required scale block.",
+          "$ref": "#/$defs/CompoundLoftScale"
+        },
+        "selector": {
+          "description": "Native integer following the scale.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flags",
+        "scale",
+        "selector",
+        "direction",
+        "parameter_range",
+        "curve"
+      ]
+    },
+    {
+      "description": "Native kind `7` tail.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Stored direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "first_flag": {
+          "description": "First flag.",
+          "type": "boolean"
+        },
+        "first_scale": {
+          "description": "First optional scale block.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompoundLoftScale"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "seven"
+        },
+        "second_flag": {
+          "description": "Second flag.",
+          "type": "boolean"
+        },
+        "second_scale": {
+          "description": "Required second scale block.",
+          "$ref": "#/$defs/CompoundLoftScale"
+        },
+        "selector": {
+          "description": "Native selector integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "trailing_flags": {
+          "description": "Two trailing flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "first_flag",
+        "second_flag",
+        "second_scale",
+        "selector",
+        "direction",
+        "trailing_flags"
+      ]
+    },
+    {
+      "description": "Native kind `0` tail.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Vector or BS3 curve with its derived native selector.",
+          "$ref": "#/$defs/CompoundLoftDirection"
+        },
+        "flags": {
+          "description": "Two leading flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "zero"
+        },
+        "trailing_flags": {
+          "description": "Two trailing flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flags",
+        "direction",
+        "trailing_flags"
+      ]
+    }
+  ]
+}
+```
+
+### `CurveOffsetCoordinate`
+
+```json
+{
+  "description": "A one-based coordinate of a curve-offset distance function.",
+  "type": "integer",
+  "format": "uint8",
+  "maximum": 255,
+  "minimum": 0
+}
+```
+
+### `CurveOffsetDistanceLaw`
+
+```json
+{
+  "description": "Variable signed distance law for a planar curve offset.",
+  "oneOf": [
+    {
+      "description": "Linear interpolation between two distance controls.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Independent-variable interpretation.",
+          "$ref": "#/$defs/CurveOffsetLawBasis"
+        },
+        "control_range": {
+          "description": "Ordered arc-length or neutral carrier-parameter controls.",
+          "$ref": "#/$defs/IncreasingParameterInterval"
+        },
+        "distances": {
+          "description": "Ordered signed distances in document length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "linear"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "basis",
+        "distances",
+        "control_range"
+      ]
+    },
+    {
+      "description": "One coordinate of another curve defines the signed distance.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Independent-variable interpretation.",
+          "$ref": "#/$defs/CurveOffsetLawBasis"
+        },
+        "coordinate": {
+          "description": "One-based coordinate number on `function`.",
+          "$ref": "#/$defs/CurveOffsetCoordinate"
+        },
+        "function": {
+          "description": "Curve carrying the distance function.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "function_parameter_offset": {
+          "description": "Function parameter at zero source parameter or arc length.",
+          "type": "number",
+          "format": "double"
+        },
+        "function_parameter_scale": {
+          "description": "Function-parameter change per neutral source parameter or length unit.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "coordinate"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "function",
+        "coordinate",
+        "basis",
+        "function_parameter_offset",
+        "function_parameter_scale"
+      ]
+    }
+  ]
+}
+```
+
+### `CurveOffsetLawBasis`
+
+```json
+{
+  "description": "Independent variable used by a curve-offset distance law.",
+  "oneOf": [
+    {
+      "description": "Distance measured along the source curve from the offset interval start.",
+      "type": "string",
+      "const": "arc_length"
+    },
+    {
+      "description": "Native source-curve parameter.",
+      "type": "string",
+      "const": "parameter"
+    }
+  ]
+}
+```
+
+### `CurveOffsetRange`
+
+```json
+{
+  "description": "Parameter interval and optional variable-distance law of a curve offset.",
+  "oneOf": [
+    {
+      "description": "Constant-distance offset over a retained source interval.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "uniform"
+        },
+        "parameter_range": {
+          "description": "Parameter interval on the source curve.",
+          "$ref": "#/$defs/IncreasingParameterInterval"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_range"
+      ]
+    },
+    {
+      "description": "Variable-distance offset over the interval used by its law.",
+      "type": "object",
+      "properties": {
+        "distance_law": {
+          "description": "Variable signed-distance law.",
+          "$ref": "#/$defs/CurveOffsetDistanceLaw"
+        },
+        "kind": {
+          "type": "string",
+          "const": "variable"
+        },
+        "parameter_range": {
+          "description": "Parameter interval on the source curve.",
+          "$ref": "#/$defs/IncreasingParameterInterval"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_range",
+        "distance_law"
+      ]
+    }
+  ]
+}
+```
+
+### `DeformableCurveData`
+
+```json
+{
+  "description": "Discriminator-specific payload of a deformable native intcurve.",
+  "oneOf": [
+    {
+      "description": "Mode 8 vector field followed by ordered scalar pairs.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "vector_field"
+        },
+        "parameter_pairs": {
+          "description": "Ordered pairs from the mode-8 scalar table.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          }
+        },
+        "vectors": {
+          "description": "Four ordered native vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vectors",
+        "parameter_pairs"
+      ]
+    },
+    {
+      "description": "Mode 3 fixed deformation payload.",
+      "type": "object",
+      "properties": {
+        "frame_flags": {
+          "description": "Two flags following the frame scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "frame_parameter": {
+          "description": "Scalar following the trailing frame.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "mode3"
+        },
+        "leading_flags": {
+          "description": "Three flags following the leading scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "leading_parameter": {
+          "description": "Scalar following the leading vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "leading_vectors": {
+          "description": "Four vectors at the start of the payload.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "parameters": {
+          "description": "Three ordered scalars following the frame flags.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "trailing_flags": {
+          "description": "Five flags following the ordered scalars.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 5,
+          "minItems": 5
+        },
+        "trailing_parameter": {
+          "description": "Final scalar before the trailing integer.",
+          "type": "number",
+          "format": "double"
+        },
+        "trailing_point": {
+          "description": "Position following the leading flags.",
+          "$ref": "#/$defs/Point3"
+        },
+        "trailing_value": {
+          "description": "Integer closing the mode-3 payload.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "trailing_vectors": {
+          "description": "Two vectors following the position.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "leading_vectors",
+        "leading_parameter",
+        "leading_flags",
+        "trailing_point",
+        "trailing_vectors",
+        "frame_parameter",
+        "frame_flags",
+        "parameters",
+        "trailing_flags",
+        "trailing_parameter",
+        "trailing_value"
+      ]
+    }
+  ]
+}
+```
+
+### `DeformableCurveSource`
+
+```json
+{
+  "description": "Source slot of a deformable native intcurve.",
+  "oneOf": [
+    {
+      "description": "Source geometry resolved to a neutral curve carrier.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Curve being deformed.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "curve"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve"
+      ]
+    },
+    {
+      "description": "Native intcurve reference whose target is absent from the active subtype table.",
+      "type": "object",
+      "properties": {
+        "flag": {
+          "description": "Boolean stored before the reference scope.",
+          "type": "boolean"
+        },
+        "index": {
+          "description": "Integer stored by the native `ref` subtype.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "native_reference"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag",
+        "index"
+      ]
+    }
+  ]
+}
+```
+
+### `DeformableSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native deformable-surface construction.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Cache contract: the revision-gated fields surrounding the support and\nshared surface tail, or the legacy solved-cache tolerance this\nconstruction states instead.",
+      "$ref": "#/$defs/CacheContract"
+    },
+    "data": {
+      "description": "Discriminator-selected deformation data.",
+      "$ref": "#/$defs/DeformableSurfaceData"
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "support": {
+      "description": "Surface being deformed.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "support",
+    "data",
+    "cache",
+    "discontinuities",
+    "discontinuity_flag"
+  ]
+}
+```
+
+### `DeformableSurfaceData`
+
+```json
+{
+  "description": "Structurally selected deformable-surface payload.",
+  "oneOf": [
+    {
+      "description": "Mode-6 full embedded deformation payload.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Embedded deformation curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "first_parameter": {
+          "description": "First scalar after the flag.",
+          "type": "number",
+          "format": "double"
+        },
+        "flag": {
+          "description": "Native support-side flag.",
+          "type": "boolean"
+        },
+        "frames": {
+          "description": "Two ordered full vector frames.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DeformableVectorFrame"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "full"
+        },
+        "leading_flags": {
+          "description": "Three leading flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "leading_parameter": {
+          "description": "Leading deformation scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "leading_vectors": {
+          "description": "Four leading deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "native_id": {
+          "description": "Native long after the support.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "second_parameter": {
+          "description": "Second scalar after the optional long.",
+          "type": "number",
+          "format": "double"
+        },
+        "selector": {
+          "description": "Native selector before the secondary support.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "surface": {
+          "description": "Secondary embedded support surface.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "trailing_value": {
+          "description": "Native trailing long.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "version_value": {
+          "description": "Version-gated ASM long when present.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "leading_vectors",
+        "leading_parameter",
+        "leading_flags",
+        "selector",
+        "surface",
+        "native_id",
+        "flag",
+        "first_parameter",
+        "second_parameter",
+        "curve",
+        "frames",
+        "trailing_value"
+      ]
+    },
+    {
+      "description": "Mode-5 surface-and-curve deformation payload.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Embedded deformation curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "first_parameter": {
+          "description": "First native scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "flag": {
+          "description": "Native leading flag.",
+          "type": "boolean"
+        },
+        "flags": {
+          "description": "Three frame flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "frame_parameter": {
+          "description": "Frame scalar after the vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "surface_curve"
+        },
+        "native_id": {
+          "description": "Native long identifier.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "parameter_triples": {
+          "description": "Counted ordered scalar triples.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 3,
+            "minItems": 3
+          }
+        },
+        "second_parameter": {
+          "description": "Second native scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "selector": {
+          "description": "Native selector integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "surface": {
+          "description": "Secondary embedded support surface.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "vectors": {
+          "description": "Four ordered deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "surface",
+        "native_id",
+        "flag",
+        "first_parameter",
+        "selector",
+        "second_parameter",
+        "curve",
+        "vectors",
+        "frame_parameter",
+        "flags",
+        "parameter_triples"
+      ]
+    },
+    {
+      "description": "Mode-1 deformation frame with counted parameter triples.",
+      "type": "object",
+      "properties": {
+        "frame": {
+          "description": "Shared full deformation frame.",
+          "$ref": "#/$defs/DeformableSurfaceFrame"
+        },
+        "kind": {
+          "type": "string",
+          "const": "plain"
+        },
+        "parameter_triples": {
+          "description": "Ordered native scalar triples.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 3,
+            "minItems": 3
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "frame",
+        "parameter_triples"
+      ]
+    },
+    {
+      "description": "Mode-3 deformation frame with a guide scalar.",
+      "type": "object",
+      "properties": {
+        "frame": {
+          "description": "Shared full deformation frame.",
+          "$ref": "#/$defs/DeformableSurfaceFrame"
+        },
+        "guide_parameter": {
+          "description": "Native guide scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "guided"
+        },
+        "selector": {
+          "description": "Native guide selector.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "frame",
+        "selector",
+        "guide_parameter"
+      ]
+    },
+    {
+      "description": "Mode-8 minimal four-vector scaffold.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "minimal"
+        },
+        "selector": {
+          "description": "Native trailing selector.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "vectors": {
+          "description": "Four ordered deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vectors",
+        "selector"
+      ]
+    },
+    {
+      "description": "Revision-gated mode-3 deformation payload.",
+      "type": "object",
+      "properties": {
+        "frame_flags": {
+          "description": "Two flags following the trailing frame scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "frame_parameter": {
+          "description": "Scalar following the trailing vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision_mode3"
+        },
+        "leading_flags": {
+          "description": "Three flags following the leading scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "leading_parameter": {
+          "description": "Scalar following the leading vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "leading_vectors": {
+          "description": "Four leading deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "parameters": {
+          "description": "Three ordered scalar parameters following the trailing frame.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "trailing_flags": {
+          "description": "Five flags following the ordered scalar parameters.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 5,
+          "minItems": 5
+        },
+        "trailing_parameter": {
+          "description": "Scalar preceding the payload's final integer.",
+          "type": "number",
+          "format": "double"
+        },
+        "trailing_point": {
+          "description": "Position anchoring the trailing frame.",
+          "$ref": "#/$defs/Point3"
+        },
+        "trailing_value": {
+          "description": "Integer closing the revision mode-3 payload.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "trailing_vectors": {
+          "description": "Two vectors following the trailing point.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "leading_vectors",
+        "leading_parameter",
+        "leading_flags",
+        "trailing_point",
+        "trailing_vectors",
+        "frame_parameter",
+        "frame_flags",
+        "parameters",
+        "trailing_flags",
+        "trailing_parameter",
+        "trailing_value"
+      ]
+    }
+  ]
+}
+```
+
+### `DeformableSurfaceFrame`
+
+```json
+{
+  "description": "Shared frame payload of deformable-surface modes 1 and 3.",
+  "type": "object",
+  "properties": {
+    "leading_flags": {
+      "description": "Three leading frame flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "leading_parameter": {
+      "description": "Leading frame scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "leading_vectors": {
+      "description": "Four leading deformation vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "point": {
+      "description": "Native model-space frame point.",
+      "$ref": "#/$defs/Point3"
+    },
+    "secondary_flags": {
+      "description": "Two secondary frame flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "secondary_parameter": {
+      "description": "Secondary frame scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "secondary_vectors": {
+      "description": "Three secondary deformation vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "trailing_flags": {
+      "description": "Five trailing frame flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 5,
+      "minItems": 5
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "leading_vectors",
+    "leading_parameter",
+    "leading_flags",
+    "secondary_vectors",
+    "secondary_parameter",
+    "secondary_flags",
+    "point",
+    "trailing_flags"
+  ]
+}
+```
+
+### `DeformableVectorFrame`
+
+```json
+{
+  "description": "Four-vector frame used by full deformable surfaces.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "description": "Three ordered flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "parameter": {
+      "description": "Frame scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "vectors": {
+      "description": "Four ordered vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "vectors",
+    "parameter",
+    "flags"
+  ]
+}
+```
+
+### `EdgeOffsetDiscriminator`
+
+```json
+{
+  "description": "Native edge-offset blend-value sub-discriminator.",
+  "type": "integer",
+  "format": "int64"
+}
+```
+
+### `ExactSpline`
+
+```json
+{
+  "description": "Mutually exclusive legacy and revision-gated exact-spline layouts.",
+  "oneOf": [
+    {
+      "description": "Legacy solved-cache layout with ordered U/V ranges.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extension": {
+          "description": "Native ASM extension integer following the ranges.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        },
+        "ranges": {
+          "description": "Ordered U and V parameter ranges.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ranges",
+        "extension"
+      ]
+    },
+    {
+      "description": "Revision-gated layout with optional interval bounds and shared form.",
+      "type": "object",
+      "properties": {
+        "extension": {
+          "description": "Native ASM extension enum following the intervals.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "form": {
+          "description": "Required revision-gated form.",
+          "$ref": "#/$defs/RevisionSurfaceForm"
+        },
+        "intervals": {
+          "description": "Two optional-bound parameter intervals in wire order.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "intervals",
+        "extension",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `FinitePoint2`
+
+```json
+{
+  "description": "A parameter-space point with finite coordinates.",
+  "type": "object",
+  "properties": {
+    "u": {
+      "description": "U parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "v": {
+      "description": "V parameter.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "u",
+    "v"
+  ]
+}
+```
+
+### `FinitePoint3`
+
+```json
+{
+  "description": "A model-space point with finite coordinates.",
+  "$ref": "#/$defs/Point3"
+}
+```
+
+### `FiniteVector3`
+
+```json
+{
+  "description": "A displacement with finite components, including zero.",
+  "$ref": "#/$defs/Vector3"
+}
+```
+
+### `G2BlendConstruction`
+
+```json
+{
+  "description": "Full native G2 blend construction graph.",
+  "type": "object",
+  "properties": {
+    "center_curve": {
+      "description": "Center or transition curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "center_flag": {
+      "description": "Native center tail integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "center_parameters": {
+      "description": "Ordered center-curve scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "discontinuities": {
+      "description": "Three ordered ASM discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "first": {
+      "description": "First side common fields.",
+      "$ref": "#/$defs/G2BlendSide"
+    },
+    "first_shape": {
+      "description": "First-side singularity payload.",
+      "$ref": "#/$defs/G2BlendFirstShape"
+    },
+    "parameter_ranges": {
+      "description": "Native U and V intervals.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "second": {
+      "description": "Second side common fields.",
+      "$ref": "#/$defs/G2BlendSide"
+    },
+    "second_exact_surface": {
+      "description": "Exact second-side spline support.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "singularity": {
+      "description": "Native first-side singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "trailing_parameters": {
+      "description": "Four ordered trailing scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "first",
+    "singularity",
+    "first_shape",
+    "second",
+    "second_exact_surface",
+    "center_curve",
+    "center_parameters",
+    "center_flag",
+    "parameter_ranges",
+    "trailing_parameters",
+    "discontinuities"
+  ]
+}
+```
+
+### `G2BlendFirstShape`
+
+```json
+{
+  "description": "Singularity-specific payload of the first G2 blend side.",
+  "oneOf": [
+    {
+      "description": "Full singularity with an optional BS3 support surface.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "full"
+        },
+        "support": {
+          "description": "Exact BS3 support and fit tolerance, when serialized.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/G2BlendFullSupport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Non-singular nine-scalar frame and tertiary pcurve.",
+      "type": "object",
+      "properties": {
+        "coefficients": {
+          "description": "Ordered native frame scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 9,
+          "minItems": 9
+        },
+        "extension": {
+          "description": "Optional intervening native token.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoftBridgeToken"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "none"
+        },
+        "pcurve": {
+          "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tolerance": {
+          "description": "Native fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "coefficients",
+        "tolerance"
+      ]
+    }
+  ]
+}
+```
+
+### `G2BlendFullSupport`
+
+```json
+{
+  "description": "Exact support surface and fit tolerance of a full G2 first-side shape.",
+  "type": "object",
+  "properties": {
+    "surface": {
+      "description": "Exact BS3 support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "tolerance": {
+      "description": "Fit tolerance of the support, in document length units.",
+      "$ref": "#/$defs/FitTolerance"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface",
+    "tolerance"
+  ]
+}
+```
+
+### `G2BlendSide`
+
+```json
+{
+  "description": "Common carrier fields of one G2 blend side.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Primary side curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "direction": {
+      "description": "Native side direction.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "label": {
+      "description": "Native side label.",
+      "type": "string"
+    },
+    "pcurves": {
+      "description": "First and second ordered BS2 pcurves; each may be `nullbs`.",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/PcurveGeometry"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "surface": {
+      "description": "Primary support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "label",
+    "surface",
+    "curve",
+    "pcurves",
+    "direction"
+  ]
+}
+```
+
+### `HelixPathConstruction`
+
+```json
+{
+  "description": "Finite circular path of a helix surface.",
+  "type": "object",
+  "properties": {
+    "angle_range": {
+      "description": "Native helix angle interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "apex_factor": {
+      "description": "Native apex taper factor.",
+      "type": "number",
+      "format": "double"
+    },
+    "axis": {
+      "description": "Helix axis direction.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "center": {
+      "description": "Helix center in model space.",
+      "$ref": "#/$defs/Point3"
+    },
+    "major": {
+      "description": "Major radial axis vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "minor": {
+      "description": "Minor radial axis vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "pitch": {
+      "description": "Axial advance of one turn, as a vector.",
+      "$ref": "#/$defs/Vector3"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "angle_range",
+    "center",
+    "major",
+    "minor",
+    "pitch",
+    "apex_factor",
+    "axis"
+  ]
+}
+```
+
+### `HelixSurfaceConstruction`
+
+```json
+{
+  "description": "Complete helix-surface construction with finite native intervals.",
+  "type": "object",
+  "properties": {
+    "angle_range": {
+      "description": "Native profile parameter interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "dimension_range": {
+      "description": "Native path angle interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "path": {
+      "description": "Circular path of the helix surface.",
+      "$ref": "#/$defs/HelixPathConstruction"
+    },
+    "profile": {
+      "description": "Profile swept along the path.",
+      "$ref": "#/$defs/HelixSurfaceProfile"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "angle_range",
+    "dimension_range",
+    "path",
+    "profile"
+  ]
+}
+```
+
+### `HelixSurfaceProfile`
+
+```json
+{
+  "description": "Profile-specific tail of a helix surface.",
+  "oneOf": [
+    {
+      "description": "Circular profile swept along the helix.",
+      "type": "object",
+      "properties": {
+        "angle": {
+          "description": "Native angle stored before the path, in radians.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
+        "radius": {
+          "description": "Signed circular profile radius.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "angle",
+        "radius"
+      ]
+    },
+    {
+      "description": "Linear profile swept along the helix.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Profile direction coefficients: `x` and `y` scale the path's rotated\nmajor and minor vectors, and `z` is a length along the path axis.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "line"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "direction"
+      ]
+    }
+  ]
+}
+```
+
+### `IntcurveSupportContext`
+
+```json
+{
+  "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays of a native intcurve.",
+  "type": "object",
+  "properties": {
+    "discontinuities": {
+      "description": "Ordered discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "parameter_range": {
+      "description": "Solved-curve interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "sides": {
+      "description": "Ordered support sides.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/IntcurveSupportSide"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "sides",
+    "parameter_range",
+    "discontinuities"
+  ]
+}
+```
+
+### `IntcurveSupportSide`
+
+```json
+{
+  "description": "One paired surface and parameter-space curve in an intcurve construction.",
+  "type": "object",
+  "properties": {
+    "pcurve": {
+      "description": "UV curve on `surface`, absent for the native `nullbs` sentinel.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SupportPcurve"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "surface": {
+      "description": "Supporting surface, absent for the native `null_surface` sentinel.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SurfaceId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+### `LawCurveVersionForm`
+
+```json
+{
+  "description": "Version-stamp prefix and unbounded interval carried by the stamped\n`law_int_cur` serializer form.",
+  "type": "object",
+  "properties": {
+    "parameter_range": {
+      "description": "Solved-curve interval endpoints; `None` records an unbounded bound.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "post_enum": {
+      "description": "Native enum following the version stamp.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "stamp": {
+      "description": "Serializer version stamp emitted after the subtype name.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "stamp",
+    "post_enum",
+    "parameter_range"
+  ]
+}
+```
+
+### `LawExpression`
+
+```json
+{
+  "description": "One native law-expression node.",
+  "oneOf": [
+    {
+      "description": "Zero-payload spelling of the native null law.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "null"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Serializer-preserved textual law expression.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "text"
+        },
+        "value": {
+          "description": "Exact text stored in the native law slot.",
+          "$ref": "#/$defs/NonBlankString"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Tagged integer constant.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "integer"
+        },
+        "value": {
+          "description": "Stored integer value.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Tagged double constant.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "double"
+        },
+        "value": {
+          "description": "Stored scalar value.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Tagged model-space point constant.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "point"
+        },
+        "value": {
+          "description": "Stored point value.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Tagged direction-vector constant.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "vector"
+        },
+        "value": {
+          "description": "Stored vector value.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Inline transform-law payload.",
+      "type": "object",
+      "properties": {
+        "enums": {
+          "description": "Three ordered transform enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "kind": {
+          "type": "string",
+          "const": "transform"
+        },
+        "scalars": {
+          "description": "Thirteen ordered transform scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 13,
+          "minItems": 13
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "scalars",
+        "enums"
+      ]
+    },
+    {
+      "description": "Vector-serialized transform-law payload: four ordered vectors, a scale,\nand three flags, in place of the thirteen-scalar/three-enum form.",
+      "type": "object",
+      "properties": {
+        "flags": {
+          "description": "Three ordered transform flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "kind": {
+          "type": "string",
+          "const": "transform_vec"
+        },
+        "scale": {
+          "description": "Trailing transform scale.",
+          "type": "number",
+          "format": "double"
+        },
+        "vectors": {
+          "description": "Four ordered transform vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vectors",
+        "scale",
+        "flags"
+      ]
+    },
+    {
+      "description": "Curve-backed edge law.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Referenced curve carrier.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "endpoints": {
+          "description": "Optional parameter endpoints following the curve in a revision-gated encoding.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "edge"
+        },
+        "parameters": {
+          "description": "Two native curve parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve",
+        "parameters"
+      ]
+    },
+    {
+      "description": "Spline-law payload.",
+      "type": "object",
+      "properties": {
+        "controls": {
+          "description": "Ordered spline-law controls.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "spline"
+        },
+        "knots": {
+          "description": "Ordered spline-law knots.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "native_id": {
+          "description": "Native spline-law integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "point": {
+          "description": "Native model-space point.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "native_id",
+        "knots",
+        "controls",
+        "point"
+      ]
+    },
+    {
+      "description": "Algebraic operator and its recursively framed operands.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "algebraic"
+        },
+        "operands": {
+          "description": "Ordered operands.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawExpression"
+          }
+        },
+        "operator": {
+          "description": "Native operator token.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "operator",
+        "operands"
+      ]
+    }
+  ]
+}
+```
+
+### `LawFormula`
+
+```json
+{
+  "description": "One recursively framed native law formula.",
+  "oneOf": [
+    {
+      "description": "The native null law, with no variables.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "null"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Named formula and its ordered recursive variables.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "named"
+        },
+        "name": {
+          "description": "Native formula name.",
+          "$ref": "#/$defs/NonBlankString"
+        },
+        "variables": {
+          "description": "Ordered recursive variables.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawExpression"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name",
+        "variables"
+      ]
+    }
+  ]
+}
+```
+
+### `LawSurfaceConstruction`
+
+```json
+{
+  "description": "Complete recursive construction stored by a native law spline surface.",
+  "type": "object",
+  "properties": {
+    "additional": {
+      "description": "Ordered counted auxiliary laws referenced by the primary law.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LawFormula"
+      }
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays from the standard surface tail.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "parameter_ranges": {
+      "description": "Legacy U and V parameter intervals; absent from modern layouts.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "primary": {
+      "description": "Primary recursive surface law.",
+      "$ref": "#/$defs/LawFormula"
+    },
+    "tail": {
+      "description": "Standard surface-tail mode and its mode-specific fields.",
+      "$ref": "#/$defs/LawSurfaceTail"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "primary",
+    "additional",
+    "tail",
+    "discontinuities"
+  ]
+}
+```
+
+### `LawSurfaceTail`
+
+```json
+{
+  "description": "Mode-specific payload of a native law surface's standard surface tail.",
+  "oneOf": [
+    {
+      "description": "Selector 0; the surface record carries a solved NURBS cache, whose fit\ncontract this tail states.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Fit contract of the solved cache this tail requires.",
+          "$ref": "#/$defs/LegacyCache"
+        },
+        "kind": {
+          "type": "string",
+          "const": "full"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "cache"
+      ]
+    },
+    {
+      "description": "Selector 1; compact parameter summaries replace the solved cache.",
+      "type": "object",
+      "properties": {
+        "closures": {
+          "description": "Ordered U and V closure enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "fit_tolerance": {
+          "description": "Native model-space fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "summary"
+        },
+        "parameters": {
+          "description": "Ordered U and V parameter summaries.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "singularities": {
+          "description": "Ordered U and V singularity enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameters",
+        "fit_tolerance",
+        "closures",
+        "singularities"
+      ]
+    },
+    {
+      "description": "Selector 2; exact parameter intervals and boundary classifications.",
+      "type": "object",
+      "properties": {
+        "closures": {
+          "description": "Ordered U and V closure enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "none"
+        },
+        "parameter_ranges": {
+          "description": "Ordered U and V parameter intervals.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "singularities": {
+          "description": "Ordered U and V singularity enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_ranges",
+        "closures",
+        "singularities"
+      ]
+    },
+    {
+      "description": "Selector 3; no mode-specific payload.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "historical"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Selector 4; no mode-specific payload.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "optimal"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `LegacyCache`
+
+```json
+{
+  "description": "Fit contract of a solved cache that the construction states itself, used by\nconstructions with no revision-gated [`RevisionCacheForm`].",
+  "type": "object",
+  "properties": {
+    "fit_tolerance": {
+      "description": "Fit tolerance of the solved cache.",
+      "$ref": "#/$defs/FitTolerance"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "fit_tolerance"
+  ]
+}
+```
+
+### `LegacyExtensionFlags`
+
+```json
+{
+  "description": "Admitted conditional flag shapes in the pre-revision offset-surface layout.",
+  "oneOf": [
+    {
+      "description": "The compact `offsur` layout has no extension flag.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "absent"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "The extension gate is false, so no dependent flags follow it.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "disabled"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "The extension gate is true and carries its required flag and optional\nlater-revision flag.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "enabled"
+        },
+        "secondary": {
+          "description": "Required flag following the true extension gate.",
+          "type": "boolean"
+        },
+        "tertiary": {
+          "description": "Optional flag admitted by the later legacy layout.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "secondary"
+      ]
+    }
+  ]
+}
+```
+
+### `LoftBridgeToken`
+
+```json
+{
+  "description": "Token retained from the variable bridge preceding a loft solved cache.",
+  "oneOf": [
+    {
+      "description": "Native boolean token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native integer token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "integer"
+        },
+        "value": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native double token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "double"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native string token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "text"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native enum token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "enum"
+        },
+        "value": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `LoftMemberForm`
+
+```json
+{
+  "description": "Type-selected fields of one loft profile member.",
+  "oneOf": [
+    {
+      "description": "Support-surface form. Legacy layouts can use type zero; revision-gated\nlayouts select this form with a nonzero type code.",
+      "type": "object",
+      "properties": {
+        "asm_extension": {
+          "description": "ASM extension integer when the stream version carries it.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "direction": {
+          "description": "Optional direction selected by the second native flag.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vector3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_flag": {
+          "description": "First native constraint flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "support"
+        },
+        "pcurve": {
+          "description": "UV curve on the support, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subdata": {
+          "description": "Native constraint table.",
+          "$ref": "#/$defs/LoftSubdata"
+        },
+        "support_bounds": {
+          "description": "Optional U/V bound fields following the support surface in the\nrevision-gated encoding.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "surface": {
+          "description": "Constraint support surface, absent for the native `null_surface`\nsentinel.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type_code": {
+          "description": "Native member type discriminator.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "type_code",
+        "support_bounds",
+        "first_flag",
+        "subdata"
+      ]
+    },
+    {
+      "description": "Revision-gated type-zero form with two nullable UV curve slots.",
+      "type": "object",
+      "properties": {
+        "asm_extension": {
+          "description": "ASM extension integer when the stream version carries it.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "direction": {
+          "description": "Optional direction selected by the second native flag.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vector3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "pcurve_pair"
+        },
+        "pcurve": {
+          "description": "First UV curve slot, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "secondary_pcurve": {
+          "description": "Second UV curve slot, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subdata": {
+          "description": "Native constraint table.",
+          "$ref": "#/$defs/LoftSubdata"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "subdata"
+      ]
+    }
+  ]
+}
+```
+
+### `LoftPath`
+
+```json
+{
+  "description": "Native path data attached to one loft section entry.",
+  "type": "object",
+  "properties": {
+    "auxiliaries": {
+      "description": "Ordered auxiliary BS3 curves.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CurveId"
+      }
+    },
+    "flag": {
+      "description": "Native path tail integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "path": {
+      "description": "Primary path curve and its optional endpoints, absent for `null_curve`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LoftPathCurve"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "auxiliaries",
+    "flag"
+  ]
+}
+```
+
+### `LoftPathCurve`
+
+```json
+{
+  "description": "One referenced curve together with its optional native parameter bounds.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Referenced curve carrier.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "endpoints": {
+      "description": "Optional parameter endpoints following the curve in a revision-gated encoding.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "curve"
+  ]
+}
+```
+
+### `LoftProfileData`
+
+```json
+{
+  "description": "The complete constraint payload of a classic loft or skin profile.\n\nEvery field the classic form carries is required and every field it cannot\ncarry is absent from the type, so the revision-gated `support_bounds` and\nthe type-zero `secondary_pcurve` are unknown keys here rather than values a\nreader has to refuse.",
+  "type": "object",
+  "properties": {
+    "asm_extension": {
+      "description": "ASM extension integer preceding the subdata.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "direction": {
+      "description": "Optional direction selected by the second native flag.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Vector3"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "first_flag": {
+      "description": "First native constraint flag.",
+      "type": "boolean"
+    },
+    "pcurve": {
+      "description": "Nullable parameter curve on the support.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "subdata": {
+      "description": "Native constraint table.",
+      "$ref": "#/$defs/LoftSubdata"
+    },
+    "surface": {
+      "description": "Required support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface",
+    "first_flag",
+    "asm_extension",
+    "subdata"
+  ]
+}
+```
+
+### `LoftProfileMember`
+
+```json
+{
+  "description": "One curve member of a loft profile.",
+  "type": "object",
+  "properties": {
+    "form": {
+      "description": "Structurally selected surface-side constraint form.",
+      "$ref": "#/$defs/LoftMemberForm"
+    },
+    "profile": {
+      "description": "Profile curve and its revision-gated parameter endpoints.",
+      "$ref": "#/$defs/LoftPathCurve"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "form"
+  ]
+}
+```
+
+### `LoftRevisionForm`
+
+```json
+{
+  "description": "Revision-gated `loft_spl_sur` form fields.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "flags": {
+      "description": "Four booleans following the parameter intervals.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "ints": {
+      "description": "Two integers preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "flags",
+    "ints",
+    "cache",
+    "discontinuities",
+    "tail_flag"
+  ]
+}
+```
+
+### `LoftSection`
+
+```json
+{
+  "description": "Ordered native loft section.",
+  "type": "object",
+  "properties": {
+    "entries": {
+      "description": "Ordered entries in the section.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftSectionEntry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "entries"
+  ]
+}
+```
+
+### `LoftSectionEntry`
+
+```json
+{
+  "description": "One parameterized entry in a native loft section.",
+  "type": "object",
+  "properties": {
+    "parameter": {
+      "description": "Native section parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "path": {
+      "description": "Native path data.",
+      "$ref": "#/$defs/LoftPath"
+    },
+    "profile": {
+      "description": "Ordered profile members.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftProfileMember"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "profile",
+    "path"
+  ]
+}
+```
+
+### `LoftSubdata`
+
+```json
+{
+  "description": "Native loft constraint table with structurally consistent dimensions.",
+  "oneOf": [
+    {
+      "description": "Type 211 stores exactly one leading pair and no column pairs.",
+      "type": "object",
+      "properties": {
+        "dimensions": {
+          "description": "Native row/column header values. They do not count this form's payload.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "type211"
+        },
+        "row": {
+          "description": "The sole leading scalar pair.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "dimensions",
+        "row"
+      ]
+    },
+    {
+      "description": "All other table types store rows of one shared column width.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "table"
+        },
+        "rows": {
+          "description": "Table rows, all of one column width.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoftSubdataRow"
+          }
+        },
+        "type_code": {
+          "description": "Native loft table type code.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "type_code",
+        "rows"
+      ]
+    }
+  ]
+}
+```
+
+### `LoftSubdataRow`
+
+```json
+{
+  "description": "One scalar row in native loft subdata.",
+  "type": "object",
+  "properties": {
+    "columns": {
+      "description": "Ordered per-column scalar pairs; empty for subdata type 211.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      }
+    },
+    "extra": {
+      "description": "Trailing scalar pair stored by the revision-gated row encoding.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "parameters": {
+      "description": "Leading ordered scalar pair.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameters",
+    "columns"
+  ]
+}
+```
+
+### `NetSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native `net_spl_sur` construction graph.",
+  "type": "object",
+  "properties": {
+    "directions": {
+      "description": "Four ordered frame directions.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "flag": {
+      "description": "Native frame integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "formulas": {
+      "description": "Four ordered parameter laws.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LawFormula"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "frame_parameters": {
+      "description": "Twelve ordered frame scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 12,
+      "minItems": 12
+    },
+    "sections": {
+      "description": "Two ordered loft-section graphs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftSection"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "sections",
+    "frame_parameters",
+    "flag",
+    "directions",
+    "formulas",
+    "discontinuities",
+    "discontinuity_flag"
+  ]
+}
+```
+
+### `NonEmptyMembers`
+
+```json
+{
+  "description": "A nonempty sequence of members in source order.\n\nThe members stay contiguous: the sequence is read through slice patterns\nand slice methods. The mint refuses an empty list, `push` only grows, and\n`DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no\nreader has to ask whether a member is there.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/Point3"
+  },
+  "minItems": 1
+}
+```
+
+### `NonEmptyMembers2`
+
+```json
+{
+  "description": "A nonempty sequence of members in source order.\n\nThe members stay contiguous: the sequence is read through slice patterns\nand slice methods. The mint refuses an empty list, `push` only grows, and\n`DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no\nreader has to ask whether a member is there.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/PolylineVertex"
+  },
+  "minItems": 1
+}
+```
+
+### `NurbsCurve`
+
+```json
+{
+  "description": "A NURBS curve knot/pole payload.",
+  "type": "object",
+  "properties": {
+    "degree": {
+      "description": "Curve degree.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "knots": {
+      "description": "Full knot vector.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "periodic": {
+      "description": "Whether the curve is periodic.",
+      "type": "boolean"
+    },
+    "poles": {
+      "description": "Poles in parameter order, with the curve's rational form.",
+      "$ref": "#/$defs/NurbsPoles3"
+    }
+  },
+  "required": [
+    "degree",
+    "knots",
+    "poles",
+    "periodic"
+  ]
+}
+```
+
+### `NurbsPoleGrid`
+
+```json
+{
+  "description": "The control grid of a NURBS surface, stating the surface's rational form.\n\nA rational pole carries its weight in its own row, so a weight grid that\ndoes not cover the pole grid has no spelling.\n\nTransposition requires admission as a [`NurbsSurface`].\n\n```compile_fail\nuse cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;\nlet mut grid = NurbsPoleGrid::Polynomial { rows: Vec::new() };\ngrid.transpose();\n```",
+  "oneOf": [
+    {
+      "description": "A polynomial surface: its poles carry no weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polynomial"
+        },
+        "rows": {
+          "description": "Control grid rows: `rows[i][j]` is pole `(i, j)`.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Point3"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "rows"
+      ]
+    },
+    {
+      "description": "A rational surface: every pole carries its weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rational"
+        },
+        "rows": {
+          "description": "Control grid rows: `rows[i][j]` is pole `(i, j)`.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/WeightedPole3"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "rows"
+      ]
+    }
+  ]
+}
+```
+
+### `NurbsPoles3`
+
+```json
+{
+  "description": "The poles of a NURBS curve, stating the curve's rational form.\n\nA rational pole carries its weight in its own row, so a weight list that\ndoes not cover the poles has no spelling, and \"the curve is polynomial\" has\nexactly one spelling.",
+  "oneOf": [
+    {
+      "description": "A polynomial curve: its poles carry no weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polynomial"
+        },
+        "points": {
+          "description": "Poles in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Point3"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    },
+    {
+      "description": "A rational curve: every pole carries its weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rational"
+        },
+        "points": {
+          "description": "Pole rows in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeightedPole3"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    }
+  ]
+}
+```
+
+### `NurbsSurface`
+
+```json
+{
+  "description": "A tensor-product NURBS surface.\n\nThe control grid is stored as rows: the outer index is u, the inner index\nis v, so the grid states both pole counts. `weights == None` denotes a\nnon-rational surface.",
+  "type": "object",
+  "properties": {
+    "cache_fit_tolerance": {
+      "description": "Fit tolerance of the source approximation cache, in model length units.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FitTolerance"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "normal_reversed": {
+      "description": "Whether the carrier's oriented normal is opposite `Pu × Pv`.",
+      "type": "boolean"
+    },
+    "poles": {
+      "description": "Control grid rows, with the surface's rational form.",
+      "$ref": "#/$defs/NurbsPoleGrid"
+    },
+    "u_degree": {
+      "description": "Degree in the u parametric direction.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "u_knots": {
+      "description": "Full knot vector in u.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "u_periodic": {
+      "description": "Whether the surface is periodic in u.",
+      "type": "boolean"
+    },
+    "v_degree": {
+      "description": "Degree in the v parametric direction.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "v_knots": {
+      "description": "Full knot vector in v.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "v_periodic": {
+      "description": "Whether the surface is periodic in v.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "u_degree",
+    "v_degree",
+    "u_knots",
+    "v_knots",
+    "poles",
+    "normal_reversed",
+    "u_periodic",
+    "v_periodic"
+  ]
+}
+```
+
+### `OffsetExtension`
+
+```json
+{
+  "description": "Mutually exclusive pre-revision and revision-gated offset layouts.",
+  "oneOf": [
+    {
+      "description": "Pre-revision conditional flag sequence.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flags": {
+          "description": "Conditional flag sequence in its positional wire form.",
+          "$ref": "#/$defs/LegacyExtensionFlags"
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flags"
+      ]
+    },
+    {
+      "description": "Revision-gated fields with the required four-boolean carrier run.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form whose carrier run is exactly four booleans.",
+          "$ref": "#/$defs/RevisionSurfaceForm2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `OffsetSide`
+
+```json
+{
+  "description": "Orientation carrier of a planar curve offset.",
+  "oneOf": [
+    {
+      "description": "Unit plane normal defining the positive offset side.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "plane_normal"
+        },
+        "normal": {
+          "description": "Unit plane normal.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "normal"
+      ]
+    },
+    {
+      "description": "Explicit offset direction, optionally constrained to a support surface.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Nonzero offset direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "direction"
+        },
+        "support": {
+          "description": "Support surface within which the offset is measured.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "direction"
+      ]
+    }
+  ]
+}
+```
+
+### `ParametricSurfaceCurveFlags`
+
+```json
+{
+  "description": "Two terminating flags carried only by a parametric surface curve.",
+  "type": "object",
+  "properties": {
+    "flag": {
+      "description": "Support-slot selector.",
+      "type": "boolean"
+    },
+    "second_flag": {
+      "description": "Optional later-revision terminating flag.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "flag"
+  ]
+}
+```
+
+### `PcurveGeometry`
+
+```json
+{
+  "description": "The shape of a parameter-space (u, v) curve on a surface.",
+  "oneOf": [
+    {
+      "description": "A straight line in parameter space.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Parameter-space line direction.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "line"
+        },
+        "origin": {
+          "description": "Parameter-space line origin.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "direction"
+      ]
+    },
+    {
+      "description": "Polar angle and axial coordinate of a first-order harmonic spatial curve.",
+      "type": "object",
+      "properties": {
+        "axial_cos": {
+          "description": "Cosine axial coefficient.",
+          "type": "number",
+          "format": "double"
+        },
+        "axial_origin": {
+          "description": "Constant axial coefficient.",
+          "type": "number",
+          "format": "double"
+        },
+        "axial_sin": {
+          "description": "Sine axial coefficient.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "polar_harmonic"
+        },
+        "radial_center": {
+          "description": "Constant radial coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "radial_cos": {
+          "description": "Cosine radial coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "radial_sin": {
+          "description": "Sine radial coefficient.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "radial_center",
+        "radial_cos",
+        "radial_sin",
+        "axial_origin",
+        "axial_cos",
+        "axial_sin"
+      ]
+    },
+    {
+      "description": "Polar angle and axial coordinate obtained from a rational NURBS vector.",
+      "type": "object",
+      "properties": {
+        "degree": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string",
+          "const": "polar_nurbs"
+        },
+        "knots": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "periodic": {
+          "type": "boolean"
+        },
+        "poles": {
+          "$ref": "#/$defs/PolarNurbsPoles"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "degree",
+        "knots",
+        "poles",
+        "periodic"
+      ]
+    },
+    {
+      "description": "Great-circle locus in a sphere's azimuth/latitude parameter chart.",
+      "type": "object",
+      "properties": {
+        "azimuth_origin": {
+          "description": "Azimuth at the parameter origin.",
+          "type": "number",
+          "format": "double"
+        },
+        "azimuth_rate": {
+          "description": "Azimuth change for one unit of parameter.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "spherical_great_circle"
+        },
+        "plane_phase": {
+          "description": "Phase of the great-circle plane.",
+          "type": "number",
+          "format": "double"
+        },
+        "plane_slope": {
+          "description": "Slope of the great-circle plane.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "azimuth_origin",
+        "azimuth_rate",
+        "plane_phase",
+        "plane_slope"
+      ]
+    },
+    {
+      "description": "Full circle in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Parameter-space circle center.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
+        "radius": {
+          "description": "Circle radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "x_axis",
+        "y_axis",
+        "radius"
+      ]
+    },
+    {
+      "description": "Full ellipse in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Parameter-space ellipse center.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ellipse"
+        },
+        "major_radius": {
+          "description": "Major semiaxis radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Minor semiaxis radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "x_axis",
+        "y_axis",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "General first-order harmonic curve in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Constant parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "cosine": {
+          "description": "Cosine parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "harmonic"
+        },
+        "sine": {
+          "description": "Sine parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "cosine",
+        "sine"
+      ]
+    },
+    {
+      "description": "Parabola in parameter space.",
+      "type": "object",
+      "properties": {
+        "focal_distance": {
+          "description": "Distance from the vertex to the focus, in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "parabola"
+        },
+        "vertex": {
+          "description": "Parameter-space parabola vertex.",
+          "$ref": "#/$defs/Point2"
+        },
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vertex",
+        "x_axis",
+        "y_axis",
+        "focal_distance"
+      ]
+    },
+    {
+      "description": "Hyperbola in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Parameter-space hyperbola center.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "hyperbola"
+        },
+        "major_radius": {
+          "description": "Transverse semiaxis radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Conjugate semiaxis radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "x_axis",
+        "y_axis",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "General first-order hyperbolic curve in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Constant parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "cosine": {
+          "description": "Hyperbolic-cosine parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "hyperbolic"
+        },
+        "sine": {
+          "description": "Hyperbolic-sine parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "cosine",
+        "sine"
+      ]
+    },
+    {
+      "description": "A free-form NURBS curve in parameter space (control points are (u, v)).",
+      "type": "object",
+      "properties": {
+        "degree": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string",
+          "const": "nurbs"
+        },
+        "knots": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "periodic": {
+          "type": "boolean"
+        },
+        "poles": {
+          "$ref": "#/$defs/PcurveNurbsPoles"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "degree",
+        "knots",
+        "poles",
+        "periodic"
+      ]
+    },
+    {
+      "description": "Affine replica of a parent pcurve in the same parameter space.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Exact parent pcurve and its parameterization.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "transformed"
+        },
+        "transform": {
+          "description": "Two-dimensional affine map from parent coordinates to replica coordinates.",
+          "$ref": "#/$defs/Transform2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "basis",
+        "transform"
+      ]
+    },
+    {
+      "description": "Parameter restriction of an exact basis pcurve.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Curve this curve trims.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "trimmed"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval retained from the basis.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "same_sense": {
+          "description": "Whether the trim follows increasing basis parameters.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_range",
+        "same_sense",
+        "basis"
+      ]
+    },
+    {
+      "description": "Signed planar offset of an exact basis pcurve.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Curve this curve is offset from.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "distance": {
+          "description": "Signed parameter-space offset distance.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "offset"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "distance",
+        "basis"
+      ]
+    }
+  ]
+}
+```
+
+### `PcurveNurbs`
+
+```json
+{
+  "description": "Checked two-dimensional NURBS payload for pcurves and sketch curves.",
+  "type": "object",
+  "properties": {
+    "degree": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "knots": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "periodic": {
+      "type": "boolean"
+    },
+    "poles": {
+      "$ref": "#/$defs/PcurveNurbsPoles"
+    }
+  },
+  "required": [
+    "degree",
+    "knots",
+    "poles",
+    "periodic"
+  ]
+}
+```
+
+### `PcurveNurbsPoles`
+
+```json
+{
+  "description": "The poles of a parameter-space NURBS curve.",
+  "oneOf": [
+    {
+      "description": "A polynomial pcurve: its poles carry no weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polynomial"
+        },
+        "points": {
+          "description": "Poles in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Point2"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    },
+    {
+      "description": "A rational pcurve: every pole carries its weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rational"
+        },
+        "points": {
+          "description": "Pole rows in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeightedPole2"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    }
+  ]
+}
+```
+
+### `Point2`
+
+```json
+{
+  "description": "A point in 2D surface parameter (u, v) space.",
+  "type": "object",
+  "properties": {
+    "u": {
+      "description": "U parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "v": {
+      "description": "V parameter.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "u",
+    "v"
+  ]
+}
+```
+
+### `Point3`
+
+```json
+{
+  "description": "A point in 3D model space, in the document's length unit.",
+  "type": "object",
+  "properties": {
+    "x": {
+      "description": "X coordinate.",
+      "type": "number",
+      "format": "double"
+    },
+    "y": {
+      "description": "Y coordinate.",
+      "type": "number",
+      "format": "double"
+    },
+    "z": {
+      "description": "Z coordinate.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "x",
+    "y",
+    "z"
+  ]
+}
+```
+
+### `PolarNurbsPole`
+
+```json
+{
+  "description": "One paired radial and axial pole of a polar parameter-space NURBS.",
+  "type": "object",
+  "properties": {
+    "axial": {
+      "description": "Axial pole value.",
+      "type": "number",
+      "format": "double"
+    },
+    "radial": {
+      "description": "Euclidean radial-plane pole.",
+      "$ref": "#/$defs/Point2"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "radial",
+    "axial"
+  ]
+}
+```
+
+### `PolarNurbsPoles`
+
+```json
+{
+  "description": "The poles of a polar parameter-space NURBS curve.",
+  "oneOf": [
+    {
+      "description": "A polynomial polar curve: its poles carry no weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polynomial"
+        },
+        "poles": {
+          "description": "Poles in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolarNurbsPole"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "poles"
+      ]
+    },
+    {
+      "description": "A rational polar curve: every pole carries its weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rational"
+        },
+        "poles": {
+          "description": "Pole rows in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeightedPolarNurbsPole"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "poles"
+      ]
+    }
+  ]
+}
+```
+
+### `PolygonalSurface`
+
+```json
+{
+  "description": "Source-native polygonal surface with an explicit chordal error bound.",
+  "type": "object",
+  "properties": {
+    "chordal_deflection": {
+      "type": "number",
+      "format": "double"
+    },
+    "triangles": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "maxItems": 3,
+        "minItems": 3
+      }
+    },
+    "vertices": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Point3"
+      }
+    }
+  },
+  "required": [
+    "vertices",
+    "triangles",
+    "chordal_deflection"
+  ]
+}
+```
+
+### `PolylineSamples`
+
+```json
+{
+  "description": "The samples of a polyline, with or without source parameters.\n\nA parameterized polyline carries one parameter per sample in the sample\nrow, so a parameter list that does not match the sample count has no\nspelling.",
+  "oneOf": [
+    {
+      "description": "Samples the source did not parameterize.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unparameterized"
+        },
+        "points": {
+          "description": "Ordered model-space samples.",
+          "$ref": "#/$defs/NonEmptyMembers"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    },
+    {
+      "description": "Samples the source parameterized.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parameterized"
+        },
+        "vertices": {
+          "description": "Ordered samples, each with its source parameter.",
+          "$ref": "#/$defs/NonEmptyMembers2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vertices"
+      ]
+    }
+  ]
+}
+```
+
+### `PolylineVertex`
+
+```json
+{
+  "description": "One polyline sample with the source parameter recorded at it.",
+  "type": "object",
+  "properties": {
+    "parameter": {
+      "description": "Source parameter at this sample.",
+      "type": "number",
+      "format": "double"
+    },
+    "point": {
+      "description": "Model-space sample.",
+      "$ref": "#/$defs/Point3"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "point"
+  ]
+}
+```
+
+### `PositiveI64`
+
+```json
+{
+  "description": "A positive value in a native signed 64-bit integer lane.",
+  "type": "integer",
+  "format": "int64"
+}
+```
+
+### `ProceduralCurveDefinition`
+
+```json
+{
+  "description": "Neutral semantics for a procedural curve.",
+  "oneOf": [
+    {
+      "description": "An exact native intcurve whose solved NURBS cache is authoritative.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "exact"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Curve defined by recursive native law formulas.",
+      "type": "object",
+      "properties": {
+        "additional": {
+          "description": "Counted additional recursive law formulas.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawFormula"
+          }
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "description": "Shared support surfaces, UV curves, interval, and discontinuities.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "extension": {
+          "description": "Native ASM extension integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "law"
+        },
+        "primary": {
+          "description": "Primary recursive law formula.",
+          "$ref": "#/$defs/LawFormula"
+        },
+        "version": {
+          "description": "Version-stamped serializer form, absent for the legacy layout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LawCurveVersionForm"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "context",
+        "extension",
+        "primary",
+        "additional"
+      ]
+    },
+    {
+      "description": "Ordered compound of native child curves with construction parameters.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "components": {
+          "description": "Component curves in construction order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompoundComponent2"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "compound"
+        },
+        "parameters": {
+          "description": "Finite leading and per-component construction parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameters",
+        "components"
+      ]
+    },
+    {
+      "description": "Circular or conical helix around an axis.",
+      "type": "object",
+      "properties": {
+        "angle_range": {
+          "description": "Native helix angle interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "apex_factor": {
+          "description": "Native apex taper factor.",
+          "type": "number",
+          "format": "double"
+        },
+        "axis": {
+          "description": "Helix axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "center": {
+          "description": "Helix center in model space.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "helix"
+        },
+        "major": {
+          "description": "Major radial axis vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "minor": {
+          "description": "Minor radial axis vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "pitch": {
+          "description": "Axial advance of one turn, as a vector.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "angle_range",
+        "center",
+        "major",
+        "minor",
+        "pitch",
+        "apex_factor",
+        "axis"
+      ]
+    },
+    {
+      "description": "Intersection of two support surfaces.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "description": "Shared surfaces, UV curves, interval, and discontinuity metadata.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "intersection"
+        }
+      },
+      "required": [
+        "kind",
+        "context",
+        "discontinuity_flag"
+      ]
+    },
+    {
+      "description": "Tolerance-bounded intersection relation selected by topology endpoints.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "construction": {
+          "description": "Distinct supports and finite endpoint bounds.",
+          "$ref": "#/$defs/TolerantIntersectionConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "tolerant_intersection"
+        },
+        "parameterization": {
+          "description": "Atomic neutral parameterization established by validated support charts.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TolerantIntersectionParameterization"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Intersection constrained by a third ordered support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "three_surface_intersection"
+        },
+        "selector": {
+          "description": "Native branch selector code.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "third": {
+          "description": "Third support side of the intersection.",
+          "$ref": "#/$defs/IntcurveSupportSide"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "selector",
+        "third"
+      ]
+    },
+    {
+      "description": "Surface-related curve whose native subtype has no tail beyond the shared prefix.",
+      "type": "object",
+      "properties": {
+        "family": {
+          "description": "Native family, support context, and optional cache-first tail.",
+          "$ref": "#/$defs/SurfaceCurveFamily"
+        },
+        "kind": {
+          "type": "string",
+          "const": "surface_curve"
+        }
+      },
+      "required": [
+        "kind",
+        "family"
+      ]
+    },
+    {
+      "description": "Silhouette of a cast surface in a light direction.",
+      "type": "object",
+      "properties": {
+        "cast_surface": {
+          "description": "Surface whose silhouette is constructed.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "context": {
+          "description": "Shared first two support pairs.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "silhouette"
+        },
+        "light_direction": {
+          "description": "Native model-space light direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "silhouette": {
+          "description": "Standard, parametric, or taper silhouette semantics.",
+          "$ref": "#/$defs/SilhouetteKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "silhouette",
+        "cast_surface",
+        "light_direction"
+      ]
+    },
+    {
+      "description": "Curve offset relative to a surface parameterization.",
+      "type": "object",
+      "properties": {
+        "base": {
+          "description": "Embedded base curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "base_endpoints": {
+          "description": "Optional parameter endpoints following the embedded base curve in\nthe cache-first layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "base_range": {
+          "description": "Native interval on `base`.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "base_u_range": {
+          "description": "Native U interval on the base surface.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "base_v_range": {
+          "description": "Native V interval on the base surface.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "cache": {
+          "description": "Cache contract: the cache-first shared-context fields, or the legacy\nsolved-cache tolerance the context-first layout states instead.",
+          "$ref": "#/$defs/CacheContract5"
+        },
+        "context": {
+          "description": "Shared first two support pairs.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "distance": {
+          "description": "Signed model-space offset distance.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "surface_offset"
+        },
+        "scale": {
+          "description": "Native unscaled parameter scale.",
+          "type": "number",
+          "format": "double"
+        },
+        "shift": {
+          "description": "Native unscaled parameter shift.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "discontinuity_flag",
+        "base_u_range",
+        "base_v_range",
+        "base",
+        "base_range",
+        "base_endpoints",
+        "cache",
+        "distance",
+        "shift",
+        "scale"
+      ]
+    },
+    {
+      "description": "Blend spring guide between two support sides.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Native direction code.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "spring"
+        },
+        "layout": {
+          "description": "Native spring record layout.",
+          "$ref": "#/$defs/SpringLayout"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "layout",
+        "direction"
+      ]
+    },
+    {
+      "description": "Deformation of an embedded source curve.",
+      "type": "object",
+      "properties": {
+        "cache_first": {
+          "description": "Cache-first serializer fields surrounding the solved curve cache.",
+          "$ref": "#/$defs/CacheFirstCurveForm"
+        },
+        "context": {
+          "description": "Shared cache-first support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "data": {
+          "description": "Discriminator-specific deformation payload.",
+          "$ref": "#/$defs/DeformableCurveData"
+        },
+        "kind": {
+          "type": "string",
+          "const": "deformable"
+        },
+        "source": {
+          "description": "Curve being deformed or its unresolved native reference.",
+          "$ref": "#/$defs/DeformableCurveSource"
+        },
+        "source_parameter_range": {
+          "description": "Optional native bounds following the source curve.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "cache_first",
+        "source",
+        "source_parameter_range",
+        "data"
+      ]
+    },
+    {
+      "description": "Projection of a source curve onto a support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "projection"
+        },
+        "source": {
+          "description": "Curve being projected.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "tail": {
+          "description": "Native projection tail.",
+          "$ref": "#/$defs/ProjectionTail"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "discontinuity_flag",
+        "source",
+        "tail"
+      ]
+    },
+    {
+      "description": "Offset from a source curve.",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "description": "Signed offset distance, in document length units.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "offset"
+        },
+        "range": {
+          "description": "Retained parameter range, with its distance law when variable.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CurveOffsetRange"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "side": {
+          "description": "Exclusive plane-normal or explicit-direction carrier.",
+          "$ref": "#/$defs/OffsetSide"
+        },
+        "source": {
+          "description": "Curve this curve is offset from.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "distance",
+        "side"
+      ]
+    },
+    {
+      "description": "Free-space 3D offset using a reference direction.",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "description": "Signed offset distance.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "spatial_offset"
+        },
+        "reference_direction": {
+          "description": "Reference direction controlling the offset frame.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "self_intersect": {
+          "description": "Whether the source classifies the result as self-intersecting.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "source": {
+          "description": "Curve being offset.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "distance",
+        "reference_direction"
+      ]
+    },
+    {
+      "description": "Intersection of two surfaces after applying independent signed offsets.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "context": {
+          "description": "Shared surfaces, UV curves, interval, and discontinuity metadata.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "two_sided_offset"
+        },
+        "offsets": {
+          "description": "Signed offset distance for each support side, in document length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "discontinuity_flag",
+        "offsets"
+      ]
+    },
+    {
+      "description": "Free-space vector offset of a source curve over a parameter interval.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "const": "vector_offset"
+        },
+        "offset": {
+          "description": "Model-space offset vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval on the source curve.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "roles": {
+          "description": "Integer codes attached to the two native roles.",
+          "$ref": "#/$defs/VectorOffsetRoles"
+        },
+        "source": {
+          "description": "Curve being offset.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "parameter_range",
+        "offset",
+        "roles"
+      ]
+    },
+    {
+      "description": "A parameter sub-range of a parent curve.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "const": "subset"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval retained from the parent.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "sense": {
+          "description": "Whether the subset follows increasing parent parameters.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Parent curve being restricted.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "parameter_range",
+        "sense"
+      ]
+    },
+    {
+      "description": "Affine replica of a curve carrier, retaining the parent curve's\nparameter range and parameterization.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "replica"
+        },
+        "source": {
+          "description": "Curve being replicated.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "transform": {
+          "description": "Affine map from the parent curve coordinates to this curve.",
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "transform"
+      ]
+    },
+    {
+      "description": "Spine or center curve of a blend surface.",
+      "type": "object",
+      "properties": {
+        "blend_surface": {
+          "description": "The blend surface this curve is the spine of, when known.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "blend_spine"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Preserved construction without a neutral interpretation.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "unknown"
+        },
+        "native_kind": {
+          "description": "Source construction-family discriminator, when known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "record": {
+          "description": "Reference to the preserved raw source record, when retained.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UnknownId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `ProceduralSurfaceDefinition`
+
+```json
+{
+  "description": "Neutral semantics for a procedural surface.",
+  "oneOf": [
+    {
+      "description": "Exact native NURBS surface with retained parameter fields.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "exact"
+        },
+        "spline": {
+          "description": "Exact spline surface.",
+          "$ref": "#/$defs/ExactSpline"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "spline"
+      ]
+    },
+    {
+      "description": "Ordered native compound of a solved surface and component surfaces.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "components": {
+          "description": "Component surfaces in construction order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompoundComponent"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "compound"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "components"
+      ]
+    },
+    {
+      "description": "Exact rectangular restriction of an embedded support surface.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "sub_surface"
+        },
+        "parameter_ranges": {
+          "description": "Finite U and V parameter intervals, each with its endpoints in stored order.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "support": {
+          "description": "Embedded support surface whose parameterization is retained.",
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "parameter_ranges"
+      ]
+    },
+    {
+      "description": "Taper of a support surface around a reference curve.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.",
+          "$ref": "#/$defs/CacheContract"
+        },
+        "kind": {
+          "type": "string",
+          "const": "taper"
+        },
+        "parameter": {
+          "description": "Native taper parameter or draft magnitude.",
+          "type": "number",
+          "format": "double"
+        },
+        "pcurve": {
+          "description": "UV curve on the support, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reference": {
+          "description": "Reference curve on the support.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "support": {
+          "description": "Base surface being tapered.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "taper": {
+          "description": "Subtype-specific taper tail.",
+          "$ref": "#/$defs/TaperSurfaceKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "reference",
+        "parameter",
+        "taper",
+        "cache"
+      ]
+    },
+    {
+      "description": "Native loft defined by two section graphs and closure contracts.",
+      "type": "object",
+      "properties": {
+        "bridge": {
+          "description": "Native bridge tokens in source order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoftBridgeToken"
+          }
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated loft form, or the legacy solved-cache tolerance this construction states instead.",
+          "$ref": "#/$defs/CacheContract2"
+        },
+        "closures": {
+          "description": "Native closure codes of the two parameter directions.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "loft"
+        },
+        "mode": {
+          "description": "Native loft mode code.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "parameters": {
+          "description": "Spline surface parameters.",
+          "$ref": "#/$defs/SplineSurfaceParameters"
+        },
+        "sections": {
+          "description": "The two loft sections.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoftSection"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "singularities": {
+          "description": "Native singularity codes of the two parameter directions.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sections",
+        "parameters",
+        "closures",
+        "singularities",
+        "mode",
+        "bridge",
+        "cache"
+      ]
+    },
+    {
+      "description": "Native compound-loft construction.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "Compound loft construction.",
+          "$ref": "#/$defs/CompoundLoftConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "compound_loft"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Revision-gated compound-loft construction.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Complete native revision-gated compound-loft graph.",
+          "$ref": "#/$defs/RevisionCompoundLoftConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision_compound_loft"
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native scaled compound-loft construction.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "Scaled compound loft construction.",
+          "$ref": "#/$defs/ScaledCompoundLoftConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "scaled_compound_loft"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native skinned spline surface.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "Skin surface construction.",
+          "$ref": "#/$defs/SkinSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "skin"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native surface defined by recursive law formulas.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Law surface construction.",
+          "$ref": "#/$defs/LawSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "law"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native curve-network spline surface.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "Net surface construction.",
+          "$ref": "#/$defs/NetSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "net"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native curvature-continuous two-sided blend.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "G2 blend construction.",
+          "$ref": "#/$defs/G2BlendConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "g2_blend"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Revision-gated curvature-continuous blend in the variable-blend side\nlayout.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Complete native revision-gated G2 construction graph.",
+          "$ref": "#/$defs/RevisionG2BlendConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision_g2_blend"
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native variable-radius two-sided blend.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Variable blend construction.",
+          "$ref": "#/$defs/VariableBlendConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "variable_blend"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native vertex-blend patch.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Vertex blend construction.",
+          "$ref": "#/$defs/VertexBlendConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "vertex_blend"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Translation of a directrix along a direction.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.\nThe directrix parameter interval is `parameter_interval`.",
+          "$ref": "#/$defs/CacheContract"
+        },
+        "direction": {
+          "description": "Length-bearing sweep direction, in document length units.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "directrix": {
+          "description": "Curve swept along `direction` to form the surface.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "extrusion"
+        },
+        "native_position": {
+          "description": "Native model-space position following the sweep direction, when carried.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameter_interval": {
+          "description": "Native source directrix parameter interval, when carried by the\nsource. The neutral surface-carrier interval is in\n`ProceduralSurface::record_bounds`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "directrix",
+        "direction",
+        "cache"
+      ]
+    },
+    {
+      "description": "Unbounded linear sweep of a directrix.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Length-bearing sweep vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "directrix": {
+          "description": "Curve swept along `direction`.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "linear_sweep"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "directrix",
+        "direction"
+      ]
+    },
+    {
+      "description": "Revolution of a directrix about an axis.",
+      "type": "object",
+      "properties": {
+        "angular_interval": {
+          "description": "Angular start and end parameters, in radians.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "angular_parameter_interval": {
+          "description": "Surface-parameter interval that maps affinely to\n`angular_interval`. Absence means the surface parameter is already\nthe revolution angle in radians.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "axis_direction": {
+          "description": "Direction of the revolution axis, with norm within `1e-9` of one.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "axis_origin": {
+          "description": "A point on the revolution axis, with finite coordinates.",
+          "$ref": "#/$defs/Point3"
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.\nThe profile curve's optional endpoints are `reference_endpoints`.",
+          "$ref": "#/$defs/CacheContract"
+        },
+        "directrix": {
+          "description": "Curve revolved about the axis to form the surface.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revolution"
+        },
+        "parameter_interval": {
+          "description": "Native source directrix parameter start and end values, when\ncarried by the source representation. The neutral surface-carrier\ninterval is in `ProceduralSurface::record_bounds`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "transposed": {
+          "description": "Whether the source parameter directions are transposed.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "directrix",
+        "axis_origin",
+        "axis_direction",
+        "angular_interval",
+        "transposed",
+        "cache"
+      ]
+    },
+    {
+      "description": "Full revolution of a directrix about an axis.",
+      "type": "object",
+      "properties": {
+        "axis_direction": {
+          "description": "Unit revolution-axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "axis_origin": {
+          "description": "Point on the revolution axis.",
+          "$ref": "#/$defs/Point3"
+        },
+        "directrix": {
+          "description": "Curve revolved about the axis.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "axis_revolution"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "directrix",
+        "axis_origin",
+        "axis_direction"
+      ]
+    },
+    {
+      "description": "Sum of two ordered curves from a base point.",
+      "type": "object",
+      "properties": {
+        "basepoint": {
+          "description": "Surface base point.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.",
+          "$ref": "#/$defs/CacheContract"
+        },
+        "first": {
+          "description": "First curve, varying in the first surface parameter.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "sum"
+        },
+        "second": {
+          "description": "Second curve, varying in the second surface parameter.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "first",
+        "second",
+        "basepoint",
+        "cache"
+      ]
+    },
+    {
+      "description": "Sweep of a profile along a spine.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "sweep"
+        },
+        "native": {
+          "description": "Native sweep construction, when the source carries one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SweepSurfaceConstruction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "description": "Curve swept along the spine.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "spine": {
+          "description": "Curve the profile follows.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "profile",
+        "spine"
+      ]
+    },
+    {
+      "description": "T-spline face with its shared subtransform program.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Complete native T-spline wrapper construction.",
+          "$ref": "#/$defs/TSplineSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "t_spline"
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Surface generated along an inline circular or linear helix path.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Complete native helix-surface construction.",
+          "$ref": "#/$defs/HelixSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "helix"
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native deformable spline surface.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Deformable surface construction.",
+          "$ref": "#/$defs/DeformableSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "deformable"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Offset from a support surface.",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "description": "Signed offset distance, in document length units.",
+          "type": "number",
+          "format": "double"
+        },
+        "extension": {
+          "description": "Legacy conditional extension flags or the revision-gated form.",
+          "$ref": "#/$defs/OffsetExtension"
+        },
+        "kind": {
+          "type": "string",
+          "const": "offset"
+        },
+        "linear_support_extension": {
+          "description": "Whether the support continues as ruled linear strips outside its\nactive NURBS rectangle.",
+          "type": "boolean"
+        },
+        "support": {
+          "description": "Surface this surface is offset from.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "u_sense": {
+          "description": "Native U parameter-direction sense enum, when carried.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "v_sense": {
+          "description": "Native V parameter-direction sense enum, when carried.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "distance",
+        "linear_support_extension",
+        "extension"
+      ]
+    },
+    {
+      "description": "Rectangular parameter sub-range of a support surface.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "const": "subset"
+        },
+        "parameter_ranges": {
+          "description": "U and V parameter endpoints in the support parameterization.\n\nThe endpoint order is significant for cyclic and reversed\ntrims. A producer that does not carry direction metadata may\nleave the sense fields absent and use increasing endpoints.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "support": {
+          "description": "Surface being restricted.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "u_sense": {
+          "description": "Whether the trimmed surface U direction agrees with the support.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "v_sense": {
+          "description": "Whether the trimmed surface V direction agrees with the support.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "parameter_ranges"
+      ]
+    },
+    {
+      "description": "Affine replica of a surface carrier, retaining the parent surface\nconstruction and its parameter domain.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "replica"
+        },
+        "source": {
+          "description": "Surface being replicated.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "transform": {
+          "description": "Affine map from the parent surface coordinates to this surface.",
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "transform"
+      ]
+    },
+    {
+      "description": "Parallel offset from a support surface.",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "description": "Signed offset distance.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "parallel_offset"
+        },
+        "self_intersect": {
+          "description": "Whether the source classifies the result as self-intersecting.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "support": {
+          "description": "Surface being offset.",
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "distance"
+      ]
+    },
+    {
+      "description": "Self-intersecting torus with an explicitly selected outer or inner sheet.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "degenerate_torus"
+        },
+        "select_outer": {
+          "description": "Whether the outer sheet is selected at the self-intersection.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "select_outer"
+      ]
+    },
+    {
+      "description": "Surface domain bounded by ordered curves on a supporting surface.",
+      "type": "object",
+      "properties": {
+        "boundaries": {
+          "description": "Boundary curves on the support.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CurveId"
+          }
+        },
+        "boundary_pcurves": {
+          "description": "Parameter-space carriers used by surface-curve boundary segments.\n\nThese are separate from `boundaries`: one STEP surface curve can\ncarry both a model-space curve and pcurves on the support surface.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PcurveId"
+          }
+        },
+        "implicit_outer": {
+          "description": "Whether the support's natural outer boundary is implicit.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "curve_bounded"
+        },
+        "support": {
+          "description": "Supporting surface whose parameterization defines the domain.",
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "required": [
+        "kind",
+        "support",
+        "boundaries",
+        "boundary_pcurves",
+        "implicit_outer"
+      ]
+    },
+    {
+      "description": "Ruled surface joining two directrices.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first": {
+          "description": "First bounding curve of the ruled surface.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ruled"
+        },
+        "second": {
+          "description": "Second bounding curve of the ruled surface.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "required": [
+        "kind",
+        "first",
+        "second"
+      ]
+    },
+    {
+      "description": "Rolling-ball or law-driven blend between two support surfaces.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Cache contract: the native rolling-ball construction, which states its\nown cache form, or the legacy solved-cache tolerance stated instead.",
+          "$ref": "#/$defs/CacheContract4"
+        },
+        "cross_section": {
+          "description": "Blend cross-section form.",
+          "$ref": "#/$defs/BlendCrossSection"
+        },
+        "kind": {
+          "type": "string",
+          "const": "blend"
+        },
+        "radius": {
+          "description": "Blend radius law.",
+          "$ref": "#/$defs/BlendRadiusLaw"
+        },
+        "spine": {
+          "description": "Spine curve, when the source resolves one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CurveId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supports": {
+          "description": "Blend support sides.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BlendSupport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "supports",
+        "radius",
+        "cross_section",
+        "cache"
+      ]
+    },
+    {
+      "description": "Rolling-ball surface defined by aligned quintic value/derivative jets.",
+      "type": "object",
+      "properties": {
+        "degree": {
+          "description": "Polynomial degree of each scalar channel.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string",
+          "const": "rolling_ball_jet"
+        },
+        "stations": {
+          "description": "Ordered station data.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RollingBallJetStation"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "degree",
+        "stations"
+      ]
+    },
+    {
+      "description": "Preserved construction without a neutral interpretation.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "unknown"
+        },
+        "record": {
+          "description": "Reference to the preserved raw source record, when retained.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UnknownId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `ProjectionRole`
+
+```json
+{
+  "description": "Support selected by a ranged projection tail.",
+  "oneOf": [
+    {
+      "description": "First support surface.",
+      "type": "string",
+      "const": "surf1"
+    },
+    {
+      "description": "Second support surface.",
+      "type": "string",
+      "const": "surf2"
+    }
+  ]
+}
+```
+
+### `ProjectionTail`
+
+```json
+{
+  "description": "Mutually exclusive tail forms of a native projected intcurve.",
+  "oneOf": [
+    {
+      "description": "The ASM flag is followed immediately by the subtype close.",
+      "type": "object",
+      "properties": {
+        "flag": {
+          "description": "Native ASM projection flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "early_close"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag"
+      ]
+    },
+    {
+      "description": "The ASM flag is followed by a retained source interval and role text.",
+      "type": "object",
+      "properties": {
+        "flag": {
+          "description": "Native ASM projection flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ranged"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval on the projected source curve.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "role": {
+          "description": "Projection support role.",
+          "$ref": "#/$defs/ProjectionRole"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag",
+        "parameter_range",
+        "role"
+      ]
+    }
+  ]
+}
+```
+
+### `RevisionCacheForm`
+
+```json
+{
+  "description": "Mutually exclusive payloads of a revision-gated approximation cache.",
+  "oneOf": [
+    {
+      "description": "A solved cache followed by its carrier-specific cache contract.",
+      "type": "object",
+      "properties": {
+        "fit_tolerance": {
+          "description": "Carrier-specific solved-cache contract.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "solved_cache"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fit_tolerance"
+      ]
+    },
+    {
+      "description": "Parameterization stored in place of a solved cache.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parameterization"
+        },
+        "u_closure": {
+          "description": "U closure enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "u_interval": {
+          "description": "U parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "u_singularity": {
+          "description": "U singularity enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "v_closure": {
+          "description": "V closure enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "v_interval": {
+          "description": "V parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "v_singularity": {
+          "description": "V singularity enum.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "u_interval",
+        "v_interval",
+        "u_closure",
+        "v_closure",
+        "u_singularity",
+        "v_singularity"
+      ]
+    }
+  ]
+}
+```
+
+### `RevisionCacheForm2`
+
+```json
+{
+  "description": "Mutually exclusive payloads of a revision-gated approximation cache.",
+  "oneOf": [
+    {
+      "description": "A solved cache followed by its carrier-specific cache contract.",
+      "type": "object",
+      "properties": {
+        "fit_tolerance": {
+          "description": "Carrier-specific solved-cache contract.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "solved_cache"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fit_tolerance"
+      ]
+    },
+    {
+      "description": "Parameterization stored in place of a solved cache.",
+      "type": "object",
+      "properties": {
+        "closed_form": {
+          "description": "Closed-form enum following the interval.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "interval": {
+          "description": "Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is\na false bound-presence flag.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "parameterization"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "interval",
+        "closed_form"
+      ]
+    }
+  ]
+}
+```
+
+### `RevisionCompoundLoftConstruction`
+
+```json
+{
+  "description": "Complete native revision-gated `cl_loft_spl_sur` construction. The\nrevision layout is cache-first: the revision integer and shared\nrevision-gated surface tail precede the construction fields.",
+  "type": "object",
+  "properties": {
+    "base_path": {
+      "description": "Path data of the leading scale block.",
+      "$ref": "#/$defs/LoftPath"
+    },
+    "base_profile": {
+      "description": "Leading unparameterized scale block: ordered profile members and path.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftProfileMember"
+      }
+    },
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "direction": {
+      "description": "Direction carrier selected by the kind-zero direction tag.",
+      "$ref": "#/$defs/CompoundLoftDirection"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "entries": {
+      "description": "Counted parameterized entries; the native parameter trails each\nentry's fields.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftSectionEntry"
+      }
+    },
+    "flags": {
+      "description": "Two flags following the entries.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "kind_flags": {
+      "description": "Two flags opening the kind-zero payload.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "tail": {
+      "description": "Trailing bounds and their dependent BS3 curve.",
+      "$ref": "#/$defs/RevisionCompoundLoftTail"
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "base_profile",
+    "base_path",
+    "entries",
+    "flags",
+    "kind_flags",
+    "direction",
+    "tail"
+  ]
+}
+```
+
+### `RevisionCompoundLoftTail`
+
+```json
+{
+  "description": "Trailing parameter bounds of a revision compound loft.\nBoth bounds select a trailing curve; all other forms contain no curve.",
+  "oneOf": [
+    {
+      "description": "Neither parameter bound is present.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unbounded"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Only the lower parameter bound is present.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "lower_bound"
+        },
+        "lower": {
+          "description": "Lower parameter bound.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "lower"
+      ]
+    },
+    {
+      "description": "Only the upper parameter bound is present.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "upper_bound"
+        },
+        "upper": {
+          "description": "Upper parameter bound.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "upper"
+      ]
+    },
+    {
+      "description": "Both parameter bounds and their selected curve.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Curve selected by the complete parameter pair.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "interval": {
+          "description": "Ordered lower and upper parameter bounds.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "curve"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "interval",
+        "curve"
+      ]
+    }
+  ]
+}
+```
+
+### `RevisionG2BlendConstruction`
+
+```json
+{
+  "description": "Complete native revision-gated `g2_blend_spl_sur` construction. The\nrevision layout stores the two support sides in the variable-blend side\nlayout and ends with the shared revision-gated surface tail.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "center": {
+      "description": "Stored center curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "center_range": {
+      "description": "Optional native center-curve parameter endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "leading_parameters": {
+      "description": "Two native scalars following the revision integer.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "radii": {
+      "description": "Two signed blend radii in document length units.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "radius_selector": {
+      "description": "Integer-valued optional-radius selector following the radii.",
+      "$ref": "#/$defs/RollingBallRadiusSelector"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "shape_length": {
+      "description": "Native length before the solved shape, in document units.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_parameter": {
+      "description": "Native scalar before the solved shape.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_prefix": {
+      "description": "Native integer before the solved shape.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "shape_tail": {
+      "description": "Native integer immediately before the shared tail.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "sides": {
+      "description": "Two ordered support-side graphs in the variable-blend side layout.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RollingBallSide"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers following the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    },
+    "u_range": {
+      "description": "Native optional U interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "v_range": {
+      "description": "Native optional V interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "leading_parameters",
+    "sides",
+    "center",
+    "center_range",
+    "radii",
+    "radius_selector",
+    "u_range",
+    "v_range",
+    "shape_prefix",
+    "shape_parameter",
+    "shape_length",
+    "shape_tail",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "tail_extensions"
+  ]
+}
+```
+
+### `RevisionSurfaceForm`
+
+```json
+{
+  "description": "Shared fields of a revision-gated spline-surface form: the revision\ninteger, optional support bounds and reference-curve endpoints, a\ncarrier-specific boolean run, and the shared tail enum, discontinuity\narrays, tail boolean, and post-tail boolean run.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "flags": {
+      "description": "Carrier-specific boolean run preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "reference_endpoints": {
+      "description": "Optional parameter endpoints following the embedded reference curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "second_endpoints": {
+      "description": "Optional parameter endpoints following a second embedded curve, used\nby two-curve carriers such as `sum_spl_sur`.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following the support surface.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    },
+    "trailing_flags": {
+      "description": "Boolean run following the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "support_bounds",
+    "reference_endpoints",
+    "second_endpoints",
+    "flags",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "trailing_flags"
+  ]
+}
+```
+
+### `RevisionSurfaceForm2`
+
+```json
+{
+  "description": "Shared fields of a revision-gated spline-surface form: the revision\ninteger, optional support bounds and reference-curve endpoints, a\ncarrier-specific boolean run, and the shared tail enum, discontinuity\narrays, tail boolean, and post-tail boolean run.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "flags": {
+      "description": "Carrier-specific boolean run preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "reference_endpoints": {
+      "description": "Optional parameter endpoints following the embedded reference curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "second_endpoints": {
+      "description": "Optional parameter endpoints following a second embedded curve, used\nby two-curve carriers such as `sum_spl_sur`.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following the support surface.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    },
+    "trailing_flags": {
+      "description": "Boolean run following the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "support_bounds",
+    "reference_endpoints",
+    "second_endpoints",
+    "flags",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "trailing_flags"
+  ]
+}
+```
+
+### `RevisionSurfaceParameterization`
+
+```json
+{
+  "description": "Parameterization carried by tail-enum form `2` of the shared revision-gated\nspline-surface tail. This form stores no approximation cache and no fit\ntolerance; it stores the two parameter intervals followed by four enums, in\nthe order the fields appear below.",
+  "type": "object",
+  "properties": {
+    "u_closure": {
+      "description": "U closure enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "u_interval": {
+      "description": "U parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "u_singularity": {
+      "description": "U singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "v_closure": {
+      "description": "V closure enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "v_interval": {
+      "description": "V parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "v_singularity": {
+      "description": "V singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "u_interval",
+    "v_interval",
+    "u_closure",
+    "v_closure",
+    "u_singularity",
+    "v_singularity"
+  ]
+}
+```
+
+### `RollingBallConstruction`
+
+```json
+{
+  "description": "Complete byte-backed rolling-ball or three-surface blend context.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "offsets": {
+      "description": "Two signed support offsets in document length units.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "parameters": {
+      "description": "Two ordered trailing scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "radius_selector": {
+      "description": "Optional-radius selector field.",
+      "$ref": "#/$defs/RollingBallRadiusSelector2"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "shape_prefix": {
+      "description": "Native integer preceding the trailing scalars.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "sides": {
+      "description": "Two ordered primary support sides.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RollingBallSide"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "slice": {
+      "description": "Stored slice or center curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "slice_range": {
+      "description": "Optional native slice-curve parameter endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "tail": {
+      "description": "Native long following the trailing scalars.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers preceding the subtype close.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "tail_flag": {
+      "description": "Native Boolean closing the shared tail.",
+      "type": "boolean"
+    },
+    "third": {
+      "description": "Third side present only for `sss_blend_spl_sur`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallThirdSide"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "u_range": {
+      "description": "Native optional U interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "v_range": {
+      "description": "Native optional V interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "sides",
+    "slice",
+    "slice_range",
+    "offsets",
+    "radius_selector",
+    "u_range",
+    "v_range",
+    "shape_prefix",
+    "parameters",
+    "tail",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "tail_extensions"
+  ]
+}
+```
+
+### `RollingBallJetDerivative`
+
+```json
+{
+  "description": "One derivative row for the four channels of a rolling-ball jet.",
+  "type": "object",
+  "properties": {
+    "angle": {
+      "description": "Derivative of the signed opening angle.",
+      "type": "number",
+      "format": "double"
+    },
+    "center": {
+      "description": "Derivative of the rolling-ball center.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "first_limit": {
+      "description": "Derivative of the first limiting point.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "second_limit": {
+      "description": "Derivative of the second limiting point.",
+      "$ref": "#/$defs/Vector3"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "first_limit",
+    "second_limit",
+    "center",
+    "angle"
+  ]
+}
+```
+
+### `RollingBallJetSite`
+
+```json
+{
+  "description": "One aligned knot site of an exact rolling-ball surface jet.",
+  "type": "object",
+  "properties": {
+    "angle": {
+      "description": "Signed opening angle at the knot, in radians.",
+      "type": "number",
+      "format": "double"
+    },
+    "center": {
+      "description": "Rolling-ball center at the knot.",
+      "$ref": "#/$defs/Point3"
+    },
+    "first_derivative": {
+      "description": "First parameter derivative of all four value channels.",
+      "$ref": "#/$defs/RollingBallJetDerivative"
+    },
+    "first_limit": {
+      "description": "First limiting point at the knot.",
+      "$ref": "#/$defs/Point3"
+    },
+    "second_derivative": {
+      "description": "Second parameter derivative of all four value channels.",
+      "$ref": "#/$defs/RollingBallJetDerivative"
+    },
+    "second_limit": {
+      "description": "Second limiting point at the knot.",
+      "$ref": "#/$defs/Point3"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "first_limit",
+    "second_limit",
+    "center",
+    "angle",
+    "first_derivative",
+    "second_derivative"
+  ]
+}
+```
+
+### `RollingBallJetStation`
+
+```json
+{
+  "description": "One parameter station of a rolling-ball jet, with its complete value rows.",
+  "type": "object",
+  "properties": {
+    "knot": {
+      "description": "Native spine parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "multiplicity": {
+      "description": "Multiplicity of this parameter in the native knot vector.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "site": {
+      "description": "Values and derivatives at this parameter.",
+      "$ref": "#/$defs/RollingBallJetSite"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "knot",
+    "multiplicity",
+    "site"
+  ]
+}
+```
+
+### `RollingBallRadiusSelector`
+
+```json
+{
+  "description": "Native optional-radius selector in a rolling-ball construction.",
+  "oneOf": [
+    {
+      "description": "The construction states no radius.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Explicit native selector scalar.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "value"
+        },
+        "value": {
+          "description": "Stored scalar value.",
+          "$ref": "#/$defs/PositiveI64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `RollingBallRadiusSelector2`
+
+```json
+{
+  "description": "Native optional-radius selector in a rolling-ball construction.",
+  "oneOf": [
+    {
+      "description": "The construction states no radius.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Explicit native selector scalar.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "value"
+        },
+        "value": {
+          "description": "Stored scalar value.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `RollingBallSide`
+
+```json
+{
+  "description": "One complete native rolling-ball support side.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Side curve and bounds, absent for `null_curve`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallSupportCurve"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "extension": {
+      "description": "Native extension integer and nullable tertiary pcurve.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallSideExtension"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "location": {
+      "description": "Native model-space side location.",
+      "$ref": "#/$defs/Point3"
+    },
+    "pcurve": {
+      "description": "Primary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "secondary_pcurve": {
+      "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "support_kind": {
+      "description": "Geometry role selected by the support-side discriminator.",
+      "$ref": "#/$defs/VariableBlendSupportKind"
+    },
+    "surface": {
+      "description": "Primary support surface and bounds, absent for `null_surface`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallSupportSurface"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "support_kind",
+    "location"
+  ]
+}
+```
+
+### `RollingBallSideExtension`
+
+```json
+{
+  "description": "The optional rolling-ball extension clause.",
+  "type": "object",
+  "properties": {
+    "pcurve": {
+      "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "value": {
+      "description": "Native integer introducing the clause.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "value"
+  ]
+}
+```
+
+### `RollingBallSupportCurve`
+
+```json
+{
+  "description": "A present rolling-ball side curve and its native parameter bounds.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Side curve or embedded geometry.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "parameter_range": {
+      "description": "Optional native parameter endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "curve",
+    "parameter_range"
+  ]
+}
+```
+
+### `RollingBallSupportSurface`
+
+```json
+{
+  "description": "A present rolling-ball support surface and its native UV bounds.",
+  "type": "object",
+  "properties": {
+    "parameter_ranges": {
+      "description": "Optional native U and V endpoints.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "surface": {
+      "description": "Support surface or embedded geometry.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface",
+    "parameter_ranges"
+  ]
+}
+```
+
+### `RollingBallThirdSide`
+
+```json
+{
+  "description": "Third support graph appended by `sss_blend_spl_sur`.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Third side curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "direction": {
+      "description": "Native side vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "extension": {
+      "description": "Native ASM integer following the secondary pcurve.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "flag": {
+      "description": "Final ASM flag.",
+      "type": "boolean"
+    },
+    "label": {
+      "description": "Native side label.",
+      "type": "string"
+    },
+    "pcurve": {
+      "description": "Primary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "secondary_pcurve": {
+      "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "surface": {
+      "description": "Third support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "tertiary_pcurve": {
+      "description": "ASM tertiary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "label",
+    "surface",
+    "curve",
+    "direction",
+    "extension",
+    "flag"
+  ]
+}
+```
+
+### `ScaledCompoundLoftBranch`
+
+```json
+{
+  "description": "Structurally selected middle branch of a scaled compound loft.",
+  "oneOf": [
+    {
+      "description": "Extended branch ending in a direction vector.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Stored direction vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "first_scale": {
+          "description": "Optional first scale block.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompoundLoftScale"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "extended_vector"
+        },
+        "second_scale": {
+          "description": "Required second scale block.",
+          "$ref": "#/$defs/CompoundLoftScale"
+        },
+        "selector": {
+          "description": "Native selector integer.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "second_scale",
+        "selector",
+        "direction"
+      ]
+    },
+    {
+      "description": "Extended branch ending in a singularity and curve.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Stored BS3 curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "flag": {
+          "description": "Native branch flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "extended_curve"
+        },
+        "scale": {
+          "description": "Optional scale block.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompoundLoftScale"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "singularity": {
+          "description": "Native singularity enum.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag",
+        "singularity",
+        "curve"
+      ]
+    },
+    {
+      "description": "Direct vector-or-curve branch.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Vector or BS3 curve with its derived native selector.",
+          "$ref": "#/$defs/CompoundLoftDirection"
+        },
+        "flag": {
+          "description": "Native branch flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "direct"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag",
+        "direction"
+      ]
+    }
+  ]
+}
+```
+
+### `ScaledCompoundLoftConstruction`
+
+```json
+{
+  "description": "Complete native scaled compound-loft construction graph.",
+  "type": "object",
+  "properties": {
+    "branch": {
+      "description": "Structurally selected middle branch.",
+      "$ref": "#/$defs/ScaledCompoundLoftBranch"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "flags": {
+      "description": "Two native flags preceding the selector.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "scales": {
+      "description": "Present leading scales within the three native slots.",
+      "$ref": "#/$defs/CompoundLoftScales_3"
+    },
+    "selector": {
+      "description": "Native integer preceding the middle branch.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "shape": {
+      "description": "Singularity-selected solved-shape payload.",
+      "$ref": "#/$defs/ScaledCompoundLoftShape"
+    },
+    "singularity": {
+      "description": "Native leading singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "tail_curve": {
+      "description": "Native trailing BS3 curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "tail_directions": {
+      "description": "Two native trailing vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "tail_kind": {
+      "description": "Native trailing kind integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "tail_singularity": {
+      "description": "Native trailing singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "trailing_flags": {
+      "description": "Two trailing branch flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "singularity",
+    "shape",
+    "discontinuities",
+    "discontinuity_flag",
+    "scales",
+    "flags",
+    "selector",
+    "branch",
+    "trailing_flags",
+    "tail_kind",
+    "tail_directions",
+    "tail_singularity",
+    "tail_curve"
+  ]
+}
+```
+
+### `ScaledCompoundLoftShape`
+
+```json
+{
+  "description": "Initial solved-shape branch of a scaled compound loft.",
+  "oneOf": [
+    {
+      "description": "A solved NURBS cache follows the singularity enum.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "full"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "The cache is replaced by two intervals and two scalar arrays.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        },
+        "parameter_ranges": {
+          "description": "Two ordered native intervals.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "parameters": {
+          "description": "Two ordered native scalar arrays.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_ranges",
+        "parameters"
+      ]
+    }
+  ]
+}
+```
+
+### `SilhouetteKind`
+
+```json
+{
+  "description": "Native silhouette construction family and its exclusive tail fields.",
+  "oneOf": [
+    {
+      "description": "Standard implicit silhouette.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "standard"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Parametric silhouette.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parametric"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Draft/taper silhouette with an explicit factor.",
+      "type": "object",
+      "properties": {
+        "draft_factor": {
+          "description": "Native unscaled draft factor.",
+          "$ref": "#/$defs/FiniteReal"
+        },
+        "kind": {
+          "type": "string",
+          "const": "taper"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft_factor"
+      ]
+    }
+  ]
+}
+```
+
+### `SkinSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native `skin_spl_sur` construction graph.",
+  "type": "object",
+  "properties": {
+    "count": {
+      "description": "Native leading count.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "direction": {
+      "description": "Stored direction vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "formula": {
+      "description": "Recursive parametric law.",
+      "$ref": "#/$defs/LawFormula"
+    },
+    "layout": {
+      "description": "Structurally selected skin payload.",
+      "$ref": "#/$defs/SkinSurfaceLayout"
+    },
+    "parameter": {
+      "description": "Native leading scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "parameter_curve": {
+      "description": "Trailing curve after the formula.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "surface_boolean": {
+      "description": "Native `SURF_BOOL` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "surface_direction": {
+      "description": "Native `SURF_DIR` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "surface_normal": {
+      "description": "Native `SURF_NORM` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "trailing_parameter": {
+      "description": "Native scalar before the formula.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface_boolean",
+    "surface_normal",
+    "surface_direction",
+    "count",
+    "parameter",
+    "layout",
+    "direction",
+    "trailing_parameter",
+    "formula",
+    "parameter_curve",
+    "discontinuities",
+    "discontinuity_flag"
+  ]
+}
+```
+
+### `SkinSurfaceLayout`
+
+```json
+{
+  "description": "Structurally selected native skin payload.",
+  "oneOf": [
+    {
+      "description": "Expanded sequence of profile curves and loft constraints.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "profiles"
+        },
+        "path": {
+          "description": "Trailing path curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "profiles": {
+          "description": "Ordered profile entries.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkinSurfaceProfile"
+          }
+        },
+        "tail": {
+          "description": "Two native trailing integers.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "profiles",
+        "path",
+        "tail"
+      ]
+    },
+    {
+      "description": "Compact curve/subdata form.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Primary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "first_tail": {
+          "description": "Integer after the subdata.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "inner_count": {
+          "description": "Native compact-layout inner integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "compact"
+        },
+        "second_tail": {
+          "description": "Final compact-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "secondary_curve": {
+          "description": "Secondary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "subdata": {
+          "description": "Native loft subdata.",
+          "$ref": "#/$defs/LoftSubdata"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "inner_count",
+        "curve",
+        "subdata",
+        "first_tail",
+        "secondary_curve",
+        "second_tail"
+      ]
+    }
+  ]
+}
+```
+
+### `SkinSurfaceProfile`
+
+```json
+{
+  "description": "One profile entry in the expanded skin layout.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Profile curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "data": {
+      "description": "Native loft constraint data.",
+      "$ref": "#/$defs/LoftProfileData"
+    },
+    "type_code": {
+      "description": "Native profile type integer.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "type_code",
+    "curve",
+    "data"
+  ]
+}
+```
+
+### `SolvedCurveGeometry`
+
+```json
+{
+  "description": "The analytic or free-form shape of a 3D curve carrier established without a\nconstruction.",
+  "oneOf": [
+    {
+      "description": "Infinite line.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Line direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "line"
+        },
+        "origin": {
+          "description": "Line origin.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "direction"
+      ]
+    },
+    {
+      "description": "Full circle.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Circle center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
+        "radius": {
+          "description": "Circle radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "ref_direction",
+        "radius"
+      ]
+    },
+    {
+      "description": "Ellipse.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Ellipse center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ellipse"
+        },
+        "major_direction": {
+          "description": "Major-axis direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "major_radius": {
+          "description": "Major semiaxis radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Minor semiaxis radius.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "major_direction",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "Parabola in STEP conic form.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "focal_distance": {
+          "description": "Distance from the vertex to the focus.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "parabola"
+        },
+        "major_direction": {
+          "description": "Major-axis direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "vertex": {
+          "description": "Parabola vertex.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vertex",
+        "axis",
+        "major_direction",
+        "focal_distance"
+      ]
+    },
+    {
+      "description": "Hyperbola in STEP conic form.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Hyperbola center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "hyperbola"
+        },
+        "major_direction": {
+          "description": "Major-axis direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "major_radius": {
+          "description": "Transverse semiaxis radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Conjugate semiaxis radius.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "major_direction",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "A curve collapsed to one model-space point at a topological singularity.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "degenerate"
+        },
+        "point": {
+          "description": "Point the curve degenerates to.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "point"
+      ]
+    },
+    {
+      "description": "Ordered child curves joined into one bounded carrier.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "composite"
+        },
+        "segments": {
+          "description": "Ordered curve uses and their continuity contracts.",
+          "$ref": "#/$defs/CompositeCurveSegments"
+        },
+        "self_intersect": {
+          "description": "Whether the source classifies the complete curve as self-intersecting.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "segments"
+      ]
+    },
+    {
+      "description": "Free-form NURBS curve.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "nurbs"
+        }
+      },
+      "$ref": "#/$defs/NurbsCurve",
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Source-native polyline with an explicit chordal error bound.",
+      "type": "object",
+      "properties": {
+        "chordal_deflection": {
+          "description": "Maximum chordal deviation recorded by the source.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "polyline"
+        },
+        "samples": {
+          "description": "The polyline's sample rows.",
+          "$ref": "#/$defs/PolylineSamples"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "samples",
+        "chordal_deflection"
+      ]
+    },
+    {
+      "description": "Exact affine placement of an inline basis curve.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Unplaced basis geometry with unchanged parameterization.",
+          "$ref": "#/$defs/SolvedCurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "transformed"
+        },
+        "transform": {
+          "description": "Affine map from basis coordinates to model coordinates.",
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "basis",
+        "transform"
+      ]
+    },
+    {
+      "description": "Native curve carrier whose shape is not decoded.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unknown"
+        },
+        "record": {
+          "description": "Retained native record containing the curve carrier.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UnknownId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `SolvedSurfaceGeometry`
+
+```json
+{
+  "description": "Analytic, NURBS, or opaque surface geometry established without a\nconstruction.",
+  "oneOf": [
+    {
+      "description": "Infinite plane through `origin` with the given `normal`.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "plane"
+        },
+        "normal": {
+          "description": "Plane normal.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "origin": {
+          "description": "Plane origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "u_axis": {
+          "description": "First in-plane axis, perpendicular to `normal`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "normal",
+        "u_axis"
+      ]
+    },
+    {
+      "description": "Right circular cylinder of the given `radius` about the axis line.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "cylinder"
+        },
+        "origin": {
+          "description": "Cylinder frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "radius": {
+          "description": "Cylinder radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "axis",
+        "ref_direction",
+        "radius"
+      ]
+    },
+    {
+      "description": "Right elliptical cone. `radius` is the major radius at `origin`;\n`ratio` is the minor-to-major radius ratio; `half_angle` is the major\nhalf-angle between the axis and the cone surface, in radians.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "half_angle": {
+          "description": "Half angle of the cone, in radians.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "cone"
+        },
+        "origin": {
+          "description": "Cone frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "radius": {
+          "description": "Cross-section radius at the origin.",
+          "type": "number",
+          "format": "double"
+        },
+        "ratio": {
+          "description": "Ratio of the minor to the major cross-section radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "axis",
+        "ref_direction",
+        "radius",
+        "ratio",
+        "half_angle"
+      ]
+    },
+    {
+      "description": "Sphere.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Sphere center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "sphere"
+        },
+        "radius": {
+          "description": "Signed sphere radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "ref_direction",
+        "radius"
+      ]
+    },
+    {
+      "description": "Torus. `major_radius` is the distance from `center` to the tube center;\n`minor_radius` is the tube radius.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Torus center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "torus"
+        },
+        "major_radius": {
+          "description": "Distance from the center to the tube center.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Signed tube radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "ref_direction",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "Free-form NURBS surface.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "nurbs"
+        }
+      },
+      "$ref": "#/$defs/NurbsSurface",
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Source-native polygonal surface with an explicit chordal error bound.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polygonal"
+        }
+      },
+      "$ref": "#/$defs/PolygonalSurface",
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Exact affine placement of an inline basis surface.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Unplaced basis geometry with unchanged parameterization.",
+          "$ref": "#/$defs/SolvedSurfaceGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "transformed"
+        },
+        "transform": {
+          "description": "Affine map from basis coordinates to model coordinates.",
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "basis",
+        "transform"
+      ]
+    },
+    {
+      "description": "Surface geometry that has no typed neutral representation.\n\n`record` links to retained source bytes when available.\n\nA [`Surface`] carrying this variant should have entity exactness\n[`Exactness::Unknown`](crate::provenance::Exactness::Unknown) in the\ndocument's [`Annotations`](crate::annotations::Annotations): the shape was\nnot established, so nothing about it is byte-exact or derived.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unknown"
+        },
+        "record": {
+          "description": "Link to the preserved raw record, when the decoder kept the bytes.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UnknownId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `SplineSurfaceParameters`
+
+```json
+{
+  "description": "Parameter fields carried by exact and loft spline-surface constructions.",
+  "oneOf": [
+    {
+      "description": "Ordered semantic U and V intervals in the legacy layout.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "ordered_ranges"
+        },
+        "ranges": {
+          "description": "Ordered U and V intervals.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ranges"
+      ]
+    },
+    {
+      "description": "Two parameter intervals in a revision-gated layout, each stored as an\nordered `[lo, hi]` pair of optional bounds. For exact and t-spline\nsurfaces these are the surface's unextended (pre-extension) parameter\nranges; for loft surfaces they are wrap ranges, where a reversed pair\n(`lo > hi`) encodes an empty interval (no wrap). `None` is a false\nbound-presence flag.",
+      "type": "object",
+      "properties": {
+        "intervals": {
+          "description": "Two parameter intervals in serialized field order.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision_ranges"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "intervals"
+      ]
+    }
+  ]
+}
+```
+
+### `SpringLayout`
+
+```json
+{
+  "description": "Mutually exclusive spring construction layouts.",
+  "oneOf": [
+    {
+      "description": "Support-first layout with inline null-carrier replacement ranges.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discontinuities": {
+          "description": "Three ordered discontinuity arrays.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "first_pcurve": {
+          "description": "First pcurve or its null replacement range.",
+          "$ref": "#/$defs/SpringPcurve"
+        },
+        "kind": {
+          "type": "string",
+          "const": "context_first"
+        },
+        "parameter_range": {
+          "description": "Native solved-curve parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "second_pcurve": {
+          "description": "Nullable second pcurve slot.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supports": {
+          "description": "Two ordered support slots.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpringSupport"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "supports",
+        "first_pcurve",
+        "parameter_range",
+        "discontinuities",
+        "discontinuity_flag"
+      ]
+    },
+    {
+      "description": "Cache-first layout, which carries no inline replacement ranges or\ncontext-first discontinuity flag.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context following the solved cache.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "form": {
+          "description": "Cache-first serializer fields.",
+          "$ref": "#/$defs/CacheFirstCurveForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "cache_first"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `SpringPcurve`
+
+```json
+{
+  "description": "First pcurve slot in a context-first spring construction.",
+  "oneOf": [
+    {
+      "description": "Resolved parameter-space curve.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "pcurve"
+        },
+        "value": {
+          "$ref": "#/$defs/PcurveGeometry"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native interval stored in place of `nullbs`.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "range"
+        },
+        "value": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `SpringSupport`
+
+```json
+{
+  "description": "One support slot in a context-first spring construction.",
+  "oneOf": [
+    {
+      "description": "Resolved support surface.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "surface"
+        },
+        "value": {
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native U/V ranges stored in place of `null_surface`.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "ranges"
+        },
+        "value": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `SubtypeTableIndex`
+
+```json
+{
+  "description": "A non-negative native subtype-table index.",
+  "type": "integer",
+  "format": "int64"
+}
+```
+
+### `SupportPcurve`
+
+```json
+{
+  "description": "A parameter-space support curve and its optional affine parameter map.",
+  "type": "object",
+  "properties": {
+    "geometry": {
+      "description": "UV curve carried by the support side.",
+      "$ref": "#/$defs/PcurveGeometry"
+    },
+    "parameter_range": {
+      "description": "Directed pcurve interval corresponding to the solved interval.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DirectedParameterRange"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "geometry"
+  ]
+}
+```
+
+### `SurfaceCurveCacheFirst`
+
+```json
+{
+  "description": "Cache-first surface-curve tail paired with its family-specific flags.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "description": "Flags admitted by the selected surface-curve family.",
+      "type": "boolean"
+    },
+    "form": {
+      "description": "Family-independent cache-first fields.",
+      "$ref": "#/$defs/SurfaceCurveTail"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "form",
+    "flags"
+  ]
+}
+```
+
+### `SurfaceCurveCacheFirst2`
+
+```json
+{
+  "description": "Cache-first surface-curve tail paired with its family-specific flags.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "description": "Flags admitted by the selected surface-curve family.",
+      "$ref": "#/$defs/ParametricSurfaceCurveFlags"
+    },
+    "form": {
+      "description": "Family-independent cache-first fields.",
+      "$ref": "#/$defs/SurfaceCurveTail"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "form",
+    "flags"
+  ]
+}
+```
+
+### `SurfaceCurveFamily`
+
+```json
+{
+  "description": "Native surface-curve family with its support context and optional\ncache-first form.",
+  "oneOf": [
+    {
+      "description": "Blend edge curve whose construction details live on its blend support.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "blend"
+        },
+        "tail": {
+          "description": "Cache-first fields, when this is not the prefix-first layout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceCurveCacheFirst"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context"
+      ]
+    },
+    {
+      "description": "Curve constrained to a support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "surface_constrained"
+        },
+        "tail": {
+          "description": "Cache-first fields, when this is not the prefix-first layout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceCurveCacheFirst"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context"
+      ]
+    },
+    {
+      "description": "Parametric curve on a support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "parametric"
+        },
+        "tail": {
+          "description": "Cache-first fields with the parametric-only second flag.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceCurveCacheFirst2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context"
+      ]
+    },
+    {
+      "description": "Skin curve on a support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "skin"
+        },
+        "tail": {
+          "description": "Cache-first fields, when this is not the prefix-first layout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceCurveCacheFirst"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context"
+      ]
+    }
+  ]
+}
+```
+
+### `SurfaceCurveTail`
+
+```json
+{
+  "description": "Family-independent tail fields carried by a cache-first surface curve.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared context enum.",
+      "$ref": "#/$defs/RevisionCacheForm2"
+    },
+    "extension": {
+      "description": "Native integer following the discontinuity arrays.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer opening the cache-first layout.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "solved_range": {
+      "description": "Optional solved-curve interval endpoints; absent endpoints inherit the\nsolved NURBS domain.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following each ordered support surface.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "maxItems": 4,
+        "minItems": 4
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "extension",
+    "revision",
+    "cache",
+    "support_bounds",
+    "solved_range"
+  ]
+}
+```
+
+### `SweepRevisionForm`
+
+```json
+{
+  "description": "Revision-gated `sweep_sur` form fields.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "path_endpoints": {
+      "description": "Optional parameter endpoints following the embedded path curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "primary_flag": {
+      "description": "Boolean replacing the pre-revision primary enum.",
+      "type": "boolean"
+    },
+    "profile_endpoints": {
+      "description": "Optional parameter endpoints following the embedded profile curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "primary_flag",
+    "profile_endpoints",
+    "path_endpoints",
+    "cache"
+  ]
+}
+```
+
+### `SweepSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native `sweep_spl_sur` construction graph.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Cache contract: the revision-gated form, or the legacy solved-cache\ntolerance this construction states instead.",
+      "$ref": "#/$defs/CacheContract3"
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "layout": {
+      "description": "Structurally selected sweep layout.",
+      "$ref": "#/$defs/SweepSurfaceLayout"
+    },
+    "primary_kind": {
+      "description": "Leading native sweep enum.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "primary_kind",
+    "cache",
+    "layout",
+    "discontinuities",
+    "discontinuity_flag"
+  ]
+}
+```
+
+### `SweepSurfaceLayout`
+
+```json
+{
+  "description": "Structurally selected native sweep payload.",
+  "oneOf": [
+    {
+      "description": "Profile-first modern ASM sweep layout.",
+      "type": "object",
+      "properties": {
+        "directions": {
+          "description": "Five ordered frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 5,
+          "minItems": 5
+        },
+        "formulas": {
+          "description": "Three ordered parametric laws.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawFormula"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "kind": {
+          "type": "string",
+          "const": "profile_first"
+        },
+        "origin": {
+          "description": "Native model-space frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "parameters": {
+          "description": "Four ordered native frame scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "secondary_kind": {
+          "description": "Second native sweep enum.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "secondary_kind",
+        "directions",
+        "origin",
+        "parameters",
+        "formulas"
+      ]
+    },
+    {
+      "description": "Explicit sweep layout whose trajectory is controlled by a formula.",
+      "type": "object",
+      "properties": {
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "formula": {
+          "description": "Parametric trajectory formula.",
+          "$ref": "#/$defs/LawFormula"
+        },
+        "formula_flag": {
+          "description": "Native formula-side boolean.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "explicit_formula"
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "path_range": {
+          "description": "Path parameter interval in model length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ]
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "trailing_flag": {
+          "description": "Native trailing boolean.",
+          "type": "boolean"
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mode",
+        "profile_range",
+        "origin",
+        "directions",
+        "trajectory_flag",
+        "path_range",
+        "path_parameter",
+        "formula_flag",
+        "formula",
+        "trailing_flag"
+      ]
+    },
+    {
+      "description": "Explicit sweep layout controlled by an auxiliary guide curve.",
+      "type": "object",
+      "properties": {
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "guide_curve": {
+          "description": "Auxiliary guide curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "guide_flags": {
+          "description": "Two guide-side booleans.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "guide_modes": {
+          "description": "Two native guide integers.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "guide_parameters": {
+          "description": "Six ordered guide scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 6,
+          "minItems": 6
+        },
+        "guide_range": {
+          "description": "Guide parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "explicit_guide"
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "path_range": {
+          "description": "Path parameter interval in model length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ]
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "trailing_flags": {
+          "description": "Three trailing guide booleans.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mode",
+        "profile_range",
+        "origin",
+        "directions",
+        "trajectory_flag",
+        "path_range",
+        "path_parameter",
+        "guide_flags",
+        "guide_curve",
+        "guide_range",
+        "guide_modes",
+        "guide_parameters",
+        "trailing_flags"
+      ]
+    },
+    {
+      "description": "Explicit sweep layout controlled by a support surface.",
+      "type": "object",
+      "properties": {
+        "auxiliary_curve": {
+          "description": "Optional auxiliary curve.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CurveId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "kind": {
+          "type": "string",
+          "const": "explicit_surface"
+        },
+        "legacy_flag": {
+          "description": "Legacy pre-219 trailing boolean when present.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "path_range": {
+          "description": "Path parameter interval in model length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ]
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "singularity": {
+          "description": "Native singularity enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "support_flag": {
+          "description": "Native support-side boolean.",
+          "type": "boolean"
+        },
+        "support_surface": {
+          "description": "Support surface controlling the sweep.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mode",
+        "profile_range",
+        "origin",
+        "directions",
+        "trajectory_flag",
+        "path_range",
+        "path_parameter",
+        "singularity",
+        "support_surface",
+        "support_flag"
+      ]
+    },
+    {
+      "description": "Explicit-prefix sweep layout controlled by recursive laws.",
+      "type": "object",
+      "properties": {
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "first_law": {
+          "description": "Leading recursive sweep law.",
+          "$ref": "#/$defs/LawExpression"
+        },
+        "first_mode": {
+          "description": "Native integer after the leading law.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "first_range": {
+          "description": "First law parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "formula": {
+          "description": "Parametric trajectory formula.",
+          "$ref": "#/$defs/LawFormula"
+        },
+        "formula_mode": {
+          "description": "Native integer before the formula.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "law_driven"
+        },
+        "law_direction": {
+          "description": "Native law direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "path_flag": {
+          "description": "Native path boolean.",
+          "type": "boolean"
+        },
+        "path_mode": {
+          "description": "Native path integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "path_parameter": {
+          "description": "Native path scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "path_range": {
+          "description": "Path parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ]
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "second_law": {
+          "description": "Trailing recursive sweep law.",
+          "$ref": "#/$defs/LawExpression"
+        },
+        "second_law_flag": {
+          "description": "Native second-law boolean.",
+          "type": "boolean"
+        },
+        "trailing_flag": {
+          "description": "Native trailing boolean.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mode",
+        "profile_range",
+        "origin",
+        "directions",
+        "first_law",
+        "first_mode",
+        "first_range",
+        "law_direction",
+        "path_mode",
+        "path_flag",
+        "path_range",
+        "path_parameter",
+        "second_law_flag",
+        "second_law",
+        "formula_mode",
+        "formula",
+        "trailing_flag"
+      ]
+    }
+  ]
+}
+```
+
+### `TSplineSubtransform`
+
+```json
+{
+  "description": "Native T-spline subtransform storage form.",
+  "oneOf": [
+    {
+      "description": "Inline line-oriented T-spline program and companion values.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "inline"
+        },
+        "program": {
+          "description": "Line-oriented topology and geometry program.",
+          "type": "string"
+        },
+        "separator": {
+          "description": "Optional native separator boolean.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "values": {
+          "description": "Companion values program.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "program",
+        "values"
+      ]
+    },
+    {
+      "description": "Resolved reference to an earlier subtype-table entry.",
+      "type": "object",
+      "properties": {
+        "index": {
+          "description": "Native subtype-table index.",
+          "$ref": "#/$defs/SubtypeTableIndex"
+        },
+        "kind": {
+          "type": "string",
+          "const": "reference"
+        },
+        "resolved": {
+          "description": "Resolved shared program.",
+          "$ref": "#/$defs/inline"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "index",
+        "resolved"
+      ]
+    }
+  ]
+}
+```
+
+### `TSplineSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native `t_spl_sur` wrapper.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Cache contract: the revision-gated form, or the legacy solved-cache\ntolerance this construction states instead. The revision layout stores\nthe shared tail first, then four optional parameter values\n(`support_bounds`), the type code as an enum, the nested subtransform\nscope, and the trailing integer.",
+      "$ref": "#/$defs/CacheContract"
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "parameter_ranges": {
+      "description": "Ordered U and V native parameter intervals.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "subtransform": {
+      "description": "Inline or referenced shared subtransform object.",
+      "$ref": "#/$defs/TSplineSubtransform"
+    },
+    "trailing_value": {
+      "description": "Native trailing integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "type_code": {
+      "description": "Native T-spline type integer.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter_ranges",
+    "type_code",
+    "subtransform",
+    "trailing_value",
+    "discontinuities",
+    "discontinuity_flag",
+    "cache"
+  ]
+}
+```
+
+### `TaperSurfaceKind`
+
+```json
+{
+  "description": "Subtype-specific tail of a native taper spline surface.",
+  "oneOf": [
+    {
+      "description": "Standard taper without a subtype-specific tail.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "standard"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Orthogonal taper with a native sense flag.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "orthogonal"
+        },
+        "sense": {
+          "description": "Native orientation sense.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sense"
+      ]
+    },
+    {
+      "description": "Edge taper with a model-space draft vector.",
+      "type": "object",
+      "properties": {
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "edge"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft"
+      ]
+    },
+    {
+      "description": "Shadow taper with a pre-factored draft angle.",
+      "type": "object",
+      "properties": {
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
+          "type": "number",
+          "format": "double"
+        },
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "shadow"
+        },
+        "sine": {
+          "description": "Stored draft-angle sine.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft",
+        "sine",
+        "cosine"
+      ]
+    },
+    {
+      "description": "Ruled taper with a pre-factored angle and factor.",
+      "type": "object",
+      "properties": {
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
+          "type": "number",
+          "format": "double"
+        },
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "factor": {
+          "description": "Native ruled-taper factor.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ruled"
+        },
+        "sine": {
+          "description": "Stored draft-angle sine.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft",
+        "sine",
+        "cosine",
+        "factor"
+      ]
+    },
+    {
+      "description": "Swept taper with a pre-factored draft angle.",
+      "type": "object",
+      "properties": {
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
+          "type": "number",
+          "format": "double"
+        },
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "swept"
+        },
+        "sine": {
+          "description": "Stored draft-angle sine.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft",
+        "sine",
+        "cosine"
+      ]
+    }
+  ]
+}
+```
+
+### `TolerantIntersectionConstruction`
+
+```json
+{
+  "description": "Finite endpoint witnesses and distinct supports of a tolerant intersection.",
+  "type": "object",
+  "properties": {
+    "endpoints": {
+      "description": "Model-space endpoint witnesses.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Point3"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "supports": {
+      "description": "Distinct support surfaces of the intersection.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SurfaceId"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "tolerance": {
+      "description": "Finite non-negative intersection tolerance.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "supports",
+    "endpoints",
+    "tolerance"
+  ]
+}
+```
+
+### `TolerantIntersectionParameterization`
+
+```json
+{
+  "description": "Complete neutral parameterization of one topology-bounded intersection.",
+  "type": "object",
+  "properties": {
+    "parameter_range": {
+      "description": "Common finite solved-curve interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "pcurves": {
+      "description": "Coincident support charts in support order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PcurveGeometry"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "pcurves",
+    "parameter_range"
+  ]
+}
+```
+
+### `UnitVector3`
+
+```json
+{
+  "description": "A direction with unit length within the analytic frame tolerance.",
+  "type": "object",
+  "properties": {
+    "x": {
+      "description": "X component.",
+      "type": "number",
+      "format": "double"
+    },
+    "y": {
+      "description": "Y component.",
+      "type": "number",
+      "format": "double"
+    },
+    "z": {
+      "description": "Z component.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "x",
+    "y",
+    "z"
+  ]
+}
+```
+
+### `VariableBlendBareCrossSection`
+
+```json
+{
+  "description": "Native zero-width variable-blend cross-section selectors whose framing is\nestablished while their geometric laws remain unclassified.",
+  "oneOf": [
+    {
+      "description": "Native selector `2`.",
+      "type": "string",
+      "const": "Selector2"
+    },
+    {
+      "description": "Native selector `4`.",
+      "type": "string",
+      "const": "Selector4"
+    },
+    {
+      "description": "Native selector `5`.",
+      "type": "string",
+      "const": "Selector5"
+    },
+    {
+      "description": "Native selector `6`.",
+      "type": "string",
+      "const": "Selector6"
+    }
+  ]
+}
+```
+
+### `VariableBlendCache`
+
+```json
+{
+  "description": "Approximation state and its dependent fit contract for a variable blend.",
+  "oneOf": [
+    {
+      "description": "A nonzero approximation-current flag with an active fit contract.",
+      "type": "object",
+      "properties": {
+        "fit_tolerance": {
+          "description": "Fit tolerance in document length units.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "current"
+        },
+        "shape_prefix": {
+          "description": "Native approximation-current flag.",
+          "type": "integer",
+          "format": "int64",
+          "not": {
+            "const": 0
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "shape_prefix",
+        "fit_tolerance"
+      ]
+    },
+    {
+      "description": "A zero approximation-current flag without an active fit contract.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "stale"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Parameterization in place of a solved cache.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parameterization"
+        },
+        "parameterization": {
+          "description": "Surface parameterization.",
+          "$ref": "#/$defs/RevisionSurfaceParameterization"
+        },
+        "shape_prefix": {
+          "description": "Native approximation-current flag, independent of the parameterization.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "shape_prefix",
+        "parameterization"
+      ]
+    }
+  ]
+}
+```
+
+### `VariableBlendConstruction`
+
+```json
+{
+  "description": "Complete native variable-radius blend construction graph.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/VariableBlendCache"
+    },
+    "convexity": {
+      "description": "Blend convexity.",
+      "$ref": "#/$defs/VariableBlendConvexity"
+    },
+    "cross_section": {
+      "description": "Cross-section clause following the complete radius-law sequence.\nAbsence denotes an elided default circular section; an explicit\ncircular clause remains distinct.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VariableBlendCrossSection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "discontinuities": {
+      "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "offsets": {
+      "description": "Two signed support offsets in document length units.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "post_curve": {
+      "description": "Native post-shape BS3 curve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CurveId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "post_pcurve": {
+      "description": "Native post-shape BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "post_range": {
+      "description": "Native optional post-shape interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "radii": {
+      "description": "Structurally selected radius-control payloads.",
+      "$ref": "#/$defs/VariableBlendRadii"
+    },
+    "render_mode": {
+      "description": "Solved-surface representation.",
+      "$ref": "#/$defs/VariableBlendRenderMode"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "secondary_curve": {
+      "description": "Secondary curve and its bounds, absent for `null_curve`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallSupportCurve"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "shape_length": {
+      "description": "Achieved fit tolerance for the surface cache, in document units.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_parameter": {
+      "description": "Requested fit tolerance for the surface cache.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_tail": {
+      "description": "Native integer immediately before the shared tail's enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "sides": {
+      "description": "Two ordered support-side graphs in the rolling-ball side layout.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RollingBallSide"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "slice": {
+      "description": "Stored slice curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "slice_range": {
+      "description": "Optional native slice-curve parameter endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "subtype": {
+      "description": "Native surface subtype selecting the variable-blend behavior class.",
+      "$ref": "#/$defs/VariableBlendSurfaceSubtype"
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers following the tail Boolean.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "tail_flag": {
+      "description": "Native Boolean following the discontinuity arrays.",
+      "type": "boolean"
+    },
+    "u_range": {
+      "description": "Support-side parameter interval `(T0, T1)`; both bounds present in\nevery instance.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "v_lower": {
+      "description": "Second interval: a lower bound with an unbounded-above marker,\nencoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`\nupper-bound marker is an interval bound, not a standalone Boolean.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "subtype",
+    "revision",
+    "sides",
+    "slice",
+    "slice_range",
+    "offsets",
+    "radii",
+    "u_range",
+    "shape_parameter",
+    "shape_length",
+    "shape_tail",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "tail_extensions",
+    "convexity",
+    "render_mode",
+    "post_range"
+  ]
+}
+```
+
+### `VariableBlendConvexity`
+
+```json
+{
+  "description": "Convexity selected for a variable-radius blend surface.",
+  "oneOf": [
+    {
+      "description": "The blend bends toward the support intersection.",
+      "type": "string",
+      "const": "convex"
+    },
+    {
+      "description": "The blend bends away from the support intersection.",
+      "type": "string",
+      "const": "concave"
+    }
+  ]
+}
+```
+
+### `VariableBlendCrossSection`
+
+```json
+{
+  "description": "Cross-section clause following the variable-radius laws.",
+  "oneOf": [
+    {
+      "description": "Circular section with no additional parameters.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "circular"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Thumbweight-controlled section with two ordered shape parameters.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "thumbweights"
+        },
+        "parameters": {
+          "description": "Ordered native shape parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameters"
+      ]
+    },
+    {
+      "description": "Rounded chamfer with an optional independent rounding-radius law.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rounded_chamfer"
+        },
+        "radius": {
+          "description": "Rounding-radius law; absent when the clause stores `no_radius`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VariableBlendValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Curvature-continuous round with two ordered shape parameters.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "g2_round"
+        },
+        "parameters": {
+          "description": "Ordered native shape parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameters"
+      ]
+    },
+    {
+      "description": "A zero-width native selector whose record framing is known but whose\ngeometric cross-section law is not classified.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unclassified_bare"
+        },
+        "selector": {
+          "description": "Exact numeric selector retained from the native record.",
+          "$ref": "#/$defs/VariableBlendBareCrossSection"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "selector"
+      ]
+    }
+  ]
+}
+```
+
+### `VariableBlendInterpolationPoint`
+
+```json
+{
+  "description": "One interpolation control point in a variable blend-value law.",
+  "type": "object",
+  "properties": {
+    "location": {
+      "description": "Model-space control location.",
+      "$ref": "#/$defs/Point3"
+    },
+    "normal": {
+      "description": "Control normal.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "parameter": {
+      "description": "Law parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "radius": {
+      "description": "Radius in document length units.",
+      "type": "number",
+      "format": "double"
+    },
+    "tangents": {
+      "description": "Optional first and second derivative scalars.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "radius",
+    "tangents",
+    "location",
+    "normal"
+  ]
+}
+```
+
+### `VariableBlendRadii`
+
+```json
+{
+  "description": "Radius-law payloads of a variable blend.",
+  "oneOf": [
+    {
+      "description": "One radius law controls both support sides.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "single"
+        },
+        "value": {
+          "description": "Shared radius law.",
+          "$ref": "#/$defs/VariableBlendValue"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Each support side has an independent radius law.",
+      "type": "object",
+      "properties": {
+        "first": {
+          "description": "First support-side radius law.",
+          "$ref": "#/$defs/VariableBlendValue"
+        },
+        "kind": {
+          "type": "string",
+          "const": "two"
+        },
+        "second": {
+          "description": "Second support-side radius law.",
+          "$ref": "#/$defs/VariableBlendValue"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "first",
+        "second"
+      ]
+    }
+  ]
+}
+```
+
+### `VariableBlendRenderMode`
+
+```json
+{
+  "description": "Solved-surface representation selected for a variable-radius blend.",
+  "oneOf": [
+    {
+      "description": "The solved surface is the rolling-ball envelope.",
+      "type": "string",
+      "const": "rolling_ball_envelope"
+    },
+    {
+      "description": "The solved surface is a rolling-ball snapshot.",
+      "type": "string",
+      "const": "rolling_ball_snapshot"
+    }
+  ]
+}
+```
+
+### `VariableBlendSupportKind`
+
+```json
+{
+  "description": "Geometry role selected by a variable-blend support-side discriminator.",
+  "oneOf": [
+    {
+      "description": "Support defined by a cosine curve.",
+      "type": "string",
+      "const": "cosine_curve"
+    },
+    {
+      "description": "Support defined by a general curve.",
+      "type": "string",
+      "const": "curve"
+    },
+    {
+      "description": "Support defined by a point curve.",
+      "type": "string",
+      "const": "point_curve"
+    },
+    {
+      "description": "Support defined by a surface.",
+      "type": "string",
+      "const": "surface"
+    },
+    {
+      "description": "Support defined by a zero curve.",
+      "type": "string",
+      "const": "zero_curve"
+    }
+  ]
+}
+```
+
+### `VariableBlendSurfaceSubtype`
+
+```json
+{
+  "description": "Native variable-radius blend surface subtype.",
+  "oneOf": [
+    {
+      "description": "General variable-blend surface.",
+      "type": "string",
+      "const": "variable_blend"
+    },
+    {
+      "description": "Surface-to-surface variable blend.",
+      "type": "string",
+      "const": "surface_surface"
+    },
+    {
+      "description": "Curve-to-curve variable blend.",
+      "type": "string",
+      "const": "curve_curve"
+    },
+    {
+      "description": "Curve-to-surface variable blend.",
+      "type": "string",
+      "const": "curve_surface"
+    },
+    {
+      "description": "Free surface-curve variable blend.",
+      "type": "string",
+      "const": "surface_curve_free"
+    }
+  ]
+}
+```
+
+### `VariableBlendTerminal`
+
+```json
+{
+  "description": "Numeric or symbolic terminal of a functional blend-value law.",
+  "oneOf": [
+    {
+      "description": "Native double token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "double"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native string token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "text"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `VariableBlendValue`
+
+```json
+{
+  "description": "Complete recursive native `getBlendValues` payload.",
+  "type": "object",
+  "properties": {
+    "calibrated": {
+      "description": "Native calibrated enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "modern_flag": {
+      "description": "Native Boolean following the calibrated enum.",
+      "type": "boolean"
+    },
+    "payload": {
+      "description": "Type-specific payload with its native sub-discriminator.",
+      "$ref": "#/$defs/VariableBlendValuePayload"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "modern_flag",
+    "calibrated",
+    "payload"
+  ]
+}
+```
+
+### `VariableBlendValuePayload`
+
+```json
+{
+  "description": "Type-specific payload of a variable blend value.\n\nEach arm carries the native sub-discriminator it admits: the edge-offset\narm is one of two codes, so an edge-offset value with any other\nsub-discriminator has no spelling.",
+  "oneOf": [
+    {
+      "description": "Law-domain parameter range and two endpoint radii.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "two_ends"
+        },
+        "parameters": {
+          "description": "Law-domain parameter range (lower, upper).",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "radii": {
+          "description": "Endpoint radii in document length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameters",
+        "radii"
+      ]
+    },
+    {
+      "description": "Fixed-width branch: the parameter-range bounds and the chamfer width\nscalar, stored unscaled.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "fixed_width"
+        },
+        "parameters": {
+          "description": "Parameter-range lower and upper bounds.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "width": {
+          "description": "Chamfer width.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameters",
+        "width"
+      ]
+    },
+    {
+      "description": "Edge-offset branch.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "$ref": "#/$defs/EdgeOffsetDiscriminator"
+        },
+        "kind": {
+          "type": "string",
+          "const": "edge_offset"
+        },
+        "lengths": {
+          "description": "Ordered length payload in document units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 1,
+          "minItems": 1
+        },
+        "scalars": {
+          "description": "Ordered native scalar payload.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "scalars",
+        "lengths"
+      ]
+    },
+    {
+      "description": "Functional radius law carried by a BS2 pcurve.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "function": {
+          "description": "Scalar function whose first coordinate is radius in document units.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "functional"
+        },
+        "parameter": {
+          "description": "Leading scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "radius": {
+          "description": "Leading length in document units.",
+          "type": "number",
+          "format": "double"
+        },
+        "terminal": {
+          "description": "Numeric or symbolic terminal value.",
+          "$ref": "#/$defs/VariableBlendTerminal"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameter",
+        "radius",
+        "function",
+        "terminal"
+      ]
+    },
+    {
+      "description": "Constant law followed by a recursive chamfer value.",
+      "type": "object",
+      "properties": {
+        "chamfer_type": {
+          "description": "Native chamfer-type enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "constant"
+        },
+        "nested": {
+          "description": "Recursively nested blend value.",
+          "$ref": "#/$defs/VariableBlendValue"
+        },
+        "parameters": {
+          "description": "Ordered native scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "radius": {
+          "description": "Radius in document length units.",
+          "type": "number",
+          "format": "double"
+        },
+        "variable_chamfer": {
+          "description": "Native variable-chamfer enum.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameters",
+        "radius",
+        "variable_chamfer",
+        "chamfer_type",
+        "nested"
+      ]
+    },
+    {
+      "description": "Interpolated radius law.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "enum_count": {
+          "description": "Native extension enum, stored ahead of the radius-point count. It\ngates nothing; the payload ends at the last radius point.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "enum_tagged": {
+          "description": "Whether the extension enum is stored as a `0x15` enum token\n(revision-gated streams) rather than a `0x04` integer.",
+          "type": "boolean"
+        },
+        "function": {
+          "description": "Scalar function whose first coordinate is radius in document units.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "interpolated"
+        },
+        "parameter": {
+          "description": "Leading scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "points": {
+          "description": "Counted radius-point array: each control carries a parameter,\nradius, two derivative scalars, a position, and a vector.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VariableBlendInterpolationPoint"
+          }
+        },
+        "radius": {
+          "description": "Leading radius in document length units.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameter",
+        "radius",
+        "function",
+        "enum_count",
+        "enum_tagged",
+        "points"
+      ]
+    }
+  ]
+}
+```
+
+### `Vector3`
+
+```json
+{
+  "description": "A 3D vector. Depending on context this may be a direction (often but not\nalways unit length) or a length-bearing displacement.",
+  "type": "object",
+  "properties": {
+    "x": {
+      "description": "X component.",
+      "type": "number",
+      "format": "double"
+    },
+    "y": {
+      "description": "Y component.",
+      "type": "number",
+      "format": "double"
+    },
+    "z": {
+      "description": "Z component.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "x",
+    "y",
+    "z"
+  ]
+}
+```
+
+### `VectorOffsetRoles`
+
+```json
+{
+  "description": "Codes attached to the two native vector-offset roles.",
+  "type": "object",
+  "properties": {
+    "offset": {
+      "description": "Code of the offset role.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "source": {
+      "description": "Code of the source role.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "source",
+    "offset"
+  ]
+}
+```
+
+### `VertexBlendBoundary`
+
+```json
+{
+  "description": "One boundary record in a native vertex-blend patch.",
+  "type": "object",
+  "properties": {
+    "boundary_type": {
+      "description": "Native cross flag. The wire form is a logical, so the value is the\ntag itself and no payload follows.",
+      "type": "boolean"
+    },
+    "fullness": {
+      "description": "Native fullness scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "geometry": {
+      "description": "Structurally selected boundary geometry.",
+      "$ref": "#/$defs/VertexBlendBoundaryGeometry"
+    },
+    "magic": {
+      "description": "Native magic direction with finite components, stored as read. It is a\ndirection, never a length, so it carries no unit scale.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "u_smoothing": {
+      "description": "Native U-smoothing flag, a logical on the wire.",
+      "type": "boolean"
+    },
+    "v_smoothing": {
+      "description": "Native V-smoothing flag, a logical on the wire.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "boundary_type",
+    "magic",
+    "u_smoothing",
+    "v_smoothing",
+    "fullness",
+    "geometry"
+  ]
+}
+```
+
+### `VertexBlendBoundaryGeometry`
+
+```json
+{
+  "description": "Type-specific geometry of a vertex-blend boundary.",
+  "oneOf": [
+    {
+      "description": "Curve boundary with a circle/ellipse/unknown twist form.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Boundary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "curve_endpoints": {
+          "description": "Optional native curve parameter endpoints stored by the\nrevision-gated layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
+        "parameters": {
+          "description": "Two ordered curve parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "sense": {
+          "description": "Native sense flag, a logical on the wire.",
+          "type": "boolean"
+        },
+        "twists": {
+          "description": "Twist payload. Pre-revision layouts store model-space locations;\nthe revision-gated layout stores unscaled twist vectors.",
+          "$ref": "#/$defs/VertexBlendTwists"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve",
+        "curve_endpoints",
+        "twists",
+        "parameters",
+        "sense"
+      ]
+    },
+    {
+      "description": "Degenerate boundary at a model-space location.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "degenerate"
+        },
+        "location": {
+          "description": "Degenerate location.",
+          "$ref": "#/$defs/Point3"
+        },
+        "normals": {
+          "description": "Two ordered boundary normals.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "location",
+        "normals"
+      ]
+    },
+    {
+      "description": "Surface pcurve boundary.",
+      "type": "object",
+      "properties": {
+        "fit_tolerance": {
+          "description": "Parameter-space fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "pcurve"
+        },
+        "pcurve": {
+          "description": "Native BS2 pcurve, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sense": {
+          "description": "Native sense flag, a logical on the wire.",
+          "type": "boolean"
+        },
+        "support_bounds": {
+          "description": "Optional U/V bound fields stored after the support by the\nrevision-gated layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "surface": {
+          "description": "Support surface.",
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "surface",
+        "support_bounds",
+        "sense",
+        "fit_tolerance"
+      ]
+    },
+    {
+      "description": "Planar boundary described by a normal and curve.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Boundary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "curve_endpoints": {
+          "description": "Optional native curve parameter endpoints stored by the\nrevision-gated layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "plane"
+        },
+        "normal": {
+          "description": "Plane normal.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "parameters": {
+          "description": "Two ordered plane parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "normal",
+        "parameters",
+        "curve",
+        "curve_endpoints"
+      ]
+    }
+  ]
+}
+```
+
+### `VertexBlendConstruction`
+
+```json
+{
+  "description": "Complete native vertex-blend surface construction.",
+  "type": "object",
+  "properties": {
+    "boundaries": {
+      "description": "Ordered boundary records.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/VertexBlendBoundary"
+      }
+    },
+    "fit_tolerance": {
+      "description": "Native model-space fit tolerance.",
+      "$ref": "#/$defs/FitTolerance"
+    },
+    "grid_size": {
+      "description": "Native grid-size integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer selecting the revision-gated\nlayout; absent from the pre-revision layout.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PositiveI64"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "boundaries",
+    "grid_size",
+    "fit_tolerance"
+  ]
+}
+```
+
+### `VertexBlendTwists`
+
+```json
+{
+  "description": "Twist payload selected by a vertex-blend circle form.",
+  "oneOf": [
+    {
+      "description": "Native form zero: no twist entries.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Native form one: one twist entry.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "one"
+        },
+        "twist": {
+          "description": "The one twist entry.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "twist"
+      ]
+    },
+    {
+      "description": "Native form three: two ordered twist entries.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "two"
+        },
+        "twists": {
+          "description": "The two ordered twist entries.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Point3"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "twists"
+      ]
+    }
+  ]
+}
+```
+
+### `WeightedPolarNurbsPole`
+
+```json
+{
+  "description": "One rational polar pole: its radial and axial halves and its weight.",
+  "type": "object",
+  "properties": {
+    "axial": {
+      "description": "Axial pole value.",
+      "type": "number",
+      "format": "double"
+    },
+    "radial": {
+      "description": "Euclidean radial-plane pole.",
+      "$ref": "#/$defs/Point2"
+    },
+    "weight": {
+      "description": "Rational weight at this pole.",
+      "$ref": "#/$defs/NonZeroReal"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "radial",
+    "axial",
+    "weight"
+  ]
+}
+```
+
+### `WeightedPole2`
+
+```json
+{
+  "description": "One rational pole in parameter space: its position and its weight.",
+  "type": "object",
+  "properties": {
+    "point": {
+      "description": "Pole position in parameter space.",
+      "$ref": "#/$defs/Point2"
+    },
+    "weight": {
+      "description": "Rational weight at this pole.",
+      "$ref": "#/$defs/NonZeroReal"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "point",
+    "weight"
+  ]
+}
+```
+
+### `WeightedPole3`
+
+```json
+{
+  "description": "One rational pole in model space: its position and its weight.",
+  "type": "object",
+  "properties": {
+    "point": {
+      "description": "Pole position in model space.",
+      "$ref": "#/$defs/Point3"
+    },
+    "weight": {
+      "description": "Rational weight at this pole.",
+      "$ref": "#/$defs/NonZeroReal"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "point",
+    "weight"
+  ]
+}
+```
+
+### `inline`
+
+```json
+{
+  "description": "An inline T-spline program and its non-empty companion values.",
+  "oneOf": [
+    {
+      "description": "Inline line-oriented T-spline program and companion values.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "inline"
+        },
+        "program": {
+          "description": "Line-oriented topology and geometry program.",
+          "type": "string"
+        },
+        "separator": {
+          "description": "Optional native separator boolean.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "values": {
+          "description": "Companion values program.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "program",
+        "values"
+      ]
+    }
+  ]
+}
+```
