@@ -1760,7 +1760,21 @@ members. A solid-root transaction rejects the root. CADIR has no tolerant-point
 or partial-solid carrier and does not infer coordinates. A geometric set with
 surface members forms a sheet carrier. Each surface member is a face in its own
 shell of the one sheet region. Curve-only and point-only sets remain
-standalone geometry.
+standalone geometry. The writer states a region of a body that is not a
+solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
+`GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the
+region is a forward face with no loops whose surface either carries no
+procedural construction and has a solved NURBS geometry, or is a rectangular
+parameter subset (written as a `RECTANGULAR_TRIMMED_SURFACE`). Other
+procedural surfaces, among them an exact NURBS whose retained ranges can make
+the written spline wider than the face and a sub-surface, which the writer
+states by its solved carrier rather than a trim to its ranges, take the
+`OPEN_SHELL` path. For an unplaced body a `SHAPE_REPRESENTATION_RELATIONSHIP`
+links the bounded-surface representation to the product's shape
+representation. For a placed body the bounded-surface representation is the
+mapped representation of the body's `REPRESENTATION_MAP`, so no empty
+body-local representation is written, and the body's `MAPPED_ITEM` is an item
+of the product's shape representation.
 
 CADIR decision: a `CURVE_BOUNDED_SURFACE` member has one ring loop for each
 boundary composite curve and one edge for each composite segment. A trimmed
@@ -2065,6 +2079,27 @@ retain their governing root type, even when they share shell carriers.
 ISO 10303-44 defines each `NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one individual
 constituent occurrence. A second use of the same child is a distinct
 `NEXT_ASSEMBLY_USAGE_OCCURRENCE` when position or orientation is assigned.
+CADIR decision: a `NEXT_ASSEMBLY_USAGE_OCCURRENCE` relates two product
+definitions, so every use of a parent definition has the same children. An
+instance at an occurrence path that shows its own bodies
+(`ProductDefinition.instance_bodies`) or its own nested placement
+(`NestedOverride.transform`) is written as an occurrence of a further
+`PRODUCT_DEFINITION` of its prototype's `PRODUCT_DEFINITION_FORMATION`. That
+definition holds the instance's bodies, or else its prototype's bodies, and a
+copy of each occurrence of its prototype. A copy carries the nested placement
+that the instance states for it, and the next step of the path places a further
+definition of the same form. The writer records
+`product.instance-definition-split` for each definition it adds this way,
+naming the path of the instance that definition places. A definition of the
+document whose every occurrence now places such a further definition is not
+written, nor are the occurrences it owns, so the file has no root that the
+document lacks. The first further definition then states the `PRODUCT` and
+carries the identifier the prototype would have carried. Bodies of such a
+definition that no written definition holds are not written, and the writer
+records `product.instance-prototype-bodies-omitted` for that definition. A
+path whose steps do not each name an occurrence of the previous step's
+prototype is `product.instance-path-unresolved`, and the writer applies
+none of it.
 ISO 10303-43 defines `representation.items` as `SET[1:?]` and
 `representation_map.map_usage` as `SET[1:?]`. A representation may contain
 several mapped items, and one representation map may be used by several mapped
