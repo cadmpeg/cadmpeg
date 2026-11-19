@@ -495,7 +495,7 @@ pub(super) fn decode(
             })? {
                 if let Some(zone_variance) = NonBlankString::new(zone_variance) {
                     ir.model.pmi[index.get()].native_options.insert(
-                        NonBlankString::new("step:zone_variance").expect("a nonblank key"),
+                        cadmpeg_core::nonblank_literal!("step:zone_variance"),
                         NativeOption::Text(Dimension::Literal(zone_variance)),
                     );
                 }
@@ -1018,18 +1018,22 @@ fn admit_dimension(
         if lower.value.get() > upper.value.get() {
             return Err("dimension lower limit exceeds its upper limit".into());
         }
-        let key = |name: &str| NonBlankString::new(name).expect("a nonblank key");
         if let Some(deviations) = nominal.and_then(|nominal| {
             Deviations::from_limits(nominal.value.get(), lower.value.get(), upper.value.get())
         }) {
             tolerance = Some(Tolerance::Deviations(deviations));
             source_settings.insert(
-                key("step:tolerance_display"),
-                NativeOption::Text(Dimension::Literal(key("limits"))),
+                cadmpeg_core::nonblank_literal!("step:tolerance_display"),
+                NativeOption::Text(Dimension::Literal(cadmpeg_core::nonblank_literal!(
+                    "limits"
+                ))),
             );
         } else {
-            for (name, limit) in [("step:lower_limit", lower), ("step:upper_limit", upper)] {
-                native_options.insert(key(name), measure_option(limit));
+            for (name, limit) in [
+                (cadmpeg_core::nonblank_literal!("step:lower_limit"), lower),
+                (cadmpeg_core::nonblank_literal!("step:upper_limit"), upper),
+            ] {
+                native_options.insert(name, measure_option(limit));
             }
         }
     }
@@ -1063,10 +1067,10 @@ fn admit_dimension(
 fn measure_option(value: PmiValue) -> NativeOption {
     match value.quantity {
         PmiQuantity::Length => NativeOption::Length(Dimension::Literal(
-            cadmpeg_ir::scalar::Length::new(value.value.get()).expect("a finite length"),
+            cadmpeg_ir::scalar::Length::from_assigned_real(value.value),
         )),
         PmiQuantity::Angle => NativeOption::Angle(Dimension::Literal(
-            cadmpeg_ir::scalar::Angle::new(value.value.get()).expect("a finite angle"),
+            cadmpeg_ir::scalar::Angle::from_assigned_real(value.value),
         )),
         PmiQuantity::Ratio => NativeOption::Real(Dimension::Literal(value.value)),
     }

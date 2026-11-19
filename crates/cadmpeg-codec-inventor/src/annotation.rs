@@ -18,7 +18,6 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::options::NativeOption;
 use cadmpeg_ir::design::parameter::{
@@ -555,7 +554,7 @@ fn dimension(
     annotation.name = name.map(str::to_owned);
     if displayed_form {
         annotation.source_settings.insert(
-            NonBlankString::new("inventor:tol_type").expect("a nonblank key"),
+            cadmpeg_core::nonblank_literal!("inventor:tol_type"),
             NativeOption::Integer(Dimension::Literal(i64::from(value.tolerance))),
         );
     }

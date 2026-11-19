@@ -57,7 +57,6 @@ fn admit(
     if nominal.is_some_and(|value| Some(value.quantity) != expected) {
         return Err("dimension nominal quantity disagrees with its kind".into());
     }
-    let key = |name: &str| NonBlankString::new(name).expect("a nonblank key");
     let mut native_options = NativeOptions::new();
     let mut source_settings = NativeOptions::new();
     let stated = match tolerance {
@@ -89,8 +88,11 @@ fn admit(
                 Deviations::from_limits(nominal.value.get(), lower.value.get(), upper.value.get())
             });
             if deviations.is_none() {
-                for (name, limit) in [("creo:lower_limit", lower), ("creo:upper_limit", upper)] {
-                    native_options.insert(key(name), measure_option(limit));
+                for (name, limit) in [
+                    (cadmpeg_core::nonblank_literal!("creo:lower_limit"), lower),
+                    (cadmpeg_core::nonblank_literal!("creo:upper_limit"), upper),
+                ] {
+                    native_options.insert(name, measure_option(limit));
                 }
             }
             deviations.map(Tolerance::Deviations)
@@ -102,7 +104,7 @@ fn admit(
             .and_then(NonBlankString::new)
         {
             source_settings.insert(
-                key("creo:tol_type"),
+                cadmpeg_core::nonblank_literal!("creo:tol_type"),
                 NativeOption::Text(Dimension::Literal(mode)),
             );
         }
@@ -120,10 +122,10 @@ fn admit(
 fn measure_option(value: PmiValue) -> NativeOption {
     match value.quantity {
         PmiQuantity::Length => NativeOption::Length(Dimension::Literal(
-            cadmpeg_ir::scalar::Length::new(value.value.get()).expect("a finite length"),
+            cadmpeg_ir::scalar::Length::from_assigned_real(value.value),
         )),
         PmiQuantity::Angle => NativeOption::Angle(Dimension::Literal(
-            cadmpeg_ir::scalar::Angle::new(value.value.get()).expect("a finite angle"),
+            cadmpeg_ir::scalar::Angle::from_assigned_real(value.value),
         )),
         PmiQuantity::Ratio => NativeOption::Real(Dimension::Literal(value.value)),
     }
