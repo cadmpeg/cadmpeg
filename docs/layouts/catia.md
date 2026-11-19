@@ -1487,7 +1487,7 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `command` | `u8` | little | spec | row command `01` or `05` |
-| 1 | 2 | `mirror` | `u16` | little | spec | mirror mask |
+| 1 | 2 | `mirror` | `u16` | little | spec | row control |
 
 ## `surface_weight_repeat_row_prefix`
 
@@ -1499,7 +1499,7 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `command` | `u8` | little | spec | row command `01` or `05` · value `5` |
-| 1 | 2 | `mirror` | `u16` | little | spec | mirror mask |
+| 1 | 2 | `mirror` | `u16` | little | spec | row control |
 | 3 | 2 | `leading_repeats` | `u16` | little | spec | leading-repeat count for command `05` |
 
 ## `consolidated_packed_plane_full_u_payload`

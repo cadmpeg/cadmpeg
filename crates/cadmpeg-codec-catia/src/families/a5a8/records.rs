@@ -2361,12 +2361,14 @@ fn a5_weights(
             }
             for column in 0..cols {
                 let reflected = cols - 1 - column;
+                let symmetric = command == 0x01 && matches!(mirror, 0x0003 | 0x0007);
                 let mirrored = reflected < column
-                    && mirror
-                        .checked_shr(u32::try_from(reflected).ok()?)
-                        .unwrap_or(0)
-                        & 1
-                        != 0;
+                    && (symmetric
+                        || mirror
+                            .checked_shr(u32::try_from(reflected).ok()?)
+                            .unwrap_or(0)
+                            & 1
+                            != 0);
                 let value = if column > 0 && column <= repeat {
                     weights[row_start]
                 } else if mirrored {

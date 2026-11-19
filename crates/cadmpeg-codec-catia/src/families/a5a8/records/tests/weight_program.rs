@@ -72,3 +72,53 @@ fn rational_rows_bound_commands_repeats_and_literal_reads() {
     assert!(super::super::a5_weights(&bytes, &mut 0, 1, 4, bytes.len() - 1).is_none());
     assert!(super::super::a5_weights(&bytes, &mut 0, 1, 4, 3).is_none());
 }
+
+#[test]
+fn rational_rows_preserve_legacy_symmetric_modes_for_even_and_odd_widths() {
+    for mode in [3_u16, 7] {
+        for columns in 1_u16..=40 {
+            let cols = usize::from(columns);
+            let seeds = (1..=columns.div_ceil(2)).map(f64::from).collect::<Vec<_>>();
+            let mut bytes = vec![0x01];
+            bytes.extend(mode.to_le_bytes());
+            bytes.extend(seeds.iter().flat_map(|value| value.to_le_bytes()));
+            let program_end = bytes.len();
+            bytes.extend([0xaa, 0xbb]);
+            let expected = seeds
+                .iter()
+                .copied()
+                .chain(seeds[..cols / 2].iter().rev().copied())
+                .collect::<Vec<_>>();
+            let mut at = 0;
+            let actual = super::super::a5_weights(&bytes, &mut at, 1, cols, bytes.len())
+                .expect("complete legacy symmetric row");
+            assert_eq!(
+                actual
+                    .into_iter()
+                    .map(cadmpeg_ir::scalar::NonZeroReal::get)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(at, program_end, "mode {mode}, width {columns}");
+            assert!(super::super::a5_weights(&bytes, &mut 0, 1, cols, program_end - 1).is_none());
+        }
+    }
+}
+
+#[test]
+fn rational_rows_keep_legacy_mode_when_followed_by_a_copied_row() {
+    let mut bytes = vec![0x01, 0x03, 0x00];
+    bytes.extend([0.8, 1.2, 1.0].into_iter().flat_map(le_f64));
+    bytes.push(0x02);
+    let mut at = 0;
+    let actual =
+        super::super::a5_weights(&bytes, &mut at, 2, 6, bytes.len()).expect("legacy row and copy");
+    assert_eq!(
+        actual
+            .into_iter()
+            .map(cadmpeg_ir::scalar::NonZeroReal::get)
+            .collect::<Vec<_>>(),
+        vec![0.8, 1.2, 1.0, 1.0, 1.2, 0.8, 0.8, 1.2, 1.0, 1.0, 1.2, 0.8]
+    );
+    assert_eq!(at, bytes.len());
+}
