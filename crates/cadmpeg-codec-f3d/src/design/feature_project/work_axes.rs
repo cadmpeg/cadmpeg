@@ -552,8 +552,9 @@ mod tests {
             let ctx = cadmpeg_test_support::service_decode_context();
             let definition = project(&ctx, &scope, &mut losses).unwrap();
             assert!(
-                losses.iter().all(|loss| loss.code
-                    == F3dLossCode::FeatureWorkAxisPartialLineNative.kind()),
+                losses
+                    .iter()
+                    .all(|loss| loss.code == F3dLossCode::FeatureWorkAxisPartialLineNative.kind()),
                 "source-less values do not assert a damaged source carrier"
             );
             assert_eq!(losses.len(), usize::from(origin != direction));
