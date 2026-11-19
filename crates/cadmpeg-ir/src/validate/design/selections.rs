@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The rules on selections (§5.8, part 10 "Selections").
 //!
-//! A pick's target is checked in the definition it resolves in; a pick with
-//! a context resolves in another definition, whose order the owner's
-//! anchor does not reach, so its order is not checked here. A pick whose
-//! target definition has no scope in this document is not checked.
+//! A pick is ordered and resolved in the scope that holds its target (§5.3):
+//! in the selection's own scope against the selection's anchor, whatever the
+//! pick's context, and in another scope against the position the selection
+//! is pinned to there, else that scope's current state. A pick whose target
+//! definition has no scope in this document is not checked.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use crate::design::feature::FeatureOperation;
+use crate::design::feature::{FeatureOperation, OperationFamily};
 use crate::design::names::NameKind;
 use crate::design::names::TopoName;
 use crate::design::ops::datum::DatumElement;
-use crate::design::refs::{EntityRef, Evaluated, Member, Position};
+use crate::design::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Position};
 use crate::design::selection::{
     Anchor, DatumPart, DefinitionRef, OccurrencePath, PickContext, PickDomain, PickTarget, Picked,
     Propagation, SelectionRule, StepRef,
@@ -33,13 +34,90 @@ use super::states::{Extent, States};
 use super::walk::{PicksView, SelectionView, TermView};
 use super::{native_text, record_finding, Held, Holder};
 
-/// Where a pick sits: its holder, its selection's anchor, and the definition
-/// it resolves in without a context.
+/// Where a pick sits: its holder, its selection's anchor, the definition it
+/// resolves in without a context, and the scope its holder belongs to.
 #[derive(Clone, Copy)]
 struct Site<'a> {
     holder: Holder<'a>,
     anchor: &'a Anchor,
     owner: Option<&'a ProductDefinitionId>,
+    scope: Option<&'a str>,
+}
+
+/// What the pick rules read from the whole document, gathered once.
+struct Lookups<'a> {
+    /// The occurrences whose owner some state restates.
+    moved: BTreeSet<&'a str>,
+    /// The definitions each scope spans (§5.1), by the scope's definition.
+    spans: BTreeMap<&'a str, BTreeSet<&'a str>>,
+    /// Whether a feature may be an assembly feature, which may change an
+    /// instance otherwise than through its definition (§5.8).
+    assembly_features: bool,
+}
+
+impl<'a> Lookups<'a> {
+    fn new(index: &DesignIndex<'a>) -> Self {
+        let spans = index
+            .records
+            .scopes
+            .keys()
+            .map(|&scope| {
+                let mut spanned = index.records.spanned_definitions(scope);
+                spanned.insert(scope);
+                (scope, spanned)
+            })
+            .collect();
+        let assembly_features =
+            index
+                .records
+                .feature_definitions()
+                .iter()
+                .any(|(_, definition)| {
+                    matches!(
+                        definition.operation,
+                        FeatureOperation::AssemblyFeature(_)
+                            | FeatureOperation::Unresolved {
+                                family: OperationFamily::AssemblyFeature
+                            }
+                            | FeatureOperation::Native { .. }
+                    )
+                });
+        Self {
+            moved: moved_occurrences(index.records.ir),
+            spans,
+            assembly_features,
+        }
+    }
+
+    /// The scope that holds a definition's design: the selection's own scope
+    /// where it spans the definition, else the definition's own scope, else
+    /// a scope that spans it.
+    fn holding(&self, own: &'a str, definition: &str) -> Option<&'a str> {
+        if self
+            .spans
+            .get(own)
+            .is_some_and(|spanned| spanned.contains(definition))
+        {
+            return Some(own);
+        }
+        if let Some((&scope, _)) = self.spans.get_key_value(definition) {
+            return Some(scope);
+        }
+        self.spans
+            .iter()
+            .find(|(_, spanned)| spanned.contains(definition))
+            .map(|(&scope, _)| scope)
+    }
+}
+
+/// The scope a holder belongs to, by its definition.
+fn holder_scope<'a>(index: &DesignIndex<'a>, holder: Holder<'a>) -> Option<&'a str> {
+    match holder {
+        Holder::Record { scope, .. } => scope.map(ProductDefinitionId::as_str),
+        Holder::Definition(_) | Holder::Owned { .. } => holder
+            .feature()
+            .and_then(|feature| index.records.scope_of(MemberKey::Feature(feature))),
+    }
 }
 
 /// Checks every selection of the design, and every publication's target.
@@ -50,7 +128,7 @@ pub(super) fn check<'a>(
     held: &'a [Held<'a>],
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let moved = moved_occurrences(index.records.ir);
+    let lookups = Lookups::new(index);
     for record in held {
         let owner = match record.holder {
             Holder::Definition(_) | Holder::Owned { .. } => record
@@ -59,16 +137,18 @@ pub(super) fn check<'a>(
                 .and_then(|feature| index.owner_definition(feature)),
             Holder::Record { scope, .. } => scope,
         };
+        let scope = holder_scope(index, record.holder);
         for selection in &record.selections {
             let site = Site {
                 holder: record.holder,
                 anchor: selection.at,
                 owner,
+                scope,
             };
             check_anchor(index, site, selection, findings);
             check_rules(selection, site, findings);
             for pick in selection.picks() {
-                check_pick(ctx, index, states, site, pick, &moved, findings)?;
+                check_pick(ctx, index, states, &lookups, site, pick, findings)?;
             }
         }
     }
@@ -80,14 +160,15 @@ pub(super) fn check<'a>(
             },
             anchor: &Anchor::Current,
             owner: Some(&publication.scope),
+            scope: Some(publication.scope.as_str()),
         };
         check_pick(
             ctx,
             index,
             states,
+            &lookups,
             site,
             &publication.target,
-            &moved,
             findings,
         )?;
     }
@@ -105,7 +186,7 @@ pub(super) fn check<'a>(
                     format_args!("an instance-body path states a step configuration"),
                 );
             }
-            check_path(index, None, path, &moved, at, findings);
+            check_path(index, None, path, &lookups.moved, at, findings);
         }
     }
     Ok(())
@@ -310,13 +391,16 @@ fn check_pick<'a>(
     ctx: &DecodeContext<'_>,
     index: &DesignIndex<'a>,
     states: &'a States<'a>,
+    lookups: &Lookups<'a>,
     site: Site<'a>,
-    pick: &Picked,
-    moved: &BTreeSet<&str>,
+    pick: &'a Picked,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let at = site.holder.record();
-    if !target_exists(index, &pick.target) {
+    let moved = &lookups.moved;
+    if target_exists(index, &pick.target) {
+        check_target_order(index, site, pick, findings);
+    } else {
         super::error(
             findings,
             at,
@@ -325,8 +409,6 @@ fn check_pick<'a>(
                 target_kind(&pick.target)
             ),
         );
-    } else if pick.context.is_none() {
-        check_target_order(index, site, pick, findings);
     }
     if let PickTarget::Native { .. } = pick.target {
         if pick.native.is_none() && pick.witness.is_none() {
@@ -393,10 +475,8 @@ fn check_pick<'a>(
     {
         super::check_closed_topology(ctx, body, at, "witness body", findings)?;
     }
-    if pick.context.is_none() {
-        for state in anchored_states(index, states, site) {
-            check_in_state(states, &state, pick, at, findings);
-        }
+    for state in anchored_states(index, states, lookups, site, pick) {
+        check_in_state(states, &state, pick, at, findings);
     }
     Ok(())
 }
@@ -409,32 +489,80 @@ enum Stored<'a> {
     Evaluation(&'a str),
 }
 
-/// The stored states a pick without a context resolves in (§5.8): the
-/// current geometry of its scope for `Current`; for a position, the current
-/// state there, else each stored evaluation of it, the end of an ordered
-/// container being the position at its rollback. None where the anchor
-/// names no stored state, or is `Native`.
+/// The stored states a pick resolves in (§5.8). In the selection's own
+/// scope, its anchored state there, whatever its context. A pick through an
+/// occurrence whose instance's bodies that state holds resolves in them and
+/// crosses into no scope. In another scope, the state there it resolves in:
+/// the position the selection is pinned to, else that scope's current
+/// geometry where the pick reads the scope's active configuration. None where
+/// that state is not stored, the anchor is `Native`, the target definition
+/// has no scope here, or a pick through an occurrence reads no instance
+/// bodies where an assembly feature may have changed the instance.
 fn anchored_states<'a>(
     index: &DesignIndex<'a>,
     states: &'a States<'a>,
+    lookups: &Lookups<'a>,
     site: Site<'a>,
+    pick: &'a Picked,
 ) -> Vec<Stored<'a>> {
-    let Some(scope) = site.owner.map(ProductDefinitionId::as_str) else {
+    let Some(own) = site.scope else {
         return Vec::new();
     };
-    let position = match site.anchor {
-        Anchor::Current => {
-            let extents: Vec<&Extent<'a>> = states
-                .extents
+    if matches!(site.anchor, Anchor::Native(_)) {
+        return Vec::new();
+    }
+    let path = match &pick.context {
+        None => return states_by_anchor(index, states, site, own),
+        Some(PickContext::Occurrence(path)) => {
+            let held = states_by_anchor(index, states, site, own);
+            if held
                 .iter()
-                .filter(|extent| extent.scope == scope)
-                .collect();
-            return if extents.is_empty() {
-                Vec::new()
-            } else {
-                vec![Stored::Extents(extents)]
-            };
+                .any(|state| holds_instance(index, states, site, state, path))
+            {
+                return held;
+            }
+            Some(path)
         }
+        Some(PickContext::InContext {
+            target: Some(path), ..
+        }) if !path.0.is_empty() => Some(path),
+        Some(PickContext::InContext { .. } | PickContext::Definition(_)) => None,
+    };
+    if path.is_some() && lookups.assembly_features {
+        return Vec::new();
+    }
+    let Some(scope) = resolving_definition(index, site.owner, pick)
+        .and_then(|definition| lookups.holding(own, definition))
+    else {
+        return Vec::new();
+    };
+    if scope == own {
+        return states_by_anchor(index, states, site, own);
+    }
+    if path.is_some_and(|path| instance_bodies_along(index, site, pick, path)) {
+        return Vec::new();
+    }
+    match site.anchor {
+        Anchor::Pinned(position) if position_scope(index, position) == Some(scope) => {
+            states_at(index, states, scope, PositionKey::of(position))
+        }
+        _ if reads_active_configuration(index, scope, pick) => current_geometry(states, scope),
+        _ => Vec::new(),
+    }
+}
+
+/// The stored states of `scope` at a selection's anchor: its current
+/// geometry for `Current`; for a position, the current state there, else
+/// each stored evaluation of it, the end of an ordered container being the
+/// position at its rollback.
+fn states_by_anchor<'a>(
+    index: &DesignIndex<'a>,
+    states: &'a States<'a>,
+    site: Site<'a>,
+    scope: &str,
+) -> Vec<Stored<'a>> {
+    let position = match site.anchor {
+        Anchor::Current => return current_geometry(states, scope),
         Anchor::Native(_) => return Vec::new(),
         Anchor::Pinned(position) => PositionKey::of(position),
         Anchor::Input => match site
@@ -446,6 +574,31 @@ fn anchored_states<'a>(
             None => return Vec::new(),
         },
     };
+    states_at(index, states, scope, position)
+}
+
+/// The current geometry of `scope`: the extents of its current states.
+fn current_geometry<'a>(states: &'a States<'a>, scope: &str) -> Vec<Stored<'a>> {
+    let extents: Vec<&Extent<'a>> = states
+        .extents
+        .iter()
+        .filter(|extent| extent.scope == scope)
+        .collect();
+    if extents.is_empty() {
+        Vec::new()
+    } else {
+        vec![Stored::Extents(extents)]
+    }
+}
+
+/// The stored states of `scope` at `position`: the current state there,
+/// else each stored evaluation of it.
+fn states_at<'a>(
+    index: &DesignIndex<'a>,
+    states: &'a States<'a>,
+    scope: &str,
+    position: PositionKey<'a>,
+) -> Vec<Stored<'a>> {
     let Some(position) = index.rollback_position(position) else {
         return Vec::new();
     };
@@ -467,8 +620,98 @@ fn anchored_states<'a>(
         .collect()
 }
 
+/// The scope a position lies in, by its definition.
+fn position_scope<'a>(index: &DesignIndex<'a>, position: &'a Position) -> Option<&'a str> {
+    match position {
+        Position::Start(container) => index
+            .records
+            .scope_of(MemberKey::Container(container.as_str())),
+        Position::After(member) => index.records.scope_of(MemberKey::of(member)),
+    }
+}
+
+/// Whether a stored state of the owner's scope holds bodies for the
+/// instance an occurrence path names from the owner's definition.
+fn holds_instance(
+    index: &DesignIndex<'_>,
+    states: &States<'_>,
+    site: Site<'_>,
+    state: &Stored<'_>,
+    path: &OccurrencePath,
+) -> bool {
+    match state {
+        Stored::Extents(_) => site
+            .owner
+            .and_then(|owner| index.records.definitions.get(owner.as_str()))
+            .is_some_and(|owner| {
+                owner
+                    .instance_bodies
+                    .iter()
+                    .any(|entry| entry.occurrence == *path)
+            }),
+        Stored::Evaluation(evaluation) => states.instance_paths(evaluation).contains(&path),
+    }
+}
+
+/// Whether a definition along a pick's path, or any stored state, holds
+/// instance bodies, in which the pick may resolve before it reaches the
+/// path's prototype (§5.8).
+fn instance_bodies_along(
+    index: &DesignIndex<'_>,
+    site: Site<'_>,
+    pick: &Picked,
+    path: &OccurrencePath,
+) -> bool {
+    let root = match &pick.context {
+        Some(PickContext::InContext { assembly, .. }) => Some(assembly.definition.as_str()),
+        _ => site.owner.map(ProductDefinitionId::as_str),
+    };
+    let along = root
+        .into_iter()
+        .chain(index.path_prototypes(path))
+        .filter_map(|definition| index.records.definitions.get(definition))
+        .any(|definition| !definition.instance_bodies.is_empty());
+    along
+        || index.records.ir.design.evaluations.iter().any(|evaluation| {
+            evaluation
+                .content
+                .as_ref()
+                .is_some_and(|content| !content.delta.instance_bodies.is_empty())
+        })
+}
+
+/// Whether a pick into another scope reads that scope's active
+/// configuration, whose state is the stored current state: the
+/// configuration its context states for the scope, else, where it states
+/// none, only a scope with no configurations is read for certain (§5.8).
+fn reads_active_configuration(index: &DesignIndex<'_>, scope: &str, pick: &Picked) -> bool {
+    let last = |path: &OccurrencePath| path.0.last().and_then(|step| step.configuration.as_ref());
+    let stated = match &pick.context {
+        Some(PickContext::Occurrence(path)) => last(path),
+        Some(PickContext::Definition(definition)) => definition.configuration.as_ref(),
+        Some(PickContext::InContext {
+            assembly, target, ..
+        }) => match target {
+            Some(target) if !target.0.is_empty() => last(target),
+            _ => assembly.configuration.as_ref(),
+        },
+        None => None,
+    };
+    match stated {
+        None => !index.records.has_configurations(scope),
+        Some(ConfigurationRef::Local(configuration)) => index
+            .records
+            .scopes
+            .get(scope)
+            .and_then(|design| design.active_configuration.as_ref())
+            == Some(configuration),
+        Some(ConfigurationRef::Named(_)) => false,
+    }
+}
+
 /// An `Entity` pick matches an entity of its stored anchored state by the
-/// matching rule of §5.7, and its `resolved` entries are records of it.
+/// matching rule of §5.7, else it is a lost operand, a Warning; its
+/// `resolved` entries are records of that state.
 fn check_in_state(
     states: &States<'_>,
     state: &Stored<'_>,
@@ -515,10 +758,14 @@ fn check_in_state(
         }),
     };
     if !matched {
-        super::error(
+        record_finding(
             findings,
-            at,
-            format_args!("an Entity pick's name matches no entity of its anchored state"),
+            Check::Design,
+            Severity::Warning,
+            Some(at),
+            format_args!(
+                "an Entity pick's name matches no entity of its anchored state, a lost operand (D51)"
+            ),
         );
     }
 }
@@ -591,35 +838,111 @@ fn target_exists(index: &DesignIndex<'_>, target: &PickTarget) -> bool {
     }
 }
 
-/// A target's feature depend-orders at or before the anchor (§5.3); a
-/// back-edge inside a dependency cycle is that cycle's Warning.
-fn check_target_order(
-    index: &DesignIndex<'_>,
-    site: Site<'_>,
-    pick: &Picked,
+/// A target's feature depend-orders at or before the pick's anchored state
+/// in the scope that holds it (§5.3): the selection's anchor in its own
+/// scope, whatever the pick's context, and the position the selection is
+/// pinned to in another. A pick into another scope that is not pinned there
+/// and whose target lies after that scope's current state that would hold
+/// it does not resolve (D51), a Warning. A back-edge inside a dependency
+/// cycle is that cycle's Warning.
+fn check_target_order<'a>(
+    index: &DesignIndex<'a>,
+    site: Site<'a>,
+    pick: &'a Picked,
     findings: &mut Vec<Finding>,
 ) {
     let Some(target) = index.target_feature(&pick.target) else {
         return;
     };
-    let holder = site.holder.feature();
-    let features = match site.anchor {
-        Anchor::Input => match holder {
-            Some(feature) => index.state_features(StateAt::Entering(feature)),
-            None => None,
+    let features = match (site.scope, index.records.scope_of(MemberKey::Feature(target))) {
+        (Some(own), Some(scope)) if own != scope => match site.anchor {
+            Anchor::Pinned(position) if position_scope(index, position) == Some(scope) => {
+                index.state_features(StateAt::Position(position))
+            }
+            Anchor::Native(_) => None,
+            _ => {
+                check_beyond_current(index, site, target, scope, findings);
+                None
+            }
         },
-        Anchor::Pinned(position) => index.state_features(StateAt::Position(position)),
-        Anchor::Current => site
-            .owner
-            .and_then(|owner| index.current_features(owner.as_str())),
-        Anchor::Native(_) => None,
+        (Some(_), Some(_)) => anchor_features(index, site),
+        _ if pick.context.is_some() => None,
+        _ => anchor_features(index, site),
     };
-    let Some(features) = features else {
-        return;
-    };
-    if features.contains(target) {
-        return;
+    if features.is_some_and(|features| !features.contains(target)) {
+        report_order(index, site, target, findings);
     }
+}
+
+/// The features a selection's anchored state in its own scope depends on.
+fn anchor_features<'a>(index: &DesignIndex<'a>, site: Site<'a>) -> Option<BTreeSet<&'a str>> {
+    match site.anchor {
+        Anchor::Input => site
+            .holder
+            .feature()
+            .and_then(|feature| index.state_features(StateAt::Entering(feature))),
+        Anchor::Pinned(position) => index.state_features(StateAt::Position(position)),
+        Anchor::Current => site.scope.and_then(|scope| index.current_features(scope)),
+        Anchor::Native(_) => None,
+    }
+}
+
+/// A pick into `scope` not pinned there resolves in the current state of
+/// that scope that would hold its target, the one at a position in the
+/// target's container or a container above it; a target after each such
+/// state does not resolve (D51), a Warning.
+fn check_beyond_current<'a>(
+    index: &DesignIndex<'a>,
+    site: Site<'a>,
+    target: &'a str,
+    scope: &str,
+    findings: &mut Vec<Finding>,
+) {
+    let mut chain = BTreeSet::new();
+    let mut member = MemberKey::Feature(target);
+    while let Some((container, _)) = index.place(member) {
+        let id = container.id().as_str();
+        if !chain.insert(id) {
+            break;
+        }
+        member = MemberKey::Container(id);
+    }
+    let Some(design) = index.records.scopes.get(scope) else {
+        return;
+    };
+    let holding: Vec<&Position> = design
+        .current
+        .iter()
+        .map(|current| &current.at)
+        .filter(|at| {
+            index
+                .records
+                .container_of(PositionKey::of(at))
+                .is_some_and(|container| chain.contains(container.id().as_str()))
+        })
+        .collect();
+    let resolves = holding.iter().any(|at| {
+        index
+            .state_features(StateAt::Position(at))
+            .is_none_or(|features| features.contains(target))
+    });
+    if !holding.is_empty() && !resolves {
+        record_finding(
+            findings,
+            Check::Design,
+            Severity::Warning,
+            Some(site.holder.record()),
+            format_args!(
+                "a pick names feature {target} of scope {scope}, which lies after that scope's current state; the pick does not resolve (D51)"
+            ),
+        );
+    }
+}
+
+/// Reports a target that does not depend-order before the pick's anchored
+/// state: an Error, or that cycle's Warning for a back-edge.
+fn report_order(index: &DesignIndex<'_>, site: Site<'_>, target: &str, findings: &mut Vec<Finding>) {
+    let holder = site.holder.feature();
     let at = site.holder.record();
     let cycle = holder.is_some_and(|feature| index.depends_on(target, feature));
     let severity = if cycle {
