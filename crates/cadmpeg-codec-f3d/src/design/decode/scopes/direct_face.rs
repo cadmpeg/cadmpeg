@@ -221,11 +221,13 @@ fn marked_move_transform(
     }
     cursor = cursor.checked_add(4)?;
     let (group, _) = take_reference(bytes, &mut cursor)?.into_local()?;
-    if u32::try_from(group).ok()? != *scope.reference_members().values().next()?
-        || !scope
-            .reference_members()
-            .values()
-            .any(|index| *index == transform_record_index)
+    let group_record_index = u32::try_from(group).ok()?;
+    let mut members = scope.reference_members().values();
+    let first = *members.clone().next()?;
+    if group_record_index == transform_record_index
+        || !(first == group_record_index || first == transform_record_index)
+        || !members.clone().any(|index| *index == group_record_index)
+        || !members.any(|index| *index == transform_record_index)
     {
         return None;
     }

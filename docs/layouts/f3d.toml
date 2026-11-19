@@ -21364,7 +21364,7 @@ name = "first_reference"
 offset = 36
 type = "bytes[11]"
 source = "spec"
-anchor = "a marked reference to its first ordered reference at offset 36"
+anchor = "a marked reference to its whole-body construction group at offset 36"
 
 
 [[record]]
