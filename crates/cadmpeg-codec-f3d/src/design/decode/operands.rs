@@ -3,6 +3,7 @@
 
 pub(crate) mod extrude_extent;
 mod fillet_variable_groups;
+mod split_groups;
 
 use crate::bytes::lp_utf16_bounded;
 use crate::records::topology::entity_selection::SelectionSerializationForm;
@@ -55,6 +56,7 @@ use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
 use crate::layout::sheet_metal_region_identity_reference as region_reference;
 use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::layout::split_body_compact_group_prefix as split_group;
 use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
 use crate::layout::typed_reference_profile_chain_record as typed_chain;
 use crate::layout::typed_reference_profile_identity_record as typed_identity;
@@ -2143,6 +2145,7 @@ pub(crate) fn decode_construction_operand_groups(
     let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
     let mut record_offsets = HashMap::<&str, OnceCell<IndexedRecordOffsets>>::new();
+    let mut split_metadata = HashMap::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Coil)
@@ -2207,6 +2210,18 @@ pub(crate) fn decode_construction_operand_groups(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let offsets = record_offsets.entry(stream).or_default();
+        let metadata = if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Split) {
+            split_metadata
+                .entry(stream)
+                .or_insert_with(|| {
+                    super::meta::metadata_for_bulk_stream(scan, &entry.name)
+                        .ok()
+                        .flatten()
+                })
+                .as_deref()
+        } else {
+            None
+        };
         let mut unclosed = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SilhouetteSplit
@@ -2222,12 +2237,13 @@ pub(crate) fn decode_construction_operand_groups(
             else {
                 continue;
             };
-            match parse_construction_operand_group_with_offsets(
+            match parse_construction_operand_group_in_stream(
                 bytes,
                 scope,
                 ordinal,
                 &RecordFrame::from(*header),
                 Some(offsets),
+                metadata,
             ) {
                 ConstructionOperandGroupParse::Complete(group) => {
                     push_construction_operand_group(
@@ -3143,21 +3159,23 @@ pub(crate) fn parse_construction_operand_group(
     scope_reference_ordinal: u32,
     header: &RecordFrame,
 ) -> ConstructionOperandGroupParse {
-    parse_construction_operand_group_with_offsets(
+    parse_construction_operand_group_in_stream(
         bytes,
         scope,
         scope_reference_ordinal,
         header,
         None,
+        None,
     )
 }
 
-fn parse_construction_operand_group_with_offsets(
+fn parse_construction_operand_group_in_stream(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &RecordFrame,
     offsets: Option<&OnceCell<IndexedRecordOffsets>>,
+    split_metadata: Option<&crate::metastream::MetaStream>,
 ) -> ConstructionOperandGroupParse {
     use ConstructionOperandGroupParse::{Complete, NotAGroup, Unclosed};
 
@@ -3279,6 +3297,20 @@ fn parse_construction_operand_group_with_offsets(
 
     // Past this point the record has opened the group grammar, so a tail that
     // does not close is a group this reader cannot name.
+    let Some(nested_index) = header.record_index.checked_add(1) else {
+        return Unclosed;
+    };
+    let compact_split_group = scope.kind()
+        == crate::records::feature::scope::DesignFeatureKind::Split
+        && member_count != 0
+        && member_count_at.checked_sub(start) == Some(split_group::MEMBER_COUNT)
+        && auxiliary_reference_slots == [false, false]
+        && trailing_count == 1
+        && match role {
+            DesignOperandRole::ROLE_0X21 => scope_reference_ordinal == 0,
+            DesignOperandRole::BODIES_A => scope_reference_ordinal >= 2,
+            _ => false,
+        };
     let mut closed = None;
     for repeats_ordinal in [true, false] {
         let mut tail = cursor;
@@ -3288,9 +3320,11 @@ fn parse_construction_operand_group_with_offsets(
             }
             tail += 4;
         }
+        let first_at = tail;
         let Some((first_tail_target, _)) = take_record_reference(record_bytes, &mut tail) else {
             continue;
         };
+        let ordinary = Some(first_tail_target) == header.record_index.checked_add(2);
         for flag_bytes in [2usize, 3] {
             let Some(flags) = record_bytes.get(tail..tail + flag_bytes) else {
                 continue;
@@ -3302,7 +3336,7 @@ fn parse_construction_operand_group_with_offsets(
             let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
             if take_record_reference(record_bytes, &mut after).map(|(index, _)| index)
-                != header.record_index.checked_add(1)
+                != Some(nested_index)
             {
                 continue;
             }
@@ -3326,7 +3360,15 @@ fn parse_construction_operand_group_with_offsets(
             if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
                 continue;
             }
-            if Some(first_tail_target) != header.record_index.checked_add(2) {
+            let compact = !ordinary
+                && compact_split_group
+                && repeats_ordinal
+                && flags == [0, 0]
+                && marked_record_reference(record_bytes, first_at) == Some(first_tail_target)
+                && split_metadata.is_some_and(|meta| {
+                    split_groups::registered_companion(bytes, meta, header, first_tail_target)
+                });
+            if !ordinary && !compact {
                 let has_independent_tail = if scope
                     .extrude_prologue()
                     .is_some_and(DesignExtrudePrologue::is_legacy_shifted_to_face)
@@ -3380,14 +3422,20 @@ fn parse_construction_operand_group_with_offsets(
                 }
             }
             if closed
-                .replace((variant, closing_flag, after, paired_class_tag.to_owned()))
+                .replace((
+                    variant,
+                    closing_flag,
+                    after,
+                    paired_class_tag.to_owned(),
+                    compact,
+                ))
                 .is_some()
             {
                 return Unclosed;
             }
         }
     }
-    let Some((variant, closing_flag, paired_at, paired_class_tag)) = closed else {
+    let Some((variant, closing_flag, paired_at, paired_class_tag, compact)) = closed else {
         return Unclosed;
     };
 
@@ -3428,6 +3476,18 @@ fn parse_construction_operand_group_with_offsets(
             return NotAGroup;
         };
         members.push(crate::records::identity::Located { value, offset });
+    }
+    if compact
+        && !scope
+            .reference_members()
+            .values()
+            .skip(index_from_u32(scope_reference_ordinal))
+            .take(members.len() + 1)
+            .copied()
+            .eq(std::iter::once(header.record_index)
+                .chain(members.iter().map(|member| member.value)))
+    {
+        return Unclosed;
     }
     let auxiliary_records = auxiliary_slots.into_iter().flatten().collect::<Vec<_>>();
     let mut trailing_records = Vec::new();

@@ -232,8 +232,8 @@ pub(crate) mod design_decal_scope_prefix {
     pub(crate) const LEN: usize = 44;
     /// Offset of `asset_reference` (`bytes[5]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 21;
-    /// Offset of `mapping_mode` (`u8`). Spec §3.1.
-    pub(crate) const MAPPING_MODE: usize = 32;
+    /// Offset of `scope_code` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_CODE: usize = 32;
     /// Offset of `target_group_reference` (`bytes[5]`). Spec §3.1.
     pub(crate) const TARGET_GROUP_REFERENCE: usize = 33;
 }
@@ -252,8 +252,8 @@ pub(crate) mod design_decal_scope_extended_prefix {
     pub(crate) const ZERO: usize = 24;
     /// Offset of `asset_reference` (`bytes[5]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 25;
-    /// Offset of `mapping_mode` (`u8`). Spec §3.1.
-    pub(crate) const MAPPING_MODE: usize = 36;
+    /// Offset of `scope_code` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_CODE: usize = 36;
     /// Offset of `target_group_reference` (`bytes[5]`). Spec §3.1.
     pub(crate) const TARGET_GROUP_REFERENCE: usize = 37;
 }
@@ -266,8 +266,8 @@ pub(crate) mod design_decal_scope_typed_prefix {
     pub(crate) const LEN: usize = 124;
     /// Offset of `asset_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 21;
-    /// Offset of `mapping_mode` (`u8`). Spec §3.1.
-    pub(crate) const MAPPING_MODE: usize = 72;
+    /// Offset of `scope_code` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_CODE: usize = 72;
     /// Offset of `target_group_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const TARGET_GROUP_REFERENCE: usize = 73;
 }
@@ -280,10 +280,28 @@ pub(crate) mod design_decal_scope_typed_extended_prefix {
     pub(crate) const LEN: usize = 128;
     /// Offset of `asset_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const ASSET_REFERENCE: usize = 25;
-    /// Offset of `mapping_mode` (`u8`). Spec §3.1.
-    pub(crate) const MAPPING_MODE: usize = 76;
+    /// Offset of `scope_code` (`u8`). Spec §3.1.
+    pub(crate) const SCOPE_CODE: usize = 76;
     /// Offset of `target_group_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const TARGET_GROUP_REFERENCE: usize = 77;
+}
+
+/// Byte offsets for the `design_decal_placement_prefix` record.
+///
+/// Spec §3.1. Record length 36 B.
+///
+/// ```text
+/// Fixed prefix through the vertex count. The counted f32 pairs start at byte 36.
+/// ```
+pub(crate) mod design_decal_placement_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 36;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `leading_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const LEADING_REFERENCE: usize = 21;
+    /// Offset of `vertex_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const VERTEX_COUNT: usize = 32;
 }
 
 /// Byte offsets for the `design_decal_image_asset_record` record.
@@ -493,7 +511,7 @@ pub(crate) mod design_parameter_tail {
 /// Spec §3.1. Record length 11 B.
 ///
 /// ```text
-/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 5 or 6.
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 4, 5 or 6.
 /// ```
 pub(crate) mod design_parameter_wide_expression_trailer {
     /// Record length in bytes. Spec §3.1.
@@ -3521,6 +3539,22 @@ pub(crate) mod timeline_owned_paste_source_pairs {
     pub(crate) const ZERO_RUN_4: usize = 1;
     /// Offset of `pair_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PAIR_COUNT: usize = 5;
+}
+
+/// Byte offsets for the `timeline_paste_name_prefix` record.
+///
+/// Spec §3.1. Record length 7 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the null removal key of a paste object that keeps its sources. The same-segment references start at the end of this prefix.
+/// ```
+pub(crate) mod timeline_paste_name_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 7;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 0;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 3;
 }
 
 /// Byte offsets for the `base_feature_wide_zero_body` record.
@@ -11129,6 +11163,18 @@ pub(crate) mod split_body_extension {
     pub(crate) const FOLLOWING_WORD: usize = 1;
     /// Stated value of `following_word` (`u32`). Spec §3.1.
     pub(crate) const FOLLOWING_WORD_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `split_body_compact_group_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Counted member references follow this prefix.
+/// ```
+pub(crate) mod split_body_compact_group_prefix {
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 21;
 }
 
 /// Byte offsets for the `mesh_plane_cut_scope_prefix` record.

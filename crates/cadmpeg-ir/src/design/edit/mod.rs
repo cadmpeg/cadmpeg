@@ -4,9 +4,14 @@
 //!
 //! The resolvers read a value through the configuration that applies:
 //! [`dimension_value`](crate::CadIr::dimension_value) resolves a bound
-//! dimension from its parameter's cache, and
+//! dimension from its parameter's cache,
 //! [`is_stateless`](crate::CadIr::is_stateless) decides which features have
-//! evaluations. They read any document.
+//! evaluations, and
+//! [`effective_transform`](crate::CadIr::effective_transform),
+//! [`effective_visibility`](crate::CadIr::effective_visibility), and
+//! [`effective_display_color`](crate::CadIr::effective_display_color)
+//! resolve an instance's placement, visibility, and colour. They read any
+//! document.
 //!
 //! The edit helpers are the methods of an [`Editor`], which
 //! [`CadIr::edit`](crate::CadIr::edit) returns over a document on which
@@ -52,6 +57,7 @@ use crate::report::check::Finding;
 use crate::report::Severity;
 use crate::CadIr;
 
+pub(crate) use eval::{cache_value, check_types, kind_type, unit_factor, ExpressionSite, Type};
 pub use eval::{evaluate, EvalError, Value};
 
 /// Why an edit helper or a resolver refuses.
@@ -400,3 +406,6 @@ fn container_members(container: &Container) -> Vec<&Member> {
 fn malformed(error: impl std::fmt::Display) -> EditError {
     EditError::Malformed(error.to_string())
 }
+
+mod effective;
+mod process;

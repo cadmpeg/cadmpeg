@@ -751,8 +751,7 @@ pub(super) fn project_extrude(
             let each_side = match prologue.distance_tail() {
                 Some(tail) => tail.measurement == DesignExtrudeMeasurement::EachSide,
                 None => {
-                    scope.is_legacy_class_330_symmetric_distance()
-                        || (parameter_along.is_none() && fixed_along.is_some())
+                    scope.assumes_symmetric_distance_each_side(parameter_along.is_some())
                         || prologue.side_extent_discriminators() == Some([1, 1])
                 }
             };

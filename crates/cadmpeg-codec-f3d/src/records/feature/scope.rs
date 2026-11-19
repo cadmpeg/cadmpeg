@@ -4008,6 +4008,13 @@ impl DesignParameterScope {
                     .map(|offset| Some(u64_from_index(offset)))
     }
 
+    pub(crate) fn assumes_symmetric_distance_each_side(&self, indexed_along: bool) -> bool {
+        !indexed_along
+            && self
+                .fixed_extrude_parameters()
+                .is_some_and(|fixed| fixed.along_distance.is_some())
+    }
+
     pub(crate) fn is_legacy_class_330_blind_cut(&self) -> bool {
         use crate::layout::legacy_class_330_blind_cut_extrude_frame as layout;
 

@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Validate the placement carrier of a bound Sketch scope.
+//! Validate Sketch placement and profile links.
+
+use cadmpeg_core::decode::u64_from_index;
 
 use super::{design_stream, Ctx};
+use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::topology::sketch_profile::{
+    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionSelection,
+};
 
 pub(super) fn placement_link(ctx: &Ctx<'_, '_>, scope: &DesignParameterScope) -> bool {
     let stream = design_stream(&scope.id);
@@ -52,6 +58,90 @@ pub(super) fn placement_link(ctx: &Ctx<'_, '_>, scope: &DesignParameterScope) ->
                     .values()
                     .any(|index| *index == placement.record_index)
         })
+}
+
+pub(super) fn profile_region_link(
+    scope: &DesignParameterScope,
+    profile: &DesignSketchProfileOperand,
+    selection: &DesignSketchProfileRegionSelection,
+) -> bool {
+    /// The offset after `loops`, which start with their loop count at
+    /// `cursor` and each end with an exterior byte.
+    fn loops_end(cursor: u64, loops: &[&DesignSketchProfileRegion]) -> Option<u64> {
+        let mut cursor = cursor.checked_add(4)?;
+        if loops.is_empty() {
+            return None;
+        }
+        for region in loops {
+            if region.member_count_offset != cursor || region.members.is_empty() {
+                return None;
+            }
+            cursor = cursor.checked_add(4)?;
+            for member in &region.members {
+                if member.kind_offset != cursor
+                    || member.curve_primary_id_offset != cursor.checked_add(4)?
+                    || member.incidence_words_offset != cursor.checked_add(8)?
+                {
+                    return None;
+                }
+                cursor = cursor.checked_add(40)?;
+            }
+            cursor = cursor.checked_add(1)?;
+        }
+        Some(cursor)
+    }
+
+    let Some(expected_region_count_offset) = selection
+        .byte_offset
+        .checked_add(u64_from_index(region_selection::LOOP_COUNT))
+    else {
+        return false;
+    };
+    let selection_index_matches = profile.record_index.checked_add(3)
+        == Some(selection.record_index)
+        || (profile.record_index.checked_add(2) == Some(selection.record_index)
+            && scope.legacy_class_330_profile_member_ordinal()
+                == Some(profile.scope_reference_ordinal)
+            && profile.class_tag.as_str() == "272"
+            && profile.paired_class_tag().as_str() == "262");
+    if !selection_index_matches
+        || selection.byte_offset <= profile.paired_byte_offset()
+        || selection.region_count_offset != expected_region_count_offset
+        || selection.regions.is_empty()
+    {
+        return false;
+    }
+    let walk = || -> Option<u64> {
+        let mut cursor = selection.region_count_offset;
+        let mut start = 0;
+        let mut ordinal = 0;
+        let mut atomic_seen = 0;
+        while start < selection.regions.len() {
+            let own = selection
+                .regions
+                .iter()
+                .skip(start)
+                .take_while(|region| region.region_ordinal == ordinal)
+                .collect::<Vec<_>>();
+            start = start.checked_add(own.len())?;
+            cursor = loops_end(cursor, &own)?;
+            cursor = cursor.checked_add(4)?;
+            for atomic in selection
+                .atomic_regions
+                .iter()
+                .filter(|atomic| atomic.region_ordinal == ordinal)
+            {
+                if atomic.loop_count_offset != cursor {
+                    return None;
+                }
+                cursor = loops_end(cursor, &atomic.loops.iter().collect::<Vec<_>>())?;
+                atomic_seen += 1;
+            }
+            ordinal = ordinal.checked_add(1)?;
+        }
+        (atomic_seen == selection.atomic_regions.len()).then_some(cursor)
+    };
+    walk() == Some(selection.companion_byte_offset)
 }
 
 #[cfg(test)]
