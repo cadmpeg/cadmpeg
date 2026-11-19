@@ -242,7 +242,7 @@ fn global_strings_leave_out_control_characters() {
 }
 
 #[test]
-fn global_strings_are_capped() {
+fn long_global_strings_are_kept_whole() {
     let long = "x".repeat(5000);
     let global = Global {
         native_system: &long,
@@ -250,6 +250,6 @@ fn global_strings_are_capped() {
         ..SOLIDWORKS
     };
     let attributes = global_attributes(&global);
-    assert_eq!(attributes["native_system_id"], "x".repeat(1024));
-    assert_eq!(attributes["author"], "x".repeat(1024));
+    assert_eq!(attributes["native_system_id"], long);
+    assert_eq!(attributes["author"], long);
 }

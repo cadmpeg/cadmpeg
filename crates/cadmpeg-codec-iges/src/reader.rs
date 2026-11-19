@@ -21,9 +21,6 @@ use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-/// Largest number of characters kept from one Global string field.
-const MAX_ATTRIBUTE_CHARS: usize = 1024;
-
 fn source_meta(
     global: &global::GlobalRecord,
     representation: Representation,
@@ -80,9 +77,7 @@ fn source_meta(
             global.organization(),
         ),
     ] {
-        let Some(value) =
-            value.and_then(|value| cadmpeg_core::text::attribute_text(value, MAX_ATTRIBUTE_CHARS))
-        else {
+        let Some(value) = value.and_then(cadmpeg_core::text::attribute_text) else {
             continue;
         };
         attributes.insert(key, value);

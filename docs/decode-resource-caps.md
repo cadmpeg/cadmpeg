@@ -243,8 +243,6 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-step`     | `src/parse.rs`                                     | `MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE`     | `16`, plus `EXPANDED_PAYLOAD_BASE` (16 MiB)             | 4    | String, binary and name octets that the anchor pass, and separately the REFERENCE pass, may copy out of anchors, per input byte. Copies that an omitted item discards stay charged. An item whose copy does not fit is omitted with its exact source and `parse.expansion-bounded`, naming this constant. Recorded anchor and reference outcomes carry their octets, so a later item that cannot fit is decided before anything is copied. Working storage, not `retain_bytes`. |
 | `cadmpeg-codec-step`     | `src/reader/tessellation.rs`                       | `MAX_ITEM_PLACEMENTS`                     | `64`                                                    | 4    | Distinct inherited placements that one association walk follows into a tessellated item. Past it the item and the items it contains keep source coordinates, and `tessellation.placement-ambiguous` names the limit.                                                        |
 | `cadmpeg-codec-step`     | `src/reader/product.rs`                            | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the NAUO graph. At the limit expansion stops and `occurrence.expansion-output-truncated` is reported. A NAUO path of `max_recursion_depth` usages stops that branch with `occurrence.expansion-depth-truncated`.                                   |
-| `cadmpeg-codec-step`     | `src/reader/header.rs`                             | `MAX_METADATA_CHARS`                      | `256`                                                   | 1    | Effective length of a `FILE_DESCRIPTION` or `FILE_NAME` string. Header validation charges a longer string as `parse.header-metadata-noncanonical`; the source attribute keeps the first 256 characters. |
-| `cadmpeg-codec-step`     | `src/reader/header.rs`                             | `MAX_SCHEMA_IDENTIFIER_CHARS`             | `1024`                                                  | 1    | Length of a `FILE_SCHEMA` identifier that the schema identifier grammar admits. The source attribute keeps the first 1024 characters. |
 | `cadmpeg-codec-pvz`      | `src/model.rs`                                     | `MAX_OCCURRENCES`                         | `100_000`                                               | 4    | Occurrences expanded from the structure definition graph, roots included; child occurrences that close a cycle count toward it. At the limit expansion stops, and a path of `max_recursion_depth` definitions stops its branch; both report `structure.occurrence-expansion-truncated`. |
 | `cadmpeg-codec-pvz`      | `src/brep/records.rs`                              | `MAX_BSPLINE_DEGREE`                      | `20`                                                    | 1    | Admitted degree of an exact-stream B-spline surface, edge curve or pcurve, as for ASM `MAX_NURBS_DEGREE`. A record of a higher order refuses the exact stream as malformed; the member keeps its tessellation and `geometry.exact-undecoded` is reported. |
 | `cadmpeg-codec-pvz`      | `src/brep/topology.rs`                             | `MAX_TOPOLOGY_WORK`                       | `1 << 24`                                               | 4    | Floor of the derived-search `WorkBudget` of one exact stream; the allowance is the larger of this floor and 1,024 times its face, loop, coedge and edge records. Face-region nesting charges one unit per polygon sample of each containment test, and coincident-edge pairing one unit per candidate test. A face whose nesting finds the budget empty keeps one unclassified region; pairing stops; each skip is reported as `exact.topology-work-exhausted`. |
@@ -285,7 +283,6 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-inventor` | `src/design.rs`                                    | `MAX_EXPRESSION_TEXT_BYTES`               | `1 << 16`                                               | 4    | Rendered text length of one parameter expression, measured once per shared node before any text is built. A longer expression skips its parameter with `parameter.expression-bounded`; emitted text is charged to `retain_bytes`.                                            |
 | `cadmpeg-codec-iges`     | `src/entities/geometry.rs`                         | `MAX_PLANAR_POINT_PAIRS`                  | `1 << 30`                                               | 4    | Point pairs the planar polyline simplicity checks of one copious, bounded-plane, or trimmed-surface pass compare (`PlanarPairBudget`). A ring that does not fit the remaining allowance is skipped with a loss naming the limit and spends none of it.                       |
 | `cadmpeg-codec-iges`     | `src/entities/nurbs_controls.rs`                   | `MAX_BEZIER_BLENDS`                       | `1 << 26`                                               | 4    | Blends, about spans × (degree + 1)², of the Bézier work behind one boundary pcurve support check, ruled carrier, or composite join. Excess skips that check or carrier with a geometry loss naming the limit; the composite is projected degraded.                           |
-| `cadmpeg-codec-iges`     | `src/reader.rs`                                    | `MAX_ATTRIBUTE_CHARS`                     | `1024`                                                  | 2    | Characters kept from one Global string field in its source attribute. |
 | `cadmpeg-codec-inventor` | `src/property_set.rs`                              | `MAX_STREAM_SIZE`                         | `2_097_152`                                             | 2    | OLE property-set stream size and the string, BLOB and clipboard size fields. A larger stream is skipped when property sets are listed and `Malformed` when parsed; a larger size field is `Malformed`. Payload reads go through `take`.                                      |
 | `cadmpeg-codec-inventor` | `src/property_set.rs`                              | `MAX_PROPERTIES`                          | `65_536`                                                | 2    | Section property count, dictionary entry count and vector element count. Excess is `Malformed`; entries are read one at a time against the section window.                                                                                                                   |
 | `cadmpeg-codec-inventor` | `src/feature/history_states.rs`                    | `MAX_STATE_SCAN_WORK`                     | `1 << 24`                                               | 4    | Live records inspected by one state-index read of the active carrier history: the state count times the live record count. A scan that passes it yields no states and reports `source.kernel-history-bounded`.                                                               |
@@ -569,23 +566,23 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 347.
+Production `MAX_*` constants: 344.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 44    |
-| 2    | Per-input bound            | 78    |
+| 1    | Format or reader invariant | 42    |
+| 2    | Per-input bound            | 77    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 172   |
 | N    | Not a decode bound         | 53    |
-|      | Total                      | 347   |
+|      | Total                      | 344   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
-`cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 10,
-`cadmpeg-codec-iges` 17, `cadmpeg-codec-inventor` 8,
+`cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
+`cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 28,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
 `cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and

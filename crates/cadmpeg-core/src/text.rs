@@ -297,14 +297,13 @@ macro_rules! nonblank_const {
 
 /// Source text as a source-attribute value.
 ///
-/// The value holds the first `max_chars` characters of `text` that are not
-/// control characters. It is `None` when no non-whitespace character remains.
+/// The value holds the characters of `text` that are not control
+/// characters. It is `None` when no non-whitespace character remains.
 #[must_use]
-pub fn attribute_text(text: &str, max_chars: usize) -> Option<String> {
+pub fn attribute_text(text: &str) -> Option<String> {
     let value: String = text
         .chars()
         .filter(|character| !character.is_control())
-        .take(max_chars)
         .collect();
     NonBlankString::new(value).map(NonBlankString::into_string)
 }
@@ -350,19 +349,20 @@ mod tests {
     };
 
     #[test]
-    fn attribute_text_drops_control_characters_and_caps_characters() {
+    fn attribute_text_drops_control_characters_and_keeps_the_rest() {
         assert_eq!(
-            attribute_text("a\u{0}b\nc\u{7f}d\u{9b}e", 16).as_deref(),
+            attribute_text("a\u{0}b\nc\u{7f}d\u{9b}e").as_deref(),
             Some("abcde")
         );
         assert_eq!(
-            attribute_text("\u{e9}\u{e9}\u{e9}", 2).as_deref(),
-            Some("\u{e9}\u{e9}")
+            attribute_text("\u{e9}\u{e9}\u{e9}").as_deref(),
+            Some("\u{e9}\u{e9}\u{e9}")
         );
-        assert_eq!(attribute_text(" ab ", 16).as_deref(), Some(" ab "));
-        assert_eq!(attribute_text("", 16), None);
-        assert_eq!(attribute_text(" \t\r\n", 16), None);
-        assert_eq!(attribute_text("abc", 0), None);
+        let long = "x".repeat(5000);
+        assert_eq!(attribute_text(&long).as_deref(), Some(long.as_str()));
+        assert_eq!(attribute_text(" ab ").as_deref(), Some(" ab "));
+        assert_eq!(attribute_text(""), None);
+        assert_eq!(attribute_text(" \t\r\n"), None);
     }
 
     #[test]

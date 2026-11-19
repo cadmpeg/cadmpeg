@@ -140,7 +140,7 @@ fn header_strings_leave_out_control_characters() {
 }
 
 #[test]
-fn header_strings_are_capped_and_lists_are_kept_whole() {
+fn long_header_strings_and_lists_are_kept_whole() {
     let long = "x".repeat(10_000);
     let authors = (0..100)
         .map(|index| format!("'a{index}'"))
@@ -149,9 +149,13 @@ fn header_strings_are_capped_and_lists_are_kept_whole() {
     let attributes = header_attributes(&format!(
         "FILE_DESCRIPTION(('d'),'2;1');\n\
          FILE_NAME('n','',({authors}),(''),'','{long}','');\n\
-         FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));"
+         FILE_SCHEMA(('AUTOMOTIVE_DESIGN','S{long}'));"
     ));
-    assert_eq!(attributes["file_name.originating_system"], "x".repeat(256));
+    assert_eq!(attributes["file_name.originating_system"], long);
+    assert_eq!(
+        attributes["file_schema.schema_identifiers.1"],
+        format!("S{long}")
+    );
     let author_keys = attributes
         .keys()
         .filter(|key| key.starts_with("file_name.author."))
