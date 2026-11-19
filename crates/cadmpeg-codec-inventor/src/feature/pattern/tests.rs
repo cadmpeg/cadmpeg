@@ -1176,7 +1176,7 @@ fn rectangular_patterns_keep_other_cached_selection_forms_native() {
 
 #[test]
 fn unsupported_selection_forms_with_line_payloads_keep_the_pattern_native() {
-    for version in [19, 25, 28, 29, 30, 31] {
+    for version in [19, 23, 25, 28, 29, 30, 31] {
         for type_id in [LINE_DIRECTION_TYPE, EDGE_DIRECTION_TYPE] {
             for form in [0u32, 2, 4, 6] {
                 let mut bytes = cached_line(type_id, version, [0.0, 3.0, 0.0]);
@@ -1238,7 +1238,36 @@ fn four_cached_lines_keep_the_pattern_native_with_the_pinned_loss() {
         }
         bytes.push(1);
         bytes.extend_from_slice(&93u32.to_le_bytes());
-        assert_eq!(bytes.len() - content_at(2, version, &[]).len(), 261);
+        let header = content_at(2, version, &[]).len();
+        assert_eq!(bytes.len() - header, 261);
+        let body = &bytes[header..];
+        let f64_at =
+            |at: usize| f64::from_le_bytes(body[at..at + 8].try_into().expect("fixed width"));
+        for (index, span) in [
+            [2.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [-2.0, 0.0, 0.0],
+            [0.0, -2.0, 0.0],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let entry = 16 + 54 * index;
+            assert_eq!(u16::from_le_bytes([body[entry], body[entry + 1]]), 0);
+            assert_eq!(
+                u32::from_le_bytes(body[entry + 2..entry + 6].try_into().expect("fixed width")),
+                23
+            );
+            for (axis, value) in span.into_iter().enumerate() {
+                assert_eq!(f64_at(entry + 30 + 8 * axis), value);
+            }
+        }
+        assert_eq!(f64_at(232), 0.25);
+        assert_eq!(body[256], 1);
+        assert_eq!(
+            u32::from_le_bytes(body[257..261].try_into().expect("fixed width")),
+            93
+        );
         let operand = with_bytes(&bytes, |ctx, source| {
             parse(ctx, LINE_DIRECTION_TYPE, source, version)
         })
@@ -1250,6 +1279,13 @@ fn four_cached_lines_keep_the_pattern_native_with_the_pinned_loss() {
                 .insert(("generated".into(), 89), Some(operand));
         })
         .is_none());
+        let losses = native_losses(std::iter::once(&source), &[]);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.namespace(), "inventor");
+        assert_eq!(
+            losses[0].code.local_code(),
+            "feature.rectangular-pattern-operands-native"
+        );
     }
 }
 
@@ -1645,7 +1681,7 @@ fn suppression_validation_requires_positive_resolved_counts_even_for_an_empty_li
 
 #[test]
 fn cached_selection_states_gate_projection_and_validation() {
-    for version in [19, 25, 28, 29, 30, 31] {
+    for version in [19, 23, 25, 28, 29, 30, 31] {
         for type_id in [EDGE_DIRECTION_TYPE, LINE_DIRECTION_TYPE] {
             for state in [-1i32, 1, 2, 0, 3] {
                 let mut bytes = cached_line(type_id, version, [0.0, 3.0, 0.0]);

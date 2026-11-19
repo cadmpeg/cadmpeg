@@ -401,6 +401,11 @@ fn build_extent_extrusion(
             },
         ),
     ];
+    properties.retain(|property| {
+        extra
+            .iter()
+            .all(|other| other.identity.record_ordinal != property.identity.record_ordinal)
+    });
     properties.extend(extra);
     for property in &mut properties {
         let type_id = match property.kind {
@@ -1357,10 +1362,20 @@ fn fixed_distance_cut_with_zero_length_keeps_native_operands_and_loss() {
         symmetric: false,
         solid_input: SolidInput::None,
     };
+    let reversed = || {
+        vec![test_property(
+            4,
+            PmDcFeaturePropertyKind::Boolean {
+                name: String::new(),
+                name_value: 0,
+                value: true,
+            },
+        )]
+    };
     let positive = build_extent_extrusion(
         case,
         &[],
-        Vec::new(),
+        reversed(),
         IDENTITY_MATRIX,
         |_| {},
         |_, _, _, _| {},
@@ -1376,7 +1391,7 @@ fn fixed_distance_cut_with_zero_length_keeps_native_operands_and_loss() {
     assert!(build_extent_extrusion(
         case,
         &[(4, 74)],
-        Vec::new(),
+        reversed(),
         IDENTITY_MATRIX,
         |_| {},
         |source, label, index, projected| {
