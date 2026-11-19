@@ -70,6 +70,9 @@ pub(super) fn resolve(
         if selected.island_absence {
             resolution.profile_work.note_island_absence_assumed();
         }
+        if selected.joined_rings != 0 {
+            resolution.profile_work.note_piece_partition_assumed();
+        }
     }
     Ok(profile)
 }

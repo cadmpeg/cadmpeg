@@ -743,6 +743,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.
     FeatureProfileIslandAbsenceAssumed,
+    /// Extrude profile selections read counted member pieces over the
+    /// partition by the curves of each member list.
+    FeatureProfilePiecePartitionAssumed,
     /// Extrude profile selections took the polyline side of a projected point
     /// within the tolerance of a NURBS tube of a face boundary.
     FeatureProfilePolylineSideAssumed,
@@ -1706,6 +1709,7 @@ impl F3dLossCode {
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
         Self::FeatureProfileIslandAbsenceAssumed,
+        Self::FeatureProfilePiecePartitionAssumed,
         Self::FeatureProfilePolylineSideAssumed,
         Self::FeatureProfileCapOutlineAssumed,
         Self::FeatureProfileCapCarrierAssumed,
@@ -2685,6 +2689,7 @@ impl F3dLossCode {
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
+            Self::FeatureProfilePiecePartitionAssumed => "feature.profile-piece-partition-assumed",
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
             Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
@@ -3634,6 +3639,7 @@ impl F3dLossCode {
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
+            | Self::FeatureProfilePiecePartitionAssumed
             | Self::FeatureProfilePolylineSideAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
@@ -4343,6 +4349,7 @@ impl F3dLossCode {
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
+            | Self::FeatureProfilePiecePartitionAssumed
             | Self::FeatureProfilePolylineSideAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
@@ -5160,6 +5167,7 @@ mod tests {
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",
                 "feature.profile-island-absence-assumed",
+                "feature.profile-piece-partition-assumed",
                 "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",
                 "feature.profile-cap-carrier-assumed",

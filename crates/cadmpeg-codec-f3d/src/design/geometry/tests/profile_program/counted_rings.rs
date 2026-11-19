@@ -165,3 +165,27 @@ fn counted_ring_numbers_circle_pieces_from_angle_zero() {
     assert!(counted_selection(&sketch, &entities, &[band([2, 4], [4, 4])]).is_some());
     assert!(counted_selection(&sketch, &entities, &[band([1, 4], [3, 4])]).is_none());
 }
+
+#[test]
+fn counted_ring_counts_a_line_beyond_the_corner_as_a_piece() {
+    let id = SketchId::mint("synthetic:test:id#counted-extension").unwrap();
+    let entities = vec![
+        line_entity(&id, "bottom", (8.0, 0.0), (0.0, 0.0)),
+        line_entity(&id, "right", (6.0, 0.0), (6.0, 2.0)),
+        line_entity(&id, "top", (6.0, 2.0), (0.0, 2.0)),
+        line_entity(&id, "left", (0.0, 2.0), (0.0, 0.0)),
+        line_entity(&id, "tee", (3.0, 0.0), (3.0, -2.0)),
+    ];
+    let sketch = sketch_with_loops(id, &[]);
+    let ring = |bottom| {
+        vec![
+            (&entities[0], true, bottom),
+            (&entities[1], false, [1, 1]),
+            (&entities[2], false, [1, 1]),
+            (&entities[3], false, [1, 1]),
+        ]
+    };
+    assert!(counted_selection(&sketch, &entities, &[ring([2, 2])]).is_some());
+    assert!(counted_selection(&sketch, &entities, &[ring([1, 2])]).is_none());
+    assert!(counted_selection(&sketch, &entities, &[ring([1, 1])]).is_none());
+}

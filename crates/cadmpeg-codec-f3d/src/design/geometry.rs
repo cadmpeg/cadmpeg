@@ -78,6 +78,8 @@ pub(crate) struct ProfileGeometryWork {
     cut_regions_beyond_profile_selections: Cell<usize>,
     island_absence_assumed: Cell<bool>,
     island_absence_assumed_selections: Cell<usize>,
+    piece_partition_assumed: Cell<bool>,
+    piece_partition_assumed_selections: Cell<usize>,
     polyline_side_assumed: Cell<bool>,
     polyline_side_assumed_selections: Cell<usize>,
     cap_outline_assumed: Cell<bool>,
@@ -154,6 +156,8 @@ impl ProfileGeometryWork {
             cut_regions_beyond_profile_selections: Cell::new(0),
             island_absence_assumed: Cell::new(false),
             island_absence_assumed_selections: Cell::new(0),
+            piece_partition_assumed: Cell::new(false),
+            piece_partition_assumed_selections: Cell::new(0),
             polyline_side_assumed: Cell::new(false),
             polyline_side_assumed_selections: Cell::new(0),
             cap_outline_assumed: Cell::new(false),
@@ -321,7 +325,7 @@ impl ProfileGeometryWork {
         self.region_hole_inferred_selections.set(counts.1);
     }
 
-    pub(crate) fn assumed_flags(&self) -> [bool; 9] {
+    pub(crate) fn assumed_flags(&self) -> [bool; 10] {
         [
             self.crossing_loop_assumed.get(),
             self.loop_flags_assumed.get(),
@@ -332,10 +336,11 @@ impl ProfileGeometryWork {
             self.polyline_side_assumed.get(),
             self.cap_outline_assumed.get(),
             self.cap_carrier_assumed.get(),
+            self.piece_partition_assumed.get(),
         ]
     }
 
-    pub(crate) fn set_assumed_flags(&self, flags: [bool; 9]) {
+    pub(crate) fn set_assumed_flags(&self, flags: [bool; 10]) {
         self.crossing_loop_assumed.set(flags[0]);
         self.loop_flags_assumed.set(flags[1]);
         self.coincident_direction_assumed.set(flags[2]);
@@ -345,6 +350,7 @@ impl ProfileGeometryWork {
         self.polyline_side_assumed.set(flags[6]);
         self.cap_outline_assumed.set(flags[7]);
         self.cap_carrier_assumed.set(flags[8]);
+        self.piece_partition_assumed.set(flags[9]);
     }
 
     /// Close one profile selection. Count it against each cap that skipped a
@@ -386,6 +392,10 @@ impl ProfileGeometryWork {
             (
                 &self.island_absence_assumed,
                 &self.island_absence_assumed_selections,
+            ),
+            (
+                &self.piece_partition_assumed,
+                &self.piece_partition_assumed_selections,
             ),
             (
                 &self.polyline_side_assumed,
@@ -445,6 +455,12 @@ impl ProfileGeometryWork {
     /// arrangement can lie inside, as a face without that curve's island.
     pub(crate) fn note_island_absence_assumed(&self) {
         self.island_absence_assumed.set(true);
+    }
+
+    /// Record that the open selection matched counted members to a joined
+    /// face ring through the member-list piece partition.
+    pub(crate) fn note_piece_partition_assumed(&self) {
+        self.piece_partition_assumed.set(true);
     }
 
     /// Record that the polyline side of a projected point decided the face
@@ -527,6 +543,12 @@ impl ProfileGeometryWork {
         if beyond != 0 {
             losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
                 "{beyond} extrude profile selection(s) took the atomic regions a cut removed from the planes it changed, in place of a stored profile reading that covers other regions: a region is removed when one interior point lay on such a face before the cut and on none after it. The extrude is a Cut, and at least one taken region is bounded by curves outside the stored profile. A region over no face of those planes before or after the cut is left unselected, and the region boundaries were not compared with the face boundaries."
+            )));
+        }
+        let piece_partition = self.piece_partition_assumed_selections.get();
+        if piece_partition != 0 {
+            losses.push(F3dLossCode::FeatureProfilePiecePartitionAssumed.note(format!(
+                "{piece_partition} extrude profile selection(s) matched counted members to a face whose edges curves outside the member list split. The reading takes the participating curves of each member's piece words from its member list; whether the serialized tracking graph names other curves is open (DR-500)."
             )));
         }
         let island_absence = self.island_absence_assumed_selections.get();
@@ -1302,6 +1324,7 @@ fn member_ring_regions(
     }
     let mut outers = Vec::new();
     let mut holes = Vec::new();
+    let mut joined_rings = 0usize;
     let mut coincident = false;
     let mut identity_unique = true;
     for (ring_index, members) in rings.iter().enumerate() {
@@ -1335,10 +1358,11 @@ fn member_ring_regions(
             if found.is_some() {
                 return Ok(None);
             }
-            found = Some((*index, *hole));
+            found = Some((*index, *hole, *joined));
         }
         identity_unique &= identity_matches == 1;
-        let (face, hole) = geometric!(found);
+        let (face, hole, joined) = geometric!(found);
+        joined_rings += usize::from(joined);
         match hole {
             None if !outers.contains(&face) => outers.push(face),
             Some(hole) if !holes.contains(&(face, hole)) => holes.push((face, hole)),
@@ -1376,6 +1400,7 @@ fn member_ring_regions(
         regions,
         coincident,
         island_absence,
+        joined_rings,
     }))
 }
 
@@ -1415,6 +1440,9 @@ pub(super) struct MemberRingRegions {
     /// Whether a curve outside the arrangement can lie inside a selected
     /// face, so that its region assumes that the curve makes no island in it.
     pub(super) island_absence: bool,
+    /// The number of rings that matched a joined face ring through the
+    /// member-list piece partition.
+    pub(super) joined_rings: usize,
 }
 
 /// Whether the arrangement of every curve holds `entity`: a line, circle,
