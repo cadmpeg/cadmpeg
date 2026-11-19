@@ -268,7 +268,10 @@ the scope. `--occurrence ID` measures in the instance space of an assembly
 occurrence: the scope is the bodies of its prototype and of the
 prototypes of its subtree, each placed by its own transform and then by
 the occurrence chain from the root, and every row states its `placement`
-space. When the space cannot place its bodies, the report has no row and
+space. Repeat `--occurrence` to name the occurrences above it, outermost
+first, where a subassembly above it is placed more than once:
+`--occurrence SUB --occurrence PART` measures `PART` in the instance that
+`SUB` places. When the space cannot place its bodies, the report has no row and
 the document totals are unavailable with the reason. `diff --geometry` stays in model space. `--kind KIND[,KIND...]` and `--radius RANGE` (`MIN..MAX`,
 `MIN..`, `..MAX`, or `R`) filter face rows. An ID is an exact ID or a unique
 ID suffix, as for `query item`.
