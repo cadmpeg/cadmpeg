@@ -180,9 +180,11 @@ The sketch record lists `points` (`id`, `pos`, `fixed`) and `curves` that
 index them: a `line` from `a` to `b`, a `circle` of centre `c` and radius
 `r`, an `arc` counterclockwise about `c` from `a` to `b`, an `ellipse` of
 centre `c`, major-axis end `m`, and minor radius `r`, a `spline` through
-`pts` (a clamped uniform B-spline of `degree` over them when `control`),
-and a `conic`. A curve marked `construction`, `centerline`, or `infinite`
-bounds no profile.
+`pts`, and a `conic`. A `spline` without `control` is the natural cubic
+interpolant of `pts` in the chord-length parameter: its second derivative
+vanishes at both ends, and each span is a cubic Bézier piece. With `control`,
+the spline is the clamped uniform B-spline of `degree` over `pts`. A curve
+marked `construction`, `centerline`, or `infinite` bounds no profile.
 
 ### 3.5 Operations
 

@@ -15,6 +15,7 @@
 mod assembly;
 mod constraints;
 mod expr;
+mod fit;
 mod operations;
 mod sketch;
 

@@ -17,6 +17,7 @@ use cadmpeg_ir::math::portable::Portable;
 use serde_json::{json, Value};
 
 use super::expr::{Kind, Scope};
+use super::fit;
 
 /// A 3-vector.
 pub(super) type V3 = [f64; 3];
@@ -247,9 +248,29 @@ fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
     (a[0] - b[0]).hypot(a[1] - b[1])
 }
 
+/// Whether a spline record is a fit spline of the natural interpolant: it has
+/// no tangent handles and is not periodic.
+fn fit_spline(curve: &Value) -> bool {
+    curve.get("control").and_then(Value::as_bool) != Some(true)
+        && curve.get("periodic").and_then(Value::as_bool) != Some(true)
+        && curve
+            .get("handles")
+            .is_none_or(|handles| handles.is_null() || handles.as_array().is_some_and(Vec::is_empty))
+}
+
+/// The positions of the points that a spline record indexes.
+fn point_list(curve: &Value, points: &[Option<SketchPoint>]) -> Option<Vec<[f64; 2]>> {
+    curve
+        .get("pts")?
+        .as_array()?
+        .iter()
+        .map(|index| Some(points.get(usize::try_from(index.as_u64()?).ok()?)?.as_ref()?.pos))
+        .collect()
+}
+
 /// The neutral geometry of a sketch curve record, or `None` for a curve
-/// that has no exact neutral form here (a fit spline, a conic, a weighted
-/// spline).
+/// that has no exact neutral form here (a conic, a weighted or periodic
+/// spline, a spline with tangent handles).
 pub(super) fn curve_geometry(curve: &Value, points: &[Option<SketchPoint>]) -> Option<Value> {
     let at = |key: &str| -> Option<[f64; 2]> {
         let index = usize::try_from(curve.get(key)?.as_u64()?).ok()?;
@@ -293,24 +314,25 @@ pub(super) fn curve_geometry(curve: &Value, points: &[Option<SketchPoint>]) -> O
                 "minor_radius": minor_radius,
             })
         }
+        "spline" if fit_spline(curve) => {
+            let pieces = fit::bezier_pieces(&point_list(curve, points)?)?;
+            let (knots, poles) = fit::bezier_chain(&pieces);
+            json!({
+                "kind": "nurbs",
+                "curve": {
+                    "degree": 3,
+                    "knots": knots,
+                    "periodic": false,
+                    "poles": {"kind": "polynomial", "points": poles.into_iter().map(uv).collect::<Vec<_>>()},
+                }
+            })
+        }
         "spline"
             if curve.get("control").and_then(Value::as_bool) == Some(true)
                 && curve.get("nurbs").is_none_or(Value::is_null)
                 && curve.get("periodic").and_then(Value::as_bool) != Some(true) =>
         {
-            let poles: Vec<[f64; 2]> = curve
-                .get("pts")?
-                .as_array()?
-                .iter()
-                .map(|index| {
-                    Some(
-                        points
-                            .get(usize::try_from(index.as_u64()?).ok()?)?
-                            .as_ref()?
-                            .pos,
-                    )
-                })
-                .collect::<Option<_>>()?;
+            let poles = point_list(curve, points)?;
             let degree = usize::from(
                 u8::try_from(curve.get("degree").and_then(Value::as_u64).unwrap_or(3)).ok()?,
             )
