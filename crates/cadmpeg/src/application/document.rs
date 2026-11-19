@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A CAD document together with its load origin.
 
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{report::decode::DecodeReport, CadIr, DecodeResult, SourceFidelity};
 use cadmpeg_registry::Selection;
 
@@ -13,6 +14,8 @@ pub(crate) struct LoadedDocument {
     pub(crate) origin: LoadOrigin,
     /// Physical byte length measured while loading the input artifact.
     pub(crate) input_bytes: u64,
+    /// The `sidecar.stale` loss of a decode sidecar the load ignored.
+    pub(crate) stale_sidecar: Option<LossNote>,
 }
 
 /// Source information attached to a loaded document.
@@ -45,6 +48,7 @@ impl LoadedDocument {
             ir,
             origin: LoadOrigin::Neutral,
             input_bytes,
+            stale_sidecar: None,
         }
     }
 
@@ -59,6 +63,7 @@ impl LoadedDocument {
                 selection,
             },
             input_bytes,
+            stale_sidecar: None,
         }
     }
 
@@ -76,7 +81,15 @@ impl LoadedDocument {
                 fidelity: Box::new(fidelity),
             },
             input_bytes,
+            stale_sidecar: None,
         }
+    }
+
+    /// Records that the load ignored the decode sidecar beside the document.
+    #[must_use]
+    pub(crate) fn with_stale_sidecar(mut self, loss: LossNote) -> Self {
+        self.stale_sidecar = Some(loss);
+        self
     }
 
     /// Returns the native decode report, when this document has decoded origin.

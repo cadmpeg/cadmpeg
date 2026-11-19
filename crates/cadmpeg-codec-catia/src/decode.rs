@@ -3593,7 +3593,13 @@ fn finish_decode(
             )));
     }
     if ctx.depth() >= cadmpeg_core::decode::DecodeDepth::Design {
-        crate::design_v11::project(ctx, &mut ir)?;
+        cadmpeg_ir::design::projection::project_layer(
+            ctx,
+            "catia",
+            &mut ir,
+            &mut report.losses,
+            |ir, _| crate::design_v11::project(ctx, ir),
+        )?;
     }
     native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
     decode_result(
