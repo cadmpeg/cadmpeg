@@ -398,8 +398,7 @@ pub(super) fn decode(
         _ => {
             // Several top-level definitions: the file itself is the root, and
             // it places each of them.
-            let document =
-                ProductDefinitionId::from(ids::product(kind!("product"), key_word!("document")));
+            let document = document_definition_id();
             let mut root = ProductDefinition::root(document.clone(), ExternalDocument::default());
             for (definition, prototype) in &roots {
                 if ir.model.occurrences.len() >= MAX_OCCURRENCES {
@@ -426,18 +425,23 @@ pub(super) fn decode(
             owned.entry(document).or_default();
         }
     }
-    if let [(_, prototype)] = roots.as_slice() {
-        if let Some(definition) = ir
-            .model
-            .product_definitions
+    // The one top definition is the root, and so is a file's one product
+    // where no PRODUCT_DEFINITION can place it.
+    let top = match (
+        roots.as_slice(),
+        ir.model.product_definitions.as_mut_slice(),
+    ) {
+        ([(_, prototype)], definitions) => definitions
             .iter_mut()
-            .find(|definition| &definition.id == prototype)
-        {
-            definition.storage = Storage::File {
-                document: ExternalDocument::default(),
-                source: None,
-            };
-        }
+            .find(|definition| &definition.id == prototype),
+        ([], [definition]) if definitions.is_empty() => Some(definition),
+        _ => None,
+    };
+    if let Some(definition) = top {
+        definition.storage = Storage::File {
+            document: ExternalDocument::default(),
+            source: None,
+        };
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -1364,3 +1368,9 @@ fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// The root definition where the file itself is the root: the document,
+/// which places the file's top definitions.
+pub(crate) fn document_definition_id() -> ProductDefinitionId {
+    ProductDefinitionId::from(ids::product(kind!("product"), key_word!("document")))
+}
