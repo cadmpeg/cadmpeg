@@ -3,7 +3,8 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::ResolvedWrite, EncodeInput, ExportBody, WritePath};
-use cadmpeg_ir::Annotations;
+use cadmpeg_ir::source_fidelity::class_list;
+use cadmpeg_ir::{Annotations, SourceFidelity};
 
 use crate::loss::SldprtLossCode;
 use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, SldprtCodec, Written};
@@ -29,7 +30,21 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    let unrepresented = input
+        .fidelity
+        .map(SourceFidelity::unrepresented)
+        .unwrap_or_default();
     let (written, bytes) = match write(input, resolved.preserves_source()) {
+        Err(CodecError::NotImplemented(detail))
+            if resolved.preserves_source() && !unrepresented.is_empty() =>
+        {
+            return Err(resolved.unavailable(format!(
+                "its retained source holds {} content the document does not represent, so it \
+                 is neither patched nor replayed, and the semantic writer cannot write it: \
+                 {detail}",
+                class_list(&unrepresented)
+            )));
+        }
         Err(error @ CodecError::NotImplemented(_)) if resolved.entry().is_none() => {
             let synthesis_targets = crate::dialect::TARGETS
                 .iter()

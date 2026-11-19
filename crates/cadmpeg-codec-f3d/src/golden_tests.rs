@@ -905,7 +905,8 @@ fn fixtures_refuse_to_write_without_a_baseline() {
         semantic_roundtrip(&F3dCodec, name, &input, |outcome| {
             match outcome {
             SemanticOutcome::Refused { error } => assert!(
-                matches!(error, CodecError::NotImplemented(_)),
+                matches!(error, CodecError::NotImplemented(_))
+                    || crate::test_support::is_unrepresented_refusal(error),
                 "fixture `{name}`: a missing baseline is an unbuilt capability, not a malformed input: {error}"
             ),
             SemanticOutcome::Written { report, .. } => panic!(

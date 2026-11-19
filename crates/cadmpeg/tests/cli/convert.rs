@@ -999,7 +999,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
             .assert();
         if format == "sldprt" {
             refused_command.code(2).stderr(predicate::str::contains(
-                "SLDPRT envelope regeneration needs validated retained",
+                "semantic SLDPRT writing requires a B-rep",
             ));
         } else {
             refused_command.code(1).stderr(
@@ -1009,6 +1009,79 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         }
         assert!(!refused.exists());
     }
+}
+
+/// A sidecar that marks a retained record `untyped` bars replay and patch, so
+/// an unedited SLDPRT document, which this writer cannot synthesize, is
+/// refused by target before anything is written; without the sidecar it is
+/// refused for the retained envelope it lacks.
+#[cfg(feature = "sldprt")]
+#[test]
+fn an_untyped_sidecar_refuses_the_sldprt_replay() {
+    let dir = tempdir().unwrap();
+    let native = dir.path().join("source.sldprt");
+    fs::write(
+        &native,
+        include_bytes!(
+            "../../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"
+        ),
+    )
+    .unwrap();
+    let persisted = dir.path().join("decoded.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "dump",
+            native.to_str().unwrap(),
+            "-o",
+            persisted.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let sidecar = cadmpeg_ir::decode_sidecar_path(&persisted).unwrap();
+    let marks: serde_json::Value = serde_json::from_slice(&fs::read(&sidecar).unwrap()).unwrap();
+    assert!(
+        marks.to_string().contains("\"untyped\":[\""),
+        "the fixture's decode marks a retained record"
+    );
+
+    let refused = dir.path().join("refused.sldprt");
+    let report = dir.path().join("refused.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            persisted.to_str().unwrap(),
+            "-o",
+            refused.to_str().unwrap(),
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "content the document does not represent, so it is neither patched nor replayed",
+        ));
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
+    assert_eq!(value["refusal"]["stage"], "plan");
+    assert_eq!(value["refusal"]["code"], "unsupported_target");
+    assert!(!refused.exists());
+
+    fs::remove_file(sidecar).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            persisted.to_str().unwrap(),
+            "-o",
+            refused.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "SLDPRT envelope regeneration needs validated retained",
+        ));
+    assert!(!refused.exists());
 }
 
 #[test]

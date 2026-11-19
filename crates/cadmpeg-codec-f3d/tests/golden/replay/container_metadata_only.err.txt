@@ -1,0 +1,1 @@
+f3d cannot preserve source dialect f3d:manifest-3-2-0-0: its retained source holds model content the document does not represent, so it is neither patched nor replayed, and the generator cannot synthesize it: source-less F3D generation requires owned face topology or a nonempty wire shell; available targets: f3d:manifest-3-2-0-0

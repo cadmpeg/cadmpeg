@@ -144,7 +144,7 @@ fn the_patch_path_refuses_a_source_whose_design_intent_was_contained() {
         )
         .map(|_| ());
     assert!(
-        matches!(&refused, Err(CodecError::NotImplemented(message)) if message.starts_with("source-less F3D")),
+        matches!(&refused, Err(error) if crate::test_support::is_unrepresented_refusal(error)),
         "{refused:?}"
     );
 
@@ -174,7 +174,7 @@ fn an_unedited_contained_document_is_not_replayed() {
         &mut written,
     );
     assert!(
-        matches!(&refused, Err(CodecError::NotImplemented(message)) if message.starts_with("source-less F3D")),
+        matches!(&refused, Err(error) if crate::test_support::is_unrepresented_refusal(error)),
         "{refused:?}"
     );
     assert!(written.is_empty());

@@ -38,6 +38,14 @@ pub(crate) fn write_retained(
     Ok(written.path())
 }
 
+/// Whether `error` is the target refusal of a document whose sidecar marks a
+/// retained record `untyped`: the writer neither patches nor replays it and
+/// cannot write it without those records.
+pub(crate) fn is_unrepresented_refusal(error: &CodecError) -> bool {
+    matches!(error, CodecError::UnsupportedTarget(refusal)
+        if refusal.to_string().contains("content the document does not represent"))
+}
+
 /// [`write_retained`] with the authored native envelope that
 /// [`plan_fixture_with_native_envelope`] supplies.
 pub(crate) fn write_retained_with_native_envelope(
@@ -157,17 +165,14 @@ pub(crate) fn serialize_history_in_native_envelope_after_refusal(
 ) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
     let error = plan_inherited_write(&ir, &fidelity, &mut Vec::new()).unwrap_err();
-    // A fixture with an untyped retained record is neither patched nor
-    // replayed, and its synthesis declines what it has not built.
-    let expected = if fidelity.unrepresented().is_empty() {
-        "SLDPRT writer cannot regenerate B-rep after"
+    if fidelity.unrepresented().is_empty() {
+        assert!(
+            matches!(&error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
+            "{error}"
+        );
     } else {
-        ""
-    };
-    assert!(
-        matches!(&error, CodecError::NotImplemented(detail) if detail.starts_with(expected)),
-        "{error}"
-    );
+        assert!(is_unrepresented_refusal(&error), "{error}");
+    }
     let records = crate::source_records(&ir, &fidelity)?;
     crate::writer::write_semantic_with_records(&ir, &fidelity.annotations, &records, writer)
         .map(|output| output.dialect)

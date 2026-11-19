@@ -97,6 +97,13 @@ pub(crate) fn write_retained(
     F3dCodec::write_preserved_bytes(ir, data, writer, &mut Vec::new())
 }
 
+/// Whether `error` is the target refusal of a document whose sidecar marks a
+/// retained record `untyped` and that the generator cannot synthesize.
+pub(crate) fn is_unrepresented_refusal(error: &CodecError) -> bool {
+    matches!(error, CodecError::UnsupportedTarget(refusal)
+        if refusal.to_string().contains("content the document does not represent"))
+}
+
 /// A finite test value as the checked scalar a record holds.
 pub(crate) fn real(value: f64) -> cadmpeg_ir::scalar::FiniteReal {
     cadmpeg_ir::scalar::FiniteReal::new(value).expect("a finite test value")

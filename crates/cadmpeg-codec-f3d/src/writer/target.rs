@@ -67,7 +67,17 @@ pub(crate) fn plan(
                 synthesized_body(input, SynthesisCause::SourceImageUnavailable)
             }
             Preservation::SourceUnrepresented(classes) => {
-                synthesized_body(input, SynthesisCause::SourceUnrepresented(classes))
+                let held = class_list(&classes);
+                synthesized_body(input, SynthesisCause::SourceUnrepresented(classes)).map_err(
+                    |error| match error {
+                        CodecError::NotImplemented(detail) => target.unavailable(format!(
+                            "its retained source holds {held} content the document does not \
+                             represent, so it is neither patched nor replayed, and the generator \
+                             cannot synthesize it: {detail}"
+                        )),
+                        other => other,
+                    },
+                )
             }
         };
     }

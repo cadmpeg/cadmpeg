@@ -167,7 +167,7 @@ fn fixtures_replay_verbatim() {
         if decodes_unrepresented(&bytes) {
             match unrepresented_source_is_not_reused(&SldprtCodec, &name, &bytes) {
                 UnrepresentedOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(_)),
+                    crate::test_support::is_unrepresented_refusal(&error),
                     "fixture `{name}`: {error}"
                 ),
                 UnrepresentedOutcome::Synthesized { .. } => {
@@ -362,8 +362,8 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
             assert_legacy_history_preconditions(&bytes);
             continue;
         }
-        // A fixture with an untyped retained record is not patched, so its
-        // edit reaches the synthesis, which declines what it has not built.
+        // A fixture with an untyped retained record is not patched, and the
+        // writer cannot write its edit without those records.
         let unrepresented = decodes_unrepresented(&bytes);
         let ran = mutation_roundtrip(
             &SldprtCodec,
@@ -411,7 +411,11 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                     panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
                 }
                 MutationOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if unrepresented || detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
+                    if unrepresented {
+                        crate::test_support::is_unrepresented_refusal(error)
+                    } else {
+                        matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after"))
+                    },
                     "fixture `{name}`: {error}"
                 ),
             },
