@@ -218,13 +218,26 @@ impl Quantity {
     /// An area, (2, 0, 0, 0).
     pub const AREA: Self = Self::of(2, 0, 0, 0);
 
-    const fn of(length: i8, mass: i8, angle: i8, time: i8) -> Self {
+    /// The quantity with these exponents of length, mass, angle, and time.
+    #[must_use]
+    pub const fn of(length: i8, mass: i8, angle: i8, time: i8) -> Self {
         Self {
             length,
             mass,
             angle,
             time,
         }
+    }
+
+    /// The factor that converts a value of this quantity from a unit system
+    /// of `millimetres`, `kilograms`, `radians`, and `seconds` per unit to
+    /// the canonical units.
+    #[must_use]
+    pub fn factor(&self, millimetres: f64, kilograms: f64, radians: f64, seconds: f64) -> f64 {
+        millimetres.powi(i32::from(self.length))
+            * kilograms.powi(i32::from(self.mass))
+            * radians.powi(i32::from(self.angle))
+            * seconds.powi(i32::from(self.time))
     }
 }
 
