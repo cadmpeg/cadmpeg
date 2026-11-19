@@ -109,3 +109,19 @@ after the Revolve.
 - `open_profile_surface_revolve.f3d`: one open line from (10, 0, 0) to
   (10, 0, 10) mm, selected through createOpenProfile. 1 surface body,
   314.15927 mm², 1 cylindrical face.
+
+# Fusion API fixtures: Copy/Paste Bodies
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Each pastes boxes of 10 × 10 mm (5, 6, 7 or 8 mm
+tall) into a new component `Target`, whose occurrence is at y + 30 mm, with one
+Copy/Paste Bodies operation. The API reported the body count, volume and face
+count after the operation.
+
+- `copy_paste_one_body.f3d`: one 5 mm box. 2 bodies, 1000 mm³, 12 faces.
+- `copy_paste_two_bodies.f3d`: two boxes of one component. 4 bodies, 2600 mm³,
+  24 faces.
+- `copy_paste_two_components.f3d`: one box from each of two components.
+  4 bodies, 2600 mm³, 24 faces.
+- `copy_paste_three_bodies.f3d`: three boxes of one component. 6 bodies,
+  3600 mm³, 36 faces.

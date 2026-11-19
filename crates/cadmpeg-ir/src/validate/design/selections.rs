@@ -515,10 +515,12 @@ fn check_in_state(
         }),
     };
     if !matched {
-        super::error(
+        record_finding(
             findings,
-            at,
-            format_args!("an Entity pick's name matches no entity of its anchored state"),
+            Check::Design,
+            Severity::Warning,
+            Some(at),
+            format_args!("an Entity pick's name matches no entity of its anchored state, a lost operand (D51)"),
         );
     }
 }
