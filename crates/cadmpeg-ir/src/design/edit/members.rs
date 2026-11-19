@@ -1,32 +1,166 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Inserting a member into a container and removing one (§4).
+//! Inserting a new member into a container (§4).
 //!
-//! Both mark `Stale` every evaluation and current state at or after the
-//! member's position, and every one that depends on a feature at or after
-//! it. Removing member `m` also deletes the evaluations keyed by `m` and
-//! rebases those based on them, retargets every other position that names
-//! `m` to the position before it, and moves a rollback before `m` to the
-//! member after it.
+//! Insertion adds a member with the records it owns, and marks `Stale` every
+//! evaluation and current state at or after the member's position, and every
+//! one that depends on a feature at or after it.
 
 use std::collections::BTreeSet;
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde_json::Value as Json;
 
-use super::history::{currents, Graph, History, Node, Step};
-use super::states::{compose, ids};
-use super::wire::{names_after, retarget, rewrite};
+use super::history::{currents, Graph, History, Node};
 use super::{malformed, EditError};
-use crate::design::container::{Container, Folder, Rollback};
-use crate::design::evaluation::{StateBase, StateContent};
-use crate::design::ids::{ContainerId, EvaluationId};
-use crate::design::refs::{Evaluated, Member, Position};
+use crate::design::container::{Container, Folder};
+use crate::design::feature::FeatureOperation;
+use crate::design::ids::ContainerId;
+use crate::design::parameter::ParameterOwner;
+use crate::design::refs::Member;
+use crate::document::Design;
 use crate::CadIr;
+
+/// The id of every record of a design's arenas.
+pub(super) fn design_ids(design: &Design) -> Result<BTreeSet<String>, EditError> {
+    let json = serde_json::to_value(design).map_err(malformed)?;
+    let mut found = BTreeSet::new();
+    for records in json
+        .as_object()
+        .into_iter()
+        .flat_map(|arenas| arenas.values())
+    {
+        for record in records.as_array().into_iter().flatten() {
+            if let Some(id) = record.get("id").and_then(Json::as_str) {
+                found.insert(id.to_owned());
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// The one member `records` adds: the feature or container that no
+/// container of `records` holds. Every other record is one of its members,
+/// or is owned by one of them.
+fn new_member(records: &Design) -> Result<Member, EditError> {
+    let refuse = |reason: String| Err(EditError::NotOneMember(reason));
+    let others = [
+        ("scopes", records.scopes.is_empty()),
+        ("sheet_metal_rules", records.sheet_metal_rules.is_empty()),
+        ("configurations", records.configurations.is_empty()),
+        ("arrangements", records.arrangements.is_empty()),
+        ("publications", records.publications.is_empty()),
+        ("evaluations", records.evaluations.is_empty()),
+        ("names", records.names.entries().is_empty()),
+    ];
+    if let Some((arena, _)) = others.iter().find(|(_, empty)| !empty) {
+        return refuse(format!("{arena} hold records no member owns"));
+    }
+    let features: BTreeSet<&str> = records
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str())
+        .collect();
+    let containers: BTreeSet<&str> = records
+        .containers
+        .iter()
+        .map(|container| container.id().as_str())
+        .collect();
+    let mut held = BTreeSet::new();
+    for container in &records.containers {
+        for member in super::container_members(container) {
+            let known = match member {
+                Member::Feature(feature) => features.contains(feature.as_str()),
+                Member::Container(inner) => containers.contains(inner.as_str()),
+            };
+            if !known {
+                return refuse(format!(
+                    "{member:?} is a member of a container and not a record"
+                ));
+            }
+            held.insert(member.clone());
+        }
+    }
+    let mut tops = records
+        .features
+        .iter()
+        .map(|feature| Member::Feature(feature.id.clone()))
+        .chain(
+            records
+                .containers
+                .iter()
+                .map(|container| Member::Container(container.id().clone())),
+        )
+        .filter(|member| !held.contains(member));
+    let (Some(member), None) = (tops.next(), tops.next()) else {
+        return refuse("not exactly one feature or container is in no container".into());
+    };
+    let sheets: BTreeSet<&str> = records
+        .features
+        .iter()
+        .filter_map(|feature| match &feature.definition.operation {
+            FeatureOperation::Spreadsheet(sheet) => Some(sheet.as_str()),
+            _ => None,
+        })
+        .collect();
+    let sketches: BTreeSet<&str> = records
+        .sketches
+        .iter()
+        .filter(|sketch| features.contains(sketch.owner.as_str()))
+        .map(|sketch| sketch.id.as_str())
+        .chain(
+            records
+                .spatial_sketches
+                .iter()
+                .filter(|sketch| features.contains(sketch.owner.as_str()))
+                .map(|sketch| sketch.id.as_str()),
+        )
+        .collect();
+    let unowned = records.sketches.len() + records.spatial_sketches.len() != sketches.len()
+        || records
+            .sketch_entities
+            .iter()
+            .any(|entity| !sketches.contains(entity.sketch.as_str()))
+        || records
+            .sketch_constraints
+            .iter()
+            .any(|constraint| !sketches.contains(constraint.sketch.as_str()))
+        || records
+            .spatial_sketch_entities
+            .iter()
+            .any(|entity| !sketches.contains(entity.sketch.as_str()))
+        || records
+            .spatial_sketch_constraints
+            .iter()
+            .any(|constraint| !sketches.contains(constraint.sketch.as_str()))
+        || records
+            .spreadsheets
+            .iter()
+            .any(|sheet| !sheets.contains(sheet.id.as_str()))
+        || records
+            .parameters
+            .iter()
+            .any(|parameter| match &parameter.owner {
+                Some(ParameterOwner::Feature(feature)) => !features.contains(feature.as_str()),
+                Some(ParameterOwner::Container(container)) => {
+                    !containers.contains(container.as_str())
+                }
+                Some(ParameterOwner::Attribute(_)) | None => true,
+            })
+        || records.programs.iter().any(|program| {
+            !program
+                .owner
+                .as_ref()
+                .is_some_and(|feature| features.contains(feature.as_str()))
+        });
+    if unowned {
+        return refuse("a record is owned by no feature or container of the records".into());
+    }
+    Ok(member)
+}
 
 impl CadIr {
     /// The features whose states change with an edit at a member's position:
     /// the features at or after it and every feature that depends on one.
-    fn features_after_edit(
+    pub(super) fn features_after_edit(
         &self,
         history: &History,
         member: &Member,
@@ -38,35 +172,21 @@ impl CadIr {
             .features)
     }
 
-    /// Inserts `member` into `container`, at `index` where the container is
-    /// ordered, and marks `Stale` every evaluation and current state at or
-    /// after its position, including every one that depends on a feature at
-    /// or after it. A folder that holds the index grows to hold the member,
-    /// and a later folder moves with the members after it.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`EditError::UnknownContainer`] for a container the design
-    /// does not hold, [`EditError::AlreadyPlaced`] for a member already in a
-    /// container or a scope root, and [`EditError::IndexOutOfRange`] for an
-    /// index past the end of an ordered container.
-    pub fn insert_member(
+    /// [`Editor::insert_member`](super::Editor::insert_member) on the
+    /// document itself.
+    pub(super) fn insert_member(
         &mut self,
         container: &ContainerId,
         index: usize,
-        member: Member,
+        records: Design,
     ) -> Result<(), EditError> {
-        let history = History::new(&self.design)?;
-        let is_root = match &member {
-            Member::Container(id) => self
-                .design
-                .scopes
-                .iter()
-                .any(|scope| scope.roots.contains(id)),
-            Member::Feature(_) => false,
-        };
-        if is_root || history.path(&member).is_some() {
-            return Err(EditError::AlreadyPlaced(member));
+        let member = new_member(&records)?;
+        let taken = design_ids(&self.design)?;
+        if let Some(id) = design_ids(&records)?
+            .into_iter()
+            .find(|id| taken.contains(id))
+        {
+            return Err(EditError::DuplicateId(id));
         }
         let record = self
             .design
@@ -94,206 +214,27 @@ impl CadIr {
                 members.insert(member.clone());
             }
         }
-        let history = History::new(&self.design)?;
+        let design = &mut self.design;
+        design.containers.extend(records.containers);
+        design.features.extend(records.features);
+        design.sketches.extend(records.sketches);
+        design.sketch_entities.extend(records.sketch_entities);
+        design.sketch_constraints.extend(records.sketch_constraints);
+        design.spatial_sketches.extend(records.spatial_sketches);
+        design
+            .spatial_sketch_entities
+            .extend(records.spatial_sketch_entities);
+        design
+            .spatial_sketch_constraints
+            .extend(records.spatial_sketch_constraints);
+        design.parameters.extend(records.parameters);
+        design.spreadsheets.extend(records.spreadsheets);
+        design.programs.extend(records.programs);
+        design.finalize();
+        let history = History::new(&self.design);
         let features = self.features_after_edit(&history, &member)?;
         self.mark_states_stale(&history, &features);
         Ok(())
-    }
-
-    /// Removes `member` from its container. It marks `Stale` every evaluation
-    /// and current state at or after the member's position, and every one
-    /// that depends on a feature at or after it; deletes the evaluations
-    /// keyed by the member (`of` is `State(After(m))` or `Tool(m)`) and
-    /// rebases those based on them so their resolved states are unchanged;
-    /// retargets every other position that names the member (a
-    /// `Pinned(After(m))` anchor, a current state at `After(m)`, a
-    /// `StateRef`) to the position before it; and retargets
-    /// `Rollback::Before(m)` to the member after it, or to `End` where it is
-    /// the last member. A folder loses the member, and one left empty is
-    /// removed. The member's own records stay in their arenas.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`EditError::NotAMember`] for a member in no container, and
-    /// [`EditError::NoPositionBefore`] where a position names a member of an
-    /// unordered container, which has no position before it.
-    pub fn remove_member(&mut self, member: &Member) -> Result<(), EditError> {
-        let history = History::new(&self.design)?;
-        let step = history
-            .path(member)
-            .and_then(<[Step]>::last)
-            .cloned()
-            .ok_or_else(|| EditError::NotAMember(member.clone()))?;
-        let before = if step.ordered {
-            Some(match step.index.checked_sub(1) {
-                Some(previous) => {
-                    let (_, members) = history
-                        .members(&step.container)
-                        .ok_or_else(|| EditError::NotAMember(member.clone()))?;
-                    Position::After(members[previous].clone())
-                }
-                None => {
-                    Position::Start(ContainerId::mint(step.container.clone()).map_err(malformed)?)
-                }
-            })
-        } else {
-            None
-        };
-        let keyed = |of: &Evaluated| match (of, member) {
-            (Evaluated::State(Position::After(at)), _) => at == member,
-            (Evaluated::Tool(feature), Member::Feature(removed)) => feature == removed,
-            (Evaluated::Tool(_), Member::Container(_)) => false,
-            (Evaluated::State(Position::Start(_)), _) => false,
-        };
-        if before.is_none() && self.names_member(member, &keyed)? {
-            return Err(EditError::NoPositionBefore(member.clone()));
-        }
-        let features = self.features_after_edit(&history, member)?;
-        self.mark_states_stale(&history, &features);
-        let deleted: Vec<EvaluationId> = self
-            .design
-            .evaluations
-            .iter()
-            .filter(|evaluation| keyed(&evaluation.of))
-            .map(|evaluation| evaluation.id.clone())
-            .collect();
-        for id in deleted {
-            self.delete_evaluation(&id)?;
-        }
-        if let Some(before) = &before {
-            self.retarget_positions(member, before)?;
-        }
-        let record = self
-            .design
-            .containers
-            .iter_mut()
-            .find(|candidate| candidate.id().as_str() == step.container)
-            .ok_or_else(|| EditError::NotAMember(member.clone()))?;
-        match record {
-            Container::Ordered {
-                members,
-                folders,
-                rollback,
-                ..
-            } => {
-                if *rollback == Rollback::Before(member.clone()) {
-                    *rollback = match members.get(step.index + 1) {
-                        Some(next) => Rollback::Before(next.clone()),
-                        None => Rollback::End,
-                    };
-                }
-                members.remove(step.index);
-                let at = u32::try_from(step.index).map_err(malformed)?;
-                folders.retain_mut(|folder| shift_for_remove(folder, at));
-            }
-            Container::Unordered { members, .. } => {
-                members.remove(member);
-            }
-        }
-        Ok(())
-    }
-
-    /// Deletes an evaluation, and rebases every evaluation based on it onto
-    /// its base, composing the two deltas, so their resolved states are
-    /// unchanged.
-    fn delete_evaluation(&mut self, id: &EvaluationId) -> Result<(), EditError> {
-        let Some(at) = self
-            .design
-            .evaluations
-            .iter()
-            .position(|evaluation| &evaluation.id == id)
-        else {
-            return Ok(());
-        };
-        let removed = self.design.evaluations.remove(at);
-        let Some(content) = removed.content else {
-            return Ok(());
-        };
-        let base_ids = ids(&self.base_state(&removed.scope, &content.base)?.records);
-        for evaluation in &mut self.design.evaluations {
-            let Some(StateContent { base, delta }) = &mut evaluation.content else {
-                continue;
-            };
-            if *base == StateBase::Evaluation(id.clone()) {
-                *delta = compose(&content.delta, delta, &base_ids);
-                base.clone_from(&content.base);
-            }
-        }
-        Ok(())
-    }
-
-    /// Whether any record of the design, other than an evaluation keyed by
-    /// the member, names `After(member)`.
-    fn names_member(
-        &self,
-        member: &Member,
-        keyed: &dyn Fn(&Evaluated) -> bool,
-    ) -> Result<bool, EditError> {
-        fn any<'a, T: Serialize + 'a>(
-            records: impl IntoIterator<Item = &'a T>,
-            member: &Member,
-        ) -> Result<bool, EditError> {
-            for record in records {
-                if names_after(&serde_json::to_value(record).map_err(malformed)?, member)? {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        }
-        let design = &self.design;
-        Ok(any(&design.features, member)?
-            || any(&design.sketches, member)?
-            || any(&design.sketch_entities, member)?
-            || any(&design.sketch_constraints, member)?
-            || any(&design.spatial_sketches, member)?
-            || any(&design.spatial_sketch_entities, member)?
-            || any(&design.spatial_sketch_constraints, member)?
-            || any(&design.parameters, member)?
-            || any(&design.spreadsheets, member)?
-            || any(&design.sheet_metal_rules, member)?
-            || any(&design.programs, member)?
-            || any(&design.configurations, member)?
-            || any(&design.arrangements, member)?
-            || any(&design.publications, member)?
-            || any(&design.scopes, member)?
-            || any(
-                design
-                    .evaluations
-                    .iter()
-                    .filter(|evaluation| !keyed(&evaluation.of)),
-                member,
-            )?)
-    }
-
-    /// Replaces every `After(member)` position of the design with `to`.
-    fn retarget_positions(&mut self, member: &Member, to: &Position) -> Result<(), EditError> {
-        fn all<T: Serialize + DeserializeOwned>(
-            records: &mut [T],
-            member: &Member,
-            to: &Position,
-        ) -> Result<(), EditError> {
-            for record in records {
-                rewrite(record, |json| retarget(json, member, to))?;
-            }
-            Ok(())
-        }
-        let design = &mut self.design;
-        all(&mut design.features, member, to)?;
-        all(&mut design.sketches, member, to)?;
-        all(&mut design.sketch_entities, member, to)?;
-        all(&mut design.sketch_constraints, member, to)?;
-        all(&mut design.spatial_sketches, member, to)?;
-        all(&mut design.spatial_sketch_entities, member, to)?;
-        all(&mut design.spatial_sketch_constraints, member, to)?;
-        all(&mut design.parameters, member, to)?;
-        all(&mut design.spreadsheets, member, to)?;
-        all(&mut design.sheet_metal_rules, member, to)?;
-        all(&mut design.programs, member, to)?;
-        all(&mut design.configurations, member, to)?;
-        all(&mut design.arrangements, member, to)?;
-        all(&mut design.publications, member, to)?;
-        all(&mut design.scopes, member, to)?;
-        all(&mut design.evaluations, member, to)
     }
 }
 
@@ -316,7 +257,7 @@ fn shift_for_insert(folder: &mut Folder, at: u32) -> Result<(), EditError> {
 
 /// Moves a folder for the member removed at index `at`, and reports whether
 /// it still holds a member.
-fn shift_for_remove(folder: &mut Folder, at: u32) -> bool {
+pub(super) fn shift_for_remove(folder: &mut Folder, at: u32) -> bool {
     if folder.first > at {
         folder.first -= 1;
         folder.last -= 1;
