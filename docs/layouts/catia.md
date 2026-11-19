@@ -1577,6 +1577,30 @@ Parsed by:
 | 42 | 8 | `direction_v_y` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 | 50 | 32 | `bounds` | `f64[4]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 
+## `surface_weight_symmetric_03_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | Command `01` with row control `0003` or `0007` · value `1` |
+| 1 | 2 | `control` | `u16` | little | spec | Command `01` with row control `0003` or `0007` · value `3` |
+
+## `surface_weight_symmetric_07_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | Command `01` with row control `0003` or `0007` · value `1` |
+| 1 | 2 | `control` | `u16` | little | spec | Command `01` with row control `0003` or `0007` · value `7` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

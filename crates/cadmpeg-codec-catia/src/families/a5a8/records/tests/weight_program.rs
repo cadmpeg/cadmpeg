@@ -20,6 +20,7 @@ fn rational_rows_combine_partial_mirrors_leading_repeats_and_row_copies() {
         .expect("bounded rational row program");
     assert_eq!(at, program_end);
     let values = weights
+        .values
         .into_iter()
         .map(cadmpeg_ir::scalar::NonZeroReal::get)
         .collect::<Vec<_>>();
@@ -43,6 +44,7 @@ fn rational_rows_retain_literal_middle_columns_and_unused_mirror_bits() {
             .expect("bounded rational row program");
         assert_eq!(
             weights
+                .values
                 .into_iter()
                 .map(cadmpeg_ir::scalar::NonZeroReal::get)
                 .collect::<Vec<_>>(),
@@ -94,6 +96,7 @@ fn rational_rows_preserve_legacy_symmetric_modes_for_even_and_odd_widths() {
                 .expect("complete legacy symmetric row");
             assert_eq!(
                 actual
+                    .values
                     .into_iter()
                     .map(cadmpeg_ir::scalar::NonZeroReal::get)
                     .collect::<Vec<_>>(),
@@ -115,10 +118,92 @@ fn rational_rows_keep_legacy_mode_when_followed_by_a_copied_row() {
         super::super::a5_weights(&bytes, &mut at, 2, 6, bytes.len()).expect("legacy row and copy");
     assert_eq!(
         actual
+            .values
             .into_iter()
             .map(cadmpeg_ir::scalar::NonZeroReal::get)
             .collect::<Vec<_>>(),
         vec![0.8, 1.2, 1.0, 1.0, 1.2, 0.8, 0.8, 1.2, 1.0, 1.0, 1.2, 0.8]
     );
     assert_eq!(at, bytes.len());
+}
+
+fn surface_with_six_weight_columns(program: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0xa5, 0x03, 0x34, 0, 0, 0, 0, 0];
+    for degree in [0x05, 0x15] {
+        bytes.extend([degree, 0x09, 0x0c]);
+        bytes.extend([0.0, 1.0].into_iter().flat_map(le_f64));
+    }
+    bytes.push(0x05);
+    for u in [0.0, 1.0] {
+        for v in [0.0, 1.0, 2.0, 3.0, 4.0, 5.0] {
+            bytes.extend([u, v, 0.0].into_iter().flat_map(le_f64));
+        }
+    }
+    bytes.extend(program);
+    bytes.extend(a5_surface_tail());
+    let length = u32::try_from(bytes.len() - 8).expect("short surface frame");
+    bytes[3..7].copy_from_slice(&length.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn extended_weight_readings_charge_one_assumption_for_an_emitted_surface() {
+    let mut partial = vec![0x01, 0x01, 0x00];
+    partial.extend([1.0, 0.8, 0.6, 0.9, 1.2].into_iter().flat_map(le_f64));
+    partial.push(0x02);
+    let mut repeated = vec![0x05, 0x00, 0x00, 0x05, 0x00];
+    repeated.extend(le_f64(1.0));
+    repeated.push(0x02);
+    for program in [partial, repeated] {
+        let bytes = surface_with_six_weight_columns(&program);
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        let surfaces = super::super::a5_surfaces(&bytes, &mut refusal).expect("surface decode");
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(
+            (
+                surfaces[0].geometry.u_count(),
+                surfaces[0].geometry.v_count()
+            ),
+            (2, 6)
+        );
+        let notes = refusal.take_notes();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(
+            notes[0].code.local_code(),
+            "geometry.surface-weights-inferred"
+        );
+        assert!(notes[0].message.contains("A5 surface at offset 0"));
+        assert!(notes[0].message.contains("reflected-column masks"));
+    }
+}
+
+#[test]
+fn established_weight_readings_emit_without_the_extended_assumption() {
+    for control in [3_u16, 7] {
+        let mut program = vec![0x01];
+        program.extend(control.to_le_bytes());
+        program.extend([1.0, 0.8, 0.6].into_iter().flat_map(le_f64));
+        program.push(0x02);
+        let bytes = surface_with_six_weight_columns(&program);
+        let mut refusal = crate::nurbs::LaneRefusals::new();
+        let surfaces = super::super::a5_surfaces(&bytes, &mut refusal).expect("legacy surface");
+        assert_eq!(surfaces.len(), 1);
+        assert!(refusal.take_notes().is_empty());
+    }
+}
+
+#[test]
+fn refused_surface_does_not_claim_emitted_inferred_weights() {
+    let mut program = vec![0x01, 0x01, 0x00];
+    program.extend([1.0, 0.8, 0.6, 0.9, 1.2].into_iter().flat_map(le_f64));
+    program.push(0x02);
+    let mut bytes = surface_with_six_weight_columns(&program);
+    bytes.pop();
+    let length = u32::try_from(bytes.len() - 8).expect("short surface frame");
+    bytes[3..7].copy_from_slice(&length.to_le_bytes());
+    let mut refusal = crate::nurbs::LaneRefusals::new();
+    assert!(super::super::a5_surfaces(&bytes, &mut refusal)
+        .expect("refused surface")
+        .is_empty());
+    assert!(refusal.take_notes().is_empty());
 }

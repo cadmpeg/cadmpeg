@@ -1913,13 +1913,13 @@ fn a5_surface(
         control_points.push(point);
         at += 24;
     }
-    let weights = match mode {
-        0x01 => None,
+    let (weights, inferred_weights) = match mode {
+        0x01 => (None, false),
         0x05 => {
             let Some(weights) = a5_weights(data, &mut at, u_count, v_count, end) else {
                 return Ok(None);
             };
-            Some(weights)
+            (Some(weights.values), weights.inferred)
         }
         _ => return Ok(None),
     };
@@ -1950,6 +1950,9 @@ fn a5_surface(
         && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
     {
         refusal.push_surface_parameters_not_transferred(pos, parameters);
+    }
+    if geometry.is_some() && inferred_weights {
+        refusal.push_surface_weights_inferred(pos);
     }
     Ok(geometry.map(|geometry| FreeformSurface {
         pos,
@@ -2333,18 +2336,32 @@ fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     Some((knots, count))
 }
 
+struct WeightProgram {
+    values: Vec<NonZeroReal>,
+    inferred: bool,
+}
+
 fn a5_weights(
     bytes: &[u8],
     at: &mut usize,
     rows: usize,
     cols: usize,
     end: usize,
-) -> Option<Vec<NonZeroReal>> {
+) -> Option<WeightProgram> {
+    use crate::layout::{
+        surface_weight_repeat_row_prefix as repeat_row, surface_weight_row_prefix as row_prefix,
+        surface_weight_symmetric_03_prefix as symmetric_03,
+        surface_weight_symmetric_07_prefix as symmetric_07,
+    };
+
     let count = rows.checked_mul(cols)?;
     let mut view = View::over_retained(bytes.get(*at..end)?);
-    let first = view.u8()?;
+    let mut peek = view;
+    let first = peek.u8()?;
     let mut weights = Vec::new();
+    let mut inferred = false;
     if first == 0x00 {
+        view.u8()?;
         if count.checked_mul(8)? > view.remaining() {
             return None;
         }
@@ -2352,31 +2369,47 @@ fn a5_weights(
             weights.push(NonZeroReal::new(view.f64_le()?)?);
         }
     } else {
-        for row in 0..rows {
-            let command = if row == 0 { first } else { view.u8()? };
+        for _ in 0..rows {
+            let mut prefix = View::over_retained(view.unread());
+            prefix.seek(row_prefix::COMMAND)?;
+            let command = prefix.u8()?;
             let row_start = weights.len();
             if command == 0x02 {
+                view.u8()?;
                 let previous_start = row_start.checked_sub(cols)?;
                 for column in 0..cols {
                     weights.push(weights[previous_start + column]);
                 }
                 continue;
             }
-            if !matches!(command, 0x01 | 0x05) {
+            if !matches!(
+                command,
+                symmetric_03::COMMAND_VALUE | repeat_row::COMMAND_VALUE
+            ) {
                 return None;
             }
-            let mirror = view.u16_le()?;
-            let repeat = if command == 0x05 {
-                usize::from(view.u16_le()?)
+            prefix.seek(row_prefix::MIRROR)?;
+            let mirror = prefix.u16_le()?;
+            let repeat = if command == repeat_row::COMMAND_VALUE {
+                prefix.seek(repeat_row::LEADING_REPEATS)?;
+                let repeat = usize::from(prefix.u16_le()?);
+                view.take(repeat_row::LEN)?;
+                repeat
             } else {
+                view.take(row_prefix::LEN)?;
                 0
             };
             if repeat >= cols {
                 return None;
             }
+            let symmetric = command == symmetric_03::COMMAND_VALUE
+                && matches!(
+                    mirror,
+                    symmetric_03::CONTROL_VALUE | symmetric_07::CONTROL_VALUE
+                );
+            inferred |= !symmetric;
             for column in 0..cols {
                 let reflected = cols - 1 - column;
-                let symmetric = command == 0x01 && matches!(mirror, 0x0003 | 0x0007);
                 let mirrored = reflected < column
                     && (symmetric
                         || mirror
@@ -2396,7 +2429,10 @@ fn a5_weights(
         }
     }
     *at = end.checked_sub(view.remaining())?;
-    Some(weights)
+    Some(WeightProgram {
+        values: weights,
+        inferred,
+    })
 }
 
 #[cfg(test)]

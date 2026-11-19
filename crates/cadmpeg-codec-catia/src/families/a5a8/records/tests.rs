@@ -1155,6 +1155,7 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
     assert_eq!(
         crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
             |weights| weights
+                .values
                 .into_iter()
                 .map(cadmpeg_ir::scalar::NonZeroReal::get)
                 .collect::<Vec<_>>()
@@ -1178,6 +1179,7 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
     assert_eq!(
         crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()).map(
             |weights| weights
+                .values
                 .into_iter()
                 .map(cadmpeg_ir::scalar::NonZeroReal::get)
                 .collect::<Vec<_>>()
