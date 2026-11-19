@@ -120,9 +120,7 @@ pub(super) fn document_prefix(stream: &str) -> &str {
         .rfind("/occurrence-")
         .and_then(|at| {
             let tail = at + "/occurrence-".len();
-            local[tail..]
-                .find('/')
-                .map(|slash| &local[..tail + slash + 1])
+            local[tail..].find('/').map(|slash| &local[..=tail + slash])
         })
         .unwrap_or("")
 }

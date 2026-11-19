@@ -11,7 +11,8 @@ use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::refs::Member;
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::features::{
-    Feature as LegacyFeature, FeatureDefinition as LegacyDefinition, FeatureEvaluation, FeatureId,
+    DistinctMembers, Feature as LegacyFeature, FeatureContent,
+    FeatureDefinition as LegacyDefinition, FeatureEvaluation, FeatureId,
     FeatureOperation as LegacyOperation, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
@@ -73,11 +74,11 @@ fn legacy(
         ordinal,
         name: Some(key.to_owned()),
         suppressed,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: DistinctMembers::default(),
+        source_properties: BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(LegacyDefinition::Operation(operation)),
         native_ref: Some(format!("{STREAM}:design-parameter-scope#{ordinal}")),
     }
@@ -107,7 +108,7 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
             Some(false),
             LegacyOperation::Native {
                 kind: "Probe".into(),
-                parameters: Default::default(),
+                parameters: BTreeMap::default(),
             },
         ),
     ];
@@ -213,14 +214,14 @@ fn a_referenced_design_is_a_document_of_its_own() {
 #[test]
 fn a_referenced_design_without_a_definition_is_hosted_by_its_enclosing_scope() {
     const OUTER: &str = "xref/role-1/reference-0/occurrence-0/";
-    let scopes = BTreeMap::from([(String::new(), ()), (OUTER.to_owned(), ())]);
+    let scopes = BTreeMap::from([(String::new(), 0_u8), (OUTER.to_owned(), 0)]);
     let inner = format!("{OUTER}xref/role-2/reference-0/occurrence-1/");
     assert_eq!(super::host(&scopes, &inner), OUTER);
     assert_eq!(
         super::host(&scopes, "xref/role-3/reference-0/occurrence-0/"),
         ""
     );
-    assert_eq!(super::host(&BTreeMap::<String, ()>::new(), OUTER), "");
+    assert_eq!(super::host(&BTreeMap::<String, u8>::new(), OUTER), "");
 }
 
 fn definition(id: &str, storage: Storage, bodies: &[&str]) -> ProductDefinition {
@@ -606,7 +607,7 @@ fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
             FeatureId::mint(OWNER).unwrap(),
             ConfigurationFeatureState {
                 evaluation: ConfigurationEvaluation::Suppressed {},
-                dependencies: Default::default(),
+                dependencies: DistinctMembers::default(),
                 definition: LegacyDefinition::Operation(LegacyOperation::Unresolved {
                     family: UnresolvedFamily::Extrude,
                 }),
