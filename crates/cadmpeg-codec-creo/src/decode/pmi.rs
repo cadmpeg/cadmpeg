@@ -7,6 +7,7 @@ mod elements;
 pub(super) mod tags;
 mod targets;
 
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
@@ -304,6 +305,9 @@ pub(super) fn transfer(
                             placement: None,
                             semantics,
                         },
+                        native_ref: None,
+                        native_options: NativeOptions::new(),
+                        source_settings: NativeOptions::new(),
                     });
                 }
                 Ok(_) => {}
@@ -501,6 +505,9 @@ fn datum_system(
                     definition: PmiDefinition::Datum {
                         identification: label.to_owned(),
                     },
+                    native_ref: None,
+                    native_options: NativeOptions::new(),
+                    source_settings: NativeOptions::new(),
                 });
                 state.ids.insert(label.to_owned(), id.clone());
                 id
@@ -537,6 +544,9 @@ fn datum_system(
         visible: None,
         targets: Vec::new(),
         definition: PmiDefinition::DatumSystem { references },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     Ok(Some(id))
 }
@@ -612,8 +622,13 @@ fn push_tolerance(
             } else {
                 Vec::new()
             },
-            constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
+            displacement: None,
+            maximum_upper: None,
+            zones: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     Ok(id)
 }

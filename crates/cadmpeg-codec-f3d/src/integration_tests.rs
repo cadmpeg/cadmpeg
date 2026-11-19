@@ -18,6 +18,7 @@ mod fusion_combine_tools;
 mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;
+mod fusion_surface_revolve;
 mod history_deltas;
 mod history_scale;
 mod inconsistent_records;

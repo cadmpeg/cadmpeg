@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{Dimension, SolverSettings, SolverTarget, SolverValue};
+use super::{SolverSettings, SolverTarget, SolverValue};
 
 rewrite_enum!(SolverTarget, []; {
     Scene {scene},
@@ -13,7 +13,6 @@ rewrite_enum!(SolverTarget, []; {
     PhysicalMaterial {material},
     Articulation {articulation},
 });
-rewrite_scalar!(Dimension);
 rewrite_enum!(SolverValue, []; {
     Bool {value},
     Integer {value},
