@@ -301,6 +301,20 @@ fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_none() {
         panic!("a placed plane");
     };
     assert_eq!(plane.resolved, None);
+    assert!(plane.after.is_empty());
+    let [input] = plane.inputs.as_slice() else {
+        panic!("one support input");
+    };
+    assert_eq!(input.role, None);
+    assert_eq!(input.value, None);
+    assert!(matches!(
+        &input.reference,
+        Some(InputReference::Picks(Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            ..
+        }))
+    ));
 }
 
 #[test]

@@ -5,8 +5,9 @@
 //! A curve's stored end is the point entity of its endpoint record, with a
 //! `Start` or `End` role; a centre a constraint names is a point entity
 //! with a `Center` role. The decoder reads no section's support references,
-//! so a sketch's plane has no inputs and states the stored frame where the
-//! decoder reads one. A relation whose v10 reading has no v11 relation of
+//! so a sketch's plane states the stored frame where the decoder reads one,
+//! and otherwise one input with no role and an `Unread` selection of the
+//! support (§5.9). A relation whose v10 reading has no v11 relation of
 //! the same meaning keeps its operands and values as a `Native` relation.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -14,7 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue, ScalarDimension};
+use cadmpeg_ir::design::construction::{
+    kinds, Construction, ConstructionInput, FrameValue, InputReference, ScalarDimension,
+};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::ops::sketch::{
@@ -22,7 +25,7 @@ use cadmpeg_ir::design::ops::sketch::{
     Operand, Planar, PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity,
     SketchPlane, SketchRelation, SketchSolve,
 };
-use cadmpeg_ir::design::selection::PrincipalEntity;
+use cadmpeg_ir::design::selection::{Anchor, Picks, PrincipalEntity, Selection};
 use cadmpeg_ir::design::units::{Quantity, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -224,11 +227,26 @@ fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
                 z_axis,
             })
         });
+    let inputs = if resolved.is_some() {
+        Vec::new()
+    } else {
+        vec![ConstructionInput {
+            role: None,
+            reference: Some(InputReference::Picks(Selection {
+                at: Anchor::Input,
+                picks: Picks::Unread,
+                native: None,
+            })),
+            value: None,
+            reversed: None,
+        }]
+    };
     Sketch {
         id: sketch.id.clone(),
         owner: owner.clone(),
         name: sketch.name.clone(),
         plane: SketchPlane::Placed(Box::new(Construction::<kinds::Frame> {
+            inputs,
             resolved,
             ..Construction::default()
         })),

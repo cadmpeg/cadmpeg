@@ -3917,6 +3917,17 @@ Offsets are relative to the byte after the two parallel 15-byte body runs. The G
 | 1 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes |
 | 5 | 4 | `pair_count` | `u32` | little | spec | u32 `N`, and `N` pairs of LP-UTF16 GUIDs |
 
+## `timeline_paste_name_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 7 B
+
+Offsets are relative to the byte after the null removal key of a paste object that keeps its sources. The same-segment references start at the end of this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `zero_run_3` | `bytes[3]` | little | spec | before the paired header, three zero bytes |
+| 3 | 4 | `reference_count` | `u32` | little | spec | a u32 reference count, that many same-segment references |
+
 ## `base_feature_wide_zero_body`
 
 Spec §3.1 · layout: byte offsets · size: 63 B
@@ -8287,7 +8298,7 @@ Parsed by:
 | 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
 | 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
 | 34 | 1 | `project_axis` | `u8` | little | spec | and offset 34 stores the Project Axis flag |
-| 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag `1` |
+| 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag: `1` creates a solid body and `0` a surface body. Offset 36 |
 | 36 | 1 | `symmetric` | `u8` | little | spec | Offset 36 stores the Symmetric flag |
 | 37 | 1 | `two_sides` | `u8` | little | spec | offset 37 stores the Two Sides flag |
 | 38 | 1 | `opposite_angle_reference_marker` | `u8` | little | spec | The marked opposite-angle reference starts at offset 38 |
