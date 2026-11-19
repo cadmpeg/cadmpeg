@@ -394,6 +394,9 @@ pub(crate) struct Builder<'a> {
     body_step_refs: HashMap<String, Ref>,
     default_product_definition_shape: Option<Ref>,
     body_shape_refs: HashMap<String, Ref>,
+    /// Bodies of definitions that only split instances placed and that no
+    /// written definition shows: charged once, and written nowhere.
+    omitted_prototype_bodies: HashSet<cadmpeg_ir::ids::BodyId>,
     pub(crate) body_item_refs: HashMap<String, Vec<Ref>>,
     advanced_brep_items: std::collections::HashSet<Ref>,
     /// Geometric sets of bounded surfaces that stand for sheet bodies.
@@ -638,6 +641,7 @@ impl<'a> Builder<'a> {
             body_step_refs: HashMap::new(),
             default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
+            omitted_prototype_bodies: HashSet::new(),
             body_item_refs: HashMap::new(),
             advanced_brep_items: std::collections::HashSet::new(),
             surface_set_items: std::collections::HashSet::new(),
@@ -712,6 +716,11 @@ impl<'a> Builder<'a> {
         }
         let context = self.emit_context();
 
+        self.omitted_prototype_bodies = instances::lower(self.ir)
+            .omitted
+            .into_iter()
+            .flat_map(|(_, bodies)| bodies)
+            .collect();
         let mut emitted_items = self.emit_shape_items(context);
         let standalone_items = self.emit_standalone_geometry();
         emitted_items.extend(standalone_items.iter().copied());
@@ -1883,6 +1892,9 @@ impl<'a> Builder<'a> {
         let mut items = Vec::new();
         let ir = self.ir;
         for region in &ir.geometry.regions {
+            if self.omitted_prototype_bodies.contains(&region.body) {
+                continue;
+            }
             let body_kind = self
                 .bodies
                 .get(region.body.as_str())
@@ -5636,7 +5648,10 @@ impl<'a> Builder<'a> {
             .geometry
             .bodies
             .iter()
-            .filter(|body| !self.body_shape_refs.contains_key(body.id.as_str()))
+            .filter(|body| {
+                !self.body_shape_refs.contains_key(body.id.as_str())
+                    && !self.omitted_prototype_bodies.contains(&body.id)
+            })
             .count();
         let omitted_shells = self
             .ir

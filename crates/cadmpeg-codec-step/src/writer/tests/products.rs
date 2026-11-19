@@ -970,6 +970,7 @@ fn writer_charges_the_body_of_a_prototype_no_instance_shows() {
         "no definition shows a body: {:#?}",
         decoded.model.product_definitions
     );
+    assert!(decoded.geometry.bodies.is_empty());
 }
 
 /// The root moves the component of its only sub-assembly to `(5, 0, 0)`.
