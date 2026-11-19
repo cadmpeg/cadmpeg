@@ -296,6 +296,12 @@ pub(crate) enum F3dLossCode {
     /// Decal timeline objects retain native image and mapping records.
     DecalNativeRetained,
     DecalMappingAssumed,
+    /// A Decal with a decoded placement record keeps its frame in the native record.
+    DecalPlacementNative,
+    /// A Decal placement record is read in a trailing-reference layout other than the one-byte separator and four-byte gap.
+    DecalPlacementLayoutAssumed,
+    /// A Decal placement record stores a normal outside the direction of `U x V` and its opposite.
+    DecalPlacementNormalAssumed,
     DecalTargetUnresolved,
     DecalImageUnresolved,
     DecalDefinitionUnresolved,
@@ -791,6 +797,10 @@ pub(crate) enum F3dLossCode {
     /// A tool of an operand-list Combine names a body that another component
     /// builds, and the generating feature is not proven.
     FeatureCombineToolBodyUnbound,
+    /// The browser node of an operand-list Combine operand names no distinct
+    /// body of the preceding history state, so that operand does not bind
+    /// through its node.
+    FeatureCombineOperandBodyUnbound,
     /// A Combine frame that matches the fixed fields of the operand-list
     /// prologue is read in the standard prologue.
     FeatureCombinePrologueAssumed,
@@ -1303,6 +1313,9 @@ impl F3dLossCode {
         Self::ReferenceImageFlagAssumed,
         Self::DecalNativeRetained,
         Self::DecalMappingAssumed,
+        Self::DecalPlacementNative,
+        Self::DecalPlacementLayoutAssumed,
+        Self::DecalPlacementNormalAssumed,
         Self::DecalTargetUnresolved,
         Self::DecalImageUnresolved,
         Self::DecalDefinitionUnresolved,
@@ -1652,6 +1665,7 @@ impl F3dLossCode {
         Self::FeatureCombineComponentDestinationAssumed,
         Self::FeatureCombineNamedTailPrologueAssumed,
         Self::FeatureCombineToolBodyUnbound,
+        Self::FeatureCombineOperandBodyUnbound,
         Self::FeatureCombinePrologueAssumed,
         Self::FeatureCombineKeptToolsCutAssumed,
         Self::FeatureCombineOperandListRefused,
@@ -2073,6 +2087,9 @@ impl F3dLossCode {
             Self::ReferenceImageFlagAssumed => "appearance.reference-image-flag-assumed",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::DecalMappingAssumed => "appearance.decal-mapping-assumed",
+            Self::DecalPlacementNative => "appearance.decal-placement-native",
+            Self::DecalPlacementLayoutAssumed => "appearance.decal-placement-layout-assumed",
+            Self::DecalPlacementNormalAssumed => "appearance.decal-placement-normal-assumed",
             Self::DecalTargetUnresolved => "appearance.decal-target-unresolved",
             Self::DecalImageUnresolved => "appearance.decal-image-unresolved",
             Self::DecalDefinitionUnresolved => "appearance.decal-definition-unresolved",
@@ -2653,6 +2670,7 @@ impl F3dLossCode {
                 "feature.combine-named-tail-prologue-assumed"
             }
             Self::FeatureCombineToolBodyUnbound => "feature.combine-tool-body-unbound",
+            Self::FeatureCombineOperandBodyUnbound => "feature.combine-operand-body-unbound",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
             Self::FeatureCombineKeptToolsCutAssumed => "feature.combine-kept-tools-cut-assumed",
             Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
@@ -3101,6 +3119,9 @@ impl F3dLossCode {
             | Self::HistoryOnlyBodyOmitted
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
+            | Self::DecalPlacementNative
+            | Self::DecalPlacementLayoutAssumed
+            | Self::DecalPlacementNormalAssumed
             | Self::DecalTargetUnresolved
             | Self::DecalImageUnresolved
             | Self::DecalDefinitionUnresolved
@@ -3448,6 +3469,7 @@ impl F3dLossCode {
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
+            | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
@@ -4112,6 +4134,7 @@ impl F3dLossCode {
             | Self::FeatureCombineComponentDestinationAssumed
             | Self::FeatureCombineNamedTailPrologueAssumed
             | Self::FeatureCombineToolBodyUnbound
+            | Self::FeatureCombineOperandBodyUnbound
             | Self::FeatureCombinePrologueAssumed
             | Self::FeatureCombineKeptToolsCutAssumed
             | Self::FeatureCombineOperandListRefused
@@ -4270,6 +4293,9 @@ impl F3dLossCode {
             | Self::ReferenceImageFlagAssumed
             | Self::DecalNativeRetained
             | Self::DecalMappingAssumed
+            | Self::DecalPlacementNative
+            | Self::DecalPlacementLayoutAssumed
+            | Self::DecalPlacementNormalAssumed
             | Self::DecalTargetUnresolved
             | Self::DecalImageUnresolved
             | Self::DecalDefinitionUnresolved
@@ -4545,6 +4571,9 @@ mod tests {
                 "appearance.reference-image-flag-assumed",
                 "appearance.decal-native",
                 "appearance.decal-mapping-assumed",
+                "appearance.decal-placement-native",
+                "appearance.decal-placement-layout-assumed",
+                "appearance.decal-placement-normal-assumed",
                 "appearance.decal-target-unresolved",
                 "appearance.decal-image-unresolved",
                 "appearance.decal-definition-unresolved",
@@ -4894,6 +4923,7 @@ mod tests {
                 "feature.combine-component-destination-assumed",
                 "feature.combine-named-tail-prologue-assumed",
                 "feature.combine-tool-body-unbound",
+                "feature.combine-operand-body-unbound",
                 "feature.combine-prologue-assumed",
                 "feature.combine-kept-tools-cut-assumed",
                 "feature.combine-operand-list-refused",
