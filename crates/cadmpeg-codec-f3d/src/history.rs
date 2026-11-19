@@ -1909,7 +1909,7 @@ pub(crate) fn bind_feature_outputs(
             outputs,
         );
         if stored_bodies::bound_result_bodies(feature).is_some()
-            || stored_bodies::is_base_feature_copy(feature, scopes)
+            || stored_bodies::has_projection_bound_base_feature_outputs(feature, scopes)
         {
             continue;
         }
