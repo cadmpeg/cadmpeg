@@ -87,7 +87,7 @@ pub enum OrderedKind {
     /// A history of any number of bodies.
     Timeline,
     /// An ordered container whose solid features build one body and act on
-    /// it (a FreeCAD PartDesign Body, a CATIA body).
+    /// it (a `FreeCAD` `PartDesign` body, a CATIA body).
     Body,
     /// A CATIA ordered geometrical set: wireframe and surface features in
     /// order, each result a body of its own.
