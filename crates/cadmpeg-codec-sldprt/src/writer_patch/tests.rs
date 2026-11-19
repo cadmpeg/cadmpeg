@@ -264,7 +264,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     };
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
+    crate::test_support::write_retained_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -340,7 +340,7 @@ fn native_patch_edits_points_without_dropping_untyped_surfaces() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
+    crate::test_support::write_retained_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -417,7 +417,7 @@ fn native_patch_requires_point_provenance_annotation() {
         .provenance
         .remove(&point_id);
 
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::write_retained(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),
@@ -511,7 +511,7 @@ fn native_patch_edits_analytic_carriers_beside_untyped_surfaces() {
     }
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
+    crate::test_support::write_retained_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -750,7 +750,7 @@ fn opaque_curve_is_retained_and_does_not_block_point_edits() {
         .expect("a finite position is a point"),
     );
     let mut encoded = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
+    crate::test_support::write_retained_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,
@@ -868,7 +868,7 @@ fn native_patch_refuses_a_baseline_its_own_decoder_refuses() {
         )
         .expect("the source image record was removed first");
 
-    let error = crate::test_support::plan_inherited_write(
+    let error = crate::test_support::write_retained(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut Vec::new(),

@@ -187,6 +187,44 @@ fn a_synthesized_export_states_the_target_it_wrote() {
     }
 }
 
+/// A retained record marked `untyped` holds content the document does not, so
+/// an unedited document is synthesized rather than replayed (§3.4).
+#[test]
+fn an_unrepresented_source_is_synthesized_rather_than_replayed() {
+    let mut decoded = EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+            .expect("point fixture decodes"),
+    );
+    decoded
+        .source_fidelity_mut()
+        .mark_untyped(
+            crate::SOURCE_IMAGE_ID,
+            [cadmpeg_core::decode::ArenaClass::Model],
+        )
+        .expect("the decode retains its source image");
+    for request in [
+        TargetRequest::Inherit,
+        TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+    ] {
+        let plan = IgesCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                request,
+            )
+            .expect("an unrepresented source plans");
+        assert!(matches!(
+            plan.report().write_path(),
+            WritePath::Synthesized { .. }
+        ));
+        let reason = degraded_reason(&plan, "an unrepresented source must degrade");
+        assert!(
+            reason.starts_with("source unrepresented: retained IGES source records hold model"),
+            "{reason}"
+        );
+    }
+}
+
 #[test]
 fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
     let decoded = EditableDecodeResult::from(

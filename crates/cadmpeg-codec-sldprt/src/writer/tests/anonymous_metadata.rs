@@ -38,16 +38,13 @@ fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
             .unwrap();
         let mut decoded = EditableDecodeResult::from(decoded);
         let mut replay = Vec::new();
-        let path = crate::test_support::plan_inherited_write(
+        let path = crate::test_support::write_retained(
             decoded.ir(),
             decoded.source_fidelity(),
             &mut replay,
         )
         .unwrap();
-        assert!(matches!(
-            path,
-            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
-        ));
+        assert_eq!(path, cadmpeg_ir::codec::write::WritePath::VerbatimReplay);
         assert_eq!(replay, source);
         {
             let mut ir = decoded.ir_mut();
@@ -63,7 +60,7 @@ fn anonymous_metadata_replays_but_only_a_real_named_owner_can_be_edited() {
             values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
         }
         let mut written = Vec::new();
-        let result = crate::test_support::plan_inherited_write(
+        let result = crate::test_support::write_retained(
             decoded.ir(),
             decoded.source_fidelity(),
             &mut written,

@@ -642,7 +642,7 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
     );
 
     let mut encoded = Vec::new();
-    crate::test_support::plan_fixture_write_with_native_envelope(
+    crate::test_support::write_retained_with_native_envelope(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut encoded,

@@ -12,7 +12,7 @@ use std::path::Path;
 use cadmpeg_core::decode::{DecodeDepth, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
-use cadmpeg_ir::codec::DecodeFailure;
+use cadmpeg_ir::codec::{DecodeFailure, FormatId};
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use cadmpeg_registry::Format;
 use serde::Serialize;
@@ -193,8 +193,10 @@ pub(crate) enum RefusalCode {
     ExportLossRejected,
     /// The encoder cannot write the dialect `--to` named.
     UnsupportedTarget,
-    /// The document records less of its source than the encoder plans from.
+    /// The document records less of its source than measurement needs.
     InsufficientDepth,
+    /// A container-only decode was asked for an output other than CADIR.
+    ContainerOnlyOutput,
     /// The selected format has no encoder in this build.
     UnsupportedOutputFormat,
     /// Binary container would stream to stdout without `--binary-stdout`.
@@ -211,9 +213,10 @@ impl RefusalCode {
             }
             Self::CheckFailed => (RefusalStage::Check, 1),
             Self::ExportLossRejected => (RefusalStage::Export, 1),
-            Self::UnsupportedTarget | Self::InsufficientDepth | Self::UnsupportedOutputFormat => {
-                (RefusalStage::Plan, 1)
-            }
+            Self::UnsupportedTarget
+            | Self::InsufficientDepth
+            | Self::ContainerOnlyOutput
+            | Self::UnsupportedOutputFormat => (RefusalStage::Plan, 1),
             Self::BinaryStdoutRejected => (RefusalStage::Plan, 2),
         };
         RefusalDisposition { stage, exit_code }
@@ -232,6 +235,7 @@ impl fmt::Display for RefusalCode {
             Self::ExportLossRejected => "export_loss_rejected",
             Self::UnsupportedTarget => "unsupported_target",
             Self::InsufficientDepth => "insufficient_depth",
+            Self::ContainerOnlyOutput => "container_only_output",
             Self::UnsupportedOutputFormat => "unsupported_output_format",
             Self::BinaryStdoutRejected => "binary_stdout_rejected",
         })
@@ -358,16 +362,10 @@ pub(crate) enum ConversionRefusal {
         /// Validation report available for an optional `--report`.
         validation: ValidationReport,
     },
-    /// The document records less of its source than the encoder plans from.
-    InsufficientDepth {
-        /// Output format of the refusing encoder.
-        format: &'static str,
-        /// The depth the encoder needs and the depth the document records.
-        depth: DepthReport,
-        /// Decode report available for an optional `--report`.
-        decode_report: Option<DecodeReport>,
-        /// Validation report available for an optional `--report`.
-        validation: ValidationReport,
+    /// `--container-only` was given with an output other than CADIR.
+    ContainerOnlyOutput {
+        /// The output format asked for.
+        format: FormatId,
     },
     /// Binary container would write to stdout without an override.
     BinaryStdoutRejected {
@@ -417,7 +415,7 @@ enum RefusalDetail<'a> {
     Dialects(&'a DialectLayers),
     /// The encoder's typed target refusal and catalog.
     Target(&'a TargetRefusal),
-    /// The depth the encoder needs and the depth the document records.
+    /// The depth measurement needs and the depth the document records.
     Depth(DepthReport),
 }
 
@@ -626,23 +624,13 @@ impl ConversionRefusal {
                     export: None,
                 },
             },
-            Self::InsufficientDepth {
-                format,
-                depth,
-                decode_report,
-                validation,
-            } => RefusalEvidence {
-                code: RefusalCode::InsufficientDepth,
+            Self::ContainerOnlyOutput { format } => RefusalEvidence {
+                code: RefusalCode::ContainerOnlyOutput,
                 message: Cow::Owned(format!(
-                    "the {format} encoder needs a {}-depth decode, but the document records {} depth",
-                    depth.needed, depth.recorded
+                    "--container-only permits CADIR output only; {format} was asked for"
                 )),
-                detail: Some(RefusalDetail::Depth(*depth)),
-                reports: RefusalReports {
-                    decode: decode_report.as_ref(),
-                    check: Some(validation),
-                    export: None,
-                },
+                detail: None,
+                reports: RefusalReports::default(),
             },
             Self::BinaryStdoutRejected { message } => RefusalEvidence {
                 code: RefusalCode::BinaryStdoutRejected,
@@ -795,31 +783,19 @@ mod tests {
     }
 
     #[test]
-    fn an_insufficient_depth_refusal_reports_both_depths_at_plan() {
-        let refusal = ConversionRefusal::InsufficientDepth {
-            format: "f3d",
-            depth: DepthReport {
-                needed: DecodeDepth::Full,
-                recorded: DecodeDepth::Geometry,
-            },
-            decode_report: None,
-            validation: ValidationReport {
-                entity_counts: BTreeMap::new(),
-                findings: Vec::new(),
-                losses: Vec::new(),
-            },
+    fn a_container_only_output_refusal_names_the_format_at_plan() {
+        let refusal = ConversionRefusal::ContainerOnlyOutput {
+            format: cadmpeg_ir::codec::FormatId::new("step"),
         };
-        assert_eq!(refusal.code(), RefusalCode::InsufficientDepth);
+        assert_eq!(refusal.code(), RefusalCode::ContainerOnlyOutput);
         assert_eq!(refusal.exit_code(), 1);
         assert_eq!(
             refusal.to_string(),
-            "the f3d encoder needs a full-depth decode, but the document records geometry depth"
+            "--container-only permits CADIR output only; step was asked for"
         );
         let report = report_value(&refusal);
-        assert_eq!(report["code"], "insufficient_depth");
+        assert_eq!(report["code"], "container_only_output");
         assert_eq!(report["stage"], "plan");
-        assert_eq!(report["depth"]["needed"], "full");
-        assert_eq!(report["depth"]["recorded"], "geometry");
     }
 
     #[test]

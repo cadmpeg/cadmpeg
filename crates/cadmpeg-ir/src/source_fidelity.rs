@@ -422,7 +422,9 @@ pub const fn arena_class_name(class: ArenaClass) -> &'static str {
     }
 }
 
-fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
+/// Returns the sidecar wire names of `classes`, comma-separated, for a message.
+#[must_use]
+pub fn class_list(classes: &BTreeSet<ArenaClass>) -> String {
     classes
         .iter()
         .map(|class| arena_class_name(*class))

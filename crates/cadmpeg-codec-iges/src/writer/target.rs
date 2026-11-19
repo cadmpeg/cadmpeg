@@ -7,6 +7,7 @@ use cadmpeg_ir::codec::write::{
     ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
+use cadmpeg_ir::source_fidelity::class_list;
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
 use crate::loss::IgesLossCode;
@@ -187,6 +188,16 @@ fn replay_bytes(ir: &CadIr, fidelity: Option<&SourceFidelity>) -> Result<Replay,
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
     let record = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID));
+    let unrepresented = fidelity
+        .map(SourceFidelity::unrepresented)
+        .unwrap_or_default();
+    if !unrepresented.is_empty() {
+        return Ok(Replay::Declined(DeclineReason::Rejected(format!(
+            "source unrepresented: retained IGES source records hold {} content the document \
+             does not represent; byte replay skipped",
+            class_list(&unrepresented)
+        ))));
+    }
     let Some(expected) = source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE) else {
         return Ok(Replay::declined_for_record(
             record,

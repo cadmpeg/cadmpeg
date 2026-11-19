@@ -466,6 +466,48 @@ fn every_preserved_write_re_decodes_as_the_dialect_the_report_named() {
     }
 }
 
+/// A sidecar that marks a retained record `untyped` bars the patch (§3.4),
+/// and this writer regenerates no `Document.xml`, so the write is refused by
+/// target; without the marked record the same document patches.
+#[test]
+fn an_untyped_retained_record_refuses_the_patch() {
+    let decoded = decode_at(DecodeDepth::Full);
+    let (ir, _, mut fidelity) = decoded.into_parts();
+    let plan = |fidelity: &cadmpeg_ir::SourceFidelity| {
+        Encoder::plan(
+            &FcstdCodec,
+            EncodeInput::new(&ir, Some(fidelity)),
+            TargetRequest::Inherit,
+        )
+    };
+    assert!(matches!(
+        plan(&fidelity)
+            .expect("an unmarked sidecar patches")
+            .report()
+            .write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    fidelity
+        .insert_retained_record(
+            "fcstd:test:skipped#0"
+                .to_owned()
+                .try_into()
+                .expect("record id"),
+            cadmpeg_ir::RetainedSourceRecord::whole("", b"skipped".to_vec())
+                .with_untyped([cadmpeg_core::decode::ArenaClass::Design]),
+        )
+        .expect("a new record id");
+    let Err(CodecError::UnsupportedTarget(refusal)) = plan(&fidelity) else {
+        panic!("a marked sidecar must refuse the patch by target");
+    };
+    assert!(
+        refusal
+            .to_string()
+            .contains("hold design content the document does not represent"),
+        "{refusal}"
+    );
+}
+
 fn decode_at(depth: DecodeDepth) -> cadmpeg_ir::DecodeResult {
     FcstdCodec
         .decode(
@@ -496,10 +538,11 @@ fn only_a_full_decode_records_the_digest() {
     }
 }
 
-/// A document below `Full` has no digest to compare, so the depth gate must
-/// refuse it, edited or not, before the writer looks for a baseline.
+/// `plan` refuses no document for its scope, and a document below `Full` has
+/// no digest to compare, so the writer refuses it for the missing baseline,
+/// edited or not.
 #[test]
-fn a_document_below_full_is_refused_by_depth_edited_or_not() {
+fn a_document_below_full_is_refused_by_the_writer_edited_or_not() {
     for depth in [DecodeDepth::Geometry, DecodeDepth::Container] {
         let decoded = decode_at(depth);
         let mut edited = decoded.ir().clone();
@@ -513,14 +556,13 @@ fn a_document_below_full_is_refused_by_depth_edited_or_not() {
                 "yes".to_owned(),
             );
         for ir in [decoded.ir(), &edited] {
-            let Err(CodecError::InsufficientDepth {
-                needed, recorded, ..
-            }) = inherit(ir)
-            else {
-                panic!("a {depth} document must be refused for its depth");
+            let Err(CodecError::NotImplemented(message)) = inherit(ir) else {
+                panic!("a {depth} document must be refused for its missing baseline");
             };
-            assert_eq!(needed, DecodeDepth::Full);
-            assert_eq!(recorded, depth);
+            assert!(
+                message.contains(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
+                "{message}"
+            );
         }
     }
 }

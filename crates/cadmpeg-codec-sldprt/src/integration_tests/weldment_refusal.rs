@@ -148,7 +148,7 @@ fn malformed_auxiliary_owner_still_allows_exact_native_passthrough() {
             .unwrap(),
     );
     let mut output = Vec::new();
-    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut output)
+    crate::test_support::write_retained(decoded.ir(), decoded.source_fidelity(), &mut output)
         .unwrap();
     assert_eq!(output, bytes);
 }

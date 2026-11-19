@@ -180,8 +180,24 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
                 .retained_records()
                 .values()
                 .any(|record| record.data() == Some(changed.as_slice())));
+            // The given-up entry is untyped, so `plan` does not replay the
+            // archive; the retained path still holds it byte for byte.
+            assert!(!decoded.source_fidelity().unrepresented().is_empty());
+            let planned = crate::test_support::plan_inherited_write(
+                decoded.ir(),
+                decoded.source_fidelity(),
+                &mut Vec::new(),
+            );
+            assert!(
+                !matches!(
+                    planned,
+                    Ok(cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+                        | cadmpeg_ir::report::export::WritePath::Patched { .. })
+                ),
+                "{planned:?}"
+            );
             let mut replayed = Vec::new();
-            crate::test_support::plan_inherited_write(
+            crate::test_support::write_retained(
                 decoded.ir(),
                 decoded.source_fidelity(),
                 &mut replayed,

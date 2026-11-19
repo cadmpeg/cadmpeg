@@ -938,7 +938,7 @@ fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() 
         if format == "sldprt" {
             fs::write(
                 &native,
-                include_bytes!("../../../cadmpeg-codec-sldprt/tests/golden/fixtures/authored_complete_planar.sldprt"),
+                include_bytes!("../../../cadmpeg-codec-sldprt/tests/golden/fixtures/archive_parameter_scalar.sldprt"),
             ).unwrap();
         } else {
             let cube = fixture(

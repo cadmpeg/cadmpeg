@@ -3,7 +3,9 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{
+    ArenaClass, DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
@@ -128,15 +130,27 @@ fn the_patch_path_refuses_a_source_whose_design_intent_was_contained() {
 
     inject_failure(malformed_design);
     let contained = decode(design_archive());
+    assert!(contained
+        .source_fidelity()
+        .unrepresented()
+        .contains(&ArenaClass::Design));
     let edited = moved_first_point(&contained);
-    inject_failure(malformed_design);
+    // The sidecar marks the design the document does not hold, so `plan`
+    // does not patch, and the generator cannot synthesize the archive.
     let refused = F3dCodec
         .plan(
             EncodeInput::new(&edited, Some(contained.source_fidelity())),
             TargetRequest::Inherit,
         )
         .map(|_| ());
+    assert!(
+        matches!(&refused, Err(CodecError::NotImplemented(message)) if message.starts_with("source-less F3D")),
+        "{refused:?}"
+    );
 
+    inject_failure(malformed_design);
+    let refused =
+        crate::test_support::write_retained(&edited, contained.source_fidelity(), &mut Vec::new());
     assert!(
         matches!(
             &refused,
@@ -148,19 +162,26 @@ fn the_patch_path_refuses_a_source_whose_design_intent_was_contained() {
 }
 
 #[test]
-fn an_unedited_contained_document_replays_its_source_bytes() {
+fn an_unedited_contained_document_is_not_replayed() {
     let source = design_archive();
     inject_failure(malformed_design);
     let contained = decode(source.clone());
 
-    let mut replayed = Vec::new();
-    crate::test_support::plan_inherited_write(
+    let mut written = Vec::new();
+    let refused = crate::test_support::plan_inherited_write(
         contained.ir(),
         contained.source_fidelity(),
-        &mut replayed,
-    )
-    .expect("an unedited contained document replays");
+        &mut written,
+    );
+    assert!(
+        matches!(&refused, Err(CodecError::NotImplemented(message)) if message.starts_with("source-less F3D")),
+        "{refused:?}"
+    );
+    assert!(written.is_empty());
 
+    let mut replayed = Vec::new();
+    crate::test_support::write_retained(contained.ir(), contained.source_fidelity(), &mut replayed)
+        .expect("the retained path replays an unedited contained document");
     assert_eq!(replayed, source);
 }
 

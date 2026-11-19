@@ -168,10 +168,11 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .any(|loss| { loss["code"]["value"]["code"] == "export.no-geometry-written" }));
 }
 
-/// A container-only document is shallower than a geometry encoder plans from.
+/// `--container-only` permits CADIR output only: any other output refuses at
+/// plan, before anything is written.
 #[cfg(all(feature = "creo", feature = "step"))]
 #[test]
-fn convert_refuses_container_only_geometry_at_its_depth() {
+fn convert_refuses_a_container_only_non_cadir_output() {
     let dir = tempdir().unwrap();
     let input = geometryless_creo(dir.path(), "empty.prt");
     let report = dir.path().join("depth.json");
@@ -190,13 +191,34 @@ fn convert_refuses_container_only_geometry_at_its_depth() {
         .code(1)
         .stdout(predicate::str::is_empty())
         .stderr(predicate::str::contains(
-            "the step encoder needs a geometry-depth decode, but the document records container depth",
+            "--container-only permits CADIR output only; step was asked for",
         ));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
     assert_eq!(value["refusal"]["stage"], "plan");
-    assert_eq!(value["refusal"]["code"], "insufficient_depth");
-    assert_eq!(value["refusal"]["depth"]["needed"], "geometry");
-    assert_eq!(value["refusal"]["depth"]["recorded"], "container");
+    assert_eq!(value["refusal"]["code"], "container_only_output");
+}
+
+/// A container-only decode written as CADIR is the one output
+/// `--container-only` admits.
+#[cfg(feature = "creo")]
+#[test]
+fn convert_writes_a_container_only_cadir_output() {
+    let dir = tempdir().unwrap();
+    let input = geometryless_creo(dir.path(), "empty.prt");
+    let output = dir.path().join("empty.cadir.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--container-only",
+        ])
+        .assert()
+        .success();
+    let written: serde_json::Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+    assert_eq!(written["scope"]["model"], false);
 }
 
 /// The format half of `--to` is checked before the input is opened.

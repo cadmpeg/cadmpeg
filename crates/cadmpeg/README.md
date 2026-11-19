@@ -147,7 +147,7 @@ its reason. STEP imports these declarations; CADIR preserves them.
 
 `--container-only` stops native decoding before geometry and records container
 depth. It is useful for container diagnostics. `convert` writes such a document
-to CADIR only: every other output refuses it (`insufficient_depth`, exit 1).
+to CADIR only: every other output refuses it (`container_only_output`, exit 1).
 
 ## Read raw bytes
 

@@ -21,6 +21,34 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// Writes `ir` by the retained-record path: replay while the baseline holds,
+/// the semantic patch otherwise.
+///
+/// `plan` takes this path only where no retained record is `untyped`, and
+/// most fixtures hold untyped records. Tests of the path's mechanics call
+/// this; [`plan_inherited_write`] states what `plan` does with the fixture.
+pub(crate) fn write_retained(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+    writer: &mut dyn Write,
+) -> Result<cadmpeg_ir::codec::write::WritePath, CodecError> {
+    let records = crate::source_records(ir, fidelity)?;
+    let written =
+        SldprtCodec::write_preserved_with_annotations(ir, &fidelity.annotations, &records, writer)?;
+    Ok(written.path())
+}
+
+/// [`write_retained`] with the authored native envelope that
+/// [`plan_fixture_with_native_envelope`] supplies.
+pub(crate) fn write_retained_with_native_envelope(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+    writer: &mut dyn Write,
+) -> Result<cadmpeg_ir::codec::write::WritePath, CodecError> {
+    let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
+    write_retained(&ir, &fidelity, writer)
+}
+
 /// Supply an authored native envelope for semantic fixture assertions.
 pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,
@@ -129,8 +157,15 @@ pub(crate) fn serialize_history_in_native_envelope_after_refusal(
 ) -> Result<cadmpeg_core::dialect::DialectId, CodecError> {
     let (ir, fidelity) = fixture_native_envelope_context(EncodeInput::new(ir, Some(fidelity)))?;
     let error = plan_inherited_write(&ir, &fidelity, &mut Vec::new()).unwrap_err();
+    // A fixture with an untyped retained record is neither patched nor
+    // replayed, and its synthesis declines what it has not built.
+    let expected = if fidelity.unrepresented().is_empty() {
+        "SLDPRT writer cannot regenerate B-rep after"
+    } else {
+        ""
+    };
     assert!(
-        matches!(&error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
+        matches!(&error, CodecError::NotImplemented(detail) if detail.starts_with(expected)),
         "{error}"
     );
     let records = crate::source_records(&ir, &fidelity)?;

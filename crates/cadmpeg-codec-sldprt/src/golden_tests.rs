@@ -20,8 +20,9 @@ use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
 use cadmpeg_test_support::roundtrip::{
-    mutation_roundtrip, semantic_roundtrip, verbatim_replay_holds, ExpectedWritePath,
-    MutationOutcome, SemanticOutcome,
+    mutation_roundtrip, semantic_roundtrip, unrepresented_source_is_not_reused,
+    verbatim_replay_holds, ExpectedWritePath, MutationOutcome, SemanticOutcome,
+    UnrepresentedOutcome,
 };
 
 use super::SldprtCodec;
@@ -137,16 +138,48 @@ fn golden_output_is_deterministic() {
     harness().check_determinism(&branches());
 }
 
+/// Whether the decode of `bytes` marks a retained record `untyped`, so that
+/// `plan` neither patches nor replays it.
+fn decodes_unrepresented(bytes: &[u8]) -> bool {
+    !SldprtCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .expect("committed fixture decodes")
+        .source_fidelity()
+        .unrepresented()
+        .is_empty()
+}
+
 /// Every fixture survives a decode and comes back byte for byte through the
-/// verbatim-replay path.
+/// verbatim-replay path, except a fixture whose decode keeps bytes it did not
+/// decode: that one is neither replayed nor patched, and the writer, which
+/// cannot synthesize without the retained records, refuses it.
 #[test]
 fn fixtures_replay_verbatim() {
+    let mut replayed = 0usize;
     for (name, bytes) in harness().fixture_inputs() {
         if frozen_invalid_cache_fixture(&name, &bytes) {
             continue;
         }
-        verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+        if name == "body_history" {
+            assert_legacy_history_preconditions(&bytes);
+            continue;
+        }
+        if decodes_unrepresented(&bytes) {
+            match unrepresented_source_is_not_reused(&SldprtCodec, &name, &bytes) {
+                UnrepresentedOutcome::Refused { error } => assert!(
+                    matches!(error, CodecError::NotImplemented(_)),
+                    "fixture `{name}`: {error}"
+                ),
+                UnrepresentedOutcome::Synthesized { .. } => {
+                    panic!("fixture `{name}`: the SLDPRT writer has no source-less synthesis")
+                }
+            }
+        } else {
+            verbatim_replay_holds(&SldprtCodec, &name, &bytes);
+            replayed += 1;
+        }
     }
+    assert!(replayed > 0, "no fixture replays verbatim");
 }
 
 /// The semantic write path either reproduces a fixture's document or declares
@@ -174,28 +207,45 @@ fn fixtures_survive_the_semantic_write_path() {
         }
         let expected = neutral_document(&bytes);
         let source = bytes.clone();
-        semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
-            SemanticOutcome::Written { report, bytes, .. } => {
-                written_count += 1;
-                assert!(
-                    matches!(report.write_path(), WritePath::Patched { .. }),
-                    "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
-                );
-                if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
-                    panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
-                }
-                if written_measures_agree(&name, &source, bytes) {
-                    measured_count += 1;
-                }
+        let mut written = |patched: bool, bytes: &[u8]| {
+            written_count += 1;
+            assert!(
+                patched,
+                "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
+            );
+            if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
+                panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
             }
-            SemanticOutcome::Refused { error } => {
-                assert!(
+            if written_measures_agree(&name, &source, bytes) {
+                measured_count += 1;
+            }
+        };
+        let refused = |error: &CodecError| {
+            assert!(
                 matches!(error, CodecError::NotImplemented(_)),
                 "fixture `{name}`: the semantic writer may decline an edit it has not built, but this \
                  refusal reports a defect in what it already retains: {error}"
             );
+        };
+        if decodes_unrepresented(&bytes) {
+            match semantic_write_below_the_gate(&bytes) {
+                Ok((path, bytes)) => written(
+                    matches!(path, cadmpeg_ir::codec::write::WritePath::Patched { .. }),
+                    &bytes,
+                ),
+                Err(error) => refused(&error),
             }
-        });
+        } else {
+            semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
+                SemanticOutcome::Written { report, bytes, .. } => {
+                    written(
+                        matches!(report.write_path(), WritePath::Patched { .. }),
+                        bytes,
+                    );
+                }
+                SemanticOutcome::Refused { error } => refused(error),
+            });
+        }
     }
     assert!(
         written_count > 0,
@@ -206,6 +256,32 @@ fn fixtures_survive_the_semantic_write_path() {
         measured_count >= MEASURED_FIXTURE_FLOOR,
         "fewer fixtures than the floor measure a comparable body through the semantic writer"
     );
+}
+
+/// The semantic writer over `bytes` with its baseline removed, run below
+/// `plan`'s `untyped` gate.
+///
+/// `plan` neither patches nor replays a fixture whose decode marks a retained
+/// record `untyped`. For such a fixture this lane reaches the writer directly,
+/// and covers what the writer does once those records are typed.
+fn semantic_write_below_the_gate(
+    bytes: &[u8],
+) -> Result<(cadmpeg_ir::codec::write::WritePath, Vec<u8>), CodecError> {
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .expect("committed fixture decodes");
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    ir.source
+        .as_mut()
+        .and_then(|source| {
+            source
+                .attributes
+                .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
+        })
+        .expect("the decode stamps its baseline");
+    let mut written = Vec::new();
+    let path = crate::test_support::write_retained(&ir, &fidelity, &mut written)?;
+    Ok((path, written))
 }
 
 /// Written fixtures whose measures the semantic write lane compares, the
@@ -286,6 +362,9 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
             assert_legacy_history_preconditions(&bytes);
             continue;
         }
+        // A fixture with an untyped retained record is not patched, so its
+        // edit reaches the synthesis, which declines what it has not built.
+        let unrepresented = decodes_unrepresented(&bytes);
         let ran = mutation_roundtrip(
             &SldprtCodec,
             &name,
@@ -332,7 +411,7 @@ fn edited_blind_depth_without_regenerated_brep_is_refused() {
                     panic!("fixture `{name}`: a blind-depth edit wrote an unverified B-rep");
                 }
                 MutationOutcome::Refused { error } => assert!(
-                    matches!(error, CodecError::NotImplemented(detail) if detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
+                    matches!(error, CodecError::NotImplemented(detail) if unrepresented || detail.starts_with("SLDPRT writer cannot regenerate B-rep after")),
                     "fixture `{name}`: {error}"
                 ),
             },
@@ -474,7 +553,23 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
         !depths(&mut ir).is_empty(),
         "legacy blind-depth coverage remains explicit"
     );
-    verbatim_replay_holds(&SldprtCodec, "body_history", bytes);
+    let UnrepresentedOutcome::Refused { error } =
+        unrepresented_source_is_not_reused(&SldprtCodec, "body_history", bytes)
+    else {
+        panic!("legacy history lacks a supported active configuration");
+    };
+    assert!(
+        matches!(&error, CodecError::Malformed(detail) if detail == "SLDPRT writing requires exactly one active configuration"),
+        "{error}"
+    );
+    let (ir, _, fidelity) = result.into_parts();
+    let mut replayed = Vec::new();
+    crate::test_support::write_retained(&ir, &fidelity, &mut replayed)
+        .expect("the retained path replays the unedited history fixture");
+    assert!(
+        replayed == bytes,
+        "the retained path replays the source bytes"
+    );
 }
 
 /// Independently authored, complete sources retain positive geometry coverage

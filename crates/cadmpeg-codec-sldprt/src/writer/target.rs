@@ -57,6 +57,17 @@ pub(crate) fn plan(
 fn write(input: EncodeInput<'_>, replay_eligible: bool) -> Result<(Written, Vec<u8>), CodecError> {
     let mut bytes = Vec::new();
     let written = match input.fidelity {
+        Some(value) if replay_eligible && !value.unrepresented().is_empty() => {
+            SldprtCodec::write_semantic(
+                input.ir,
+                &Annotations::default(),
+                &[],
+                SemanticFidelity::ReplaySkipped(ReplaySkipped::SourceUnrepresented(
+                    value.unrepresented(),
+                )),
+                &mut bytes,
+            )?
+        }
         Some(value) if replay_eligible => {
             let records = source_records(input.ir, value)?;
             SldprtCodec::write_preserved_with_annotations(
@@ -112,7 +123,7 @@ fn finish(
     let write_path = written.path();
     let mut losses: Vec<_> = written
         .replay_skipped()
-        .filter(|(_, reason)| *reason == ReplaySkipped::ImageMissing)
+        .filter(|(_, reason)| **reason == ReplaySkipped::ImageMissing)
         .map(|(path, _)| {
             SldprtLossCode::SourcePreservedImageUnavailable.note(match path {
                 SemanticPath::Patched => {

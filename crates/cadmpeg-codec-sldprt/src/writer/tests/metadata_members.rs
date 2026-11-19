@@ -695,12 +695,8 @@ fn metadata_edits_preserve_unedited_f64_bits_and_complete_display_member() {
         values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
     }
     let mut written = Vec::new();
-    crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut written,
-    )
-    .unwrap();
+    crate::test_support::write_retained(decoded.ir(), decoded.source_fidelity(), &mut written)
+        .unwrap();
     let scan = crate::test_support::container::scan(&written);
     for (name, expected) in [
         ("Contents/ExtraMetadata", &metadata),
@@ -816,7 +812,7 @@ fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
         );
         edit_radius(&mut decoded.ir_mut());
         let mut unchanged = Vec::new();
-        crate::test_support::plan_inherited_write(
+        crate::test_support::write_retained(
             decoded.ir(),
             decoded.source_fidelity(),
             &mut unchanged,
@@ -854,7 +850,7 @@ fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
                 .unwrap()
                 .name = Some("RenamedSaved".into());
             let mut renamed = Vec::new();
-            crate::test_support::plan_inherited_write(
+            crate::test_support::write_retained(
                 decoded.ir(),
                 decoded.source_fidelity(),
                 &mut renamed,

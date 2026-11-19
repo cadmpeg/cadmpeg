@@ -94,6 +94,18 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     let resolution = resolve(input.ir, resolved)?;
+    let unrepresented = input
+        .fidelity
+        .map(cadmpeg_ir::SourceFidelity::unrepresented)
+        .unwrap_or_default();
+    if !unrepresented.is_empty() {
+        return Err(resolved.unavailable(format!(
+            "the retained FCStd source records hold {} content the document does not \
+             represent, so the retained document is not patched, and this writer \
+             regenerates no Document.xml",
+            cadmpeg_ir::source_fidelity::class_list(&unrepresented)
+        )));
+    }
     admit_unedited(input.ir)?;
     finish(&resolution)
 }
