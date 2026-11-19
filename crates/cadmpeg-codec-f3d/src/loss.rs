@@ -135,6 +135,9 @@ pub(crate) enum F3dLossCode {
     ConstructionClosingFlagAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
+    /// A fixed Chamfer scalar is applied to the face-role groups beside the
+    /// scope's one edge-role group (DR-891).
+    ChamferFixedFaceGroupAssumed,
     ChamferDefinitionUnresolved,
     ChamferSelectionUnresolved,
     ChamferReferenceFaceAssumed,
@@ -1232,6 +1235,7 @@ impl F3dLossCode {
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
         Self::ChamferEdgeRoleAssumed,
+        Self::ChamferFixedFaceGroupAssumed,
         Self::ChamferDefinitionUnresolved,
         Self::ChamferSelectionUnresolved,
         Self::ChamferReferenceFaceAssumed,
@@ -1986,6 +1990,7 @@ impl F3dLossCode {
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
+            Self::ChamferFixedFaceGroupAssumed => "feature.chamfer-fixed-face-group-assumed",
             Self::ChamferDefinitionUnresolved => "feature.chamfer-definition-unresolved",
             Self::ChamferSelectionUnresolved => "feature.chamfer-selection-unresolved",
             Self::ChamferReferenceFaceAssumed => "feature.chamfer-reference-face-assumed",
@@ -3050,6 +3055,7 @@ impl F3dLossCode {
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferFixedFaceGroupAssumed
             | Self::ChamferDefinitionUnresolved
             | Self::ChamferSelectionUnresolved
             | Self::ChamferReferenceFaceAssumed
@@ -3722,6 +3728,7 @@ impl F3dLossCode {
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferFixedFaceGroupAssumed
             | Self::ChamferDefinitionUnresolved
             | Self::ChamferSelectionUnresolved
             | Self::ChamferReferenceFaceAssumed
@@ -4496,6 +4503,7 @@ mod tests {
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
                 "feature.chamfer-edge-role-assumed",
+                "feature.chamfer-fixed-face-group-assumed",
                 "feature.chamfer-definition-unresolved",
                 "feature.chamfer-selection-unresolved",
                 "feature.chamfer-reference-face-assumed",

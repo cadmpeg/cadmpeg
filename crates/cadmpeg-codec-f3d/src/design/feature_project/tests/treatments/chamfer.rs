@@ -773,6 +773,10 @@ fn fixed_chamfer_face_and_edge_groups_take_the_one_specification() {
     )));
     assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 2);
     assert_eq!(
+        loss_count(&projected, F3dLossCode::ChamferFixedFaceGroupAssumed),
+        1
+    );
+    assert_eq!(
         loss_count(&projected, F3dLossCode::ChamferEdgeRoleAssumed),
         0
     );

@@ -6499,6 +6499,12 @@ fn project_fixed_chamfer(
         }
         projected.push(ChamferGroup { edges, spec });
     }
+    if shared {
+        losses.push(crate::loss::F3dLossCode::ChamferFixedFaceGroupAssumed.note(format!(
+            "Chamfer scope {} applies its fixed scalar to each face-role group beside its edge-role group (DR-891).",
+            scope.id
+        )));
+    }
     if edge_role_assumed {
         losses.push(crate::loss::F3dLossCode::ChamferEdgeRoleAssumed.note(format!(
             "Chamfer scope {} shares one specification between face groups and a group whose role is not the edge role; the group is read as the edge group.",
