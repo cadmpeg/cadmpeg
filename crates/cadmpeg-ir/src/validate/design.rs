@@ -16,7 +16,6 @@ mod configurations;
 mod constructions;
 mod containers;
 mod evaluations;
-mod fits;
 #[cfg(test)]
 mod fixture;
 mod index;
@@ -136,7 +135,6 @@ pub(super) fn check_design(
     evaluations::check_current_geometry(records, findings);
     resolved::check_resolved_states(ctx, records, ids, findings)?;
     configurations::check_configurations(records, findings);
-    fits::check_fits(ir, findings);
 
     let _depth = ctx.enter_nested("IR design validation")?;
     let held = collect(ctx, ir, &index)?;
