@@ -7,6 +7,7 @@ use cadmpeg_ir::report::check::Check;
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::*;
+use crate::loss::CreoLossCode;
 
 fn feature(key: &str, ordinal: u64, operation: LegacyOperation) -> LegacyFeature {
     LegacyFeature {
@@ -118,9 +119,104 @@ fn an_empty_timeline_holds_its_current_state_at_its_start() {
 fn a_model_with_no_feature_list_states_no_design_records() {
     let (mut ir, definition) = part(Vec::new(), &["1", "2"]);
     let scan = crate::test_support::empty_container_scan();
-    crate::decode::with_service_context(|ctx| project(ctx, &scan, &mut ir, &definition))
-        .expect("projection");
+    crate::decode::with_service_context(|ctx| {
+        project(ctx, &scan, &mut ir, &definition, &mut Vec::new())
+    })
+    .expect("projection");
     assert_eq!(ir.design, CadIr::empty().design);
+}
+
+fn sketch_feature(key: &str, ordinal: u64) -> LegacyFeature {
+    feature(
+        key,
+        ordinal,
+        LegacyOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
+                SketchId::mint(format!("creo:model:sketch#{key}")).expect("sketch id"),
+            )),
+        },
+    )
+}
+
+fn legacy_sketch(key: &str, placement: serde_json::Value) -> cadmpeg_ir::sketches::Sketch {
+    serde_json::from_value(serde_json::json!({
+        "id": format!("creo:model:sketch#{key}"),
+        "native_ref": format!("creo:featdefs:sketch#{key}"),
+        "placement": placement,
+        "profiles": [],
+    }))
+    .expect("v10 sketch")
+}
+
+fn design_findings(ir: &CadIr) -> Vec<String> {
+    cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
+        .expect("validation")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Design)
+        .map(|finding| finding.message)
+        .collect()
+}
+
+#[test]
+fn a_sketch_whose_frame_is_unread_states_no_sketch_and_charges_a_loss() {
+    let (mut ir, definition) = part(vec![sketch_feature("1", 0), sketch_feature("2", 1)], &[]);
+    ir.model.sketches = vec![
+        legacy_sketch(
+            "1",
+            serde_json::json!({
+                "kind": "resolved",
+                "frame": {
+                    "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                    "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
+                    "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0},
+                },
+            }),
+        ),
+        legacy_sketch("2", serde_json::json!({"kind": "unresolved"})),
+    ];
+    let model = ir.model.clone();
+    let scan = crate::test_support::empty_container_scan();
+    let mut losses = Vec::new();
+    crate::decode::with_service_context(|ctx| {
+        project(ctx, &scan, &mut ir, &definition, &mut losses)
+    })
+    .expect("projection");
+    assert_eq!(ir.model, model);
+    assert_eq!(
+        ir.design
+            .sketches
+            .iter()
+            .map(|sketch| sketch.id.as_str())
+            .collect::<Vec<_>>(),
+        ["creo:model:sketch#1"]
+    );
+    let operation = |key: &str| {
+        ir.design
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == format!("creo:model:feature#{key}"))
+            .map(|feature| feature.definition.operation.clone())
+            .expect("projected feature")
+    };
+    assert_eq!(
+        operation("1"),
+        FeatureOperation::Sketch(SketchId::mint("creo:model:sketch#1").expect("sketch id"))
+    );
+    assert_eq!(
+        operation("2"),
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Sketch
+        }
+    );
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == CreoLossCode::DesignSketchPlaneUnread.kind())
+            .count(),
+        1
+    );
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
 }
 
 #[test]
@@ -218,14 +314,15 @@ fn fixture_decodes_state_a_scope_that_passes_the_design_checks() {
         );
         assert_eq!(ir.design.features.len(), ir.model.features.len());
         assert_eq!(ir.design.parameters.len(), ir.model.parameters.len());
-        assert_eq!(ir.design.sketches.len(), ir.model.sketches.len());
-        let findings = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
-            .expect("validation")
-            .findings
-            .into_iter()
-            .filter(|finding| finding.check == Check::Design)
-            .map(|finding| finding.message)
-            .collect::<Vec<_>>();
+        assert_eq!(
+            ir.design.sketches.len(),
+            ir.model
+                .sketches
+                .iter()
+                .filter(|sketch| sketch.placement.resolved().is_some())
+                .count()
+        );
+        let findings = design_findings(ir);
         assert!(findings.is_empty(), "{}: {findings:?}", path.display());
     }
 }

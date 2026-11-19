@@ -307,6 +307,8 @@ pub(crate) enum CreoLossCode {
     AssemblyMemberReferenceUnresolved,
     /// Component placement constraints are not decoded.
     AssemblyConstraintsNotTransferred,
+    /// A sketch whose stored frame is not read states no v11 sketch record.
+    DesignSketchPlaneUnread,
 }
 }
 
@@ -470,6 +472,7 @@ impl CreoLossCode {
             Self::AssemblyPlacementUnresolved => "assembly.placement-unresolved",
             Self::AssemblyMemberReferenceUnresolved => "assembly.member-reference-unresolved",
             Self::AssemblyConstraintsNotTransferred => "assembly.constraints-not-transferred",
+            Self::DesignSketchPlaneUnread => "design.sketch-plane-unread",
         }
     }
 
@@ -613,7 +616,8 @@ impl CreoLossCode {
             | Self::AssemblyMemberTableIncomplete
             | Self::AssemblyPlacementUnresolved
             | Self::AssemblyMemberReferenceUnresolved
-            | Self::AssemblyConstraintsNotTransferred => Severity::Warning,
+            | Self::AssemblyConstraintsNotTransferred
+            | Self::DesignSketchPlaneUnread => Severity::Warning,
         }
     }
 
@@ -751,7 +755,8 @@ impl CreoLossCode {
             | Self::CurveExpressionSolveControlUnresolved
             | Self::CurveExpressionKindProhibited
             | Self::SectionSignBranchesCapped
-            | Self::CurveExpressionTextCapped => LossTaxonomy::FeatureHistoryRetained,
+            | Self::CurveExpressionTextCapped
+            | Self::DesignSketchPlaneUnread => LossTaxonomy::FeatureHistoryRetained,
             Self::AssemblyComponentsExternal | Self::AssemblyMemberReferenceUnresolved => {
                 LossTaxonomy::AssemblyComponentsExternal
             }
@@ -937,6 +942,7 @@ mod tests {
                 "assembly.placement-unresolved",
                 "assembly.member-reference-unresolved",
                 "assembly.constraints-not-transferred",
+                "design.sketch-plane-unread",
             ]
         );
     }

@@ -27,8 +27,10 @@
         {
           "definition": {
             "operation": {
-              "kind": "sketch",
-              "value": "creo:model:sketch#40"
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
             }
           },
           "id": "creo:model:sketch_feature#40",
@@ -66,24 +68,7 @@
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
-      "sketches": [
-        {
-          "id": "creo:model:sketch#40",
-          "native_options": {},
-          "native_ref": "creo:featdefs:sketch#40",
-          "owner": "creo:model:sketch_feature#40",
-          "plane": {
-            "after": [],
-            "inputs": [],
-            "kind": "placed",
-            "resolved_in": {}
-          },
-          "solve": {
-            "status": "current"
-          },
-          "source_settings": {}
-        }
-      ],
+      "sketches": [],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
@@ -797,6 +782,18 @@
           }
         },
         "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "design.sketch-plane-unread",
+            "kind": "feature_history_retained",
+            "namespace": "creo"
+          }
+        },
+        "message": "1 sketch(es) whose stored frame the decoder does not read state no v11 sketch record; a sketch feature that owns one is an unresolved sketch operation.",
         "severity": "warning"
       }
     ],
