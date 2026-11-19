@@ -246,6 +246,42 @@ impl DimensionModifier {
     }
 }
 
+/// The wire form of a [`DimensionModifier`] as read: an `Other` text may be
+/// blank.
+#[derive(Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+#[serde(deny_unknown_fields)]
+enum DimensionModifierRead {
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Reference,
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Statistical,
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    ControlledRadius,
+    Other(String),
+}
+
+/// Reads a dimension's modifiers into their set. A modifier stated twice is
+/// one modifier, the stated order is not kept, and an `Other` with a blank
+/// text qualifies nothing and is dropped, so the set (§2.5, §8) is built from
+/// any list of modifiers.
+fn deserialize_modifiers<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeSet<DimensionModifier>, D::Error> {
+    let modifiers = Vec::<DimensionModifierRead>::deserialize(deserializer)?;
+    Ok(modifiers
+        .into_iter()
+        .filter_map(|modifier| match modifier {
+            DimensionModifierRead::Reference => Some(DimensionModifier::Reference),
+            DimensionModifierRead::Statistical => Some(DimensionModifier::Statistical),
+            DimensionModifierRead::ControlledRadius => Some(DimensionModifier::ControlledRadius),
+            DimensionModifierRead::Other(text) => {
+                cadmpeg_core::text::NonBlankString::new(text).map(DimensionModifier::Other)
+            }
+        })
+        .collect())
+}
+
 /// Geometric form of a datum target feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -493,7 +529,10 @@ pub struct PmiDimension {
     pub decimals: Option<u8>,
     /// The qualifiers, a set: each is stated once and their order carries no
     /// meaning.
-    #[serde(with = "cadmpeg_core::distinct_keys::set")]
+    #[serde(
+        serialize_with = "cadmpeg_core::distinct_keys::set::serialize",
+        deserialize_with = "deserialize_modifiers"
+    )]
     #[cfg_attr(feature = "schema", schemars(with = "BTreeSet<DimensionModifier>"))]
     pub modifiers: BTreeSet<DimensionModifier>,
 }

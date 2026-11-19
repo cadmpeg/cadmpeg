@@ -629,16 +629,24 @@ macro_rules! declare_home_arenas {
                 0 $(+ self.$field.len())*
             }
 
-            /// Refuses the first arena whose records are not in strictly
-            /// increasing order of id (§2.2, §2.8), naming `home`, the arena,
-            /// and the id.
-            pub(crate) fn check_arena_order(&self, home: &str) -> Result<(), String> {
-                $(check_ids_increase(
-                    home,
-                    stringify!($field),
-                    self.$field.iter().map(crate::schema::ArenaRecord::record_identity),
-                )?;)*
-                Ok(())
+            /// Whether every arena is in increasing order of id, as
+            /// [`Self::finalize`] leaves it.
+            pub(crate) fn is_finalized(&self) -> bool {
+                true $(&& arena_is_ordered(&self.$field))*
+            }
+
+            /// Keeps the first record of each id in each sorted arena and
+            /// drops the later ones, returning the arena, the id, and the
+            /// number of records dropped for each repeated id.
+            pub(crate) fn drop_repeated_ids(&mut self, home: &str) -> Vec<RepeatedId> {
+                let mut repeated = Vec::new();
+                $(keep_first_ids(
+                    &mut self.$field,
+                    crate::schema::ArenaRecord::record_identity,
+                    &format!("{home}.{}", stringify!($field)),
+                    &mut repeated,
+                );)*
+                repeated
             }
 
             /// Sort each arena lexicographically by its entity identity.
@@ -760,7 +768,11 @@ macro_rules! declare_topology {
             where
                 S: Serializer,
             {
-                self.check_arena_order("topology").map_err(serde::ser::Error::custom)?;
+                if !self.is_finalized() {
+                    let mut sorted = self.clone();
+                    sorted.finalize();
+                    return sorted.serialize(serializer);
+                }
                 TopologyWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -805,7 +817,6 @@ macro_rules! declare_topology {
                             .map_err(serde::de::Error::custom)?;
                     }
                 }
-                topology.check_arena_order("topology").map_err(serde::de::Error::custom)?;
                 Ok(topology)
             }
         }
@@ -911,7 +922,11 @@ macro_rules! declare_model {
                 S: Serializer,
             {
                 feature_parents::validate(&[self]).map_err(serde::ser::Error::custom)?;
-                self.check_arena_order("model").map_err(serde::ser::Error::custom)?;
+                if !self.is_finalized() {
+                    let mut sorted = self.clone();
+                    sorted.finalize();
+                    return sorted.serialize(serializer);
+                }
                 ModelWriteWire {
                     $($field: model_write_value!(self, $field),)*
                 }
@@ -938,7 +953,6 @@ macro_rules! declare_model {
                     model.features.push(feature);
                 }
                 feature_parents::validate(&[&model]).map_err(serde::de::Error::custom)?;
-                model.check_arena_order("model").map_err(serde::de::Error::custom)?;
                 Ok(model)
             }
         }
@@ -1205,28 +1219,30 @@ fn arena_is_ordered<T: crate::schema::ArenaRecord>(values: &[T]) -> bool {
         .all(|pair| pair[0].record_identity() <= pair[1].record_identity())
 }
 
-/// Refuses the first id of `ids` that does not follow the one before it in
-/// strictly increasing order: an arena is a checked type (§2.8).
-pub(crate) fn check_ids_increase<'a>(
-    home: &str,
+/// An id a sorted arena held more than once: the arena, the id, and the
+/// number of later records dropped.
+pub(crate) type RepeatedId = (String, String, usize);
+
+/// Drops each record of a sorted arena whose id equals the one before it, so
+/// the first record of each id stays, and counts the records dropped per id.
+pub(crate) fn keep_first_ids<T>(
+    records: &mut Vec<T>,
+    id: impl Fn(&T) -> &str,
     arena: &str,
-    ids: impl IntoIterator<Item = &'a str>,
-) -> Result<(), String> {
-    let mut previous: Option<&str> = None;
-    for id in ids {
-        match previous {
-            Some(previous) if id == previous => {
-                return Err(format!("arena {home}.{arena} holds id {id} twice"));
-            }
-            Some(previous) if id < previous => {
-                return Err(format!(
-                    "arena {home}.{arena} is not in strictly increasing order of id: {id} follows {previous}"
-                ));
-            }
-            _ => previous = Some(id),
+    repeated: &mut Vec<RepeatedId>,
+) {
+    records.dedup_by(|later, earlier| {
+        if id(later) != id(earlier) {
+            return false;
         }
-    }
-    Ok(())
+        match repeated.last_mut() {
+            Some((last_arena, last_id, count)) if last_arena == arena && last_id == id(later) => {
+                *count += 1;
+            }
+            _ => repeated.push((arena.to_owned(), id(later).to_owned(), 1)),
+        }
+        true
+    });
 }
 
 fn sorted_rows<'a, T: crate::schema::ArenaRecord, U>(
@@ -2174,8 +2190,14 @@ struct CadIrReadWire {
 impl Serialize for CadIr {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         self.check_scope().map_err(serde::ser::Error::custom)?;
-        check_design_arena_order(&self.design, &self.process, &self.native)
-            .map_err(serde::ser::Error::custom)?;
+        if !(self.design.is_finalized()
+            && self.process.is_finalized()
+            && self.native.is_finalized())
+        {
+            let mut sorted = self.clone();
+            sorted.finalize();
+            return sorted.serialize(serializer);
+        }
         CadIrWriteWire {
             ir_version: IrVersion,
             fragment: self.fragment,
@@ -2198,25 +2220,10 @@ impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
         check_ir_version(wire.ir_version.as_ref())?;
-        check_design_arena_order(&wire.design, &wire.process, &wire.native)
-            .map_err(serde::de::Error::custom)?;
         wire.admit_state_chains()
             .map_err(serde::de::Error::custom)?;
         wire.try_into().map_err(serde::de::Error::custom)
     }
-}
-
-/// Refuses a design, process, or native arena whose records are not in
-/// strictly increasing order of id (§2.8). The topology and model homes
-/// check their own arenas as they are read and written.
-fn check_design_arena_order(
-    design: &Design,
-    process: &Process,
-    native: &Native,
-) -> Result<(), String> {
-    design.check_arena_order("design")?;
-    process.check_arena_order("process")?;
-    native.check_arena_order()
 }
 
 impl CadIrReadWire {
@@ -2586,18 +2593,19 @@ impl CadIr {
         serde_json::from_str::<Self>(s)
     }
 
-    /// Refuses the first arena of the document's homes or of a native
-    /// namespace whose records are not in strictly increasing order of id,
-    /// naming the arena and the id (§2.2, §2.8). The arenas of a state's
-    /// delta are checked when the delta is read or written.
-    ///
-    /// # Errors
-    ///
-    /// Returns the condition the arena breaks and where.
-    pub fn check_arena_order(&self) -> Result<(), String> {
-        self.geometry.check_arena_order("topology")?;
-        self.model.check_arena_order("model")?;
-        check_design_arena_order(&self.design, &self.process, &self.native)
+    /// Sorts every arena of the document's homes and native namespaces by
+    /// id, keeping records of one id in their present order, then keeps the
+    /// first record of each id and drops the later ones. Returns the arena,
+    /// the id, and the number of records dropped for each repeated id. The
+    /// arenas of a state's delta are left as they are.
+    pub(crate) fn drop_repeated_ids(&mut self) -> Vec<RepeatedId> {
+        self.finalize();
+        let mut repeated = self.geometry.drop_repeated_ids("topology");
+        repeated.extend(self.model.drop_repeated_ids("model"));
+        repeated.extend(self.design.drop_repeated_ids("design"));
+        repeated.extend(self.process.drop_repeated_ids("process"));
+        repeated.extend(self.native.drop_repeated_ids());
+        repeated
     }
 
     /// Sort geometry, model, design, process, native, and unknown-record

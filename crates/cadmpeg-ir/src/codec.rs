@@ -228,10 +228,8 @@ impl DecodeResult {
         decoded: Decoded,
         format: FormatId,
     ) -> Result<Self, DecodeFailure> {
-        let result = DecodeResult::new(decoded, format, ctx.depth())?;
-        result.ir().check_arena_order().map_err(|error| {
-            CodecError::malformed(format_args!("codec {format:?} decoded an {error}"))
-        })?;
+        let mut result = DecodeResult::new(decoded, format, ctx.depth())?;
+        result.keep_first_of_repeated_ids();
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -303,6 +301,19 @@ impl DecodeResult {
             report: DecodeReport::from_body(classification, body),
             source_fidelity,
         })
+    }
+
+    /// Keeps the first copy, in the decoder's emission order, of each id a
+    /// decoder emitted more than once in one arena, drops the others, and
+    /// charges one loss per id naming it and the copies dropped (interim,
+    /// item Q).
+    fn keep_first_of_repeated_ids(&mut self) {
+        for (arena, id, dropped) in self.ir.drop_repeated_ids() {
+            self.report.losses.push(DecodeLossCode::IdRepeated.note(format!(
+                "the decoder emitted {id} {} times in arena {arena}; the first copy is kept and {dropped} dropped",
+                dropped + 1
+            )));
+        }
     }
 
     /// Borrow the finalized IR.

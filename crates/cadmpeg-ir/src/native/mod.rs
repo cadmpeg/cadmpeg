@@ -839,19 +839,31 @@ impl Native {
         self.0.entry(format.into()).or_default()
     }
 
-    /// Refuses the first namespace arena whose records are not in strictly
-    /// increasing order of id (§2.8).
-    pub(crate) fn check_arena_order(&self) -> Result<(), String> {
-        for (format, namespace) in &self.0 {
-            for (arena, records) in &namespace.arenas {
-                crate::document::check_ids_increase(
-                    &format!("native.{format}"),
-                    arena,
-                    records.iter().map(NativeRecord::id),
-                )?;
+    /// Whether every namespace arena is in increasing order of id.
+    pub(crate) fn is_finalized(&self) -> bool {
+        self.0.values().all(|namespace| {
+            namespace
+                .arenas
+                .values()
+                .all(|records| records.windows(2).all(|pair| pair[0].id() <= pair[1].id()))
+        })
+    }
+
+    /// Keeps the first record of each id in each sorted namespace arena and
+    /// drops the later ones, counting the records dropped per id.
+    pub(crate) fn drop_repeated_ids(&mut self) -> Vec<crate::document::RepeatedId> {
+        let mut repeated = Vec::new();
+        for (format, namespace) in &mut self.0 {
+            for (arena, records) in &mut namespace.arenas {
+                crate::document::keep_first_ids(
+                    records,
+                    NativeRecord::id,
+                    &format!("native.{format}.{arena}"),
+                    &mut repeated,
+                );
             }
         }
-        Ok(())
+        repeated
     }
 
     /// Sort every arena into canonical identity order.

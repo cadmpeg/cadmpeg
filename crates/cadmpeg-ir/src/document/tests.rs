@@ -1343,59 +1343,41 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
 }
 
 #[test]
-fn an_arena_out_of_order_or_holding_an_id_twice_is_neither_read_nor_written() {
+fn an_arena_out_of_order_is_written_sorted_and_read_as_main_reads_it() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let wire = serde_json::to_value(&ir).expect("a sorted document writes");
+    let sorted = serde_json::to_value(&ir).expect("a sorted document writes");
     assert!(ir.geometry.points.len() >= 2);
 
-    let mut repeated = wire.clone();
-    let points = repeated["geometry"]["points"].as_array_mut().unwrap();
-    let first = points[0].clone();
-    points.insert(1, first);
-    let error = CadIr::from_json(&repeated.to_string())
-        .expect_err("a repeated id")
-        .to_string();
-    assert!(
-        error.contains("topology.points") && error.contains("twice"),
-        "{error}"
-    );
-
-    let mut swapped = wire.clone();
-    swapped["geometry"]["points"]
-        .as_array_mut()
-        .unwrap()
-        .swap(0, 1);
-    let error = CadIr::from_json(&swapped.to_string())
-        .expect_err("an arena out of order")
-        .to_string();
-    assert!(
-        error.contains("topology.points") && error.contains("strictly increasing"),
-        "{error}"
-    );
-
-    let mut native = wire;
-    native["native"] = serde_json::json!({
-        "test": {"records": [{"id": "test:s:record#2"}, {"id": "test:s:record#1"}]}
-    });
-    let error = CadIr::from_json(&native.to_string())
-        .expect_err("a native arena out of order")
-        .to_string();
-    assert!(error.contains("native.test.records"), "{error}");
-
+    // Serialization sorts an arena out of order, as `finalize` does, and
+    // keeps records of one id in their order.
     let mut unsorted = ir.clone();
     unsorted.geometry.points.swap(0, 1);
-    let error = serde_json::to_string(&unsorted)
-        .expect_err("serialization refuses an arena out of order")
-        .to_string();
-    assert!(error.contains("topology.points"), "{error}");
     let report = validate_neutral(&unsorted, Vec::new()).expect("validate in memory");
     assert!(report
         .findings
         .iter()
         .any(|finding| finding.check == crate::report::check::Check::ArenaOrder));
-    unsorted.finalize();
     assert_eq!(
-        serde_json::to_value(&unsorted).expect("a finalized document writes"),
-        serde_json::to_value(&ir).expect("serialize")
+        serde_json::to_value(&unsorted).expect("an unsorted document writes"),
+        sorted
     );
+    let mut repeated = ir.clone();
+    let mut later = repeated.geometry.points[0].clone();
+    later.native_ref = Some("the later copy".into());
+    repeated.geometry.points.insert(0, later);
+    let wire = serde_json::to_value(&repeated).expect("a repeated id writes");
+    let points = wire["geometry"]["points"].as_array().unwrap();
+    assert_eq!(points.len(), ir.geometry.points.len() + 1);
+    assert_eq!(points[0]["native_ref"], "the later copy");
+
+    // Reading adds no refusal and no repair of its own (item Q).
+    let mut swapped = sorted;
+    swapped["geometry"]["points"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    let read = CadIr::from_json(&swapped.to_string()).expect("an arena out of order reads");
+    assert_eq!(read.geometry.points, unsorted.geometry.points);
+    let read = CadIr::from_json(&wire.to_string()).expect("a repeated id reads");
+    assert_eq!(read.geometry.points.len(), ir.geometry.points.len() + 1);
 }

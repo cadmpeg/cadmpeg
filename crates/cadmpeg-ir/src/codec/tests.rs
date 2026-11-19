@@ -590,20 +590,36 @@ impl CodecBackend for RepeatedIdentityCodec {
         _root: View<'_>,
     ) -> Result<Decoded, CodecError> {
         let mut ir = unit_cube().expect("valid unit cube fixture");
-        let point = ir.geometry.points[0].clone();
-        ir.geometry.points.push(point);
+        for copy in ["second", "third"] {
+            let mut point = ir.geometry.points[0].clone();
+            point.native_ref = Some(copy.into());
+            ir.geometry.points.push(point);
+        }
         Ok(decoded(ir))
     }
 }
 
 #[test]
-fn the_sealed_wrapper_refuses_an_arena_that_holds_an_id_twice() {
-    let error = RepeatedIdentityCodec
+fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_one_loss() {
+    let result = RepeatedIdentityCodec
         .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
-        .expect_err("an arena holds each id once (§2.8)");
-    let text = error.to_string();
+        .expect("a decoder's repeated id does not refuse the file");
+    let cube = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    let repeated = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == super::loss::DecodeLossCode::IdRepeated.note("").code)
+        .collect::<Vec<_>>();
+    let [loss] = repeated.as_slice() else {
+        panic!("one loss for the one repeated id: {repeated:?}");
+    };
+    assert_eq!(loss.severity, crate::report::Severity::Error);
     assert!(
-        text.contains("topology.points") && text.contains("twice"),
-        "{text}"
+        loss.message.contains(cube.geometry.points[0].id.as_str())
+            && loss.message.contains("2 dropped"),
+        "{}",
+        loss.message
     );
 }

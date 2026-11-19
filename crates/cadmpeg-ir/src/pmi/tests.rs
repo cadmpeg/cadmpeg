@@ -279,32 +279,42 @@ fn a_literal_nominal_whose_quantity_disagrees_with_its_kind_is_a_finding() {
 }
 
 #[test]
-fn dimension_modifiers_are_a_set_that_refuses_a_repeat_and_disorder() {
+fn dimension_modifiers_read_into_their_set_from_any_list() {
     let with = |modifiers: serde_json::Value| json!({"dimension": {"kind": "size"}, "modifiers": modifiers});
-    let read = serde_json::from_value::<PmiDimension>(with(json!([
-        {"kind": "reference"},
-        {"kind": "controlled_radius"},
-        {"kind": "other", "value": "free state"}
-    ])))
-    .expect("a set in declared variant order");
-    assert_eq!(read.modifiers.len(), 3);
-    for (modifiers, refusal) in [
-        (
-            json!([{"kind": "statistical"}, {"kind": "statistical"}]),
-            "twice",
-        ),
-        (
-            json!([{"kind": "controlled_radius"}, {"kind": "reference"}]),
-            "out of order",
-        ),
-    ] {
-        let error = serde_json::from_value::<PmiDimension>(with(modifiers))
-            .expect_err("a set refuses the array")
-            .to_string();
-        assert!(error.contains(refusal), "{error}");
-    }
+    let read = |modifiers| {
+        serde_json::from_value::<PmiDimension>(with(modifiers))
+            .expect("modifiers read")
+            .modifiers
+            .into_iter()
+            .collect::<Vec<_>>()
+    };
+    let free = DimensionModifier::Other(
+        cadmpeg_core::text::NonBlankString::new("free state").expect("a text"),
+    );
+    // The set reads every list of modifiers: a repeat is one modifier, any
+    // order reads sorted, and a blank `Other` qualifies nothing.
+    assert_eq!(
+        read(json!([
+            {"kind": "other", "value": "free state"},
+            {"kind": "controlled_radius"},
+            {"kind": "reference"},
+            {"kind": "controlled_radius"},
+            {"kind": "other", "value": " "}
+        ])),
+        [
+            DimensionModifier::Reference,
+            DimensionModifier::ControlledRadius,
+            free.clone()
+        ]
+    );
+    let mut dimension = PmiDimension::new(PmiDimensionKind::Size);
+    dimension.modifiers = [free, DimensionModifier::Statistical].into();
+    assert_eq!(
+        serde_json::to_value(&dimension).expect("serialize")["modifiers"],
+        json!([{"kind": "statistical"}, {"kind": "other", "value": "free state"}])
+    );
     assert!(serde_json::from_value::<PmiDimension>(with(json!([
-        {"kind": "other", "value": " "}
+        {"kind": "statistical", "value": null}
     ])))
     .is_err());
 }
