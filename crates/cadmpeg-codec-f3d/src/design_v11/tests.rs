@@ -2,7 +2,7 @@
 //! Tests of the v11 design of a Fusion document.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
@@ -112,7 +112,7 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
     let timelines = [timeline(STREAM, 1, &[]), timeline(STREAM, 0, &[10, 20, 30])];
     let types = [record_type(GROUND, vec![30])];
     let documents = crate::test_support::with_decode_context(|ctx| {
-        super::timeline::project(ctx, &features, &timelines, &types)
+        super::timeline::project(ctx, &features, &timelines, &types, &BTreeSet::new())
     })
     .unwrap();
     assert_eq!(documents.keys().collect::<Vec<_>>(), [""]);
@@ -168,7 +168,7 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
 #[test]
 fn a_stream_whose_timelines_list_no_item_states_no_container() {
     let documents = crate::test_support::with_decode_context(|ctx| {
-        super::timeline::project(ctx, &[], &[timeline(STREAM, 0, &[])], &[])
+        super::timeline::project(ctx, &[], &[timeline(STREAM, 0, &[])], &[], &BTreeSet::new())
     })
     .unwrap();
     assert!(documents.is_empty());
@@ -302,4 +302,50 @@ fn a_definition_and_its_bodies_belong_to_the_scope_that_spans_it() {
             ),
         ])
     );
+}
+
+#[test]
+fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
+    let body = BodyId::mint("f3d:brep:entity#1").unwrap();
+    let base = |bodies: Vec<BodyId>| {
+        legacy(
+            "base:10",
+            0,
+            Some(false),
+            LegacyOperation::BaseFeature {
+                bodies: cadmpeg_ir::features::BodySelection::Bodies(bodies.into_iter().collect()),
+            },
+        )
+    };
+    let project = |feature: LegacyFeature, current: &[&str]| {
+        let current = current.iter().copied().collect::<BTreeSet<_>>();
+        let timelines = [timeline(STREAM, 0, &[10])];
+        crate::test_support::with_decode_context(|ctx| {
+            super::timeline::project(ctx, &[feature], &timelines, &[], &current)
+        })
+        .unwrap()
+        .remove("")
+        .unwrap()
+        .features
+        .remove(0)
+        .definition
+        .operation
+    };
+    assert_eq!(
+        project(base(vec![body.clone()]), &[body.as_str()]),
+        FeatureOperation::Stored {
+            bodies: Some(vec![body.clone()]),
+            tessellations: Vec::new(),
+            origin: cadmpeg_ir::design::feature::StoredOrigin::Base {},
+        }
+    );
+    for (bodies, current) in [
+        (vec![body.clone()], &[][..]),
+        (Vec::new(), &[body.as_str()][..]),
+    ] {
+        assert!(matches!(
+            project(base(bodies), current),
+            FeatureOperation::Native { kind, .. } if kind.as_str() == "f3d:base_feature"
+        ));
+    }
 }

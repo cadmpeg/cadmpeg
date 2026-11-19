@@ -13,15 +13,16 @@
 //! whose streams state none has no scope.
 //!
 //! A scope spans its definition and the embedded component definitions below
-//! it. Its current state, at the end of its first timeline, holds the bodies
-//! of the definitions it spans.
+//! it; where it spans several, each feature names the component the decoder
+//! lists it under. Its current state, at the end of its first timeline, holds
+//! the bodies of the definitions it spans.
 
 mod operation;
 #[cfg(test)]
 mod tests;
 mod timeline;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -54,7 +55,13 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         return Ok(());
     }
     let types = namespace.arena_as_for_decode::<SegmentType>(ctx, TYPES)?;
-    let documents = timeline::project(ctx, &ir.model.features, &timelines, &types)?;
+    let current = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let documents = timeline::project(ctx, &ir.model.features, &timelines, &types, &current)?;
     let scopes = documents
         .into_iter()
         .filter_map(|(prefix, projected)| {
@@ -63,8 +70,25 @@ pub(crate) fn project(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), Cod
         })
         .collect::<BTreeMap<_, _>>();
     let mut spans = span(&ir.model.product_definitions, &scopes);
-    for (prefix, (definition, projected)) in scopes {
-        let Span { bodies, .. } = spans.remove(&prefix).unwrap_or_default();
+    let owners = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| Some((&feature.id, feature.product_definition.as_ref()?)))
+        .collect::<HashMap<_, _>>();
+    for (prefix, (definition, mut projected)) in scopes {
+        let Span {
+            definitions: spanned,
+            bodies,
+        } = spans.remove(&prefix).unwrap_or_default();
+        if spanned.len() > 1 {
+            for feature in &mut projected.features {
+                feature.component = owners
+                    .get(&feature.id)
+                    .filter(|owner| spanned.contains(**owner))
+                    .map(|owner| (*owner).clone());
+            }
+        }
         let Some(Container::Ordered { id, members, .. }) = projected.containers.first() else {
             continue;
         };

@@ -7,18 +7,25 @@
 //! at an item's position in that run is the item's feature. An item the v10
 //! projection did not resolve is a feature of the family its record type
 //! establishes, or a native feature named by that type.
+//!
+//! A Base Feature is stored geometry (§5.10) where the v10 projection names
+//! its bodies and each is a body of the current geometry, whose records the
+//! state after it holds; otherwise its bodies are typed with the carrier
+//! unread, and it is native.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
-use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, StoredOrigin};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::refs::Member;
-use cadmpeg_ir::features::{Feature as LegacyFeature, FeatureId};
+use cadmpeg_ir::features::{
+    BodySelection, Feature as LegacyFeature, FeatureId, FeatureOperation as LegacyOperation,
+};
 use cadmpeg_ir::ids::IdentityKeyTail;
 
 use super::operation::{family, kind_family, Family};
@@ -37,12 +44,14 @@ pub(super) struct Projected {
 
 /// The timeline containers and item features of every document of the
 /// decode, keyed by the document's identity prefix (empty for the root
-/// document, `xref/…/occurrence-N/` for a referenced design).
+/// document, `xref/…/occurrence-N/` for a referenced design). `bodies` are
+/// the bodies of the current geometry.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     features: &[LegacyFeature],
     timelines: &[DesignFeatureTimeline],
     types: &[SegmentType],
+    bodies: &BTreeSet<&str>,
 ) -> Result<BTreeMap<String, Projected>, CodecError> {
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
     for timeline in timelines {
@@ -80,7 +89,7 @@ pub(super) fn project(
                     .and_then(|candidates| item_feature(candidates, item.value))
                     .map_or_else(
                         || unprojected_item(stream, timeline, item.value, &item_types),
-                        resolved_item,
+                        |feature| resolved_item(feature, bodies),
                     );
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
@@ -130,11 +139,12 @@ fn item_feature<'a>(candidates: &[&'a LegacyFeature], record: u64) -> Option<&'a
         .copied()
 }
 
-fn resolved_item(feature: &LegacyFeature) -> Feature {
-    let operation = match family(feature.evaluation.definition().operation()) {
+fn resolved_item(feature: &LegacyFeature, bodies: &BTreeSet<&str>) -> Feature {
+    let operation = feature.evaluation.definition().operation();
+    let operation = stored(operation, bodies).unwrap_or_else(|| match family(operation) {
         Family::Typed(family) => FeatureOperation::Unresolved { family },
         Family::Native(kind) => native(&kind),
-    };
+    });
     Feature {
         id: feature.id.clone(),
         name: feature.name.clone(),
@@ -149,6 +159,25 @@ fn resolved_item(feature: &LegacyFeature) -> Feature {
         driven_by: None,
         native_ref: feature.native_ref.clone(),
     }
+}
+
+/// The stored geometry of a Base Feature whose bodies the v10 projection
+/// names, each a body of the current geometry.
+fn stored(operation: &LegacyOperation, bodies: &BTreeSet<&str>) -> Option<FeatureOperation> {
+    let LegacyOperation::BaseFeature {
+        bodies: BodySelection::Bodies(named) | BodySelection::Resolved { bodies: named, .. },
+    } = operation
+    else {
+        return None;
+    };
+    let named = named.iter().cloned().collect::<Vec<_>>();
+    (!named.is_empty() && named.iter().all(|body| bodies.contains(body.as_str()))).then(|| {
+        FeatureOperation::Stored {
+            bodies: Some(named),
+            tessellations: Vec::new(),
+            origin: StoredOrigin::Base {},
+        }
+    })
 }
 
 /// The feature of an item the v10 projection did not resolve: its record
