@@ -11,14 +11,17 @@
 //! has an evaluation with no content and status `Stale`; a stored partition so
 //! flagged is a stale state.
 //!
-//! The states between features are not stated yet. Each partition's Deltas
-//! stream replays, mark by mark along the main line, to the node set of every
-//! earlier state; once the Parasolid reader replays it, a state joined to a
-//! feature is the state after it, `of: State(After(feature))`, its records
-//! those the partition's builder makes of that node set and its names those
-//! of [`Names::entries`], based on the next later stored state and the last
-//! one on `Current` (§5.4). Until then a state between two features has no
-//! evaluation, which §5.4 reads as not read.
+//! The states between features are deferred to the unit that joins each
+//! feature to its mark. A partition's Deltas stream replays as data, mark by
+//! mark along the main line, to the node set of every earlier state (§3.1,
+//! Stored states), and the first word of a feature's `moPMarkRecord_c` is
+//! the PMARK id of the mark set after it. Once the Parasolid reader exposes
+//! that replay, a state joined to a feature is the state after it,
+//! `of: State(After(feature))`, its records those the partition's builder
+//! makes of that node set and its names those of [`Names::entries`], based on
+//! the next later stored state and the last one on `Current` (§5.4). Until
+//! then a state between two features has no evaluation, which §5.4 reads as
+//! not read.
 
 use std::collections::{HashMap, HashSet};
 
@@ -37,9 +40,11 @@ use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::EntitySchema;
 
 use super::names::Names;
+use crate::loss::SldprtLossCode;
 
 /// The scope whose configurations' states are stated.
 pub(super) struct Scope<'a> {
@@ -54,12 +59,15 @@ pub(super) struct Scope<'a> {
 }
 
 /// The evaluation of each configuration that is not active and whose state
-/// the source stores or flags, and the number of records they hold.
+/// the source stores or flags, and the number of records they hold. A
+/// configuration whose evaluation cannot be named has none and charges a
+/// note to `losses`; only a decode ceiling fails the projection.
 pub(super) fn configuration_states(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     scope: &Scope<'_>,
     names: &Names<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<Evaluation>, usize), CodecError> {
     let current = scope.current.iter().collect::<HashSet<_>>();
     let (at, depended) = end_of_tree(scope);
@@ -70,6 +78,13 @@ pub(super) fn configuration_states(
         if Some(&configuration.id) == scope.active {
             continue;
         }
+        let Some(id) = evaluation_id(&configuration.id) else {
+            losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
+                "configuration {} has no evaluation id; its state is not stated.",
+                configuration.id
+            )));
+            continue;
+        };
         let native = ir.model.configurations.iter().find(|native| {
             native.native_ref.is_some() && native.native_ref == configuration.native_ref
         });
@@ -104,7 +119,7 @@ pub(super) fn configuration_states(
             None => continue,
         };
         evaluations.push(Evaluation {
-            id: evaluation_id(&configuration.id)?,
+            id,
             scope: scope.definition.clone(),
             configuration: Some(configuration.id.clone()),
             of: Evaluated::State(at.clone()),
@@ -171,13 +186,14 @@ fn stateless(feature: &Feature) -> bool {
     }
 }
 
-fn evaluation_id(configuration: &ConfigurationId) -> Result<EvaluationId, CodecError> {
+/// The evaluation id of a configuration's state, in the configuration id's
+/// key; `None` where that key is no id key.
+fn evaluation_id(configuration: &ConfigurationId) -> Option<EvaluationId> {
     let key = configuration
         .as_str()
         .split_once('#')
         .map_or(configuration.as_str(), |(_, key)| key);
-    EvaluationId::mint(format!("sldprt:model:evaluation#{key}"))
-        .map_err(|_| CodecError::malformed("invalid SLDPRT evaluation ID"))
+    EvaluationId::mint(format!("sldprt:model:evaluation#{key}")).ok()
 }
 
 macro_rules! topology_arenas {

@@ -3,19 +3,26 @@
 //!
 //! A Parasolid partition stores a persistent id on each face (`FACE_ID_2001`)
 //! and on each body (`ATOM_ID_2001`); the whole stored list is the entity's
-//! native name. A face's list names the history feature that produced it
-//! (value 1), that feature's time stamp (value 2) and a face identity local to
-//! the feature (value 4), with optional path fields after it. A face whose
-//! producer is a feature of the timeline is `Generated` by that feature. Which
-//! of the list's other values is a role and which a discriminator is not
-//! established, so the name states neither (interim, gap 20261119-SW2-2). A
-//! face whose producer is no feature of the document, and a body, whose list
-//! is one identity that names no feature, have no structured name.
+//! native name. A face's list is a chain of hops, each `[class, producer,
+//! time stamp, 0, class fields...]`, where the class is a
+//! `mo*SurfIdRep_c` identity class, the producer the history feature that
+//! made the face, and a wrapping class is followed by the hop it wraps
+//! (`docs/formats/sldprt.md` §5). The partition reader keeps lists of four to
+//! seven values, which are single hops. A face whose producer is a feature of
+//! the timeline is named by that feature, its role and index read from the
+//! class: a side swept from a sketch entity, a start or end cap with its
+//! region as index, a fillet or chamfer face with its ordinal as index, a
+//! feature-scoped set that names no role; every other class is a role whose
+//! meaning is not established, `Other("sldprt:<class>")`. The producer id,
+//! time stamp and sketch-entity id are allocations and stay in the native
+//! name. A face whose producer is no feature of the document, and a body,
+//! whose list is one identity that names no feature, have no structured name.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::design::names::{
-    CodecId, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
+    CodecId, GenerationRole, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
 };
 use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::document::Topology;
@@ -25,8 +32,22 @@ use cadmpeg_ir::ids::{BodyId, FaceId};
 use crate::brep::attrib::NativeIdentity;
 use crate::records::FeatureHistory;
 
-/// The value of a `FACE_ID_2001` list that names the producing feature.
-const PRODUCER: usize = 1;
+/// The `mo*SurfIdRep_c` classes whose role the hop states, by class code.
+mod class {
+    /// `moFromSktEntSurfIdRep_c`: a face swept from a sketch entity, whose
+    /// one field is the entity's id.
+    pub(super) const FROM_SKETCH_ENTITY: u32 = 74;
+    /// `moFromSktEnt3IntSurfIdRep_c`: the same, with two fields more.
+    pub(super) const FROM_SKETCH_ENTITY_3INT: u32 = 83;
+    /// `moEndFaceSurfIdRep_c`: a cap, by its end (0 start, 1 end) and region.
+    pub(super) const END_FACE: u32 = 40;
+    /// `moEndFace3IntSurfIdRep_c`: the same, with a zero field after them.
+    pub(super) const END_FACE_3INT: u32 = 81;
+    /// `moFilletSurfIdRep_c`: a fillet or chamfer face, by its ordinal.
+    pub(super) const FILLET: u32 = 72;
+    /// `moSurfaceIdRep_c`: the four-word set of a feature's faces.
+    pub(super) const SURFACE: u32 = 36;
+}
 
 /// The persistent ids the Parasolid partitions store on decoded faces and
 /// bodies.
@@ -119,21 +140,15 @@ impl<'a> Names<'a> {
             let Some(values) = self.faces.get(face.as_str()) else {
                 continue;
             };
-            let producer = values
-                .get(PRODUCER)
-                .map(|source| self.producers.get(source).copied());
-            let name = match producer {
-                Some(Some(Producer::Feature(feature))) if depends(feature) => {
-                    Some(TopoName::Generated {
-                        kind: NameKind::Face,
-                        feature: feature.clone(),
-                        role: None,
-                        generator: None,
-                        index: None,
-                    })
+            let &[code, producer, _, 0, ref fields @ ..] = *values else {
+                continue;
+            };
+            let name = match self.producers.get(&producer).copied() {
+                Some(Producer::Feature(feature)) if depends(feature) => {
+                    Some(face_name(feature, code, fields))
                 }
-                Some(None | Some(Producer::Node)) => None,
-                Some(Some(Producer::Feature(_) | Producer::Ambiguous)) | None => continue,
+                None | Some(Producer::Node) => None,
+                Some(Producer::Feature(_) | Producer::Ambiguous) => continue,
             };
             table.insert(
                 EntityRef::Face(face.clone()),
@@ -144,6 +159,39 @@ impl<'a> Names<'a> {
             );
         }
         table
+    }
+}
+
+/// The name of a face that `feature` produced, from the class and fields of
+/// its one hop (§5.7).
+fn face_name(feature: &FeatureId, code: u32, fields: &[u32]) -> TopoName {
+    let generated = |role: Option<GenerationRole>, index: Option<u32>| TopoName::Generated {
+        kind: NameKind::Face,
+        feature: feature.clone(),
+        role,
+        generator: None,
+        index,
+    };
+    match (code, fields) {
+        (class::FROM_SKETCH_ENTITY, [_]) | (class::FROM_SKETCH_ENTITY_3INT, [_, _, _]) => {
+            generated(Some(GenerationRole::Side), None)
+        }
+        (class::END_FACE, &[0, region]) | (class::END_FACE_3INT, &[0, region, 0]) => {
+            generated(Some(GenerationRole::Start), Some(region))
+        }
+        (class::END_FACE, &[1, region]) | (class::END_FACE_3INT, &[1, region, 0]) => {
+            generated(Some(GenerationRole::End), Some(region))
+        }
+        (class::FILLET, &[ordinal]) => TopoName::Blend {
+            feature: feature.clone(),
+            between: Vec::new(),
+            index: Some(ordinal),
+        },
+        (class::SURFACE, []) => generated(None, None),
+        _ => generated(
+            NonBlankString::new(format!("sldprt:{code}")).map(GenerationRole::Other),
+            None,
+        ),
     }
 }
 

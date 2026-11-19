@@ -4237,6 +4237,7 @@ fn build_geometry_ir(
                 faces: &brep.native_face_identities,
                 bodies: &brep.native_body_identities,
             },
+            &mut pmi_losses,
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
@@ -4255,8 +4256,9 @@ fn project_design(
     lanes: &[crate::records::FeatureInputLane],
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
     persistent: crate::design_v11::Persistent<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ctx, ir, histories, lanes, bodies, persistent)?;
+    let added = crate::design_v11::project(ctx, ir, histories, lanes, bodies, persistent, losses)?;
     ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
 }
 
@@ -5121,6 +5123,7 @@ fn build_metadata_ir(
                 faces: &[],
                 bodies: &[],
             },
+            &mut pmi_losses,
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
