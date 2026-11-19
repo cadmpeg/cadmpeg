@@ -553,12 +553,15 @@ pub(super) fn body_rows(a: &BodyMeasures, b: &BodyMeasures, context: &Context) -
 }
 
 /// The document rows: body count, total area, closed volume, union box and
-/// occurrence placement.
+/// occurrence placement. Where a document places bodies by occurrences,
+/// `instances` holds the instance rows, and is `None` when an instance
+/// enumeration failed.
 pub(super) fn document_rows(
     a: &MeasureReport,
     b: &MeasureReport,
     context: &Context,
     placement: Placements,
+    instances: Option<Vec<Row>>,
 ) -> Vec<Row> {
     let mut rows = vec![exact(
         "body_count",
@@ -602,6 +605,16 @@ pub(super) fn document_rows(
             Operand::Text(class(placement.a).to_owned()),
             Operand::Text(class(placement.b).to_owned()),
         ));
+    } else if let Some(instances) = instances {
+        let mut row = exact(
+            "occurrences",
+            Operand::Text(class(placement.a).to_owned()),
+            Operand::Text(class(placement.b).to_owned()),
+        );
+        // The instance rows compare the placements; the classes inform.
+        row.agrees = None;
+        rows.push(row);
+        rows.extend(instances);
     } else {
         let mut row = not_compared("occurrences", None, CompareCause::OccurrencePlacement);
         row.a = Some(Operand::Text(class(placement.a).to_owned()));

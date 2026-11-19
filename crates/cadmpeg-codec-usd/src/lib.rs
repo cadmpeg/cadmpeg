@@ -105,7 +105,13 @@ impl CodecBackend for UsdCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        decode::decode(ctx, root)
+        let mut decoded = decode::decode(ctx, root)?;
+        decoded.ir.state_root_definition(
+            ctx,
+            crate::ids::stage(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        Ok(decoded)
     }
 }
 

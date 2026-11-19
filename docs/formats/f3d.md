@@ -3218,6 +3218,156 @@ The two identities of a placement name the same entity, a record of the construc
 
 **Side-face walk.** In a stream with serializer magic `1234`, a one-sided `Extrude` (travel direction `1`) whose operation is join, new body, or cut and whose reversed-direction byte is `0` names its side faces by a walk of its profile loop when the profile identity record holds one region group of one region with one loop, and every entry of that loop names a sketch line and stores incidence words `1` and `1`. The `k`-th line of the walk generates side token `k + 2`. The loop's ring runs each entry's line from its end point to its start point when the entry's traversal flag is `1`, and from its start point to its end point when the flag is `0`. Each line of the ring ends where the next line starts. In the Sketch's own coordinates, the ring runs counterclockwise about the Sketch z axis. Let `C` be the loop line whose sketch-curve record has the largest record index, and `P` the start point of `C`. Token `3` is the line whose run in the ring starts at `P`: `C` itself when the traversal flag of `C` is `0`, and the line after `C` in the ring when the flag is `1`. When the `AlongDistance` value is positive, tokens `4`, `5`, and onward follow the ring from token `3`. When the value is negative, they run against the ring from token `3`.
 
+#### Records of a Base Feature design
+
+This subsection gives the records that a Design stream holds when its MetaStream header stores serializer magic `1234` and its timeline lists one `Base Feature` item that stores `N > 0` result bodies. A reference to a record of the same segment is in the eleven-byte plain form. The cross-segment references are the exceptions, and the records that hold them say so: the one in the `549FBB80-B890-473E-A5C0-415D3D9BF4E6` record is 15 bytes wide (marker, u64, segment flag, segment index), and the component aggregate holds one more. Record indices are local to one Design `BulkStream`. The feature item tail, the paired scope record, the tracked-results table, the item-tail companion, the timeline context, the persistent-id table, and the origin of the previous subsection apply. The type table registers the types below in addition to the types of the previous subsection that these records name.
+
+| Type GUID | Base-type GUID | Version | Add-in | Role |
+|---|---|---|---|---|
+| `D7015B81-AB4D-4C89-BED7-AA4411E1964A` | `2FCB0587-233E-449B-9724-9AAE5AA23647` | 4 | `Fusion` | `Base Feature` parameter scope |
+| `493A89BA-E146-498D-9033-2783FE727AF4` | `D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B` | 3 | `Fusion` | Base Feature result owner |
+| `5988EB6C-011B-4012-B500-089A713F57BF` | `5C069ACB-169F-4555-9792-815B4671DDA0` | 2 | `Fusion` | Base Feature body tracking entry |
+
+**Scope frame.** The `Base Feature` scope record stores its `N` result bodies in three parallel runs. Body `i`, for `0 ≤ i < N`, has a design body-reference record, a parameter body-reference record, and a browser-node member at position `i` of their runs. Each run element of the first two runs is a reference followed by a u32 member.
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 8 × u8 | zero |
+| 19 | u8 | `1` |
+| 20 | u32 | `2N` |
+| 24 + 15i | reference, u32 | design body-reference record of body `i` (type `D3937028-C20C-4E65-B010-94AD418A5C20`, property `BASEFEAT_DM_BODY_REF`); member `0` |
+| 24 + 15(N + i) | reference, u32 | parameter body-reference record of body `i` (type `D3937028-C20C-4E65-B010-94AD418A5C20`, property `BASEFEAT_PM_BODY_REF`); member `0` |
+| 24 + 30N | 11 × u8 | `01`, eight zero bytes, `00 00` |
+| 35 + 30N | u32 | `N` |
+| 39 + 30N + 11i | reference | parameter body-reference record of body `i` |
+| 39 + 41N | u8 | `0` |
+| 40 + 41N | reference, u32 | the result owner (type `493A89BA-E146-498D-9033-2783FE727AF4`); member `0` |
+| 55 + 41N | u32 | `N` |
+| 59 + 41N + 11i | reference | browser-node member of body `i` (type `D26351F0-5940-4D23-AA20-2C35475A6D9E`) |
+| 59 + 52N | 8 × u8 | zero |
+| 67 + 52N | LP-UTF16 | GUID of 36 code units, `00000000-0000-0000-0000-000000000000` |
+| 143 + 52N | 3 × u8 | zero |
+| 146 + 52N | u32 | `1`, the scope-reference count |
+| 150 + 52N | reference | the result owner |
+| 161 + 52N | u32 | current history-state identity |
+| 165 + 52N | LP-UTF16 | family name `Base Feature` |
+| 193 + 52N | 78 bytes | feature item tail |
+| 271 + 52N | header | paired indexed header, followed by the paired scope record |
+
+The item tail stores family ordinal `1`, label count `0`, state bytes `00 00 00`, the preceding history-state identity `2`, two equal evaluation epochs, `s0 = 0`, and `s1 = 0`. The current history-state identity is `3`. The tracked-results table has `N` entries; entry `i` references the body tracking entry of body `i` with key `i + 1`, and the next key is `N + 1`. The item-tail companion stores item word `0`. The scope's record-timestamp table lists the record of type `5D15E992-1E93-4D79-A553-10D2624148AE` and then the scope, and its owner entry names the scope.
+
+The design body-reference record index of body `i` is its body entity suffix: the Design body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`) stores the pair `(i, record index)` as its `i`-th pair, with ten reserved zero bytes.
+
+A `Base Feature` scope that stores no result body uses the shifted wide zero-body form. It stores current and preceding history-state identity `2`, and its tracked-results table has `n = 0` and next key `1`.
+
+**Body-reference records.** The two body-reference records of a body are body-presentation owners of type version `19`. Each record names the other one:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 9 × u8 | zero |
+| 20 | u8 | `1` |
+| 21 | u32 | `1`, the property count |
+| 25 | LP-ASCII | property name: `BASEFEAT_DM_BODY_REF` in the design body-reference record, `BASEFEAT_PM_BODY_REF` in the parameter body-reference record |
+| — | LP-ASCII | `PassiveRefMetaType` |
+| — | reference | the other body-reference record of the body |
+| — | LP-UTF16 | `0_` followed by the decimal record index of this record |
+
+The design body-reference record stores the body's node GUID, and the parameter body-reference record stores the body's parameter GUID, each as an LP-UTF16 GUID of 36 code units. In the 891-byte form of either record, that GUID is the second LP-UTF16 GUID and starts at offset 349.
+
+**Result owner.** The record of type `493A89BA-E146-498D-9033-2783FE727AF4`, type version `3`, is 120 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 22 × u8 | zero |
+| 33 | reference | the `Base Feature` scope |
+| 44 | 20 × u8 | zero |
+| 64 | u8 | `1` |
+| 65 | 2 × u8 | zero |
+| 67 | reference | its parameter companion: the 58-byte record of type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57` whose owner entry names the result owner |
+| 78 | u8 | `0` |
+| 79 | reference | the `Base Feature` scope |
+| 90 | header | paired indexed header |
+| 101 | 8 × u8 | zero |
+| 109 | reference | the owner collection |
+
+**Browser-node member.** The browser-node member of body `i` is the 151-byte form of type `D26351F0-5940-4D23-AA20-2C35475A6D9E`:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | LP-UTF16 | the body's node GUID, 36 code units |
+| 97 | u8 | hidden flag, `0` |
+| 98 | u8 | `1` |
+| 99 | reference | the design body-reference record of body `i` |
+| 110 | reference | the `Base Feature` scope |
+| 121 | header | paired indexed header |
+| 132 | 8 × u8 | zero |
+| 140 | reference | the timeline context |
+
+**Body tracking entry.** The tracked-results entry of body `i` is a 197-byte record of type `5988EB6C-011B-4012-B500-089A713F57BF`:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 14 × u8 | zero |
+| 25 | LP-UTF16 | the body's parameter GUID, 36 code units |
+| 101 | LP-UTF16 | the body's node GUID, 36 code units |
+| 177 | header | paired indexed header |
+| 188 | 9 × u8 | zero |
+
+**Records the timeline context names.** The timeline context stores one browser-node reference for each result body, in body order, one counter `DcBaseFeatureMetaType = 1`, context value `0`, and `K = 1` reference to a record of type `549FBB80-B890-473E-A5C0-415D3D9BF4E6`. The persistent-id table is the forward form with the scope entry `Base Feature → 300`, the pair `(300, scope)`, and no retired identity. The other records that the context names are:
+
+| Record | Layout |
+|---|---|
+| `549FBB80-B890-473E-A5C0-415D3D9BF4E6`, version 4, 72 bytes | header; 22 zero bytes; u32 `3` at 33; zero byte at 37; a cross-segment reference at 38; the component aggregate at 53; u32 `0xffffffff` at 64; u32 `0` at 68 |
+| `12D00AC0-B828-48C8-9740-80C4D992DB65`, version 0, 40 bytes | header; 18 zero bytes; the timeline context at 29 |
+| `016D8C93-144B-4352-9299-98FA738BD4FF`, version 2, 36 bytes | header; 14 zero bytes; the timeline context at 25 |
+| `B65B5682-9355-44C7-8AFC-823058C4A36B`, version 0, 70 bytes | header; 10 zero bytes; the timeline context at 21; `u8 1` at 32; u32 member count `3` at 33; the members at 37 |
+| `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C` (owner collection), version 0, 88 bytes | header; 10 zero bytes; paired header at 21; 8 zero bytes; u32 member count `3` at 40; the members at 44; the timeline context at 77 |
+| `B13113CC-031E-4F93-8240-C4C10728869F`, version 0, 161 bytes | the dependency table below |
+
+The members of `B65B5682-9355-44C7-8AFC-823058C4A36B` and of the owner collection are, in this order, the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the `Base Feature` scope, and the result owner. The paired record of each member ends with a reference to the owner collection.
+
+The dependency table of type `B13113CC-031E-4F93-8240-C4C10728869F` stores, after the indexed header, ten zero bytes at offsets 11 through 20, then `u8 1` at offset 21, or `u8 0` when it has no entry. Then follow two maps, the first map's u32 count at offset 22. Each map entry is a reference, u32 `m`, and `m` pairs of a reference and a u32 flag.
+
+| Field | Type | Value in this design |
+|---|---|---|
+| input-map entry count | u32 | `2` |
+| input map | entries | scope → (`5D15E992` record, `0x1000`); result owner → (scope, `1`) |
+| the timeline context | reference | |
+| dependent-map entry count | u32 | `2` |
+| dependent map | entries | `5D15E992` record → (scope, `0x1000`); scope → (result owner, `1`) |
+
+The input map lists the records that each record reads. The dependent map lists the same edges by the record read. Flag `0x1000` marks an edge to the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, and flag `1` marks the other edges.
+
+**Component records.** The record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, type version `1`, is 79 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u8 | `1` |
+| 22 | reference | the component aggregate |
+| 33 | u8 | `1` |
+| 34 | 2 × u8 | zero |
+| 36 | reference | its record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) |
+| 47 | 2 × u8 | zero |
+| 49 | header | paired indexed header |
+| 60 | 8 × u8 | zero |
+| 68 | reference | the owner collection |
+
+The parameter collection of type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`, of a design with no parameters is 61 bytes: the indexed header, 23 zero bytes, a reference at offset 34 to its record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF`, five zero bytes, and the component aggregate at offset 50. That record, type version `1`, is 44 bytes: the indexed header, eight zero bytes, `u8 1` at offset 19, u32 `1` at offset 20, the parameter collection at offset 24, and nine zero bytes.
+
+The component aggregate of type `E03784ED-5E19-4E14-B9F2-3B07017018CD`, type version `23`, references these records in this order before its paired header: types `8EF00D65-F18D-4179-A644-FE0CA39943D6`, `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, `1E650EA7-07C5-4111-B639-7DEE3A659799`, `F670456D-872C-4818-95E9-DE115B264ACA`, `B4CDE096-07DE-4272-BA4A-B257EFE0B470`, the origin container, `64435F6E-077A-4F6B-A7B6-537BF84BA414`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487`, `AD3F9695-7FDF-4708-AE05-B21309CDE969`, `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, `91461D14-4F77-44B2-9E79-8B052566D9CE`, then the LP-UTF16 name `arrangementsContainer`, then `60F93DE2-6329-4598-A6AF-096AC63E627C`, the timeline context, `7E84430B-74C7-4B67-92D0-4131A0B79109`, `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B`, and `3978701C-58EC-401A-8D24-A6FF4103DC24`. After its paired header it references `0C5DAB90-715E-49EA-A56E-E30F2328F43E`, `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, `AC202226-A700-462A-BC41-13631C9E95D5`, `596C8B98-D176-4E40-B294-6404BAD566BC`, `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, `0DBF95ED-82D2-4CC4-936D-642370679CBB`, `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7`, `77EF6384-409E-498D-8167-BCA537533B35`, the parameter collection, `30DCFC57-8E13-405B-9295-5CF74AC1FB39`, `5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF`, `372234A0-2A6C-4122-8047-E74DBA04F326`, `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E`, the Protein asset manager, `F9CB8717-EB86-47F2-AAA7-39E142C57A09`, a cross-segment reference, `904F885E-D859-4755-A7EF-6EBED8732FAD`, and `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`.
+
+**Names in the B-rep of a Base Feature.** Let `I` be the persistent identity of the `Base Feature` scope. Each result body carries a generic-tag attribute of envelope version `3` with one body group: entity kind `3`, decimal Design id `I`, the body ordinal from `1`, and `0`, `0`. Each face of a result body carries a generic-tag attribute of envelope version `3` with one face group: a selector equal to the number of decimal digits of the token, the decimal token, token integer `0`, one Design reference `-I`, and terminator `0`. In each body, the face tokens increase by one along the body's lump, shell, and face chains. The first face of the first body has token `0`. The faces of a body with `F` faces that is the only result body therefore have the tokens `0` to `F - 1`.
+
+**History of a Base Feature.** When the `Base Feature` is the only item that commits a state, the `.smbh` history is two `delta_state` records. The root state has identity `2`, previous reference `0`, next reference `-1`, node index `1`, and no bulletin board. The head state has identity `3`, previous reference `-1`, next reference `1`, and node index `0`. It has one bulletin board with owner reference `0` and number `2`. Every change of that board is an insertion, and the insertions name every entity slot of the solved model except slot `0` once each.
+
 ### 3.2 Materials
 
 Visual and physical materials are distinct serialized channels.
