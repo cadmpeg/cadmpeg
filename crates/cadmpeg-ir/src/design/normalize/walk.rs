@@ -63,15 +63,29 @@ pub(super) trait Kinded: ConstructionKind {
     const KIND: Kind;
 }
 
-macro_rules! kinded {
-    ($($kind:ident),*) => {$(
-        impl Kinded for kinds::$kind {
-            const KIND: Kind = Kind::$kind;
-        }
-    )*};
+impl Kinded for kinds::Point {
+    const KIND: Kind = Kind::Point;
 }
 
-kinded!(Point, Direction, Axis, Plane, Frame, Curve);
+impl Kinded for kinds::Direction {
+    const KIND: Kind = Kind::Direction;
+}
+
+impl Kinded for kinds::Axis {
+    const KIND: Kind = Kind::Axis;
+}
+
+impl Kinded for kinds::Plane {
+    const KIND: Kind = Kind::Plane;
+}
+
+impl Kinded for kinds::Frame {
+    const KIND: Kind = Kind::Frame;
+}
+
+impl Kinded for kinds::Curve {
+    const KIND: Kind = Kind::Curve;
+}
 
 impl<K: Kinded> Walk for Construction<K> {
     fn walk(&mut self, into: &mut Visit<'_, '_>) -> Result<(), CodecError> {
