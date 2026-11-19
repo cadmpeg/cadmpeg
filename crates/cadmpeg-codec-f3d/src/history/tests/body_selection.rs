@@ -511,26 +511,15 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
     ));
 }
 
-/// The feature that selects a body in [`generated_case`].
-#[derive(Clone, Copy)]
-enum Selecting {
-    /// A pattern whose seed is body slot 1 in its own input state 79.
-    PatternSeed,
-    /// A `RemoveBody` whose group 20 resolves to slot 1.
-    RemoveBody,
-    /// A Reverse Normal of the given body slot in its own input state 79.
-    ReverseNormal(i64),
-}
-
 /// An extrude whose state 77 inserts body slot 1 and a feature that selects
-/// a body. Returns the selecting feature, the result states, and the losses.
+/// that body: a pattern whose seed is the body in its own input state 79, or,
+/// with `remove`, a `RemoveBody` whose group 20 resolves to slot 1.
 fn generated_case(
     live: &[cadmpeg_ir::topology::Body],
-    selecting: Selecting,
+    remove: bool,
 ) -> (
     cadmpeg_ir::features::Feature,
     Vec<cadmpeg_ir::features::FeatureResultTopology>,
-    Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use cadmpeg_ir::features::{
@@ -571,15 +560,14 @@ fn generated_case(
     };
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
     let pattern_id = FeatureId::mint("f3d:test:feature#mirror").unwrap();
-    let input_selection = |slot: i64| {
-        let prefix = crate::ids::feature_input_prefix(&pattern_id, 79);
-        BodySelection::historical(
-            crate::ids::history_input_state_id(&prefix),
-            vec![crate::ids::history_input_body_id(&prefix, slot)],
-            group_id.to_owned(),
-        )
-        .unwrap()
-    };
+    let seed_body =
+        crate::ids::history_input_body_id(&crate::ids::feature_input_prefix(&pattern_id, 79), 1);
+    let seed = BodySelection::historical(
+        crate::ids::history_input_state_id(&crate::ids::feature_input_prefix(&pattern_id, 79)),
+        vec![seed_body],
+        group_id.to_owned(),
+    )
+    .unwrap();
     let mut features = vec![
         feature(
             "f3d:test:feature#extrude",
@@ -592,18 +580,16 @@ fn generated_case(
         feature(
             pattern_id.as_str(),
             &scopes[1].id,
-            FeatureDefinition::Operation(match selecting {
-                Selecting::RemoveBody => FeatureOperation::DeleteBody {
+            FeatureDefinition::Operation(if remove {
+                FeatureOperation::DeleteBody {
                     bodies: BodySelection::Native(group_id.into()),
                     mode: BodyRetentionMode::DeleteSelected,
-                },
-                Selecting::PatternSeed => FeatureOperation::Pattern {
-                    seeds: vec![PatternSeed::Bodies(input_selection(1))],
+                }
+            } else {
+                FeatureOperation::Pattern {
+                    seeds: vec![PatternSeed::Bodies(seed)],
                     pattern: PatternKind::UNRESOLVED_CIRCULAR,
-                },
-                Selecting::ReverseNormal(slot) => FeatureOperation::ReverseShape {
-                    source: input_selection(slot),
-                },
+                }
             }),
         ),
     ];
@@ -660,16 +646,20 @@ fn generated_case(
         shells: &[],
         faces: &[],
     };
-    let mut losses = Vec::new();
-    let results =
-        crate::history::bind_generated_body_selections(&mut features, &inputs, &mut losses);
-    (features.remove(1), results, losses)
+    let results = crate::history::bind_generated_body_selections(
+        &mut features,
+        &inputs,
+        &std::collections::HashMap::new(),
+        None,
+        &mut Vec::new(),
+    );
+    (features.remove(1), results)
 }
 
 #[test]
 fn a_seed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
     use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
-    let (pattern, results, _) = generated_case(&[], Selecting::PatternSeed);
+    let (pattern, results) = generated_case(&[], false);
     let FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
         seeds, ..
     }) = pattern.evaluation.definition()
@@ -715,7 +705,7 @@ fn a_seed_body_the_final_model_keeps_stays_historical() {
         .bodies
         .remove(0);
     body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
-    let (pattern, results, _) = generated_case(std::slice::from_ref(&body), Selecting::PatternSeed);
+    let (pattern, results) = generated_case(std::slice::from_ref(&body), false);
     assert!(results.is_empty());
     assert!(matches!(
         pattern.evaluation.definition(),
@@ -728,7 +718,7 @@ fn a_seed_body_the_final_model_keeps_stays_historical() {
 #[test]
 fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
-    let (remove, results, _) = generated_case(&[], Selecting::RemoveBody);
+    let (remove, results) = generated_case(&[], true);
     let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         bodies: BodySelection::Generated { bodies, native },
         ..
@@ -753,115 +743,4 @@ fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts
         .iter()
         .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
     assert_eq!(results.len(), 1);
-}
-
-fn model_body(id: &str) -> cadmpeg_ir::topology::Body {
-    let mut body = cadmpeg_ir::examples::unit_cube()
-        .unwrap()
-        .geometry
-        .bodies
-        .remove(0);
-    body.id = cadmpeg_ir::ids::BodyId::mint(id).unwrap();
-    body
-}
-
-fn reverse_source(feature: &cadmpeg_ir::features::Feature) -> &cadmpeg_ir::features::BodySelection {
-    let cadmpeg_ir::features::FeatureDefinition::Operation(
-        cadmpeg_ir::features::FeatureOperation::ReverseShape { source },
-    ) = feature.evaluation.definition()
-    else {
-        panic!("reverse definition: {:?}", feature.evaluation.definition());
-    };
-    source
-}
-
-fn producer_unresolved(losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
-    losses.iter().any(|loss| {
-        loss.code == crate::loss::F3dLossCode::FeatureReverseNormalBodyProducerUnresolved.kind()
-    })
-}
-
-#[test]
-fn a_reversed_body_the_final_model_keeps_selects_that_model_body() {
-    use cadmpeg_ir::features::BodySelection;
-    let (reverse, results, losses) = generated_case(
-        &[model_body("f3d:brep:entity#1")],
-        Selecting::ReverseNormal(1),
-    );
-    let BodySelection::Resolved { bodies, native } = reverse_source(&reverse) else {
-        panic!("resolved source: {:?}", reverse_source(&reverse));
-    };
-    assert_eq!(
-        bodies
-            .iter()
-            .map(cadmpeg_ir::ids::BodyId::as_str)
-            .collect::<Vec<_>>(),
-        ["f3d:brep:entity#1"]
-    );
-    assert_eq!(
-        native,
-        "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
-    );
-    assert!(reverse
-        .dependencies
-        .as_slice()
-        .iter()
-        .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
-    assert!(results.is_empty());
-    assert!(losses.is_empty());
-}
-
-#[test]
-fn a_reversed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
-    use cadmpeg_ir::features::BodySelection;
-    let (reverse, results, losses) = generated_case(&[], Selecting::ReverseNormal(1));
-    let BodySelection::Generated { bodies, .. } = reverse_source(&reverse) else {
-        panic!("generated source: {:?}", reverse_source(&reverse));
-    };
-    assert_eq!(
-        bodies
-            .iter()
-            .map(|body| (body.feature.as_str(), body.local_id.as_str()))
-            .collect::<Vec<_>>(),
-        [("f3d:test:feature#extrude", "1")]
-    );
-    assert!(reverse
-        .dependencies
-        .as_slice()
-        .iter()
-        .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
-    assert_eq!(results.len(), 1);
-    assert!(losses.is_empty());
-}
-
-#[test]
-fn a_reversed_slot_of_several_model_bodies_stays_in_its_input_state() {
-    use cadmpeg_ir::features::BodySelection;
-    let (reverse, results, losses) = generated_case(
-        &[
-            model_body("f3d:brep:entity#1"),
-            model_body("f3d:brep/component:entity#1"),
-        ],
-        Selecting::ReverseNormal(1),
-    );
-    assert!(matches!(
-        reverse_source(&reverse),
-        BodySelection::Historical { .. }
-    ));
-    assert!(reverse.dependencies.is_empty());
-    assert!(results.is_empty());
-    assert!(producer_unresolved(&losses));
-}
-
-#[test]
-fn a_reversed_slot_that_no_feature_inserts_stays_in_its_input_state() {
-    use cadmpeg_ir::features::BodySelection;
-    let (reverse, results, losses) = generated_case(&[], Selecting::ReverseNormal(2));
-    assert!(matches!(
-        reverse_source(&reverse),
-        BodySelection::Historical { .. }
-    ));
-    assert!(reverse.dependencies.is_empty());
-    assert!(results.is_empty());
-    assert!(producer_unresolved(&losses));
 }

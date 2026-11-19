@@ -742,8 +742,9 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
-    /// A Reverse Normal selection stays in its input state: its body slots
-    /// have no unique generating feature or model body.
+    /// A Reverse Normal selection stays in its input state: its bound
+    /// history, the model bodies of its slots in that history's BREP source,
+    /// or the generating features of absent slots are unresolved.
     FeatureReverseNormalBodyProducerUnresolved,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
