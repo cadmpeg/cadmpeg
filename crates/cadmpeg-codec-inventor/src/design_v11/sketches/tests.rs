@@ -9,6 +9,7 @@ use cadmpeg_ir::features::{
     FeatureEvaluation, FeatureId, FinitePoint3, SketchFeatureBinding, SketchPointSelection,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::check::Check;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 
@@ -305,7 +306,7 @@ fn spline_keeps_knots_poles_weights_and_periodicity() {
 }
 
 #[test]
-fn unread_placement_keeps_an_unresolved_frame() {
+fn unread_placement_states_one_unread_support_input() {
     let mut ir = fixture();
     ir.model.sketches[0].placement = SketchPlacement::Unresolved {};
     run(&mut ir);
@@ -313,7 +314,28 @@ fn unread_placement_keeps_an_unresolved_frame() {
         panic!("placed")
     };
     assert!(frame.resolved.is_none());
-    assert!(frame.inputs.is_empty());
+    assert!(frame.after.is_empty());
+    let [input] = frame.inputs.as_slice() else {
+        panic!("one support input");
+    };
+    assert_eq!(input.role, None);
+    assert_eq!(input.value, None);
+    assert!(matches!(
+        &input.reference,
+        Some(InputReference::Picks(Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: None,
+        }))
+    ));
+    let findings = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("validation")
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Design)
+        .map(|finding| finding.message)
+        .collect::<Vec<_>>();
+    assert!(findings.is_empty(), "{findings:?}");
 }
 
 #[test]
