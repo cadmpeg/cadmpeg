@@ -589,7 +589,9 @@ An expression binding is retained independently from its target property's cache
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property
 identity, expression-engine identity, and dependencies on other decoded parameters when qualified
 or same-owner identifiers resolve unambiguously. Unresolved symbols remain expression text and do
-not create fabricated parameter identities.
+not create fabricated parameter identities. A binding whose expression text is empty or blank
+emits `parameter.expression-empty`; the v11 parameter states the target property's stored value as
+its expression.
 
 `Placement.Base.x`, `.y`, and `.z` identify the translation components of a
 `PropertyPlacement`; each component is a length in millimetres. An expression target

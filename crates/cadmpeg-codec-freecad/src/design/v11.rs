@@ -10,8 +10,6 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::text::NonBlankString;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
@@ -27,19 +25,22 @@ use cadmpeg_ir::features::{
     FeatureOperation as LegacyOperation, FeatureTreeNodeRole,
     FuzzyTolerance as LegacyFuzzyTolerance, UnresolvedFamily,
 };
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, Identity};
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::native::{ObjectRecord, PropertyRecord};
 
 mod parameters;
 
 /// Project the decoded design of `ir` into its v11 design layer, and say
-/// whether it states a scope.
+/// whether it states a scope. A record the projection cannot state in full is
+/// stated as far as it is read, with a loss in `losses` (§3.3).
 pub(crate) fn project(
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-) -> Result<bool, CodecError> {
+    losses: &mut Vec<LossNote>,
+) -> bool {
     let Some(definition) = ir
         .model
         .product_definitions
@@ -47,17 +48,17 @@ pub(crate) fn project(
         .find(|definition| definition.is_root())
         .map(|definition| definition.id.clone())
     else {
-        return Ok(false);
+        return false;
     };
     let source = Source::of(objects, properties);
-    let history = History::of(&ir.model.features, &source)?;
+    let history = History::of(&ir.model.features, &source);
     if history.bodies.is_empty() {
-        return Ok(false);
+        return false;
     }
     let mut features = Vec::new();
     for member in &history.contained {
         if let Some(legacy) = history.features.get(member) {
-            features.push(feature(legacy, &source)?);
+            features.push(feature(legacy, &source));
         }
     }
     let mut containers = Vec::new();
@@ -65,8 +66,10 @@ pub(crate) fn project(
     let mut roots = Vec::new();
     let mut current = Vec::new();
     for body in &history.bodies {
-        let id = ContainerId::mint(format!("fcstd:design:container#{}", body.key))
-            .map_err(CodecError::malformed)?;
+        let id = ContainerId::from(
+            Identity::from(body.feature.clone())
+                .with_kind(&cadmpeg_ir::identity_component!("container")),
+        );
         let members = body
             .members
             .iter()
@@ -121,9 +124,16 @@ pub(crate) fn project(
         .iter()
         .map(|property| (property.id.as_str(), property.type_name.as_str()))
         .collect::<HashMap<_, _>>();
-    let parameters = parameters::project(ir, &definition, &body_containers, &features, &carriers)?;
+    let parameters = parameters::project(
+        ir,
+        &definition,
+        &body_containers,
+        &features,
+        &carriers,
+        losses,
+    );
     if features.is_empty() && parameters.is_empty() {
-        return Ok(false);
+        return false;
     }
     ir.design.containers = containers;
     ir.design.features = features;
@@ -136,7 +146,7 @@ pub(crate) fn project(
         occurrences: BTreeMap::default(),
         current,
     });
-    Ok(true)
+    true
 }
 
 /// What the projection reads from the document's object records beside the
@@ -195,7 +205,6 @@ struct History<'a> {
 /// A `PartDesign::Body`: its members in `Group` order and its `Tip`.
 struct BodyHistory<'a> {
     feature: &'a FeatureId,
-    key: &'a str,
     members: Vec<FeatureId>,
     tip: Option<FeatureId>,
     outputs: Vec<BodyId>,
@@ -203,7 +212,7 @@ struct BodyHistory<'a> {
 }
 
 impl<'a> History<'a> {
-    fn of(legacy: &'a [LegacyFeature], source: &Source<'_>) -> Result<Self, CodecError> {
+    fn of(legacy: &'a [LegacyFeature], source: &Source<'_>) -> Self {
         let mut ordered = legacy.iter().collect::<Vec<_>>();
         ordered.sort_by_key(|feature| (feature.ordinal, &feature.id));
         let mut features = BTreeMap::new();
@@ -231,12 +240,6 @@ impl<'a> History<'a> {
             }
         }
         for (feature, children) in containers {
-            let key = feature
-                .id
-                .as_str()
-                .split_once('#')
-                .map(|(_, key)| key)
-                .ok_or_else(|| CodecError::malformed("FCStd Body feature id has no key"))?;
             let mut members = Vec::new();
             for child in &**children {
                 if features.contains_key(child) && contained.insert(child.clone()) {
@@ -250,25 +253,24 @@ impl<'a> History<'a> {
                 .cloned();
             bodies.push(BodyHistory {
                 feature: &feature.id,
-                key,
                 members,
                 tip,
                 outputs: feature.evaluation.outputs().clone(),
                 native_ref: feature.native_ref.clone(),
             });
         }
-        Ok(Self {
+        Self {
             features,
             bodies,
             contained,
-        })
+        }
     }
 }
 
 /// The feature of `legacy`. Its `refine` and `fuzzy_tolerance` are stated only
 /// where the object stores `Refine` and `FuzzyTolerance` (§2.4): the decoded
 /// definition fills the one the object lacks.
-fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Result<Feature, CodecError> {
+fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Feature {
     let (operation, refine, fuzzy_tolerance) = match legacy.evaluation.definition() {
         LegacyDefinition::PostProcess {
             operation,
@@ -289,12 +291,12 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Result<Feature, Codec
         ),
         LegacyDefinition::Operation(operation) => (operation, None, None),
     };
-    Ok(Feature {
+    Feature {
         id: legacy.id.clone(),
         name: legacy.name.clone(),
         suppressed: legacy.suppressed.map(Dimension::Literal),
         definition: FeatureDefinition {
-            operation: self::operation(legacy, operation)?,
+            operation: self::operation(legacy, operation),
             refine,
             fuzzy_tolerance,
         },
@@ -302,16 +304,15 @@ fn feature(legacy: &LegacyFeature, source: &Source<'_>) -> Result<Feature, Codec
         component: None,
         driven_by: None,
         native_ref: legacy.native_ref.clone(),
-    })
+    }
 }
 
-fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
-    Ok(FeatureOperation::Native {
-        kind: NonBlankString::new(format!("fcstd:{kind}"))
-            .ok_or_else(|| CodecError::malformed("FCStd v11 operation kind is blank"))?,
+fn native(kind: &str) -> FeatureOperation {
+    FeatureOperation::Native {
+        kind: cadmpeg_core::nonblank_literal!("fcstd:").with_suffix(kind),
         native_options: BTreeMap::default(),
         source_settings: BTreeMap::default(),
-    })
+    }
 }
 
 /// The feature's operation: its family where the decoder reads the operation,
@@ -319,15 +320,15 @@ fn native(kind: &str) -> Result<FeatureOperation, CodecError> {
 fn operation(
     legacy: &LegacyFeature,
     operation: &LegacyOperation,
-) -> Result<FeatureOperation, CodecError> {
+) -> FeatureOperation {
     let kind = legacy.source_tag.as_deref().unwrap_or("feature");
     let family = match operation {
         LegacyOperation::StoredGeometry {} => {
-            return Ok(FeatureOperation::Stored {
+            return FeatureOperation::Stored {
                 bodies: Some(legacy.evaluation.outputs().clone()),
                 tessellations: Vec::new(),
                 origin: StoredOrigin::Base {},
-            })
+            }
         }
         LegacyOperation::Sketch { .. } => OperationFamily::Sketch,
         LegacyOperation::SpatialSketch { .. } => OperationFamily::SpatialSketch,
@@ -411,7 +412,7 @@ fn operation(
         | LegacyOperation::FilledSurface { .. } => OperationFamily::Patch,
         _ => return native(kind),
     };
-    Ok(FeatureOperation::Unresolved { family })
+    FeatureOperation::Unresolved { family }
 }
 
 #[cfg(test)]

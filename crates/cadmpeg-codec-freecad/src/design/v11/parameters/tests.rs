@@ -133,6 +133,23 @@ fn a_literal_takes_its_carriers_unit_not_the_one_its_number_agrees_in() {
 }
 
 #[test]
+fn a_stored_value_with_no_text_is_a_literal_in_its_carriers_unit() {
+    let text = |value: &LegacyValue, carrier: Option<&str>| {
+        let node = super::stored_literal(value, carrier)?;
+        let wire = serde_json::to_value(Expression::Neutral(Neutral(node))).unwrap();
+        Some(wire["value"]["text"].as_str().unwrap().to_owned())
+    };
+    let degrees = LegacyValue::Angle(Angle::new(12.5_f64.to_radians()).unwrap());
+    assert_eq!(
+        text(&degrees, Some("App::PropertyAngle")).as_deref(),
+        Some("12.5[deg]")
+    );
+    assert_eq!(text(&degrees, None), None);
+    let length = LegacyValue::Length(Length::new(-3.0).unwrap());
+    assert_eq!(text(&length, None).as_deref(), Some("-3[mm]"));
+}
+
+#[test]
 fn a_literal_is_the_shortest_decimal_at_fifteen_significant_digits() {
     let length = LegacyValue::Length(Length::new(5.751_842_036_105_048).unwrap());
     assert_eq!(

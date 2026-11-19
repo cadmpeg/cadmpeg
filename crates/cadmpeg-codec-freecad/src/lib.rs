@@ -1165,7 +1165,12 @@ impl CodecBackend for FcstdCodec {
                 &shape_payloads,
             )?;
             let scoped = ctx.depth() >= DecodeDepth::Design
-                && design::v11::project(&mut ir, &graph.objects, &graph.properties)?;
+                && design::v11::project(
+                    &mut ir,
+                    &graph.objects,
+                    &graph.properties,
+                    &mut transfer_losses,
+                );
             if !top_level.has_design_member && !scoped {
                 design::own_at_root(&mut ir, top_level.bodies);
             }

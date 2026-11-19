@@ -9258,7 +9258,9 @@ pub(crate) fn state_root_definition(
         .iter()
         .filter(|object| is_design_object(&object.type_name))
     {
-        feature_ids.insert(object.id().as_str(), feature_id(object)?);
+        if let Ok(id) = feature_id(object) {
+            feature_ids.insert(object.id().as_str(), id);
+        }
     }
     let not_features = multi_transform_stages(objects, properties)
         .into_iter()

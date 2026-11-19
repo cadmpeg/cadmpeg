@@ -317,11 +317,56 @@ fn refine_and_fuzzy_tolerance_are_stated_where_stored() {
 
 #[test]
 fn a_native_kind_uses_the_codec_id() {
-    let FeatureOperation::Native { kind, .. } = super::native("PartDesign::FeatureBase").unwrap()
-    else {
+    let FeatureOperation::Native { kind, .. } = super::native("PartDesign::FeatureBase") else {
         panic!();
     };
     assert_eq!(kind.as_str(), "fcstd:PartDesign::FeatureBase");
+}
+
+#[test]
+fn a_parameter_with_an_empty_expression_is_stated_with_its_stored_value() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="PartDesign::Body" name="Body" id="1"/>
+ <Object type="PartDesign::Pad" name="Pad" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Body"><Properties Count="2">
+  <Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Pad"/></LinkList></Property>
+  <Property name="Tip" type="App::PropertyLink"><Link value="Pad"/></Property>
+ </Properties></Object>
+ <Object name="Pad"><Properties Count="2">
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="EXPRESSION"/></ExpressionEngine></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="20.0000000000000000"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    for text in ["", "  "] {
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document.replace("EXPRESSION", text))),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let ir = decoded.ir();
+        assert_valid_document(ir);
+        let length = ir
+            .design
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id.as_str() == "fcstd:design:parameter#Pad:Length")
+            .unwrap_or_else(|| panic!("{:?}", ir.design.parameters));
+        let wire = serde_json::to_value(&length.definition).unwrap();
+        assert_eq!(wire["value"]["kind"], "neutral", "{wire}");
+        assert_eq!(wire["value"]["value"]["text"], "20[mm]", "{wire}");
+        let empty = crate::loss::FreecadLossCode::ParameterExpressionEmpty.note("");
+        assert_eq!(empty.code.to_string(), "fcstd/parameter.expression-empty");
+        assert!(
+            decoded.report().losses.iter().any(|loss| loss.code == empty.code
+                && loss.message.contains("fcstd:design:parameter#Pad:Length")),
+            "{:?}",
+            decoded.report().losses
+        );
+    }
 }
 
 #[test]

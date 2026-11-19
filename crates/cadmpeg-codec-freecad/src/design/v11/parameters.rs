@@ -5,7 +5,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
     self, BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
@@ -21,7 +20,10 @@ use cadmpeg_ir::features::{
     DesignParameter as LegacyParameter, FeatureId, ParameterId, ParameterValue as LegacyValue,
 };
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
+
+use crate::loss::FreecadLossCode;
 
 /// The property type of a sketch's constraints, whose values `FreeCAD` stores
 /// in millimetres and radians.
@@ -36,7 +38,8 @@ pub(super) fn project(
     containers: &BTreeMap<FeatureId, ContainerId>,
     features: &[Feature],
     carriers: &HashMap<&str, &str>,
-) -> Result<Vec<DesignParameter>, CodecError> {
+    losses: &mut Vec<LossNote>,
+) -> Vec<DesignParameter> {
     let features = features
         .iter()
         .map(|feature| &feature.id)
@@ -72,7 +75,7 @@ pub(super) fn project(
         let parameter_definition = if property(parameter, "is_driving") == Some("0") {
             ParameterDefinition::Driven
         } else {
-            ParameterDefinition::Expression(expression(parameter, &by_id, &kind, carriers)?)
+            ParameterDefinition::Expression(expression(parameter, &by_id, &kind, carriers, losses))
         };
         parameters.push(DesignParameter {
             id: parameter.id.clone(),
@@ -93,7 +96,7 @@ pub(super) fn project(
         });
     }
     parameters.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(parameters)
+    parameters
 }
 
 fn property<'a>(parameter: &'a LegacyParameter, key: &str) -> Option<&'a str> {
@@ -137,30 +140,107 @@ fn kind_and_value(value: Option<&LegacyValue>) -> (ValueKind, Option<ParameterVa
 
 /// The parameter's expression. A stored value is a one-literal expression in
 /// the property's unit; a bound property holds the expression `FreeCAD` binds
-/// to it.
+/// to it. A parameter whose expression text is empty is stated with its
+/// stored value and charged a loss.
 fn expression(
     parameter: &LegacyParameter,
     parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
     kind: &ValueKind,
     carriers: &HashMap<&str, &str>,
-) -> Result<Expression, CodecError> {
+    losses: &mut Vec<LossNote>,
+) -> Expression {
     let text = parameter.expression.as_str();
+    let carrier = parameter
+        .native_ref
+        .as_deref()
+        .and_then(|property| carriers.get(property).copied());
+    if text.trim().is_empty() {
+        return empty_expression(parameter, carrier, losses);
+    }
     if parameter.dependencies.is_empty() {
-        let carrier = parameter
-            .native_ref
-            .as_deref()
-            .and_then(|property| carriers.get(property).copied());
         if let Some(literal) = literal(text, parameter.value.as_ref(), carrier) {
-            return Ok(Expression::Neutral(Neutral(literal)));
+            return Expression::Neutral(Neutral(literal));
         }
     }
     translated(parameter, text, parameters, kind)
 }
 
-/// A stored value as a literal in the unit its carrier stores it in (§5.12):
-/// millimetres for a length, degrees for an angle property, radians for a
-/// sketch constraint's angle, and no unit for a real. An angle whose carrier
-/// the decoder does not know has no literal.
+/// The expression of a parameter that stores no expression text: its stored
+/// value as a one-literal expression where it is a quantity in a known
+/// carrier unit, and otherwise a source expression with no token, the
+/// spelling of a text the decoder did not read (interim, gap 20261119-X3-1).
+fn empty_expression(
+    parameter: &LegacyParameter,
+    carrier: Option<&str>,
+    losses: &mut Vec<LossNote>,
+) -> Expression {
+    let literal = parameter
+        .value
+        .as_ref()
+        .and_then(|value| stored_literal(value, carrier));
+    let stated = if literal.is_some() {
+        "its stored value is stated as its expression"
+    } else {
+        "its expression is stated with no text"
+    };
+    losses.push(FreecadLossCode::ParameterExpressionEmpty.note(format!(
+        "FCStd parameter {} has an empty expression; {stated}",
+        parameter.id.as_str()
+    )));
+    literal.map_or_else(
+        || Expression::Source {
+            dialect: ExpressionDialect::FreeCad,
+            tokens: Vec::new(),
+        },
+        |literal| Expression::Neutral(Neutral(literal)),
+    )
+}
+
+/// The unit a carrier stores a value in (§5.12): millimetres for a length,
+/// degrees for an angle property, radians for a sketch constraint's angle,
+/// and no unit for a real. An angle whose carrier the decoder does not know,
+/// and a value that is no quantity, has none.
+struct CarrierUnit {
+    symbol: &'static str,
+    /// A number in the unit, in the canonical unit.
+    to_canonical: fn(f64) -> f64,
+    /// A number in the canonical unit, in the unit.
+    from_canonical: fn(f64) -> f64,
+}
+
+fn carrier_unit(value: &LegacyValue, carrier: Option<&str>) -> Option<CarrierUnit> {
+    let same = |value| value;
+    match value {
+        LegacyValue::Length(_) => Some(CarrierUnit {
+            symbol: "mm",
+            to_canonical: same,
+            from_canonical: same,
+        }),
+        LegacyValue::Angle(_) if carrier == Some(CONSTRAINT_LIST) => Some(CarrierUnit {
+            symbol: "rad",
+            to_canonical: same,
+            from_canonical: same,
+        }),
+        LegacyValue::Angle(_) if carrier.is_some_and(|carrier| carrier.contains("Angle")) => {
+            Some(CarrierUnit {
+                symbol: "deg",
+                to_canonical: f64::to_radians,
+                from_canonical: f64::to_degrees,
+            })
+        }
+        LegacyValue::Real(_) => Some(CarrierUnit {
+            symbol: "",
+            to_canonical: same,
+            from_canonical: same,
+        }),
+        LegacyValue::Angle(_)
+        | LegacyValue::Integer(_)
+        | LegacyValue::Boolean(_)
+        | LegacyValue::String(_) => None,
+    }
+}
+
+/// A stored value's text as a literal in the unit its carrier stores it in.
 fn literal(
     text: &str,
     value: Option<&LegacyValue>,
@@ -171,23 +251,29 @@ fn literal(
         .parse::<f64>()
         .ok()
         .filter(|value| value.is_finite())?;
-    let (unit, canonical): (&str, fn(f64) -> f64) = match value? {
-        LegacyValue::Length(_) => ("mm", |value| value),
-        LegacyValue::Angle(_) if carrier == Some(CONSTRAINT_LIST) => ("rad", |value| value),
-        LegacyValue::Angle(_) if carrier.is_some_and(|carrier| carrier.contains("Angle")) => {
-            ("deg", f64::to_radians)
+    literal_in(stored, &carrier_unit(value?, carrier)?)
+}
+
+/// A decoded value as a literal in the unit its carrier stores it in.
+fn stored_literal(value: &LegacyValue, carrier: Option<&str>) -> Option<Node<ParameterRef>> {
+    let unit = carrier_unit(value, carrier)?;
+    let canonical = match value {
+        LegacyValue::Length(value) => value.get(),
+        LegacyValue::Angle(value) => value.get(),
+        LegacyValue::Real(value) => value.get(),
+        LegacyValue::Integer(_) | LegacyValue::Boolean(_) | LegacyValue::String(_) => {
+            return None
         }
-        LegacyValue::Real(_) => ("", |value| value),
-        LegacyValue::Angle(_)
-        | LegacyValue::Integer(_)
-        | LegacyValue::Boolean(_)
-        | LegacyValue::String(_) => return None,
     };
-    let number = decimal(stored, canonical);
-    let text = if unit.is_empty() {
+    literal_in((unit.from_canonical)(canonical), &unit)
+}
+
+fn literal_in(stored: f64, unit: &CarrierUnit) -> Option<Node<ParameterRef>> {
+    let number = decimal(stored, unit.to_canonical);
+    let text = if unit.symbol.is_empty() {
         number
     } else {
-        format!("{number}[{unit}]")
+        format!("{number}[{}]", unit.symbol)
     };
     expr::parse(&text, &[], &[]).ok()
 }
@@ -212,7 +298,7 @@ fn translated(
     text: &str,
     parameters: &BTreeMap<&ParameterId, &LegacyParameter>,
     kind: &ValueKind,
-) -> Result<Expression, CodecError> {
+) -> Expression {
     let targets = reference_paths(parameter, parameters);
     let mut tokens = Vec::new();
     let mut neutral = String::new();
@@ -312,20 +398,14 @@ fn translated(
                 .as_ref()
                 == Some(kind)
             {
-                return Ok(Expression::Neutral(Neutral(tree)));
+                return Expression::Neutral(Neutral(tree));
             }
         }
     }
-    if tokens.is_empty() {
-        return Err(CodecError::malformed(format!(
-            "FCStd parameter {} has an empty expression",
-            parameter.id.as_str()
-        )));
-    }
-    Ok(Expression::Source {
+    Expression::Source {
         dialect: ExpressionDialect::FreeCad,
         tokens,
-    })
+    }
 }
 
 /// The paths by which the expression names each parameter it depends on:
