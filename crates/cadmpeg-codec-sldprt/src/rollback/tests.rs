@@ -7,7 +7,8 @@ use cadmpeg_parasolid::records::DeltasRecords;
 use cadmpeg_parasolid::test_support::test_pmarks;
 
 use super::{
-    join, mark_chain, mark_records, token_naming_marks, MarkChain, MarkRecord, Reading, Unread,
+    join, mark_chain, mark_class_index, mark_records, token_naming_marks, MarkChain, MarkRecord,
+    Reading, Unread,
 };
 use crate::carchive::reader::MarkOwner;
 use crate::layout::pmark_record_head as head;
@@ -262,4 +263,20 @@ fn a_token_whose_heads_mostly_miss_the_main_line_names_no_record() {
     let sequence = [2, 3, 4, 5].map(|value| tagged(0x30, value));
     let stream = resolved(&[sequence.concat(), tagged(0x2b, 4)]);
     assert_eq!(token_naming_marks(&stream, None, &marks), Some(0x2b));
+}
+
+#[test]
+fn a_reconciled_map_without_the_mark_class_bounds_the_token_scan_by_its_count() {
+    let marks = chain(&[11, 8, 5, 1]);
+    let stream = resolved(&[tagged(0x2b, 5), tagged(0x2b, 8), tagged(0x2b, 11)]);
+    let map = std::collections::BTreeMap::from([(0x10, "moOtherRecord_c".to_owned())]);
+    assert_eq!(
+        mark_class_index(Some(&map), Some(0x2b), &stream, &marks),
+        Err(Unread::NoMarkClass),
+        "a token at or past the map count names no class of the configuration"
+    );
+    assert_eq!(
+        mark_class_index(Some(&map), Some(0x40), &stream, &marks),
+        Ok(0x2b)
+    );
 }

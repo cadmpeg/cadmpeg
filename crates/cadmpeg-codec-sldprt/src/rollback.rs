@@ -183,15 +183,7 @@ pub(crate) fn read(
         Some(count) => crate::archive::class_index_map(config, count, ctx)?,
         None => None,
     };
-    let index = match map {
-        Some(map) => map
-            .iter()
-            .find_map(|(index, name)| (name == MARK_CLASS).then_some(*index))
-            .or_else(|| token_naming_marks(resolved, None, &chain))
-            .ok_or(Unread::NoMarkClass),
-        None => token_naming_marks(resolved, count, &chain).ok_or(Unread::ClassMapUnreconciled),
-    };
-    let index = match index {
+    let index = match mark_class_index(map.as_ref(), count, resolved, &chain) {
         Ok(index) => index,
         Err(unread) => return Ok(Reading::Unread(unread)),
     };
@@ -255,6 +247,27 @@ fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
 /// and whose record heads mostly name main-line marks after the initial one,
 /// the one whose record heads name the most distinct such marks. `None` where
 /// no index or several do.
+/// The class index of `moPMarkRecord_c` in a configuration's feature stream:
+/// the class map's entry where the map reconciles, else the token whose
+/// records name the most marks among indices below the stream's map count.
+/// A reconciled map bounds the token scan as an unreconciled one does: a
+/// token at or past the count names no class of the configuration.
+fn mark_class_index(
+    map: Option<&BTreeMap<u32, String>>,
+    count: Option<u32>,
+    resolved: &[u8],
+    chain: &MarkChain,
+) -> Result<u32, Unread> {
+    match map {
+        Some(map) => map
+            .iter()
+            .find_map(|(index, name)| (name == MARK_CLASS).then_some(*index))
+            .or_else(|| token_naming_marks(resolved, count, chain))
+            .ok_or(Unread::NoMarkClass),
+        None => token_naming_marks(resolved, count, chain).ok_or(Unread::ClassMapUnreconciled),
+    }
+}
+
 fn token_naming_marks(stream: &[u8], count: Option<u32>, chain: &MarkChain) -> Option<u32> {
     let marks = match chain.main.split_last() {
         Some((_, later)) if !later.is_empty() => later,
