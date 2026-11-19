@@ -272,7 +272,7 @@ fn the_unmarked_form_has_eight_references_and_its_operation_at_offset_21() {
 }
 
 #[test]
-fn each_further_reference_of_a_boolean_marked_frame_adds_one_table_reference() {
+fn a_nine_reference_boolean_marked_frame_adds_one_table_reference() {
     let mut nine = Fixture::marked();
     nine.references = 9;
     nine.operation = 2;
@@ -286,6 +286,9 @@ fn each_further_reference_of_a_boolean_marked_frame_adds_one_table_reference() {
     let mut short = nine.clone();
     short.payload_length = Some(373);
     assert!(short.decode().is_none());
+    let mut ten = nine.clone();
+    ten.references = 10;
+    assert!(ten.decode().is_none());
 }
 
 #[test]

@@ -188,15 +188,10 @@ pub(super) fn referenced_revolve_reference_loss(
 
 /// Whether a referenced-angle `Revolve` frame of `length` token-independent
 /// bytes and `count` ordered references has the Boolean-operation layout: the
-/// 373-byte eight-reference frame, with one more marked reference in the
-/// ordered table for each further reference.
+/// 373-byte eight-reference frame, or the 384-byte nine-reference frame that
+/// stores one more marked reference in its ordered table.
 fn referenced_boolean_revolve_frame(length: u64, count: usize) -> bool {
-    count
-        .checked_sub(8)
-        .and_then(|extra| extra.checked_mul(MARKED_REFERENCE_LEN))
-        .and_then(|extra| extra.checked_add(373))
-        .and_then(|expected| u64::try_from(expected).ok())
-        == Some(length)
+    matches!((length, count), (373, 8) | (384, 9))
 }
 
 /// A referenced-angle `Revolve` scope whose angle owner can store a negative angle.
