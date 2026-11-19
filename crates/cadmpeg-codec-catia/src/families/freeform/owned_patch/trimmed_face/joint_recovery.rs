@@ -250,6 +250,124 @@ fn connected_in_world(
     Some(pair)
 }
 
+pub(super) fn planar_station_join(
+    sides: [&Trim; 2],
+    endpoint_indices: [usize; 2],
+    vertex: Point3,
+    world: impl Fn([f64; 2]) -> Option<Point3>,
+) -> Option<[f64; 2]> {
+    let line = match sides.map(|side| matches!(side.pcurve, PcurveGeometry::Line(_))) {
+        [true, false] => 0,
+        [false, true] => 1,
+        _ => return None,
+    };
+    let spline = 1 - line;
+    let trim = sides[spline];
+    let station = trim.primary_stations[endpoint_indices[spline]]?;
+    if !(trim.range[0]..=trim.range[1]).contains(&station) {
+        return None;
+    }
+    let anchor = world(trim.uv(station)?)?;
+    if anchor.distance(vertex) > KNOWN_VERTEX_JOIN_MM {
+        return None;
+    }
+    let projected = world_projection(sides[line], anchor, &world, super::GAP_MM)?;
+    if world(sides[line].uv(projected)?)?.distance(vertex) > super::GAP_MM {
+        return None;
+    }
+    let mut pair = [station; 2];
+    pair[line] = projected;
+    connected_in_world(sides, pair, &world, super::GAP_MM)
+}
+
+pub(super) fn mapped_endpoint_join(
+    sides: [&Trim; 2],
+    endpoints: [usize; 2],
+    world: impl Fn([f64; 2]) -> Option<Point3>,
+) -> Option<[f64; 2]> {
+    let [a, b] = sides;
+    let line = match (&a.pcurve, &b.pcurve) {
+        (PcurveGeometry::Line(_), PcurveGeometry::Nurbs { .. }) => 0,
+        (PcurveGeometry::Nurbs { .. }, PcurveGeometry::Line(_)) => 1,
+        _ => return None,
+    };
+    let pair = [a.stations[endpoints[0]]?, b.stations[endpoints[1]]?];
+    if sides[line].primary_stations[endpoints[line]] != Some(pair[line])
+        || !sides.iter().zip(pair).all(|(side, station)| {
+            side.mapped_range == Some(side.range)
+                && (side.range[0]..=side.range[1]).contains(&station)
+        })
+    {
+        return None;
+    }
+    connected_in_world(sides, pair, &world, super::GAP_MM)
+}
+
+pub(super) fn tensor_station_join(
+    sides: [&Trim; 2],
+    stations: [Option<f64>; 2],
+    world: impl Fn([f64; 2]) -> Option<Point3>,
+) -> Option<[f64; 2]> {
+    let pair = [stations[0]?, stations[1]?];
+    if !sides.iter().zip(pair).all(|(side, station)| {
+        side.mapped_range.is_some_and(|range| {
+            (range[0]..=range[1]).contains(&station)
+                && (side.range[0]..=side.range[1]).contains(&station)
+        })
+    }) {
+        return None;
+    }
+    connected_in_world(sides, pair, &world, super::GAP_MM)
+}
+
+const PAIRED_ENDPOINT_JOIN_MM: f64 = 0.002;
+
+pub(super) fn primary_spline_join(
+    sides: [&Trim; 2],
+    endpoints: [usize; 2],
+    world: impl Fn([f64; 2]) -> Option<Point3>,
+) -> Option<[f64; 2]> {
+    if !sides
+        .iter()
+        .all(|side| matches!(side.pcurve, PcurveGeometry::Nurbs { .. }))
+    {
+        return None;
+    }
+    let primary = match sides.map(|side| side.primary_stations) {
+        [first, second] if first[endpoints[0]].is_some() && second[endpoints[1]].is_none() => 0,
+        [first, second] if first[endpoints[0]].is_none() && second[endpoints[1]].is_some() => 1,
+        _ => return None,
+    };
+    let other = 1 - primary;
+    if sides[other].stations[endpoints[other]].is_some() {
+        return None;
+    }
+    let anchor = sides[primary].primary_stations[endpoints[primary]]?;
+    if !(sides[primary].range[0]..=sides[primary].range[1]).contains(&anchor) {
+        return None;
+    }
+    let point = world(sides[primary].uv(anchor)?)?;
+    let endpoints = sides[other]
+        .range
+        .into_iter()
+        .filter(|&t| {
+            sides[other]
+                .uv(t)
+                .and_then(&world)
+                .is_some_and(|other| point.distance(other) <= PAIRED_ENDPOINT_JOIN_MM)
+        })
+        .collect::<Vec<_>>();
+    let projected = match endpoints.as_slice() {
+        [endpoint] => *endpoint,
+        [] => world_projection(sides[other], point, &world, PAIRED_ENDPOINT_JOIN_MM)?,
+        _ => return None,
+    };
+    let mut pair = [anchor; 2];
+    pair[other] = projected;
+    let gap = point.distance(world(sides[other].uv(projected)?)?);
+    (gap <= PAIRED_ENDPOINT_JOIN_MM).then_some(pair)
+}
+
 pub(super) fn known_vertex(
     sides: [&Trim; 2],
     vertex: Point3,
@@ -289,7 +407,15 @@ pub(super) fn world_join(
     stations: [Option<f64>; 2],
     world: impl Fn([f64; 2]) -> Option<Point3>,
 ) -> Option<[f64; 2]> {
-    world_join_with_tolerance(sides, stations, &world, KNOWN_VERTEX_JOIN_MM)
+    world_join_with_tolerance(sides, stations, &world, KNOWN_VERTEX_JOIN_MM, false)
+}
+
+pub(super) fn bounded_world_join(
+    sides: [&Trim; 2],
+    stations: [Option<f64>; 2],
+    world: impl Fn([f64; 2]) -> Option<Point3>,
+) -> Option<[f64; 2]> {
+    world_join_with_tolerance(sides, stations, &world, KNOWN_VERTEX_JOIN_MM, true)
 }
 
 fn world_join_with_tolerance(
@@ -297,6 +423,7 @@ fn world_join_with_tolerance(
     stations: [Option<f64>; 2],
     world: &impl Fn([f64; 2]) -> Option<Point3>,
     tolerance: f64,
+    bounded_ranges: bool,
 ) -> Option<[f64; 2]> {
     let [a, b] = sides;
     let pair = match stations {
@@ -323,6 +450,15 @@ fn world_join_with_tolerance(
                         if !sides.iter().enumerate().all(|(i, side)| {
                             (pair[i] - prior[i]).abs()
                                 <= PARAMETER_MERGE * (side.range[1] - side.range[0])
+                                || (bounded_ranges
+                                    && sides
+                                        .iter()
+                                        .all(|side| side.mapped_range == Some(side.range))
+                                    && side
+                                        .uv(pair[i])
+                                        .and_then(world)
+                                        .zip(side.uv(prior[i]).and_then(world))
+                                        .is_some_and(|(a, b)| a.distance(b) <= tolerance))
                         }) {
                             return None;
                         }
@@ -357,8 +493,12 @@ pub(super) fn extended_splines(
         pair[i] = &extended;
         let candidate = crossing(pair, stations)
             .or_else(|| crossing(pair, [None; 2]))
-            .or_else(|| world_join_with_tolerance(pair, stations, &world, KNOWN_VERTEX_JOIN_MM))
-            .or_else(|| world_join_with_tolerance(pair, [None; 2], &world, KNOWN_VERTEX_JOIN_MM));
+            .or_else(|| {
+                world_join_with_tolerance(pair, stations, &world, KNOWN_VERTEX_JOIN_MM, false)
+            })
+            .or_else(|| {
+                world_join_with_tolerance(pair, [None; 2], &world, KNOWN_VERTEX_JOIN_MM, false)
+            });
         if let Some(candidate) = candidate {
             if let Some(prior) = solution {
                 let agree = sides.into_iter().zip(candidate).zip(prior).all(
@@ -377,6 +517,6 @@ pub(super) fn extended_splines(
         }
     }
     solution
-        .or_else(|| world_join_with_tolerance(sides, stations, &world, FITTED_JOIN_MM))
-        .or_else(|| world_join_with_tolerance(sides, [None; 2], &world, FITTED_JOIN_MM))
+        .or_else(|| world_join_with_tolerance(sides, stations, &world, FITTED_JOIN_MM, false))
+        .or_else(|| world_join_with_tolerance(sides, [None; 2], &world, FITTED_JOIN_MM, false))
 }

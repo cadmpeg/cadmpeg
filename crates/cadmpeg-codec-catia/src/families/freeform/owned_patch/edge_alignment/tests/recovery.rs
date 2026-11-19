@@ -138,3 +138,46 @@ fn analytic_reprojection_preserves_both_torus_chart_branches() {
         assert!((point.v - (6.1 + 0.4 * t)).abs() <= UV_FIT_FALLBACK);
     }
 }
+
+#[test]
+fn spline_reprojection_handles_stationary_parameters_within_the_lift_limit() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+
+    let first = edge(vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)], true);
+    for height in [0.0, 2.0 * GAP_MM] {
+        let surface = NurbsSurface::new(
+            NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsPoleGrid::Polynomial {
+                rows: [0.0, 0.0, 1.0]
+                    .map(|x| vec![Point3::new(x, 0.0, height), Point3::new(x, 1.0, height)])
+                    .to_vec(),
+            },
+            false,
+        )
+        .expect("quadratically parameterized plane");
+        let projected = project_spline(&first, &surface, |fraction| {
+            Some(Point2::new(fraction, 0.0))
+        });
+        if height > 0.0 {
+            assert!(projected.is_none());
+            continue;
+        }
+        let pcurve = projected.expect("bounded reprojection at the stationary endpoint");
+        for t in (0..=256)
+            .map(|i| f64::from(i) / 256.0)
+            .chain([1.0e-8, 1.0e-6, 1.0e-4])
+        {
+            let uv = evaluate_uv(&pcurve, t).expect("projected parameter");
+            let point = eval::decode::nurbs_surface_point(
+                EvaluationAdmission::Standard,
+                &surface,
+                uv.u,
+                uv.v,
+            )
+            .expect("projected lift")
+            .get();
+            assert!(point.distance(curve_point(&first.curve, t).expect("source point")) <= GAP_MM);
+        }
+    }
+}

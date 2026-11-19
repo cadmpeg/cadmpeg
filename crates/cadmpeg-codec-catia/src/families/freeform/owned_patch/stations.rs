@@ -4,8 +4,11 @@
 use cadmpeg_core::decode::View;
 
 use crate::families::consolidated::records::class25::{self, Class25SourceRelation};
+use crate::layout::consolidated_vertex_wide_roster as wide_roster;
 use crate::nurbs::LaneRefusals;
-use crate::wire::bytes::{allocation_reference, compact_int, AllocationReference};
+use crate::wire::bytes::{
+    allocation_reference, compact_int, AllocationReference, AllocationReferenceEncoding,
+};
 use crate::wire::records::{
     owned_pcurve_from_record, ConsolidatedFamily as Family, ConsolidatedRecord,
 };
@@ -13,12 +16,28 @@ use crate::wire::records::{
 use super::payload;
 
 const STATION_TOLERANCE: f64 = 1.0e-9;
+const SAMPLED_IDENTITY_ROUNDOFF: f64 = 4.0 * f64::EPSILON;
 
 #[derive(Clone, Copy)]
 pub(super) struct Domain<'a> {
     pub(super) range: [f64; 2],
     pub(super) knots: Option<(&'a [f64], usize, usize)>,
     pub(super) line: bool,
+}
+
+fn vertex_roster_reference(bytes: &[u8]) -> Option<AllocationReference> {
+    if bytes.len() == wide_roster::LEN
+        && bytes[wide_roster::MARKER] == wide_roster::MARKER_VALUE
+        && bytes[wide_roster::TERMINAL] == wide_roster::TERMINAL_VALUE
+    {
+        return Some(AllocationReference {
+            value: View::u24_le_at(bytes, wide_roster::ORDINAL)?,
+            encoding: AllocationReferenceEncoding::TaggedU24,
+        });
+    }
+    let mut at = 0;
+    let reference = allocation_reference(bytes, &mut at)?;
+    (bytes.get(at..)? == [0]).then_some(reference)
 }
 
 pub(super) fn parameter(
@@ -35,11 +54,7 @@ pub(super) fn parameter(
         (record.family() == Family::B && record.class() == class).then_some(record)
     };
     let vertex_bytes = payload(bytes, typed(vertex, 0x5d)?)?;
-    let mut at = 0;
-    let roster = resolve(vertex, allocation_reference(vertex_bytes, &mut at)?)?;
-    if vertex_bytes.get(at..)? != [0] {
-        return None;
-    }
+    let roster = resolve(vertex, vertex_roster_reference(vertex_bytes)?)?;
     let roster_bytes = payload(bytes, typed(roster, 0x05)?)?;
     let count = roster_bytes.first()?.checked_sub(0x80)?;
     let mut at = 1;
@@ -238,11 +253,52 @@ fn map_parameter(relation: &Class25SourceRelation, axis: usize, t: f64) -> Optio
             .or_else(|| {
                 samples
                     .pairs()
-                    .all(|[a, b]| (a - b).abs() <= STATION_TOLERANCE)
+                    .all(|[a, b]| {
+                        let roundoff = SAMPLED_IDENTITY_ROUNDOFF * a.abs().max(b.abs());
+                        (a - b).abs() <= STATION_TOLERANCE.max(roundoff)
+                    })
                     .then_some(t)
             }),
         Class25SourceRelation::Absent => None,
     }
+}
+
+pub(super) fn sampled_line_station(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+    [map, curve, incidence]: [usize; 3],
+    resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
+) -> Option<f64> {
+    let record = records.get(curve)?;
+    if (record.family(), record.class()) != (Family::B, 0x18) {
+        return None;
+    }
+    let mapping = map_record(bytes, records.get(map)?)?;
+    let [spline, line] = operands(&mapping, map, resolve)?;
+    if spline == line || line != curve {
+        return None;
+    }
+    let t = map_station(bytes, records, incidence, map, spline, resolve)?;
+    if !(mapping.target_range.lower()..=mapping.target_range.upper()).contains(&t) {
+        return None;
+    }
+    let parameter = interpolate_sampled_station(&mapping.source, t)?;
+    refusal.push_sampled_endpoint_station_inferred(incidence, map, parameter);
+    Some(parameter)
+}
+
+fn interpolate_sampled_station(relation: &Class25SourceRelation, t: f64) -> Option<f64> {
+    let Class25SourceRelation::Sampled { samples, .. } = relation else {
+        return None;
+    };
+    let (a, b) = samples
+        .pairs()
+        .zip(samples.pairs().skip(1))
+        .find(|(a, b)| a[0] <= t && t <= b[0])?;
+    let fraction = cadmpeg_ir::math::parameter_fraction(t, a[0], b[0])?.get();
+    let parameter = (b[1] - a[1]).mul_add(fraction, a[1]);
+    parameter.is_finite().then_some(parameter)
 }
 
 fn map_station(
@@ -443,8 +499,8 @@ fn arc_parameter(
     extrapolation_sites: usize,
 ) -> Option<f64> {
     let arc = usize::from(code.checked_sub(1)? / 4)
-        .checked_sub(first_arc)?
-        .checked_add(extrapolation_sites)?;
+        .checked_add(extrapolation_sites)?
+        .checked_sub(first_arc)?;
     parameter_on_arc(t, knots, arc)
 }
 
@@ -490,6 +546,11 @@ fn incidence_parameter(
         let t = View::f64_le_at(tail, at)?;
         let tag = tagged.then(|| tail.get(at + 8..)).flatten();
         match (knots, tag) {
+            (Some((knots, first_arc, extrapolation_sites)), Some([1, ..]))
+                if extrapolation_sites >= first_arc =>
+            {
+                arc_parameter(t, 1, knots, first_arc, extrapolation_sites)
+            }
             (Some((knots, _, _)), Some([0x04, code, ..])) => {
                 parameter_on_arc(t, knots, usize::from(code.checked_sub(0x44)?))
             }
@@ -523,6 +584,11 @@ fn incidence_parameter(
             scalar(1 + 9 * lane, true)?
         }
         (2, _, [0, ..]) if tail.len() == 18 && tail[9] % 4 == 1 => scalar(1 + 9 * lane, lane == 0)?,
+        (4, 2 | 3, [0x80, ..])
+            if tail.len() == 28 && tail[9] % 4 == 1 && tail[18] % 4 == 1 && tail[19] == 0 =>
+        {
+            scalar(if lane == 2 { 10 } else { 20 }, lane == 2)?
+        }
         (4, 2 | 3, [0x80, ..]) if tail.len() == 27 && tail[9] % 4 == 1 && tail[18] == 0 => {
             scalar(1 + 9 * (lane - 1), false)?
         }
@@ -596,6 +662,9 @@ mod tests {
     use super::*;
 
     mod fixtures;
+    mod map_allocations;
+    mod map_identity;
+    mod roster_reference;
 
     fn station_value(
         bytes: &[u8],
@@ -613,6 +682,72 @@ mod tests {
             &mut LaneRefusals::new(),
         )
         .map(|(t, _)| t)
+    }
+
+    #[test]
+    fn repeated_map_incidence_keeps_the_spline_span_tag() {
+        let resolve =
+            |_: usize, reference: AllocationReference| usize::try_from(reference.value).ok();
+        let mut bytes = vec![0x84, 3, 3, 7, 11, 0x80];
+        bytes.extend(0.25_f64.to_le_bytes());
+        bytes.push(1);
+        bytes.extend(0.25_f64.to_le_bytes());
+        bytes.push(1);
+        bytes.push(0);
+        bytes.extend(7.0_f64.to_le_bytes());
+        let knots = [-5.0, 0.0, 1.0];
+        assert_eq!(
+            station_value(
+                &bytes,
+                0,
+                1,
+                Domain {
+                    range: [0.0, 1.0],
+                    knots: Some((&knots, 1, 1)),
+                    line: false
+                },
+                &resolve
+            ),
+            Some(-4.75)
+        );
+        assert_eq!(
+            station_value(
+                &bytes,
+                0,
+                2,
+                Domain {
+                    range: [0.0, 10.0],
+                    knots: None,
+                    line: true
+                },
+                &resolve
+            ),
+            Some(7.0)
+        );
+    }
+
+    #[test]
+    fn zero_arc_station_selects_the_leading_extrapolation_span() {
+        let resolve =
+            |_: usize, reference: AllocationReference| usize::try_from(reference.value).ok();
+        let mut bytes = vec![0x83, 3, 7, 11, 0x81];
+        bytes.extend(0.25_f64.to_le_bytes());
+        bytes.push(1);
+        let knots = [-5.0, 0.0, 1.0];
+        assert_eq!(
+            station_value(
+                &bytes,
+                0,
+                1,
+                Domain {
+                    range: [0.0, 1.0],
+                    knots: Some((&knots, 1, 1)),
+                    line: false
+                },
+                &resolve
+            ),
+            Some(-4.75)
+        );
     }
 
     #[test]

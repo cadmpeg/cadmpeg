@@ -71,6 +71,14 @@ pub(crate) enum CatiaLossCode {
     TopologyAffineVertexReconciled,
     /// A planar shared-edge lift uses a native parameter-map fit tolerance.
     GeometryParameterMapAccuracyInferred,
+    /// Native local surface limits and affine chart maps remain outside the neutral carrier.
+    GeometrySurfaceParametersNotTransferred,
+    /// Extended rational weight-row controls use an inferred expansion.
+    GeometrySurfaceWeightsInferred,
+    /// Native surface extrapolation controls remain outside the neutral carrier.
+    GeometrySurfaceExtrapolationNotTransferred,
+    /// Bounded native plane charts emit neutral plane supports without their intervals.
+    GeometryPlaneBoundsNotTransferred,
     /// A witnessed conic branch exceeds the incident face bounds.
     GeometryConicBranchBoundsInferred,
     /// A sheet face uses a fitted surface carrier.
@@ -182,6 +190,10 @@ impl CatiaLossCode {
         Self::GeometryRollingSheetExtended,
         Self::TopologyAffineVertexReconciled,
         Self::GeometryParameterMapAccuracyInferred,
+        Self::GeometrySurfaceParametersNotTransferred,
+        Self::GeometrySurfaceWeightsInferred,
+        Self::GeometrySurfaceExtrapolationNotTransferred,
+        Self::GeometryPlaneBoundsNotTransferred,
         Self::GeometryConicBranchBoundsInferred,
         Self::GeometrySheetSurfaceFitted,
         Self::GeometryRollingBallRailsAdjusted,
@@ -249,6 +261,14 @@ impl CatiaLossCode {
             Self::GeometryParameterMapAccuracyInferred => {
                 "geometry.parameter-map-accuracy-inferred"
             }
+            Self::GeometrySurfaceParametersNotTransferred => {
+                "geometry.surface-parameters-not-transferred"
+            }
+            Self::GeometrySurfaceWeightsInferred => "geometry.surface-weights-inferred",
+            Self::GeometrySurfaceExtrapolationNotTransferred => {
+                "geometry.surface-extrapolation-not-transferred"
+            }
+            Self::GeometryPlaneBoundsNotTransferred => "geometry.plane-bounds-not-transferred",
             Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
             Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
@@ -342,10 +362,14 @@ impl CatiaLossCode {
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryRollingSheetExtended
             | Self::GeometryParameterMapAccuracyInferred
+            | Self::GeometrySurfaceWeightsInferred
             | Self::GeometryConicBranchBoundsInferred
             | Self::GeometrySheetSurfaceFitted
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
-            Self::GeometryUnresolvedCarriers
+            Self::GeometrySurfaceParametersNotTransferred
+            | Self::GeometrySurfaceExtrapolationNotTransferred
+            | Self::GeometryPlaneBoundsNotTransferred
+            | Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
             | Self::GeometryAnalyticPayloadInvalid
@@ -436,6 +460,10 @@ mod tests {
                 "geometry.rolling-sheet-extended",
                 "topology.affine-vertex-reconciled",
                 "geometry.parameter-map-accuracy-inferred",
+                "geometry.surface-parameters-not-transferred",
+                "geometry.surface-weights-inferred",
+                "geometry.surface-extrapolation-not-transferred",
+                "geometry.plane-bounds-not-transferred",
                 "geometry.conic-branch-bounds-inferred",
                 "geometry.sheet-surface-fitted",
                 "geometry.rolling-ball-rails-adjusted",

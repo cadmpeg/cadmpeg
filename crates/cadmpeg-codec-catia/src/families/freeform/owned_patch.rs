@@ -67,8 +67,11 @@ enum SheetSurfaceFit {
 
 #[derive(Clone, Copy, Default)]
 struct SheetBoundaryRecovery {
+    untransferred_plane_bounds: Option<[[f64; 2]; 2]>,
     rolling_extension_mm: f64,
     affine_vertex_shift_mm: f64,
+    endpoint_vertex_shift: f64,
+    paired_station_vertex: Option<(usize, Point3)>,
 }
 
 struct Patch {
@@ -141,10 +144,14 @@ fn bridge_radius(bytes: &[u8], sheet: bool) -> Option<(AllocationReference, f64)
     }
     let radius = tail.f64_le()?;
     let controls = tail.take(2)?;
+    let zero = tail.take(8)?;
+    let terminal = tail.take(2)?;
+    let valid_terminal =
+        terminal == [0x01, 0x05] || sheet && controls == [0x01, 0x03] && terminal == [0x01, 0x09];
     if (!sheet && controls != [0x03, 0x05])
         || (sheet && !matches!(controls, [0x01 | 0x03 | 0x05, 0x03 | 0x05]))
-        || tail.take(8)? != [0; 8]
-        || tail.take(2)? != [0x01, 0x05]
+        || zero != [0; 8]
+        || !valid_terminal
         || tail.remaining() != 0
         || !radius.is_finite()
         || radius <= 0.0
@@ -507,6 +514,7 @@ pub(super) fn append(
         ..
     } = stream;
     if carriers.is_empty()
+        && stream.selection.is_none()
         && !records
             .iter()
             .any(|frame| sheet_group::root(frame, data) || sheet_group::backward_root(frame, data))

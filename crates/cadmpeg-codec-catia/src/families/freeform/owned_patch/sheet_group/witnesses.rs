@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::math::Point3;
 
 use super::super::{edge_alignment, trimmed_face, Patch, Use, GAP_MM};
-use super::ANCHOR_AGREEMENT_MM;
+use super::{add_site, Sites, ANCHOR_AGREEMENT_MM, DISPUTED_VERTEX_PENALTY};
 
 type SitesByFace = BTreeMap<usize, Option<Point3>>;
 
@@ -59,21 +59,8 @@ impl PrimarySites {
 pub(super) fn disputed(patches: &[Patch]) -> BTreeMap<(usize, usize), BTreeMap<usize, Point3>> {
     let mut candidates = BTreeMap::<_, Vec<_>>::new();
     for patch in patches {
-        let mut vertices = BTreeMap::<_, Option<Point3>>::new();
-        for &(id, point) in patch.sides.iter().flat_map(|side| &side.vertices) {
-            vertices
-                .entry(id)
-                .and_modify(|prior| {
-                    if prior.is_some_and(|p| p.distance(point) > ANCHOR_AGREEMENT_MM) {
-                        *prior = None;
-                    }
-                })
-                .or_insert(Some(point));
-        }
-        for (id, point) in vertices {
-            if let Some(point) = point {
-                candidates.entry((patch.body, id)).or_default().push(point);
-            }
+        for (id, point) in coherent_vertices(patch.sides.iter().flat_map(|side| side.vertices)) {
+            candidates.entry((patch.body, id)).or_default().push(point);
         }
     }
     let mut witnesses = BTreeMap::<_, BTreeMap<_, _>>::new();
@@ -83,6 +70,62 @@ pub(super) fn disputed(patches: &[Patch]) -> BTreeMap<(usize, usize), BTreeMap<u
         }
     }
     witnesses
+}
+
+pub(super) fn retry_sites(patches: &[Patch]) -> BTreeMap<(usize, usize), BTreeMap<usize, Point3>> {
+    let mut sites = Sites::new();
+    for patch in patches {
+        record_retry_sites(
+            &mut sites,
+            patch.body,
+            patch.priority,
+            patch.sides.iter().flat_map(|side| side.vertices),
+        );
+    }
+    sites
+        .into_iter()
+        .map(|(body, vertices)| {
+            (
+                body,
+                vertices
+                    .into_iter()
+                    .filter_map(|(id, point)| Some((id, point?)))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+fn record_retry_sites(
+    sites: &mut Sites,
+    body: (usize, usize),
+    priority: u8,
+    vertices: impl Iterator<Item = (usize, Point3)>,
+) {
+    if priority >= DISPUTED_VERTEX_PENALTY {
+        return;
+    }
+    for (id, point) in coherent_vertices(vertices) {
+        add_site(sites, body, id, point);
+    }
+}
+
+fn coherent_vertices(vertices: impl Iterator<Item = (usize, Point3)>) -> BTreeMap<usize, Point3> {
+    let mut points = BTreeMap::<_, Option<Point3>>::new();
+    for (id, point) in vertices {
+        points
+            .entry(id)
+            .and_modify(|prior| {
+                if prior.is_some_and(|p| p.distance(point) > ANCHOR_AGREEMENT_MM) {
+                    *prior = None;
+                }
+            })
+            .or_insert(Some(point));
+    }
+    points
+        .into_iter()
+        .filter_map(|(id, point)| Some((id, point?)))
+        .collect()
 }
 
 fn majority(points: &[Point3]) -> Option<Point3> {
@@ -170,6 +213,34 @@ fn disagrees_with_sites(side: &Use, sites: &BTreeMap<usize, Point3>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unresolved_and_inconsistent_faces_preserve_an_independent_retry_site() {
+        let point = Point3::new(2.0, 3.0, 4.0);
+        let other = Point3::new(2.02, 3.0, 4.0);
+        let mut sites = Sites::new();
+        record_retry_sites(&mut sites, (0, 10), 0, [(7, point)].into_iter());
+        record_retry_sites(
+            &mut sites,
+            (0, 10),
+            DISPUTED_VERTEX_PENALTY + 2,
+            [(7, other)].into_iter(),
+        );
+        record_retry_sites(&mut sites, (0, 10), 5, [(7, other), (7, point)].into_iter());
+        assert_eq!(sites[&(0, 10)][&7], Some(point));
+    }
+
+    #[test]
+    fn independent_retry_site_conflicts_remain_unresolved_within_their_body() {
+        let point = Point3::new(2.0, 3.0, 4.0);
+        let other = Point3::new(2.02, 3.0, 4.0);
+        let mut sites = Sites::new();
+        record_retry_sites(&mut sites, (0, 10), 0, [(7, point)].into_iter());
+        record_retry_sites(&mut sites, (0, 20), 0, [(7, other)].into_iter());
+        record_retry_sites(&mut sites, (0, 10), 0, [(7, other)].into_iter());
+        assert_eq!(sites[&(0, 10)][&7], None);
+        assert_eq!(sites[&(0, 20)][&7], Some(other));
+    }
 
     #[test]
     fn two_independent_lifts_resolve_a_disputed_vertex() {

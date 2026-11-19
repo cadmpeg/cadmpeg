@@ -45,14 +45,85 @@ impl EndpointSites {
             });
     }
 
+    pub(super) fn plane_refit_sites(
+        &self,
+        patches: &[Patch],
+    ) -> BTreeMap<usize, BTreeMap<usize, Point3>> {
+        use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
+        let mut disputed = BTreeMap::<_, Vec<_>>::new();
+        for patch in patches {
+            if !matches!(patch.surface, SolvedSurfaceGeometry::Plane(_)) {
+                continue;
+            }
+            for side in &patch.sides {
+                for (vertex, point) in side.vertices {
+                    let key = (patch.body, vertex);
+                    if let Some(sites) = self.by_vertex.get(&key) {
+                        for site in sites.iter().filter(|site| {
+                            site.primary
+                                && site.face == patch.face
+                                && site.edge == side.edge
+                                && site.point.distance(point) > GAP_MM
+                        }) {
+                            disputed.entry((key, side.edge)).or_default().push(*site);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut witnesses = BTreeMap::<usize, BTreeMap<usize, Option<Point3>>>::new();
+        for patch in patches {
+            for side in &patch.sides {
+                for (vertex, point) in side.vertices {
+                    let Some(sites) = disputed.get(&((patch.body, vertex), side.edge)) else {
+                        continue;
+                    };
+                    for site in sites.iter().filter(|site| {
+                        site.face != patch.face && site.point.distance(point) <= ANCHOR_AGREEMENT_MM
+                    }) {
+                        witnesses
+                            .entry(site.face)
+                            .or_default()
+                            .entry(vertex)
+                            .and_modify(|prior| {
+                                if prior
+                                    .is_some_and(|p| p.distance(site.point) > ANCHOR_AGREEMENT_MM)
+                                {
+                                    *prior = None;
+                                }
+                            })
+                            .or_insert(Some(site.point));
+                    }
+                }
+            }
+        }
+        witnesses
+            .into_iter()
+            .map(|(face, vertices)| {
+                (
+                    face,
+                    vertices
+                        .into_iter()
+                        .filter_map(|(id, point)| Some((id, point?)))
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
     pub(super) fn resolve(self, patches: &mut [Patch]) {
         let mut anchors = BTreeMap::new();
         let mut affine_anchors = BTreeMap::<_, (Point3, Vec<Point3>)>::new();
+        let mut boundary_anchors = BTreeMap::<_, (Point3, Vec<Point3>)>::new();
         for (key, sites) in self.by_vertex {
             if let Some(point) = corroborate(&sites) {
                 anchors.insert(key, point);
             } else if let Some(point) = corroborate_affine(&sites) {
                 affine_anchors.insert(key, (point, Vec::new()));
+            } else if let Some(point) = boundary_station(&sites) {
+                boundary_anchors.insert(key, (point, Vec::new()));
             }
         }
         let mut disputed = BTreeSet::new();
@@ -67,6 +138,14 @@ impl EndpointSites {
                             anchors.remove(&key);
                         } else if distance > GAP_MM {
                             disputed.insert(key);
+                        }
+                    }
+                    if let Some((_, ends)) = boundary_anchors.get_mut(&key) {
+                        ends.push(point);
+                        if let Some(end) = curve_point(&side.curve, parameter) {
+                            ends.push(end);
+                        } else {
+                            boundary_anchors.remove(&key);
                         }
                     }
                     if let Some((_, ends)) = affine_anchors.get_mut(&key) {
@@ -87,6 +166,14 @@ impl EndpointSites {
                 anchors.insert(key, point);
             }
         }
+        let mut boundary_resolved = BTreeSet::new();
+        for (key, (point, ends)) in boundary_anchors {
+            if let Some(point) = fit_boundary_vertex(point, &ends) {
+                disputed.insert(key);
+                boundary_resolved.insert(key);
+                anchors.insert(key, point);
+            }
+        }
         for patch in patches {
             for (vertex, point) in patch.sides.iter_mut().flat_map(|side| &mut side.vertices) {
                 let key = (patch.body, *vertex);
@@ -97,11 +184,53 @@ impl EndpointSites {
                             .affine_vertex_shift_mm
                             .max(point.distance(*anchor));
                     }
+                    if boundary_resolved.contains(&key) {
+                        patch.recovery.endpoint_vertex_shift = patch
+                            .recovery
+                            .endpoint_vertex_shift
+                            .max(point.distance(*anchor));
+                    }
                     *point = *anchor;
                 }
             }
         }
     }
+}
+
+fn boundary_station(sites: &[Site]) -> Option<Point3> {
+    let first = sites.first()?;
+    if sites.iter().any(|site| site.face != first.face)
+        || sites
+            .iter()
+            .map(|site| site.edge)
+            .collect::<BTreeSet<_>>()
+            .len()
+            != 2
+    {
+        return None;
+    }
+    let mut primary = sites.iter().filter(|site| site.primary);
+    let point = primary.next()?.point;
+    primary
+        .all(|site| site.point.distance(point) <= SAME_STATION_MM)
+        .then_some(point)
+}
+
+fn fit_boundary_vertex(point: Point3, ends: &[Point3]) -> Option<Point3> {
+    let (end, gap) = ends
+        .iter()
+        .map(|&end| (end, end.distance(point)))
+        .max_by(|a, b| a.1.total_cmp(&b.1))?;
+    if gap <= GAP_MM {
+        return None;
+    }
+    let center = Point3::new(
+        point.x.midpoint(end.x),
+        point.y.midpoint(end.y),
+        point.z.midpoint(end.z),
+    );
+    (point.distance(center) <= GAP_MM && ends.iter().all(|end| end.distance(center) <= GAP_MM))
+        .then_some(center)
 }
 
 // A pair of explicit stations can establish the point. When only one is
@@ -196,6 +325,54 @@ fn fit_affine_vertex(point: Point3, ends: &[Point3]) -> Option<Point3> {
 mod tests {
     use super::super::super::SheetBoundaryRecovery;
     use super::*;
+
+    #[test]
+    fn boundary_station_requires_one_face_and_two_edges() {
+        let point = Point3::new(0.0015, 0.0, 0.0);
+        let mut sites = vec![
+            Site {
+                face: 1,
+                edge: 1,
+                point,
+                primary: true,
+                affine: false,
+            },
+            Site {
+                face: 1,
+                edge: 2,
+                point: Point3::new(0.0, 0.0, 0.0),
+                primary: false,
+                affine: false,
+            },
+        ];
+        assert_eq!(boundary_station(&sites), Some(point));
+        assert_eq!(boundary_station(&sites[..1]), None);
+        sites[1].face = 2;
+        assert_eq!(boundary_station(&sites), None);
+        sites[1].face = 1;
+        sites[1].primary = true;
+        assert_eq!(boundary_station(&sites), None);
+    }
+
+    #[test]
+    fn boundary_vertex_bounds_the_native_station_and_each_incident_endpoint() {
+        let point = Point3::new(0.0015, 0.0, 0.0);
+        let ends = [Point3::new(0.0, 0.0, 0.0), Point3::new(0.0001, 0.0, 0.0)];
+        let vertex = fit_boundary_vertex(point, &ends).expect("common tolerance ball");
+        assert!((vertex.x - 0.00075).abs() < 1.0e-12);
+        assert!(point.distance(vertex) <= GAP_MM);
+        assert!(ends.iter().all(|end| end.distance(vertex) <= GAP_MM));
+        assert_eq!(
+            fit_boundary_vertex(Point3::new(0.003, 0.0, 0.0), &ends),
+            None
+        );
+        assert_eq!(
+            fit_boundary_vertex(point, &[ends[0], Point3::new(0.004, 0.0, 0.0)]),
+            None
+        );
+        assert_eq!(fit_boundary_vertex(point, &[]), None);
+        assert_eq!(fit_boundary_vertex(ends[0], &ends), None);
+    }
 
     #[test]
     fn shared_edge_stations_can_disambiguate_a_vertex() {
