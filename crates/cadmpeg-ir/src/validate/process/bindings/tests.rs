@@ -65,3 +65,19 @@ fn a_parameter_dependency_cycle_is_a_warning() {
         "process parameter depends on itself through its expression",
     );
 }
+
+#[test]
+fn a_parameter_expressions_missing_reference_is_reported_once() {
+    let mut ir = document();
+    ir.process.parameters[0].definition =
+        ProcessDefinition::Expression(Expression::Neutral(Neutral(Node::Reference(
+            ParamRef::Process(id("parameter", "missing")),
+        ))));
+    let findings: Vec<_> = crate::validate::validate_neutral(&ir, Vec::new())
+        .unwrap()
+        .findings
+        .into_iter()
+        .filter(|finding| finding.message.contains("parameter#missing"))
+        .collect();
+    assert_eq!(findings.len(), 1, "{findings:#?}");
+}

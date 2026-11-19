@@ -49,7 +49,17 @@ pub(super) fn check_bindings(
                 );
             }
         }
+        // A process parameter's references are its expression's, which the
+        // design layer's expression rules resolve (§5.13); only its
+        // dependencies are read here.
+        let expression = record.arena == "parameters";
         for (at, reference) in &record.found.references {
+            if expression {
+                if let ParamRef::Process(parameter) = reference {
+                    graph.entry(id).or_default().push(parameter.as_str());
+                }
+                continue;
+            }
             match reference {
                 ParamRef::Process(parameter) => {
                     if !records.has_parameter(parameter) {
@@ -61,9 +71,6 @@ pub(super) fn check_bindings(
                                 parameter.as_str()
                             ),
                         );
-                    }
-                    if record.arena == "parameters" {
-                        graph.entry(id).or_default().push(parameter.as_str());
                     }
                 }
                 ParamRef::Design(ParameterRef {
