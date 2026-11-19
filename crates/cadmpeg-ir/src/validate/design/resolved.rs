@@ -22,7 +22,8 @@ use crate::features::ConfigurationId;
 use crate::ids::{BodyId, ProductDefinitionId};
 use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
-use crate::report::check::Finding;
+use crate::process::state::{ProcessBase, ProcessState};
+use crate::report::check::{Check, Finding};
 use crate::schema::EntitySchema;
 use crate::topology::ChildLists;
 use crate::transform::Transform;
@@ -629,6 +630,102 @@ fn check_stored_bodies(
             );
         }
     }
+}
+
+/// Each process state with content resolves like an evaluation (§7.9): its
+/// chain of process states, down to a design base, with each delta applied.
+/// `scope` gives the design scope of a state's setup, which a `Current` base
+/// reads. Every resolved state's entries name what it holds, and it is
+/// closed. Findings are reported under [`Check::Process`].
+pub(in crate::validate) fn check_process_states<'a>(
+    ctx: &DecodeContext<'_>,
+    index: &DesignRecords<'a>,
+    ids: &ModelIndex<'_>,
+    scope: impl Fn(&ProcessState) -> Option<&'a str>,
+    findings: &mut Vec<Finding>,
+) -> Result<(), CodecError> {
+    let ir = index.ir;
+    let states = &ir.process.states;
+    if states.iter().all(|state| state.content.is_none()) {
+        return Ok(());
+    }
+    let resolver = Resolver {
+        ctx,
+        index,
+        geometry: locate(&ir.geometry),
+        children: ir.geometry.child_lists(),
+    };
+    let mut topology: BTreeSet<&str> = resolver.geometry.keys().copied().collect();
+    let deltas = ir
+        .design
+        .evaluations
+        .iter()
+        .filter_map(|evaluation| evaluation.content.as_ref().map(|content| &content.delta))
+        .chain(
+            states
+                .iter()
+                .filter_map(|state| state.content.as_ref().map(|content| &content.delta)),
+        );
+    for delta in deltas {
+        topology.extend(records(&delta.records).into_iter().map(|(_, id, _)| id));
+    }
+    let mut by_id: BTreeMap<&str, &ProcessState> = BTreeMap::new();
+    for state in states {
+        by_id.entry(state.id.as_str()).or_insert(state);
+    }
+    let mut design_findings = Vec::new();
+    let mut process_findings = Vec::new();
+    for state in states {
+        if state.content.is_none() {
+            continue;
+        }
+        let mut chain: Vec<&ProcessState> = vec![state];
+        let mut seen = BTreeSet::from([state.id.as_str()]);
+        let start = loop {
+            let last = chain[chain.len() - 1];
+            let Some(content) = &last.content else {
+                break None;
+            };
+            match &content.base {
+                ProcessBase::State(base) => match by_id.get(base.as_str()) {
+                    Some(base) if seen.insert(base.id.as_str()) => chain.push(base),
+                    _ => break None,
+                },
+                ProcessBase::Design(StateBase::Empty) => break Some(ResolvedState::default()),
+                ProcessBase::Design(StateBase::Current(position)) => {
+                    let Some(scope) = scope(last) else { break None };
+                    break resolver.extent(scope, PositionKey::of(position))?;
+                }
+                ProcessBase::Design(StateBase::Evaluation(base)) => {
+                    let Some(base) = index.evaluations.get(base.as_str()) else {
+                        break None;
+                    };
+                    break resolver
+                        .resolve(base, &mut design_findings)?
+                        .map(|resolved| resolved.state);
+                }
+            }
+        };
+        let Some(mut resolved) = start else { continue };
+        let id = state.id.as_str();
+        for link in chain.iter().rev() {
+            if let Some(content) = &link.content {
+                let report = std::ptr::eq(*link, state);
+                apply(
+                    &mut resolved,
+                    &content.delta,
+                    report.then_some((id, &mut process_findings)),
+                );
+            }
+        }
+        check_entries(index, &resolved, id, &mut process_findings);
+        check_closure(ctx, &resolved, &topology, ids, id, &mut process_findings)?;
+    }
+    findings.extend(process_findings.into_iter().map(|finding| Finding {
+        check: Check::Process,
+        ..finding
+    }));
+    Ok(())
 }
 
 mod state_topology;

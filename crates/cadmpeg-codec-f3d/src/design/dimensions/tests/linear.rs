@@ -1173,9 +1173,10 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     assert!(symmetry_constraints.iter().any(|constraint| matches!(
         constraint.definition.kind(),
         SpatialSketchConstraintDefinitionInput::Native {
+            native_kind,
             parameter: Some(_),
             ..
-        }
+        } if native_kind == "Linear Dimension"
     )));
 
     let mut zero_parameter = parameter;
