@@ -350,11 +350,28 @@ fn decode_result(
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
     retention.apply(&mut source_fidelity)?;
-    ir.state_root_definition(
+    // A scoped root lists only the bodies of its current states. The bodies
+    // of a configuration that is not active are stated by that
+    // configuration's evaluation (§5.4) and stay in the geometry unlisted,
+    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
+    let current = (!ir.design.scopes.is_empty()).then(|| {
+        ir.design
+            .scopes
+            .iter()
+            .flat_map(|scope| &scope.current)
+            .flat_map(|state| &state.bodies)
+            .cloned()
+            .collect::<std::collections::HashSet<_>>()
+    });
+    if let Some(root) = ir.state_root_definition(
         ctx,
         root_definition_id(),
         cadmpeg_ir::products::ExternalDocument::default(),
-    )?;
+    )? {
+        if let Some(current) = &current {
+            root.bodies.retain(|body| current.contains(body));
+        }
+    }
     stamp_local_digests(ctx, &mut ir)?;
     Ok(Decoded {
         ir,
