@@ -2293,9 +2293,10 @@ impl<'a> Builder<'a> {
         )
     }
 
-    /// Whether `face` has a curve-bounded surface and one loop per boundary
-    /// curve of it, whose edges run on exactly the boundaries' segment
-    /// curves.
+    /// Whether `face` has a curve-bounded surface whose boundary curves
+    /// pair one to one with its loops: each loop has one coedge per segment
+    /// of its boundary, on that segment's curve, in the segments'
+    /// order or its reverse.
     fn bounded_by_its_boundaries(&self, face: &Face) -> bool {
         let Some(ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }) = self
             .procedural_surfaces
@@ -2307,22 +2308,12 @@ impl<'a> Builder<'a> {
         if face.loops.len() != boundaries.len() {
             return false;
         }
-        let mut segment_curves = BTreeSet::new();
-        for boundary in boundaries {
-            let Some(SolvedCurveGeometry::Composite { segments, .. }) = self
-                .curves
-                .get(boundary.as_str())
-                .and_then(|curve| curve.geometry.solved())
-            else {
-                return false;
-            };
-            segment_curves.extend(segments.iter().map(|segment| segment.curve.as_str()));
-        }
-        let mut edge_curves = BTreeSet::new();
+        let mut loop_curves = Vec::new();
         for loop_id in &face.loops {
             let Some(face_loop) = self.loops.get(loop_id.as_str()) else {
                 return false;
             };
+            let mut curves = Vec::new();
             for coedge in face_loop.coedges() {
                 let Some(curve) = self
                     .coedges
@@ -2332,10 +2323,32 @@ impl<'a> Builder<'a> {
                 else {
                     return false;
                 };
-                edge_curves.insert(curve.as_str());
+                curves.push(curve.as_str());
             }
+            loop_curves.push(Some(curves));
         }
-        edge_curves == segment_curves
+        for boundary in boundaries {
+            let Some(SolvedCurveGeometry::Composite { segments, .. }) = self
+                .curves
+                .get(boundary.as_str())
+                .and_then(|curve| curve.geometry.solved())
+            else {
+                return false;
+            };
+            let segment_curves: Vec<&str> = segments
+                .iter()
+                .map(|segment| segment.curve.as_str())
+                .collect();
+            let Some(paired) = loop_curves.iter_mut().find(|curves| {
+                curves
+                    .as_deref()
+                    .is_some_and(|curves| runs_on_segments(curves, &segment_curves))
+            }) else {
+                return false;
+            };
+            *paired = None;
+        }
+        true
     }
 
     /// Whether a PMI annotation targets `face`, an edge of its loops, or a
@@ -6941,6 +6954,12 @@ impl<'a> Builder<'a> {
             notes: Vec::new(),
         }
     }
+}
+
+/// Whether a loop's coedge curves run on `segment_curves` one to one, in
+/// their order or its reverse.
+fn runs_on_segments(loop_curves: &[&str], segment_curves: &[&str]) -> bool {
+    loop_curves == segment_curves || loop_curves.iter().rev().eq(segment_curves.iter())
 }
 
 fn datum_target_form_text(form: &DatumTargetForm) -> &str {

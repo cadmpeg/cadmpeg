@@ -422,3 +422,105 @@ fn a_pmi_target_on_a_curve_bounded_face_keeps_the_sheet_a_shell() {
         );
     }
 }
+
+/// The disc of `ap242_geometric_set.p21`, its loop split into two
+/// half-circle edges on the one boundary circle.
+fn disc_split_into_two_edges() -> CadIr {
+    use cadmpeg_ir::ids::{CoedgeId, EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{EdgeCarrier, EdgeEnds, Point, Vertex};
+    let source = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/fixtures/ap242_geometric_set.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = source.ir().clone();
+    let geometry = &mut ir.geometry;
+    let [face_loop] = geometry.loops.as_mut_slice() else {
+        panic!("one loop: {:#?}", geometry.loops);
+    };
+    let [coedge] = face_loop.coedges() else {
+        panic!("one coedge: {face_loop:#?}");
+    };
+    let coedge = geometry
+        .coedges
+        .iter()
+        .find(|candidate| &candidate.id == coedge)
+        .unwrap()
+        .clone();
+    let edge_index = geometry
+        .edges
+        .iter()
+        .position(|edge| edge.id == coedge.edge)
+        .unwrap();
+    let edge = geometry.edges[edge_index].clone();
+    let circle = edge.curve().unwrap().clone();
+    let start = edge.start().unwrap().clone();
+    let point = PointId::mint("test:surface-set:point#half").unwrap();
+    let middle = VertexId::mint("test:surface-set:vertex#half").unwrap();
+    geometry.points.push(Point::new(
+        point.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(-5.0, 0.0, 0.0))
+            .unwrap(),
+        None,
+    ));
+    geometry.vertices.push(Vertex {
+        id: middle.clone(),
+        point,
+        tolerance: None,
+        native_ref: None,
+    });
+    let half = std::f64::consts::PI;
+    geometry.edges[edge_index].carrier =
+        EdgeCarrier::new(Some(circle.clone()), Some([0.0, half])).unwrap();
+    geometry.edges[edge_index].ends = Some(EdgeEnds::new(start.clone(), middle.clone()));
+    let second_edge = EdgeId::mint("test:surface-set:edge#half").unwrap();
+    geometry.edges.push(cadmpeg_ir::topology::Edge {
+        id: second_edge.clone(),
+        carrier: EdgeCarrier::new(Some(circle), Some([half, 2.0 * half])).unwrap(),
+        ends: Some(EdgeEnds::new(middle, start)),
+        ..edge
+    });
+    let second_coedge = CoedgeId::mint("test:surface-set:coedge#half").unwrap();
+    geometry.coedges.push(cadmpeg_ir::topology::Coedge {
+        id: second_coedge.clone(),
+        edge: second_edge,
+        radial_next: second_coedge.clone(),
+        pcurves: Vec::new(),
+        ..coedge.clone()
+    });
+    let [face_loop] = geometry.loops.as_mut_slice() else {
+        unreachable!();
+    };
+    face_loop
+        .replace_ring(vec![coedge.id, second_coedge], Vec::new())
+        .unwrap();
+    ir.finalize();
+    ir
+}
+
+/// A curve-bounded face whose loop splits a boundary segment into two
+/// edges has no edge per segment: the writer keeps the face a shell
+/// member, so both edges survive a round trip.
+#[test]
+fn a_loop_that_splits_a_boundary_segment_keeps_the_sheet_a_shell() {
+    let ir = disc_split_into_two_edges();
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= OPEN_SHELL(").count(), 1, "{text}");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().geometry.edges.len(), 2);
+    assert_eq!(decoded.ir().geometry.vertices.len(), 2);
+}

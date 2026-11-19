@@ -1766,9 +1766,10 @@ solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` 
 region is a forward face that either has no loops and a surface that carries
 no procedural construction and has a solved NURBS geometry, has no loops and
 a rectangular parameter subset surface (written as a
-`RECTANGULAR_TRIMMED_SURFACE`), or has a curve-bounded surface and one loop
-per boundary curve of it, whose edges run on exactly the boundaries' segment
-curves, and that no PMI annotation targets, through the face, an edge of its
+`RECTANGULAR_TRIMMED_SURFACE`), or has a curve-bounded surface whose boundary
+curves pair one to one with its loops, each loop holding one coedge per segment
+of its boundary, on that segment's curve, in the segments' order or its
+reverse, and that no PMI annotation targets, through the face, an edge of its
 loops, or a vertex of those edges. The writer
 states a curve-bounded face as a `CURVE_BOUNDED_SURFACE` on its support,
 with each boundary composite curve of the construction as a member of its
