@@ -15,6 +15,7 @@ mod configurations;
 mod extrude;
 mod names;
 mod operation;
+mod order;
 mod parameters;
 mod sketch;
 mod states;
@@ -80,6 +81,7 @@ pub(crate) fn project(
     if timeline.features.is_empty() {
         return Ok(0);
     }
+    losses.extend(order::regeneration_order(&mut timeline, &ir.model));
     let definition = root_definition();
     let entries = parameters::Entries::new(histories, &timeline)?;
     let typed = typed::project(

@@ -318,6 +318,9 @@ pub(crate) enum SldprtLossCode {
     /// Design features whose operation the decoder typed in its own records
     /// state their family without operands.
     DesignFeatureUnresolved,
+    /// A feature folder whose members regeneration order does not keep in
+    /// one run is not stated.
+    DesignFolderDropped,
 }
 
 impl SldprtLossCode {
@@ -453,6 +456,7 @@ impl SldprtLossCode {
         Self::AssemblyEmbeddedDocumentsNotTransferred,
         Self::AssemblyBomExclusionNotTransferred,
         Self::DesignFeatureUnresolved,
+        Self::DesignFolderDropped,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -610,6 +614,7 @@ impl SldprtLossCode {
             }
             Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
+            Self::DesignFolderDropped => "design.folder-dropped",
         }
     }
 
@@ -738,7 +743,8 @@ impl SldprtLossCode {
             Self::MetadataMassPropertiesNotCompared => Severity::Warning,
             Self::AssemblyMatesNotTransferred
             | Self::AssemblyVirtualComponentsNotTransferred
-            | Self::AssemblyEmbeddedDocumentsNotTransferred => Severity::Warning,
+            | Self::AssemblyEmbeddedDocumentsNotTransferred
+            | Self::DesignFolderDropped => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -791,6 +797,7 @@ impl SldprtLossCode {
                 LossTaxonomy::AssemblyPlacementsNotTransferred
             }
             Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
+            Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1181,6 +1188,7 @@ mod tests {
                 "assembly.embedded-documents-not-transferred",
                 "assembly.bom-exclusion-not-transferred",
                 "design.feature-unresolved",
+                "design.folder-dropped",
             ]
         );
     }

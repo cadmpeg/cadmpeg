@@ -78,10 +78,7 @@ fn assert_no_design_findings(ir: &CadIr) {
     assert!(design.is_empty(), "{design:#?}");
 }
 
-#[test]
-fn feature_tree_is_one_timeline_of_the_root_definition() {
-    let ir = part_with_history(
-        br#"<Keywords Name="Bracket">
+const BRACKET: &[u8] = br#"<Keywords Name="Bracket">
             <Feature Name="Annotations" Type="Annotations" id="101"/>
             <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
             <Feature Name="Group" Type="FtrFolder" id="110">
@@ -92,13 +89,17 @@ fn feature_tree_is_one_timeline_of_the_root_definition() {
             </Feature>
             <Fillet Name="Fillet1" id="9" Suppressed="1"/>
             <Feature Name="Odd" Type="CustomOperation" id="11"/>
-        </Keywords>"#,
-        &[
-            ("moDetailCabinet_c", "Annotations", 101),
-            ("moOriginProfileFeature_c", "Origin", 106),
-            ("moFtrFolder_c", "Group", 110),
-        ],
-    );
+        </Keywords>"#;
+
+const BRACKET_CLASSES: &[(&str, &str, u32)] = &[
+    ("moDetailCabinet_c", "Annotations", 101),
+    ("moOriginProfileFeature_c", "Origin", 106),
+    ("moFtrFolder_c", "Group", 110),
+];
+
+#[test]
+fn feature_tree_is_one_timeline_of_the_root_definition() {
+    let ir = part_with_history(BRACKET, BRACKET_CLASSES);
     let [scope] = ir.design.scopes.as_slice() else {
         panic!("one scope: {:#?}", ir.design.scopes);
     };
@@ -944,7 +945,7 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
 /// extrude of it, whose v10 records state a rectangle sketch with a
 /// horizontal and a vertical dimension and a blind extrusion.
 fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
-    let mut ir = part_with_history(
+    sketch_and_extrude_from(
         br#"<Keywords Name="Block">
             <Feature Name="Front" id="2"/>
             <Feature Name="Top" id="3"/>
@@ -959,6 +960,15 @@ fn sketch_and_extrude() -> (CadIr, crate::native::SldprtNative) {
                 <Dimension Name="D1">10</Dimension>
             </Extrusion>
         </Keywords>"#,
+    )
+}
+
+/// A part whose history `keywords` holds the built-in planes, the origin, a
+/// sketch `Sketch1` and its extrude `Boss`, with the v10 records the decoder
+/// types them from.
+fn sketch_and_extrude_from(keywords: &[u8]) -> (CadIr, crate::native::SldprtNative) {
+    let mut ir = part_with_history(
+        keywords,
         &[
             ("moRefPlane_c", "Front", 2),
             ("moRefPlane_c", "Top", 3),
@@ -1302,4 +1312,117 @@ fn a_sketch_and_an_extrude_left_unresolved_are_reported() {
         ));
         assert!(note.message.contains(feature.id.as_str()));
     }
+}
+
+fn member_position(timeline: &super::tree::Timeline, name: &str) -> usize {
+    timeline
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some(name))
+        .unwrap()
+}
+
+fn depends(features: &mut [cadmpeg_ir::features::Feature], consumer: &str, on: &str) {
+    let on = features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(on))
+        .unwrap()
+        .id
+        .clone();
+    features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some(consumer))
+        .unwrap()
+        .dependencies
+        .insert(on);
+}
+
+#[test]
+fn members_follow_the_features_they_depend_on() {
+    let (mut ir, native) = sketch_and_extrude_from(
+        br#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D1">10</Dimension>
+            </Extrusion>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                <Dimension Name="D1">50</Dimension>
+                <Dimension Name="D2">30</Dimension>
+                <Dimension Name="D3">&lt;MOD-DIAM&gt;10</Dimension>
+            </Sketch>
+        </Keywords>"#,
+    );
+    depends(&mut ir.model.features, "Boss", "Sketch1");
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    assert!(member_position(&timeline, "Boss") < member_position(&timeline, "Sketch1"));
+    let note = super::order::regeneration_order(&mut timeline, &ir.model);
+    assert!(note.is_none(), "{note:?}");
+    assert_eq!(
+        member_position(&timeline, "Sketch1") + 1,
+        member_position(&timeline, "Boss")
+    );
+
+    let definition = ir.design.scopes[0].definition.clone();
+    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let typed = super::typed::project(
+        &ir.model,
+        &native.feature_histories,
+        &[],
+        &mut timeline,
+        &entries,
+        &definition,
+    );
+    assert!(typed.loss.is_none(), "{:?}", typed.loss);
+    let boss = &timeline.features[member_position(&timeline, "Boss")];
+    assert!(
+        matches!(boss.definition.operation, FeatureOperation::Extrude(_)),
+        "{:#?}",
+        boss.definition.operation
+    );
+}
+
+#[test]
+fn a_folder_keeps_its_run_or_is_dropped_with_a_note() {
+    let ir = part_with_history(BRACKET, BRACKET_CLASSES);
+    let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
+    let names = |timeline: &super::tree::Timeline| {
+        timeline
+            .features
+            .iter()
+            .map(|feature| feature.name.clone().unwrap())
+            .collect::<Vec<_>>()
+    };
+
+    let mut model = ir.model.clone();
+    depends(&mut model.features, "Sketch1", "Boss");
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model);
+    assert!(note.is_none(), "{note:?}");
+    assert_eq!(
+        names(&timeline),
+        ["Origin", "Boss", "Sketch1", "Fillet1", "Odd"]
+    );
+    assert_eq!(
+        timeline.folders,
+        [Folder {
+            name: Some("Group".to_owned()),
+            first: 1,
+            last: 2,
+        }]
+    );
+
+    let mut model = ir.model.clone();
+    depends(&mut model.features, "Sketch1", "Odd");
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    let note = super::order::regeneration_order(&mut timeline, &model).unwrap();
+    assert_eq!(note.code.local_code(), "design.folder-dropped");
+    assert!(note.message.contains("Group"), "{}", note.message);
+    assert_eq!(
+        names(&timeline),
+        ["Origin", "Boss", "Fillet1", "Odd", "Sketch1"]
+    );
+    assert!(timeline.folders.is_empty());
 }
