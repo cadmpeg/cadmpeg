@@ -1502,6 +1502,65 @@ Parsed by:
 | 1 | 2 | `mirror` | `u16` | little | spec | mirror mask |
 | 3 | 2 | `leading_repeats` | `u16` | little | spec | leading-repeat count for command `05` |
 
+## `consolidated_packed_plane_full_u_payload`
+
+Spec §6.3 · layout: byte offsets · size: 67 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | packed marker `08` · value `8` |
+| 1 | 2 | `control` | `u16` | little | spec | a two-byte little-endian control word · value `6400` |
+| 3 | 24 | `origin` | `f64[3]` | little | spec | origin `(x,y,z)` |
+| 27 | 24 | `u_axis` | `f64[3]` | little | spec | Control `1900` stores all three U components |
+| 51 | 16 | `v_yz` | `f64[2]` | little | spec | `u_x,u_y,u_z,v_y,v_z` \| 67 \| |
+
+## `sheet_plane_signed_v_payload`
+
+Spec §6.3 · layout: byte offsets · size: 35 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `header` | `u8[3]` | little | spec | Selector `08 68 1d` stores origin XYZ |
+| 3 | 24 | `origin` | `f64[3]` | little | spec | Selector `08 68 1d` stores origin XYZ |
+| 27 | 8 | `direction_v_y` | `f64` | little | spec | Selector `08 68 1d` stores origin XYZ |
+
+## `sheet_plane_implicit_v_payload`
+
+Spec §6.3 · layout: byte offsets · size: 74 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `header` | `u8[2]` | little | spec | Selector `d4 a0` stores origin XYZ |
+| 2 | 24 | `origin` | `f64[3]` | little | spec | Selector `d4 a0` stores origin XYZ |
+| 26 | 8 | `direction_u_x` | `f64` | little | spec | Selector `d4 a0` stores origin XYZ |
+| 34 | 8 | `direction_u_z` | `f64` | little | spec | Selector `d4 a0` stores origin XYZ |
+| 42 | 32 | `bounds` | `f64[4]` | little | spec | Selector `d4 a0` stores origin XYZ |
+
+## `sheet_plane_explicit_v_payload`
+
+Spec §6.3 · layout: byte offsets · size: 82 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `header` | `u8[2]` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 2 | 24 | `origin` | `f64[3]` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 26 | 8 | `direction_u_x` | `f64` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 34 | 8 | `direction_u_z` | `f64` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 42 | 8 | `direction_v_y` | `f64` | little | spec | Selector `d4 20` adds V's signed Y component |
+| 50 | 32 | `bounds` | `f64[4]` | little | spec | Selector `d4 20` adds V's signed Y component |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

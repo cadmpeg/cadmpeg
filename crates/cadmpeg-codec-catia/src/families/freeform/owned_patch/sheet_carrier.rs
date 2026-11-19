@@ -385,7 +385,7 @@ impl SpatialPlane {
             None
         };
         let origin_x = view.f64_le()?;
-        let compressed_origin = (layout, mask) == (0xb4, 0xd6);
+        let compressed_origin = matches!((layout, mask), (0xb4, 0xd6 | 0xde));
         let origin_y = if compressed_origin {
             0.0
         } else {
@@ -421,11 +421,14 @@ impl SpatialPlane {
         let (u, v) = match (layout, mask, frame) {
             (0x84, 0x00 | 0x10 | 0x20 | 0x40, None)
             | (0x94, 0x10 | 0x60 | 0x68, None)
-            | (0xa4, 0x50 | 0x58, None)
-            | (0xb4, 0x58, None)
+            | (0xa4, 0x00 | 0x50 | 0x58, None)
+            | (0xb4, 0x50 | 0x58, None)
             | (0xc4, 0x30 | 0x38 | 0x3c, None)
-            | (0xd4, 0xa0, None)
-            | (0xe4, 0x50, None) => (direction(mask)?, direction(layout & 0x70)?),
+            | (0xd4, 0x20 | 0x68 | 0xa0 | 0xe8, None)
+            | (0xe4, 0x50 | 0x58, None) => (
+                direction(mask)?,
+                direction((layout & 0x70) | ((mask & 0x80) >> 4))?,
+            ),
             (0xb4, 0xd0, None) => {
                 let y = view.f64_le()?;
                 if y.abs() != 1.0 {
@@ -436,9 +439,16 @@ impl SpatialPlane {
                     UnitVector3::Z_AXIS,
                 )
             }
-            (0xb4, 0xd6, None) => (direction(mask)?, UnitVector3::Z_AXIS),
+            (0xb4, 0xd6 | 0xde, None) => (direction(mask)?, UnitVector3::Z_AXIS),
             (0x08, 0, Some(0x18)) => (direction(0)?, direction(0)?),
-            (0x08, 0xe8, Some(0x1d)) => (UnitVector3::X_AXIS, UnitVector3::Y_AXIS),
+            (0x08, 0, Some(0x19)) => (direction(0)?, direction(0x10)?),
+            (0x08, 0, Some(0x1a)) => (direction(0)?, direction(0x20)?),
+            (0x08, 0x40 | 0x50 | 0x58 | 0xd0 | 0xd8, Some(0x1b)) => {
+                (direction(mask)?, direction(0x30 | ((mask & 0x80) >> 4))?)
+            }
+            (0x08, 0x68 | 0xe8, Some(0x1d)) => {
+                (direction(mask)?, direction(0x50 | ((mask & 0x80) >> 4))?)
+            }
             _ => return None,
         };
         let bounds = if frame.is_none() {
@@ -637,5 +647,105 @@ mod tests {
         assert_eq!(chart.bounds(), Some([[0.0, 1.0], [-2.0, 2.0]]));
         bytes[24] ^= 0x01;
         assert!(SpatialCylinder::read(&bytes).is_none());
+    }
+    #[test]
+    fn bounded_plane_decodes_compact_offset_result_frames() {
+        for (prefix, frame, point) in [
+            ([0xb4, 0xde], &[3.0_f64][..], Point3::new(3.0, 2.0, 3.0)),
+            (
+                [0xb4, 0x50],
+                &[3.0, 4.0, 5.0, -1.0, 1.0][..],
+                Point3::new(3.0, 2.0, 8.0),
+            ),
+            (
+                [0xd4, 0x68],
+                &[3.0, 4.0, 5.0, -1.0][..],
+                Point3::new(5.0, 1.0, 5.0),
+            ),
+            (
+                [0xa4, 0x00],
+                &[3.0, 4.0, 5.0, 0.0, 1.0, 0.0, 0.6, 0.8][..],
+                Point3::new(4.8, 6.0, 7.4),
+            ),
+        ] {
+            let mut bytes = prefix.to_vec();
+            for value in frame.iter().copied().chain([-4.0, 4.0, -6.0, 6.0]) {
+                bytes.extend(value.to_le_bytes());
+            }
+            let plane = SpatialPlane::read(&bytes).expect("bounded offset result");
+            assert_eq!(plane.bounds, Some([[-4.0, 4.0], [-6.0, 6.0]]));
+            assert!(
+                Carrier::Plane(plane)
+                    .evaluate([2.0, 3.0])
+                    .expect("plane point")
+                    .distance(point)
+                    < 1e-12
+            );
+            bytes.pop();
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
+    }
+
+    #[test]
+    fn unrestricted_plane_retains_the_signed_v_axis() {
+        for (mask, sign) in [(0xe8, 1.0), (0x68, -1.0), (0x68, 1.0)] {
+            let mut bytes = vec![0x08, mask, 0x1d];
+            for value in [3.0_f64, 4.0, 5.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            if mask == 0x68 {
+                bytes.extend(f64::to_le_bytes(sign));
+            }
+            let plane = SpatialPlane::read(&bytes).expect("implicit-axis plane");
+            assert_eq!(plane.bounds, None);
+            assert_eq!(
+                Carrier::Plane(plane).evaluate([2.0, 3.0]),
+                Some(Point3::new(5.0, 4.0 + 3.0 * sign, 5.0))
+            );
+            bytes.push(0);
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
+        for sign in [0.0_f64, 2.0, f64::NAN] {
+            let mut bytes = vec![0x08, 0x68, 0x1d];
+            for value in [3.0, 4.0, 5.0, sign] {
+                bytes.extend(value.to_le_bytes());
+            }
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
+    }
+
+    #[test]
+    fn bounded_plane_retains_implicit_and_explicit_v_components() {
+        for (mask, sign) in [(0xa0, 1.0), (0x20, -1.0), (0x20, 1.0)] {
+            let mut bytes = vec![0xd4, mask];
+            for value in [3.0_f64, 4.0, 5.0, -1.0, 0.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            if mask == 0x20 {
+                bytes.extend(f64::to_le_bytes(sign));
+            }
+            for value in [0.0_f64, 20.0, -10.0, 10.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            let plane = SpatialPlane::read(&bytes).expect("bounded signed-axis plane");
+            assert_eq!(plane.bounds, Some([[0.0, 20.0], [-10.0, 10.0]]));
+            assert_eq!(
+                Carrier::Plane(plane).evaluate([2.0, 3.0]),
+                Some(Point3::new(1.0, 4.0 + 3.0 * sign, 5.0))
+            );
+            bytes.push(0);
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
+    }
+
+    #[test]
+    fn packed_plane_omits_the_zero_x_component_of_v() {
+        let mut bytes = vec![0x08, 0x00, 0x19];
+        for value in [3.0_f64, 4.0, 5.0, 1.0, 0.0, 0.0, 0.6, 0.8] {
+            bytes.extend(value.to_le_bytes());
+        }
+        let plane = Carrier::Plane(SpatialPlane::read(&bytes).expect("packed plane"));
+        let point = plane.evaluate([2.0, 5.0]).expect("chart point");
+        assert!(point.distance(Point3::new(5.0, 7.0, 9.0)) < 1e-12);
     }
 }
