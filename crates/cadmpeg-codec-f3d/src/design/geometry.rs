@@ -35,6 +35,7 @@ macro_rules! geometric {
     };
 }
 
+mod counted_incidence;
 pub(super) mod member_loop_union;
 
 /// Radians between the departure tangents of two arrangement edges at one
@@ -593,6 +594,13 @@ struct ArrangementFragment {
     /// Curves of coincident edges merged into the fragment's edges, each
     /// with its traversal direction.
     coincident: Vec<cadmpeg_ir::sketches::SketchEntityUse>,
+    /// The fragment's parameter interval of `curve`, low end first. A
+    /// circle interval is modulo a full turn. `None` when `curve` replaced
+    /// an unnamed curve.
+    range: Option<[f64; 2]>,
+    /// The curve of each edge that meets the node where the walk enters
+    /// the fragment, `curve` included, once per edge.
+    joint_curves: Vec<cadmpeg_ir::sketches::SketchEntityId>,
 }
 
 impl ArrangementFragment {
@@ -602,6 +610,21 @@ impl ArrangementFragment {
         std::iter::once(&self.curve)
             .chain(&self.coincident)
             .any(|curve| curve == member)
+    }
+
+    /// The interval of `curve` that the walk covers along `first` and then
+    /// along `second`, which continues it.
+    fn joined_range(
+        first: Option<[f64; 2]>,
+        second: Option<[f64; 2]>,
+        reversed: bool,
+    ) -> Option<[f64; 2]> {
+        let ([first_low, first_high], [second_low, second_high]) = (first?, second?);
+        Some(if reversed {
+            [second_low, first_high]
+        } else {
+            [first_low, second_high]
+        })
     }
 }
 
@@ -678,15 +701,71 @@ impl ArrangementRing {
                 .chain(&fragment.coincident)
                 .filter(|use_| !unnamed.contains(&use_.entity))
                 .cloned();
+            let curve = named.next()?;
+            let range = fragment.range.filter(|_| curve == fragment.curve);
             fragments.push(ArrangementFragment {
-                curve: named.next()?,
+                curve,
                 coincident: named.collect(),
+                range,
+                joint_curves: fragment.joint_curves.clone(),
             });
         }
         Some(std::borrow::Cow::Owned(Self {
             boundary: self.boundary.clone(),
             fragments,
         }))
+    }
+
+    /// The ring in which consecutive fragments with one curve and direction
+    /// join where only curves outside the ring meet that curve. `None` when
+    /// no fragments join.
+    fn joined_at_foreign_nodes(&self) -> Option<Self> {
+        let ring_curves = self.curves().collect::<HashSet<_>>();
+        let joins = |previous: &ArrangementFragment, fragment: &ArrangementFragment| {
+            let own = &fragment.curve.entity;
+            previous.curve == fragment.curve
+                && previous.coincident.is_empty()
+                && fragment.coincident.is_empty()
+                && fragment
+                    .joint_curves
+                    .iter()
+                    .filter(|curve| *curve == own)
+                    .count()
+                    == 2
+                && fragment
+                    .joint_curves
+                    .iter()
+                    .all(|curve| curve == own || !ring_curves.contains(curve))
+        };
+        let mut fragments = Vec::<ArrangementFragment>::new();
+        for fragment in &self.fragments {
+            match fragments.last_mut() {
+                Some(previous) if joins(previous, fragment) => {
+                    previous.range = ArrangementFragment::joined_range(
+                        previous.range,
+                        fragment.range,
+                        fragment.curve.reversed,
+                    );
+                }
+                _ => fragments.push(fragment.clone()),
+            }
+        }
+        let wraps = match (fragments.first(), fragments.last()) {
+            (Some(first), Some(last)) if fragments.len() > 1 => joins(last, first),
+            _ => false,
+        };
+        if wraps {
+            if let Some(last) = fragments.pop() {
+                let first = fragments.first_mut()?;
+                first.range =
+                    ArrangementFragment::joined_range(last.range, first.range, last.curve.reversed);
+                first.joint_curves = last.joint_curves;
+            }
+        }
+        (fragments.len() < self.fragments.len()).then(|| Self {
+            boundary: self.boundary.clone(),
+            fragments,
+        })
     }
 
     /// The number of fragments with a coincident curve.
@@ -1126,6 +1205,69 @@ pub(super) fn arrangement_regions_matching_member_rings(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<MemberRingRegions>, CodecError> {
+    member_ring_regions(
+        sketch,
+        entities,
+        MemberRings {
+            uses: rings,
+            counted: None,
+        },
+        unnamed,
+        tolerance,
+        work,
+        ctx,
+    )
+}
+
+/// The regions that counted member rings select, as
+/// [`arrangement_regions_matching_member_rings`] states, where each member
+/// also carries its piece ordinal and piece count. A face ring also matches
+/// when its consecutive fragments of one curve, joined where only curves
+/// outside the ring meet that curve, match the ring and every member names
+/// its piece of the ring's own partition.
+pub(super) fn arrangement_regions_matching_counted_rings(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    rings: &CountedMemberRings,
+    unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<MemberRingRegions>, CodecError> {
+    let uses = rings
+        .iter()
+        .map(|ring| {
+            ring.iter()
+                .map(|(use_, _)| use_.clone())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    member_ring_regions(
+        sketch,
+        entities,
+        MemberRings {
+            uses: &uses,
+            counted: Some(rings),
+        },
+        unnamed,
+        tolerance,
+        work,
+        ctx,
+    )
+}
+
+fn member_ring_regions(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    MemberRings {
+        uses: rings,
+        counted,
+    }: MemberRings<'_>,
+    unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<MemberRingRegions>, CodecError> {
     if rings.is_empty() {
         return Ok(None);
     }
@@ -1146,13 +1288,13 @@ pub(super) fn arrangement_regions_matching_member_rings(
     let mut candidates = Vec::new();
     for (index, face) in faces.iter().enumerate() {
         if let Some(ring) = face.ring.without_unnamed(unnamed) {
-            let curves = ring.curves().count();
-            candidates.push((index, None, ring, curves));
+            let (ring, curves, joined) = member_ring_candidate(ring, counted.is_some());
+            candidates.push((index, None, ring, curves, joined));
         }
         for (hole, ring) in face.holes.iter().flatten().enumerate() {
             if let Some(ring) = ring.without_unnamed(unnamed) {
-                let curves = ring.curves().count();
-                candidates.push((index, Some(hole), ring, curves));
+                let (ring, curves, joined) = member_ring_candidate(ring, counted.is_some());
+                candidates.push((index, Some(hole), ring, curves, joined));
             }
         }
     }
@@ -1160,10 +1302,10 @@ pub(super) fn arrangement_regions_matching_member_rings(
     let mut holes = Vec::new();
     let mut coincident = false;
     let mut identity_unique = true;
-    for members in rings {
+    for (ring_index, members) in rings.iter().enumerate() {
         let mut identity_matches = 0usize;
         let mut found = None;
-        for (index, hole, ring, curves) in &candidates {
+        for (index, hole, ring, curves, joined) in &candidates {
             if *curves != members.len() {
                 continue;
             }
@@ -1181,6 +1323,12 @@ pub(super) fn arrangement_regions_matching_member_rings(
             coincident |= ring.shared_fragments() != 0 && has_curves;
             if !ring.matches_members(members) {
                 continue;
+            }
+            if *joined {
+                let program = geometric!(counted.and_then(|counted| counted.get(ring_index)));
+                if !counted_incidence::ring_holds(ring, program, entities, tolerance, work)? {
+                    continue;
+                }
             }
             if found.is_some() {
                 return Ok(None);
@@ -1227,6 +1375,29 @@ pub(super) fn arrangement_regions_matching_member_rings(
         coincident,
         island_absence,
     }))
+}
+
+/// A candidate face ring for member rings, its curve count, and whether
+/// its fragments were joined for counted members.
+fn member_ring_candidate(
+    ring: std::borrow::Cow<'_, ArrangementRing>,
+    counted: bool,
+) -> (std::borrow::Cow<'_, ArrangementRing>, usize, bool) {
+    let joined = counted.then(|| ring.joined_at_foreign_nodes()).flatten();
+    let is_joined = joined.is_some();
+    let ring = joined.map_or(ring, std::borrow::Cow::Owned);
+    let curves = ring.curves().count();
+    (ring, curves, is_joined)
+}
+
+/// Member rings, each member with its piece ordinal and piece count.
+type CountedMemberRings = [Vec<(cadmpeg_ir::sketches::SketchEntityUse, [u32; 2])>];
+
+/// The members of each ring, and for counted rings the same members with
+/// their piece ordinals and piece counts.
+struct MemberRings<'a> {
+    uses: &'a [Vec<cadmpeg_ir::sketches::SketchEntityUse>],
+    counted: Option<&'a CountedMemberRings>,
 }
 
 /// The regions that counted member rings select.
@@ -2035,6 +2206,7 @@ fn sketch_arrangement_faces_with_nodes(
                             entity: other.entity.clone(),
                             reversed: other.reversed != reverse,
                         });
+                let range = Some(use_.parameter_range.endpoints());
                 match runs.last_mut() {
                     Some(run)
                         if synthetic_nodes.contains(&joint) && run.curve.entity == use_.entity =>
@@ -2044,6 +2216,8 @@ fn sketch_arrangement_faces_with_nodes(
                                 return Ok(None);
                             }
                         }
+                        run.range =
+                            ArrangementFragment::joined_range(run.range, range, use_.reversed);
                     }
                     _ => runs.push(ArrangementFragment {
                         curve: cadmpeg_ir::sketches::SketchEntityUse {
@@ -2051,6 +2225,16 @@ fn sketch_arrangement_faces_with_nodes(
                             reversed: use_.reversed,
                         },
                         coincident: coincident.collect(),
+                        range,
+                        joint_curves: outgoing[joint]
+                            .iter()
+                            .flat_map(|(edge, _, _)| {
+                                std::iter::once(&edges[*edge].boundary.entity).chain(
+                                    edges[*edge].coincident.iter().map(|other| &other.entity),
+                                )
+                            })
+                            .cloned()
+                            .collect(),
                     }),
                 }
                 boundary.push(use_);
@@ -2089,6 +2273,12 @@ fn sketch_arrangement_faces_with_nodes(
                             return Ok(None);
                         }
                     }
+                    runs[0].range = ArrangementFragment::joined_range(
+                        last.range,
+                        runs[0].range,
+                        runs[0].curve.reversed,
+                    );
+                    runs[0].joint_curves = last.joint_curves;
                 }
             }
             let ring = ArrangementRing {

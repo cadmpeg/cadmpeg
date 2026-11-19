@@ -35,14 +35,17 @@ pub(super) fn resolve(
             else {
                 return Ok(None);
             };
-            members.push(SketchEntityUse {
-                entity: entity.clone(),
-                reversed: member.incidence_flag,
-            });
+            members.push((
+                SketchEntityUse {
+                    entity: entity.clone(),
+                    reversed: member.incidence_flag,
+                },
+                member.incidence_values.map(u32::from),
+            ));
         }
         rings.push(members);
     }
-    let Some(selected) = crate::design::geometry::arrangement_regions_matching_member_rings(
+    let Some(selected) = crate::design::geometry::arrangement_regions_matching_counted_rings(
         sketch,
         entities,
         &rings,
