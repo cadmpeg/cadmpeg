@@ -2166,7 +2166,7 @@ pub(crate) fn append_design_losses(
     Ok(())
 }
 
-fn configuration_source_needs_update(
+pub(crate) fn configuration_source_needs_update(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
@@ -4233,6 +4233,10 @@ fn build_geometry_ir(
             &native.feature_histories,
             &native.feature_input_lanes,
             current_bodies,
+            crate::design_v11::Persistent {
+                faces: &brep.native_face_identities,
+                bodies: &brep.native_body_identities,
+            },
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
@@ -4250,8 +4254,9 @@ fn project_design(
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
+    persistent: crate::design_v11::Persistent<'_>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ir, histories, lanes, bodies)?;
+    let added = crate::design_v11::project(ctx, ir, histories, lanes, bodies, persistent)?;
     ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
 }
 
@@ -5112,6 +5117,10 @@ fn build_metadata_ir(
             &native.feature_histories,
             &native.feature_input_lanes,
             bodies,
+            crate::design_v11::Persistent {
+                faces: &[],
+                bodies: &[],
+            },
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local

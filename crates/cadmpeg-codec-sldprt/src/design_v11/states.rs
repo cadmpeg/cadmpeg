@@ -1,0 +1,301 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The states of a part other than its current state (§5.4).
+//!
+//! `SolidWorks` stores the model of a configuration it has rebuilt as a
+//! partition of its own (`Config-N-Partition`). The active configuration's is
+//! the current geometry (§5.5). Every other configuration whose partition the
+//! decoder reads has its state at the end of the tree as an evaluation of its
+//! own, based on `Empty`: its partition is a kernel index space the current
+//! geometry does not hold. A configuration whose partition is not stored and
+//! that the source flags as needing a rebuild (`swConfigurationNeedsUpdate`)
+//! has an evaluation with no content and status `Stale`; a stored partition so
+//! flagged is a stale state.
+//!
+//! The states between features are not stated. Each feature's
+//! `moPMarkRecord_c` names the mark set after it, but which section of a
+//! Deltas stream holds the change of one mark is not established, so the
+//! decoder applies no stored delta and a state between two features is not
+//! read (interim, gap 20261119-SW2-1).
+
+use std::collections::{HashMap, HashSet};
+
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::configuration::DesignConfiguration;
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::evaluation::{
+    Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+};
+use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::ids::{ContainerId, EvaluationId};
+use cadmpeg_ir::design::ops::body::PatternInstances;
+use cadmpeg_ir::design::ops::surface::MeshKind;
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
+use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::features::{ConfigurationId, FeatureId};
+use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
+use cadmpeg_ir::schema::EntitySchema;
+
+use super::names::Names;
+
+/// The scope whose configurations' states are stated.
+pub(super) struct Scope<'a> {
+    pub(super) definition: &'a ProductDefinitionId,
+    pub(super) timeline: &'a ContainerId,
+    /// The timeline's features, in member order.
+    pub(super) features: &'a [Feature],
+    pub(super) configurations: &'a [DesignConfiguration],
+    pub(super) active: Option<&'a ConfigurationId>,
+    /// The bodies of the current state.
+    pub(super) current: &'a [BodyId],
+}
+
+/// The evaluation of each configuration that is not active and whose state
+/// the source stores or flags, and the number of records they hold.
+pub(super) fn configuration_states(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    scope: &Scope<'_>,
+    names: &Names<'_>,
+) -> Result<(Vec<Evaluation>, usize), CodecError> {
+    let current = scope.current.iter().collect::<HashSet<_>>();
+    let (at, depended) = end_of_tree(scope);
+    let mut evaluations = Vec::new();
+    let mut records = 0;
+    let mut index = None;
+    for configuration in scope.configurations {
+        if Some(&configuration.id) == scope.active {
+            continue;
+        }
+        let native = ir.model.configurations.iter().find(|native| {
+            native.native_ref.is_some() && native.native_ref == configuration.native_ref
+        });
+        let stale = native
+            .is_some_and(|native| crate::decode::configuration_source_needs_update(ir, native));
+        let bodies = native.and_then(|native| native.bodies.as_deref());
+        let content = match bodies {
+            Some(bodies) if bodies.iter().all(|body| !current.contains(body)) => {
+                if index.is_none() {
+                    index = Some(Reach::new(ctx, &ir.geometry)?);
+                }
+                let Some(reach) = &index else {
+                    continue;
+                };
+                let topology = reach.state(ctx, bodies)?;
+                let table = names.entries(&topology, bodies, |feature| depended.contains(feature));
+                records += topology_len(&topology) + table.len();
+                Some(StateContent {
+                    base: StateBase::Empty,
+                    delta: StateDelta {
+                        records: topology,
+                        names: table
+                            .into_iter()
+                            .map(|(entity, entry)| (entity, Some(entry)))
+                            .collect(),
+                        ..StateDelta::default()
+                    },
+                })
+            }
+            Some(_) => continue,
+            None if stale => None,
+            None => continue,
+        };
+        evaluations.push(Evaluation {
+            id: evaluation_id(&configuration.id)?,
+            scope: scope.definition.clone(),
+            configuration: Some(configuration.id.clone()),
+            of: Evaluated::State(at.clone()),
+            status: if stale {
+                EvaluationStatus::Stale
+            } else {
+                EvaluationStatus::Current
+            },
+            content,
+            native_ref: None,
+        });
+    }
+    Ok((evaluations, records))
+}
+
+/// The state at the end of the tree, spelled after its last member that is
+/// not stateless (§5.4), and the features that state depends on.
+fn end_of_tree<'a>(scope: &Scope<'a>) -> (Position, HashSet<&'a FeatureId>) {
+    let last = scope
+        .features
+        .iter()
+        .rposition(|feature| !stateless(feature));
+    let Some(last) = last else {
+        return (Position::Start(scope.timeline.clone()), HashSet::new());
+    };
+    let depended = scope.features[..=last]
+        .iter()
+        .map(|feature| &feature.id)
+        .collect();
+    (
+        Position::After(Member::Feature(scope.features[last].id.clone())),
+        depended,
+    )
+}
+
+/// `CadIr::is_stateless` in a configuration that overrides nothing (§5.4):
+/// the feature is suppressed, or its operation cannot change a state; an
+/// `Unresolved` operation is judged by its family.
+fn stateless(feature: &Feature) -> bool {
+    if matches!(feature.suppressed, Some(Dimension::Literal(true))) {
+        return true;
+    }
+    match &feature.definition.operation {
+        FeatureOperation::Sketch(_)
+        | FeatureOperation::SpatialSketch(_)
+        | FeatureOperation::Spreadsheet(_)
+        | FeatureOperation::Datum(_)
+        | FeatureOperation::TemplateInstance(_)
+        | FeatureOperation::Decal(_) => true,
+        FeatureOperation::Pattern(pattern) => {
+            matches!(pattern.instances, PatternInstances::Members(_))
+        }
+        FeatureOperation::Mesh(mesh) => matches!(mesh.kind, MeshKind::Section { .. }),
+        FeatureOperation::Unresolved { family } => matches!(
+            family,
+            OperationFamily::Sketch
+                | OperationFamily::SpatialSketch
+                | OperationFamily::Spreadsheet
+                | OperationFamily::Datum
+                | OperationFamily::TemplateInstance
+                | OperationFamily::Decal
+        ),
+        _ => false,
+    }
+}
+
+fn evaluation_id(configuration: &ConfigurationId) -> Result<EvaluationId, CodecError> {
+    let key = configuration
+        .as_str()
+        .split_once('#')
+        .map_or(configuration.as_str(), |(_, key)| key);
+    EvaluationId::mint(format!("sldprt:model:evaluation#{key}"))
+        .map_err(|_| CodecError::malformed("invalid SLDPRT evaluation ID"))
+}
+
+macro_rules! topology_arenas {
+    ($($field:ident),* $(,)?) => {
+        /// A `Topology` arena.
+        #[allow(non_camel_case_types)]
+        #[derive(Clone, Copy)]
+        enum Arena {
+            $($field,)*
+        }
+
+        /// The records of a `Topology` by id, and the records that reference
+        /// each of them.
+        struct Reach<'g> {
+            geometry: &'g Topology,
+            slots: HashMap<&'g str, (Arena, usize)>,
+            referrers: HashMap<&'g str, Vec<&'g str>>,
+        }
+
+        impl<'g> Reach<'g> {
+            fn new(ctx: &DecodeContext<'_>, geometry: &'g Topology) -> Result<Self, CodecError> {
+                let mut slots = HashMap::new();
+                $(for (at, record) in geometry.$field.iter().enumerate() {
+                    slots.entry(record.identity()).or_insert((Arena::$field, at));
+                })*
+                let mut reach = Self {
+                    geometry,
+                    slots,
+                    referrers: HashMap::new(),
+                };
+                let mut referrers = HashMap::<&'g str, Vec<&'g str>>::new();
+                let mut targets = Vec::new();
+                for &id in reach.slots.keys() {
+                    targets.clear();
+                    reach.references(ctx, id, &mut targets)?;
+                    for &target in &targets {
+                        referrers.entry(target).or_default().push(id);
+                    }
+                }
+                reach.referrers = referrers;
+                Ok(reach)
+            }
+
+            /// Pushes onto `found` each record of the topology that the record
+            /// `id` references.
+            fn references(
+                &self,
+                ctx: &DecodeContext<'_>,
+                id: &str,
+                found: &mut Vec<&'g str>,
+            ) -> Result<(), CodecError> {
+                let Some(&(arena, at)) = self.slots.get(id) else {
+                    return Ok(());
+                };
+                let mut visit = |target: &str| {
+                    if let Some((target, _)) = self.slots.get_key_value(target) {
+                        found.push(*target);
+                    }
+                    Ok(())
+                };
+                match arena {
+                    $(Arena::$field => self.geometry.$field[at].visit_references(ctx, &mut visit),)*
+                }
+            }
+
+            /// The records that belong to the state of `bodies`, each arena
+            /// sorted by id: the records whose parent pointers lead to one of
+            /// them, and every record those reference.
+            fn state(&self, ctx: &DecodeContext<'_>, bodies: &[BodyId]) -> Result<Topology, CodecError> {
+                let mut owned = HashSet::<&str>::new();
+                let mut pending = bodies
+                    .iter()
+                    .filter_map(|body| self.slots.get_key_value(body.as_str()).map(|(id, _)| *id))
+                    .collect::<Vec<_>>();
+                while let Some(id) = pending.pop() {
+                    if owned.insert(id) {
+                        pending.extend(self.referrers.get(id).into_iter().flatten().copied());
+                    }
+                }
+                let mut held = HashSet::<&str>::new();
+                let mut pending = owned.into_iter().collect::<Vec<_>>();
+                while let Some(id) = pending.pop() {
+                    if held.insert(id) {
+                        self.references(ctx, id, &mut pending)?;
+                    }
+                }
+                let mut out = Topology::default();
+                $(
+                    out.$field = self
+                        .geometry
+                        .$field
+                        .iter()
+                        .filter(|record| held.contains(record.identity()))
+                        .cloned()
+                        .collect();
+                    out.$field.sort_by(|a, b| a.identity().cmp(b.identity()));
+                )*
+                Ok(out)
+            }
+        }
+
+        fn topology_len(topology: &Topology) -> usize {
+            0 $(+ topology.$field.len())*
+        }
+    };
+}
+
+topology_arenas!(
+    bodies,
+    regions,
+    shells,
+    faces,
+    loops,
+    coedges,
+    edges,
+    vertices,
+    points,
+    surfaces,
+    curves,
+    subds,
+    pcurves,
+    procedural_surfaces,
+    procedural_curves,
+);

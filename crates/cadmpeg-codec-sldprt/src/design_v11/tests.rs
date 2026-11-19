@@ -8,8 +8,11 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::names::{
+    CodecId, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
+};
 use cadmpeg_ir::design::ops::datum::DatumElement;
-use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::check::Check;
 
@@ -32,14 +35,21 @@ fn decode(source: &[u8]) -> CadIr {
 }
 
 fn part_with_history(keywords: &[u8], classes: &[(&str, &str, u32)]) -> CadIr {
-    let mut source = sldprt_with_body(&triangle_body());
+    decode(&with_history(
+        sldprt_with_body(&triangle_body()),
+        keywords,
+        classes,
+    ))
+}
+
+fn with_history(mut source: Vec<u8>, keywords: &[u8], classes: &[(&str, &str, u32)]) -> Vec<u8> {
     source.extend(make_block(0x42, "Contents/Keywords", keywords));
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(classes),
     ));
-    decode(&source)
+    source
 }
 
 fn body_ids(ir: &CadIr) -> Vec<String> {
@@ -573,5 +583,204 @@ fn configurations_mark_the_active_one() {
         [material] if material.target.is_none()
             && material.material == MaterialRef::Named(cadmpeg_core::nonblank_literal!("Aluminum"))
     ));
+    assert_no_design_findings(&ir);
+}
+
+/// The triangle body whose face carries the `FACE_ID_2001` list `face` and
+/// whose body carries the `ATOM_ID_2001` list `[body]`.
+fn identified_triangle(face: &[u32], body: u32) -> Vec<u8> {
+    use crate::test_support::parasolid::int_list_attribute;
+
+    let mut bytes = triangle_body();
+    bytes.extend(int_list_attribute(
+        "FACE_ID_2001",
+        &[9, 9, 1, 1],
+        1100,
+        10,
+        face,
+    ));
+    bytes.extend(int_list_attribute(
+        "ATOM_ID_2001",
+        &[9, 1],
+        1110,
+        900,
+        &[body],
+    ));
+    bytes
+}
+
+fn native_name(values: &[i64]) -> NativeName {
+    NativeName {
+        codec: CodecId::from(cadmpeg_core::nonblank_literal!("sldprt")),
+        value: NativeNameValue::Integers(values.to_vec()),
+    }
+}
+
+const BOSS: &[u8] = br#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Sketch Name="Sketch1" Type="ProfileFeature" id="8"/>
+    </Extrusion>
+</Keywords>"#;
+
+#[test]
+fn faces_and_bodies_are_named_by_their_persistent_ids() {
+    let ir = decode(&with_history(
+        sldprt_with_body(&identified_triangle(&[72, 7, 0x6523_4178, 0, 3], 41)),
+        BOSS,
+        &[],
+    ));
+    let [face] = ir.geometry.faces.as_slice() else {
+        panic!("one face");
+    };
+    let [body] = ir.geometry.bodies.as_slice() else {
+        panic!("one body");
+    };
+    let entries = ir.design.names.entries();
+    assert_eq!(entries.len(), 2, "{entries:#?}");
+    assert_eq!(
+        entries.get(&EntityRef::Face(face.id.clone())),
+        Some(&NameEntry {
+            name: Some(TopoName::Generated {
+                kind: NameKind::Face,
+                feature: feature_named(&ir, "Boss").id.clone(),
+                role: None,
+                generator: None,
+                index: None,
+            }),
+            native: Some(native_name(&[72, 7, 0x6523_4178, 0, 3])),
+        })
+    );
+    assert_eq!(
+        entries.get(&EntityRef::Body(body.id.clone())),
+        Some(&NameEntry {
+            name: None,
+            native: Some(native_name(&[41])),
+        })
+    );
+    assert!(ir.design.evaluations.is_empty());
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_face_whose_producer_is_no_feature_keeps_only_its_native_name() {
+    let ir = decode(&with_history(
+        sldprt_with_body(&identified_triangle(&[72, 99, 0x6523_4178, 0, 3], 41)),
+        BOSS,
+        &[],
+    ));
+    let face = &ir.geometry.faces[0];
+    assert_eq!(
+        ir.design
+            .names
+            .entries()
+            .get(&EntityRef::Face(face.id.clone())),
+        Some(&NameEntry {
+            name: None,
+            native: Some(native_name(&[72, 99, 0x6523_4178, 0, 3])),
+        })
+    );
+    assert_no_design_findings(&ir);
+}
+
+const TWO_CONFIGURATIONS: &[u8] = br#"<Keywords Name="Bracket">
+    <Configuration Name="First" SourceIndex="0"/>
+    <Configuration Name="Second" SourceIndex="1"/>
+    <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+    <Sketch Name="Sketch2" Type="ProfileFeature" id="12"/>
+</Keywords>"#;
+
+#[test]
+fn a_configuration_that_is_not_active_has_its_stored_state() {
+    use cadmpeg_ir::design::evaluation::{EvaluationStatus, StateBase};
+    use cadmpeg_ir::design::refs::Evaluated;
+
+    let mut source = with_history(
+        crate::test_support::container::sldprt_with_colliding_sites(),
+        TWO_CONFIGURATIONS,
+        &[],
+    );
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
+    ));
+    let ir = decode(&source);
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    let configuration = |name: &str| {
+        ir.design
+            .configurations
+            .iter()
+            .find(|configuration| configuration.name == name)
+            .unwrap()
+            .id
+            .clone()
+    };
+    assert_eq!(scope.active_configuration, Some(configuration("Second")));
+    let [current] = scope.current.as_slice() else {
+        panic!("one current state");
+    };
+    let [evaluation] = ir.design.evaluations.as_slice() else {
+        panic!("one evaluation: {:#?}", ir.design.evaluations);
+    };
+    assert_eq!(evaluation.scope, scope.definition);
+    assert_eq!(evaluation.configuration, Some(configuration("First")));
+    assert_eq!(
+        evaluation.of,
+        Evaluated::State(Position::After(Member::Feature(
+            feature_named(&ir, "Boss").id.clone()
+        )))
+    );
+    assert_eq!(evaluation.status, EvaluationStatus::Current);
+    let content = evaluation.content.as_ref().unwrap();
+    assert_eq!(content.base, StateBase::Empty);
+    let records = &content.delta.records;
+    let [body] = records.bodies.as_slice() else {
+        panic!("one body: {records:#?}");
+    };
+    assert!(!current.bodies.contains(&body.id));
+    assert_eq!(records.faces.len(), 1);
+    assert_eq!(records.vertices.len(), 3);
+    assert_eq!(records.points.len(), 3);
+    assert!(records
+        .points
+        .iter()
+        .all(|point| point.position().get().x < 10_000.0));
+    assert!(content.delta.removed.is_empty());
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
+    use cadmpeg_ir::design::evaluation::EvaluationStatus;
+
+    let mut source = with_history(
+        sldprt_with_body(&triangle_body()),
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        &[],
+    );
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Default"/><swConfigurationList><swConfiguration swName="Default" swID="0" swConfigurationNeedsUpdate="NO"/><swConfiguration swName="Long" swID="1" swConfigurationNeedsUpdate="YES"/></swConfigurationList></swSolidWorks>"#,
+    ));
+    let ir = decode(&source);
+    let [evaluation] = ir.design.evaluations.as_slice() else {
+        panic!("one evaluation: {:#?}", ir.design.evaluations);
+    };
+    let long = ir
+        .design
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name == "Long")
+        .unwrap();
+    assert_eq!(evaluation.configuration.as_ref(), Some(&long.id));
+    assert_eq!(evaluation.status, EvaluationStatus::Stale);
+    assert!(evaluation.content.is_none());
     assert_no_design_findings(&ir);
 }
