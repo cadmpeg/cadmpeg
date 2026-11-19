@@ -443,6 +443,14 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
             &[],
         ),
         parameter(
+            "alias",
+            None,
+            "d1",
+            Some(V10::Length(Length::new(10.0).unwrap())),
+            &["d1"],
+            &[],
+        ),
+        parameter(
             "count",
             None,
             "3",
@@ -485,7 +493,7 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
         .collect::<BTreeMap<_, _>>();
     assert_eq!(
         by_name.keys().copied().collect::<Vec<_>>(),
-        ["bare", "count", "d1", "d2", "turn"]
+        ["alias", "bare", "count", "d1", "d2", "turn"]
     );
     let d1 = by_name["d1"];
     assert_eq!(d1.scope, root);
@@ -529,6 +537,13 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
             }),
             ExpressionToken::Text(" * 2".to_owned()),
         ])
+    );
+    assert_eq!(
+        definition("alias"),
+        Expression::Neutral(Neutral(Node::Reference(ParameterRef {
+            target: RefTarget::Parameter(by_name["d1"].id.clone()),
+            through: None,
+        })))
     );
     assert_eq!(by_name["turn"].owner, None);
     assert_eq!(definition("turn"), number(45.0, Some(UnitSymbol::Deg)));

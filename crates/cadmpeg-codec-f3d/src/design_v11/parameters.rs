@@ -6,7 +6,8 @@
 //! timeline item, or a user parameter. Its value is the cache the decoder
 //! read, in canonical units. An expression that is one number with a unit,
 //! or a bare number of a dimensionless parameter, is a `Neutral` literal in
-//! the unit the text states. Any other text is a `Source` expression in the
+//! the unit the text states, and a name of one parameter alone is a `Neutral`
+//! reference. Any other text is a `Source` expression in the
 //! `Fusion` dialect whose names of the parameters it reads are reference
 //! tokens. The role Fusion stores on a model parameter is the source setting
 //! `f3d:role`.
@@ -165,10 +166,22 @@ pub(super) fn expression(
     kind: &ValueKind,
     vocabulary: &HashMap<&str, &ParameterId>,
 ) -> Expression {
-    literal(text, kind).map_or_else(
-        || source(text, vocabulary),
-        |node| Expression::Neutral(Neutral(node)),
-    )
+    if let Some(node) = literal(text, kind) {
+        return Expression::Neutral(Neutral(node));
+    }
+    match <[_; 1]>::try_from(tokens(text, vocabulary)) {
+        Ok([ExpressionToken::Reference(reference)]) => {
+            Expression::Neutral(Neutral(Node::Reference(reference)))
+        }
+        Ok(token) => Expression::Source {
+            dialect: ExpressionDialect::Fusion,
+            tokens: token.into(),
+        },
+        Err(tokens) => Expression::Source {
+            dialect: ExpressionDialect::Fusion,
+            tokens,
+        },
+    }
 }
 
 /// The literal `text` states, where it is one number with a unit of the
@@ -242,9 +255,12 @@ fn literal(text: &str, kind: &ValueKind) -> Option<Node<ParameterRef>> {
     })
 }
 
-/// The source text of an expression, each name of a parameter it reads a
-/// reference token.
-fn source(text: &str, references: &HashMap<&str, &ParameterId>) -> Expression {
+/// The tokens of an expression's source text, each name of a parameter it
+/// reads a reference token.
+fn tokens(
+    text: &str,
+    references: &HashMap<&str, &ParameterId>,
+) -> Vec<ExpressionToken<ParameterRef>> {
     let mut tokens = Vec::new();
     let mut plain = String::new();
     let mut rest = text;
@@ -278,8 +294,5 @@ fn source(text: &str, references: &HashMap<&str, &ParameterId>) -> Expression {
     if !plain.is_empty() {
         tokens.push(ExpressionToken::Text(plain));
     }
-    Expression::Source {
-        dialect: ExpressionDialect::Fusion,
-        tokens,
-    }
+    tokens
 }
