@@ -102,9 +102,9 @@ impl ClassField {
 }
 
 /// The cached number a process dimension states: its literal, or the cached
-/// number of the parameter it binds, negated for `Negated`. `None` for a
-/// reference `through` an occurrence path, which reads the occurrence's
-/// cache (§5.13), not the parameter's own.
+/// number of the parameter it binds, negated for `Negated`. A reference
+/// `through` an occurrence path reads the cache of the occurrence the path
+/// reaches (§5.13).
 fn number(records: &ProcessRecords<'_>, dimension: &ProcessDimension<Length>) -> Option<f64> {
     let cached = |reference: &ParamRef| {
         let value = match reference {
@@ -113,6 +113,10 @@ fn number(records: &ProcessRecords<'_>, dimension: &ProcessDimension<Length>) ->
                 target: RefTarget::Parameter(id),
                 through: None,
             }) => records.design.parameters.get(id.as_str())?.value.as_ref(),
+            ParamRef::Design(ParameterRef {
+                target: RefTarget::Parameter(id),
+                through: Some(path),
+            }) => records.ir.through_cache(id, path).ok()?,
             ParamRef::Design(_) => None,
         };
         match value {

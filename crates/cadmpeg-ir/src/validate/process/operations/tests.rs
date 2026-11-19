@@ -2,10 +2,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::design::configuration::ParameterOverride;
 use crate::design::dimension::{Dimension, ParamRef};
 use crate::design::parameter::ParameterValue;
+use crate::design::refs::ConfigurationRef;
+use crate::design::scope::OccurrenceDesign;
 use crate::design::selection::{Members, Picks};
-use crate::features::FinitePoint3;
+use crate::document::CadIr;
+use crate::features::{FinitePoint3, ParameterId};
+use crate::ids::OccurrenceId;
 use crate::math::Point3;
 use crate::process::cycle::{Cycle, CycleKind, ProbeTarget};
 use crate::process::limits::{
@@ -25,6 +30,7 @@ use crate::process::toolpath::{Motion, ToolpathContent};
 use crate::process::{Choice, ProcessDimension};
 use crate::scalar::{Angle, FiniteReal, Length};
 use crate::transform::Transform;
+use crate::validate::design::fixture as design;
 use crate::validate::process::fixture::{
     assert_error, assert_no_process_finding, constant, document, id, lit, place_pin, text,
     width_through, workpiece_selection,
@@ -264,6 +270,84 @@ fn lead_angles() {
     );
     turning(&mut ir);
     assert_no_process_finding(&ir);
+}
+
+/// A radius `through` occurrence `pin` reads the pin's own override of
+/// `width`, else `width`'s cache in the configuration the pin uses; a lead
+/// whose radius reads zero there has no arc.
+#[test]
+fn a_through_arc_radius_reads_the_occurrences_cache() {
+    let number = |x: f64| Some(ParameterValue::Number(FiniteReal::new(x).unwrap()));
+    let angled = |ir: &mut CadIr, width: f64| {
+        place_pin(ir);
+        if let Some(parameter) = ir.design.parameters.last_mut() {
+            parameter.value = number(width);
+        }
+        ir.process.operations[2].leads = Some(Leads {
+            entry: Some(lead_on(
+                angle_turn(45.0, None),
+                Dimension::Parameter(width_through("pin")),
+            )),
+            exit: None,
+        });
+    };
+    let pin = || design::id::<OccurrenceId>("occurrence", "pin");
+    let width = || design::id::<ParameterId>("parameter", "width");
+    let override_width = |ir: &mut CadIr, value: f64| {
+        let state = OccurrenceDesign {
+            configuration: None,
+            arrangements: Vec::new(),
+            grounded: None,
+            flexible: None,
+            parameters: BTreeMap::from([(
+                width(),
+                ParameterOverride {
+                    expression: None,
+                    value: number(value),
+                },
+            )]),
+        };
+        ir.design.scopes[0].occurrences.insert(pin(), state);
+    };
+
+    let mut ir = document();
+    angled(&mut ir, 0.0);
+    assert_no_process_finding(&ir);
+
+    let mut ir = document();
+    angled(&mut ir, 2.0);
+    override_width(&mut ir, 0.0);
+    assert_no_process_finding(&ir);
+    override_width(&mut ir, 2.0);
+    if let Some(parameter) = ir.design.parameters.last_mut() {
+        parameter.value = number(0.0);
+    }
+    assert_error(&ir, "a lead with an arc states a `LineTurn::Angle`");
+
+    let mut ir = document();
+    angled(&mut ir, 2.0);
+    let mut small = design::configuration("small", None);
+    small.overrides.parameters.insert(
+        width(),
+        ParameterOverride {
+            expression: None,
+            value: number(0.0),
+        },
+    );
+    ir.design.configurations.push(small);
+    override_width(&mut ir, 0.0);
+    if let Some(state) = ir.design.scopes[0].occurrences.get_mut(&pin()) {
+        state.parameters.clear();
+        state.configuration = Some(ConfigurationRef::Local(design::id(
+            "configuration",
+            "small",
+        )));
+    }
+    assert_no_process_finding(&ir);
+    if let Some(state) = ir.design.scopes[0].occurrences.get_mut(&pin()) {
+        state.configuration = Some(ConfigurationRef::Named(text("large")));
+    }
+    assert_error(&ir, "a lead with an arc states a `LineTurn::Angle`");
 }
 
 #[test]
