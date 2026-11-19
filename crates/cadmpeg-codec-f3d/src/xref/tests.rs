@@ -223,7 +223,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
     assert_eq!(occurrences.len(), 1);
     assert_eq!(occurrences[0].id.as_str(), "f3d:model:occurrence#xref-0-0");
     assert_eq!(
-        occurrences[0].transform.rows(),
+        occurrences[0].transform.unwrap().rows(),
         [
             [0.0, -1.0, 0.0, 10.0],
             [1.0, 0.0, 0.0, 20.0],
@@ -232,15 +232,8 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
         ]
     );
     assert_eq!(
-        occurrences[0].parent,
-        cadmpeg_ir::products::OccurrenceParent::Root {}
-    );
-    assert_eq!(
         occurrences[0].prototype,
-        cadmpeg_ir::products::PrototypeReference::External {
-            document: cadmpeg_ir::products::ExternalDocument::path("part.f3d"),
-            object: None,
-        }
+        super::document_definition_id("part.f3d")
     );
 }
 
@@ -665,7 +658,7 @@ fn repeated_target_frames_accept_both_reference_and_separator_forms() {
 
 #[test]
 fn local_occurrence_paths_belong_to_the_local_component_decoder() {
-    let (bulk, _) = crate::test_support::streams_test::nested_local_component_design(&[300]);
+    let (bulk, _) = crate::test_support::component_design::nested_local_component_design(&[300]);
     let records = super::indexed_records(&bulk);
     let local_records: Vec<_> = records
         .into_iter()
@@ -1017,7 +1010,7 @@ fn attributed_legacy_external_placements_keep_the_transform_owner_and_source() {
                 [0.0, 0.0, 1.0, 0.0],
             ]
         };
-        assert_eq!(occurrence.transform.affine_rows(), expected);
+        assert_eq!(occurrence.transform.unwrap().affine_rows(), expected);
         let losses = &decoded.report().losses;
         assert!(!losses
             .iter()
@@ -1863,7 +1856,7 @@ fn a_component_path_carrier_supplies_the_current_root_pose() {
         .iter()
         .find(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
         .expect("root occurrence");
-    assert!((occurrence.transform.rows()[0][3] - 120.0).abs() < EPS_PLACEMENT_TRANSLATION);
+    assert!((occurrence.transform.unwrap().rows()[0][3] - 120.0).abs() < EPS_PLACEMENT_TRANSLATION);
     assert!(decoded
         .report()
         .losses
@@ -1964,4 +1957,5 @@ fn pathless_occurrence_placements_bind_the_target_role_and_close() {
     }
 }
 
+mod legacy_insert_carrier;
 mod reference_rows;

@@ -15,6 +15,23 @@
         "configurations": 0,
         "curves": 0,
         "declared_measures": 0,
+        "design.arrangements": 0,
+        "design.configurations": 0,
+        "design.containers": 0,
+        "design.evaluations": 0,
+        "design.features": 0,
+        "design.parameters": 0,
+        "design.programs": 0,
+        "design.publications": 0,
+        "design.scopes": 0,
+        "design.sheet_metal_rules": 0,
+        "design.sketch_constraints": 0,
+        "design.sketch_entities": 0,
+        "design.sketches": 0,
+        "design.spatial_sketch_constraints": 0,
+        "design.spatial_sketch_entities": 0,
+        "design.spatial_sketches": 0,
+        "design.spreadsheets": 0,
         "drawings": 0,
         "edges": 0,
         "faces": 0,
@@ -35,7 +52,18 @@
         "presentation_layers": 0,
         "procedural_curves": 0,
         "procedural_surfaces": 0,
-        "product_definitions": 3,
+        "process.features": 0,
+        "process.groups": 0,
+        "process.machines": 0,
+        "process.operations": 0,
+        "process.parameters": 0,
+        "process.presets": 0,
+        "process.programs": 0,
+        "process.setups": 0,
+        "process.states": 0,
+        "process.toolpaths": 0,
+        "process.tools": 0,
+        "product_definitions": 4,
         "regions": 0,
         "rigid_bodies": 0,
         "semantic_annotations": 0,
@@ -57,16 +85,18 @@
       }
     },
     "identity": {
-      "payload": "native",
+      "kind": "native",
       "target": "usd:usda-1.0"
     },
     "losses": [
       {
         "code": {
-          "code": "export.vertex-precision",
-          "kind": "mesh_vertex_precision",
-          "namespace": "usd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "export.vertex-precision",
+            "kind": "mesh_vertex_precision",
+            "namespace": "usd"
+          }
         },
         "message": "5 points were written as binary32 coordinates, which round them",
         "severity": "info"
@@ -77,9 +107,9 @@
     ],
     "write_path": {
       "fidelity": {
-        "status": "not_provided"
+        "kind": "not_provided"
       },
-      "path": "synthesized"
+      "kind": "synthesized"
     }
   },
   "usda": [
@@ -150,17 +180,6 @@
     "            }",
     "        }",
     "    }",
-    "    def Mesh \"Cover\" (",
-    "        prepend apiSchemas = [\"MaterialBindingAPI\"]",
-    "    )",
-    "    {",
-    "        rel material:binding = </Root/Looks/Painted>",
-    "        float3[] extent = [(0, 0, 0.01), (0.01, 0.01, 0.01)]",
-    "        int[] faceVertexCounts = [3]",
-    "        int[] faceVertexIndices = [0, 1, 2]",
-    "        point3f[] points = [(0, 0, 0.01), (0.01, 0, 0.01), (0, 0.01, 0.01)]",
-    "        uniform token subdivisionScheme = \"none\"",
-    "    }",
     "    def Mesh \"Plate\" (",
     "        prepend apiSchemas = [\"MaterialBindingAPI\"]",
     "    )",
@@ -170,6 +189,17 @@
     "        int[] faceVertexCounts = [3]",
     "        int[] faceVertexIndices = [0, 1, 2]",
     "        point3f[] points = [(0, 0, 0), (0.01, 0, 0), (0, 0.01, 0)]",
+    "        uniform token subdivisionScheme = \"none\"",
+    "    }",
+    "    def Mesh \"Cover\" (",
+    "        prepend apiSchemas = [\"MaterialBindingAPI\"]",
+    "    )",
+    "    {",
+    "        rel material:binding = </Root/Looks/Painted>",
+    "        float3[] extent = [(0, 0, 0.01), (0.01, 0.01, 0.01)]",
+    "        int[] faceVertexCounts = [3]",
+    "        int[] faceVertexIndices = [0, 1, 2]",
+    "        point3f[] points = [(0, 0, 0.01), (0.01, 0, 0.01), (0, 0.01, 0.01)]",
     "        uniform token subdivisionScheme = \"none\"",
     "    }",
     "}"

@@ -296,6 +296,68 @@ pub(super) fn bind_face_selection(
         return;
     };
     if native == &scope.id {
+        let split_target = if scope.kind()
+            == crate::records::feature::scope::DesignFeatureKind::SplitFace
+        {
+            let Some(stream) = crate::ids::native_stream(&scope.id) else {
+                return;
+            };
+            let scoped = groups.iter().filter(|group| {
+                crate::ids::native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == scope.record_index
+            });
+            let mut targets = scoped.filter(|group| group.role() == DesignOperandRole::ROLE_0X10);
+            let Some(target) = targets.next() else {
+                return;
+            };
+            if targets.next().is_some()
+                || target.scope_reference_ordinal == 0
+                || usize::try_from(target.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                    != Some(&target.record_index)
+                || groups
+                    .iter()
+                    .filter(|group| {
+                        crate::ids::native_stream(&group.id) == Some(stream)
+                            && group.scope_record_index == scope.record_index
+                            && group.record_index == target.record_index
+                    })
+                    .count()
+                    != 1
+            {
+                return;
+            }
+            if target.members().is_empty()
+                || target
+                    .members()
+                    .iter()
+                    .enumerate()
+                    .any(|(ordinal, member)| {
+                        let Ok(ordinal) = u32::try_from(ordinal) else {
+                            return true;
+                        };
+                        operands
+                            .iter()
+                            .filter(|operand| {
+                                crate::ids::native_stream(&operand.id) == Some(stream)
+                                    && operand.scope_record_index == scope.record_index
+                                    && operand.scope_reference_ordinal
+                                        == target.scope_reference_ordinal
+                                    && operand.group_record_index() == Some(target.record_index)
+                                    && operand.group_member_ordinal() == Some(ordinal)
+                                    && operand.record_index() == member.value
+                            })
+                            .count()
+                            != 1
+                    })
+            {
+                return;
+            }
+            Some(target)
+        } else {
+            None
+        };
         let selected =
             |operand: &&crate::records::topology::face::DesignFaceOperand| match scope.payload() {
                 crate::records::feature::scope::DesignScopePayload::Thicken(Some(operation)) => {
@@ -304,6 +366,18 @@ pub(super) fn bind_face_selection(
                             .group_record_index()
                             .is_none_or(|index| operation.group_record_indices.contains(&index))
                 }
+                _ if split_target.is_some() => split_target.is_some_and(|target| {
+                    operand.group_record_index() == Some(target.record_index)
+                        && operand.scope_reference_ordinal == target.scope_reference_ordinal
+                        && operand
+                            .group_member_ordinal()
+                            .and_then(|ordinal| {
+                                usize::try_from(ordinal)
+                                    .ok()
+                                    .and_then(|ordinal| target.members().get(ordinal))
+                            })
+                            .is_some_and(|member| member.value == operand.record_index())
+                }),
                 _ => true,
             };
         if let Some(resolved) = crate::design::feature_project::direct_face_selection(
@@ -1183,7 +1257,10 @@ pub(crate) fn bind_mirror_selection_planes(
         let stream = crate::ids::native_stream(&scope.id).map(str::to_owned);
         let record_index = scope.record_index;
         let history_state_id = scope.history_state_id();
-        let previous_history_state_id = scope.previous_history_state_id();
+        // A scope that stores no preceding state takes it from its history
+        // state.
+        let previous_history_state_id =
+            crate::history::effective_scope_previous_history_state_id(scope, histories);
         let Some(construction) = scope.mirror_construction_mut() else {
             continue;
         };
@@ -1241,6 +1318,12 @@ pub(crate) fn bind_mirror_selection_planes(
         if matching_face_operands.next().is_some() {
             continue;
         }
+        // A face-recipe member keeps its recipe before the indexed header that closes an
+        // entity-selection reading of the same record, so a later recipe is not this member's.
+        let matching_face_operand = matching_face_operand.filter(|face| {
+            matching_operand
+                .is_none_or(|operand| face.recipe_program_offset < operand.next_byte_offset())
+        });
         let plane = if let Some(operand) = matching_operand {
             if matching_face_operand.is_some() {
                 continue;
@@ -2575,6 +2658,11 @@ pub(super) fn feature_selected_input_state_id(
         FeatureDefinition::PostProcess { operation, .. } => operation,
     };
     match op {
+        FeatureOperation::BaseFeature {
+            bodies: BodySelection::Historical { state, .. },
+        } => {
+            return parse_state(state);
+        }
         FeatureOperation::Fillet { groups } => {
             for g in groups {
                 if let EdgeSelection::Historical { state, .. }
@@ -2606,12 +2694,18 @@ pub(super) fn feature_selected_input_state_id(
                 return Some(id);
             }
         }
-        FeatureOperation::SplitFace {
-            targets: FaceSelection::Historical { state, .. },
-            ..
-        } => {
-            if let Some(id) = parse_state(state) {
-                return Some(id);
+        FeatureOperation::SplitFace { targets, tool, .. } => {
+            for selection in std::iter::once(targets).chain(match tool {
+                cadmpeg_ir::features::SplitFaceTool::Faces(faces) => Some(faces),
+                _ => None,
+            }) {
+                if let FaceSelection::Historical { state, .. }
+                | FaceSelection::HistoricalPartial { state, .. } = selection
+                {
+                    if let Some(id) = parse_state(state) {
+                        return Some(id);
+                    }
+                }
             }
         }
         FeatureOperation::Shell {

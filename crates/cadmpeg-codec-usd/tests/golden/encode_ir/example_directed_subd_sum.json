@@ -15,6 +15,23 @@
         "configurations": 0,
         "curves": 2,
         "declared_measures": 0,
+        "design.arrangements": 0,
+        "design.configurations": 0,
+        "design.containers": 0,
+        "design.evaluations": 0,
+        "design.features": 0,
+        "design.parameters": 0,
+        "design.programs": 0,
+        "design.publications": 0,
+        "design.scopes": 0,
+        "design.sheet_metal_rules": 0,
+        "design.sketch_constraints": 0,
+        "design.sketch_entities": 0,
+        "design.sketches": 0,
+        "design.spatial_sketch_constraints": 0,
+        "design.spatial_sketch_entities": 0,
+        "design.spatial_sketches": 0,
+        "design.spreadsheets": 0,
         "drawings": 0,
         "edges": 0,
         "faces": 0,
@@ -35,6 +52,17 @@
         "presentation_layers": 0,
         "procedural_curves": 0,
         "procedural_surfaces": 1,
+        "process.features": 0,
+        "process.groups": 0,
+        "process.machines": 0,
+        "process.operations": 0,
+        "process.parameters": 0,
+        "process.presets": 0,
+        "process.programs": 0,
+        "process.setups": 0,
+        "process.states": 0,
+        "process.toolpaths": 0,
+        "process.tools": 0,
         "product_definitions": 0,
         "regions": 0,
         "rigid_bodies": 0,
@@ -57,38 +85,44 @@
       }
     },
     "identity": {
-      "payload": "native",
+      "kind": "native",
       "target": "usd:usda-1.0"
     },
     "losses": [
       {
         "code": {
-          "code": "export.carrier-not-written",
-          "kind": "geometry_not_transferred",
-          "namespace": "usd",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "export.carrier-not-written",
+            "kind": "geometry_not_transferred",
+            "namespace": "usd",
+            "strict_floor": "warning"
+          }
         },
         "message": "2 curves with no line or NURBS form and 1 surfaces that no face uses were not written",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "arena.omitted",
-          "kind": "subd_omitted",
-          "namespace": "export",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "arena.omitted",
+            "kind": "subd_omitted",
+            "namespace": "export",
+            "strict_floor": "warning"
+          }
         },
         "message": "the usd write does not represent model arena `subds`: 1 record(s) omitted",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "arena.omitted",
-          "kind": "procedural_reduced",
-          "namespace": "export",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "arena.omitted",
+            "kind": "procedural_reduced",
+            "namespace": "export"
+          }
         },
         "message": "the usd write does not represent model arena `procedural_surfaces`: 1 record(s) omitted",
         "severity": "warning"
@@ -99,9 +133,9 @@
     ],
     "write_path": {
       "fidelity": {
-        "status": "not_provided"
+        "kind": "not_provided"
       },
-      "path": "synthesized"
+      "kind": "synthesized"
     }
   },
   "usda": [

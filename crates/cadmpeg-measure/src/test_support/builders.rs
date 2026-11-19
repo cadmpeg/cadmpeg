@@ -15,12 +15,12 @@ use cadmpeg_ir::geometry::pcurve::{
     PcurveNurbsPoles, PolarHarmonicPcurve,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, DirectedParameterRange, SolvedCurveGeometry, SolvedSurfaceGeometry,
-    Surface, SurfaceGeometry,
+    Curve, CurveGeometry, DirectedParameterRange, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::NonZeroReal;
@@ -215,15 +215,16 @@ impl Builder {
         let point = id(PointId::mint, "point", n);
         let vertex = id(VertexId::mint, "vertex", n);
         let [x, y, z] = position;
-        self.ir.model.points.push(Point::new(
+        self.ir.geometry.points.push(Point::new(
             point.clone(),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, y, z)).expect("finite"),
             None,
         ));
-        self.ir.model.vertices.push(Vertex {
+        self.ir.geometry.vertices.push(Vertex {
             id: vertex.clone(),
             point,
             tolerance: None,
+            native_ref: None,
         });
         vertex
     }
@@ -231,14 +232,14 @@ impl Builder {
     fn position(&self, vertex: &VertexId) -> Point3 {
         let point = self
             .ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|candidate| candidate.id == *vertex)
             .map(|vertex| vertex.point.clone())
             .expect("vertex exists");
         self.ir
-            .model
+            .geometry
             .points
             .iter()
             .find(|candidate| candidate.id == point)
@@ -249,11 +250,12 @@ impl Builder {
     fn curve(&mut self, geometry: SolvedCurveGeometry) -> CurveId {
         let n = self.serial();
         let curve = id(CurveId::mint, "curve", n);
-        self.ir.model.curves.push(Curve {
+        self.ir.geometry.curves.push(Curve {
             id: curve.clone(),
             geometry: CurveGeometry::Solved(geometry),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         curve
     }
@@ -261,12 +263,12 @@ impl Builder {
     fn edge(&mut self, carrier: EdgeCarrier, start: VertexId, end: VertexId) -> EdgeId {
         let n = self.serial();
         let edge = id(EdgeId::mint, "edge", n);
-        self.ir.model.edges.push(Edge {
+        self.ir.geometry.edges.push(Edge {
             id: edge.clone(),
             carrier,
-            start,
-            end,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
             tolerance: None,
+            native_ref: None,
         });
         edge
     }
@@ -354,6 +356,36 @@ impl Builder {
             EdgeCarrier::unbounded(Some(curve)),
             vertex.clone(),
             vertex.clone(),
+        )
+    }
+
+    /// An edge from `start` to `end` on the degree-1 B-spline through
+    /// `corners`, on `[0, corners.len() − 1]` with one knot per corner.
+    pub(crate) fn polyline(
+        &mut self,
+        corners: &[[f64; 3]],
+        start: &VertexId,
+        end: &VertexId,
+    ) -> EdgeId {
+        let segments = corners.len() - 1;
+        let points = corners
+            .iter()
+            .map(|&[x, y, z]| Point3::new(x, y, z))
+            .collect();
+        let curve = self.curve(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                polyline_knots(segments),
+                NurbsPoles3::from_lanes(points, None).expect("poles"),
+                false,
+            )
+            .expect("polyline"),
+        ));
+        let last = f64::from(u32::try_from(segments).expect("segment count"));
+        self.edge(
+            EdgeCarrier::new(Some(curve), Some([0.0, last])).expect("carrier"),
+            start.clone(),
+            end.clone(),
         )
     }
 
@@ -505,14 +537,15 @@ impl Builder {
     ) {
         let n = self.serial();
         let pcurve = id(PcurveId::mint, "pcurve", n);
-        self.ir.model.pcurves.push(Pcurve {
+        self.ir.geometry.pcurves.push(Pcurve {
             id: pcurve.clone(),
             geometry,
             metadata: PcurveMetadata::default(),
+            native_ref: None,
         });
         let loop_id = self
             .ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|candidate| candidate.id == *face)
@@ -520,7 +553,7 @@ impl Builder {
             .expect("face loop");
         let coedge_id = self
             .ir
-            .model
+            .geometry
             .loops
             .iter()
             .find(|candidate| candidate.id == loop_id)
@@ -528,7 +561,7 @@ impl Builder {
             .expect("loop coedge");
         let coedge = self
             .ir
-            .model
+            .geometry
             .coedges
             .iter_mut()
             .find(|candidate| candidate.id == coedge_id)
@@ -572,6 +605,41 @@ impl Builder {
         ))
     }
 
+    /// A spindle torus about the frame origin with its outer (`select_outer`)
+    /// or inner sheet selected.
+    pub(crate) fn degenerate_torus(
+        &mut self,
+        frame: Frame,
+        major: f64,
+        minor: f64,
+        select_outer: bool,
+    ) -> SurfaceId {
+        let (origin, axis, reference) = frame.vectors();
+        let n = self.serial();
+        let surface = id(SurfaceId::mint, "surface", n);
+        let construction = id(ProceduralSurfaceId::mint, "degenerate-torus", n);
+        self.ir
+            .geometry
+            .procedural_surfaces
+            .push(ProceduralSurface::new(
+                construction.clone(),
+                ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
+                None,
+            ));
+        self.ir.geometry.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction,
+                cache: Some(SolvedSurfaceGeometry::Torus(
+                    TorusSurface::try_new(origin, axis, reference, major, minor).expect("torus"),
+                )),
+            },
+            source_object: None,
+            native_ref: None,
+        });
+        surface
+    }
+
     /// A face on `surface` bounded only by vertex loops at `vertices`.
     pub(crate) fn vertex_face(
         &mut self,
@@ -584,19 +652,20 @@ impl Builder {
         for vertex in vertices {
             let m = self.serial();
             let loop_id = id(LoopId::mint, "loop", m);
-            self.ir.model.loops.push(Loop {
+            self.ir.geometry.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Vertex {
                     vertex: vertex.clone(),
                     pcurves: Vec::new(),
                 },
+                native_ref: None,
             });
             loops.push(loop_id);
         }
         let record = self
             .ir
-            .model
+            .geometry
             .faces
             .iter_mut()
             .find(|candidate| candidate.id == face)
@@ -671,10 +740,11 @@ impl Builder {
     pub(crate) fn surface(&mut self, geometry: SolvedSurfaceGeometry) -> SurfaceId {
         let n = self.serial();
         let surface = id(SurfaceId::mint, "surface", n);
-        self.ir.model.surfaces.push(Surface {
+        self.ir.geometry.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(geometry),
             source_object: None,
+            native_ref: None,
         });
         surface
     }
@@ -698,7 +768,7 @@ impl Builder {
             for (edge, coedge_sense) in ring {
                 let k = self.serial();
                 let coedge = id(CoedgeId::mint, "coedge", k);
-                self.ir.model.coedges.push(Coedge {
+                self.ir.geometry.coedges.push(Coedge {
                     id: coedge.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge.clone(),
@@ -706,13 +776,15 @@ impl Builder {
                     sense: *coedge_sense,
                     pcurves: Vec::new(),
                     use_curve: None,
+                    native_ref: None,
                 });
                 coedges.push(coedge);
             }
-            self.ir.model.loops.push(Loop {
+            self.ir.geometry.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face.clone(),
                 boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new()).expect("ring")),
+                native_ref: None,
             });
             loops.push(loop_id);
         }
@@ -723,7 +795,7 @@ impl Builder {
         } else {
             FaceLoops::unspecified(loops)
         };
-        self.ir.model.faces.push(Face {
+        self.ir.geometry.faces.push(Face {
             id: face.clone(),
             shell: id(ShellId::mint, "shell", 0),
             surface: surface.clone(),
@@ -732,6 +804,7 @@ impl Builder {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         self.faces.push(face.clone());
         face
@@ -741,7 +814,7 @@ impl Builder {
     pub(crate) fn reverse_listing(&mut self, face: &FaceId, index: usize) {
         let loop_id = self
             .ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|candidate| candidate.id == *face)
@@ -749,7 +822,7 @@ impl Builder {
             .expect("face loop");
         let face_loop = self
             .ir
-            .model
+            .geometry
             .loops
             .iter_mut()
             .find(|candidate| candidate.id == loop_id)
@@ -767,7 +840,7 @@ impl Builder {
         let body = id(BodyId::mint, "body", 0);
         let wire_edges = if self.faces.is_empty() {
             self.ir
-                .model
+                .geometry
                 .edges
                 .iter()
                 .map(|edge| edge.id.clone())
@@ -775,32 +848,29 @@ impl Builder {
         } else {
             Vec::new()
         };
-        self.ir.model.shells.push(
-            Shell::new(
-                shell.clone(),
-                region.clone(),
-                self.faces.clone(),
-                wire_edges,
-                Vec::new(),
-            )
-            .expect("shell"),
-        );
-        self.ir.model.regions.push(Region {
+        self.ir.geometry.shells.push(Shell::with_members(
+            shell.clone(),
+            region.clone(),
+            wire_edges,
+            Vec::new(),
+        ));
+        self.ir.geometry.regions.push(Region {
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
+            native_ref: None,
         });
-        self.ir.model.bodies.push(Body {
+        self.ir.geometry.bodies.push(Body {
             id: body,
             kind,
-            regions: vec![region],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
-        let coedges = self.ir.model.coedges.clone();
-        for coedge in &mut self.ir.model.coedges {
+        let coedges = self.ir.geometry.coedges.clone();
+        for coedge in &mut self.ir.geometry.coedges {
             let partners: Vec<&Coedge> = coedges
                 .iter()
                 .filter(|other| other.edge == coedge.edge)
@@ -1101,7 +1171,7 @@ pub(crate) fn square_with_split_side(listed_backward: bool) -> (CadIr, CoedgeId,
     }
     let ir = builder.finish(BodyKind::Sheet);
     let split = ir
-        .model
+        .geometry
         .loops
         .iter()
         .find(|face_loop| face_loop.face == face)
@@ -1118,25 +1188,29 @@ pub(crate) fn renamed(ir: &CadIr, from: &str, to: &str) -> CadIr {
     copy
 }
 
-/// The model arenas of `a` and `b` in one document; `b`'s IDs must not
+/// The neutral arenas of `a` and `b` in one document; `b`'s IDs must not
 /// collide with `a`'s.
 pub(crate) fn merged(a: &CadIr, b: &CadIr) -> CadIr {
     let mut first: serde_json::Value =
         serde_json::from_str(&a.to_canonical_json().expect("json")).expect("value");
     let second: serde_json::Value =
         serde_json::from_str(&b.to_canonical_json().expect("json")).expect("value");
-    let (Some(model), Some(other)) = (first["model"].as_object_mut(), second["model"].as_object())
-    else {
-        panic!("documents have models");
-    };
-    for (arena, records) in other {
-        if let (Some(target), Some(records)) = (
-            model
-                .get_mut(arena)
-                .and_then(serde_json::Value::as_array_mut),
-            records.as_array(),
-        ) {
-            target.extend(records.iter().cloned());
+    for home in cadmpeg_ir::ArenaHome::ALL {
+        let (Some(arenas), Some(other)) = (
+            first[home.as_str()].as_object_mut(),
+            second[home.as_str()].as_object(),
+        ) else {
+            panic!("documents have every neutral home");
+        };
+        for (arena, records) in other {
+            if let (Some(target), Some(records)) = (
+                arenas
+                    .get_mut(arena)
+                    .and_then(serde_json::Value::as_array_mut),
+                records.as_array(),
+            ) {
+                target.extend(records.iter().cloned());
+            }
         }
     }
     let mut document = CadIr::from_json(&first.to_string()).expect("merged document");

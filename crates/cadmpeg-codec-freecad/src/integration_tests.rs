@@ -10,6 +10,7 @@ mod authored_gui;
 mod authored_history;
 mod authored_operations;
 mod geometry_topology;
+mod gui_expand;
 mod measured_geometry;
 mod mesh_placement;
 mod metadata_recovery;
@@ -20,6 +21,7 @@ mod revolve_direction;
 mod ring_traversal;
 mod shape_placement;
 mod sketch_bspline;
+mod unreadable_shapes;
 mod visibility;
 
 use super::FcstdCodec;
@@ -566,10 +568,11 @@ fn an_undeclared_schema_version_alone_recovers_the_schema_four_content() {
     let drifted = decode(rewrite_schema_version(CORE_OPERATIONS, "5"));
 
     let model = |result: &cadmpeg_ir::codec::DecodeResult| {
-        serde_json::to_string(&result.ir().model).expect("serialize model")
+        serde_json::to_string(&(&result.ir().geometry, &result.ir().model))
+            .expect("serialize model")
     };
     assert_eq!(model(&drifted), model(&baseline));
-    assert!(!drifted.ir().model.bodies.is_empty());
+    assert!(!drifted.ir().geometry.bodies.is_empty());
 
     assert_eq!(
         baseline

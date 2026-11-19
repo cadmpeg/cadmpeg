@@ -14,6 +14,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::{Cursor, Write};
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::loss::LossKind;
 use zip::CompressionMethod;
@@ -92,8 +93,19 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
         "FusionAssetName[Active]/Breps.BlobParts/BREP1.sat",
     ]);
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .decode(&mut Cursor::new(archive.clone()), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(source_image_marks(&decoded), [ArenaClass::Model]);
+    let container_only = F3dCodec
+        .decode(
+            &mut Cursor::new(archive),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Container,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(source_image_marks(&container_only), [ArenaClass::Model]);
     let message = |code: LossKind| {
         let loss = decoded
             .report()
@@ -177,10 +189,10 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
         kernel.declared()["carrier"],
         "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat"
     );
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.surfaces.len(), 1);
-    let surface = &decoded.ir().model.surfaces[0];
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.surfaces.len(), 1);
+    let surface = &decoded.ir().geometry.surfaces[0];
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
@@ -463,8 +475,8 @@ fn empty_model_maps_do_not_decode_or_blame_a_sketch_snapshot() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.bodies.is_empty());
-    assert!(decoded.ir().model.curves.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
+    assert!(decoded.ir().geometry.curves.is_empty());
     let geometry = decoded
         .report()
         .losses
@@ -514,4 +526,160 @@ fn model_brep_reports_distinguish_failed_and_successful_empty_decodes() {
             .iter()
             .all(|loss| loss.code != F3dLossCode::MissingGeometryStream.kind()));
     }
+}
+
+fn source_image_marks(decoded: &cadmpeg_ir::codec::DecodeResult) -> Vec<ArenaClass> {
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded.clone());
+    let fidelity = decoded.source_fidelity();
+    let marks = fidelity
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .expect("the source image is retained")
+        .untyped()
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fidelity.unrepresented().into_iter().collect::<Vec<_>>(),
+        marks
+    );
+    marks
+}
+
+#[test]
+fn the_file_definition_is_the_root_occurrence_prototype_or_the_one_unplaced_definition() {
+    use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition, ProductDefinitionKind};
+    let definition = |id: &str| ProductDefinition {
+        id: ProductDefinitionId::mint(id).unwrap(),
+        kind: Some(ProductDefinitionKind::Part),
+        source_name: None,
+        label: None,
+        description: None,
+        part_number: None,
+        bom_properties: std::collections::BTreeMap::new(),
+        bodies: Vec::new(),
+        sketches: Vec::new(),
+        tessellations: Vec::new(),
+        native_ref: None,
+        generated_from: None,
+        storage: cadmpeg_ir::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
+    };
+    let occurrence = |id: &str, definition: &str| Occurrence {
+        id: OccurrenceId::mint(id).unwrap(),
+        prototype: ProductDefinitionId::mint(definition).unwrap(),
+        transform: Some(cadmpeg_ir::transform::Transform::identity()),
+        suppressed: None,
+        visible: None,
+        representation: None,
+        overrides: Vec::new(),
+        name: None,
+        native_ref: None,
+    };
+    let root = "f3d:model:component#root";
+    let child = "f3d:model:component#child";
+    let member = "f3d:xref/role-a/reference-0/occurrence-0/archive:product-definition#0";
+    let file_definition = |model: &cadmpeg_ir::document::Model| {
+        super::super::file_definition(model).map(|id| id.as_str().to_owned())
+    };
+
+    // The decoder's expanded tree: the file root lists the top level, and a
+    // definition the occurrences its placement holds.
+    let place = |model: &mut cadmpeg_ir::document::Model, parents: &[(&str, Option<&str>)]| {
+        model
+            .product_definitions
+            .retain(|definition| !definition.is_root());
+        for definition in &mut model.product_definitions {
+            definition.occurrences.clear();
+        }
+        for (id, parent) in parents {
+            let parent = parent.map(|parent| OccurrenceId::mint(parent).unwrap());
+            crate::tree::place_under(model, parent.as_ref(), OccurrenceId::mint(*id).unwrap());
+        }
+    };
+
+    let mut model = cadmpeg_ir::document::Model::default();
+    model.product_definitions = vec![definition(root), definition(child), definition(member)];
+    model.occurrences = vec![
+        occurrence("f3d:model:occurrence#root-a", root),
+        occurrence("f3d:model:occurrence#a", child),
+        occurrence("f3d:model:occurrence#xref", member),
+    ];
+    place(
+        &mut model,
+        &[
+            ("f3d:model:occurrence#root-a", None),
+            (
+                "f3d:model:occurrence#a",
+                Some("f3d:model:occurrence#root-a"),
+            ),
+            ("f3d:model:occurrence#xref", None),
+        ],
+    );
+    assert_eq!(file_definition(&model).as_deref(), Some(root));
+
+    let stored = "f3d:model:component#stored";
+    let stored_frame = format!("{stored}/stored-frame-occurrence");
+    model.product_definitions.push(definition(stored));
+    model.occurrences.push(occurrence(&stored_frame, stored));
+    place(
+        &mut model,
+        &[
+            ("f3d:model:occurrence#root-a", None),
+            (
+                "f3d:model:occurrence#a",
+                Some("f3d:model:occurrence#root-a"),
+            ),
+            ("f3d:model:occurrence#xref", None),
+            (&stored_frame, None),
+        ],
+    );
+    assert_eq!(
+        file_definition(&model).as_deref(),
+        Some(root),
+        "a stored-frame root beside a source root"
+    );
+    model.occurrences.retain(|occurrence| {
+        occurrence.id.as_str() == stored_frame || occurrence.id.as_str().ends_with("#xref")
+    });
+    place(
+        &mut model,
+        &[(&stored_frame, None), ("f3d:model:occurrence#xref", None)],
+    );
+    assert_eq!(
+        file_definition(&model).as_deref(),
+        Some(stored),
+        "one stored-frame root alone"
+    );
+    model
+        .occurrences
+        .push(occurrence("f3d:model:occurrence#root-b", child));
+    model
+        .occurrences
+        .push(occurrence("f3d:model:occurrence#root-a", root));
+    place(
+        &mut model,
+        &[
+            (&stored_frame, None),
+            ("f3d:model:occurrence#xref", None),
+            ("f3d:model:occurrence#root-b", None),
+            ("f3d:model:occurrence#root-a", None),
+        ],
+    );
+    assert_eq!(file_definition(&model), None, "two source roots");
+
+    model.occurrences.clear();
+    model.product_definitions = vec![definition(root), definition(member)];
+    assert_eq!(file_definition(&model).as_deref(), Some(root));
+
+    model.product_definitions.push(definition(child));
+    assert_eq!(file_definition(&model), None, "two unplaced definitions");
+
+    model.product_definitions.clear();
+    assert_eq!(file_definition(&model), None, "no definition");
 }

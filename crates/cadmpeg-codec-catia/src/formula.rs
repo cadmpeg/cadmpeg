@@ -158,9 +158,9 @@ pub(crate) fn transfer_parameters(
         let mut dependencies = Vec::new();
         let mut used_inputs = BTreeSet::new();
         let mut expression_bindings = BTreeMap::new();
-        // E7 inputs have a declared type but no value. Keep a separate typed
-        // binding set so their defining expression can still be retained as
-        // an unset result after syntax and type validation.
+        // Unset and literal inputs leave the formula unevaluated. Keep a
+        // separate typed binding set so its defining expression can still be
+        // retained after syntax and type validation.
         let mut type_bindings = BTreeMap::new();
         let mut all_inputs_complete = true;
         let mut all_inputs_typed = true;
@@ -204,7 +204,12 @@ pub(crate) fn transfer_parameters(
             dependencies.push(id);
             let type_value = static_formula_value(candidate.parameter_type);
             type_bindings.insert(input.parameter.as_str(), type_value);
-            match candidate.parameter.value.as_ref() {
+            match candidate
+                .parameter
+                .value
+                .as_ref()
+                .filter(|_| !candidate.literal)
+            {
                 None => {
                     all_inputs_complete = false;
                 }
@@ -284,7 +289,10 @@ pub(crate) fn transfer_parameters(
                         typed_parameter_evaluation(&signature.result_type, &output_value.evaluation)
                     {
                         let accepted = match &value {
-                            TypedParameterEvaluation::Unset => transferable_expression.is_some(),
+                            TypedParameterEvaluation::Unset
+                            | TypedParameterEvaluation::Literal(_) => {
+                                transferable_expression.is_some()
+                            }
                             TypedParameterEvaluation::Value(value) => {
                                 if let Some(evaluated) = evaluated_expression {
                                     evaluated.agrees_with(&TypedParameterEvaluation::Value(
@@ -320,7 +328,11 @@ pub(crate) fn transfer_parameters(
                             )?;
                             let output_expression = expression.expression.value.clone();
                             let output_native_ref = output.id.clone();
+                            let (published_value, output_literal) =
+                                published_output_value(value, evaluated_expression);
                             transferred.push(FormulaParameterCandidate {
+                                literal: false,
+                                literal_value: output_literal,
                                 parameter: DesignParameter {
                                     product_definition: None,
                                     id: output_id,
@@ -329,10 +341,7 @@ pub(crate) fn transfer_parameters(
                                     name: output_name,
                                     expression: output_expression,
                                     display: None,
-                                    value: match value {
-                                        TypedParameterEvaluation::Unset => None,
-                                        TypedParameterEvaluation::Value(value) => Some(value),
-                                    },
+                                    value: published_value,
                                     dependencies: output_dependencies,
                                     properties: parameter_properties(
                                         parameter_type.as_str(),
@@ -565,6 +574,14 @@ pub(crate) fn transfer_parameters(
         }
     }
     *annotations = annotation_builder.build();
+    let literal_value_count = parameters
+        .iter()
+        .filter(|candidate| candidate.literal_value == Some(true))
+        .count();
+    let contradicted_literal_count = parameters
+        .iter()
+        .filter(|candidate| candidate.literal_value == Some(false))
+        .count();
     for candidate in parameters {
         ir.model.parameters.push(candidate.parameter);
     }
@@ -582,6 +599,8 @@ pub(crate) fn transfer_parameters(
         legacy_parameter_count: legacy_transfer.parameters,
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
         legacy_formula_count: legacy_transfer.formulas,
+        literal_value_count,
+        contradicted_literal_count,
         consumed_object_records,
     })
 }
@@ -642,9 +661,10 @@ fn definition_chain_parameter_candidate(
         Err(error) => return Err(error),
     };
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
+    let literal = matches!(evaluation, TypedParameterEvaluation::Literal(_));
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
-        TypedParameterEvaluation::Value(value) => {
+        TypedParameterEvaluation::Value(value) | TypedParameterEvaluation::Literal(value) => {
             let expression = parameter_expression(&value);
             (expression, Some(value))
         }
@@ -700,6 +720,8 @@ fn definition_chain_parameter_candidate(
         )?;
     }
     Ok(Some(FormulaParameterCandidate {
+        literal,
+        literal_value: literal.then_some(true),
         parameter: DesignParameter {
             product_definition: None,
             id,
@@ -729,6 +751,10 @@ pub(crate) struct FormulaTransfer {
     pub(crate) legacy_parameter_count: usize,
     pub(crate) legacy_selector_parameter_count: usize,
     pub(crate) legacy_formula_count: usize,
+    /// Parameters that publish a stored `E7` or `E8` literal as their value.
+    pub(crate) literal_value_count: usize,
+    /// Formula outputs whose stored literal the evaluated expression contradicts.
+    pub(crate) contradicted_literal_count: usize,
     pub(crate) consumed_object_records: HashSet<String>,
 }
 
@@ -821,9 +847,11 @@ fn collect_legacy_parameters(
                 continue;
             }
             ctx.charge_entities(1, "admit CATIA formula candidate")?;
+            let literal = matches!(evaluation, TypedParameterEvaluation::Literal(_));
             let (expression, value) = match evaluation {
                 TypedParameterEvaluation::Unset => (String::new(), None),
-                TypedParameterEvaluation::Value(value) => {
+                TypedParameterEvaluation::Value(value)
+                | TypedParameterEvaluation::Literal(value) => {
                     let expression = parameter_expression(&value);
                     (expression, Some(value))
                 }
@@ -832,6 +860,8 @@ fn collect_legacy_parameters(
             let parameter_name = name.to_owned();
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
+                literal,
+                literal_value: literal.then_some(true),
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -892,6 +922,8 @@ fn collect_legacy_parameters(
             let parameter_name = name.to_owned();
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
+                literal: false,
+                literal_value: None,
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -952,6 +984,8 @@ fn collect_legacy_parameters(
             let parameter_name = name.to_owned();
             let native_ref = run.id.clone();
             let candidate = FormulaParameterCandidate {
+                literal: false,
+                literal_value: None,
                 parameter: DesignParameter {
                     product_definition: None,
                     id: parameter_id,
@@ -1285,6 +1319,11 @@ struct FormulaParameterCandidate {
     parameter_type: FormulaParameterType,
     role: FormulaParameterRole,
     source_order: u64,
+    /// The value is a stored `E7` or `E8` literal, which leaves a formula
+    /// that reads it unevaluated.
+    literal: bool,
+    /// For a stored `E7` or `E8` literal: whether the parameter publishes it.
+    literal_value: Option<bool>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1343,14 +1382,17 @@ fn typed_entity_parameter_candidate(
     ctx.charge_entities(1, "admit CATIA formula candidate")?;
     let name = parameter.name.value.clone();
     let native_ref = entity.id.clone();
+    let literal = matches!(evaluation, TypedParameterEvaluation::Literal(_));
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
-        TypedParameterEvaluation::Value(value) => {
+        TypedParameterEvaluation::Value(value) | TypedParameterEvaluation::Literal(value) => {
             let expression = parameter_expression(&value);
             (expression, Some(value))
         }
     };
     Ok(Some(FormulaParameterCandidate {
+        literal,
+        literal_value: literal.then_some(true),
         parameter: DesignParameter {
             product_definition: None,
             id,
@@ -1512,7 +1554,12 @@ fn relation_program_output_candidate<'a>(
             input.parameter.as_str(),
             static_formula_value(candidate.parameter_type),
         );
-        match candidate.parameter.value.as_ref() {
+        match candidate
+            .parameter
+            .value
+            .as_ref()
+            .filter(|_| !candidate.literal)
+        {
             Some(value) => {
                 expression_bindings.insert(
                     input.parameter.as_str(),
@@ -1573,7 +1620,7 @@ fn relation_program_output_candidate<'a>(
         return Ok(None);
     };
     let accepted = match &value {
-        TypedParameterEvaluation::Unset => true,
+        TypedParameterEvaluation::Unset | TypedParameterEvaluation::Literal(_) => true,
         TypedParameterEvaluation::Value(value) => {
             if let Some(evaluated) = evaluated_expression {
                 evaluated.agrees_with(&TypedParameterEvaluation::Value((value).clone()))
@@ -1596,7 +1643,10 @@ fn relation_program_output_candidate<'a>(
     let output_native_ref = output_entity.id.clone();
     let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
     output_dependencies.extend(dependencies.iter().cloned());
+    let (published_value, output_literal) = published_output_value(value, evaluated_expression);
     let candidate = FormulaParameterCandidate {
+        literal: false,
+        literal_value: output_literal,
         parameter: DesignParameter {
             product_definition: None,
             id: candidate_id,
@@ -1605,10 +1655,7 @@ fn relation_program_output_candidate<'a>(
             name: output_name,
             expression: output_expression,
             display: None,
-            value: match value {
-                TypedParameterEvaluation::Unset => None,
-                TypedParameterEvaluation::Value(value) => Some(value),
-            },
+            value: published_value,
             dependencies: output_dependencies,
             properties: parameter_properties(
                 parameter_type.as_str(),
@@ -1647,18 +1694,27 @@ fn formula_parameter_candidates_agree(
         candidate.role.is_formula_output(),
     ) {
         (true, true) | (false, false) => existing.parameter == candidate.parameter,
-        (true, false) => formula_parameter_matches_input(&existing.parameter, &candidate.parameter),
-        (false, true) => formula_parameter_matches_input(&candidate.parameter, &existing.parameter),
+        (true, false) => formula_output_matches_input(existing, &candidate.parameter),
+        (false, true) => formula_output_matches_input(candidate, &existing.parameter),
     }
 }
 
-fn formula_parameter_matches_input(formula: &DesignParameter, input: &DesignParameter) -> bool {
+/// Whether a formula output and an input view describe one parameter. An
+/// output whose evaluated expression contradicts its stored literal keeps no
+/// value, and its input view keeps that literal.
+fn formula_output_matches_input(
+    output: &FormulaParameterCandidate,
+    input: &DesignParameter,
+) -> bool {
+    let formula = &output.parameter;
+    let value_agrees = formula.value == input.value
+        || (output.literal_value == Some(false) && formula.value.is_none());
     formula.id == input.id
         && formula.owner == input.owner
         && formula.ordinal == input.ordinal
         && formula.name == input.name
         && formula.display == input.display
-        && formula.value == input.value
+        && value_agrees
         && formula.properties == input.properties
         && formula.pmi == input.pmi
         && formula.native_ref == input.native_ref
@@ -1672,7 +1728,7 @@ fn formula_parameter_candidate_accepts_input(
         return false;
     }
     if candidate.role.is_formula_output() {
-        formula_parameter_matches_input(&candidate.parameter, &input.0)
+        formula_output_matches_input(candidate, &input.0)
     } else {
         candidate.parameter == input.0
     }
@@ -1695,9 +1751,39 @@ fn demote_formula_output(candidate: &mut FormulaParameterCandidate) -> bool {
 enum TypedParameterEvaluation {
     Unset,
     Value(ParameterValue),
+    /// A stored `E7` or `E8` literal.
+    Literal(ParameterValue),
 }
 
-fn parameter_expression(value: &ParameterValue) -> String {
+/// The published value of a formula output, and for a stored literal whether
+/// the output publishes it.
+fn published_output_value(
+    value: TypedParameterEvaluation,
+    evaluated: Option<&EvaluatedFormulaValue>,
+) -> (Option<ParameterValue>, Option<bool>) {
+    match value {
+        TypedParameterEvaluation::Unset => (None, None),
+        TypedParameterEvaluation::Value(value) => (Some(value), None),
+        TypedParameterEvaluation::Literal(value) => {
+            let kept = uncontradicted_literal(value, evaluated);
+            let published = kept.is_some();
+            (kept, Some(published))
+        }
+    }
+}
+
+/// The literal's value, unless an evaluated expression contradicts it.
+fn uncontradicted_literal(
+    value: ParameterValue,
+    evaluated: Option<&EvaluatedFormulaValue>,
+) -> Option<ParameterValue> {
+    let contradicted = evaluated.is_some_and(|evaluated| {
+        !evaluated.agrees_with(&TypedParameterEvaluation::Value(value.clone()))
+    });
+    (!contradicted).then_some(value)
+}
+
+pub(crate) fn parameter_expression(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(value) => format!("{} mm", value.get()),
         ParameterValue::Angle(value) => format!("{} rad", value.get()),
@@ -2164,7 +2250,7 @@ impl EvaluatedFormulaValue {
     fn agrees_with(&self, evaluation: &TypedParameterEvaluation) -> bool {
         match evaluation {
             TypedParameterEvaluation::Unset => true,
-            TypedParameterEvaluation::Value(value) => {
+            TypedParameterEvaluation::Value(value) | TypedParameterEvaluation::Literal(value) => {
                 if let (Self::String(left), ParameterValue::String(right)) = (self, value) {
                     return left.is_known() && left.value() == right;
                 }
@@ -3801,17 +3887,36 @@ fn typed_parameter_evaluation(
     evaluation: &crate::native::CatiaEntityEvaluation,
 ) -> Option<(FormulaParameterType, TypedParameterEvaluation)> {
     let parameter_type = canonical_parameter_type(source_type)?;
-    let bits = match evaluation {
+    let (bits, literal) = match evaluation {
         crate::native::CatiaEntityEvaluation::Unset => {
             return Some((parameter_type, TypedParameterEvaluation::Unset));
         }
-        crate::native::CatiaEntityEvaluation::Scalar { bits } => bits,
+        crate::native::CatiaEntityEvaluation::Scalar { bits } => (*bits, false),
+        crate::native::CatiaEntityEvaluation::UnitLiteral
+        | crate::native::CatiaEntityEvaluation::ZeroLiteral => (evaluation.bits()?, true),
     };
-    let value = f64::from_bits(*bits);
+    let Some(value) = typed_parameter_value(parameter_type, bits) else {
+        return literal.then_some((parameter_type, TypedParameterEvaluation::Unset));
+    };
+    Some((
+        parameter_type,
+        if literal {
+            TypedParameterEvaluation::Literal(value)
+        } else {
+            TypedParameterEvaluation::Value(value)
+        },
+    ))
+}
+
+fn typed_parameter_value(
+    parameter_type: FormulaParameterType,
+    bits: u64,
+) -> Option<ParameterValue> {
+    let value = f64::from_bits(bits);
     if !value.is_finite() {
         return None;
     }
-    let value = match parameter_type {
+    Some(match parameter_type {
         FormulaParameterType::Length => ParameterValue::Length(Length::new(value)?),
         FormulaParameterType::Angle => ParameterValue::Angle(Angle::new(value)?),
         FormulaParameterType::Real => {
@@ -3826,8 +3931,7 @@ fn typed_parameter_evaluation(
             ParameterValue::Integer(truncate_f64_to_i64(value)?)
         }
         FormulaParameterType::Boolean | FormulaParameterType::String => return None,
-    };
-    Some((parameter_type, TypedParameterEvaluation::Value(value)))
+    })
 }
 
 fn canonical_parameter_type(source_type: &str) -> Option<FormulaParameterType> {
@@ -3864,6 +3968,8 @@ mod parser_tests {
 
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
+            literal: false,
+            literal_value: None,
             parameter: DesignParameter {
                 id: ParameterId::mint("synthetic:test:id#parameter".to_string())
                     .expect("identity grammar"),

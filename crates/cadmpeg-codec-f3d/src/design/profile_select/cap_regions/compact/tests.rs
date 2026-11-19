@@ -76,18 +76,23 @@ fn lateral_ellipse_certificate_bounds_the_complete_carrier_and_its_projection() 
 }
 
 fn prism_topology() -> AsmHistoricalTopology {
+    prism_over(1.0)
+}
+
+/// A prism of height 2 over the rectangle from the origin to `(width, 1)`.
+pub(in crate::design::profile_select) fn prism_over(width: f64) -> AsmHistoricalTopology {
     use crate::history_records::{
         AsmHistoricalCurveAxis, AsmHistoricalEdge, AsmHistoricalOptionalCarrierBinding,
         AsmHistoricalPoint,
     };
     let points = [
         Point3::new(0.0, 0.0, 0.0),
-        Point3::new(1.0, 0.0, 0.0),
-        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(width, 0.0, 0.0),
+        Point3::new(width, 1.0, 0.0),
         Point3::new(0.0, 1.0, 0.0),
         Point3::new(0.0, 0.0, 2.0),
-        Point3::new(1.0, 0.0, 2.0),
-        Point3::new(1.0, 1.0, 2.0),
+        Point3::new(width, 0.0, 2.0),
+        Point3::new(width, 1.0, 2.0),
         Point3::new(0.0, 1.0, 2.0),
     ];
     let facets = [
@@ -214,7 +219,7 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
             )
         })
         .collect::<Vec<_>>();
-    let run = |topology, length| {
+    let run = |topology, length, operation: BooleanOp| {
         let states = [(2, topology), (1, AsmHistoricalTopology::default())]
             .into_iter()
             .map(|(state_id, topology)| {
@@ -263,7 +268,7 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
                 resolution,
                 (2, 1),
                 super::Sweep {
-                    operation: &BooleanOp::Join,
+                    operation: &operation,
                     start: &ExtrudeStart::ProfilePlane {},
                     direction: &ExtrudeDirection::ProfileNormal {},
                     extent: &ExtrudeExtent::OneSided {
@@ -279,9 +284,13 @@ fn added_cap_certificate_requires_the_blind_distance_and_analytic_lateral_carrie
         })
         .unwrap()
     };
-    assert!(run(prism_topology(), 2.0).is_some());
-    assert!(run(prism_topology(), 1.0).is_none());
+    assert!(run(prism_topology(), 2.0, BooleanOp::Join).is_some());
+    assert!(run(prism_topology(), 2.0, BooleanOp::NewBody).is_some());
+    assert!(run(prism_topology(), 1.0, BooleanOp::Join).is_none());
+    // A Cut or Intersect far cap cannot show a profile over no material.
+    assert!(run(prism_topology(), 2.0, BooleanOp::Cut).is_none());
+    assert!(run(prism_topology(), 2.0, BooleanOp::Intersect).is_none());
     let mut unsupported = prism_topology();
     unsupported.surface_planes[2].origin = Point3::new(0.0, 0.5, 0.0);
-    assert!(run(unsupported, 2.0).is_none());
+    assert!(run(unsupported, 2.0, BooleanOp::Join).is_none());
 }

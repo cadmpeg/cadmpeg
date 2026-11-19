@@ -9,6 +9,7 @@ use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, SurfaceParameterAxis};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::geometry::{
     CurveGeometry, IntcurveSupportContext, ProceduralCurveDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, SurfaceGeometry,
@@ -44,6 +45,7 @@ struct Plan {
     curve_cache: NurbsCurve,
     curve_range: ParameterInterval,
     plane_pcurve: Option<(usize, PcurveGeometry, ParameterInterval, usize)>,
+    plane_fit_tolerance: Option<FitTolerance>,
     vertex_misses: [(usize, f64); 2],
 }
 
@@ -304,59 +306,69 @@ pub(in crate::families) fn attach(
         .map(|plane| (plane.pos, plane))
         .collect();
     let curve_indices: HashMap<_, _> = ir
-        .model
+        .geometry
         .curves
         .iter()
         .enumerate()
         .map(|(i, c)| (c.id.clone(), i))
         .collect();
     let procedure_indices: HashMap<_, _> = ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .enumerate()
         .map(|(index, procedure)| (procedure.id.clone(), index))
         .collect();
-    let points: HashMap<_, _> = ir.model.points.iter().map(|p| (p.id.clone(), p)).collect();
+    let points: HashMap<_, _> = ir
+        .geometry
+        .points
+        .iter()
+        .map(|p| (p.id.clone(), p))
+        .collect();
     let vertices: HashMap<_, _> = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .filter_map(|v| Some((v.id.clone(), *points.get(&v.point)?)))
         .collect();
     let vertex_indices: HashMap<_, _> = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .enumerate()
         .map(|(i, vertex)| (vertex.id.clone(), i))
         .collect();
     let loop_faces: HashMap<_, _> = ir
-        .model
+        .geometry
         .loops
         .iter()
         .map(|l| (l.id.clone(), l.face.clone()))
         .collect();
-    let faces: HashMap<_, _> = ir.model.faces.iter().map(|f| (f.id.clone(), f)).collect();
+    let faces: HashMap<_, _> = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|f| (f.id.clone(), f))
+        .collect();
     let surfaces: HashMap<_, _> = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .map(|s| (s.id.clone(), s))
         .collect();
     let mut edge_coedges: HashMap<_, Vec<usize>> = HashMap::new();
-    for (index, coedge) in ir.model.coedges.iter().enumerate() {
+    for (index, coedge) in ir.geometry.coedges.iter().enumerate() {
         edge_coedges
             .entry(coedge.edge.clone())
             .or_default()
             .push(index);
     }
     let mut plans = Vec::new();
-    for (edge_index, edge) in ir.model.edges.iter().enumerate() {
+    for (edge_index, edge) in ir.geometry.edges.iter().enumerate() {
         let Some(curve_index) = edge.curve().and_then(|id| curve_indices.get(id)).copied() else {
             continue;
         };
-        let curve = &ir.model.curves[curve_index];
+        let curve = &ir.geometry.curves[curve_index];
         let CurveGeometry::Procedural {
             construction,
             cache: Some(SolvedCurveGeometry::Unknown { .. }),
@@ -368,7 +380,7 @@ pub(in crate::families) fn attach(
             continue;
         };
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            ir.model.procedural_curves[procedure_index].definition()
+            ir.geometry.procedural_curves[procedure_index].definition()
         else {
             continue;
         };
@@ -386,10 +398,10 @@ pub(in crate::families) fn attach(
         let Some(Some((node_index, node))) = nodes.get(&tag) else {
             continue;
         };
-        let Some(start) = vertices.get(&edge.start) else {
+        let Some(start) = edge.start().and_then(|vertex| vertices.get(vertex)) else {
             continue;
         };
-        let Some(end) = vertices.get(&edge.end) else {
+        let Some(end) = edge.end().and_then(|vertex| vertices.get(vertex)) else {
             continue;
         };
         let Some(start_tag) = source_tag(start.source_object.as_ref(), "vertex") else {
@@ -479,7 +491,7 @@ pub(in crate::families) fn attach(
             .into_iter()
             .flatten()
             .filter_map(|index| {
-                let coedge = &ir.model.coedges[*index];
+                let coedge = &ir.geometry.coedges[*index];
                 let surface = loop_faces
                     .get(&coedge.owner_loop)
                     .and_then(|face| faces.get(face))
@@ -540,7 +552,7 @@ pub(in crate::families) fn attach(
                 .flatten()
                 .copied()
                 .filter(|i| {
-                    let c = &ir.model.coedges[*i];
+                    let c = &ir.geometry.coedges[*i];
                     loop_faces
                         .get(&c.owner_loop)
                         .and_then(|f| faces.get(f))
@@ -558,15 +570,18 @@ pub(in crate::families) fn attach(
             if face_coedges.len() != 1 {
                 continue;
             }
-            let add_face_pcurve = ir.model.coedges[face_coedges[0]].pcurves.is_empty();
-            let Some(&start_index) = vertex_indices.get(&edge.start) else {
+            let add_face_pcurve = ir.geometry.coedges[face_coedges[0]].pcurves.is_empty();
+            let Some(ends) = &edge.ends else {
                 continue;
             };
-            let Some(&end_index) = vertex_indices.get(&edge.end) else {
+            let Some(&start_index) = vertex_indices.get(&ends.start) else {
+                continue;
+            };
+            let Some(&end_index) = vertex_indices.get(&ends.end) else {
                 continue;
             };
             let endpoint_tolerances = [start_index, end_index].map(|index| {
-                ir.model.vertices[index]
+                ir.geometry.vertices[index]
                     .tolerance
                     .map_or(ir.tolerances.linear.get(), |t| {
                         t.get().max(ir.tolerances.linear.get())
@@ -606,6 +621,7 @@ pub(in crate::families) fn attach(
             let mut curve_cache = cache;
             let mut curve_range = interval;
             let mut plane_pcurve = None;
+            let mut plane_fit_tolerance = None;
             for ((other, other_range), other_occurrence) in [reps.target, reps.source]
                 .into_iter()
                 .zip(ranges)
@@ -654,7 +670,7 @@ pub(in crate::families) fn attach(
                     .flatten()
                     .copied()
                     .filter(|i| {
-                        let c = &ir.model.coedges[*i];
+                        let c = &ir.geometry.coedges[*i];
                         let Some(face_surface) = loop_faces
                             .get(&c.owner_loop)
                             .and_then(|f| faces.get(f))
@@ -737,7 +753,7 @@ pub(in crate::families) fn attach(
                 if !direct_matches && !reverse_matches {
                     continue;
                 }
-                let coedge = &ir.model.coedges[plane_coedges[0]];
+                let coedge = &ir.geometry.coedges[plane_coedges[0]];
                 let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(face_plane))) =
                     loop_faces
                         .get(&coedge.owner_loop)
@@ -794,9 +810,21 @@ pub(in crate::families) fn attach(
                 let Ok(source_range) = ParameterInterval::new(canonical) else {
                     continue;
                 };
+                if compatible {
+                    if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
+                        plane_pcurve = pcurve.map(|pcurve| {
+                            (plane_coedges[0], pcurve, source_range, other.byte_offset())
+                        });
+                        if let class25::Class25Accuracy::Fitted { fit_tolerance, .. } = map.accuracy
+                        {
+                            plane_fit_tolerance = FitTolerance::try_new(fit_tolerance.get()).ok();
+                        }
+                    }
+                    break;
+                }
                 curve_cache = lifted;
                 curve_range = source_range;
-                if ir.model.coedges[plane_coedges[0]].pcurves.is_empty() {
+                if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
                     plane_pcurve = pcurve.map(|pcurve| {
                         (plane_coedges[0], pcurve, source_range, other.byte_offset())
                     });
@@ -807,10 +835,10 @@ pub(in crate::families) fn attach(
             for (parameter, vertex_id, stored) in [
                 (
                     curve_range.endpoints()[0],
-                    &edge.start,
+                    &ends.start,
                     start.position().get(),
                 ),
-                (curve_range.endpoints()[1], &edge.end, end.position().get()),
+                (curve_range.endpoints()[1], &ends.end, end.position().get()),
             ] {
                 let point =
                     cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
@@ -826,7 +854,7 @@ pub(in crate::families) fn attach(
                 let Some(&vertex_index) = vertex_indices.get(vertex_id) else {
                     break;
                 };
-                let existing = ir.model.vertices[vertex_index]
+                let existing = ir.geometry.vertices[vertex_index]
                     .tolerance
                     .map_or(ir.tolerances.linear.get(), |t| {
                         t.get().max(ir.tolerances.linear.get())
@@ -851,6 +879,7 @@ pub(in crate::families) fn attach(
                 curve_cache,
                 curve_range,
                 plane_pcurve,
+                plane_fit_tolerance,
                 vertex_misses,
             });
         }
@@ -871,15 +900,15 @@ pub(in crate::families) fn attach(
                 .and_modify(|old| *old = old.max(miss))
                 .or_insert(miss);
         }
-        let curve = &mut ir.model.curves[plan.curve];
+        let curve = &mut ir.geometry.curves[plan.curve];
         let CurveGeometry::Procedural { cache, .. } = &mut curve.geometry else {
             continue;
         };
         *cache = Some(SolvedCurveGeometry::Nurbs(plan.curve_cache));
         annotations.derived(&curve.id, "geometry")?;
-        ir.model.edges[plan.edge].set_param_range(Some(plan.curve_range));
-        annotations.derived(&ir.model.edges[plan.edge].id, "carrier")?;
-        let procedure = &mut ir.model.procedural_curves[plan.procedure];
+        ir.geometry.edges[plan.edge].set_param_range(Some(plan.curve_range));
+        annotations.derived(&ir.geometry.edges[plan.edge].id, "carrier")?;
+        let procedure = &mut ir.geometry.procedural_curves[plan.procedure];
         let ProceduralCurveDefinition::Intersection {
             context,
             discontinuity_flag,
@@ -907,18 +936,29 @@ pub(in crate::families) fn attach(
                 "consolidated_b18",
                 "weighted_surface_curve",
                 Some(true),
+                None,
             )
         });
-        let plane_pcurves = plan
-            .plane_pcurve
-            .into_iter()
-            .map(|pcurve| (pcurve, "consolidated_b20", "weighted_plane_curve", None));
-        for ((coedge_index, geometry, range, source_pos), family, role, isoparametric) in
-            face_pcurves.chain(plane_pcurves)
+        let plane_pcurves = plan.plane_pcurve.into_iter().map(|pcurve| {
+            (
+                pcurve,
+                "consolidated_b20",
+                "weighted_plane_curve",
+                None,
+                plan.plane_fit_tolerance,
+            )
+        });
+        for (
+            (coedge_index, geometry, range, source_pos),
+            family,
+            role,
+            isoparametric,
+            fit_tolerance,
+        ) in face_pcurves.chain(plane_pcurves)
         {
             let id = crate::resource::compose_index_id(
                 &cadmpeg_ir::identity_namespace!("catia", "consolidated", "weighted-pcurve"),
-                ir.model.pcurves.len(),
+                ir.geometry.pcurves.len(),
                 cadmpeg_ir::ids::PcurveId::mint,
             )?;
             crate::assemble::annotate(
@@ -929,28 +969,32 @@ pub(in crate::families) fn attach(
                 role,
                 cadmpeg_ir::Exactness::Derived,
             )?;
+            if let Some(tolerance) = fit_tolerance {
+                refusal.push_parameter_map_pcurve_accuracy(source_pos, tolerance.get());
+            }
             admission.charge()?;
-            ir.model.pcurves.push(Pcurve {
+            ir.geometry.pcurves.push(Pcurve {
                 id: id.clone(),
                 geometry,
                 metadata: PcurveMetadata::general(
                     None,
                     cadmpeg_ir::units::FiniteVector::new(range.endpoints()),
-                    None,
+                    fit_tolerance,
                 ),
+                native_ref: None,
             });
-            ir.model.coedges[coedge_index].pcurves.push(PcurveUse {
+            ir.geometry.coedges[coedge_index].pcurves.push(PcurveUse {
                 pcurve: id,
                 isoparametric,
                 parameter_range: None,
             });
-            annotations.derived(&ir.model.coedges[coedge_index].id, "pcurves")?;
+            annotations.derived(&ir.geometry.coedges[coedge_index].id, "pcurves")?;
         }
     }
     let mut widened_vertices = 0;
     let mut max_vertex_widening = 0.0_f64;
     for (index, miss) in vertex_misses {
-        let vertex = &mut ir.model.vertices[index];
+        let vertex = &mut ir.geometry.vertices[index];
         let previous = vertex
             .tolerance
             .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);

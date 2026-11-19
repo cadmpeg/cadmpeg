@@ -92,8 +92,14 @@ fn transforms_are_written_as_row_vector_matrices() {
     ));
     let (text, _) = encode(source.ir());
     let round = decode(&text);
-    let original = &source.ir().model.occurrences[0].transform.affine_rows();
-    let written = &round.ir().model.occurrences[0].transform.affine_rows();
+    let original = &source.ir().model.occurrences[0]
+        .transform
+        .unwrap()
+        .affine_rows();
+    let written = &round.ir().model.occurrences[0]
+        .transform
+        .unwrap()
+        .affine_rows();
     assert_eq!(original, written);
     assert!(text.contains("(0.001, 0.002, 0.003, 1))"), "{text}");
 }
@@ -127,7 +133,7 @@ fn patch_points_are_written_with_the_u_index_fastest() {
     let round = decode(&text);
     let poles = |result: &cadmpeg_ir::codec::DecodeResult| -> Vec<f64> {
         let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(nurbs)) =
-            result.ir().model.surfaces[0].geometry.solved()
+            result.ir().geometry.surfaces[0].geometry.solved()
         else {
             panic!("a NURBS surface");
         };
@@ -150,7 +156,7 @@ fn patch_points_are_written_with_the_u_index_fastest() {
     let senses = |result: &cadmpeg_ir::codec::DecodeResult| -> Vec<_> {
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .map(|face| face.sense)
@@ -182,13 +188,14 @@ fn a_solid_with_no_tessellation_is_written_as_a_brep_array_and_a_mesh() {
     assert!(!has_loss(&report, UsdLossCode::ExportBrepNotWritten));
     let round = decode(&text);
     let model = &round.ir().model;
-    assert_eq!(model.faces.len(), 6);
-    assert_eq!(model.bodies.len(), 1);
+    let geometry = &round.ir().geometry;
+    assert_eq!(geometry.faces.len(), 6);
+    assert_eq!(geometry.bodies.len(), 1);
     let [mesh] = model.tessellations.as_slice() else {
         panic!("one mesh\n{text}");
     };
     assert_eq!(mesh.triangles().len(), 12);
-    assert_eq!(mesh.body.as_ref(), Some(&model.bodies[0].id));
+    assert_eq!(mesh.body.as_ref(), Some(&geometry.bodies[0].id));
 }
 
 #[test]

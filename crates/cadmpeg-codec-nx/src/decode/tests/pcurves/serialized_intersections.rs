@@ -19,7 +19,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             SurfaceId::mint("nx:test:surface#1").expect("identity grammar"),
         ];
         for surface in &surfaces {
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -30,12 +30,13 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
         }
         let curve = CurveId::mint("test:model:entity#nx:test:curve").expect("identity grammar");
         let procedural = ProceduralCurveId::mint("test:model:entity#nx:test:intersection")
             .expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Procedural {
@@ -43,8 +44,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
-        ir.model.procedural_curves.push(ProceduralCurve::new(
+        ir.geometry.procedural_curves.push(ProceduralCurve::new(
             procedural,
             ProceduralCurveDefinition::TolerantIntersection {
                 construction: cadmpeg_ir::geometry::TolerantIntersectionConstruction::try_new(
@@ -66,7 +68,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             VertexId::mint("nx:test:vertex#1").expect("identity grammar"),
         ];
         for index in 0..2 {
-            ir.model.points.push(Point::new(
+            ir.geometry.points.push(Point::new(
                 points[index].clone(),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                     0.005
@@ -79,21 +81,25 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 .expect("a finite position is a point"),
                 None,
             ));
-            ir.model.vertices.push(Vertex {
+            ir.geometry.vertices.push(Vertex {
                 id: vertices[index].clone(),
                 point: points[index].clone(),
                 tolerance: None,
+                native_ref: None,
             });
         }
         let edge = EdgeId::mint("test:model:entity#nx:test:edge").expect("identity grammar");
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
-            start: vertices[0].clone(),
-            end: vertices[1].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertices[0].clone(),
+                vertices[1].clone(),
+            )),
             tolerance: Some(
                 cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"),
             ),
+            native_ref: None,
         });
         let pcurves = [
             PcurveId::mint("nx:test:pcurve#0").expect("identity grammar"),
@@ -112,7 +118,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             CoedgeId::mint("nx:test:coedge#1").expect("identity grammar"),
         ];
         for index in 0..2 {
-            ir.model.pcurves.push(Pcurve {
+            ir.geometry.pcurves.push(Pcurve {
                 id: pcurves[index].clone(),
                 geometry: PcurveGeometry::Line(
                     cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -132,8 +138,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                             .expect("finite non-negative fixture tolerance"),
                     ),
                 ),
+                native_ref: None,
             });
-            ir.model.faces.push(Face {
+            ir.geometry.faces.push(Face {
                 id: faces[index].clone(),
                 shell: ShellId::mint("test:model:entity#nx:test:shell").expect("identity grammar"),
                 surface: surfaces[index].clone(),
@@ -144,16 +151,18 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                 tolerance: Some(
                     cadmpeg_ir::scalar::PositiveReal::new(0.03).expect("positive finite tolerance"),
                 ),
+                native_ref: None,
             });
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: loops[index].clone(),
                 face: faces[index].clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
                     cadmpeg_ir::topology::LoopRing::new(vec![coedges[index].clone()], Vec::new())
                         .expect("valid loop ring"),
                 ),
+                native_ref: None,
             });
-            ir.model.coedges.push(Coedge {
+            ir.geometry.coedges.push(Coedge {
                 id: coedges[index].clone(),
                 owner_loop: loops[index].clone(),
                 edge: edge.clone(),
@@ -167,13 +176,14 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                     ),
                 }],
                 use_curve: None,
+                native_ref: None,
             });
         }
         let serialized = [0, 1]
             .map(|index| {
                 (
-                    ir.model
-                        .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+                    ir.geometry
+                        .procedural_curve_owner(&ir.geometry.procedural_curves[0].id)
                         .expect("intersection owner")
                         .clone(),
                     surfaces[index].clone(),
@@ -189,13 +199,13 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             &mut AnnotationBuilder::new(),
         );
         assert!(matches!(
-            ir.model.procedural_curves[0].definition(),
+            ir.geometry.procedural_curves[0].definition(),
             ProceduralCurveDefinition::TolerantIntersection {
                 parameterization: None,
                 ..
             }
         ));
-        for pcurve in &mut ir.model.pcurves {
+        for pcurve in &mut ir.geometry.pcurves {
             let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata } =
                 &mut pcurve.metadata
             else {
@@ -215,13 +225,13 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let ProceduralCurveDefinition::TolerantIntersection {
             parameterization: Some(parameterization),
             ..
-        } = ir.model.procedural_curves[0].definition()
+        } = ir.geometry.procedural_curves[0].definition()
         else {
             panic!("serialized branch transferred");
         };
         assert_eq!(parameterization.parameter_range().endpoints(), [0.0, 10.0]);
         assert_eq!(
-            ir.model.edges[0]
+            ir.geometry.edges[0]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 10.0])
@@ -243,7 +253,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             )
         );
 
-        ir.model.procedural_curves[0].edit_definition(|definition| {
+        ir.geometry.procedural_curves[0].edit_definition(|definition| {
             let ProceduralCurveDefinition::TolerantIntersection {
                 parameterization, ..
             } = definition
@@ -252,10 +262,11 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             };
             *parameterization = None;
         });
-        let edge = &mut ir.model.edges[0];
+        let edge = &mut ir.geometry.edges[0];
         edge.set_param_range(None);
-        std::mem::swap(&mut edge.start, &mut edge.end);
-        for pcurve in &mut ir.model.pcurves {
+        let ends = edge.ends.as_mut().unwrap();
+        std::mem::swap(&mut ends.start, &mut ends.end);
+        for pcurve in &mut ir.geometry.pcurves {
             pcurve.geometry = PcurveGeometry::Line(
                 cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     Point2::new(10.0, 0.0),
@@ -273,7 +284,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let ProceduralCurveDefinition::TolerantIntersection {
             parameterization: Some(parameterization),
             ..
-        } = ir.model.procedural_curves[0].definition()
+        } = ir.geometry.procedural_curves[0].definition()
         else {
             panic!("reversed serialized branch transferred");
         };
@@ -285,8 +296,11 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
                         origin.u == 0.0 && direction.u == 1.0
                     })
         ));
-        assert_eq!(ir.model.edges[0].start, vertices[0]);
-        assert_eq!(ir.model.edges[0].end, vertices[1]);
+        assert_eq!(
+            ir.geometry.edges[0].ends.as_ref().unwrap().start,
+            vertices[0]
+        );
+        assert_eq!(ir.geometry.edges[0].ends.as_ref().unwrap().end, vertices[1]);
 
         let range = [-1.5, 1.5];
         let canonical = PcurveGeometry::Ellipse(
@@ -308,13 +322,13 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             .unwrap();
             Point3::new(uv.u, uv.v, 0.0)
         });
-        for (point, position) in ir.model.points.iter_mut().zip(endpoints) {
+        for (point, position) in ir.geometry.points.iter_mut().zip(endpoints) {
             point.set_position(
                 cadmpeg_ir::features::FinitePoint3::new(position)
                     .expect("a finite position is a point"),
             );
         }
-        ir.model.procedural_curves[0].edit_definition(|definition| {
+        ir.geometry.procedural_curves[0].edit_definition(|definition| {
             let ProceduralCurveDefinition::TolerantIntersection {
                 construction: intersection,
                 parameterization,
@@ -333,12 +347,12 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             .unwrap();
             *parameterization = None;
         });
-        ir.model.edges[0].set_param_range(None);
-        for coedge in &mut ir.model.coedges {
+        ir.geometry.edges[0].set_param_range(None);
+        for coedge in &mut ir.geometry.coedges {
             coedge.pcurves[0].parameter_range =
                 Some(cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap());
         }
-        for pcurve in &mut ir.model.pcurves {
+        for pcurve in &mut ir.geometry.pcurves {
             let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata } =
                 &mut pcurve.metadata
             else {
@@ -378,7 +392,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         let ProceduralCurveDefinition::TolerantIntersection {
             parameterization: Some(parameterization),
             ..
-        } = ir.model.procedural_curves[0].definition()
+        } = ir.geometry.procedural_curves[0].definition()
         else {
             panic!("reversed symmetric conic branches transferred");
         };
@@ -391,7 +405,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             })
         ));
 
-        ir.model.procedural_curves[0].edit_definition(|definition| {
+        ir.geometry.procedural_curves[0].edit_definition(|definition| {
             let ProceduralCurveDefinition::TolerantIntersection {
                 construction: intersection,
                 parameterization,
@@ -410,7 +424,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             .unwrap();
             *parameterization = None;
         });
-        ir.model.edges[0].set_param_range(None);
+        ir.geometry.edges[0].set_param_range(None);
         complete_tolerant_intersection_pcurves_from_serialized_branches(
             geometry_ctx,
             &mut ir,
@@ -418,7 +432,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             &mut AnnotationBuilder::new(),
         );
         assert!(matches!(
-            ir.model.procedural_curves[0].definition(),
+            ir.geometry.procedural_curves[0].definition(),
             ProceduralCurveDefinition::TolerantIntersection {
                 parameterization: Some(_),
                 ..
@@ -435,7 +449,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
             .expect("identity grammar");
         let support = SurfaceId::mint("test:model:entity#nx:test:closed-orientation-support")
             .expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -448,8 +462,9 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -460,6 +475,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         let pcurve = PcurveGeometry::Circle(
             cadmpeg_ir::geometry::pcurve::CirclePcurve::try_new(

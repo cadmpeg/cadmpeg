@@ -78,9 +78,9 @@ fn extreme_finite_instance_transforms_keep_native_occurrences_and_geometry() {
         );
         let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
         for ir in [decoded.ir(), &reread] {
-            assert_eq!(ir.model.points.len(), 1, "exponent {exponent}");
+            assert_eq!(ir.geometry.points.len(), 1, "exponent {exponent}");
             assert_eq!(
-                ir.model.points[0].position().get(),
+                ir.geometry.points[0].position().get(),
                 Point3::new(scale, 2.0 * scale, 3.0 * scale)
             );
             let native = serde_json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
@@ -137,9 +137,9 @@ fn invalid_instance_inverse_is_located_and_later_reference_survives() {
             .iter()
             .any(|loss| loss.code == RhinoLossCode::IntegrityFailure.kind()));
         let ir = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
-        assert_eq!(ir.model.points.len(), 1);
+        assert_eq!(ir.geometry.points.len(), 1);
         assert_eq!(
-            ir.model.points[0].position().get(),
+            ir.geometry.points[0].position().get(),
             Point3::new(1.0, 2.0, 3.0)
         );
         let native = serde_json::to_value(ir.native.namespace("rhino").unwrap()).unwrap();
@@ -186,10 +186,10 @@ fn source_instance_world_placement_is_applied_once() {
         .contains(&loss.code)));
         let reread = CadIr::from_json(&serde_json::to_string(decoded.ir()).unwrap()).unwrap();
         for ir in [decoded.ir(), &reread] {
-            assert_eq!(ir.model.bodies.len(), 1);
-            assert_eq!(ir.model.points.len(), 1);
-            let point = ir.model.points[0].position().get();
-            let body = ir.model.bodies.first().unwrap();
+            assert_eq!(ir.geometry.bodies.len(), 1);
+            assert_eq!(ir.geometry.points.len(), 1);
+            let point = ir.geometry.points[0].position().get();
+            let body = ir.geometry.bodies.first().unwrap();
             let world = body.transform.unwrap_or_default().apply_point(point);
             assert_eq!(
                 world.map(cadmpeg_ir::features::FinitePoint3::get),

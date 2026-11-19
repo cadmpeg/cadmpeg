@@ -75,6 +75,7 @@ fn scope_with(
                     side_extent_discriminator_offsets: [177, 190],
                     first_side_target_ordinal: None,
                     distance_tail: None,
+                    opaque_distance_word: None,
                     extent,
                     direction_face_extend_offsets: [132, 136],
                     direction_reversed: false,
@@ -152,6 +153,7 @@ fn group(index: u32, role: DesignConstructionOperandRole) -> DesignConstructionO
 
 fn sketch_profile() -> DesignSketchProfileOperand {
     DesignSketchProfileOperand::try_new(DesignSketchProfileOperandDraft {
+        sketch_absent: false,
         scope_reference_ordinal: 0,
         record_index: 100,
         byte_offset: 300,
@@ -234,15 +236,12 @@ fn definition(
     start: serde_json::Value,
     extent: serde_json::Value,
 ) -> cadmpeg_ir::features::FeatureDefinition {
-    let mut value = serde_json::json!({
-        "definition": "extrude",
-        "profile": {"kind": "native", "value": profile},
+    let mut value = serde_json::json!({"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "native", "value": profile}},
         "direction": {"kind": "profile_normal"},
         "op": "new_body",
-        "solid": true
-    });
-    value["start"] = start;
-    value["extent"] = extent;
+        "solid": true}}});
+    value["value"]["value"]["start"] = start;
+    value["value"]["value"]["extent"] = extent;
     serde_json::from_value(value).unwrap()
 }
 
@@ -476,6 +475,35 @@ fn selected_face_start_read_as_offset_plane_reports_the_absent_start_group() {
         code
     )
     .is_empty());
+}
+
+#[test]
+fn group_free_extrude_start_reports_the_unresolved_face() {
+    let code = F3dLossCode::FeatureExtrudeStartFaceUnresolved;
+    let native_code = F3dLossCode::FeatureFaceSelectionNative;
+    let native = native_with(scope(
+        DesignExtrudeExtent::OneSidedDistance,
+        DesignExtrudeStart::FromFace,
+    ));
+    let start = |face| serde_json::json!({"kind": "from_face", "face": face, "offset": -5.0});
+    let unresolved = definition(
+        SCOPE_ID,
+        start(serde_json::json!({"kind": "unresolved"})),
+        one_sided(),
+    );
+    assert_eq!(notes(&native, unresolved.clone(), code).len(), 1);
+    assert!(notes(&native, unresolved, native_code).is_empty());
+
+    let native_face = definition(
+        SCOPE_ID,
+        start(serde_json::json!({
+            "kind": "native",
+            "value": format!("{STREAM}:operand-group#13")
+        })),
+        one_sided(),
+    );
+    assert!(notes(&native, native_face.clone(), code).is_empty());
+    assert_eq!(notes(&native, native_face, native_code).len(), 1);
 }
 
 #[test]

@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
-use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::transform::Transform;
@@ -26,10 +26,12 @@ pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
     topology: &TopologyData,
+    definitions_by_shape: &BTreeMap<u64, ProductDefinitionId>,
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut admitted_meshes = u64_from_index(ir.model.tessellations.len());
+    let item_owners = definition_items(exchange, definitions_by_shape);
     let mut coordinates = BTreeMap::new();
     for (&id, record) in exchange.records() {
         if !has_entity(record, "COORDINATES_LIST") {
@@ -400,7 +402,7 @@ pub(super) fn decode(
         if let Some(surface_step) = complex_triangulated_face_surface(record) {
             let surface_id = ids::data(kind!("surface"), surface_step);
             if let Some(surface) = ir
-                .model
+                .geometry
                 .surfaces
                 .iter_mut()
                 .find(|surface| surface.id.as_str() == surface_id.as_str())
@@ -447,18 +449,26 @@ pub(super) fn decode(
             }
         };
         admitted_meshes = pending_meshes;
-        if !declared_items.contains(&id) {
-            losses.push(StepLossCode::TessellationItemUndeclared.note(format!(
-                "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
-            )));
-        }
-
         let body = (!item_bodies.get(&id).is_some_and(BTreeSet::is_empty))
             .then(|| item_bodies.get(&id))
             .flatten()
             .filter(|bodies| bodies.len() == 1)
             .and_then(|bodies| bodies.iter().next())
             .cloned();
+        // A mesh that represents no body belongs to the one product
+        // definition whose shape lists it: a part stated as triangles.
+        let owner = body
+            .is_none()
+            .then(|| item_owners.get(&id))
+            .flatten()
+            .filter(|owners| owners.len() == 1)
+            .and_then(|owners| owners.iter().next())
+            .cloned();
+        if !declared_items.contains(&id) && owner.is_none() {
+            losses.push(StepLossCode::TessellationItemUndeclared.note(format!(
+                "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
+            )));
+        }
         let source_object = if !declared_items.contains(&id)
             || item_bodies.get(&id).is_some_and(BTreeSet::is_empty)
             || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1)
@@ -468,9 +478,16 @@ pub(super) fn decode(
             None
         };
 
-        ir.model
-            .tessellations
-            .push(mesh.with_body(body).with_source_object(source_object));
+        let mesh = mesh.with_body(body).with_source_object(source_object);
+        if let Some(definition) = owner.and_then(|owner| {
+            ir.model
+                .product_definitions
+                .iter_mut()
+                .find(|definition| definition.id == owner)
+        }) {
+            definition.tessellations.push(mesh.id.clone());
+        }
+        ir.model.tessellations.push(mesh);
         typed.insert(id);
         typed.insert(coordinate_id);
     }
@@ -814,6 +831,82 @@ fn product_linked_representations(exchange: &Exchange) -> BTreeSet<u64> {
         }
     }
     linked
+}
+
+/// The product definitions whose shape lists each tessellated item: through
+/// a `SHAPE_DEFINITION_REPRESENTATION` of its product definition shape, the
+/// representations a `SHAPE_REPRESENTATION_RELATIONSHIP` with no transformation
+/// joins to it, and the tessellated solids and shells among their items.
+fn definition_items(
+    exchange: &Exchange,
+    definitions_by_shape: &BTreeMap<u64, ProductDefinitionId>,
+) -> BTreeMap<u64, BTreeSet<ProductDefinitionId>> {
+    let mut related = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for record in exchange.records().values() {
+        if record
+            .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+            .is_some()
+        {
+            continue;
+        }
+        let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
+            continue;
+        };
+        let base = record
+            .partial("REPRESENTATION_RELATIONSHIP")
+            .unwrap_or(relationship);
+        let mut ends = relationship
+            .parameters
+            .iter()
+            .chain(&base.parameters)
+            .filter_map(ValueExt::reference);
+        if let (Some(left), Some(right)) = (ends.next(), ends.next()) {
+            related.entry(left).or_default().insert(right);
+            related.entry(right).or_default().insert(left);
+        }
+    }
+    let mut owners = BTreeMap::<u64, BTreeSet<ProductDefinitionId>>::new();
+    for (_, record) in exchange.entities("SHAPE_DEFINITION_REPRESENTATION") {
+        let Some(partial) = record.partial("SHAPE_DEFINITION_REPRESENTATION") else {
+            continue;
+        };
+        let (Some(shape), Some(representation)) = (
+            partial.parameters.first().and_then(ValueExt::reference),
+            partial.parameters.get(1).and_then(ValueExt::reference),
+        ) else {
+            continue;
+        };
+        let Some(definition) = definitions_by_shape.get(&shape) else {
+            continue;
+        };
+        let mut seen = BTreeSet::from([representation]);
+        let mut pending = vec![representation];
+        while let Some(current) = pending.pop() {
+            for &next in related.get(&current).into_iter().flatten() {
+                if seen.insert(next) {
+                    pending.push(next);
+                }
+            }
+        }
+        let mut items = product_representation_items(exchange, &seen);
+        let containers = items.clone();
+        for container in containers {
+            let Some(record) = exchange.records().get(&container) else {
+                continue;
+            };
+            let Some(kind) = entity_kind(record, &["TESSELLATED_SOLID", "TESSELLATED_SHELL"])
+            else {
+                continue;
+            };
+            if let Some(members) = entity_parameter(record, kind, 0, 1).and_then(ValueExt::list) {
+                items.extend(members.iter().filter_map(ValueExt::reference));
+            }
+        }
+        for item in items {
+            owners.entry(item).or_default().insert(definition.clone());
+        }
+    }
+    owners
 }
 
 fn product_representation_items(

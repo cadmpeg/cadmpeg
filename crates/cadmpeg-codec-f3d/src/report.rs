@@ -7,6 +7,7 @@ use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::SourceMeta;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::container::ContainerScan;
@@ -89,9 +90,7 @@ pub(crate) fn header_losses(
     scan: &ContainerScan<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for diagnostic in &scan.entry_diagnostics {
-        losses.push(crate::loss::F3dLossCode::ArchiveEntryUnreadable.note(diagnostic.to_owned()));
-    }
+    losses.extend(scan.given_up.iter().map(GivenUpPart::loss));
     for (name, run, stored) in &scan.unindexed_record_runs {
         let retained = stored.checked_sub(run.start).ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(

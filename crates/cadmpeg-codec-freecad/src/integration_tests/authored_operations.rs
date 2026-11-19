@@ -47,6 +47,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
     let feature = |name: &str| {
         model
             .features
@@ -153,7 +154,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         ),
     ] {
         let op = operation(name);
-        assert_eq!(op["definition"].as_str(), Some(kind), "{name}");
+        assert_eq!(op["kind"].as_str(), Some(kind), "{name}");
         for owner in owners {
             assert!(
                 feature(name)
@@ -195,12 +196,12 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     let extrusion_base = native_property("SymmetricExtrusion", "Base");
     let extrusion_profile_id = feature("ExtrusionProfile").id.as_str();
     assert_eq!(
-        operation("SymmetricExtrusion")["profile"]["kind"].as_str(),
+        operation("SymmetricExtrusion")["value"]["profile"]["value"]["kind"].as_str(),
         Some("feature"),
         "extrusion profile resolves to a typed feature result"
     );
     assert_eq!(
-        operation("SymmetricExtrusion")["profile"]["value"].as_str(),
+        operation("SymmetricExtrusion")["value"]["profile"]["value"]["value"].as_str(),
         Some(extrusion_profile_id),
         "extrusion profile feature"
     );
@@ -219,13 +220,14 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     assert_eq!(loft_section_links.len(), 2, "Loft.Sections count");
     let expected_loft_sections = ["LoftSectionA", "LoftSectionB"];
     let loft_operation = operation("Loft");
-    let actual_loft_sections = loft_operation["sections"].as_array().unwrap();
+    let actual_loft_sections = loft_operation["value"]["sections"].as_array().unwrap();
     assert_eq!(actual_loft_sections.len(), expected_loft_sections.len());
     for ((section, link), expected) in actual_loft_sections
         .iter()
         .zip(loft_section_links)
         .zip(expected_loft_sections)
     {
+        let section = &section["value"]["value"];
         assert_eq!(section["kind"].as_str(), Some("feature"));
         let expected_feature_id = feature(expected).id.as_str();
         assert_eq!(
@@ -244,12 +246,12 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     let sweep = operation("Sweep");
     let sweep_section_feature_id = feature("SweepSection").id.as_str();
     assert_eq!(
-        sweep["shape"]["section"]["value"]["kind"].as_str(),
+        sweep["value"]["shape"]["section"]["value"]["kind"].as_str(),
         Some("feature"),
         "Sweep profile resolves to a typed feature result"
     );
     assert_eq!(
-        sweep["shape"]["section"]["value"]["value"].as_str(),
+        sweep["value"]["shape"]["section"]["value"]["value"].as_str(),
         Some(sweep_section_feature_id),
         "Sweep profile feature"
     );
@@ -264,7 +266,7 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     );
     let sweep_spine = native_property("Sweep", "Spine");
     assert_eq!(
-        sweep["path"]["kind"].as_str(),
+        sweep["value"]["path"]["kind"].as_str(),
         Some("edges"),
         "Sweep path resolves to ordered neutral edges"
     );
@@ -442,147 +444,157 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
     for (name, pointer, expected, tolerance) in [
         (
             "Revolution",
-            "/construction/extent/termination/angle",
+            "/value/construction/value/extent/termination/angle",
             225.0_f64.to_radians(),
             ANGLE_TOLERANCE,
         ),
         (
             "Revolution",
-            "/construction/axis/direction/x",
+            "/value/construction/value/axis/direction/x",
             0.0,
             DIRECTION_TOLERANCE,
         ),
         (
             "Revolution",
-            "/construction/axis/direction/y",
+            "/value/construction/value/axis/direction/y",
             1.0,
             DIRECTION_TOLERANCE,
         ),
         (
             "Revolution",
-            "/construction/axis/direction/z",
+            "/value/construction/value/axis/direction/z",
             0.0,
             DIRECTION_TOLERANCE,
         ),
         (
             "SymmetricExtrusion",
-            "/extent/side/termination/length",
+            "/value/extent/side/termination/length",
             12.0,
             LENGTH_TOLERANCE,
         ),
         (
             "SymmetricExtrusion",
-            "/extent/side/draft",
+            "/value/extent/side/draft",
             3.0_f64.to_radians(),
             ANGLE_TOLERANCE,
         ),
         (
             "SymmetricExtrusion",
-            "/direction/vector/x",
+            "/value/direction/vector/x",
             0.0,
             DIRECTION_TOLERANCE,
         ),
         (
             "SymmetricExtrusion",
-            "/direction/vector/y",
+            "/value/direction/vector/y",
             0.0,
             DIRECTION_TOLERANCE,
         ),
         (
             "SymmetricExtrusion",
-            "/direction/vector/z",
+            "/value/direction/vector/z",
             1.0,
             DIRECTION_TOLERANCE,
         ),
         (
             "PartFillet",
-            "/groups/0/radius/radius",
+            "/value/groups/0/radius/radius",
             2.0,
             LENGTH_TOLERANCE,
         ),
-        ("PartChamfer", "/groups/0/spec/first", 1.5, LENGTH_TOLERANCE),
         (
             "PartChamfer",
-            "/groups/0/spec/second",
+            "/value/groups/0/spec/first",
+            1.5,
+            LENGTH_TOLERANCE,
+        ),
+        (
+            "PartChamfer",
+            "/value/groups/0/spec/second",
             2.5,
             LENGTH_TOLERANCE,
         ),
-        ("Thickness", "/thickness", 1.25, LENGTH_TOLERANCE),
-        ("Mirror", "/plane_normal/x", 1.0, DIRECTION_TOLERANCE),
-        ("Mirror", "/plane_normal/y", 0.0, DIRECTION_TOLERANCE),
-        ("Mirror", "/plane_normal/z", 0.0, DIRECTION_TOLERANCE),
-        ("Draft", "/angle", -5.0_f64.to_radians(), ANGLE_TOLERANCE),
-        ("Hole", "/shape/diameter", 6.0, LENGTH_TOLERANCE),
-        ("Hole", "/extent/length", 7.0, LENGTH_TOLERANCE),
+        ("Thickness", "/value/thickness", 1.25, LENGTH_TOLERANCE),
+        ("Mirror", "/value/plane_normal/x", 1.0, DIRECTION_TOLERANCE),
+        ("Mirror", "/value/plane_normal/y", 0.0, DIRECTION_TOLERANCE),
+        ("Mirror", "/value/plane_normal/z", 0.0, DIRECTION_TOLERANCE),
+        (
+            "Draft",
+            "/value/angle",
+            -5.0_f64.to_radians(),
+            ANGLE_TOLERANCE,
+        ),
+        ("Hole", "/value/shape/diameter", 6.0, LENGTH_TOLERANCE),
+        ("Hole", "/value/extent/length", 7.0, LENGTH_TOLERANCE),
         (
             "Hole",
-            "/shape/construction/kind/diameter",
+            "/value/shape/construction/value/kind/diameter",
             10.0,
             LENGTH_TOLERANCE,
         ),
         (
             "Hole",
-            "/shape/construction/kind/angle",
+            "/value/shape/construction/value/kind/angle",
             82.0_f64.to_radians(),
             ANGLE_TOLERANCE,
         ),
         (
             "Hole",
-            "/bottom/included_angle",
+            "/value/bottom/included_angle",
             118.0_f64.to_radians(),
             ANGLE_TOLERANCE,
         ),
         (
             "LinearPattern",
-            "/pattern/spacing",
+            "/value/pattern/spacing",
             24.0 / 3.0,
             LENGTH_TOLERANCE,
         ),
         (
             "LinearPattern",
-            "/pattern/direction/x",
+            "/value/pattern/direction/x",
             0.0,
             DIRECTION_TOLERANCE,
         ),
         (
             "LinearPattern",
-            "/pattern/direction/y",
+            "/value/pattern/direction/y",
             0.0,
             DIRECTION_TOLERANCE,
         ),
         (
             "LinearPattern",
-            "/pattern/direction/z",
+            "/value/pattern/direction/z",
             -1.0,
             DIRECTION_TOLERANCE,
         ),
-        ("DatumPlane", "/frame/origin/z", 4.0, LENGTH_TOLERANCE),
-        ("DatumAxis", "/origin/x", 2.0, LENGTH_TOLERANCE),
-        ("DatumAxis", "/origin/y", 3.0, LENGTH_TOLERANCE),
-        ("DatumPoint", "/position/x", 4.0, LENGTH_TOLERANCE),
-        ("DatumPoint", "/position/y", 5.0, LENGTH_TOLERANCE),
-        ("DatumPoint", "/position/z", 6.0, LENGTH_TOLERANCE),
+        ("DatumPlane", "/value/frame/origin/z", 4.0, LENGTH_TOLERANCE),
+        ("DatumAxis", "/value/axis/origin/x", 2.0, LENGTH_TOLERANCE),
+        ("DatumAxis", "/value/axis/origin/y", 3.0, LENGTH_TOLERANCE),
+        ("DatumPoint", "/value/position/x", 4.0, LENGTH_TOLERANCE),
+        ("DatumPoint", "/value/position/y", 5.0, LENGTH_TOLERANCE),
+        ("DatumPoint", "/value/position/z", 6.0, LENGTH_TOLERANCE),
         (
             "DatumCoordinateSystem",
-            "/frame/origin/x",
+            "/value/frame/origin/x",
             7.0,
             LENGTH_TOLERANCE,
         ),
         (
             "DatumCoordinateSystem",
-            "/frame/origin/y",
+            "/value/frame/origin/y",
             8.0,
             LENGTH_TOLERANCE,
         ),
         (
             "DatumCoordinateSystem",
-            "/frame/origin/z",
+            "/value/frame/origin/z",
             9.0,
             LENGTH_TOLERANCE,
         ),
-        ("PatternBase", "/solid/length", 4.0, LENGTH_TOLERANCE),
-        ("PatternBase", "/solid/width", 4.0, LENGTH_TOLERANCE),
-        ("PatternBase", "/solid/height", 8.0, LENGTH_TOLERANCE),
+        ("PatternBase", "/value/solid/length", 4.0, LENGTH_TOLERANCE),
+        ("PatternBase", "/value/solid/width", 4.0, LENGTH_TOLERANCE),
+        ("PatternBase", "/value/solid/height", 8.0, LENGTH_TOLERANCE),
     ] {
         let op = operation(name);
         let actual = op
@@ -592,17 +604,25 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         assert!((actual - expected).abs() < tolerance, "{name}: {pointer}");
     }
     for (name, pointer, expected) in [
-        ("Revolution", "/construction/extent/kind", "symmetric"),
-        ("SymmetricExtrusion", "/extent/kind", "symmetric"),
-        ("Sweep", "/orientation/kind", "frenet"),
-        ("Sweep", "/transition", "transformed"),
-        ("Sweep", "/shape/mode", "solid"),
-        ("PartChamfer", "/groups/0/spec/kind", "two_distances"),
-        ("Thickness", "/mode", "skin"),
-        ("Thickness", "/join", "arc"),
-        ("Hole", "/shape/construction/kind/kind", "countersink"),
-        ("Hole", "/bottom/kind", "angled"),
-        ("LinearPattern", "/pattern/kind", "linear"),
+        (
+            "Revolution",
+            "/value/construction/value/extent/kind",
+            "symmetric",
+        ),
+        ("SymmetricExtrusion", "/value/extent/kind", "symmetric"),
+        ("Sweep", "/value/orientation/kind", "frenet"),
+        ("Sweep", "/value/transition", "transformed"),
+        ("Sweep", "/value/shape/kind", "solid"),
+        ("PartChamfer", "/value/groups/0/spec/kind", "two_distances"),
+        ("Thickness", "/value/mode", "skin"),
+        ("Thickness", "/value/join", "arc"),
+        (
+            "Hole",
+            "/value/shape/construction/value/kind/kind",
+            "countersink",
+        ),
+        ("Hole", "/value/bottom/kind", "angled"),
+        ("LinearPattern", "/value/pattern/kind", "linear"),
     ] {
         assert_eq!(
             operation(name)
@@ -613,12 +633,12 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         );
     }
     for (name, pointer, expected) in [
-        ("Revolution", "/construction/solid", false),
-        ("SymmetricExtrusion", "/solid", true),
-        ("Loft", "/solid", true),
-        ("Loft", "/ruled", true),
-        ("Loft", "/closed", false),
-        ("Thickness", "/resolve_intersections", true),
+        ("Revolution", "/value/construction/value/solid", false),
+        ("SymmetricExtrusion", "/value/solid", true),
+        ("Loft", "/value/solid", true),
+        ("Loft", "/value/ruled", true),
+        ("Loft", "/value/closed", false),
+        ("Thickness", "/value/resolve_intersections", true),
     ] {
         assert_eq!(
             operation(name)
@@ -628,32 +648,44 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             "{name}: {pointer}"
         );
     }
-    assert_eq!(operation("Loft")["max_degree"].as_u64(), Some(4));
-    assert_eq!(operation("Loft")["sections"].as_array().unwrap().len(), 2);
+    assert_eq!(operation("Loft")["value"]["max_degree"].as_u64(), Some(4));
     assert_eq!(
-        operation("PartFillet")["groups"].as_array().unwrap().len(),
-        1
-    );
-    assert_eq!(
-        operation("PartChamfer")["groups"].as_array().unwrap().len(),
-        1
-    );
-    assert_eq!(
-        operation("Draft")["faces"]["value"]["faces"]
+        operation("Loft")["value"]["sections"]
             .as_array()
             .unwrap()
             .len(),
         2
     );
     assert_eq!(
-        operation("Thickness")["removed_faces"]["value"]["faces"]
+        operation("PartFillet")["value"]["groups"]
             .as_array()
             .unwrap()
             .len(),
         1
     );
     assert_eq!(
-        operation("LinearPattern")["pattern"]["count"].as_u64(),
+        operation("PartChamfer")["value"]["groups"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        operation("Draft")["value"]["faces"]["value"]["faces"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        operation("Thickness")["value"]["removed_faces"]["value"]["faces"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        operation("LinearPattern")["value"]["pattern"]["count"].as_u64(),
         Some(4)
     );
     for (name, base, treatment) in [
@@ -689,23 +721,19 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
         let [body] = feature(base).evaluation.outputs().as_slice() else {
             panic!("{base}: one body")
         };
-        let body = model
+        let body = geometry
             .bodies
             .iter()
             .find(|candidate| &candidate.id == body)
             .unwrap();
-        let in_body = body
-            .regions
-            .iter()
-            .filter_map(|id| model.regions.iter().find(|item| &item.id == id))
+        let in_body = geometry
+            .body_regions(&body.id)
             .flat_map(|region| &region.shells)
-            .filter_map(|id| model.shells.iter().find(|item| &item.id == id))
-            .flat_map(cadmpeg_ir::topology::Shell::faces)
-            .filter_map(|id| model.faces.iter().find(|item| &item.id == id))
+            .flat_map(|id| geometry.shell_faces(id))
             .flat_map(|face| face.loops.iter())
-            .filter_map(|id| model.loops.iter().find(|item| &item.id == id))
+            .filter_map(|id| geometry.loops.iter().find(|item| &item.id == id))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
-            .filter_map(|id| model.coedges.iter().find(|item| &item.id == id))
+            .filter_map(|id| geometry.coedges.iter().find(|item| &item.id == id))
             .any(|coedge| &coedge.edge == edge);
         assert!(in_body, "{name}: selected edge belongs to {base}");
     }

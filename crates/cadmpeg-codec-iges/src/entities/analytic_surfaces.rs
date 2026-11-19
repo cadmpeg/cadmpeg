@@ -40,7 +40,7 @@ fn admit_analytic<T>(
 fn point(ir: &CadIr, sequence: u32) -> Option<Point3> {
     let mut storage = [0_u8; 64];
     let id = crate::ids::directory_lookup_key("iges:model:point#D", sequence, &mut storage)?;
-    ir.model
+    ir.geometry
         .points
         .iter()
         .find(|point| point.id.as_str() == id)
@@ -667,7 +667,7 @@ pub(super) fn project(
         );
 
         ctx.charge_entities(1, "iges_geometry_analytic_surfaces")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: result,
             source_object: Some(match source_object(entry) {
@@ -678,6 +678,7 @@ pub(super) fn project(
                     continue;
                 }
             }),
+            native_ref: None,
         });
         decoded.insert(entry.sequence);
     }

@@ -106,6 +106,86 @@ fn attachment_keeps_order_qualifiers_states_and_optional_reference() {
 }
 
 #[test]
+fn contour_attachment_has_the_extended_attachment_fields_and_one_final_byte() {
+    for version in [29, 31] {
+        let mut bytes = header(version);
+        reference_bytes(&mut bytes, 10);
+        bytes.extend_from_slice(&[1, 1, 1]);
+        bytes.extend_from_slice(&0x8000_000b_u32.to_le_bytes());
+        bytes.extend_from_slice(&0x8000_000c_u32.to_le_bytes());
+        bytes.push(7);
+        let parsed = exact_record(&bytes, CONTOUR_ATTACHMENT_TYPE, version);
+        let PmDcFeaturePropertyKind::SheetMetal { definition } = parsed.kind else {
+            panic!("contour attachment");
+        };
+        assert_eq!(
+            definition.references(),
+            (1..=12)
+                .map(|index| PmDcReference::from_packed(0x8000_0000 | index))
+                .collect::<Vec<_>>()
+        );
+        let SheetMetalProperty::ContourAttachment {
+            directions,
+            radius,
+            states,
+            extension,
+            value,
+            ..
+        } = definition
+        else {
+            panic!("contour attachment variant");
+        };
+        assert_eq!([directions[0].index(), directions[1].index()], [4, 5]);
+        assert_eq!(radius.index(), 6);
+        assert_eq!(states.as_ref(), &[1, 1, 1]);
+        assert_eq!(extension.index(), 12);
+        assert_eq!(value, 7);
+        let mut short = header(version);
+        reference_bytes(&mut short, 10);
+        short.extend_from_slice(&[1, 1, 1]);
+        short.extend_from_slice(&0x8000_000b_u32.to_le_bytes());
+        assert!(decode(&short, CONTOUR_ATTACHMENT_TYPE, version).is_err());
+    }
+}
+
+#[test]
+fn contour_attachment_validation_uses_the_extended_operand_types() {
+    let mut bytes = header(31);
+    reference_bytes(&mut bytes, 10);
+    bytes.extend_from_slice(&[1, 1, 1]);
+    bytes.extend_from_slice(&0x8000_000b_u32.to_le_bytes());
+    bytes.extend_from_slice(&0x8000_000c_u32.to_le_bytes());
+    bytes.push(0);
+    let payload = decode(&bytes, CONTOUR_ATTACHMENT_TYPE, 31).expect("contour attachment");
+    let located = Located::new(
+        payload,
+        RecordTypeId::from_bytes(CONTOUR_ATTACHMENT_TYPE),
+        cadmpeg_ir::ids::IdentityKey::try_new("synthetic").expect("key"),
+        20,
+    );
+    let mut types: Vec<_> = ATTACHMENT_EXTENDED_REFERENCES
+        .iter()
+        .map(|id| type_id_string(*id))
+        .collect();
+    let check = |types: &[String]| {
+        valid_references(&located, |ordinal| {
+            types
+                .get(usize::try_from(ordinal).expect("fixture ordinal"))
+                .map(String::as_str)
+        })
+    };
+    assert!(check(&types));
+    types[11] = type_id_string(ATTACHMENT_TYPE);
+    assert!(!check(&types));
+    types[11] = type_id_string(ATTACHMENT_STATE_TYPE);
+    let mut wrong_identity = located.clone();
+    wrong_identity.identity.type_id = RecordTypeId::from_bytes(ATTACHMENT_TYPE);
+    assert!(!valid_references(&wrong_identity, |ordinal| types
+        .get(usize::try_from(ordinal).expect("fixture ordinal"))
+        .map(String::as_str)));
+}
+
+#[test]
 fn relief_transition_and_corner_keep_each_reference_and_scalar() {
     for version in [19, 23, 29, 31] {
         for (kind, count) in [
@@ -306,6 +386,10 @@ fn attachment_state_can_reference_the_shared_hem_control_family() {
     assert!(valid_references(&located, |ordinal| types
         .get(usize::try_from(ordinal).expect("fixture ordinal"))
         .map(String::as_str)));
+    types[2] = type_id_string(CONTOUR_ATTACHMENT_TYPE);
+    assert!(valid_references(&located, |ordinal| types
+        .get(usize::try_from(ordinal).expect("fixture ordinal"))
+        .map(String::as_str)));
     types[2] = type_id_string(super::super::EDGE_COLLECTION_TYPE);
     assert!(!valid_references(&located, |ordinal| types
         .get(usize::try_from(ordinal).expect("fixture ordinal"))
@@ -314,9 +398,8 @@ fn attachment_state_can_reference_the_shared_hem_control_family() {
 
 fn corner_loss_input() -> cadmpeg_ir::features::Feature {
     serde_json::from_value(serde_json::json!({
-        "id": "test:model:feature#corner", "ordinal": 1, "suppressed": null,
-        "definition": {"definition": "native", "kind": "SheetMetalCorner"}
-    }))
+        "id": "test:model:feature#corner", "ordinal": 1,
+        "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "SheetMetalCorner", "parameters": {}}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
     .expect("synthetic corner feature")
 }
 
@@ -480,4 +563,136 @@ fn corner_round_loss_requires_a_unique_class_owner_and_native_source() {
         },
     ));
     assert!(native_kind_losses(&inventory, &[feature]).is_empty());
+}
+
+#[test]
+fn fold_mode_and_fold_list_records_use_the_enumeration_and_list_grammars() {
+    for kind in [UNFOLD_MODE_TYPE, REFOLD_MODE_TYPE] {
+        let mut bytes = header(31);
+        bytes.extend_from_slice(&5_i16.to_le_bytes());
+        bytes.extend_from_slice(&3_u16.to_le_bytes());
+        assert!(matches!(
+            exact_record(&bytes, kind, 31).kind,
+            PmDcFeaturePropertyKind::SheetMetal {
+                definition: SheetMetalProperty::Enumeration {
+                    type_value: 5,
+                    value: 3
+                }
+            }
+        ));
+        let mut invalid = header(31);
+        invalid.extend_from_slice(&9_i16.to_le_bytes());
+        invalid.extend_from_slice(&3_u16.to_le_bytes());
+        assert!(decode(&invalid, kind, 31).is_err());
+    }
+    let mut empty = header(31);
+    empty.extend_from_slice(&0x3000_0002_u32.to_le_bytes());
+    empty.extend_from_slice(&0_u32.to_le_bytes());
+    assert!(matches!(
+        exact_record(&empty, FOLD_LIST_TYPE, 31).kind,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::SheetMetalFoldList,
+            items
+        } if items.references().is_empty()
+    ));
+    let mut one = header(31);
+    for word in [0x3000_0002_u32, 1, 1, 16, 0x8000_0005] {
+        one.extend_from_slice(&word.to_le_bytes());
+    }
+    assert!(matches!(
+        exact_record(&one, FOLD_LIST_TYPE, 31).kind,
+        PmDcFeaturePropertyKind::References {
+            family: PmDcFeatureReferenceFamily::SheetMetalFoldList,
+            items
+        } if items.references() == [PmDcReference::from_packed(0x8000_0005)]
+    ));
+}
+
+#[test]
+fn a_native_face_plate_names_its_first_refused_check() {
+    let (inventory, mut feature) = native_corner_round();
+    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: "Plate".into(),
+            parameters: BTreeMap::new(),
+        },
+    ));
+    let source = inventory.features[0].id();
+    let refusals = std::collections::BTreeMap::from([(source, "direction-normal")]);
+    let losses = face_losses(&refusals, std::slice::from_ref(&feature));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sheet-metal-face-refused"
+    );
+    assert!(losses[0].message.ends_with("is direction-normal."));
+    // A typed feature has no face note.
+    let mut typed = feature;
+    typed.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::SheetMetalCorner {
+            bend: FeatureId::mint("test:model:feature#bend").expect("bend"),
+            effect: cadmpeg_ir::features::SheetMetalCornerEffect::Unchanged,
+        },
+    ));
+    assert!(face_losses(&refusals, &[typed]).is_empty());
+}
+
+#[test]
+fn a_native_plate_without_another_note_names_its_projection_stage() {
+    let (mut inventory, mut feature) = native_corner_round();
+    let mut label = serde_json::to_value(&inventory.labels[0]).expect("label");
+    label["class_id"] = serde_json::to_value(super::super::PLATE_CLASS_ID).expect("class");
+    inventory.labels[0] = serde_json::from_value(label).expect("plate label");
+    feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: "Plate".into(),
+            parameters: BTreeMap::new(),
+        },
+    ));
+    // A plate without a bend and without a face refusal.
+    let losses = unexplained_losses(&inventory, std::slice::from_ref(&feature), |_| false);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sheet-metal-native-unexplained"
+    );
+    assert!(losses[0].message.ends_with("the projection stage is face."));
+    // A refusal explains the plate.
+    assert!(unexplained_losses(&inventory, std::slice::from_ref(&feature), |_| true).is_empty());
+    // A record that no label classifies and no flange owns is not sheet metal.
+    inventory.labels.clear();
+    assert!(unexplained_losses(&inventory, &[feature], |_| false).is_empty());
+}
+
+#[test]
+fn a_missing_edge_inventory_reports_its_reason_for_selecting_plates() {
+    use crate::test_support::sheet_metal::feature;
+    let mut inventory = FeatureInventory::default();
+    inventory.edge_inputs.unavailable = Some(crate::feature::edge_selection::Unavailable::Archive);
+    // No plate selects edges: no note.
+    assert!(native_kind_losses(&inventory, &[]).is_empty());
+    let mut slots = vec![0; 13];
+    slots[12] = 5;
+    inventory.features.push(feature(100, &slots));
+    let losses = native_kind_losses(&inventory, &[]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.edge-inventory-unavailable"
+    );
+    assert!(losses[0].message.ends_with(": archive."));
+}
+
+#[test]
+fn a_style_record_without_a_layout_names_its_segment_version() {
+    let mut inventory = FeatureInventory::default();
+    assert!(native_kind_losses(&inventory, &[]).is_empty());
+    inventory.unread_style_versions.extend([30, 25]);
+    let losses = native_kind_losses(&inventory, &[]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.sheet-metal-style-version-unread"
+    );
+    assert!(losses[0].message.contains("version(s) 25, 30 "));
 }

@@ -56,6 +56,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let face = Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -66,6 +67,7 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     assert_eq!(
         unique_cylindrical_face(
@@ -119,6 +121,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let face = Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -129,6 +132,7 @@ fn frame_only_plane_support_requires_one_coincident_face() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
 
     assert_eq!(
@@ -175,6 +179,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let face = Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -185,6 +190,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
         product_definition: None,
@@ -247,6 +253,7 @@ fn generic_native_offset_plane_support_stays_native() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let face = Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -257,6 +264,7 @@ fn generic_native_offset_plane_support_stays_native() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let native = "sldprt:feature-input:surface-component-ids:lane:40:200";
     let mut features = vec![cadmpeg_ir::features::Feature {
@@ -458,6 +466,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let topology_face = Face {
         id: FaceId::mint("test:model:entity#cylinder-face").expect("identity grammar"),
@@ -468,6 +477,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     features[1].evaluation.edit(|definition, _| {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1278,6 +1288,7 @@ fn split_face_collects_distinct_generated_target_faces() {
                 tool: cadmpeg_ir::features::SplitFaceTool::Path(
                     cadmpeg_ir::features::PathRef::Native("tool".into()),
                 ),
+                method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
             }),
         ),
     ];

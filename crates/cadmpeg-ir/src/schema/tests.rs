@@ -16,8 +16,10 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     let target = crate::ids::BodyId::mint("test:model:body#missing").expect("valid identity");
     ir.model.product_definitions.push(ProductDefinition {
         sketches: Vec::default(),
+
+        tessellations: Vec::new(),
         id: owner.clone(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
         label: None,
         description: None,
@@ -25,6 +27,14 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
         bom_properties: std::collections::BTreeMap::new(),
         bodies: vec![target.clone()],
         native_ref: None,
+        generated_from: None,
+        storage: crate::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     });
 
     let mut references = Vec::new();
@@ -218,12 +228,12 @@ fn schema_constrains_version_and_requires_subd_arena() {
         Some(&serde_json::json!(crate::IR_VERSION))
     );
     assert!(schema
-        .pointer("/properties/model/$ref")
+        .pointer("/properties/geometry/$ref")
         .and_then(serde_json::Value::as_str)
         .is_some());
 
-    let model_schema = schema.pointer("/$defs/Model").unwrap();
-    assert!(model_schema
+    let topology_schema = schema.pointer("/$defs/Topology").unwrap();
+    assert!(topology_schema
         .pointer("/required")
         .and_then(serde_json::Value::as_array)
         .unwrap()
@@ -232,7 +242,7 @@ fn schema_constrains_version_and_requires_subd_arena() {
 
     let mut value = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
     value
-        .pointer_mut("/model")
+        .pointer_mut("/geometry")
         .unwrap()
         .as_object_mut()
         .unwrap()
@@ -323,8 +333,10 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     use cadmpeg_core::CodecError;
     let entity = ProductDefinition {
         sketches: Vec::default(),
+
+        tessellations: Vec::new(),
         id: "test:model:product#owner".try_into().unwrap(),
-        kind: ProductDefinitionKind::Part,
+        kind: Some(ProductDefinitionKind::Part),
         source_name: Some("test:model:name#not-a-reference".into()),
         label: None,
         description: None,
@@ -332,6 +344,14 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
         bom_properties: std::collections::BTreeMap::new(),
         bodies: vec!["test:model:body#target".try_into().unwrap()],
         native_ref: None,
+        generated_from: None,
+        storage: crate::products::Storage::Embedded,
+        occurrences: Vec::new(),
+        instance_bodies: Vec::new(),
+        representations: Vec::new(),
+        units: None,
+        general_tolerance: None,
+        active: None,
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
@@ -366,6 +386,7 @@ fn borrowed_reference_walk_preserves_a_callback_resource_refusal() {
         id: "test:model:vertex#owner".try_into().unwrap(),
         point: "test:model:point#target".try_into().unwrap(),
         tolerance: None,
+        native_ref: None,
     };
     let ctx = cadmpeg_test_support::service_decode_context();
     let limit = ResourceLimit::allocation_failed(

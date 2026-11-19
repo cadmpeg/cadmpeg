@@ -26,6 +26,7 @@ fn scope(extent: DesignExtrudeExtent, start: DesignExtrudeStart) -> DesignParame
                 side_extent_discriminator_offsets: [117, 280],
                 first_side_target_ordinal: None,
                 distance_tail: None,
+                opaque_distance_word: None,
                 extent,
                 direction_face_extend_offsets: [32, 36],
                 direction_reversed: true,

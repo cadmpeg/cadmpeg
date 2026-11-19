@@ -111,20 +111,20 @@ fn scene_counted_name_and_complete_following_grammar_gate_admission() {
     assert!(losses.is_empty());
 }
 
-fn occurrence(
-    id: &str,
-    parent: Option<&str>,
-    reference: Option<&str>,
-) -> cadmpeg_ir::products::Occurrence {
-    let mut wire = serde_json::json!({
-        "id":id, "parent":parent.map_or_else(||serde_json::json!({"kind":"root"}), |id|serde_json::json!({"kind":"occurrence","occurrence":id})),
-        "prototype":{"scope":"local","definition":"f3d:test:definition#1"},
-        "ordinal":0,"transform":[[1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.]],"scale":[1.,1.,1.]
-    });
-    if let Some(reference) = reference {
-        wire["native_ref"] = serde_json::json!(reference);
-    }
-    serde_json::from_value(wire).unwrap()
+fn occurrence(id: &str, reference: Option<&str>) -> cadmpeg_ir::products::Occurrence {
+    let mut occurrence = cadmpeg_ir::products::Occurrence::new(
+        cadmpeg_ir::ids::OccurrenceId::mint(id).unwrap(),
+        cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:test:definition#1").unwrap(),
+        Some(cadmpeg_ir::transform::Transform::identity()),
+    );
+    occurrence.native_ref = reference.map(str::to_owned);
+    occurrence
+}
+
+/// States the instance tree `parents` names, by position, as the decoder
+/// builds it.
+fn place(ir: &mut cadmpeg_ir::CadIr, parents: &[Option<usize>]) {
+    ir.model.product_definitions = crate::tree::owned_by(&mut ir.model.occurrences, parents);
 }
 
 #[test]
@@ -134,23 +134,12 @@ fn scene_binding_is_exact_and_preserves_all_three_states() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.occurrences = vec![
-        occurrence("f3d:test:occurrence#root", None, None),
-        occurrence(
-            "f3d:test:occurrence#a",
-            Some("f3d:test:occurrence#root"),
-            Some("a"),
-        ),
-        occurrence(
-            "f3d:test:occurrence#child",
-            Some("f3d:test:occurrence#a"),
-            Some("child"),
-        ),
-        occurrence(
-            "f3d:test:occurrence#duplicate",
-            Some("f3d:test:occurrence#root"),
-            Some("a"),
-        ),
+        occurrence("f3d:test:occurrence#root", None),
+        occurrence("f3d:test:occurrence#a", Some("a")),
+        occurrence("f3d:test:occurrence#child", Some("child")),
+        occurrence("f3d:test:occurrence#duplicate", Some("a")),
     ];
+    place(&mut ir, &[None, Some(0), Some(1), Some(0)]);
     let sources = Sources::from([("a".to_owned(), [3, 17]), ("child".to_owned(), [23, 29])]);
     let mut losses = Vec::new();
     let mut rows = Vec::new();
@@ -316,18 +305,11 @@ fn scene_inserted_synthetic_root_shares_placement_path_and_child_uses_member_def
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.occurrences = vec![
-        occurrence("f3d:test:occurrence#holder", None, Some("xref")),
-        occurrence(
-            "f3d:test:occurrence#member",
-            Some("f3d:test:occurrence#holder"),
-            None,
-        ),
-        occurrence(
-            "f3d:test:occurrence#child",
-            Some("f3d:test:occurrence#member"),
-            Some("carrier"),
-        ),
+        occurrence("f3d:test:occurrence#holder", Some("xref")),
+        occurrence("f3d:test:occurrence#member", None),
+        occurrence("f3d:test:occurrence#child", Some("carrier")),
     ];
+    place(&mut ir, &[None, Some(0), Some(1)]);
     let sources = Sources::from([
         ("xref".to_owned(), [3, 4533]),
         ("carrier".to_owned(), [5, 991]),

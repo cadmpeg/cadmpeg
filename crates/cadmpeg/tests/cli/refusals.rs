@@ -46,8 +46,9 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
         .code(2);
 
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
-    invalid.model.faces[0].surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
-        .expect("valid identity for an absent surface");
+    invalid.geometry.faces[0].surface =
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
+            .expect("valid identity for an absent surface");
     let invalid = fixture(dir.path(), "invalid.json", &invalid);
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -134,8 +135,8 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .unwrap()
             .iter()
             .any(|loss| {
-                loss["code"]["namespace"] == "rhino"
-                    && loss["code"]["code"] == "source.dialect-unverified"
+                loss["code"]["value"]["namespace"] == "rhino"
+                    && loss["code"]["value"]["code"] == "source.dialect-unverified"
             }));
     }
 }
@@ -164,7 +165,7 @@ fn convert_writes_when_native_decode_has_no_geometry() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| { loss["code"]["code"] == "export.no-geometry-written" }));
+        .any(|loss| { loss["code"]["value"]["code"] == "export.no-geometry-written" }));
 }
 
 /// A container-only document is shallower than a geometry encoder plans from.
@@ -531,12 +532,12 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         serde_json::from_slice(&fs::read(export_report).unwrap()).unwrap();
     assert_eq!(report["refusal"]["code"], "export_loss_rejected");
     assert!(report["export"].is_object());
-    assert_eq!(report["export"]["identity"]["payload"], "native");
+    assert_eq!(report["export"]["identity"]["kind"], "native");
     let losses = report["export"]["losses"].as_array().unwrap();
     assert_eq!(losses.len(), 2);
     assert!(losses
         .iter()
-        .any(|loss| loss["code"]["code"] == "export.no-geometry-written"));
+        .any(|loss| loss["code"]["value"]["code"] == "export.no-geometry-written"));
 
     let lossless = fixture(
         dir.path(),

@@ -1,49 +1,129 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
-      "features": [],
-      "loops": [],
-      "occurrences": [],
-      "parameters": [],
-      "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [
+      "containers": [
         {
-          "id": "inventor:document:product#root",
-          "kind": "part"
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "inventor:document:timeline#root",
+            "kind": "timeline",
+            "members": [],
+            "rollback": {
+              "kind": "end"
+            }
+          }
         }
       ],
-      "regions": [],
-      "semantic_annotations": [],
-      "shells": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "start",
+                "value": "inventor:document:timeline#root"
+              },
+              "bodies": [],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "inventor:document:product#root",
+          "occurrences": {},
+          "roots": [
+            "inventor:document:timeline#root"
+          ]
+        }
+      ],
+      "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "inventor:document:product#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -398,25 +478,41 @@
         "wire_topologies": []
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "cfb_major_version": "3",
-        "cfb_sector_size": "512",
         "document_kind": "part",
-        "kernel_entity_count": "0",
         "kernel_family": "asm",
         "kernel_flags": "0",
         "kernel_product_family": "Inventor",
         "kernel_product_version": "synthetic ASM",
-        "kernel_save_format_version": "700",
-        "rse_segment_pairs": "1"
+        "kernel_save_format_version": "700"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [
             {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "reference_width": "4",
                 "save_format_major": "7",
@@ -426,7 +522,9 @@
             }
           ],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "cfb_major_version": "3",
               "meta_stream_marker": "RSe Meta Stream Version 8",
@@ -435,7 +533,8 @@
             },
             "dialect": "inventor:cfb3-rse31-meta8"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -443,7 +542,10 @@
       "linear": 9.999999999999999e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -512,11 +614,12 @@
       "ufrx_occurrences": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [
           {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "reference_width": "4",
               "save_format_major": "7",
@@ -526,7 +629,9 @@
           }
         ],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "cfb_major_version": "3",
             "meta_stream_marker": "RSe Meta Stream Version 8",
@@ -535,26 +640,31 @@
           },
           "dialect": "inventor:cfb3-rse31-meta8"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.kernel-carrier-not-transferred",
-          "kind": "geometry_not_transferred",
-          "namespace": "inventor",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.kernel-carrier-not-transferred",
+            "kind": "geometry_not_transferred",
+            "namespace": "inventor",
+            "strict_floor": "warning"
+          }
         },
         "message": "the part has no bodies: its active kernel carrier holds no model records",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "rse.segment-pair-untyped",
-          "kind": "record_not_typed",
-          "namespace": "inventor",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "rse.segment-pair-untyped",
+            "kind": "record_not_typed",
+            "namespace": "inventor"
+          }
         },
         "message": "Retained 1 structurally paired RSe segment(s) without record semantics.",
         "severity": "warning"
@@ -563,20 +673,30 @@
     "notes": [],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {},
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "e531689d06aa6dd0b5465c36aeb99b62e52deedf5cde9f56b1db50cda72bb02a",
+    "file_digests": {},
     "retained_records": {
       "inventor:kernel:carrier#seg-0": {
         "bytes": {
           "data": "QVNNIEJpbmFyeUZpbGU0vAIAAAAAAAAAAAAAAAAAAAcISW52ZW50b3IHDXN5bnRoZXRpYyBBU00HCjIwMDAtMDEtMDEGAAAAAAAA8D8Gje21oPfGsD4Gu73X2d982z0=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 18,
-        "stream": "RSeStorage/Bseg:expanded"
+        "stream": "RSeStorage/Bseg:expanded",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

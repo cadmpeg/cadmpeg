@@ -937,7 +937,7 @@ fn round_placed_cylinder_radius(
     row: &crate::surface::SurfaceRow,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
 ) -> Option<f64> {
-    exactly_one(ir.model.surfaces.iter().filter(|surface| {
+    exactly_one(ir.geometry.surfaces.iter().filter(|surface| {
         crate::identity::matches_numbered_identity(
             surface.id.as_str(),
             "creo:visibgeom:surface#",
@@ -1100,7 +1100,7 @@ fn chamfer_cone_equation(
             frame.half_angle().get().get(),
         );
     }
-    let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| {
+    let surface = exactly_one(ir.geometry.surfaces.iter().filter(|surface| {
         crate::identity::matches_numbered_identity(
             surface.id.as_str(),
             "creo:visibgeom:surface#",
@@ -1172,7 +1172,7 @@ pub(in super::super) fn chamfer_constant_distance(
         let second_row = rows.next();
         let is_support_plane = match (first_row, second_row) {
             (None, None) => {
-                let mut model_surfaces = ir.model.surfaces.iter().filter(|surface| {
+                let mut model_surfaces = ir.geometry.surfaces.iter().filter(|surface| {
                     crate::identity::matches_numbered_identity(
                         surface.id.as_str(),
                         "creo:visibgeom:surface#",

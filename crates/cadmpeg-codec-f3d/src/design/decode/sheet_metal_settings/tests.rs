@@ -217,25 +217,52 @@ fn settings_name_every_linked_record_for_header_retention() {
 
 #[test]
 fn rule_thickness_is_the_first_entry_named_thickness() {
-    let rule = |name: &str| {
+    let rule = |name: &str, settings: Option<&[u64]>| {
         let mut bytes = vec![0xaa; 7];
         let start = bytes.len();
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         bytes.extend_from_slice(b"285");
         bytes.extend_from_slice(&273_u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
+        if let Some(settings) = settings {
+            bytes.extend_from_slice(&u32::try_from(settings.len()).unwrap().to_le_bytes());
+            for target in settings {
+                bytes.push(1);
+                bytes.extend_from_slice(&target.to_le_bytes());
+                bytes.extend_from_slice(&[0, 0]);
+            }
+        }
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         bytes.extend_from_slice(&u32::try_from(name.len()).unwrap().to_le_bytes());
         for unit in name.encode_utf16() {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
+        let thickness_offset = bytes.len();
         bytes.extend_from_slice(&0.25_f64.to_le_bytes());
-        (bytes, start)
+        (bytes, start, thickness_offset)
     };
-    let (bytes, start) = rule("Thickness");
-    let (thickness, offset) = super::rule_thickness(&bytes, start).expect("rule thickness");
-    assert_eq!(thickness.get(), 0.25);
-    assert_eq!(offset, u64::try_from(start + 47).unwrap());
-    let (other, start) = rule("KFactor00");
-    assert!(super::rule_thickness(&other, start).is_none());
+    let types = HashMap::from([(17, (SETTINGS_GUID, 2)), (18, (SETTINGS_GUID, 3))]);
+    for (version, settings) in [(1, None), (0, Some([17, 18].as_slice()))] {
+        let (bytes, start, thickness_offset) = rule("Thickness", settings);
+        let root = View::over_retained(&bytes);
+        let (thickness, offset) =
+            rule_thickness(root.child(start, bytes.len()).unwrap(), version, &types).unwrap();
+        assert_eq!(
+            thickness,
+            cadmpeg_ir::scalar::PositiveReal::new(0.25).unwrap()
+        );
+        assert_eq!(offset, u64_from_index(thickness_offset));
+        let short = root.child(start, bytes.len() - 1).unwrap();
+        assert!(rule_thickness(short, version, &types).is_none());
+        let (other, start, _) = rule("KFactor00", settings);
+        let record = View::over_retained(&other)
+            .child(start, other.len())
+            .unwrap();
+        assert!(rule_thickness(record, version, &types).is_none());
+    }
+    let (bytes, start, _) = rule("Thickness", Some(&[17, 20]));
+    let record = View::over_retained(&bytes)
+        .child(start, bytes.len())
+        .unwrap();
+    assert!(rule_thickness(record, 0, &types).is_none());
 }

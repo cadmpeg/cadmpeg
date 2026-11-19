@@ -90,6 +90,7 @@ fn a_scope_group_record_is_not_a_face_operand() {
                     &[],
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
@@ -181,7 +182,8 @@ fn terminal_profile_member_cannot_borrow_the_next_group_recipe() {
                 &[recipe],
                 &[],
             )
-            .unwrap();
+            .unwrap()
+            .0;
             assert_eq!(
                 operands
                     .iter()
@@ -200,13 +202,13 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
 
     let mut bytes = Vec::new();
     for index in [100, 100, 101, 102, 103] {
-        indexed_header(&mut bytes, *b"306", index);
+        indexed_header(&mut bytes, *b"256", index);
     }
     let next_group_at = bytes.len();
-    indexed_header(&mut bytes, *b"332", 190);
+    indexed_header(&mut bytes, *b"257", 190);
     let face_at = bytes.len();
     for index in [200, 200, 201, 202, 203] {
-        indexed_header(&mut bytes, *b"306", index);
+        indexed_header(&mut bytes, *b"256", index);
     }
     bytes.extend_from_slice(&24u32.to_le_bytes());
     let recipe_at = bytes.len();
@@ -214,13 +216,14 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
     for value in [0i32, -1] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
-    indexed_header(&mut bytes, *b"306", 204);
+    let terminal_at = bytes.len();
+    indexed_header(&mut bytes, *b"256", 204);
     let headers: Vec<_> = [(100, 0), (190, next_group_at), (200, face_at)]
         .into_iter()
         .map(|(record_index, offset)| DesignRecordHeader {
             id: format!("{STREAM}:design-record-header#{offset}"),
             record_index,
-            class_tag: "306".to_owned().try_into().unwrap(),
+            class_tag: "256".to_owned().try_into().unwrap(),
             byte_offset: u64::try_from(offset).unwrap(),
         })
         .collect();
@@ -232,10 +235,46 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
         recipe_index: 0,
         record_index: None,
     };
-    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
-    for (kind, first_role) in [
-        (DesignFeatureKind::SplitFace, DesignOperandRole::ROLE_0X21),
-        (DesignFeatureKind::Draft, DesignOperandRole::ROLE_0X10),
+    let meta = crate::test_support::split_face::metadata(
+        &[
+            (
+                "00000000-0000-0000-0000-000000000001",
+                1,
+                &[100, 101, 102, 103, 200, 201, 202, 203, 204],
+            ),
+            ("00000000-0000-0000-0000-000000000002", 1, &[190]),
+        ],
+        &[
+            (100, 0),
+            (101, 22),
+            (102, 33),
+            (103, 44),
+            (190, 55),
+            (200, 66),
+            (201, 88),
+            (202, 99),
+            (203, 110),
+            (204, u64::try_from(terminal_at).unwrap()),
+        ],
+        &[(100, 11), (200, 77)],
+    );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &meta);
+    for (kind, first_role, second_role) in [
+        (
+            DesignFeatureKind::SplitFace,
+            DesignOperandRole::ROLE_0X21,
+            DesignOperandRole::ROLE_0X10,
+        ),
+        (
+            DesignFeatureKind::Draft,
+            DesignOperandRole::ROLE_0X10,
+            DesignOperandRole::ROLE_0X10,
+        ),
+        (
+            DesignFeatureKind::SurfaceUntrim,
+            DesignOperandRole::ROLE_0X9,
+            DesignOperandRole::ROLE_0X9,
+        ),
     ] {
         let mut scope =
             DesignParameterScope::empty(&format!("{STREAM}:design-parameter-scope#50"), kind, 50);
@@ -248,23 +287,20 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let groups: Vec<_> = [
-            (90, 100, first_role),
-            (190, 200, DesignOperandRole::ROLE_0X10),
-        ]
-        .into_iter()
-        .map(|(record_index, member, role)| {
-            let mut group = group(50, record_index);
-            group.operand_role = DesignConstructionOperandRole::Other(role);
-            group
-                .try_set_members(vec![Located {
-                    value: member,
-                    offset: 1026,
-                }])
-                .unwrap();
-            group
-        })
-        .collect();
+        let groups: Vec<_> = [(90, 100, first_role), (190, 200, second_role)]
+            .into_iter()
+            .map(|(record_index, member, role)| {
+                let mut group = group(50, record_index);
+                group.operand_role = DesignConstructionOperandRole::Other(role);
+                group
+                    .try_set_members(vec![Located {
+                        value: member,
+                        offset: 1026,
+                    }])
+                    .unwrap();
+                group
+            })
+            .collect();
         crate::test_support::with_decode_context(|ctx| {
             crate::test_support::zip_test::with_scan(&archive, |scan| {
                 let operands = crate::design::decode::operands::decode_face_operands(
@@ -276,7 +312,8 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
                     std::slice::from_ref(&recipe),
                     &[],
                 )
-                .unwrap();
+                .unwrap()
+                .0;
                 assert_eq!(
                     operands
                         .iter()
@@ -284,6 +321,9 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
                         .collect::<Vec<_>>(),
                     [200]
                 );
+                assert_eq!(operands[0].group_record_index(), Some(190));
+                assert_eq!(operands[0].group_member_ordinal(), Some(0));
+                assert_eq!(operands[0].recipe_kind, ConstructionRecipeKind::BoundedFace);
             });
         });
     }
@@ -361,6 +401,7 @@ fn sweep_profile_member_is_a_face_operand_only_as_a_topology_recipe() {
                     types,
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
@@ -442,12 +483,196 @@ fn a_pattern_face_seed_group_member_is_a_face_operand() {
                     &[],
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
             };
             assert_eq!(operands(1), [100]);
             assert!(operands(0).is_empty());
+        });
+    });
+}
+
+#[test]
+fn surface_face_groups_retain_owned_face_recipe_members() {
+    use crate::records::identity::{Located, ReferenceRun};
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+
+    for (kind, role, refused_role) in [
+        (
+            DesignFeatureKind::SurfaceUntrim,
+            DesignOperandRole::ROLE_0X9,
+            DesignOperandRole::ROLE_0X10,
+        ),
+        (
+            DesignFeatureKind::SurfaceTrim,
+            DesignOperandRole::ROLE_0X9,
+            DesignOperandRole::ROLE_0X21,
+        ),
+        (
+            DesignFeatureKind::ReplaceFace,
+            DesignOperandRole::ROLE_0X9,
+            DesignOperandRole::ROLE_0X21,
+        ),
+        (
+            DesignFeatureKind::ReplaceFace,
+            DesignOperandRole::ROLE_0X10,
+            DesignOperandRole::ROLE_0X21,
+        ),
+    ] {
+        let mut bytes = Vec::new();
+        for index in [100, 100, 101, 102, 103] {
+            indexed_header(&mut bytes, *b"777", index);
+        }
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        let recipe_at = bytes.len();
+        bytes.extend_from_slice(b"face_recipe_data");
+        for value in [0i32, -1] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        indexed_header(&mut bytes, *b"777", 104);
+        let mut scope =
+            DesignParameterScope::empty(&format!("{STREAM}:design-parameter-scope#50"), kind, 50);
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(vec![70, 90, 100]);
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let mut selection = group(50, 90);
+        selection.scope_reference_ordinal = 1;
+        selection.operand_role = DesignConstructionOperandRole::Other(role);
+        selection
+            .try_set_members(vec![Located {
+                value: 100,
+                offset: 1026,
+            }])
+            .unwrap();
+        let header = DesignRecordHeader {
+            id: format!("{STREAM}:design-record-header#0"),
+            record_index: 100,
+            class_tag: "777".to_owned().try_into().unwrap(),
+            byte_offset: 0,
+        };
+        let recipe = ConstructionRecipe {
+            id: format!("{STREAM}:construction-recipe#{recipe_at}"),
+            byte_offset: u64::try_from(recipe_at).unwrap(),
+            kind: ConstructionRecipeKind::Face,
+            design: None,
+            recipe_index: 0,
+            record_index: None,
+        };
+        let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
+        crate::test_support::with_decode_context(|ctx| {
+            crate::test_support::zip_test::with_scan(&archive, |scan| {
+                let operands = crate::design::decode::operands::decode_face_operands(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&selection),
+                    std::slice::from_ref(&header),
+                    std::slice::from_ref(&recipe),
+                    &[],
+                )
+                .unwrap()
+                .0;
+                assert_eq!(operands.len(), 1);
+                assert_eq!(operands[0].record_index(), 100);
+                assert_eq!(operands[0].scope_record_index, 50);
+                assert_eq!(operands[0].scope_reference_ordinal, 1);
+                assert_eq!(operands[0].group_record_index(), Some(90));
+                assert_eq!(operands[0].group_member_ordinal(), Some(0));
+                assert_eq!(operands[0].recipe_kind, ConstructionRecipeKind::Face);
+                selection.operand_role = DesignConstructionOperandRole::Other(refused_role);
+                let unrelated = crate::design::decode::operands::decode_face_operands(
+                    ctx,
+                    scan,
+                    std::slice::from_ref(&scope),
+                    std::slice::from_ref(&selection),
+                    std::slice::from_ref(&header),
+                    std::slice::from_ref(&recipe),
+                    &[],
+                )
+                .unwrap()
+                .0;
+                assert!(unrelated.is_empty());
+            });
+        });
+    }
+}
+
+#[test]
+fn surface_untrim_loop_groups_retain_exact_edge_recipe_members() {
+    use crate::records::identity::{Located, ReferenceRun};
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+
+    let mut bytes = Vec::new();
+    for index in [100, 100, 101, 102, 103] {
+        indexed_header(&mut bytes, *b"777", index);
+    }
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    let recipe_at = bytes.len();
+    bytes.extend_from_slice(b"edge_recipe_data");
+    for value in [-1i32, -1, 2, 0, -1, 1, -1, 7] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    indexed_header(&mut bytes, *b"777", 104);
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#50"),
+        DesignFeatureKind::SurfaceUntrim,
+        50,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = ReferenceRun::unlocated(vec![70, 90, 100]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut selection = group(50, 90);
+    selection.scope_reference_ordinal = 1;
+    selection.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X9);
+    selection
+        .try_set_members(vec![Located {
+            value: 100,
+            offset: 1026,
+        }])
+        .unwrap();
+    let header = DesignRecordHeader {
+        id: format!("{STREAM}:design-record-header#0"),
+        record_index: 100,
+        class_tag: "777".to_owned().try_into().unwrap(),
+        byte_offset: 0,
+    };
+    let recipe = ConstructionRecipe {
+        id: format!("{STREAM}:construction-recipe#{recipe_at}"),
+        byte_offset: u64::try_from(recipe_at).unwrap(),
+        kind: ConstructionRecipeKind::Edge,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let operands = crate::design::decode::operands::decode_edge_operands(
+                ctx,
+                scan,
+                &[scope],
+                &[selection],
+                &[header],
+                &[recipe],
+            )
+            .unwrap();
+            assert_eq!(operands.len(), 1);
+            assert_eq!(operands[0].record_index(), 100);
+            assert_eq!(operands[0].scope_record_index, 50);
+            assert_eq!(operands[0].scope_reference_ordinal, 2);
+            assert_eq!(operands[0].next_record_index, 104);
+            assert_eq!(operands[0].recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
         });
     });
 }

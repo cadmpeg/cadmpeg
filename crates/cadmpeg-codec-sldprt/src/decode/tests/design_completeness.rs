@@ -20,6 +20,52 @@ use cadmpeg_ir::{
 use std::collections::BTreeMap;
 
 #[test]
+fn surface_untrim_requires_resolved_faces_loops_and_distance() {
+    use cadmpeg_ir::features::surfaces::UntrimLoops;
+    let face = FaceSelection::Faces(vec![
+        cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#1").unwrap()
+    ]);
+    let edge = EdgeSelection::Edges(vec![EdgeId::mint("synthetic:test:edge#1").unwrap()]);
+    for (loops, extension, incomplete) in [
+        (UntrimLoops::Unresolved {}, Length::new(3.0), true),
+        (UntrimLoops::All {}, None, true),
+        (
+            UntrimLoops::Selected {
+                edges: EdgeSelection::Native("native:loops".into()),
+            },
+            Length::new(3.0),
+            true,
+        ),
+        (
+            UntrimLoops::Selected { edges: edge },
+            Length::new(-3.0),
+            false,
+        ),
+    ] {
+        let mut ir = CadIr::empty();
+        let definition = FeatureDefinition::Operation(FeatureOperation::UntrimSurface {
+            faces: face.clone(),
+            loops,
+            extension,
+        });
+        ir.model.features.push(serde_json::from_value(serde_json::json!({
+            "id": "synthetic:test:feature#untrim", "ordinal": 0, "suppressed": false, "definition": definition, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap());
+        let mut report = super::empty_report(true);
+        append_design_losses(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &mut report,
+        )
+        .unwrap();
+        assert_eq!(
+            report.losses.iter().any(|loss| loss.message
+                == "1 typed feature(s) retain native or unresolved required operation operands."),
+            incomplete
+        );
+    }
+}
+
+#[test]
 fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     let mut ir = CadIr::empty();
     let feature = |id: &str, ordinal, definition| Feature {
@@ -273,8 +319,8 @@ fn design_completeness_audits_typed_construction_families() {
         }),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-            side: cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
+            side: Some(cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric),
         }),
         FeatureDefinition::Operation(FeatureOperation::Block {
             dimensions: None,
@@ -334,7 +380,14 @@ fn design_completeness_audits_typed_construction_families() {
                 cadmpeg_ir::features::DistinctMembers::try_from(vec![body])
                     .expect("distinct bodies"),
             ),
-            cells: cadmpeg_ir::features::NonEmptyMembers::one(BodySelection::Unresolved),
+            cells: cadmpeg_ir::features::NonEmptyMembers::one(
+                cadmpeg_ir::features::boundary_fill::BoundaryFillCell::BodyRegion(
+                    BodySelection::Unresolved,
+                ),
+            ),
+            plane_tools: Vec::new(),
+            operation: None,
+            remove_tools: None,
         }),
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
@@ -1329,7 +1382,7 @@ fn missing_feature_outputs_are_reported_as_design_loss() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     ir.model.features.clear();
     ir.model.parameters.clear();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let repeated = vec![body.clone(), body.clone()];
     assert!(cadmpeg_ir::features::DistinctMembers::try_from(repeated,).is_err());
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {

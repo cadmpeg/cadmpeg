@@ -13,12 +13,20 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
+use cadmpeg_ir::products::{self, Occurrence, ProductDefinition};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::CadIr;
 
 use crate::export::write_step;
 use crate::loss::StepLossCode;
 use crate::test_support::exchange::{decode_inline, export};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
+
+/// Whether the root definition lists `occurrence` among its occurrences.
+fn owned_by_root(ir: &CadIr, occurrence: &Occurrence) -> bool {
+    products::owner(&ir.model.product_definitions, &occurrence.id)
+        .is_some_and(ProductDefinition::is_root)
+}
 
 const DRAWING_OWNED_SOURCE: &[u8] = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=DRAUGHTING_MODEL('',(#2),$);#2=REPRESENTATION('',(#3),$);#3=MAPPED_ITEM();ENDSEC;END-ISO-10303-21;";
 
@@ -63,6 +71,7 @@ fn product_descriptions_transfer_from_product_and_definition() {
         .model
         .product_definitions
         .iter()
+        .filter(|product| !product.is_root())
         .map(|product| product.description.as_deref())
         .collect::<Vec<_>>();
     assert_eq!(
@@ -75,17 +84,27 @@ fn product_descriptions_transfer_from_product_and_definition() {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: "test:model:product#described"
                 .try_into()
                 .expect("valid identity"),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: Some("Described part".into()),
             label: Some("Described part".into()),
             description: Some("Round-tripped description".into()),
             part_number: Some("DESCRIBED".into()),
             bom_properties: std::collections::BTreeMap::new(),
-            bodies: vec![ir.model.bodies[0].id.clone()],
+            bodies: vec![ir.geometry.bodies[0].id.clone()],
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
     let mut output = Vec::new();
     write_step(
@@ -108,8 +127,6 @@ fn product_descriptions_transfer_from_product_and_definition() {
 
 #[test]
 fn product_definition_views_keep_distinct_prototypes_and_metadata() {
-    use cadmpeg_ir::products::PrototypeReference;
-
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
 #2=PRODUCT_CONTEXT('',#1,'mechanical');
@@ -121,12 +138,16 @@ fn product_definition_views_keep_distinct_prototypes_and_metadata() {
 #8=PRODUCT_DEFINITION('manufacturing view','Manufacturing view description',#7,#5);",
     );
 
-    assert_eq!(result.ir().model.product_definitions.len(), 2);
+    // Two top-level definitions: the file is the root definition and
+    // places each view once.
+    let model = &result.ir().model;
+    let (roots, views): (Vec<_>, Vec<_>) = model
+        .product_definitions
+        .iter()
+        .partition(|definition| definition.is_root());
+    assert_eq!(roots.len(), 1);
     assert_eq!(
-        result
-            .ir()
-            .model
-            .product_definitions
+        views
             .iter()
             .map(|definition| definition.description.as_deref())
             .collect::<Vec<_>>(),
@@ -135,18 +156,20 @@ fn product_definition_views_keep_distinct_prototypes_and_metadata() {
             Some("Manufacturing view description")
         ]
     );
-    assert_eq!(result.ir().model.occurrences.len(), 2);
-    let prototypes = result
-        .ir()
-        .model
+    assert_eq!(model.occurrences.len(), 2);
+    assert_eq!(
+        roots[0].occurrences,
+        model
+            .occurrences
+            .iter()
+            .map(|occurrence| occurrence.id.clone())
+            .collect::<Vec<_>>()
+    );
+    let prototypes = model
         .occurrences
         .iter()
-        .filter_map(|occurrence| match &occurrence.prototype {
-            PrototypeReference::Local { definition } => Some(definition.clone()),
-            _ => None,
-        })
+        .map(|occurrence| occurrence.prototype.clone())
         .collect::<Vec<_>>();
-    assert_eq!(prototypes.len(), 2);
     assert_ne!(prototypes[0], prototypes[1]);
     assert!(prototypes
         .iter()
@@ -158,15 +181,13 @@ fn product_definition_views_keep_distinct_prototypes_and_metadata() {
 
 #[test]
 pub(crate) fn decode_builds_product_occurrences_with_relative_placement() {
-    use cadmpeg_ir::products::OccurrenceParent;
-
     let bytes = include_bytes!("../../../tests/fixtures/ap242_assembly.p21");
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 assembly");
 
     assert_eq!(result.ir().model.product_definitions.len(), 2);
-    assert_eq!(result.ir().model.occurrences.len(), 2);
+    assert_eq!(result.ir().model.occurrences.len(), 1);
     let child = result
         .ir()
         .model
@@ -174,10 +195,10 @@ pub(crate) fn decode_builds_product_occurrences_with_relative_placement() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .unwrap();
-    assert!(matches!(child.parent, OccurrenceParent::Occurrence { .. }));
-    assert_eq!(child.transform.rows()[0][3], 25.0);
-    assert_eq!(child.transform.rows()[1][3], 0.0);
-    assert_eq!(child.transform.rows()[2][3], 0.0);
+    assert!(owned_by_root(result.ir(), child));
+    assert_eq!(child.transform.unwrap().rows()[0][3], 25.0);
+    assert_eq!(child.transform.unwrap().rows()[1][3], 0.0);
+    assert_eq!(child.transform.unwrap().rows()[2][3], 0.0);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -194,7 +215,7 @@ pub(crate) fn decode_builds_product_occurrences_with_relative_placement() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written product graph");
     assert_eq!(roundtrip.ir().model.product_definitions.len(), 2);
-    assert_eq!(roundtrip.ir().model.occurrences.len(), 2);
+    assert_eq!(roundtrip.ir().model.occurrences.len(), 1);
     let child = roundtrip
         .ir()
         .model
@@ -202,8 +223,8 @@ pub(crate) fn decode_builds_product_occurrences_with_relative_placement() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("round-tripped child occurrence");
-    assert!(matches!(child.parent, OccurrenceParent::Occurrence { .. }));
-    assert_eq!(child.transform.rows()[0][3], 25.0);
+    assert!(owned_by_root(roundtrip.ir(), child));
+    assert_eq!(child.transform.unwrap().rows()[0][3], 25.0);
 }
 
 #[test]
@@ -228,7 +249,7 @@ fn occurrence_transform_direction_follows_relationship_endpoints() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("placed child occurrence");
-    assert_eq!(child.transform.rows()[0][3], -25.0);
+    assert_eq!(child.transform.unwrap().rows()[0][3], -25.0);
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::NauoPlacementUnresolved.kind()
             && loss.message.contains("NAUO #12")
@@ -253,7 +274,7 @@ fn ps02_item_defined_transform_items_follow_relationship_endpoint_contexts() {
         .iter()
         .find(|occurrence| occurrence.id.as_str().contains("#12"))
         .expect("child-to-parent occurrence");
-    assert_eq!(child.transform.rows()[0][3], 25.0);
+    assert_eq!(child.transform.unwrap().rows()[0][3], 25.0);
     assert!(!child_to_parent
         .report()
         .losses
@@ -270,7 +291,7 @@ fn ps02_item_defined_transform_items_follow_relationship_endpoint_contexts() {
         .iter()
         .find(|occurrence| occurrence.id.as_str().contains("#12"))
         .expect("parent-to-child occurrence");
-    assert_eq!(child.transform.rows()[0][3], -25.0);
+    assert_eq!(child.transform.unwrap().rows()[0][3], -25.0);
     assert!(!parent_to_child
         .report()
         .losses
@@ -304,7 +325,7 @@ fn occurrence_transform_requires_direct_definition_representation_endpoints() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("unresolved child occurrence remains represented");
-    assert_eq!(child.transform, Transform::identity());
+    assert_eq!(child.transform, Some(Transform::identity()));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::NauoPlacementUnresolved.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Error
@@ -339,7 +360,7 @@ fn occurrence_transform_accepts_cartesian_operator_endpoints() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("placed child occurrence");
-    assert_eq!(child.transform.rows()[0][3], 25.0);
+    assert_eq!(child.transform.unwrap().rows()[0][3], 25.0);
     assert!(!result
         .report()
         .losses
@@ -518,8 +539,8 @@ pub(crate) fn decode_builds_occurrence_placement_from_mapped_item() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
         .unwrap();
-    assert_eq!(child.transform.rows()[0][3], 40.0);
-    assert_eq!(child.transform.rows()[1][3], 5.0);
+    assert_eq!(child.transform.unwrap().rows()[0][3], 40.0);
+    assert_eq!(child.transform.unwrap().rows()[1][3], 5.0);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -567,8 +588,8 @@ fn complex_product_relationships_preserve_mapped_occurrence_placement() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
         .expect("mapped child occurrence");
-    assert_eq!(child.transform.rows()[0][3], 40.0);
-    assert_eq!(child.transform.rows()[1][3], 5.0);
+    assert_eq!(child.transform.unwrap().rows()[0][3], 40.0);
+    assert_eq!(child.transform.unwrap().rows()[1][3], 5.0);
 }
 
 #[test]
@@ -583,8 +604,8 @@ fn conflicting_standalone_mapped_body_placements_are_not_overwritten() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode conflicting standalone body mappings");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Error
@@ -607,9 +628,9 @@ fn ps03_repeated_mapped_body_placements_require_one_cadir_transform() {
     let same_transform = decode_fixture(include_bytes!(
         "tests/data/ps03_repeated_mapped_placements_same_transform.p21"
     ));
-    assert_eq!(same_transform.ir().model.bodies.len(), 1);
+    assert_eq!(same_transform.ir().geometry.bodies.len(), 1);
     assert_eq!(
-        same_transform.ir().model.bodies[0]
+        same_transform.ir().geometry.bodies[0]
             .transform
             .expect("one shared body transform")
             .rows()[0][3],
@@ -626,8 +647,8 @@ fn ps03_repeated_mapped_body_placements_require_one_cadir_transform() {
         include_bytes!("tests/data/ps03_repeated_mapped_placements_reordered.p21").as_slice(),
     ] {
         let conflicting = decode_fixture(bytes);
-        assert_eq!(conflicting.ir().model.bodies.len(), 1);
-        assert!(conflicting.ir().model.bodies[0].transform.is_none());
+        assert_eq!(conflicting.ir().geometry.bodies.len(), 1);
+        assert!(conflicting.ir().geometry.bodies[0].transform.is_none());
         assert!(conflicting.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::BodyConflictingMappedPlacements.kind()
                 && loss.severity == cadmpeg_ir::report::Severity::Error
@@ -651,8 +672,8 @@ fn drawing_mapped_items_do_not_place_exact_bodies() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode drawing mapped item");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
             .contains("MAPPED_ITEM #22 has no resolved body placement")
@@ -673,8 +694,8 @@ fn nested_drawing_mapped_items_do_not_place_exact_bodies() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode nested drawing mapped item");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
             .contains("MAPPED_ITEM #22 has no resolved body placement")
@@ -726,8 +747,8 @@ fn two_dimensional_mapping_does_not_change_body_placement() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode 2D mapped presentation item");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(result.ir().model.bodies[0].transform.is_none());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert!(result.ir().geometry.bodies[0].transform.is_none());
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
             .contains("MAPPED_ITEM has no resolved body placement")
@@ -764,9 +785,9 @@ fn decode_builds_mapped_item_placement_from_canonical_cartesian_operator() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
         .expect("mapped child occurrence");
-    assert_eq!(child.transform.rows()[0], [2.0, 0.0, 0.0, 20.0]);
-    assert_eq!(child.transform.rows()[1], [0.0, 2.0, 0.0, 5.0]);
-    assert_eq!(child.transform.rows()[2], [0.0, 0.0, 2.0, 0.0]);
+    assert_eq!(child.transform.unwrap().rows()[0], [2.0, 0.0, 0.0, 20.0]);
+    assert_eq!(child.transform.unwrap().rows()[1], [0.0, 2.0, 0.0, 5.0]);
+    assert_eq!(child.transform.unwrap().rows()[2], [0.0, 0.0, 2.0, 0.0]);
     assert!(!result
         .report()
         .losses
@@ -794,16 +815,21 @@ fn decode_builds_repeated_occurrence_placements_from_their_shape_representations
     children.sort_by(|left, right| left.name.cmp(&right.name));
     assert_eq!(children.len(), 2);
     assert_eq!(children[0].name.as_deref(), Some("First child"));
-    assert_eq!(children[0].transform.rows()[0][3], 25.0);
-    assert_eq!(children[0].transform.rows()[1][3], 0.0);
+    assert_eq!(children[0].transform.unwrap().rows()[0][3], 25.0);
+    assert_eq!(children[0].transform.unwrap().rows()[1][3], 0.0);
     assert_eq!(children[1].name.as_deref(), Some("Second child"));
-    assert_eq!(children[1].transform.rows()[0][3], -10.0);
-    assert_eq!(children[1].transform.rows()[1][3], 4.0);
+    assert_eq!(children[1].transform.unwrap().rows()[0][3], -10.0);
+    assert_eq!(children[1].transform.unwrap().rows()[1][3], 4.0);
     assert!(!result
         .report()
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::NauoPlacementUnresolved.kind()));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::OccurrencePlacementInferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -862,14 +888,27 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
         .collect::<Vec<_>>();
     children.sort_by_key(|occurrence| occurrence.id.clone());
     assert_eq!(children.len(), 2);
-    assert_eq!(children[0].transform.rows()[0][3], 25.0);
-    assert_eq!(children[1].transform.rows()[0][3], -10.0);
-    assert_eq!(children[1].transform.rows()[1][3], 4.0);
+    assert_eq!(children[0].transform.unwrap().rows()[0][3], 25.0);
+    assert_eq!(children[1].transform.unwrap().rows()[0][3], -10.0);
+    assert_eq!(children[1].transform.unwrap().rows()[1][3], 4.0);
     assert!(!result
         .report()
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::NauoPlacementUnresolved.kind() }));
+    let inferred = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::OccurrencePlacementInferred.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(inferred.len(), 1);
+    assert_eq!(inferred[0].severity, cadmpeg_ir::report::Severity::Info);
+    assert!(
+        inferred[0].message.contains("#16, #17"),
+        "{}",
+        inferred[0].message
+    );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -891,8 +930,8 @@ fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
             .iter()
             .find(|occurrence| occurrence.id.as_str().contains("#16"))
             .expect("first child occurrence");
-        assert_eq!(first.transform.rows()[0][3], 25.0);
-        assert_eq!(first.transform.rows()[1][3], 0.0);
+        assert_eq!(first.transform.unwrap().rows()[0][3], 25.0);
+        assert_eq!(first.transform.unwrap().rows()[1][3], 0.0);
         let second = result
             .ir()
             .model
@@ -900,8 +939,8 @@ fn ps09_parent_mapped_items_bind_by_child_definition_not_set_order() {
             .iter()
             .find(|occurrence| occurrence.id.as_str().contains("#17"))
             .expect("second child occurrence");
-        assert_eq!(second.transform.rows()[0][3], -10.0);
-        assert_eq!(second.transform.rows()[1][3], 4.0);
+        assert_eq!(second.transform.unwrap().rows()[0][3], -10.0);
+        assert_eq!(second.transform.unwrap().rows()[1][3], 4.0);
         assert!(!result
             .report()
             .losses
@@ -993,7 +1032,7 @@ fn unrelated_representation_mapping_does_not_place_an_occurrence() {
         .expect("child occurrence");
     assert_eq!(
         occurrence.transform,
-        cadmpeg_ir::transform::Transform::identity()
+        Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::NauoPlacementUnresolved.kind()
@@ -1050,7 +1089,7 @@ fn repeated_child_uses_without_owned_placements_remain_unresolved() {
     assert_eq!(children.len(), 2);
     assert!(children
         .iter()
-        .all(|occurrence| occurrence.transform == cadmpeg_ir::transform::Transform::identity()));
+        .all(|occurrence| occurrence.transform == Some(Transform::identity())));
     for usage_id in [16, 17] {
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == StepLossCode::NauoPlacementUnresolved.kind()
@@ -1078,8 +1117,8 @@ fn ps01_repeated_child_binding_requires_occurrence_identity() {
         .iter()
         .find(|occurrence| occurrence.id.as_str().contains("#12"))
         .expect("single child occurrence");
-    assert_eq!(single_child.transform.rows()[0][3], 25.0);
-    assert_eq!(single_child.transform.rows()[1][3], 0.0);
+    assert_eq!(single_child.transform.unwrap().rows()[0][3], 25.0);
+    assert_eq!(single_child.transform.unwrap().rows()[1][3], 0.0);
     assert!(!single
         .report()
         .losses
@@ -1103,7 +1142,7 @@ fn ps01_repeated_child_binding_requires_occurrence_identity() {
         assert_eq!(children.len(), 2);
         assert!(children
             .iter()
-            .all(|occurrence| occurrence.transform == Transform::identity()));
+            .all(|occurrence| occurrence.transform == Some(Transform::identity())));
         for usage_id in [12, 13] {
             assert!(repeated.report().losses.iter().any(|loss| {
                 loss.code == StepLossCode::NauoPlacementUnresolved.kind()
@@ -1126,10 +1165,10 @@ fn ps01_repeated_child_binding_requires_occurrence_identity() {
         .collect::<Vec<_>>();
     children.sort_by_key(|occurrence| occurrence.id.clone());
     assert_eq!(children.len(), 2);
-    assert_eq!(children[0].transform.rows()[0][3], 25.0);
-    assert_eq!(children[0].transform.rows()[1][3], 0.0);
-    assert_eq!(children[1].transform.rows()[0][3], -10.0);
-    assert_eq!(children[1].transform.rows()[1][3], 4.0);
+    assert_eq!(children[0].transform.unwrap().rows()[0][3], 25.0);
+    assert_eq!(children[0].transform.unwrap().rows()[1][3], 0.0);
+    assert_eq!(children[1].transform.unwrap().rows()[0][3], -10.0);
+    assert_eq!(children[1].transform.unwrap().rows()[1][3], 4.0);
     assert!(!occurrence_owned
         .report()
         .losses
@@ -1204,10 +1243,12 @@ fn mapped_child_unique_per_parent_uses_parent_local_uniqueness() {
         .collect::<Vec<_>>();
     assert_eq!(children.len(), 4);
     assert!(children.iter().any(|occurrence| {
-        occurrence.name.as_deref() == Some("Child A") && occurrence.transform.rows()[0][3] == 10.0
+        occurrence.name.as_deref() == Some("Child A")
+            && occurrence.transform.unwrap().rows()[0][3] == 10.0
     }));
     assert!(children.iter().any(|occurrence| {
-        occurrence.name.as_deref() == Some("Child B") && occurrence.transform.rows()[0][3] == 20.0
+        occurrence.name.as_deref() == Some("Child B")
+            && occurrence.transform.unwrap().rows()[0][3] == 20.0
     }));
     assert!(!result
         .report()
@@ -1217,9 +1258,7 @@ fn mapped_child_unique_per_parent_uses_parent_local_uniqueness() {
 }
 
 #[test]
-pub(crate) fn repeated_subassembly_instances_each_receive_the_subtree() {
-    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
-
+pub(crate) fn a_repeated_subassembly_states_its_children_once() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
 #2=PRODUCT_CONTEXT('',#1,'mechanical');
@@ -1237,37 +1276,33 @@ pub(crate) fn repeated_subassembly_instances_each_receive_the_subtree() {
 #21=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u2','sub two','',#6,#9,$);
 #22=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u3','leaf','',#9,#12,$);",
     );
-    assert_eq!(result.ir().model.occurrences.len(), 5);
-    let subassemblies = result
-        .ir()
-        .model
+    // One definition with two occurrences; its child is stated once, in it
+    // (§8.1).
+    let model = &result.ir().model;
+    assert_eq!(model.occurrences.len(), 3);
+    let subassemblies = model
         .occurrences
         .iter()
-        .filter(|occurrence| {
-            matches!(
-                &occurrence.prototype,
-                PrototypeReference::Local { definition }
-                    if definition.as_str() == "step:product:product#7"
-            )
-        })
+        .filter(|occurrence| occurrence.prototype.as_str() == "step:product:product#7")
         .collect::<Vec<_>>();
     assert_eq!(subassemblies.len(), 2);
-    for subassembly in subassemblies {
-        assert_eq!(
-            result
-                .ir()
-                .model
-                .occurrences
-                .iter()
-                .filter(|occurrence| matches!(
-                    &occurrence.parent,
-                    OccurrenceParent::Occurrence { occurrence: parent }
-                        if parent == &subassembly.id
-                ))
-                .count(),
-            1
-        );
-    }
+    assert!(subassemblies
+        .iter()
+        .all(|occurrence| owned_by_root(result.ir(), occurrence)));
+    let subassembly = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.id.as_str() == "step:product:product#7")
+        .expect("subassembly definition");
+    let [leaf] = subassembly.occurrences.as_slice() else {
+        panic!("subassembly owns one occurrence: {subassembly:#?}");
+    };
+    let leaf = model
+        .occurrences
+        .iter()
+        .find(|occurrence| &occurrence.id == leaf)
+        .expect("leaf occurrence");
+    assert_eq!(leaf.prototype.as_str(), "step:product:product#10");
 }
 
 #[test]
@@ -1286,17 +1321,16 @@ pub(crate) fn ap203_specified_source_formations_build_occurrence_tree() {
     );
 
     assert_eq!(result.ir().model.product_definitions.len(), 2);
-    assert_eq!(result.ir().model.occurrences.len(), 2);
+    assert_eq!(result.ir().model.occurrences.len(), 1);
     assert!(result
         .ir()
         .model
         .occurrences
         .iter()
-        .any(|occurrence| matches!(
-            &occurrence.prototype,
-            cadmpeg_ir::products::PrototypeReference::Local { definition }
-                if definition.as_str() == "step:product:product#7"
-        )));
+        .any(
+            |occurrence| occurrence.prototype.as_str() == "step:product:product#7"
+                && owned_by_root(result.ir(), occurrence)
+        ));
     assert!(!result
         .ir()
         .native_unknowns("step")
@@ -1313,8 +1347,6 @@ pub(crate) fn ap203_specified_source_formations_build_occurrence_tree() {
 
 #[test]
 fn product_definition_subtypes_preserve_assembly_occurrences() {
-    use cadmpeg_ir::products::OccurrenceParent;
-
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
 #2=PRODUCT_CONTEXT('',#1,'mechanical');
@@ -1330,7 +1362,7 @@ fn product_definition_subtypes_preserve_assembly_occurrences() {
     );
 
     assert_eq!(result.ir().model.product_definitions.len(), 2);
-    assert_eq!(result.ir().model.occurrences.len(), 2);
+    assert_eq!(result.ir().model.occurrences.len(), 1);
     let child = result
         .ir()
         .model
@@ -1338,7 +1370,7 @@ fn product_definition_subtypes_preserve_assembly_occurrences() {
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("subtype-backed child occurrence");
-    assert!(matches!(child.parent, OccurrenceParent::Occurrence { .. }));
+    assert!(owned_by_root(result.ir(), child));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.message
             .contains("NAUO #10 references an unresolved child definition")
@@ -1430,7 +1462,7 @@ fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
     ])
     .expect("affine transform");
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].transform = Some(transform);
+    ir.geometry.bodies[0].transform = Some(transform);
     let mut output = Vec::new();
     write_step(
         &ir,
@@ -1502,7 +1534,7 @@ fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
             &DecodeOptions::default(),
         )
         .expect("decode mapped body with canonical operator");
-    assert_eq!(decoded.ir().model.bodies[0].transform, Some(transform));
+    assert_eq!(decoded.ir().geometry.bodies[0].transform, Some(transform));
 }
 
 #[test]
@@ -1551,6 +1583,22 @@ END-ISO-10303-21;"
             "parent owns the occurrence, not its child's body"
         );
         assert_eq!(child.bodies.len(), 1);
-        assert_eq!(decoded.ir().model.faces.len(), 1);
+        assert_eq!(decoded.ir().geometry.faces.len(), 1);
     }
+}
+
+#[test]
+fn an_assembly_shape_with_no_body_of_its_own_is_not_reported() {
+    let bytes = include_bytes!("../../../tests/fixtures/ap242_assembly.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 assembly");
+    let reported = |owner: &str| {
+        result.report().losses.iter().any(|loss| {
+            loss.message
+                == format!("{owner} has a shape representation with no committed topology body")
+        })
+    };
+    assert!(!reported("PRODUCT_DEFINITION #6"));
+    assert!(reported("PRODUCT_DEFINITION #10"));
 }

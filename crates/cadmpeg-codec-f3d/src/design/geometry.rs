@@ -79,6 +79,8 @@ pub(crate) struct ProfileGeometryWork {
     cap_outline_assumed_selections: Cell<usize>,
     cap_carrier_assumed: Cell<bool>,
     cap_carrier_assumed_selections: Cell<usize>,
+    spatial_transition_assumed: Cell<bool>,
+    spatial_transition_assumed_selections: Cell<usize>,
     hole_boundary_inferred_selections: Cell<usize>,
     region_hole_inferred_selections: Cell<usize>,
 }
@@ -115,6 +117,8 @@ impl ProfileGeometryWork {
             cap_outline_assumed_selections: Cell::new(0),
             cap_carrier_assumed: Cell::new(false),
             cap_carrier_assumed_selections: Cell::new(0),
+            spatial_transition_assumed: Cell::new(false),
+            spatial_transition_assumed_selections: Cell::new(0),
             hole_boundary_inferred_selections: Cell::new(0),
             region_hole_inferred_selections: Cell::new(0),
         }
@@ -220,6 +224,10 @@ impl ProfileGeometryWork {
                 &self.cap_carrier_assumed,
                 &self.cap_carrier_assumed_selections,
             ),
+            (
+                &self.spatial_transition_assumed,
+                &self.spatial_transition_assumed_selections,
+            ),
         ] {
             if skipped.take() {
                 selections.set(selections.get() + 1);
@@ -287,6 +295,12 @@ impl ProfileGeometryWork {
     /// edge read from its samples.
     pub(crate) fn note_cap_carrier_assumed(&self) {
         self.cap_carrier_assumed.set(true);
+    }
+
+    /// Record that the open selection stated the stored spatial profiles of a
+    /// spatial Sketch frame that the Extrude transition did not certify.
+    pub(crate) fn note_spatial_transition_assumed(&self) {
+        self.spatial_transition_assumed.set(true);
     }
 
     /// One loss for each cap that made a closed selection skip a search.
@@ -362,6 +376,12 @@ impl ProfileGeometryWork {
         if cap_carrier != 0 {
             losses.push(F3dLossCode::FeatureProfileCapCarrierAssumed.note(format!(
                 "{cap_carrier} extrude profile selection(s) were read from an end cap with an edge whose carrier is not proven. The reading assumes, from the edge's end points and interior sample, that the edge is the straight line between its ends, or the circular arc through its ends and the sample."
+            )));
+        }
+        let spatial_transition = self.spatial_transition_assumed_selections.get();
+        if spatial_transition != 0 {
+            losses.push(F3dLossCode::FeatureSpatialProfileTransitionAssumed.note(format!(
+                "{spatial_transition} extrude profile selection(s) stated the spatial profiles that the stored selection of a spatial Sketch frame names, or the one profile of the Sketch. The Extrude transition did not certify the stored spatial selection: its far caps were not compared with the union of the profiles (DR-780)."
             )));
         }
         let hole_inferred = self.hole_boundary_inferred_selections.get();
@@ -465,6 +485,34 @@ impl ArrangementRing {
             let mut seen = vec![false; free.len()];
             assign_fragment(fragment, &shared, &free, &mut owners, &mut seen)
         })
+    }
+
+    /// The ring that remains when the curves in `unnamed` are removed from
+    /// every fragment. A fragment keeps its curve and traversal direction
+    /// when that curve is named; otherwise its first named coincident curve
+    /// takes its place. `None` when a fragment has no named curve.
+    fn without_unnamed(
+        &self,
+        unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    ) -> Option<std::borrow::Cow<'_, Self>> {
+        if unnamed.is_empty() || !self.curves().any(|entity| unnamed.contains(entity)) {
+            return Some(std::borrow::Cow::Borrowed(self));
+        }
+        let mut fragments = Vec::with_capacity(self.fragments.len());
+        for fragment in &self.fragments {
+            let mut named = std::iter::once(&fragment.curve)
+                .chain(&fragment.coincident)
+                .filter(|use_| !unnamed.contains(&use_.entity))
+                .cloned();
+            fragments.push(ArrangementFragment {
+                curve: named.next()?,
+                coincident: named.collect(),
+            });
+        }
+        Some(std::borrow::Cow::Owned(Self {
+            boundary: self.boundary.clone(),
+            fragments,
+        }))
     }
 
     /// The number of fragments with a coincident curve.
@@ -660,6 +708,164 @@ pub(super) fn arrangement_region_containing_points(
     )
 }
 
+/// A box that holds the whole of `entity`, or `None` when the curve has no
+/// bounded box this reading knows: a reference line or a bounded ellipse.
+fn arrangement_focus_bounds(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Point { position } => {
+            let point = position.get();
+            Some([point, point])
+        }
+        SketchGeometryDefinition::Line { start, end } => polyline_bounds(&[start.get(), end.get()]),
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => {
+            let (center, radius) = (center.get(), radius.get());
+            Some([
+                Point2::new(center.u - radius, center.v - radius),
+                Point2::new(center.u + radius, center.v + radius),
+            ])
+        }
+        _ => outside_curve_bounds(entity),
+    }
+}
+
+/// Whether the box `outer` holds the box `inner` within `tolerance`.
+fn box_holds(outer: [Point2; 2], inner: [Point2; 2], tolerance: f64) -> bool {
+    outer[0].u <= inner[0].u + tolerance
+        && outer[0].v <= inner[0].v + tolerance
+        && outer[1].u + tolerance >= inner[1].u
+        && outer[1].v + tolerance >= inner[1].v
+}
+
+/// The sketch and entities restricted to the units that can change the faces
+/// of the `focus` curves. A unit is a profile loop or a curve in no loop. The
+/// box that holds the focus units grows over every unit whose box meets it
+/// within `tolerance`: such a unit can cross a focus face or lie inside it.
+/// A unit whose box misses that box does neither. A loop whose box holds that
+/// box can hold the focus faces as islands and stays. Every other unit drops,
+/// so the kept faces are the faces of the whole arrangement, up to the faces
+/// that drop units would split or fill. Text stays. `None` when a curve has
+/// no box, no focus curve is in the sketch, or every unit stays.
+fn arrangement_focus(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    focus: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
+    tolerance: f64,
+) -> Option<(
+    cadmpeg_ir::sketches::Sketch,
+    Vec<cadmpeg_ir::sketches::SketchEntity>,
+)> {
+    use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometryDefinition};
+
+    let members = entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && !entity.construction)
+        .filter(|entity| {
+            !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Text { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut curve_box = HashMap::<&SketchEntityId, [Point2; 2]>::new();
+    for entity in &members {
+        curve_box.insert(entity.id(), arrangement_focus_bounds(entity)?);
+    }
+    let merge = |left: [Point2; 2], right: [Point2; 2]| {
+        [
+            Point2::new(left[0].u.min(right[0].u), left[0].v.min(right[0].v)),
+            Point2::new(left[1].u.max(right[1].u), left[1].v.max(right[1].v)),
+        ]
+    };
+    // Units: the profile loops, then the curves in no loop.
+    let mut units = Vec::<(Vec<&SketchEntityId>, [Point2; 2], bool)>::new();
+    let mut in_loop = HashSet::new();
+    for profile in &sketch.profiles {
+        let mut ids = Vec::new();
+        let mut hull = None;
+        for use_ in profile {
+            let (id, bounds) = curve_box.get_key_value(&use_.entity)?;
+            in_loop.insert(*id);
+            ids.push(*id);
+            hull = Some(hull.map_or(*bounds, |hull| merge(hull, *bounds)));
+        }
+        units.push((ids, hull?, true));
+    }
+    for entity in &members {
+        if !in_loop.contains(entity.id()) {
+            units.push((vec![entity.id()], curve_box[entity.id()], false));
+        }
+    }
+    let mut kept = units
+        .iter()
+        .map(|(ids, _, _)| ids.iter().any(|id| focus.contains(*id)))
+        .collect::<Vec<_>>();
+    if !kept.iter().any(|keep| *keep) {
+        return None;
+    }
+    let hull_of = |kept: &[bool]| {
+        units
+            .iter()
+            .zip(kept)
+            .filter(|(_, keep)| **keep)
+            .map(|(unit, _)| unit.1)
+            .reduce(merge)
+    };
+    loop {
+        let hull = hull_of(&kept)?;
+        let mut grew = false;
+        for (index, unit) in units.iter().enumerate() {
+            let container = unit.2 && box_holds(unit.1, hull, tolerance);
+            if !kept[index] && !container && bounds_meet(unit.1, hull, tolerance) {
+                kept[index] = true;
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    let hull = hull_of(&kept)?;
+    for (index, unit) in units.iter().enumerate() {
+        if unit.2 && box_holds(unit.1, hull, tolerance) {
+            kept[index] = true;
+        }
+    }
+    if kept.iter().all(|keep| *keep) {
+        return None;
+    }
+    let keep_ids = units
+        .iter()
+        .zip(&kept)
+        .filter(|(_, keep)| **keep)
+        .flat_map(|(unit, _)| unit.0.iter().map(|id| (*id).clone()))
+        .collect::<HashSet<_>>();
+    let filtered = entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch != sketch.id
+                || entity.construction
+                || keep_ids.contains(entity.id())
+                || matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Text { .. }
+                )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let loops = sketch
+        .profiles
+        .iter()
+        .filter(|profile| profile.iter().all(|use_| keep_ids.contains(&use_.entity)))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut restricted = sketch.clone();
+    restricted.profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(loops).ok()?;
+    Some((restricted, filtered))
+}
+
 pub(super) fn arrangement_region_matching_curve_program(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -671,6 +877,12 @@ pub(super) fn arrangement_region_matching_curve_program(
     if program.is_empty() {
         return Ok(None);
     }
+    let focus = program.iter().cloned().collect::<HashSet<_>>();
+    let focused = arrangement_focus(sketch, entities, &focus, tolerance);
+    let (sketch, entities) = match &focused {
+        Some((sketch, entities)) => (sketch, entities.as_slice()),
+        None => (sketch, entities),
+    };
     let faces = geometric!(curve_arrangement_faces(
         sketch, entities, tolerance, work, ctx, false
     )?);
@@ -730,6 +942,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     rings: &[Vec<cadmpeg_ir::sketches::SketchEntityUse>],
+    unnamed: &HashSet<cadmpeg_ir::sketches::SketchEntityId>,
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
@@ -737,14 +950,31 @@ pub(super) fn arrangement_regions_matching_member_rings(
     if rings.is_empty() {
         return Ok(None);
     }
+    let focus = rings
+        .iter()
+        .flatten()
+        .map(|use_| use_.entity.clone())
+        .chain(unnamed.iter().cloned())
+        .collect::<HashSet<_>>();
+    let focused = arrangement_focus(sketch, entities, &focus, tolerance);
+    let (sketch, entities) = match &focused {
+        Some((sketch, entities)) => (sketch, entities.as_slice()),
+        None => (sketch, entities),
+    };
     let faces = geometric!(curve_arrangement_faces(
         sketch, entities, tolerance, work, ctx, true
     )?);
     let mut candidates = Vec::new();
     for (index, face) in faces.iter().enumerate() {
-        candidates.push((index, None, &face.ring, face.ring.curves().count()));
+        if let Some(ring) = face.ring.without_unnamed(unnamed) {
+            let curves = ring.curves().count();
+            candidates.push((index, None, ring, curves));
+        }
         for (hole, ring) in face.holes.iter().flatten().enumerate() {
-            candidates.push((index, Some(hole), ring, ring.curves().count()));
+            if let Some(ring) = ring.without_unnamed(unnamed) {
+                let curves = ring.curves().count();
+                candidates.push((index, Some(hole), ring, curves));
+            }
         }
     }
     let mut outers = Vec::new();
@@ -1471,7 +1701,8 @@ fn sketch_arrangement_faces_with_nodes(
         work.arrangement_skipped.set(true);
         return Ok(None);
     }
-    if edges.len() < 3 {
+    // Two edges close a face: a circle split at two nodes, or a lens.
+    if edges.len() < 2 {
         return Ok(None);
     }
     let mut edge_pieces = Vec::new();

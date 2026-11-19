@@ -148,7 +148,7 @@ fn push_bounded_completion_losses(
     adaptive_geometry_exhausted: bool,
 ) {
     let unresolved_intersection_lanes = ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .filter_map(|procedural| {
@@ -399,7 +399,7 @@ pub(crate) fn append_design_intent_losses(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut current_body_ids = Vec::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         current_body_ids.push(body.id.clone());
     }
     // Require a non-BaseFeature writer before treating body-to-history as proven.
@@ -524,6 +524,7 @@ pub(crate) fn append_design_intent_losses(
                 UnresolvedFamily::FillHole => "fill hole",
                 UnresolvedFamily::MoveFace => "move face",
                 UnresolvedFamily::MoveObject => "move object",
+                UnresolvedFamily::Combine => "combine",
                 UnresolvedFamily::Cylinder => "cylinder",
                 UnresolvedFamily::Cone => "cone",
                 UnresolvedFamily::Sphere => "sphere",
@@ -538,7 +539,6 @@ pub(crate) fn append_design_intent_losses(
                 | UnresolvedFamily::Revolve
                 | UnresolvedFamily::Fillet
                 | UnresolvedFamily::BoundarySurface => continue,
-                UnresolvedFamily::Combine => "combine",
             },
             _ => continue,
         };
@@ -597,7 +597,7 @@ pub(crate) fn append_design_intent_losses(
                     .filter(|_| {
                         let current_outputs_are_valid = !feature.evaluation.outputs().is_empty()
                             && feature.evaluation.outputs().iter().all(|output| {
-                                ir.model.bodies.iter().any(|body| body.id == *output)
+                                ir.geometry.bodies.iter().any(|body| body.id == *output)
                             });
                         !(current_outputs_are_valid
                             || feature.evaluation.outputs().is_empty()
@@ -965,13 +965,14 @@ mod tests {
         let mut ir = CadIr::empty();
         let carrier = CurveId::mint("test:model:entity#report-intersection-carrier")
             .expect("identity grammar");
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: carrier.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
-        ir.model
+        ir.geometry
             .add_procedural_curve(
                 &carrier,
                 ProceduralCurve::new(

@@ -48,7 +48,7 @@ fn configuration_attachment_preserves_active_relation() {
     assert!(configuration.parameter_values.is_empty());
     assert!(configuration.parameter_overrides.is_empty());
     assert!(configuration.feature_states.is_empty());
-    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies.len(), 1);
     assert_eq!(ir.model.parameters.len(), 1);
     assert_eq!(
         ir.model.parameters[0].value,

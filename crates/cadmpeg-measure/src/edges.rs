@@ -6,10 +6,13 @@
 //! around one period, a closed non-periodic curve whose domain ends coincide
 //! from its domain, and an open edge from the parameters of its two
 //! vertices, in the increasing-parameter convention of `Edge.param_range`.
+//! An edge with no vertex admits its curve record's whole domain where the
+//! record is closed.
 
 use std::rc::Rc;
 
 use cadmpeg_core::decode::ResourceLimit;
+use cadmpeg_ir::ids::VertexId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::topology::{Edge, EdgeCarrier};
@@ -52,10 +55,22 @@ pub(crate) struct EdgeGeometry<'ir> {
 }
 
 impl EdgeGeometry<'_> {
-    /// Whether the edge starts and ends at one vertex.
+    /// Whether the edge starts and ends at one vertex, or has no vertex.
     pub(crate) fn closed(&self) -> bool {
-        self.edge.start == self.edge.end
+        closed(self.edge)
     }
+}
+
+/// Whether an edge starts and ends at one vertex, or has no vertex.
+fn closed(edge: &Edge) -> bool {
+    edge.ends.as_ref().is_none_or(|ends| ends.start == ends.end)
+}
+
+/// Whether an edge starts and ends at one vertex.
+fn single_vertex(edge: &Edge) -> bool {
+    edge.ends
+        .as_ref()
+        .is_some_and(|ends| ends.start == ends.end)
 }
 
 fn missing(reason: UnavailableReason, entity: &str, message: &str) -> MeasureFailure {
@@ -83,16 +98,20 @@ pub(crate) fn measure_edge<'ir>(
     };
     let local = [
         edge.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get),
-        vertex_tolerance(edge.start.as_str()),
-        vertex_tolerance(edge.end.as_str()),
+        edge.start()
+            .and_then(|vertex| vertex_tolerance(vertex.as_str())),
+        edge.end()
+            .and_then(|vertex| vertex_tolerance(vertex.as_str())),
     ];
     let alpha = allowance(linear, local.into_iter().flatten());
     let tau = model_tolerance(linear, local.into_iter().flatten());
-    let start = owners
-        .vertex_position(edge.start.as_str())
+    let start = edge
+        .start()
+        .and_then(|vertex| owners.vertex_position(vertex.as_str()))
         .map(|point| placement.point(point));
-    let end = owners
-        .vertex_position(edge.end.as_str())
+    let end = edge
+        .end()
+        .and_then(|vertex| owners.vertex_position(vertex.as_str()))
         .map(|point| placement.point(point));
     let curve = settle(
         match (body, edge.carrier.curve()) {
@@ -138,6 +157,7 @@ pub(crate) fn measure_edge<'ir>(
                     &PcurveEnds {
                         placement: *placement,
                         alpha,
+                        tau,
                         start,
                         end,
                     },
@@ -185,7 +205,7 @@ pub(crate) fn measure_edge<'ir>(
             },
         ),
     };
-    let point_edge = edge.start == edge.end
+    let point_edge = single_vertex(edge)
         && matches!(&curve, Ok(chart) if matches!(chart.shape, CurveShape::Degenerate { .. }));
     let length = if point_edge {
         Ok(Length {
@@ -215,6 +235,7 @@ pub(crate) fn measure_edge<'ir>(
 struct PcurveEnds {
     placement: Placement,
     alpha: f64,
+    tau: f64,
     start: Point3,
     end: Point3,
 }
@@ -255,7 +276,7 @@ fn pcurve_trace(
             )
         })?;
     let carrier = Carrier::resolve_in(owners, surface, ends.placement)?;
-    let chart = carrier.chart()?;
+    let chart = &carrier.chart()?.collapsing_within(ends.tau);
     let (start, end) = match coedge.sense {
         cadmpeg_ir::topology::Sense::Forward => (ends.start, ends.end),
         cadmpeg_ir::topology::Sense::Reversed => (ends.end, ends.start),
@@ -266,7 +287,7 @@ fn pcurve_trace(
         alpha: ends.alpha,
         start,
         end,
-        closed: edge.start == edge.end,
+        closed: closed(edge),
         curve: None,
         edge_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
     };
@@ -307,7 +328,7 @@ fn pcurve_trace(
         length.value += integral.value[0];
         length.numeric_error += integral.error[0];
     }
-    let degenerate = edge.start == edge.end && length.value <= ends.alpha;
+    let degenerate = single_vertex(edge) && length.value <= ends.alpha;
     if degenerate {
         return Ok(Some(Trace {
             length: Length {
@@ -373,21 +394,11 @@ fn interval(
             message.to_owned(),
         )
     };
-    let start = start.ok_or_else(|| unresolved("the edge's start vertex has no point"))?;
-    let end = end.ok_or_else(|| unresolved("the edge's end vertex has no point"))?;
-    let domain = chart.domain();
-    let seed = domain.map_or(0.0, |[lower, _]| lower);
-    let parameter = |point: Point3, seed: f64| -> Measure<f64> {
-        chart
-            .parameter(eval, point, seed, alpha)?
-            .ok_or_else(|| unresolved("a vertex does not invert onto the edge's curve"))
-    };
-    if edge.start == edge.end {
-        if let Some(period) = chart.period() {
-            let t = parameter(start, seed)?;
-            return Ok([t, t + period]);
-        }
-        return match domain {
+    // A curve record's own domain is its `parameter_range`, else one turn
+    // of a circle or an ellipse, else a NURBS knot domain; the record is
+    // closed where that domain is finite and its ends meet within α (§5.6).
+    let closed_domain = |domain: Option<[f64; 2]>| -> Measure<[f64; 2]> {
+        match domain {
             Some([lower, upper]) if upper > lower => {
                 let a = chart.point(eval, lower)?;
                 let b = chart.point(eval, upper)?;
@@ -398,7 +409,26 @@ fn interval(
                 }
             }
             _ => Err(unresolved("a closed edge's curve states no domain")),
-        };
+        }
+    };
+    let domain = chart.domain();
+    if edge.ends.is_none() {
+        return closed_domain(domain.or_else(|| chart.period().map(|period| [0.0, period])));
+    }
+    let seed = domain.map_or(0.0, |[lower, _]| lower);
+    let parameter = |point: Point3, seed: f64| -> Measure<f64> {
+        chart
+            .parameter(eval, point, seed, alpha)?
+            .ok_or_else(|| unresolved("a vertex does not invert onto the edge's curve"))
+    };
+    let start = start.ok_or_else(|| unresolved("the edge's start vertex has no point"))?;
+    let end = end.ok_or_else(|| unresolved("the edge's end vertex has no point"))?;
+    if single_vertex(edge) {
+        if let Some(period) = chart.period() {
+            let t = parameter(start, seed)?;
+            return Ok([t, t + period]);
+        }
+        return closed_domain(domain);
     }
     let t_start = parameter(start, seed)?;
     let t_end = parameter(end, domain.map_or(t_start, |[_, upper]| upper))?;
@@ -469,47 +499,60 @@ impl EdgeGeometry<'_> {
             _ => (None, None),
         };
         let body = owners.edge_body(id);
-        let endpoint = |point: Option<Point3>, vertex: &str| match (point, &self.unplaced) {
-            (_, Some(missing)) => missing.quantity(),
-            (Some(point), None) => {
-                let mut fields: Vec<SourceField> = owners
-                    .vertex(vertex)
-                    .map(|record| {
-                        let point = record.point.as_str();
-                        SourceField::new(point, "position", exactness(fidelity, point, "position"))
-                    })
-                    .into_iter()
-                    .collect();
-                if let Some(body) = body.filter(|_| self.placed) {
-                    fields.push(SourceField::new(
-                        body,
-                        "transform",
-                        exactness(fidelity, body, "transform"),
-                    ));
-                }
-                let method = if self.placed {
-                    Method::ClosedForm
-                } else {
-                    Method::Source
-                };
-                match measured(
-                    Point::new(point),
-                    Unit::Millimeter,
-                    method,
-                    Errors::ZERO,
-                    vertex,
-                ) {
-                    Quantity::Measured(measured) => {
-                        Quantity::Measured(measured.with_provenance(fields))
+        let endpoint = |point: Option<Point3>, vertex: Option<&VertexId>| {
+            let Some(vertex) = vertex.map(VertexId::as_str) else {
+                return Quantity::missing(
+                    UnavailableReason::BoundaryEdgeRangeUnresolved,
+                    Some(id),
+                    "the edge has no vertex",
+                );
+            };
+            match (point, &self.unplaced) {
+                (_, Some(missing)) => missing.quantity(),
+                (Some(point), None) => {
+                    let mut fields: Vec<SourceField> = owners
+                        .vertex(vertex)
+                        .map(|record| {
+                            let point = record.point.as_str();
+                            SourceField::new(
+                                point,
+                                "position",
+                                exactness(fidelity, point, "position"),
+                            )
+                        })
+                        .into_iter()
+                        .collect();
+                    if let Some(body) = body.filter(|_| self.placed) {
+                        fields.push(SourceField::new(
+                            body,
+                            "transform",
+                            exactness(fidelity, body, "transform"),
+                        ));
                     }
-                    unavailable @ Quantity::Unavailable(_) => unavailable,
+                    let method = if self.placed {
+                        Method::ClosedForm
+                    } else {
+                        Method::Source
+                    };
+                    match measured(
+                        Point::new(point),
+                        Unit::Millimeter,
+                        method,
+                        Errors::ZERO,
+                        vertex,
+                    ) {
+                        Quantity::Measured(measured) => {
+                            Quantity::Measured(measured.with_provenance(fields))
+                        }
+                        unavailable @ Quantity::Unavailable(_) => unavailable,
+                    }
                 }
+                (None, None) => Quantity::missing(
+                    UnavailableReason::BoundaryCoedgeUnresolved,
+                    Some(vertex),
+                    "the vertex has no point",
+                ),
             }
-            (None, None) => Quantity::missing(
-                UnavailableReason::BoundaryCoedgeUnresolved,
-                Some(vertex),
-                "the vertex has no point",
-            ),
         };
         let bbox = match &self.bbox {
             Ok(curve_box) => measured(
@@ -534,8 +577,8 @@ impl EdgeGeometry<'_> {
             length,
             arc_angle,
             parameter_span,
-            start: endpoint(self.start, self.edge.start.as_str()),
-            end: endpoint(self.end, self.edge.end.as_str()),
+            start: endpoint(self.start, self.edge.start()),
+            end: endpoint(self.end, self.edge.end()),
             closed: self.closed(),
             degenerate: self.degenerate,
             faces: owners.edge_faces(id),

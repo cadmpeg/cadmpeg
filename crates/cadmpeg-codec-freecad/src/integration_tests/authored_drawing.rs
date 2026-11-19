@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::FcstdCodec;
 use cadmpeg_ir::drawings::{DrawingCurveGeometry, DrawingKind};
-use cadmpeg_ir::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
+use cadmpeg_ir::semantic_annotations::{
+    AnnotationDimensionKind as DimensionKind, SemanticAnnotationKind,
+};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 const LENGTH_TOLERANCE: f64 = 1.0e-12;
@@ -37,7 +39,10 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     let views = &page.relationships["Views"];
     assert_eq!(views.len(), 4);
     for (reference, name) in views.iter().zip(["View", "Dimension", "Note", "Symbol"]) {
-        assert_eq!(reference.local_target(), Some(drawing(name).id.as_str()));
+        assert_eq!(
+            reference.native_text(),
+            Some(crate::native::id_key(&drawing(name).object))
+        );
     }
     let template = drawing("Template");
     let sheet = template.sheet.as_ref().unwrap();
@@ -94,25 +99,18 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     assert!((x - 105.0).abs() < LENGTH_TOLERANCE);
     assert!((y - 148.5).abs() < LENGTH_TOLERANCE);
     assert!((view.scale.unwrap().get() - 1.0).abs() < SCALE_TOLERANCE);
-    assert_eq!(
-        view.relationships["Source"][0].local_target(),
-        Some("fcstd:native:object#Model")
-    );
+    assert_eq!(view.relationships["Source"][0].native_text(), Some("Model"));
     let dim = model
         .semantic_annotations
         .iter()
         .find(|a| a.object.ends_with("#Dimension"))
         .unwrap();
     assert_eq!(dim.kind, SemanticAnnotationKind::Dimension);
-    assert!(matches!(
-        dim.dimension_kind,
-        Some(DimensionKind::Distance {})
-    ));
+    assert!(matches!(dim.dimension_kind, Some(DimensionKind::Distance)));
     assert_eq!(dim.format.as_deref(), Some("%.2w"));
-    assert_eq!(dim.references["References2D"][0].subelements, ["Edge1"]);
     assert_eq!(
-        dim.references["References2D"][0].local_target(),
-        Some(drawing("View").id.as_str())
+        dim.references["References2D"][0].native_text(),
+        Some("View.Edge1")
     );
     let [x, y, z] = dim.position.unwrap().get();
     for (actual, expected) in [x, y, z].into_iter().zip([80.0, 125.0, 0.0]) {

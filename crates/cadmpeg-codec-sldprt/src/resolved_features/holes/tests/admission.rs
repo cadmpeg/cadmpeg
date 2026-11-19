@@ -133,6 +133,7 @@ fn bore_backed_position_projection_projects_one_point_sketch() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     }];
     let input = [hole, position];
     let mut features = input.clone();

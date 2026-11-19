@@ -71,10 +71,11 @@ impl<'ir> Measurer<'ir> {
         &self,
         ctx: &DecodeContext<'_>,
     ) -> Result<Vec<Finding>, ResourceLimit> {
-        let model = &self.input.ir.model;
-        let items = model.faces.len() + model.edges.len();
-        let Some(allowance) = self.options.work.findings_allowance(items) else {
+        let geometry = &self.input.ir.geometry;
+        let items = geometry.faces.len() + geometry.edges.len();
+        let Some(allowance) = self.options.work.pass_allowance(items) else {
             return Err(ResourceLimit {
+                scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
                 dimension: ResourceDimension::Entities,
                 reason: ResourceFailure::BudgetExceeded,
                 limit: 0,
@@ -83,7 +84,7 @@ impl<'ir> Measurer<'ir> {
                 operation: "measurement findings allowance",
             });
         };
-        self.findings_under(ctx, &PassAllowance::findings(allowance))
+        self.findings_under(ctx, &PassAllowance::new(allowance))
     }
 
     /// The findings under `pass`. A face or edge whose slice refused a
@@ -94,11 +95,11 @@ impl<'ir> Measurer<'ir> {
         ctx: &DecodeContext<'_>,
         pass: &PassAllowance,
     ) -> Result<Vec<Finding>, ResourceLimit> {
-        let model = &self.input.ir.model;
+        let geometry = &self.input.ir.geometry;
         let (mut findings, mut unchecked) = self.ring_findings(pass);
         let mut starved: BTreeSet<&'ir str> = BTreeSet::new();
 
-        let placements: HashMap<&'ir str, Outcome<Placement>> = model
+        let placements: HashMap<&'ir str, Outcome<Placement>> = geometry
             .bodies
             .iter()
             .map(|body| {
@@ -116,7 +117,7 @@ impl<'ir> Measurer<'ir> {
         };
 
         let mut needed_edges: BTreeSet<&'ir str> = BTreeSet::new();
-        for face in &model.faces {
+        for face in &geometry.faces {
             for loop_id in &face.loops {
                 if let Some(face_loop) = self.owners.loop_(loop_id.as_str()) {
                     for coedge in face_loop.coedges() {
@@ -147,20 +148,20 @@ impl<'ir> Measurer<'ir> {
         }
 
         let no_faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
-        let flux_bodies: BTreeSet<&'ir str> = model
+        let flux_bodies: BTreeSet<&'ir str> = geometry
             .bodies
             .iter()
             .filter(|body| {
-                let shells: Vec<_> = body
-                    .regions
+                let shells: Vec<_> = self
+                    .owners
+                    .body_regions(&body.id)
                     .iter()
-                    .filter_map(|region| self.owners.region(region.as_str()))
                     .flat_map(|region| &region.shells)
                     .filter_map(|shell| self.owners.shell(shell.as_str()))
                     .collect();
                 !shells.is_empty()
                     && shells.iter().all(|shell| {
-                        !shell.faces().is_empty()
+                        !self.owners.shell_faces(&shell.id).is_empty()
                             && closure(&self.owners, &no_faces, &edges, shell).closed()
                     })
             })
@@ -172,7 +173,7 @@ impl<'ir> Measurer<'ir> {
             .collect();
 
         let mut faces: HashMap<&'ir str, FaceResult<'ir>> = HashMap::new();
-        for face in &model.faces {
+        for face in &geometry.faces {
             let body = self.owners.face_body(face);
             let slice = pass.face_slice();
             let eval = Eval {
@@ -219,7 +220,7 @@ impl<'ir> Measurer<'ir> {
             return Err(limit);
         }
 
-        for face in &model.faces {
+        for face in &geometry.faces {
             if starved.contains(face.id.as_str()) {
                 unchecked.insert(face.id.as_str());
                 continue;
@@ -241,7 +242,7 @@ impl<'ir> Measurer<'ir> {
             density: None,
         };
         let mut unchecked_bodies = 0_usize;
-        for body in &model.bodies {
+        for body in &geometry.bodies {
             let id = body.id.as_str();
             let starved_member = witness_slice.exhausted()
                 || self
@@ -295,7 +296,7 @@ impl<'ir> Measurer<'ir> {
     fn ring_findings(&self, pass: &PassAllowance) -> (Vec<Finding>, BTreeSet<&'ir str>) {
         let mut findings = Vec::new();
         let mut unchecked = BTreeSet::new();
-        for face in &self.input.ir.model.faces {
+        for face in &self.input.ir.geometry.faces {
             let slice = pass.face_slice();
             for loop_id in &face.loops {
                 let Some(face_loop) = self.owners.loop_(loop_id.as_str()) else {
@@ -446,11 +447,11 @@ mod tests {
     /// reversed order: one ring-order and two orientation findings.
     fn defective_cube() -> cadmpeg_ir::CadIr {
         let mut cube = cadmpeg_ir::examples::unit_cube().expect("fixture");
-        cube.model.faces[0].sense = match cube.model.faces[0].sense {
+        cube.geometry.faces[0].sense = match cube.geometry.faces[0].sense {
             Sense::Forward => Sense::Reversed,
             Sense::Reversed => Sense::Forward,
         };
-        let face_loop = &mut cube.model.loops[0];
+        let face_loop = &mut cube.geometry.loops[0];
         let mut coedges = face_loop.coedges().to_vec();
         coedges.reverse();
         face_loop.replace_ring(coedges, Vec::new()).expect("ring");
@@ -466,7 +467,7 @@ mod tests {
             geometry_transferred: true,
         };
         Measurer::new(input, MeasureOptions::default())
-            .findings_under(&ctx, &PassAllowance::findings(allowance))
+            .findings_under(&ctx, &PassAllowance::new(allowance))
             .expect("findings")
     }
 
@@ -512,7 +513,7 @@ mod tests {
         let cube = defective_cube();
         let owners = crate::owners::Owners::new(&cube);
         let rings: usize = cube
-            .model
+            .geometry
             .loops
             .iter()
             .map(|face_loop| {
@@ -547,7 +548,7 @@ mod tests {
         let pass = PassAllowance::new(1 << 30);
         let placement = Ok(Placement::identity());
         let mut edges = HashMap::new();
-        for edge in &ir.model.edges {
+        for edge in &ir.geometry.edges {
             let slice = pass.edge_slice();
             let eval = Eval {
                 ctx: &ctx,
@@ -558,10 +559,10 @@ mod tests {
                 .expect("session stays unrefused");
             edges.insert(edge.id.as_str(), geometry);
         }
-        let body = ir.model.bodies[0].id.as_str();
+        let body = ir.geometry.bodies[0].id.as_str();
         let origin = measurer.flux_origin(body, &edges, &placement);
         let mut fluxes = Vec::new();
-        for face in &ir.model.faces {
+        for face in &ir.geometry.faces {
             let [row, orientation] = [Work::Row, Work::Orientation].map(|work| {
                 let slice = pass.face_slice();
                 let eval = Eval {

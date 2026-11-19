@@ -16,11 +16,11 @@ const STREAM: &str = "f3d:Design/BulkStream.dat";
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:design-parameter-scope#0";
 
 #[test]
-fn plain_scope_starts_its_operation_at_24_26_27_or_28() {
-    for operation in [124, 126, 127, 128] {
+fn plain_scope_starts_its_operation_at_23_24_26_27_or_28() {
+    for operation in [123, 124, 126, 127, 128] {
         assert!(direct_extrude_operation_valid(100, false, operation));
     }
-    for operation in [122, 123, 125, 129] {
+    for operation in [121, 122, 125, 129] {
         assert!(!direct_extrude_operation_valid(100, false, operation));
     }
 }
@@ -56,6 +56,7 @@ fn plain_one_sided_scope(operation_offset: u64) -> DesignParameterScope {
                     side_extent_discriminator_offsets: [first_side, first_side + 13],
                     first_side_target_ordinal: None,
                     distance_tail: None,
+                    opaque_distance_word: None,
                     extent: DesignExtrudeExtent::OneSidedDistance,
                     direction_face_extend_offsets: [operation_offset + 4, operation_offset + 8],
                     direction_reversed: false,

@@ -60,8 +60,10 @@ fn product(ir: &mut cadmpeg_ir::CadIr) {
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
             sketches: Vec::default(),
+
+            tessellations: Vec::new(),
             id: "test:model:product-definition#empty".try_into().unwrap(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            kind: Some(cadmpeg_ir::products::ProductDefinitionKind::Part),
             source_name: None,
             label: None,
             description: None,
@@ -69,6 +71,14 @@ fn product(ir: &mut cadmpeg_ir::CadIr) {
             bom_properties: std::collections::BTreeMap::default(),
             bodies: Vec::new(),
             native_ref: None,
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
 }
 
@@ -94,7 +104,7 @@ fn bodies_outside_products_have_a_counted_root_assignment_note() {
     );
     ir.model.product_definitions[0]
         .bodies
-        .push(ir.model.bodies[0].id.clone());
+        .push(ir.geometry.bodies[0].id.clone());
     let report = write_step(
         &ir,
         &mut Vec::new(),
@@ -115,16 +125,14 @@ fn solid_and_sheet_shell_wire_members_have_counted_export_losses() {
         cadmpeg_ir::topology::BodyKind::Sheet,
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        ir.model.bodies[0].kind = kind;
-        let shell = &ir.model.shells[0];
-        ir.model.shells[0] = cadmpeg_ir::topology::Shell::new(
+        ir.geometry.bodies[0].kind = kind;
+        let shell = &ir.geometry.shells[0];
+        ir.geometry.shells[0] = cadmpeg_ir::topology::Shell::with_members(
             shell.id.clone(),
             shell.region.clone(),
-            shell.faces().to_vec(),
-            vec![ir.model.edges[0].id.clone()],
-            vec![ir.model.vertices[0].id.clone()],
-        )
-        .unwrap();
+            vec![ir.geometry.edges[0].id.clone()],
+            vec![ir.geometry.vertices[0].id.clone()],
+        );
         let report = write_step(
             &ir,
             &mut Vec::new(),
@@ -144,42 +152,43 @@ fn solid_and_sheet_shell_wire_members_have_counted_export_losses() {
 }
 
 #[test]
-fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
-    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+fn missing_local_product_refuses_occurrences_of_the_root_and_nested_definitions_before_output() {
+    use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
+    use cadmpeg_ir::transform::Transform;
     for nested in [false, true] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         product(&mut ir);
-        let root: cadmpeg_ir::ids::OccurrenceId = "test:model:occurrence#root".try_into().unwrap();
-        let occurrence = Occurrence {
-            id: root.clone(),
-            prototype: PrototypeReference::Local {
-                definition: ir.model.product_definitions[0].id.clone(),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform: cadmpeg_ir::transform::Transform::identity(),
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        };
+        let missing: cadmpeg_ir::ids::OccurrenceId =
+            "test:model:occurrence#missing".try_into().unwrap();
+        // The definition that owns the dangling occurrence is the root, or
+        // a definition the root places.
+        let owner = &mut ir.model.product_definitions[0];
+        owner.occurrences.push(missing.clone());
         if nested {
-            ir.model.occurrences.push(occurrence.clone());
+            let placed: cadmpeg_ir::ids::OccurrenceId =
+                "test:model:occurrence#placed".try_into().unwrap();
+            let mut root = ProductDefinition::root(
+                "test:model:product-definition#root".try_into().unwrap(),
+                ExternalDocument::default(),
+            );
+            root.occurrences.push(placed.clone());
+            ir.model.occurrences.push(Occurrence::new(
+                placed,
+                owner.id.clone(),
+                Some(Transform::identity()),
+            ));
+            ir.model.product_definitions.push(root);
+        } else {
+            owner.storage = Storage::File {
+                document: ExternalDocument::default(),
+                source: None,
+            };
         }
-        ir.model.occurrences.push(Occurrence {
-            id: "test:model:occurrence#missing".try_into().unwrap(),
-            prototype: PrototypeReference::Local {
-                definition: "test:model:product-definition#missing".try_into().unwrap(),
-            },
-            parent: if nested {
-                OccurrenceParent::Occurrence { occurrence: root }
-            } else {
-                OccurrenceParent::Root {}
-            },
-            ..occurrence
-        });
+        ir.model.occurrences.push(Occurrence::new(
+            missing,
+            "test:model:product-definition#missing".try_into().unwrap(),
+            Some(Transform::identity()),
+        ));
         let mut output = vec![0xaa];
         let error = write_step(
             &ir,

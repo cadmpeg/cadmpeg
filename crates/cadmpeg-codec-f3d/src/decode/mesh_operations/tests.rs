@@ -378,17 +378,17 @@ fn with_source_records(mut stream: Vec<u8>, kind: &str, bodies: &[u32]) -> Fixtu
         "MeshSmooth" => ("F84CD988-9696-458D-8AF3-795D12E6B9EF", 2),
         "MeshShell" => ("1514CDB8-BB81-4895-A953-7B12F4504F99", 2),
         "MeshReverseNormals" => ("4AB7A6BD-C40C-4C44-B7CA-0D415B6E4412", 0),
+        "MeshRemove" => ("57A2E341-A23A-469D-B41D-59B57A9AD8B8", 0),
         _ => panic!("mesh operation kind"),
+    };
+    let base = if kind == "MeshRemove" {
+        "63A5A106-D239-4D6B-A96B-319CA9B9BA6A"
+    } else {
+        "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF"
     };
     let metadata = crate::test_support::streams_test::design_metastream_with_records(
         &[
-            (
-                guid,
-                "90B8D2C6-05BB-4D0F-89EF-83AAC46CA1FF",
-                version,
-                "Fusion",
-                &[7],
-            ),
+            (guid, base, version, "Fusion", &[7]),
             (
                 "22975A91-16AD-4CC9-A5E4-B4F8B4C27881",
                 "2CA5A1CD-C99B-4C9B-91AF-57989148E841",
@@ -425,6 +425,151 @@ fn reverse_scope() -> Vec<u8> {
     stream[32..43].copy_from_slice(&reference(20));
     stream[47..58].copy_from_slice(&reference(8));
     stream
+}
+
+fn removal_scope() -> Vec<u8> {
+    let mut stream = record(7, 32);
+    stream[21..32].copy_from_slice(&reference(8));
+    stream
+}
+
+#[test]
+fn removal_scope_projects_ordered_input_local_body_deletions() {
+    let fixture = with_source_records(removal_scope(), "MeshRemove", &[9, 3]);
+    let (native, scope) = scope("MeshRemove", 7);
+    let mut features = [feature(
+        "synthetic:model:feature#remove",
+        "MeshRemove",
+        Some(native.clone()),
+    )];
+    let codes = bind(&fixture, &mut features, &[scope]);
+    let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+        bodies: BodySelection::Local {
+            bodies,
+            native: source,
+        },
+        mode,
+    }) = features[0].evaluation.definition()
+    else {
+        panic!("delete selected mesh bodies");
+    };
+    assert_eq!(source.as_str(), native);
+    assert_eq!(bodies.as_slice(), ["9", "3"]);
+    assert_eq!(
+        *mode,
+        cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
+    );
+    assert_eq!(
+        codes,
+        [
+            "feature.mesh-body-selection-assumed",
+            "feature.mesh-operation-source-unresolved"
+        ]
+    );
+    let properties = &features[0].source_properties;
+    assert_eq!(properties["mesh-source-group"], "8");
+    assert_eq!(properties["mesh-source-member-count"], "2");
+    assert_eq!(properties["mesh-member-reference:0"], "40");
+    assert_eq!(properties["mesh-member-reference:1"], "41");
+    assert_eq!(properties["mesh-body-reference:0"], "9");
+    assert_eq!(properties["mesh-body-reference:1"], "3");
+    assert_eq!(properties["parameter:d1"], "1.00 mm");
+    assert!(!properties.contains_key("mesh-input-geometry"));
+    assert!(!properties.contains_key("mesh-output-geometry"));
+}
+
+#[test]
+fn removal_missing_member_keeps_its_reference_and_later_body() {
+    let mut fixture = with_source_records(removal_scope(), "MeshRemove", &[9, 3]);
+    fixture.stream[39..43].copy_from_slice(&777u32.to_le_bytes());
+    let (native, scope) = scope("MeshRemove", 7);
+    let mut features = [feature(
+        "synthetic:model:feature#remove",
+        "MeshRemove",
+        Some(native.clone()),
+    )];
+    let codes = bind(&fixture, &mut features, &[scope]);
+    assert!(matches!(features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+            bodies: BodySelection::Native(source),
+            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+        }) if source == &native));
+    let properties = &features[0].source_properties;
+    assert_eq!(properties["mesh-member-reference:0"], "40");
+    assert_eq!(properties["mesh-member-reference:1"], "41");
+    assert!(!properties.contains_key("mesh-body-reference:0"));
+    assert_eq!(properties["mesh-body-reference:1"], "3");
+    assert_eq!(codes, ["feature.mesh-operation-scope-unparsed"]);
+}
+
+#[test]
+fn removal_missing_body_definition_keeps_both_body_references() {
+    let mut fixture = with_source_records(removal_scope(), "MeshRemove", &[9, 3]);
+    fixture.stream[166..170].copy_from_slice(&777u32.to_le_bytes());
+    let (native, scope) = scope("MeshRemove", 7);
+    let mut features = [feature(
+        "synthetic:model:feature#remove",
+        "MeshRemove",
+        Some(native.clone()),
+    )];
+    let codes = bind(&fixture, &mut features, &[scope]);
+    assert!(matches!(features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+            bodies: BodySelection::Native(source),
+            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+        }) if source == &native));
+    let properties = &features[0].source_properties;
+    assert_eq!(properties["mesh-body-reference:0"], "9");
+    assert_eq!(properties["mesh-body-reference:1"], "3");
+    assert_eq!(codes, ["feature.mesh-operation-scope-unparsed"]);
+}
+
+#[test]
+fn removal_truncated_source_keeps_its_kind_without_a_placeholder_group() {
+    let mut source = removal_scope();
+    source.truncate(31);
+    let fixture = with_source_records(source, "MeshRemove", &[9]);
+    let (native, scope) = scope("MeshRemove", 7);
+    let mut features = [feature(
+        "synthetic:model:feature#remove",
+        "MeshRemove",
+        Some(native.clone()),
+    )];
+    let codes = bind(&fixture, &mut features, &[scope]);
+    assert!(matches!(features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+            bodies: BodySelection::Native(source),
+            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+        }) if source == &native));
+    assert!(!features[0]
+        .source_properties
+        .contains_key("mesh-source-group"));
+    assert_eq!(
+        codes,
+        [
+            "feature.mesh-operation-tail-partial",
+            "feature.mesh-operation-scope-unparsed"
+        ]
+    );
+}
+
+#[test]
+fn removal_without_a_scope_still_projects_a_typed_deletion() {
+    let fixture = with_source_records(removal_scope(), "MeshRemove", &[]);
+    let mut features = [feature(
+        "synthetic:model:feature#remove",
+        "MeshRemove",
+        None,
+    )];
+    let codes = bind(&fixture, &mut features, &[]);
+    assert!(matches!(
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+            bodies: BodySelection::Unresolved,
+            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+        })
+    ));
+    assert_eq!(codes, ["feature.mesh-operation-scope-unparsed"]);
 }
 
 #[test]

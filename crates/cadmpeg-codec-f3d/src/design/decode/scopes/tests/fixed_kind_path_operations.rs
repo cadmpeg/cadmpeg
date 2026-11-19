@@ -243,6 +243,7 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(
             crate::records::topology::sketch_profile::DesignSketchProfileOperand::try_new(
                 crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                    sketch_absent: false,
                     scope_reference_ordinal: 3,
                     record_index: 2795,
                     byte_offset: 32_000,

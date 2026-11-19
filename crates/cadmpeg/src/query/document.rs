@@ -2,13 +2,14 @@
 //! CADIR document index for graph, join, and inferred schema.
 //!
 //! Parses the document as JSON and inventories every array arena under
-//! `model` and `native.<codec>`. Identity lookup is exact string
+//! each neutral home and `native.<codec>`. Identity lookup is exact string
 //! match against each record's top-level `id`.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
+use cadmpeg_ir::ArenaHome;
 use serde_json::Value;
 
 use super::item::{unknown_arena_message, ArenaTarget};
@@ -134,11 +135,16 @@ impl CadirDocument {
 
     pub(super) fn from_value(mut root: Value) -> Self {
         let mut arenas = Vec::new();
-        if let Some(model) = root.get_mut("model").and_then(Value::as_object_mut) {
-            for (name, value) in model {
+        for home in ArenaHome::ALL {
+            let Some(arenas_in_home) = root.get_mut(home.as_str()).and_then(Value::as_object_mut)
+            else {
+                continue;
+            };
+            for (name, value) in arenas_in_home {
                 if let Some(arr) = value.as_array_mut() {
                     arenas.push(Arena {
-                        target: ArenaTarget::Model {
+                        target: ArenaTarget::Neutral {
+                            home,
                             arena: name.clone(),
                         },
                         records: std::mem::take(arr),
@@ -336,11 +342,13 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn indexes_model_and_native_arenas_and_skips_non_arrays() {
+    fn indexes_neutral_and_native_arenas_and_skips_non_arrays() {
         let mut doc = CadirDocument::from_value(json!({
             "ir_version": cadmpeg_ir::IR_VERSION,
+            "geometry": {
+                "faces": [{"id": "f1"}, {"id": "f2"}]
+            },
             "model": {
-                "faces": [{"id": "f1"}, {"id": "f2"}],
                 "empty": [],
                 "null_arena": null
             },
@@ -350,14 +358,14 @@ mod tests {
         }));
         doc.index_ids();
         let names: Vec<String> = doc.arenas.iter().map(|a| a.target.dotted()).collect();
-        assert!(names.contains(&"model.faces".to_owned()));
+        assert!(names.contains(&"geometry.faces".to_owned()));
         assert!(names.contains(&"model.empty".to_owned()));
         assert!(names.contains(&"native.rhino.unknowns".to_owned()));
         assert!(!names.iter().any(|n| n.contains("null")));
         let location = doc.by_id["f1"][0];
-        assert_eq!(doc.arenas[location.arena].target.dotted(), "model.faces");
+        assert_eq!(doc.arenas[location.arena].target.dotted(), "geometry.faces");
         assert_eq!(location.rec, 0);
-        assert_eq!(doc.locator(location), "model.faces#f1");
+        assert_eq!(doc.locator(location), "geometry.faces#f1");
     }
 
     #[test]
@@ -381,7 +389,7 @@ mod tests {
     #[test]
     fn select_head_and_suffix_and_ambiguous() {
         let doc = CadirDocument::from_value(json!({
-            "model": {"faces": [
+            "geometry": {"faces": [
                 {"id": "other:face#1"},
                 {"id": "other:face#2"},
                 {"id": "other:face#802"},

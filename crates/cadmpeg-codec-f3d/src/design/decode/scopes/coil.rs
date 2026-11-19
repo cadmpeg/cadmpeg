@@ -19,6 +19,7 @@ use crate::layout::coil_compact_scope_discriminators as coil_compact;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
+use crate::layout::coil_short_ten_reference_compact_scope as coil_short;
 use crate::layout::coil_ten_reference_compact_prologue as coil_ten;
 use crate::layout::coil_ten_reference_flagged_prologue_tail as coil_ten_flagged;
 use crate::records::decal::DesignRecordHeader;
@@ -469,6 +470,7 @@ fn exact_coil_face_selection(
             bytes,
             records,
             crate::design::decode::operands::FaceOperandFrame {
+                registered_frame: None,
                 scope,
                 scope_reference_ordinal: 0,
                 group_ownership: None,
@@ -659,8 +661,6 @@ pub(super) fn exact_coil_discriminators(
     })
 }
 
-/// Whether the scope frame is the 466-byte ten-reference form that uses the
-/// compact discriminator lanes.
 fn exact_ten_reference_compact_coil(
     bytes: &[u8],
     start: usize,
@@ -669,6 +669,7 @@ fn exact_ten_reference_compact_coil(
     reference_members: &[u32],
 ) -> bool {
     (|| {
+        let frame_length = paired_at.checked_sub(start)?;
         let at = |relative: usize| start.checked_add(relative);
         let member = |relative: usize| {
             marked_record_reference(bytes, at(relative)?)
@@ -676,16 +677,26 @@ fn exact_ten_reference_compact_coil(
         };
         let zero_run = at(coil_ten::ZERO_RUN_9)?..at(coil_ten::FORM_CONSTANT)?;
         let unflagged = member(coil_ten::SECOND_MEMBER_REFERENCE).is_some()
-            && bytes.get(at(coil_ten::TRAILING_FLAGS)?..at(coil_ten::TRAILING_FLAGS + 2)?)?
-                == [1, 0];
-        let flagged = bytes
-            .get(at(coil_ten_flagged::LEADING_FLAGS)?..at(coil_ten_flagged::LEADING_FLAGS + 2)?)?
-            == [0, 1]
+            && match frame_length {
+                TEN_REFERENCE_COMPACT_FRAME => {
+                    bytes.get(at(coil_ten::TRAILING_FLAGS)?..at(coil_ten::TRAILING_FLAGS + 2)?)?
+                        == [1, 0]
+                }
+                coil_short::LEN => {
+                    bytes.get(at(coil_short::CONTROL_BYTES)?..at(coil_short::CONTROL_BYTES + 2)?)?
+                        == coil_short::CONTROL_BYTES_VALUE
+                }
+                _ => false,
+            };
+        let flagged = frame_length == TEN_REFERENCE_COMPACT_FRAME
+            && bytes.get(
+                at(coil_ten_flagged::LEADING_FLAGS)?..at(coil_ten_flagged::LEADING_FLAGS + 2)?,
+            )? == [0, 1]
             && member(coil_ten_flagged::SECOND_MEMBER_REFERENCE).is_some();
         Some(
             *kind == scope::DesignFeatureKind::CoilPrimitive
                 && reference_members.len() == 10
-                && paired_at.checked_sub(start)? == TEN_REFERENCE_COMPACT_FRAME
+                && matches!(frame_length, TEN_REFERENCE_COMPACT_FRAME | coil_short::LEN)
                 && bytes.get(zero_run)?.iter().all(|byte| *byte == 0)
                 && View::u32_le_at(bytes, at(coil_ten::FORM_CONSTANT)?)?
                     == coil_ten::FORM_CONSTANT_VALUE

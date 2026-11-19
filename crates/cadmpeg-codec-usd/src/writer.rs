@@ -5,9 +5,10 @@
 //! holds child occurrences or several bodies, and nothing outside it, uses
 //! that occurrence as the one root prim; otherwise each root occurrence and
 //! each body no definition owns is a root prim. Each occurrence becomes an
-//! `Xform` prim with a `matrix4d` transform. A definition placed more than
-//! once is written once, under the abstract `Prototypes` prim, and each
-//! placement references it. Bodies become geometry prims: tessellations as
+//! `Xform` prim with a `matrix4d` transform. A definition that more than one
+//! occurrence places is written once, with its bodies and the occurrences it
+//! owns, under the abstract `Prototypes` prim, and each placement references
+//! it. Bodies become geometry prims: tessellations as
 //! `Mesh` prims; for a body with faces and no tessellation, each untrimmed
 //! face on a NURBS surface as a `NurbsPatch` prim and the other faces as one
 //! `Mesh` prim; and wire edges as one `NurbsCurves` prim. A placement whose content is one geometry prim is
@@ -37,7 +38,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
-use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::{Occurrence, ProductDefinition, ProductDefinitionKind, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh, TextureCoordinateAddressing};
 use cadmpeg_ir::topology::{Body, Sense};
@@ -71,7 +72,7 @@ const SOURCE_UP_AXIS: &str = "up_axis";
 /// Topology, geometry carriers, tessellations, and appearances are
 /// `Reported`: [`plan`] charges a loss for each record no prim carries.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Omitted, Reported, Written};
+    use ArenaDisposition::{Ignored, Omitted, Reported, Written};
     ArenaDispositions {
         bodies: Reported,
         regions: Reported,
@@ -110,6 +111,7 @@ const COVERAGE: ArenaDispositions = {
         view_presentations: Omitted,
         tessellations: Reported,
         point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Reported,
         appearance_bindings: Reported,
         attributes: Omitted,
@@ -123,6 +125,8 @@ const COVERAGE: ArenaDispositions = {
         physics_scenes: Written,
         solver_settings: Written,
         declared_measures: Omitted,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 };
 
@@ -250,15 +254,20 @@ fn group_key(tessellation: &str, group: &str) -> String {
     format!("{tessellation}#group:{group}")
 }
 
+/// Whether `definition` is a part or an assembly document's definition.
+fn is_part_definition(definition: &ProductDefinition) -> bool {
+    matches!(
+        definition.kind,
+        Some(ProductDefinitionKind::Part | ProductDefinitionKind::Assembly)
+    )
+}
+
 /// Whether `occurrence` places a part definition.
 fn is_part(ir: &CadIr, occurrence: &Occurrence) -> bool {
-    let PrototypeReference::Local { definition } = &occurrence.prototype else {
-        return false;
-    };
-    ir.model.product_definitions.iter().any(|candidate| {
-        &candidate.id == definition
-            && candidate.kind == cadmpeg_ir::products::ProductDefinitionKind::Part
-    })
+    ir.model
+        .product_definitions
+        .iter()
+        .any(|candidate| candidate.id == occurrence.prototype && is_part_definition(candidate))
 }
 
 /// One wire edge in NURBS form.
@@ -300,8 +309,8 @@ struct Writer<'ir> {
     positions: BTreeMap<&'ir str, usize>,
     /// The tessellations of each body, in arena order.
     body_tessellations: BTreeMap<&'ir BodyId, Vec<&'ir Tessellation>>,
-    /// Occurrences with a part occurrence below them.
-    above_parts: BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
+    /// Definitions that place a part, directly or through other definitions.
+    above_parts: BTreeSet<ProductDefinitionId>,
     /// The members a package holds beside the root layer, or `None` for a
     /// layer that no package holds.
     package: Option<Vec<Member>>,
@@ -313,7 +322,7 @@ impl<'ir> Writer<'ir> {
     fn new(ir: &'ir CadIr, version: &'static str) -> Self {
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
-            let key = match &binding.target {
+            let key = match &binding.target.entity {
                 AppearanceTarget::Tessellation(id) => id.clone(),
                 AppearanceTarget::Body(id) => id.to_string(),
                 AppearanceTarget::Face(id) => id.to_string(),
@@ -329,9 +338,7 @@ impl<'ir> Writer<'ir> {
         }
         let mut uses: BTreeMap<&ProductDefinitionId, usize> = BTreeMap::new();
         for occurrence in &ir.model.occurrences {
-            if let PrototypeReference::Local { definition } = &occurrence.prototype {
-                *uses.entry(definition).or_default() += 1;
-            }
+            *uses.entry(&occurrence.prototype).or_default() += 1;
         }
         let mut names = Names::default();
         let shared = ir
@@ -340,7 +347,7 @@ impl<'ir> Writer<'ir> {
             .iter()
             .filter(|definition| {
                 uses.get(&definition.id).copied().unwrap_or_default() > 1
-                    && !definition.bodies.is_empty()
+                    && (!definition.bodies.is_empty() || !definition.occurrences.is_empty())
             })
             .map(|definition| {
                 let name = names.unique(definition.source_name.as_deref().unwrap_or("Prototype"));
@@ -353,28 +360,30 @@ impl<'ir> Writer<'ir> {
             .iter()
             .flat_map(|definition| definition.bodies.iter().cloned())
             .collect();
-        let parents: BTreeMap<_, _> = ir
-            .model
-            .occurrences
-            .iter()
-            .filter_map(|occurrence| match &occurrence.parent {
-                OccurrenceParent::Occurrence { occurrence: parent } => {
-                    Some((&occurrence.id, parent))
-                }
-                OccurrenceParent::Root {} => None,
-            })
-            .collect();
+        // A definition is above parts when an occurrence it owns places a
+        // part, or places a definition above parts.
         let mut above_parts = BTreeSet::new();
-        for occurrence in &ir.model.occurrences {
-            if !is_part(ir, occurrence) {
-                continue;
-            }
-            let mut at = &occurrence.id;
-            while let Some(parent) = parents.get(at) {
-                if !above_parts.insert((*parent).clone()) {
-                    break;
+        loop {
+            let before = above_parts.len();
+            for definition in &ir.model.product_definitions {
+                if above_parts.contains(&definition.id) {
+                    continue;
                 }
-                at = parent;
+                let places_part = definition.occurrences.iter().any(|id| {
+                    ir.model
+                        .occurrences
+                        .iter()
+                        .find(|occurrence| &occurrence.id == id)
+                        .is_some_and(|occurrence| {
+                            is_part(ir, occurrence) || above_parts.contains(&occurrence.prototype)
+                        })
+                });
+                if places_part {
+                    above_parts.insert(definition.id.clone());
+                }
+            }
+            if above_parts.len() == before {
+                break;
             }
         }
         Self {
@@ -416,7 +425,7 @@ impl<'ir> Writer<'ir> {
     /// `group` for any other occurrence above a part.
     fn model_kind(&self, occurrence: &Occurrence) -> Option<&'static str> {
         let part = is_part(self.ir, occurrence);
-        match (part, self.above_parts.contains(&occurrence.id)) {
+        match (part, self.above_parts.contains(&occurrence.prototype)) {
             (true, true) => Some("assembly"),
             (true, false) => Some("component"),
             (false, true) => Some("group"),
@@ -441,17 +450,43 @@ impl<'ir> Writer<'ir> {
     }
 
     fn layer(&mut self) -> String {
-        let roots: Vec<&'ir Occurrence> = self
+        // A root definition the source names, or one that owns bodies, is
+        // written as the root prim; an unnamed one is the layer itself, and
+        // its occurrences are the root prims.
+        let root_definition = self
             .ir
             .model
-            .occurrences
+            .product_definitions
             .iter()
-            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
-            .collect();
+            .find(|definition| definition.is_root());
+        let root_prim = root_definition
+            .filter(|definition| {
+                definition.source_name.is_some()
+                    || definition.label.is_some()
+                    || !definition.bodies.is_empty()
+            })
+            .and_then(|definition| {
+                let id = cadmpeg_ir::ids::OccurrenceId::mint(format!(
+                    "{}:root-prim",
+                    definition.id.as_str()
+                ))
+                .ok()?;
+                let mut occurrence = Occurrence::new(id, definition.id.clone(), None);
+                occurrence.name = definition
+                    .label
+                    .clone()
+                    .or_else(|| definition.source_name.clone());
+                Some(occurrence)
+            });
+        let roots: Vec<&Occurrence> = match (&root_prim, root_definition) {
+            (Some(root), _) => vec![root],
+            (None, Some(definition)) => self.owned_occurrences(definition),
+            (None, None) => Vec::new(),
+        };
         let (free_curves, free_points) = self.free_carriers();
         let orphans = self
             .ir
-            .model
+            .geometry
             .bodies
             .iter()
             .any(|body| !self.owned.contains(&body.id))
@@ -485,7 +520,7 @@ impl<'ir> Writer<'ir> {
                 for occurrence in roots {
                     self.occurrence(occurrence, &mut names, None);
                 }
-                for body in &self.ir.model.bodies {
+                for body in &self.ir.geometry.bodies {
                     if !self.owned.contains(&body.id) {
                         self.body(body, &mut names, &Placement::default(), None);
                     }
@@ -570,7 +605,7 @@ impl<'ir> Writer<'ir> {
 
     /// Writes an occurrence and its descendants. The root occurrence names
     /// the root prim `root` and holds the `Looks` scope.
-    fn occurrence(&mut self, occurrence: &'ir Occurrence, names: &mut Names, root: Option<&str>) {
+    fn occurrence(&mut self, occurrence: &Occurrence, names: &mut Names, root: Option<&str>) {
         let name = match root {
             Some(root) => {
                 names.reserve(root);
@@ -583,8 +618,8 @@ impl<'ir> Writer<'ir> {
             .insert(occurrence.id.clone(), format!("/{}", self.stack.join("/")));
         let (schemas, properties) = self.physics.occurrence(&occurrence.id);
         let mut placement = Placement {
-            transform: Some(&occurrence.transform),
-            scale: occurrence.scale.map(cadmpeg_ir::scalar::FiniteReal::get),
+            transform: occurrence.transform.as_ref(),
+            scale: [1.0; 3],
             hidden: occurrence.visible == Some(false),
             metadata: schemas,
             properties,
@@ -599,25 +634,19 @@ impl<'ir> Writer<'ir> {
                 quoted(occurrence.name.as_deref().unwrap_or_default())
             ));
         }
-        let mut definition = None;
-        match &occurrence.prototype {
-            PrototypeReference::Local { definition: id } => {
-                definition = self
-                    .ir
-                    .model
-                    .product_definitions
-                    .iter()
-                    .find(|candidate| &candidate.id == id);
-                if let Some(prototype) = self.shared.get(id) {
-                    placement
-                        .metadata
-                        .push(format!("prepend references = </{PROTOTYPES}/{prototype}>"));
-                }
-            }
-            PrototypeReference::External { document, object } => {
-                if let ExternalDocument::Path { path } = document {
-                    let target = object
-                        .as_deref()
+        let definition = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|candidate| candidate.id == occurrence.prototype);
+        match definition.map(|definition| &definition.storage) {
+            Some(Storage::External(document)) => {
+                if let Some(path) = &document.path {
+                    let target = document
+                        .object
+                        .as_ref()
+                        .map(cadmpeg_core::text::NonBlankString::as_str)
                         .filter(|object| object.starts_with('/'))
                         .map(|object| format!("<{object}>"))
                         .unwrap_or_default();
@@ -627,9 +656,22 @@ impl<'ir> Writer<'ir> {
                     ));
                 }
             }
-            PrototypeReference::Unresolved {} => {}
+            Some(_) => {
+                if let Some(prototype) = self.shared.get(&occurrence.prototype) {
+                    placement
+                        .metadata
+                        .push(format!("prepend references = </{PROTOTYPES}/{prototype}>"));
+                }
+            }
+            None => {}
         }
-        let mut children: Vec<&'ir Occurrence> = self.children(occurrence);
+        let shared = definition.is_some_and(|definition| self.shared.contains_key(&definition.id));
+        // A shared definition's occurrences are written in its prototype.
+        let mut children: Vec<&'ir Occurrence> = if shared {
+            Vec::new()
+        } else {
+            self.children(occurrence)
+        };
         let mut references = Vec::new();
         children.retain(|child| match self.arc_reference(child) {
             Some(reference) => {
@@ -647,7 +689,6 @@ impl<'ir> Writer<'ir> {
                 .metadata
                 .push(format!("prepend references = [{}]", references.join(", "))),
         }
-        let shared = definition.is_some_and(|definition| self.shared.contains_key(&definition.id));
         let bodies: Vec<&'ir Body> = definition
             .filter(|_| !shared)
             .map(|definition| {
@@ -672,11 +713,9 @@ impl<'ir> Writer<'ir> {
             placement.metadata.push(format!("kind = {}", quoted(kind)));
         }
         let head = if shared {
-            if children.is_empty() {
-                placement
-                    .metadata
-                    .insert(0, "instanceable = true".to_owned());
-            }
+            placement
+                .metadata
+                .insert(0, "instanceable = true".to_owned());
             "def"
         } else {
             "def Xform"
@@ -716,52 +755,71 @@ impl<'ir> Writer<'ir> {
     /// Whether `occurrence` has no child occurrences and places a definition
     /// of one unshared body: it is written as that body's prim.
     fn is_leaf(&self, occurrence: &Occurrence) -> bool {
-        let PrototypeReference::Local { definition } = &occurrence.prototype else {
-            return false;
-        };
         self.children(occurrence).is_empty()
-            && !self.shared.contains_key(definition)
+            && !self.shared.contains_key(&occurrence.prototype)
             && self
                 .ir
                 .model
                 .product_definitions
                 .iter()
-                .find(|candidate| &candidate.id == definition)
-                .is_some_and(|definition| definition.bodies.len() == 1)
+                .find(|candidate| candidate.id == occurrence.prototype)
+                .is_some_and(|definition| {
+                    !matches!(definition.storage, Storage::External(_))
+                        && definition.bodies.len() == 1
+                })
     }
 
-    /// The child occurrences of `occurrence`.
+    /// The occurrences `definition` owns, in its order.
+    fn owned_occurrences(&self, definition: &ProductDefinition) -> Vec<&'ir Occurrence> {
+        definition
+            .occurrences
+            .iter()
+            .filter_map(|id| {
+                self.ir
+                    .model
+                    .occurrences
+                    .iter()
+                    .find(|occurrence| &occurrence.id == id)
+            })
+            .collect()
+    }
+
+    /// The child occurrences of `occurrence`: those its prototype owns.
     fn children(&self, occurrence: &Occurrence) -> Vec<&'ir Occurrence> {
         self.ir
             .model
-            .occurrences
+            .product_definitions
             .iter()
-            .filter(|child| {
-                matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent }
-                    if parent == &occurrence.id)
-            })
-            .collect()
+            .find(|definition| definition.id == occurrence.prototype)
+            .map(|definition| self.owned_occurrences(definition))
+            .unwrap_or_default()
     }
 
     /// The reference list item that writes `child` on its parent prim:
     /// an external prototype placed at the identity, with no children of its
     /// own.
     fn arc_reference(&self, child: &Occurrence) -> Option<String> {
-        let PrototypeReference::External {
-            document: ExternalDocument::Path { path },
-            object,
-        } = &child.prototype
-        else {
-            return None;
-        };
-        let placed = child.transform.affine_rows() != Transform::identity().affine_rows()
-            || child.scale.iter().any(|scale| scale.get() != 1.0)
-            || child.visible.is_some();
+        let document = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.id == child.prototype)
+            .and_then(|definition| match &definition.storage {
+                Storage::External(document) => Some(document),
+                Storage::Embedded | Storage::File { .. } => None,
+            })?;
+        let path = document.path.as_ref()?;
+        let placed = child.transform.is_some_and(|transform| {
+            transform.affine_rows() != Transform::identity().affine_rows()
+        }) || child.visible.is_some();
         if placed || !self.children(child).is_empty() {
             return None;
         }
-        let target = object
-            .as_deref()
+        let target = document
+            .object
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str)
             .filter(|object| object.starts_with('/'))
             .map(|object| format!("<{object}>"))
             .unwrap_or_default();
@@ -1065,12 +1123,9 @@ impl<'ir> Writer<'ir> {
     )> {
         let query = cadmpeg_ir::index::StandardIndex;
         let mut out = Vec::new();
-        for region in self.ordered(
-            body.regions
-                .iter()
-                .filter_map(|region| self.index.regions(region.as_str(), query)),
-            |region| region.id.as_str(),
-        ) {
+        for region in self.ordered(self.index.ir().geometry.body_regions(&body.id), |region| {
+            region.id.as_str()
+        }) {
             for shell in self.ordered(
                 region
                     .shells
@@ -1078,13 +1133,9 @@ impl<'ir> Writer<'ir> {
                     .filter_map(|shell| self.index.shells(shell.as_str(), query)),
                 |shell| shell.id.as_str(),
             ) {
-                for face in self.ordered(
-                    shell
-                        .faces()
-                        .iter()
-                        .filter_map(|face| self.index.faces(face.as_str(), query)),
-                    |face| face.id.as_str(),
-                ) {
+                for face in self.ordered(self.index.ir().geometry.shell_faces(&shell.id), |face| {
+                    face.id.as_str()
+                }) {
                     let surface = self.index.surfaces(face.surface.as_str(), query);
                     out.push((face, surface));
                 }
@@ -1114,14 +1165,14 @@ impl<'ir> Writer<'ir> {
         };
         self.out.line(&format!(
             "color3f[] primvars:displayColor = [{}] (",
-            tuple32(&[color.r(), color.g(), color.b()])
+            tuple32(&[color.r(), color.g(), color.b()].map(crate::text::value::round_f32))
         ));
         self.out.line("    interpolation = \"constant\"");
         self.out.line(")");
         if color.a() < 1.0 {
             self.out.line(&format!(
                 "float[] primvars:displayOpacity = [{}] (",
-                real32(color.a())
+                real32(crate::text::value::round_f32(color.a()))
             ));
             self.out.line("    interpolation = \"constant\"");
             self.out.line(")");
@@ -1376,12 +1427,9 @@ impl<'ir> Writer<'ir> {
         let query = cadmpeg_ir::index::StandardIndex;
         let index = &self.index;
         let mut edges = Vec::new();
-        for region in self.ordered(
-            body.regions
-                .iter()
-                .filter_map(|region| index.regions(region.as_str(), query)),
-            |region| region.id.as_str(),
-        ) {
+        for region in self.ordered(index.ir().geometry.body_regions(&body.id), |region| {
+            region.id.as_str()
+        }) {
             for shell in self.ordered(
                 region
                     .shells
@@ -1393,7 +1441,6 @@ impl<'ir> Writer<'ir> {
                     self.ordered(
                         shell
                             .wire_edges()
-                            .iter()
                             .filter_map(|edge| index.edges(edge.as_str(), query)),
                         |edge| edge.id.as_str(),
                     ),
@@ -1455,8 +1502,8 @@ impl<'ir> Writer<'ir> {
 
     /// The NURBS form of a wire edge.
     fn edge_nurbs(&self, edge: &cadmpeg_ir::topology::Edge) -> Option<WireCurve> {
-        let model = &self.ir.model;
-        let curve = model
+        let geometry = &self.ir.geometry;
+        let curve = geometry
             .curves
             .iter()
             .find(|curve| Some(&curve.id) == edge.curve())?;
@@ -1468,7 +1515,10 @@ impl<'ir> Writer<'ir> {
                 .points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)
                 .map(|point| point.position().get())
         };
-        let ends = position(&edge.start).zip(position(&edge.end));
+        let ends = edge
+            .start()
+            .and_then(&position)
+            .zip(edge.end().and_then(&position));
         curve_nurbs(
             curve,
             edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
@@ -1483,23 +1533,30 @@ impl<'ir> Writer<'ir> {
         Vec<&'ir cadmpeg_ir::geometry::Curve>,
         Vec<&'ir cadmpeg_ir::topology::Point>,
     ) {
-        let model = &self.ir.model;
-        let vertex_points: BTreeSet<_> =
-            model.vertices.iter().map(|vertex| &vertex.point).collect();
-        let edge_curves: BTreeSet<_> = model.edges.iter().filter_map(|edge| edge.curve()).collect();
+        let geometry = &self.ir.geometry;
+        let vertex_points: BTreeSet<_> = geometry
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.point)
+            .collect();
+        let edge_curves: BTreeSet<_> = geometry
+            .edges
+            .iter()
+            .filter_map(|edge| edge.curve())
+            .collect();
         let independent = |source: Option<&cadmpeg_ir::SourceObjectAssociation>| {
             source.is_none_or(|source| {
                 source.geometry_role != Some(cadmpeg_ir::SourceGeometryRole::Support)
             })
         };
-        let curves = model
+        let curves = geometry
             .curves
             .iter()
             .filter(|curve| {
                 !edge_curves.contains(&curve.id) && independent(curve.source_object.as_ref())
             })
             .collect();
-        let points = model
+        let points = geometry
             .points
             .iter()
             .filter(|point| {
@@ -1575,17 +1632,24 @@ impl<'ir> Writer<'ir> {
                         .bodies(id.as_str(), cadmpeg_ir::index::StandardIndex)
                 })
                 .collect();
+            let occurrences = self.owned_occurrences(definition);
             let mut names = Names::default();
-            if let [body] = bodies.as_slice() {
+            if let ([body], []) = (bodies.as_slice(), occurrences.as_slice()) {
                 self.body(body, &mut names, &Placement::default(), Some(&name));
                 continue;
             }
             self.out.line(&format!("def Xform {}", quoted(&name)));
             self.out.name_next(&name);
             self.out.open();
+            self.stack.extend([PROTOTYPES.to_owned(), name.clone()]);
             for body in bodies {
                 self.body(body, &mut names, &Placement::default(), None);
             }
+            for occurrence in occurrences {
+                self.occurrence(occurrence, &mut names, None);
+            }
+            self.stack.pop();
+            self.stack.pop();
             self.out.close();
         }
         self.out.close();
@@ -1595,6 +1659,7 @@ impl<'ir> Writer<'ir> {
     fn losses(&self) -> Vec<LossNote> {
         let unwritten = &self.unwritten;
         let model = &self.ir.model;
+        let geometry = &self.ir.geometry;
         let mut losses = Vec::new();
         if unwritten.solver_properties > 0 {
             losses.push(UsdLossCode::ExportSolverPropertyNotWritten.note(format!(
@@ -1659,8 +1724,8 @@ impl<'ir> Writer<'ir> {
                 unwritten.curves
             )));
         }
-        let face_surfaces: BTreeSet<_> = model.faces.iter().map(|face| &face.surface).collect();
-        let free_surfaces = model
+        let face_surfaces: BTreeSet<_> = geometry.faces.iter().map(|face| &face.surface).collect();
+        let free_surfaces = geometry
             .surfaces
             .iter()
             .filter(|surface| !face_surfaces.contains(&surface.id))
@@ -1702,7 +1767,7 @@ impl<'ir> Writer<'ir> {
             .iter()
             .filter(|binding| {
                 !matches!(
-                    binding.target,
+                    binding.target.entity,
                     AppearanceTarget::Tessellation(_)
                         | AppearanceTarget::Body(_)
                         | AppearanceTarget::TriangleGroup { .. }
@@ -1845,18 +1910,18 @@ mod tests;
 
 /// The arena position of each region, shell, face, and edge of `ir`.
 fn positions(ir: &CadIr) -> BTreeMap<&str, usize> {
-    let model = &ir.model;
+    let geometry = &ir.geometry;
     let mut out = BTreeMap::new();
-    for (position, region) in model.regions.iter().enumerate() {
+    for (position, region) in geometry.regions.iter().enumerate() {
         out.insert(region.id.as_str(), position);
     }
-    for (position, shell) in model.shells.iter().enumerate() {
+    for (position, shell) in geometry.shells.iter().enumerate() {
         out.insert(shell.id.as_str(), position);
     }
-    for (position, face) in model.faces.iter().enumerate() {
+    for (position, face) in geometry.faces.iter().enumerate() {
         out.insert(face.id.as_str(), position);
     }
-    for (position, edge) in model.edges.iter().enumerate() {
+    for (position, edge) in geometry.edges.iter().enumerate() {
         out.insert(edge.id.as_str(), position);
     }
     out

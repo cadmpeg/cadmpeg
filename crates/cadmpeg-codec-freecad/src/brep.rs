@@ -2382,7 +2382,7 @@ pub(crate) fn parse_payloads(
     Ok(payloads)
 }
 
-fn direct_shape_entry(
+pub(crate) fn direct_shape_entry(
     ctx: &DecodeContext<'_>,
     property: &PropertyRecord,
 ) -> Result<Option<String>, CodecError> {
@@ -6001,6 +6001,7 @@ fn append_text_curve(
         id,
         geometry,
         source_object: Some((association).clone()),
+        native_ref: None,
     });
     Ok(index)
 }
@@ -6351,6 +6352,7 @@ fn append_text_surface(
         id,
         geometry,
         source_object: Some((association).clone()),
+        native_ref: None,
     });
     Ok(index)
 }

@@ -54,9 +54,9 @@ fn physics_records_decode_in_ir_units() {
         drive.target_position.unwrap().get(),
         std::f64::consts::FRAC_PI_4
     ));
-    // Torque per degree in kilograms and centimetres, to newton millimetres
-    // per radian.
-    let expected = 10.0 * 2.0 * 0.01 * 0.01 * 1000.0 * 180.0 / std::f64::consts::PI;
+    // Torque per degree in kilograms and centimetres, to kilogram square
+    // millimetres per second squared per radian.
+    let expected = 10.0 * 2.0 * 10.0 * 10.0 * 180.0 / std::f64::consts::PI;
     assert!(close(drive.stiffness.unwrap().get(), expected));
 }
 
@@ -97,17 +97,17 @@ fn physics_records_survive_a_write() {
     assert!(after
         .rigid_bodies
         .iter()
-        .all(|body| matches!(body.target, PhysicsTarget::Occurrence { .. })));
+        .all(|body| matches!(body.target.entity, PhysicsTarget::Occurrence { .. })));
 }
 
 #[test]
 fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     let mut ir = decode("#usda 1.0\ndef Cylinder \"C\"\n{\n}\n").ir().clone();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.colliders.push(cadmpeg_ir::physics::Collider {
         id: crate::ids::collider("collider"),
-        target: PhysicsTarget::Body { body },
-        shape: cadmpeg_ir::physics::ColliderShape::ConvexHull {},
+        target: PhysicsTarget::Body { body }.into(),
+        shape: cadmpeg_ir::physics::ColliderShape::ConvexHull,
         enabled: true,
         material: None,
         native_ref: None,
@@ -130,12 +130,12 @@ fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     let model = &again.ir().model;
     assert_eq!(model.colliders.len(), 1);
     assert!(matches!(
-        model.colliders[0].target,
+        model.colliders[0].target.entity,
         PhysicsTarget::Body { .. }
     ));
     assert!(matches!(
         model.colliders[0].shape,
-        cadmpeg_ir::physics::ColliderShape::ConvexHull {}
+        cadmpeg_ir::physics::ColliderShape::ConvexHull
     ));
 }
 
@@ -213,7 +213,7 @@ fn physx_settings_decode_in_ir_units() {
     assert!(matches!(
         solver_value(ir, "PhysxMimicJointAPI:transX", "physxMimicJoint:transX:referenceJoint"),
         Some(cadmpeg_ir::physics::solver::SolverValue::Targets { targets })
-            if matches!(targets.as_slice(), [cadmpeg_ir::physics::solver::SolverTarget::Joint { .. }])
+            if matches!(targets.as_slice(), [target] if matches!(target.entity, cadmpeg_ir::physics::solver::SolverTarget::Joint { .. }))
     ));
     let scene = &ir.model.physics_scenes[0];
     assert!(close(scene.gravity_magnitude.unwrap().get(), 9810.0));

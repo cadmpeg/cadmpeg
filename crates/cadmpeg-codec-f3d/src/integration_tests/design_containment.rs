@@ -29,6 +29,7 @@ fn malformed_design() -> CodecError {
 
 fn recursion_refusal() -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::RecursionDepth),
         dimension: ResourceDimension::RecursionDepth,
         reason: ResourceFailure::BudgetExceeded,
         limit: 1,
@@ -46,9 +47,12 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
     inject_failure(malformed_design);
     let contained = decode(design_archive());
 
-    assert_eq!(contained.ir().model.bodies, full.ir().model.bodies);
-    assert_eq!(contained.ir().model.faces, full.ir().model.faces);
-    assert_eq!(contained.ir().model.surfaces, full.ir().model.surfaces);
+    assert_eq!(contained.ir().geometry.bodies, full.ir().geometry.bodies);
+    assert_eq!(contained.ir().geometry.faces, full.ir().geometry.faces);
+    assert_eq!(
+        contained.ir().geometry.surfaces,
+        full.ir().geometry.surfaces
+    );
     assert_eq!(
         contained.ir().model.appearances,
         full.ir().model.appearances
@@ -99,8 +103,8 @@ fn strict_mode_refuses_a_contained_design_intent_failure() {
 
 fn moved_first_point(result: &EditableDecodeResult) -> cadmpeg_ir::document::CadIr {
     let mut edited = result.ir().clone();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
@@ -250,4 +254,41 @@ fn a_resource_refusal_in_design_intent_still_refuses_the_document() {
         ),
         "{failure:?}"
     );
+}
+
+#[test]
+fn a_consumed_history_failure_in_finalize_keeps_geometry_and_design() {
+    let full = decode(design_archive());
+    crate::history::history_bodies::inject_consumed_failure(malformed_design);
+    let contained = decode(design_archive());
+    assert_eq!(contained.ir().geometry, full.ir().geometry);
+    assert_eq!(contained.ir().model.features, full.ir().model.features);
+    assert_eq!(
+        f3d_native(contained.ir()).asm_histories,
+        f3d_native(full.ir()).asm_histories
+    );
+    let losses = contained
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::FeatureHistoryBodyUndecoded.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("injected design-intent failure"));
+    assert_valid(&contained);
+}
+
+#[test]
+fn a_consumed_history_resource_refusal_in_finalize_refuses_the_document() {
+    crate::history::history_bodies::inject_consumed_failure(recursion_refusal);
+    let failure = F3dCodec
+        .decode(
+            &mut Cursor::new(design_archive()),
+            &DecodeOptions::default(),
+        )
+        .expect_err("a consumed history resource refusal propagates");
+    assert!(matches!(
+        failure,
+        DecodeFailure::Codec(CodecError::ResourceLimit(_))
+    ));
 }

@@ -152,7 +152,7 @@ pub(crate) fn transfer(
         sketch_ids.insert(object.id().as_str(), id);
     }
     let mut body_ids = Vec::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         body_ids.push(body.id.clone());
     }
     let (feature_ordinals, mut cycle_affected) = feature_ordinals(
@@ -172,7 +172,7 @@ pub(crate) fn transfer(
         objects,
         &properties_by_owner,
         payloads,
-        &ir.model.bodies,
+        &ir.geometry.bodies,
         ProfileFeatureOrder {
             feature_ids: &feature_ids,
             ordinals: &feature_ordinals,
@@ -3798,7 +3798,7 @@ fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>,
             _ => {
                 return Err(CodecError::malformed(
                     "constraint entity and position must both be present",
-                ))
+                ));
             }
         }
     }
@@ -5860,13 +5860,13 @@ pub(crate) fn resolve_operation_selections(
         (!ids.is_empty()).then_some(ids)
     };
     let face_ids = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| face.id.as_str().to_owned())
         .collect::<HashSet<_>>();
     let edge_ids = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| edge.id.as_str().to_owned())
@@ -5942,7 +5942,7 @@ pub(crate) fn resolve_operation_selections(
         };
     };
     let body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.as_str())
@@ -7068,10 +7068,10 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
         "PartDesign::Plane" => FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, z_axis, x_axis)?,
         }),
-        "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
-        }),
+        "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::datum_axis(
+            cadmpeg_ir::features::FinitePoint3::new(origin)?,
+            cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
+        )),
         "PartDesign::Point" => FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: cadmpeg_ir::features::FinitePoint3::new(origin)?,
             construction: None,
@@ -8561,6 +8561,7 @@ fn linear_pattern_axis(
             count,
             second: None,
             omitted_instances: Vec::new(),
+            symmetric: false,
         })
         .ok())
     } else {
@@ -9241,7 +9242,7 @@ pub(crate) fn hide_intermediate_bodies(
     let hidden = crate::gui::select_shape_bodies(ir, hidden)
         .into_iter()
         .collect::<std::collections::HashSet<_>>();
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         if hidden.contains(&body.id) {
             body.visible = Some(false);
         }
@@ -9321,7 +9322,7 @@ pub(crate) fn census(
             ))
         })?;
         let semantic_kind = value
-            .get("definition")
+            .get("kind")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(

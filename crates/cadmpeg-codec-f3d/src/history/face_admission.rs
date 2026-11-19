@@ -342,12 +342,15 @@ impl FaceAdmission<'_, '_> {
                     .map_err(CodecError::malformed)?;
             }
             FeatureOperation::ReplaceFace { operands, .. } if edit_pair => {
+                let tangent_chain = operands.tangent_chain();
                 let mut first = operands.targets().clone();
                 let mut second = operands.replacements().clone();
                 admit(&mut first, false)?;
                 admit(&mut second, false)?;
-                *operands = cadmpeg_ir::features::ReplaceFaceOperands::new(first, second)
-                    .map_err(CodecError::malformed)?;
+                *operands =
+                    cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(first, second)
+                        .map_err(CodecError::malformed)?
+                        .with_tangent_chain(tangent_chain);
             }
             FeatureOperation::CosmeticThread { face, .. } => admit(face, false)?,
             FeatureOperation::Thicken { faces, .. }
@@ -355,13 +358,19 @@ impl FaceAdmission<'_, '_> {
             | FeatureOperation::KnitSurface { faces, .. }
             | FeatureOperation::TrimSurface { faces, .. }
             | FeatureOperation::ExtendSurface { faces, .. }
+            | FeatureOperation::UntrimSurface { faces, .. }
             | FeatureOperation::DeleteFace { faces, .. }
             | FeatureOperation::MoveFace { faces, .. }
             | FeatureOperation::Dome { faces, .. }
             | FeatureOperation::Decal { faces, .. } => admit(faces, false)?,
             FeatureOperation::FilledSurface { support_faces, .. }
             | FeatureOperation::RuledSurface { support_faces, .. } => admit(support_faces, false)?,
-            FeatureOperation::SplitFace { targets, .. } => admit(targets, false)?,
+            FeatureOperation::SplitFace { targets, tool, .. } => {
+                admit(targets, false)?;
+                if let cadmpeg_ir::features::SplitFaceTool::Faces(faces) = tool {
+                    admit(faces, true)?;
+                }
+            }
             FeatureOperation::SplitBody {
                 tool: cadmpeg_ir::features::SplitBodyTool::Faces(tools),
                 ..
@@ -386,6 +395,37 @@ impl FaceAdmission<'_, '_> {
                 admit(anchor, false)?;
             }
             _ => {}
+        }
+        if let FeatureOperation::SplitFace { targets, tool, .. } = operation {
+            use cadmpeg_ir::features::{PathRef, SplitFaceTool};
+            let unresolved_faces = |selection: &FaceSelection| {
+                matches!(
+                    selection,
+                    FaceSelection::Native(_)
+                        | FaceSelection::Unresolved
+                        | FaceSelection::HistoricalPartial { .. }
+                )
+            };
+            if unresolved_faces(targets) {
+                losses.push(
+                    crate::loss::F3dLossCode::FeatureSplitFaceSelectionUnresolved.note(format!(
+                        "{id}: target face selection remains unresolved (DR-573)."
+                    )),
+                );
+            }
+            let unresolved_tool = match tool {
+                SplitFaceTool::Native(_)
+                | SplitFaceTool::Path(PathRef::Native(_) | PathRef::Unresolved(_)) => true,
+                SplitFaceTool::Faces(faces) => unresolved_faces(faces),
+                _ => false,
+            };
+            if unresolved_tool {
+                losses.push(
+                    crate::loss::F3dLossCode::FeatureSplitFaceSelectionUnresolved.note(format!(
+                        "{id}: splitting-tool selection remains unresolved (DR-573)."
+                    )),
+                );
+            }
         }
         Ok(())
     }

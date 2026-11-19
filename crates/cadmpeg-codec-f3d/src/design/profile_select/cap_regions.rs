@@ -26,6 +26,7 @@
 //! reports `feature.profile-cap-outline-assumed`.
 
 pub(super) mod compact;
+pub(super) mod spatial;
 
 use std::collections::HashSet;
 
@@ -725,8 +726,9 @@ fn removed_regions(
     Ok(selection)
 }
 
-/// The `selected` regions as trimmed regions, each with the nested regions
-/// left out of the selection as holes.
+/// The `selected` regions as trimmed regions, each with every region nested
+/// directly in it as a hole. A nested region that is also selected is its own
+/// trimmed region, so the regions do not overlap.
 fn trimmed_selection(
     sampled: &[Sampled<'_>],
     selected: &[usize],
@@ -737,7 +739,6 @@ fn trimmed_selection(
         let holes = region
             .nested
             .iter()
-            .filter(|nested| !selected.contains(nested))
             .map(|nested| {
                 sampled[*nested]
                     .region

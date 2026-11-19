@@ -9,13 +9,16 @@ use cadmpeg_core::CodecError;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::document::{CadIr, SortedModel, SourceMeta};
+use crate::document::{
+    CadIr, SortedDesign, SortedModel, SortedProcess, SortedTopology, SourceMeta,
+};
 use crate::native::{Native, NativeConvertError, NativeRecord};
 use crate::units::{CanonicalUnitsWire, Tolerances};
 
 pub mod digest;
 pub mod finite_json;
 
+use finite_json::admission::CanonicalAdmission;
 use finite_json::{write_canonical_json, CanonicalJsonError};
 
 /// Bytes gathered before the hasher sees them; the pretty JSON writer emits one
@@ -63,7 +66,7 @@ pub fn canonical_json_sha256<T: Serialize + ?Sized>(
 ) -> Result<String, DigestError> {
     let mut buffered =
         std::io::BufWriter::with_capacity(DIGEST_BUFFER_BYTES, DigestWriter(Sha256::new()));
-    write_canonical_json(ctx, &mut buffered, value)?;
+    write_canonical_json(CanonicalAdmission::limited(ctx), &mut buffered, value)?;
     let writer = buffered
         .into_inner()
         .map_err(|error| DigestError::Write(error.into_error()))?;
@@ -152,10 +155,14 @@ pub fn document_local_sha256_without_carried(
     let document = (|| {
         Ok::<_, CodecError>(NormalizedDocument {
             ir_version: ir.ir_version(),
+            fragment: ir.fragment,
             source: source.map(SourceMeta::normalized_digest_copy),
             units: CanonicalUnitsWire::default(),
             tolerances: &ir.tolerances,
+            geometry: ir.geometry.sorted(),
             model: ir.model.sorted()?,
+            design: ir.design.sorted(),
+            process: ir.process.sorted(),
             native: normalized_native(&ir.native, format, &unknowns, carried),
         })
     })()?;
@@ -188,16 +195,20 @@ fn reduced_unknowns(
 /// A document as the semantic digest sees it.
 ///
 /// Mirrors [`CadIr`]'s serialized shape field for field, borrowing what it can,
-/// except `decode_depth`: decoders take this digest before the decode wrapper
-/// records the depth.
+/// except `scope`: decoders take this digest before the decode wrapper
+/// records the scope.
 #[derive(Serialize)]
 struct NormalizedDocument<'a> {
     ir_version: &'a str,
+    fragment: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<SourceMeta>,
     units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
+    geometry: SortedTopology<'a>,
     model: SortedModel<'a>,
+    design: SortedDesign<'a>,
+    process: SortedProcess<'a>,
     native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>,
 }
 
@@ -600,7 +611,7 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&cadmpeg_test_support::service_decode_context(), &ir).unwrap(),
-            "2cf1aea125851f8aa50d45c4fbf1150a075f8c8f7525e9f53d48cc49921f2135"
+            "ed973e3fccbfe465c1ce26ee06372ac3151356fcdaeba850c5bd028009a61e02"
         );
         assert_eq!(
             document_local_sha256(
@@ -611,7 +622,7 @@ mod tests {
                 "pin:test:source-image#0"
             )
             .unwrap(),
-            "75ab44e54fa118cbd10ff244c38f890c60bfef5149ccb742136cec0a589f6178"
+            "b05cf37e11d812511ae3830a8f0d138eb69e7d0fbf87b00534f39a79a30722de"
         );
     }
 
@@ -672,11 +683,12 @@ mod tests {
     /// ```text
     ///   "source": {
     ///     "identity": {
-    ///       "classification": "classified",
+    ///       "kind": "classified",
     ///       "dialects": {
     ///         "primary": {
     ///           "dialect": "pin:test",
-    ///           "admission": "admitted"
+    ///           "declared": {},
+    ///           "admission": {"kind": "admitted"}
     ///         },
     ///         "extra": []
     ///       }
@@ -697,7 +709,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "cdc604f944f65c3bc2ebb64098e127197c949b233784db34dcf2a6310d3a6b92"
+            "93ec763bbb89f3a4269601f6ba4102cd6c0bb47cc670fa2fbec1999ebee25888"
         );
         assert_eq!(
             document_local_sha256(
@@ -778,9 +790,15 @@ mod tests {
             )
             .unwrap();
         let text = normalized.to_canonical_json().unwrap();
-        let depth = "\n  \"decode_depth\": \"full\",";
-        assert_eq!(text.matches(depth).count(), 1, "{text}");
-        crate::hash::sha256_hex(text.replacen(depth, "", 1).as_bytes())
+        let start = text
+            .find("\n  \"scope\": {")
+            .expect("the document records its scope");
+        let end = start
+            + text[start..]
+                .find("\n  },")
+                .expect("the scope object closes")
+            + 5;
+        crate::hash::sha256_hex(format!("{}{}", &text[..start], &text[end..]).as_bytes())
     }
 
     /// A document with an unordered model, a recorded digest, two native
@@ -789,8 +807,8 @@ mod tests {
         source_image: UnknownRecord,
     ) -> (CadIr, crate::SourceFidelity) {
         let mut ir = unit_cube().expect("valid unit cube fixture");
-        ir.model.faces.reverse();
-        ir.model.surfaces.reverse();
+        ir.geometry.faces.reverse();
+        ir.geometry.surfaces.reverse();
         ir.source = Some(crate::SourceMeta::classified(
             cadmpeg_core::dialect::DialectLayers::of(
                 cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
@@ -810,12 +828,13 @@ mod tests {
             .into_iter()
             .collect(),
         ));
-        let body_id = ir.model.bodies[0].id.as_str().to_owned();
+        let body_id = ir.geometry.bodies[0].id.as_str().to_owned();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("test context");
-        let mut source_fidelity = crate::SourceFidelity::default();
+        let mut source_fidelity =
+            crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(&[]));
         source_fidelity
             .attach_native_unknown_records(
                 &mut ir,
@@ -917,7 +936,7 @@ mod tests {
                 UnknownId::mint(source_image).expect("valid identity"),
                 4,
                 vec![9],
-                vec![ir.model.bodies[0].id.as_str().to_owned()],
+                vec![ir.geometry.bodies[0].id.as_str().to_owned()],
             ));
         assert_eq!(
             document_local_sha256(
@@ -940,7 +959,7 @@ mod tests {
         for index in 0..4096 {
             let construction =
                 ProceduralCurveId::mint(format!("test:model:construction#{index:04}")).unwrap();
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: CurveId::mint(format!("test:model:curve#{index:04}")).unwrap(),
                 geometry: CurveGeometry::Procedural {
@@ -948,8 +967,9 @@ mod tests {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
-            ir.model.procedural_curves.push(ProceduralCurve::new(
+            ir.geometry.procedural_curves.push(ProceduralCurve::new(
                 construction,
                 ProceduralCurveDefinition::Exact { cache: None },
             ));
@@ -960,8 +980,8 @@ mod tests {
         let digest =
             document_local_sha256(&ctx, &ir, None, "test", "test:model:unknown#source").unwrap();
         ctx.finish_session().unwrap();
-        ir.model.curves.reverse();
-        ir.model.procedural_curves.reverse();
+        ir.geometry.curves.reverse();
+        ir.geometry.procedural_curves.reverse();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert_eq!(
             digest,
@@ -978,12 +998,12 @@ mod tests {
         for count in [0, 2, 3] {
             let mut ir = CadIr::empty();
             let construction = ProceduralCurveId::mint("test:model:construction#one").unwrap();
-            ir.model.procedural_curves.push(ProceduralCurve::new(
+            ir.geometry.procedural_curves.push(ProceduralCurve::new(
                 construction.clone(),
                 ProceduralCurveDefinition::Exact { cache: None },
             ));
             for index in 0..count {
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: CurveId::mint(format!("test:model:curve#{index}")).unwrap(),
                     geometry: CurveGeometry::Procedural {
@@ -991,6 +1011,7 @@ mod tests {
                         cache: None,
                     },
                     source_object: None,
+                    native_ref: None,
                 });
             }
             let arena = DecodeArena::new();

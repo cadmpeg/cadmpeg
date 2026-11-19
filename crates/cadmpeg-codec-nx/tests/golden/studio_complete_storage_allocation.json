@@ -1,30 +1,130 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "10",
-      "model": {
-        "appearance_bindings": [],
-        "appearances": [],
-        "assembly_joints": [],
-        "attributes": [],
-        "bodies": [],
-        "coedges": [],
+      "design": {
+        "arrangements": [],
         "configurations": [],
-        "curves": [],
-        "drawings": [],
-        "edges": [],
-        "faces": [],
+        "containers": [
+          {
+            "kind": "ordered",
+            "value": {
+              "folders": [],
+              "id": "nx:feature-history:timeline#root",
+              "kind": "timeline",
+              "members": [
+                {
+                  "kind": "feature",
+                  "value": "nx:feature-history:feature#0000000000-0000000000"
+                }
+              ],
+              "rollback": {
+                "kind": "end"
+              }
+            }
+          }
+        ],
+        "evaluations": [],
         "features": [
           {
             "definition": {
-              "definition": "unresolved",
-              "family": "freeform_surface"
+              "operation": {
+                "kind": "unresolved",
+                "value": {
+                  "family": "patch"
+                }
+              }
             },
+            "id": "nx:feature-history:feature#0000000000-0000000000",
+            "native_ref": "nx:feature-history:operation-label#0000000000-0000000000"
+          }
+        ],
+        "names": [],
+        "parameters": [],
+        "programs": [],
+        "publications": [],
+        "scopes": [
+          {
+            "active_arrangements": [],
+            "current": [
+              {
+                "at": {
+                  "kind": "after",
+                  "value": {
+                    "kind": "feature",
+                    "value": "nx:feature-history:feature#0000000000-0000000000"
+                  }
+                },
+                "bodies": [],
+                "poses": [],
+                "status": "current"
+              }
+            ],
+            "definition": "nx:document:product-definition#root",
+            "occurrences": {},
+            "roots": [
+              "nx:feature-history:timeline#root"
+            ]
+          }
+        ],
+        "sheet_metal_rules": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": []
+      },
+      "fragment": false,
+      "geometry": {
+        "bodies": [],
+        "coedges": [],
+        "curves": [],
+        "edges": [],
+        "faces": [],
+        "loops": [],
+        "pcurves": [],
+        "points": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "regions": [],
+        "shells": [],
+        "subds": [],
+        "surfaces": [],
+        "vertices": []
+      },
+      "ir_version": "11",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "articulations": [],
+        "assembly_joints": [],
+        "assets": [],
+        "attributes": [],
+        "colliders": [],
+        "configurations": [],
+        "declared_measures": [],
+        "drawings": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
+        "features": [
+          {
+            "definition": {
+              "kind": "operation",
+              "value": {
+                "kind": "unresolved",
+                "value": {
+                  "family": "freeform_surface"
+                }
+              }
+            },
+            "dependencies": [],
             "id": "nx:feature-history:feature#0000000000-0000000000",
             "name": "Studio Surface",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
             "ordinal": 0,
+            "outputs": [],
+            "source_content": [],
             "source_properties": {
               "object_index.0": "null",
               "object_index.1": "null",
@@ -67,34 +167,47 @@
               "surface_construction_reference_record.8": "nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000008",
               "surface_construction_reference_record.9": "nx:feature-history:surface-construction-reference#0000000000-0000000000-0000000009"
             },
-            "source_tag": "Studio Surface",
-            "suppressed": null
+            "source_tag": "Studio Surface"
           }
         ],
-        "loops": [],
+        "history_bodies": [],
+        "mass_properties": [],
         "occurrences": [],
         "parameters": [],
-        "pcurves": [],
+        "physical_materials": [],
+        "physics_scenes": [],
         "pmi": [],
-        "points": [],
+        "point_clouds": [],
         "presentation_documents": [],
         "presentation_layers": [],
-        "procedural_curves": [],
-        "procedural_surfaces": [],
-        "product_definitions": [],
-        "regions": [],
+        "product_definitions": [
+          {
+            "bodies": [],
+            "bom_properties": {},
+            "id": "nx:document:product-definition#root",
+            "instance_bodies": [],
+            "kind": "part",
+            "occurrences": [],
+            "representations": [],
+            "sketches": [],
+            "storage": {
+              "document": {},
+              "kind": "file"
+            },
+            "tessellations": []
+          }
+        ],
+        "rigid_bodies": [],
         "semantic_annotations": [],
-        "shells": [],
         "sketch_constraints": [],
         "sketch_entities": [],
         "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
         "spatial_sketch_entities": [],
         "spatial_sketches": [],
         "spreadsheets": [],
-        "subds": [],
-        "surfaces": [],
         "tessellations": [],
-        "vertices": [],
         "view_presentations": []
       },
       "native": {
@@ -1014,123 +1127,158 @@
           ],
           "unknowns": [
             {
-              "id": "nx:om-section-0:block#0"
+              "id": "nx:om-section-0:block#0",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#1"
+              "id": "nx:om-section-0:block#1",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#10"
+              "id": "nx:om-section-0:block#10",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#11"
+              "id": "nx:om-section-0:block#11",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#12"
+              "id": "nx:om-section-0:block#12",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#13"
+              "id": "nx:om-section-0:block#13",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#14"
+              "id": "nx:om-section-0:block#14",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#15"
+              "id": "nx:om-section-0:block#15",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#16"
+              "id": "nx:om-section-0:block#16",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#17"
+              "id": "nx:om-section-0:block#17",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#18"
+              "id": "nx:om-section-0:block#18",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#19"
+              "id": "nx:om-section-0:block#19",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#2"
+              "id": "nx:om-section-0:block#2",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#20"
+              "id": "nx:om-section-0:block#20",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#21"
+              "id": "nx:om-section-0:block#21",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#22"
+              "id": "nx:om-section-0:block#22",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#23"
+              "id": "nx:om-section-0:block#23",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#24"
+              "id": "nx:om-section-0:block#24",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#25"
+              "id": "nx:om-section-0:block#25",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#26"
+              "id": "nx:om-section-0:block#26",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#27"
+              "id": "nx:om-section-0:block#27",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#28"
+              "id": "nx:om-section-0:block#28",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#3"
+              "id": "nx:om-section-0:block#3",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#4"
+              "id": "nx:om-section-0:block#4",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#5"
+              "id": "nx:om-section-0:block#5",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#6"
+              "id": "nx:om-section-0:block#6",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#7"
+              "id": "nx:om-section-0:block#7",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#8"
+              "id": "nx:om-section-0:block#8",
+              "links": []
             },
             {
-              "id": "nx:om-section-0:block#9"
+              "id": "nx:om-section-0:block#9",
+              "links": []
             }
           ]
         }
       },
+      "process": {
+        "features": [],
+        "groups": [],
+        "machines": [],
+        "operations": [],
+        "parameters": [],
+        "presets": [],
+        "programs": [],
+        "setups": [],
+        "states": [],
+        "toolpaths": [],
+        "tools": []
+      },
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
-        "attributes": {
-          "classified_offset_store_control_count": "0",
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "757",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "743",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "offset_store_control_count": "1",
-          "partition_streams": "0",
-          "plain_streams": "0",
-          "unclassified_offset_store_control_count": "1"
-        },
+        "attributes": {},
         "identity": {
-          "classification": "classified",
           "dialects": {
             "extra": [],
             "primary": {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "splmsstr_version": "6"
               },
               "dialect": "nx:splmsstr"
             }
-          }
+          },
+          "kind": "classified"
         }
       },
       "tolerances": {
@@ -1138,41 +1286,51 @@
         "linear": 1e-6
       },
       "units": {
-        "length": "millimeter"
+        "angle": "radian",
+        "length": "millimeter",
+        "mass": "kilogram",
+        "time": "second"
       }
     },
     "report": {
+      "coverage": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "splmsstr_version": "6"
             },
             "dialect": "nx:splmsstr"
           }
-        }
+        },
+        "kind": "classified"
       },
       "losses": [
         {
           "code": {
-            "code": "geometry.not-transferred",
-            "kind": "geometry_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.not-transferred",
+              "kind": "geometry_not_transferred",
+              "namespace": "nx",
+              "strict_floor": "warning"
+            }
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
         },
         {
           "code": {
-            "code": "container.offset-store-control-untyped",
-            "kind": "record_not_typed",
-            "namespace": "nx",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "container.offset-store-control-untyped",
+              "kind": "record_not_typed",
+              "namespace": "nx"
+            }
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
@@ -1187,15 +1345,24 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "kind": "full"
+      },
+      "transfer_ledger": {
+        "entries": []
       }
     },
     "source_fidelity": {
       "annotations": {
         "exactness": {
+          "nx:document:product-definition#root": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          },
           "nx:feature-history:feature#0000000000-0000000000": {
             "entity": "derived",
-            "scope": "entity"
+            "fields": {},
+            "kind": "entity"
           }
         },
         "provenance": {
@@ -1386,240 +1553,278 @@
           }
         }
       },
+      "decode_digest": "0b77384b39d3536fcb4e9e593224c95a98e888bd51e2d60f0d5a53844083e205",
+      "file_digests": {},
       "retained_records": {
         "nx:om-section-0:block#0": {
           "bytes": {
             "data": "BAEOTlggMjAyNy4zMTAyAA==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 699,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": [
+            "model",
+            "design"
+          ]
         },
         "nx:om-section-0:block#1": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 715,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#10": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 724,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#11": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 725,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#12": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 726,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#13": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 727,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#14": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 728,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#15": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 729,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#16": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 730,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#17": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 731,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#18": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 732,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#19": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 733,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#2": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 716,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#20": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 734,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#21": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 735,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#22": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 736,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#23": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 737,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#24": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 738,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#25": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 739,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#26": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 740,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#27": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 741,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#28": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 742,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#3": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 717,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#4": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 718,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#5": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 719,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#6": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 720,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#7": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 721,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#8": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 722,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         },
         "nx:om-section-0:block#9": {
           "bytes": {
             "data": "QQ==",
-            "retention": "inline"
+            "kind": "inline"
           },
           "offset": 723,
-          "stream": "nx:container"
+          "stream": "nx:container",
+          "untyped": []
         }
-      }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
     }
   },
   "inspect": {
@@ -1630,28 +1835,31 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compression": "none",
+        "kind": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
         "size": {
-          "form": "exact",
+          "kind": "exact",
           "size": 667
         }
       }
     ],
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "splmsstr_version": "6"
           },
           "dialect": "nx:splmsstr"
         }
-      }
+      },
+      "kind": "classified"
     },
+    "losses": [],
     "notes": [
       "SPLMSSTR container: file tag 0, footer offset 743, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",

@@ -6,7 +6,7 @@ use crate::test_support::scene::{override_row, with_world};
 
 #[test]
 fn scene_local_paths_bind_without_changing_occurrences_or_joints() {
-    let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(&[300]);
+    let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[300]);
     let bytes = crate::test_support::body_map_test::f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
@@ -40,7 +40,10 @@ fn scene_local_paths_bind_without_changing_occurrences_or_joints() {
             occurrence
         })
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(bound.len(), 3);
+    // §8.1: the module, placed twice, owns its child once, so the poses of
+    // the child under both placements bind the one child occurrence; each
+    // row keeps its own path.
+    assert_eq!(bound.len(), 2);
 }
 
 #[test]

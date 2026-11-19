@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::Decoded;
-use cadmpeg_ir::ids::{IdentityKey, OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{Occurrence, ProductDefinition};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
@@ -80,7 +80,7 @@ impl AssemblyProjection {
             let tail = format!("@{site}");
             let bodies = decoded
                 .ir
-                .model
+                .geometry
                 .bodies
                 .iter()
                 .filter(|body| body.id.as_str().ends_with(&tail))
@@ -120,7 +120,7 @@ impl AssemblyProjection {
         }
         decoded.ir.model.occurrences.extend(self.occurrences);
         decoded.body.losses.extend(self.losses);
-        decoded.ir.model.finalize();
+        decoded.ir.finalize();
     }
 
     /// The site keys of the virtual component sections that the assembly
@@ -394,31 +394,21 @@ fn native_project(
         virtual_sections,
         holder_stem: None,
         definitions: BTreeSet::new(),
+        expanded: BTreeSet::new(),
         occurrences: BTreeSet::new(),
         native: &mut native,
         tally: &mut tally,
     };
     walk.holder_stem = walk.model_name(root_model);
-    let Some(root_definition) = walk.definition(root_model)? else {
+    let Some(root_definition) = walk.root_definition(root_model)? else {
         return Ok(NativeAssembly::structure_lost(format!(
             "The active configuration's model `{root_model}` has no valid identity. No \
              occurrence is transferred."
         )));
     };
-    let root_name = walk.model_name(root_model);
-    let Some(root_occurrence) = NativePlacement::tree_root(root_model, root_definition, root_name)
-    else {
-        return Ok(NativeAssembly::structure_lost(format!(
-            "The active configuration's model `{root_model}` has no valid identity. No \
-             occurrence is transferred."
-        )));
-    };
-    let root_id = root_occurrence.id().clone();
-    ctx.charge_entities(1, "project SolidWorks root occurrence")?;
-    walk.occurrences.insert(root_id.clone());
-    walk.native.push_placement(root_occurrence);
     let mut path = BTreeSet::from([root_model]);
-    walk.children(root_model, &root_id, None, &mut path)?;
+    walk.expanded.insert(root_model);
+    walk.children(root_model, &root_definition, &mut path)?;
     tally.report(&mut native);
     Ok(native)
 }
@@ -512,6 +502,8 @@ struct Walk<'w, 'a> {
     /// `VirtualComp` sections.
     holder_stem: Option<String>,
     definitions: BTreeSet<&'a str>,
+    /// Models whose component instances are already projected.
+    expanded: BTreeSet<&'a str>,
     /// Occurrence identities already placed.
     occurrences: BTreeSet<OccurrenceId>,
     native: &'w mut NativeAssembly,
@@ -586,6 +578,25 @@ impl<'a> Walk<'_, 'a> {
         Ok(Some(id))
     }
 
+    /// The root definition: the model of the active configuration, added
+    /// first, or `None` for a model identity that is not a valid identity key.
+    fn root_definition(
+        &mut self,
+        model: &'a str,
+    ) -> Result<Option<ProductDefinitionId>, CodecError> {
+        let Some(definition) = NativeDefinition::tree_model(model, self.model_name(model))
+            .map(NativeDefinition::into_root)
+        else {
+            return Ok(None);
+        };
+        let id = definition.id().clone();
+        self.definitions.insert(model);
+        self.ctx
+            .charge_entities(1, "project SolidWorks assembly model")?;
+        self.native.push_definition(definition);
+        Ok(Some(id))
+    }
+
     /// The product definition of an assembly model, added once, or `None` for
     /// a model identity that is not a valid identity key.
     fn definition(&mut self, model: &'a str) -> Result<Option<ProductDefinitionId>, CodecError> {
@@ -601,12 +612,12 @@ impl<'a> Walk<'_, 'a> {
         Ok(Some(id))
     }
 
-    /// Project the component instances of `model`, placed under `parent`.
+    /// Project the component instances of `model`, which its definition
+    /// `owner` places, and those of each assembly model they place, once.
     fn children(
         &mut self,
         model: &'a str,
-        parent: &OccurrenceId,
-        parent_key: Option<&IdentityKey>,
+        owner: &ProductDefinitionId,
         path: &mut BTreeSet<&'a str>,
     ) -> Result<(), CodecError> {
         let _depth = self.ctx.enter_nested("project SolidWorks component tree")?;
@@ -646,7 +657,7 @@ impl<'a> Walk<'_, 'a> {
                 self.tally.unresolved.push(name);
                 continue;
             }
-            let Some((key, occurrence)) = NativePlacement::tree_occurrence_id(parent_key, id)
+            let Some(instance) = NativePlacement::tree_occurrence_id(id)
                 .filter(|(_, occurrence)| !self.occurrences.contains(occurrence))
             else {
                 self.tally.unresolved.push(name);
@@ -689,15 +700,21 @@ impl<'a> Walk<'_, 'a> {
                 Some("NO") => Some(true),
                 _ => None,
             };
-            self.occurrences.insert(occurrence.clone());
+            self.occurrences.insert(instance.1.clone());
+            let child_definition = match &prototype {
+                NativePrototype::Local(definition) => Some(definition.clone()),
+                NativePrototype::External { .. } | NativePrototype::Unresolved => None,
+            };
             self.native.push_placement(
-                NativePlacement::tree_child(occurrence.clone(), prototype, parent.clone(), id)
+                NativePlacement::tree_child(instance, prototype, owner.clone(), id)
                     .placed(ordinal, transform, name, visible),
             );
-            if expands {
-                path.insert(child);
-                self.children(child, &occurrence, Some(&key), path)?;
-                path.remove(child);
+            if let (true, Some(child_definition)) = (expands, child_definition) {
+                if self.expanded.insert(child) {
+                    path.insert(child);
+                    self.children(child, &child_definition, path)?;
+                    path.remove(child);
+                }
             }
         }
         Ok(())

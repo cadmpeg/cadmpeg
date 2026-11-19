@@ -5,7 +5,7 @@
       "attributes": {
         "directory_id": "1"
       },
-      "compression": "storage",
+      "kind": "storage",
       "name": "RSeStorage",
       "role": "rse-storage"
     },
@@ -13,7 +13,7 @@
       "attributes": {
         "directory_id": "2"
       },
-      "compression": "storage",
+      "kind": "storage",
       "name": "RSeStorage/V1",
       "role": "storage"
     },
@@ -23,11 +23,11 @@
         "directory_id": "4",
         "start_sector": "4"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "RSeStorage/V1/RSeDb",
       "role": "rse-database",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 108
       }
     },
@@ -40,11 +40,11 @@
         "inner_framing": "zlib",
         "start_sector": "7"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "RSeStorage/Bseg",
       "role": "rse-segment-bulk",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 159
       }
     },
@@ -60,11 +60,11 @@
         "segment_kind": "pm_brep",
         "start_sector": "10"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "RSeStorage/Mseg",
       "role": "rse-segment-metadata",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 219
       }
     },
@@ -74,11 +74,11 @@
         "directory_id": "3",
         "start_sector": "0"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "RSeStorage/RSeSegInfo",
       "role": "rse-segment-registry",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 255
       }
     },
@@ -88,21 +88,22 @@
         "directory_id": "5",
         "start_sector": "6"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "RSeStorage/RSeDbRevisionInfo",
       "role": "rse-revision-table",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 8
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [
         {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "reference_width": "4",
             "save_format_major": "7",
@@ -112,7 +113,9 @@
         }
       ],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "cfb_major_version": "3",
           "meta_stream_marker": "RSe Meta Stream Version 8",
@@ -121,8 +124,10 @@
         },
         "dialect": "inventor:cfb3-rse31-meta8"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "CFB v3 with 1 RSe segment pair(s) and 1 versioned database(s)"
   ]

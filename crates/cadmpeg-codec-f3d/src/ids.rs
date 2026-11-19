@@ -295,16 +295,17 @@ pub(crate) fn stream_root_occurrence_id(
     )
 }
 
-/// Neutral nested occurrence identified by its complete containing path.
-pub(crate) fn nested_component_occurrence_id(
+/// One instance of the nested occurrence `own`, identified by the instance
+/// it sits in and its own occurrence identity.
+pub(crate) fn nested_occurrence_id(
     parent: &cadmpeg_ir::ids::OccurrenceId,
-    key: &impl crate::records::mesh::OccurrenceIdentity,
+    own: &cadmpeg_ir::ids::OccurrenceId,
 ) -> cadmpeg_ir::ids::OccurrenceId {
     cadmpeg_ir::ids::OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("f3d", "model", "occurrence"),
         cadmpeg_ir::ids::Identity::from(parent.clone())
             .key()
-            .colon(key.occurrence_identity_key()),
+            .colon(cadmpeg_ir::ids::Identity::from(own.clone()).key()),
     )
 }
 
@@ -847,6 +848,18 @@ pub(crate) fn feature_input_prefix(
     previous_state_id: i64,
 ) -> cadmpeg_ir::ids::IdentityKey {
     history_input_prefix(&feature.key(), previous_state_id)
+}
+
+/// Identity of the result state of `feature`, the history state `state_id`
+/// that its transition produces.
+pub(crate) fn history_result_state_id(
+    feature: &cadmpeg_ir::features::FeatureId,
+    state_id: i64,
+) -> cadmpeg_ir::ids::FeatureResultTopologyId {
+    cadmpeg_ir::ids::FeatureResultTopologyId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "history-result", "state"),
+        history_input_prefix(&feature.key(), state_id),
+    )
 }
 
 /// The history-input state key for a `prefix` from [`history_input_prefix`].

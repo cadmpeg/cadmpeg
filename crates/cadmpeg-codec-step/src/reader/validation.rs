@@ -126,7 +126,7 @@ pub(super) fn decode(
             continue;
         };
         validation_representations.insert(representation_id);
-        let target = definition.map_or(DeclaredTarget::Unresolved {}, |definition| {
+        let target = definition.map_or(DeclaredTarget::Unresolved, |definition| {
             resolved_targets
                 .entry(definition)
                 .or_insert_with(|| {
@@ -201,7 +201,7 @@ pub(super) fn decode(
             }
         }
     }
-    ir.model.points.retain(|point| {
+    ir.geometry.points.retain(|point| {
         let Some(id) = point
             .id
             .as_str()
@@ -289,21 +289,21 @@ fn resolve_target(
     aspect_items: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> DeclaredTarget {
     let Some(record) = exchange.records().get(&definition) else {
-        return DeclaredTarget::Unresolved {};
+        return DeclaredTarget::Unresolved;
     };
     if record.partial("PRODUCT_DEFINITION_SHAPE").is_some() {
         return definitions_by_shape.get(&definition).map_or(
-            DeclaredTarget::Unresolved {},
+            DeclaredTarget::Unresolved,
             |definition| DeclaredTarget::Definition {
                 definition: definition.clone(),
             },
         );
     }
     if record.partial("SHAPE_ASPECT").is_none() {
-        return DeclaredTarget::Unresolved {};
+        return DeclaredTarget::Unresolved;
     }
     let Some(items) = aspect_items.get(&definition) else {
-        return DeclaredTarget::Unresolved {};
+        return DeclaredTarget::Unresolved;
     };
     let mut bodies = BTreeSet::new();
     for item in items {
@@ -315,12 +315,12 @@ fn resolve_target(
             continue;
         }
         let Some(item_bodies) = topology.body_by_root.get(item) else {
-            return DeclaredTarget::Unresolved {};
+            return DeclaredTarget::Unresolved;
         };
         bodies.extend(item_bodies.iter().cloned());
     }
     if bodies.is_empty() {
-        return DeclaredTarget::Unresolved {};
+        return DeclaredTarget::Unresolved;
     }
     DeclaredTarget::Bodies {
         bodies: bodies.into_iter().collect(),

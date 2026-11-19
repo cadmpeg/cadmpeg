@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Ordered plate, bend, and corner children of a flange.
+//! Ordered plate, bend, and corner children of a flange or contour flange.
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -14,7 +14,40 @@ pub(crate) const TYPE: [u8; 16] = [
     0x08, 0xdc, 0xdd, 0xc3, 0xd3, 0x11, 0xd0, 0x97, 0x60, 0x00, 0xa7, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
 ];
 
+/// The contour-flange parent. Its payload has the flange layout.
+pub(crate) const CONTOUR_TYPE: [u8; 16] = [
+    0xb0, 0x74, 0x38, 0xa0, 0xd4, 0x11, 0x38, 0x12, 0x60, 0x00, 0x18, 0xaa, 0x9d, 0xcc, 0xef, 0xb0,
+];
+
 pub(crate) type Flange = Located<FlangePayload>;
+
+/// The parent operation that owns the plate, bend, and corner children.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FlangeKind {
+    /// Type `08dcddc3d311d0976000a7a99dccefb0`: a flange on existing edges.
+    Edge,
+    /// Type `b07438a0d4113812600018aa9dccefb0`: a contour flange from an
+    /// open sketch profile.
+    Contour,
+}
+
+impl FlangeKind {
+    /// The kind of a parsed parent record.
+    pub(crate) fn of(flange: &Flange) -> Option<Self> {
+        let type_id = flange.identity.type_id.as_str();
+        [Self::Edge, Self::Contour]
+            .into_iter()
+            .find(|kind| type_id == crate::pmdc::type_id_string(kind.type_id()))
+    }
+
+    /// The record type of this kind.
+    pub(crate) const fn type_id(self) -> [u8; 16] {
+        match self {
+            Self::Edge => TYPE,
+            Self::Contour => CONTOUR_TYPE,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FlangePayload {
@@ -23,7 +56,18 @@ pub(crate) struct FlangePayload {
     state: i32,
     pub(crate) children: PmDcReferenceList,
     value: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_attachment_edges"
+    )]
+    pub(crate) attachment_edges: Option<super::contour::AttachmentEdges>,
 }
+cadmpeg_core::named_optional_field!(
+    deserialize_attachment_edges,
+    super::contour::AttachmentEdges,
+    "attachment_edges"
+);
 
 impl RecordPayload for FlangePayload {
     const KIND: &'static str = "sheet-metal-flange";
@@ -46,13 +90,32 @@ pub(crate) fn parse(
         state,
         children,
         value,
+        attachment_edges: None,
     })
 }
 
+impl Flange {
+    pub(super) fn with_attachment_edges(
+        &self,
+        edges: Option<super::contour::AttachmentEdges>,
+    ) -> Self {
+        let mut payload = (**self).clone();
+        payload.attachment_edges = edges;
+        Self::new(
+            payload,
+            self.identity.type_id.clone(),
+            self.identity.segment_token.clone(),
+            self.identity.record_ordinal,
+        )
+    }
+}
+
 pub(crate) fn valid<'a>(flange: &Flange, type_at: impl Fn(u32) -> Option<&'a str>) -> bool {
-    flange.identity.type_id.as_str() == crate::pmdc::type_id_string(TYPE)
-        && type_at(flange.identity.record_ordinal)
-            .is_some_and(|actual| actual == crate::pmdc::type_id_string(TYPE))
+    let Some(kind) = FlangeKind::of(flange) else {
+        return false;
+    };
+    type_at(flange.identity.record_ordinal)
+        .is_some_and(|actual| actual == crate::pmdc::type_id_string(kind.type_id()))
         && [flange.header.next, flange.header.context]
             .into_iter()
             .all(|reference| {
