@@ -105,7 +105,7 @@ impl Fixture {
                 } else {
                     351
                 });
-        let table = [80_u32, 81, 82, 91, 92, 93, 94, ANGLE, 96];
+        let table = [79_u32, 80, 81, 82, 91, 92, 93, 94, ANGLE, 96];
         let table = &table[table.len() - self.references..];
         let tail_extra = if self.second_reference.is_some() {
             10
