@@ -371,7 +371,19 @@ pub(crate) fn bind(
     // and bind each path to the occurrence the definition owns.
     let original_parents =
         crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
-    let expanded = crate::tree::expand(&ir.model.product_definitions, &ir.model.occurrences)?;
+    let expanded = match crate::tree::expand(&ir.model.product_definitions, &ir.model.occurrences) {
+        Ok(expanded) => expanded,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(error) => {
+            // An instance tree past the entity limit leaves the overrides
+            // unbound; it does not fail the file.
+            losses.push(F3dLossCode::SceneOverrideUnbound.note(format!(
+                "{} display override row(s) stay unbound: the occurrence tree cannot be expanded ({error})",
+                rows.len()
+            )));
+            return Ok(());
+        }
+    };
     let occurrences = expanded
         .occurrences
         .iter()
