@@ -22,6 +22,54 @@ const XML: &[u8] = br#"<document><model><tool id="t1"/><section type="setup" nam
 const MEMBER: &str = "Toolpath/Iron.Document/synthetic.irondoc";
 
 #[test]
+fn cam_section_structure_emits_assumption() {
+    let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, XML);
+    let result = F3dCodec
+        .decode(&mut Cursor::new(part), &DecodeOptions::default())
+        .unwrap();
+    let manufacturing = &result.ir().manufacturing;
+    assert_eq!(manufacturing.setups.len(), 1);
+    assert_eq!(manufacturing.operations.len(), 1);
+    assert_eq!(
+        manufacturing.operations[0].setup,
+        manufacturing.setups[0].id
+    );
+    assert_eq!(
+        manufacturing.operations[0].family,
+        cadmpeg_ir::manufacturing::ManufacturingStrategy::Parallel
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::CamStructureAssumed.kind()));
+}
+
+#[test]
+fn cam_repeated_tool_reference_selects_last_tool_and_emits_assumption() {
+    let xml = br#"<document><model><tool id="t1" number="1"/><tool id="t1" number="2"/><section type="setup"><section strategy="parallel" tool="t1"/></section></model></document>"#;
+    let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, xml);
+    let result = F3dCodec
+        .decode(&mut Cursor::new(part), &DecodeOptions::default())
+        .unwrap();
+    let manufacturing = &result.ir().manufacturing;
+    assert_eq!(manufacturing.tools.len(), 2);
+    assert_eq!(manufacturing.operations.len(), 1);
+    assert_ne!(manufacturing.tools[0].id, manufacturing.tools[1].id);
+    assert_eq!(manufacturing.tools[0].number.as_deref(), Some("1"));
+    assert_eq!(manufacturing.tools[1].number.as_deref(), Some("2"));
+    assert_eq!(
+        manufacturing.operations[0].tool.as_ref(),
+        Some(&manufacturing.tools[1].id)
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::CamToolReferenceLastAssumed.kind()));
+}
+
+#[test]
 fn cam_archive_decode_and_f3z_root_member() {
     let part = with_cam(f3d_with_smbh(&synthetic_geometry_smbh()), MEMBER, XML);
     let direct = F3dCodec

@@ -2,6 +2,7 @@
 //! Source manufacturing definitions with ordered native parameters.
 
 use crate::design::ids::{OperationId, SetupId, ToolId};
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -148,9 +149,10 @@ pub struct ManufacturingSetup {
 }
 
 /// Normalized machining strategy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "lowercase")]
+#[serde(deny_unknown_fields)]
 pub enum ManufacturingStrategy {
     /// Planar adaptive clearing.
     Adaptive2d,
