@@ -8325,7 +8325,7 @@ Parsed by:
 | 29 | 4 | `extent_kind` | `u32` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
 | 33 | 1 | `direction_kind` | `u8` | little | spec | It uses the marker-one prologue through offset 33, and offset 34 |
 | 34 | 1 | `project_axis` | `u8` | little | spec | and offset 34 stores the Project Axis flag |
-| 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag `1` |
+| 35 | 1 | `solid` | `u8` | little | spec | Offset 35 stores the solid flag: `1` creates a solid body and `0` a surface body. Offset 36 |
 | 36 | 1 | `symmetric` | `u8` | little | spec | Offset 36 stores the Symmetric flag |
 | 37 | 1 | `two_sides` | `u8` | little | spec | offset 37 stores the Two Sides flag |
 | 38 | 1 | `opposite_angle_reference_marker` | `u8` | little | spec | The marked opposite-angle reference starts at offset 38 |

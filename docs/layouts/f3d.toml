@@ -27016,7 +27016,7 @@ name = "solid"
 offset = 35
 type = "u8"
 source = "spec"
-anchor = "Offset 35 stores the solid flag `1`"
+anchor = "Offset 35 stores the solid flag: `1` creates a solid body and `0` a surface body. Offset 36"
 
 [[record.field]]
 name = "symmetric"
