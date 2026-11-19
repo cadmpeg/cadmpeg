@@ -281,6 +281,7 @@ pub(crate) enum F3dLossCode {
     HistoryBindingWorkExceeded,
     /// A Design recipe side-sequence search exceeded its local work cap.
     RecipeSideSearchBudgetExceeded,
+    FaceRecipeMatchWorkExceeded,
     /// Ordering one owner scope's Design parameters exceeded its local work cap.
     ParameterOrderBudgetExceeded,
     /// An ASM history span stays opaque because record framing failed.
@@ -429,11 +430,11 @@ pub(crate) enum F3dLossCode {
     FeatureDerivedBaseUnresolved,
     /// A Pipe section is inferred as a circle from its result faces.
     FeaturePipeCircularSectionInferred,
-    /// A Pipe whose fractions both equal one is assumed to sweep its whole path group.
+    /// A Pipe with a point-selection pair whose fractions both equal one is assumed to sweep its whole path group.
     FeaturePipeWholePathExtentAssumed,
     /// A Pipe section without an unchanged new-body result is assumed to be a circle.
     FeaturePipeCircularSectionAssumed,
-    /// A Pipe with one unit and one zero fraction is assumed to start its section at a path end.
+    /// A Pipe with one unit and one zero fraction is assumed to place its section where the unit fraction starts.
     FeaturePipePathEndSectionAssumed,
     FeatureSweepSourceUnavailable,
     FeatureSweepOperationPrefixAssumed,
@@ -892,6 +893,7 @@ pub(crate) enum F3dLossCode {
     ThickenFaceSelectionAssumed,
     /// A `Shell` reference table stores references outside its face-group members.
     FeatureShellTableMembersAssumed,
+    FeatureShellRemovedFacesAssumed,
     FeatureShellSourceUnavailable,
     FeatureShellEnvelopeAssumed,
     FeatureShellCountedControlAssumed,
@@ -1292,6 +1294,7 @@ impl F3dLossCode {
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
         Self::RecipeSideSearchBudgetExceeded,
+        Self::FaceRecipeMatchWorkExceeded,
         Self::ParameterOrderBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
@@ -1720,6 +1723,7 @@ impl F3dLossCode {
         Self::ThickenThicknessUnrepresentable,
         Self::ThickenFaceSelectionAssumed,
         Self::FeatureShellTableMembersAssumed,
+        Self::FeatureShellRemovedFacesAssumed,
         Self::FeatureShellSourceUnavailable,
         Self::FeatureShellEnvelopeAssumed,
         Self::FeatureShellCountedControlAssumed,
@@ -2060,6 +2064,7 @@ impl F3dLossCode {
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
             Self::RecipeSideSearchBudgetExceeded => "feature.recipe-search-budget-exceeded",
+            Self::FaceRecipeMatchWorkExceeded => "feature.face-recipe-work-exceeded",
             Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
@@ -2751,6 +2756,7 @@ impl F3dLossCode {
             Self::ThickenThicknessUnrepresentable => "feature.thicken-thickness-unrepresentable",
             Self::ThickenFaceSelectionAssumed => "feature.thicken-face-selection-assumed",
             Self::FeatureShellTableMembersAssumed => "feature.shell-table-members-assumed",
+            Self::FeatureShellRemovedFacesAssumed => "feature.shell-removed-faces-assumed",
             Self::FeatureShellSourceUnavailable => "feature.shell-source-unavailable",
             Self::FeatureShellEnvelopeAssumed => "feature.shell-envelope-assumed",
             Self::FeatureShellCountedControlAssumed => "feature.shell-counted-control-assumed",
@@ -2986,6 +2992,7 @@ impl F3dLossCode {
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
+            | Self::FaceRecipeMatchWorkExceeded
             | Self::ParameterOrderBudgetExceeded
             | Self::HistoryRecordFramingFailed
             | Self::MeshContainerUndecoded
@@ -3512,6 +3519,7 @@ impl F3dLossCode {
             | Self::ThickenFrameAssumed
             | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellRemovedFacesAssumed
             | Self::FeatureShellSourceUnavailable
             | Self::FeatureShellEnvelopeAssumed
             | Self::FeatureShellCountedControlAssumed
@@ -3752,6 +3760,7 @@ impl F3dLossCode {
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
+            | Self::FaceRecipeMatchWorkExceeded
             | Self::ParameterOrderBudgetExceeded
             | Self::FeatureStoredBodiesEmpty
             | Self::FeatureStoredBodiesRecipeAbsent
@@ -4174,6 +4183,7 @@ impl F3dLossCode {
             | Self::ThickenFrameAssumed
             | Self::ThickenFaceSelectionAssumed
             | Self::FeatureShellTableMembersAssumed
+            | Self::FeatureShellRemovedFacesAssumed
             | Self::FeatureShellSourceUnavailable
             | Self::FeatureShellEnvelopeAssumed
             | Self::FeatureShellCountedControlAssumed
@@ -4526,6 +4536,7 @@ mod tests {
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
                 "feature.recipe-search-budget-exceeded",
+                "feature.face-recipe-work-exceeded",
                 "parameter.order-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
@@ -4954,6 +4965,7 @@ mod tests {
                 "feature.thicken-thickness-unrepresentable",
                 "feature.thicken-face-selection-assumed",
                 "feature.shell-table-members-assumed",
+                "feature.shell-removed-faces-assumed",
                 "feature.shell-source-unavailable",
                 "feature.shell-envelope-assumed",
                 "feature.shell-counted-control-assumed",

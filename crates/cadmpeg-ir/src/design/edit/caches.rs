@@ -15,7 +15,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::eval::{
-    cache_value, check_types, evaluate, kind_type, kind_value, EvalError, Type, Value,
+    cache_value, check_types, evaluate, kind_type, kind_value, EvalError, ExpressionSite, Type,
+    Value,
 };
 use super::history::{currents, Context, Currents, Dependents, Graph, History, Node};
 use super::wire::{clear_measures, clear_transformations, reads, rewrite};
@@ -129,7 +130,7 @@ fn kind_refusal(
         parameter: parameter.clone(),
         reason,
     };
-    check_types(node, type_of)
+    check_types(node, ExpressionSite::Parameter, type_of)
         .and_then(|found| kind_type(kind, found))
         .map_err(refusal)?;
     let result = evaluate(
@@ -331,7 +332,8 @@ impl CadIr {
         let dependents = graph.dependents(&history, &currents, seeds);
         self.mark_states_stale(&history, &dependents.features);
         self.mark_sketches_stale(&dependents.features);
-        self.refresh_caches(&history, &currents, &dependents)
+        self.refresh_caches(&history, &currents, &dependents)?;
+        self.refresh_process(&history, &currents, &dependents)
     }
 
     /// Marks `Stale` every evaluation and current state that depends on any
