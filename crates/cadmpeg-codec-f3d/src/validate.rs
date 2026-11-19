@@ -452,6 +452,7 @@ fn valid_class_307_joint_origin_qualifier(
 }
 
 fn valid_sketch_profile_region_selection(
+    scope: &records::feature::scope::DesignParameterScope,
     profile: &records::topology::sketch_profile::DesignSketchProfileOperand,
     selection: &records::topology::sketch_profile::DesignSketchProfileRegionSelection,
 ) -> bool {
@@ -489,7 +490,14 @@ fn valid_sketch_profile_region_selection(
     else {
         return false;
     };
-    if profile.record_index.checked_add(3) != Some(selection.record_index)
+    let selection_index_matches = profile.record_index.checked_add(3)
+        == Some(selection.record_index)
+        || (profile.record_index.checked_add(2) == Some(selection.record_index)
+            && profile.scope_reference_ordinal == 1
+            && profile.class_tag.as_str() == "272"
+            && profile.paired_class_tag().as_str() == "262"
+            && scope.is_legacy_class_330_symmetric_distance());
+    if !selection_index_matches
         || selection.byte_offset <= profile.paired_byte_offset()
         || selection.region_count_offset != expected_region_count_offset
         || selection.regions.is_empty()
@@ -2240,7 +2248,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         })
                     }
                     && profile.region_selection.as_ref().is_none_or(|selection| {
-                        valid_sketch_profile_region_selection(profile, selection)
+                        valid_sketch_profile_region_selection(scope, profile, selection)
                     })
             };
         let valid_sketch_profile =

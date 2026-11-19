@@ -45,6 +45,7 @@ use crate::layout::construction_operand_extended_path_prefix as extended_path;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_extrude_group_tail_marker as group_tail_marker;
+use crate::layout::legacy_extrude_sketch_profile_tail as legacy_profile_tail;
 use crate::layout::legacy_loft_body_carrier as legacy_loft;
 use crate::layout::legacy_loft_body_carrier_owner_tail as legacy_loft_tail;
 use crate::layout::legacy_loft_body_carrier_three_flag as legacy_loft_three;
@@ -1964,6 +1965,7 @@ pub(crate) fn bind_sketch_profiles(
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let headers = indexed_operand_headers(headers);
     let mut losses = Vec::new();
+    let mut record_offsets = HashMap::<_, OnceCell<_>>::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
@@ -1988,8 +1990,24 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            let Some(profile) = parse_sketch_profile(bytes, stream, ordinal, header, entities)
-            else {
+            let profile =
+                parse_sketch_profile(bytes, stream, ordinal, header, entities).or_else(|| {
+                    if ordinal != 1 || !scope.is_legacy_class_330_symmetric_distance() {
+                        return None;
+                    }
+                    parse_sketch_profile_frame(
+                        bytes,
+                        stream,
+                        ordinal,
+                        header,
+                        entities,
+                        Some((
+                            scope.record_index,
+                            record_offsets.entry(entry.name.as_str()).or_default(),
+                        )),
+                    )
+                });
+            let Some(profile) = profile else {
                 continue;
             };
             profiles.push(profile);
@@ -3308,33 +3326,46 @@ fn parse_construction_operand_group_with_offsets(
             if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
                 continue;
             }
-            if Some(first_tail_target) != header.record_index.checked_add(2)
-                && !(repeats_ordinal
-                    && flags == [0, 0]
-                    && first_tail_target > header.record_index
-                    && matches!(
+            if Some(first_tail_target) != header.record_index.checked_add(2) {
+                let has_independent_tail = if scope
+                    .extrude_prologue()
+                    .is_some_and(DesignExtrudePrologue::is_legacy_shifted_to_face)
+                {
+                    matches!(
                         role,
                         DesignOperandRole::BODIES_A
                             | DesignOperandRole::PROFILE
                             | DesignOperandRole::ROLE_0X12
                     )
-                    && scope
-                        .extrude_prologue()
-                        .is_some_and(DesignExtrudePrologue::is_legacy_shifted_to_face)
+                } else {
+                    role == DesignOperandRole::PROFILE
+                        && scope_reference_ordinal == 0
+                        && member_count == 1
+                        && scope.is_legacy_class_330_symmetric_distance()
+                        && marked_record_reference(record_bytes, members_at).is_some_and(|member| {
+                            scope
+                                .reference_members()
+                                .values()
+                                .take(2)
+                                .copied()
+                                .eq([header.record_index, member])
+                        })
+                };
+                if !(has_independent_tail
+                    && repeats_ordinal
+                    && flags == [0, 0]
+                    && first_tail_target > header.record_index
                     && offsets.is_some_and(|offsets| {
-                        let records = offsets.get_or_init(|| IndexedRecordOffsets::build(bytes));
-                        let [target] = records.offsets(first_tail_target) else {
-                            return false;
-                        };
-                        let marker_end = *target + group_tail_marker::LEN;
-                        *target > after_tag
-                            && bytes
-                                .get(*target + group_tail_marker::ZERO_PAYLOAD..marker_end)
-                                .is_some_and(|payload| payload.iter().all(|&byte| byte == 0))
-                            && indexed_record_header_at(bytes, marker_end).is_some()
+                        is_following_empty_extrude_record(
+                            bytes,
+                            offsets,
+                            first_tail_target,
+                            after_tag + size_of::<u32>(),
+                        )
                     }))
-            {
-                continue;
+                {
+                    continue;
+                }
             }
             if closed
                 .replace((variant, closing_flag, after, paired_class_tag.to_owned()))
@@ -3434,6 +3465,26 @@ fn parse_construction_operand_group_with_offsets(
         return Unclosed;
     };
     Complete(Box::new(group))
+}
+
+fn is_following_empty_extrude_record(
+    bytes: &[u8],
+    offsets: &OnceCell<IndexedRecordOffsets>,
+    record_index: u32,
+    after: usize,
+) -> bool {
+    let records = offsets.get_or_init(|| IndexedRecordOffsets::build(bytes));
+    let &[target] = records.offsets(record_index) else {
+        return false;
+    };
+    let Some(end) = target.checked_add(group_tail_marker::LEN) else {
+        return false;
+    };
+    target >= after
+        && bytes
+            .get(target + group_tail_marker::ZERO_PAYLOAD..end)
+            .is_some_and(|payload| payload.iter().all(|&byte| byte == 0))
+        && indexed_record_header_at(bytes, end).is_some()
 }
 
 fn construction_tracking_registry<'cache>(
@@ -5853,10 +5904,33 @@ pub(in crate::design) fn parse_sketch_profile(
     header: &DesignRecordHeader,
     entities: &[DesignEntityHeader],
 ) -> Option<DesignSketchProfileOperand> {
+    parse_sketch_profile_frame(
+        bytes,
+        stream,
+        scope_reference_ordinal,
+        header,
+        entities,
+        None,
+    )
+}
+
+fn parse_sketch_profile_frame(
+    bytes: &[u8],
+    stream: &str,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+    entities: &[DesignEntityHeader],
+    legacy: Option<(u32, &OnceCell<IndexedRecordOffsets>)>,
+) -> Option<DesignSketchProfileOperand> {
+    if legacy.is_some() && header.class_tag.as_str() != "272" {
+        return None;
+    }
     let start = usize::try_from(header.byte_offset).ok()?;
+    let prefix_record_delta = if legacy.is_some() { 2 } else { 3 };
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
-        || View::u32_le_at(bytes, start + 22)? != header.record_index.checked_add(3)?
+        || View::u32_le_at(bytes, start + 22)?
+            != header.record_index.checked_add(prefix_record_delta)?
         || bytes.get(start + 26..start + 32)? != [0; 6]
         || View::u32_le_at(bytes, start + 32)? != 1
     {
@@ -5871,6 +5945,8 @@ pub(in crate::design) fn parse_sketch_profile(
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
     if View::u32_le_at(bytes, after_paired_tag)? != header.record_index
         || !matches!(tail_length, 82 | 83 | 89 | 93 | 94)
+        || (legacy.is_some()
+            && (tail_length != legacy_profile_tail::LEN || paired_class_tag != "262"))
     {
         return None;
     }
@@ -5918,12 +5994,12 @@ pub(in crate::design) fn parse_sketch_profile(
         let (nested_two_at, nested_one_at, scope_at) = if tail_length == 89 {
             (53, 66, 78)
         } else {
-            (57, 70, 82)
+            (legacy_profile_tail::EMPTY_RECORD_REFERENCE, 70, 82)
         };
+        let first_tail_target = marked_record_reference(bytes, tail + nested_two_at)?;
+        let scope_target = marked_record_reference(bytes, tail + scope_at)?;
         if bytes.get(tail..tail + 8) != Some(&[1, 0, 0, 0, 0, 0, 0, 0])
             || View::u32_le_at(bytes, tail + 8) != Some(1)
-            || marked_record_reference(bytes, tail + nested_two_at)
-                != header.record_index.checked_add(2)
             || !bytes
                 .get(tail + nested_one_at - 2..tail + nested_one_at)?
                 .iter()
@@ -5931,11 +6007,29 @@ pub(in crate::design) fn parse_sketch_profile(
             || marked_record_reference(bytes, tail + nested_one_at)
                 != header.record_index.checked_add(1)
             || bytes.get(tail + scope_at - 1) != Some(&0)
-            || marked_record_reference(bytes, tail + scope_at).is_none()
             || View::u32_le_at(bytes, tail + 41) == Some(0)
             || (tail_length == 93
                 && View::u32_le_at(bytes, tail + 41) != View::u32_le_at(bytes, tail + 53))
         {
+            return None;
+        }
+        if let Some((owner, offsets)) = legacy {
+            if scope_target != owner
+                || first_tail_target <= header.record_index
+                || View::u32_le_at(bytes, tail + legacy_profile_tail::ROLE)
+                    != Some(legacy_profile_tail::ROLE_VALUE)
+                || bytes.get(tail + legacy_profile_tail::ZERO_FLAGS..tail + nested_one_at)
+                    != Some(&[0, 0])
+                || !is_following_empty_extrude_record(
+                    bytes,
+                    offsets,
+                    first_tail_target,
+                    after_paired_tag + size_of::<u32>(),
+                )
+            {
+                return None;
+            }
+        } else if Some(first_tail_target) != header.record_index.checked_add(2) {
             return None;
         }
         compact_tail_flags = Some([
@@ -5976,8 +6070,15 @@ pub(in crate::design) fn parse_sketch_profile(
             (format!("{prefix}_{entity_suffix}"), true)
         }
     };
-    let region_selection =
-        parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
+    let region_selection = parse_sketch_profile_region_selection_frame(
+        bytes,
+        header.record_index,
+        paired_at,
+        prefix_record_delta,
+    );
+    if legacy.is_some() && region_selection.is_none() {
+        return None;
+    }
     DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
             sketch_absent,
@@ -6004,6 +6105,15 @@ fn parse_sketch_profile_region_selection(
     profile_record_index: u32,
     paired_at: usize,
 ) -> Option<DesignSketchProfileRegionSelection> {
+    parse_sketch_profile_region_selection_frame(bytes, profile_record_index, paired_at, 3)
+}
+
+fn parse_sketch_profile_region_selection_frame(
+    bytes: &[u8],
+    profile_record_index: u32,
+    paired_at: usize,
+    selection_delta: u32,
+) -> Option<DesignSketchProfileRegionSelection> {
     const COUNT_LEN: usize = 4;
     // Each counted region stores at least its four-byte loop count, so the
     // bytes after a count bound it.
@@ -6019,17 +6129,16 @@ fn parse_sketch_profile_region_selection(
         let at = next_indexed_record_offset(bytes, position)?;
         (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
     };
-    let nested_one_at = next_header(
-        paired_at.checked_add(indexed_header::LEN)?,
-        profile_record_index.checked_add(1)?,
-    )?;
-    let nested_two_at = next_header(
-        nested_one_at.checked_add(indexed_header::LEN)?,
-        profile_record_index.checked_add(2)?,
-    )?;
-    let selection_record_index = profile_record_index.checked_add(3)?;
+    let mut predecessor = paired_at;
+    for delta in 1..selection_delta {
+        predecessor = next_header(
+            predecessor.checked_add(indexed_header::LEN)?,
+            profile_record_index.checked_add(delta)?,
+        )?;
+    }
+    let selection_record_index = profile_record_index.checked_add(selection_delta)?;
     let selection_at = next_header(
-        nested_two_at.checked_add(indexed_header::LEN)?,
+        predecessor.checked_add(indexed_header::LEN)?,
         selection_record_index,
     )?;
     let (class_tag, after_class_tag) =

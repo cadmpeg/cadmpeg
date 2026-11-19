@@ -10963,6 +10963,51 @@ source = "spec"
 anchor = "two opaque bytes at offsets 30 and 31"
 
 [[record]]
+name = "legacy_extrude_sketch_profile_tail"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Its 93-byte compact tail stores the u32 profile role"
+size = 93
+
+[[record.gap]]
+offset = 0
+size = 27
+note = "The compact tail prefix precedes the profile role."
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u32"
+value = 65
+source = "spec"
+anchor = "stores the u32 profile role `0x41` at offset 27"
+
+[[record.gap]]
+offset = 31
+size = 26
+note = "The repeated ordinal and its scalar precede the first tail reference."
+
+[[record.field]]
+name = "empty_record_reference"
+offset = 57
+type = "bytes[11]"
+source = "spec"
+anchor = "The first tail reference at offset 57"
+
+[[record.field]]
+name = "zero_flags"
+offset = 68
+type = "bytes[2]"
+source = "spec"
+anchor = "Two zero flag bytes start at offset 68"
+
+[[record.gap]]
+offset = 70
+size = 23
+note = "The compact tail closes with the next record reference and owning scope reference."
+
+[[record]]
 name = "sketch_profile_region_selection_prefix"
 kind = "byte"
 section = "3.1"
@@ -17369,6 +17414,51 @@ offset = 292
 type = "u32"
 source = "spec"
 anchor = "`+292`"
+
+[[record]]
+name = "legacy_class_330_symmetric_extrude_frame"
+parsed_by = "crates/cadmpeg-codec-f3d/src/records/feature/scope.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The legacy class-330/262 symmetric distance Extrude has a 420-byte primary frame"
+size = 420
+
+[[record.gap]]
+offset = 0
+size = 106
+note = "The shifted prologue and local reference slots precede the extent words."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 106
+type = "u32"
+source = "spec"
+anchor = "The two extent words are `[1, 0]` at offsets 106 and 110"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 110
+type = "u32"
+source = "spec"
+anchor = "The two extent words are `[1, 0]` at offsets 106 and 110"
+
+[[record.gap]]
+offset = 114
+size = 138
+note = "The remainder of the scope prefix precedes the ordered reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 252
+type = "u32"
+value = 5
+source = "spec"
+anchor = "The reference count is at offset 252"
+
+[[record.gap]]
+offset = 256
+size = 164
+note = "The ordered references and common scope tail precede the paired header."
 
 [[record]]
 name = "shifted_reference_aware_extrude_class_323_tail"
