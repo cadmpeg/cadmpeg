@@ -249,8 +249,9 @@ pub(crate) enum SldprtLossCode {
     ContainerNoParasolidStream,
     /// The legacy Parasolid zlib probe stopped at its work limit in a section.
     ContainerParasolidProbeCapped,
-    /// An optional weldment owner was retained after a malformed extraction refusal.
-    ContainerAuxiliaryParasolidRefused,
+    /// The compound document admits a noncanonical CFB encoding that every
+    /// stream it names is read past.
+    ContainerNoncanonical,
     /// Preserved source image required for a byte-exact write was unavailable.
     SourcePreservedImageUnavailable,
     /// The document carries no usable `swVersion`, so no declared identity was
@@ -422,7 +423,7 @@ impl SldprtLossCode {
         Self::MaterialMetadataNotTransferred,
         Self::ContainerNoParasolidStream,
         Self::ContainerParasolidProbeCapped,
-        Self::ContainerAuxiliaryParasolidRefused,
+        Self::ContainerNoncanonical,
         Self::SourcePreservedImageUnavailable,
         Self::SourceDialectUnverified,
         Self::KernelDialectUnverified,
@@ -555,7 +556,7 @@ impl SldprtLossCode {
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
             Self::ContainerNoParasolidStream => "container.no-parasolid-stream",
             Self::ContainerParasolidProbeCapped => "container.parasolid-probe-capped",
-            Self::ContainerAuxiliaryParasolidRefused => "container.auxiliary-parasolid-refused",
+            Self::ContainerNoncanonical => "container.noncanonical",
             Self::SourcePreservedImageUnavailable => "source.preserved-image-unavailable",
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
@@ -709,7 +710,7 @@ impl SldprtLossCode {
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
             | Self::MaterialMetadataNotTransferred
-            | Self::ContainerAuxiliaryParasolidRefused
+            | Self::ContainerNoncanonical
             | Self::ContainerParasolidProbeCapped
             | Self::SourceDialectUnverified
             | Self::KernelDialectUnverified
@@ -810,7 +811,6 @@ impl SldprtLossCode {
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
             | Self::GeometryMeshBodyNotTransferred
-            | Self::ContainerAuxiliaryParasolidRefused
             | Self::GeometryImportedBodiesNotTransferred
             | Self::ContainerParasolidProbeCapped => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous | Self::GeometrySurfaceSolverWorkCapped => {
@@ -832,7 +832,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
-            | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftFaceDocumentTailAssumed
+            | Self::ContainerNoncanonical => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -1142,7 +1143,7 @@ mod tests {
                 "material.metadata-not-transferred",
                 "container.no-parasolid-stream",
                 "container.parasolid-probe-capped",
-                "container.auxiliary-parasolid-refused",
+                "container.noncanonical",
                 "source.preserved-image-unavailable",
                 "source.dialect-unverified",
                 "source.kernel-dialect-unverified",

@@ -8,15 +8,26 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::unknown::part::GivenUpPart;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Annotations, SourceFidelity};
 
 #[derive(Default)]
 pub(super) struct Retention {
     records: BTreeMap<String, BTreeSet<ArenaClass>>,
+    given_up: Vec<GivenUpPart>,
 }
 
 impl Retention {
+    pub(super) fn give_up(&mut self, parts: impl IntoIterator<Item = GivenUpPart>) {
+        self.given_up.extend(parts);
+    }
+
+    /// The parts the decode gave up, in the order they were given up.
+    pub(super) fn take_given_up(&mut self) -> Vec<GivenUpPart> {
+        std::mem::take(&mut self.given_up)
+    }
+
     pub(super) fn record(&mut self, id: &str, class: ArenaClass) {
         self.records.entry(id.to_owned()).or_default().insert(class);
     }

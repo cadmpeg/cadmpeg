@@ -647,8 +647,16 @@ mod tests {
 
     #[test]
     fn terminal_empty_frame_still_has_to_validate_before_becoming_an_anchor() {
+        let grid = primary_grid(0);
+        let ranges = |scan: &super::super::ContainerScan<'_>| {
+            scan.cache_cells
+                .iter()
+                .map(|cell| cell.physical_range.clone())
+                .collect::<Vec<_>>()
+        };
+        let expected = ranges(&scan(&grid).unwrap());
         for offset in [block_hdr::CRC32, block_hdr::COMP_SZ, block_hdr::UNCOMP_SZ] {
-            let mut source = primary_grid(0);
+            let mut source = grid.clone();
             let start = source.len();
             let block = make_block(1, "Contents/Empty", &[]);
             source.extend(block);
@@ -656,7 +664,15 @@ mod tests {
             let value = View::u32_le_at(&source, at).unwrap();
             source[at..at + 4].copy_from_slice(&(value + 1).to_le_bytes());
             source.push(0x45);
-            assert!(scan(&source).is_err());
+            let scanned = scan(&source).unwrap();
+            assert!(scanned.blocks.is_empty());
+            assert_eq!(ranges(&scanned), expected);
+            let [part] = scanned.given_up.as_slice() else {
+                panic!("the frame is one given-up part");
+            };
+            assert!(part.loss().message.contains(&format!(
+                "part native-block \"Contents/Empty\" stream=\"\" offset={start} "
+            )));
         }
     }
     #[test]

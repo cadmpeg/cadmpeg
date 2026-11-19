@@ -666,6 +666,8 @@ mod default_properties;
 
 mod weldment_refusal;
 
+mod partial_decode;
+
 mod partition_sketches;
 
 fn face_table_bytes() -> Vec<u8> {

@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 use std::io::SeekFrom;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeArena, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -31,6 +31,7 @@ use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 
 use crate::loss::SldprtLossCode;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -192,6 +193,7 @@ fn decode_scan(
     part: bool,
 ) -> Result<Decoded, CodecError> {
     let decode_digest = Sha256Digest::digest(scan.source_image);
+    let mut given_up = std::mem::take(&mut scan.given_up);
     let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
@@ -201,7 +203,7 @@ fn decode_scan(
     let mut admitted_entities = 0_u64;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns, retention, mut pmi_losses) = build_metadata_ir(
+        let (ir, annotations, unknowns, mut retention, mut pmi_losses) = build_metadata_ir(
             ctx,
             &scan,
             &classification,
@@ -210,6 +212,7 @@ fn decode_scan(
             false,
             false,
         )?;
+        retention.give_up(given_up);
         let mut report =
             build_container_report(ctx, &scan, &classification, container::notes(&scan), 0)?;
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {};
@@ -236,8 +239,9 @@ fn decode_scan(
             placed_virtual,
             &classification,
             &mut brep_fallback_losses,
+            &mut given_up,
         )? {
-            let (ir, annotations, unknowns, retention, mut pmi_losses) = build_geometry_ir(
+            let (ir, annotations, unknowns, mut retention, mut pmi_losses) = build_geometry_ir(
                 ctx,
                 &mut scan,
                 &classification,
@@ -246,6 +250,7 @@ fn decode_scan(
                 &mut admitted_entities,
                 part,
             )?;
+            retention.give_up(given_up);
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
             append_design_losses(ctx, &ir, &mut report)?;
@@ -261,7 +266,7 @@ fn decode_scan(
         }
     }
 
-    let (ir, annotations, unknowns, retention, mut pmi_losses) = build_metadata_ir(
+    let (ir, annotations, unknowns, mut retention, mut pmi_losses) = build_metadata_ir(
         ctx,
         &scan,
         &classification,
@@ -270,6 +275,7 @@ fn decode_scan(
         true,
         part,
     )?;
+    retention.give_up(given_up);
     let display_meshes = ir.model.tessellations.len();
     let mut report = build_container_report(
         ctx,
@@ -325,7 +331,7 @@ fn decode_result(
     ctx: &DecodeContext<'_>,
     decode_digest: Sha256Digest,
     mut ir: CadIr,
-    body: DecodeBody,
+    mut body: DecodeBody,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
     mut retention: retention::Retention,
@@ -341,7 +347,12 @@ fn decode_result(
     if let Some(source_image) = source_image {
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
+    let given_up = retention.take_given_up();
     retention.apply(&mut source_fidelity)?;
+    for part in given_up {
+        body.losses
+            .push(part.commit(ctx, &mut ir, &mut source_fidelity)?);
+    }
     stamp_local_digests(ctx, &mut ir)?;
     Ok(Decoded {
         ir,
@@ -2513,6 +2524,7 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
             streams.push(ActiveParasolidSite {
                 section,
                 payload: &stream.payload,
+                offset: stream.offset,
                 header: &stream.header,
             });
         }
@@ -2573,6 +2585,7 @@ fn all_local_body_streams<'a>(
                 ActiveParasolidSite {
                     section,
                     payload: &stream.payload,
+                    offset: stream.offset,
                     header: &stream.header,
                 },
             ));
@@ -2647,6 +2660,7 @@ fn try_decode_brep(
     placed_virtual: &BTreeSet<String>,
     classification: &crate::dialect::LayerClassification,
     fallback_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    given_up: &mut Vec<GivenUpPart>,
 ) -> Result<Option<(DecodedBrep, DecodeBody)>, CodecError> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
@@ -2659,8 +2673,12 @@ fn try_decode_brep(
             .iter()
             .map(|index| (streams[*index].payload, streams[*index].header))
             .collect::<Vec<_>>();
-        let decoded = decode_bodies(ctx, &bodies, streams[first].source_stream())?;
-        decoded_sites.push((site.clone(), first, decoded));
+        match ctx.run_part(|| decode_bodies(ctx, &bodies, streams[first].source_stream()))? {
+            Ok(decoded) => decoded_sites.push((site.clone(), first, decoded)),
+            Err(error) => {
+                given_up.push(ctx.give_up_part(site_part(streams, indices), error)?);
+            }
+        }
     }
     if decoded_sites.is_empty() {
         let mut decoded = Brep::default();
@@ -2804,6 +2822,42 @@ fn try_decode_brep(
     )))
 }
 
+/// The Parasolid site whose body streams are `indices` of `streams`, as a
+/// part to give up. The part is the site's first stream; the site's other
+/// streams decode with it and are given up with it.
+fn site_part<'a>(streams: &[ActiveParasolidSite<'a>], indices: &[usize]) -> Part<'a> {
+    let first = &streams[indices[0]];
+    let mut part = Part::at(
+        "sldprt",
+        "parasolid-site",
+        u64_from_index(first.offset),
+        first.payload,
+        [ArenaClass::Model],
+    )
+    .named(first.header.description.as_str())
+    .in_stream(first.source_stream().clone())
+    .digest_only();
+    let others = indices[1..]
+        .iter()
+        .map(|index| {
+            let stream = &streams[*index];
+            format!(
+                "{:?} at {} in {}",
+                stream.header.description,
+                stream.offset,
+                stream.source_stream().as_str()
+            )
+        })
+        .collect::<Vec<_>>();
+    if !others.is_empty() {
+        part = part.costing(format!(
+            "the site's other Parasolid streams are given up with it: {}",
+            others.join(", ")
+        ));
+    }
+    part
+}
+
 /// Add the bodies of each placed virtual component document (spec §11.5).
 /// Each document is scanned as a container of its own; the bodies of its
 /// active partition site are qualified by the site key of its section. A
@@ -2825,8 +2879,11 @@ fn merge_virtual_component_bodies(
             continue;
         }
         let _depth = ctx.enter_nested("decode SolidWorks virtual component document")?;
+        // A part given up in the nested document would take an id of the
+        // outer document's, so such a document adds no body.
         let nested = match container::scan(ctx, View::over_retained(section.payload())) {
-            Ok(nested) => nested,
+            Ok(nested) if nested.given_up.is_empty() => nested,
+            Ok(_) => continue,
             Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
             Err(_) => continue,
         };
@@ -3464,6 +3521,7 @@ fn build_geometry_ir(
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     complete_resolved_configuration_parameter_snapshots(&mut ir)?;
     stamp_parameter_baseline(ctx, &mut ir)?;
+    let mut sketch_streams_given_up = Vec::new();
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         mut sketches,
         entities: mut sketch_entities,
@@ -3473,7 +3531,9 @@ fn build_geometry_ir(
         scan,
         &mut annotations,
         &mut pmi_losses,
+        &mut sketch_streams_given_up,
     )?;
+    retention.give_up(sketch_streams_given_up);
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
         crate::resolved_features::profiles::SketchArenas {
@@ -4677,6 +4737,7 @@ fn build_metadata_ir(
         &histories,
         &mut pmi_losses,
     )?;
+    let mut sketch_streams_given_up = Vec::new();
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         sketches,
         entities: sketch_entities,
@@ -4686,7 +4747,9 @@ fn build_metadata_ir(
         scan,
         &mut annotations,
         &mut pmi_losses,
+        &mut sketch_streams_given_up,
     )?;
+    retention.give_up(sketch_streams_given_up);
     let mut model_attributes =
         crate::metadata::attributes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let custom_properties = crate::history::project::custom_property_attributes(&histories)?;
@@ -6351,13 +6414,8 @@ fn append_parasolid_container_losses(
     scan: &ContainerScan<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    for section in scan.sections() {
-        if let Some(reason) = section.ps_auxiliary_refusal() {
-            losses.push(SldprtLossCode::ContainerAuxiliaryParasolidRefused.note(format!(
-                "Optional Parasolid owner {} is malformed: {reason}. Its complete source bytes remain retained; no fallback scan or entry resynchronization followed this refusal.",
-                section.source_stream().as_str(),
-            )));
-        }
+    for deviation in &scan.noncanonical {
+        losses.push(SldprtLossCode::ContainerNoncanonical.note(deviation.clone()));
     }
     let mut capped = crate::loss::NamedCount::default();
     for section in scan.sections().filter(|section| section.ps_probe_capped()) {
