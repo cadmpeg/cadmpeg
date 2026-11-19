@@ -2181,7 +2181,11 @@ pub(crate) fn project_marker_backed_sketches(
                     };
                     let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
                         (marker_is_selected_construction_line(&lane.native_payload, offset)
-                            || current_compact_roster_selected_axis(&lane.native_payload, offset))
+                            || current_compact_roster_selected_axis(&lane.native_payload, offset)
+                            || (record_lists
+                                .listed_curve_kind(&lane.native_payload, offset)
+                                .is_some()
+                                && construction_record(&lane.native_payload, offset)))
                             && !(matches!(
                                 geometry.definition(),
                                 SketchGeometryDefinition::Circle { .. }
@@ -5010,3 +5014,6 @@ mod index_tests;
 
 #[cfg(test)]
 mod unread_marker_tests;
+
+#[cfg(test)]
+mod listed_curve_tests;

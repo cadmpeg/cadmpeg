@@ -18,7 +18,7 @@ use super::relation_loci::same_dimension_length;
 use super::relation_records::unique_relation_declaration_candidates;
 use super::scalars::{operand_kind, FeatureObjectNames, FeatureObjectStarts};
 use super::selections::{marker_local_links, operand_accepts_marker};
-use super::sketch_lists::{CurveForm, SketchRecordLists};
+use super::sketch_lists::{CurveForm, FramedCurve, SketchRecordLists};
 use super::{
     is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
     SPATIAL_VERTEX_PREFIX,
@@ -905,7 +905,17 @@ pub(crate) fn admit_sketch_input_entities(
                     SketchInputKind::LineOrCircle
                 }
                 Some(CurveForm::Arc { .. }) => SketchInputKind::Arc,
-                None => kind,
+                None => match (kind, record_lists.listed_curve_kind(payload, offset)) {
+                    (
+                        SketchInputKind::Relation(_) | SketchInputKind::Native(_),
+                        Some(FramedCurve::Line | FramedCurve::Circle),
+                    ) => SketchInputKind::LineOrCircle,
+                    (
+                        SketchInputKind::Relation(_) | SketchInputKind::Native(_),
+                        Some(FramedCurve::Arc),
+                    ) => SketchInputKind::Arc,
+                    (kind, _) => kind,
+                },
             };
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return Err(CodecError::malformed(format_args!(

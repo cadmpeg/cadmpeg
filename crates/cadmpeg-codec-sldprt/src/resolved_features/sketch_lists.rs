@@ -28,7 +28,7 @@ const EPS_PLANE_OFFSET_M: f64 = 1.0e-9;
 const F32_MINUS_ONE: [u8; 4] = [0x00, 0x00, 0x80, 0xbf];
 /// The f64 `-1` that follows a curve record's endpoint fields.
 const F64_MINUS_ONE: [u8; 8] = [0, 0, 0, 0, 0, 0, 0xf0, 0xbf];
-/// The i32 `-2` that follows an arc's centre index.
+/// The i32 `-2` that an arc writes four times after its centre index.
 const I32_MINUS_TWO: [u8; 4] = [0xfe, 0xff, 0xff, 0xff];
 /// The length of the `sgSketch` header before the first point record.
 const SKETCH_HEADER_LEN: usize = 14;
@@ -134,6 +134,15 @@ impl SketchRecordLists {
     pub(super) fn listed_curve(&self, payload: &[u8], offset: usize) -> Option<CurveForm> {
         match self.record(offset)? {
             ListedRecord::Curve { .. } => curve_form(payload, offset),
+            ListedRecord::Point => None,
+        }
+    }
+
+    /// The kind of the curve record of a list that starts at `offset`,
+    /// decided from the record's own shape ([`framed_curve`]).
+    pub(super) fn listed_curve_kind(&self, payload: &[u8], offset: usize) -> Option<FramedCurve> {
+        match self.record(offset)? {
+            ListedRecord::Curve { .. } => framed_curve(payload, offset).map(|(_, kind)| kind),
             ListedRecord::Point => None,
         }
     }
@@ -304,35 +313,70 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
     (u.is_finite() && v.is_finite()).then_some([u, v])
 }
 
-/// The form of the curve record at `offset`, when its type is a line or an
-/// arc in its arc layout and its fields are positions in the point records of
-/// its own sketch: the current layout with its eight zero bytes, a roster
-/// selector, and for a line no object-identifier trailer. The layout before
-/// `swVersion` 11000 keeps the readings of `super::endpoints`.
-pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
+/// The kind of a curve record from its own shape.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FramedCurve {
+    /// Type `0`.
+    Line,
+    /// Type `1` in its arc layout with equal endpoint indices.
+    Circle,
+    /// Type `1` in its arc layout with distinct endpoint indices.
+    Arc,
+}
+
+/// The kind of the curve record at `offset` in the current layout with a
+/// roster selector: type `0` is a line; type `1` is an arc when u16 `0`
+/// follows the type and four i32 `-2` follow the centre index.
+fn framed_curve(payload: &[u8], offset: usize) -> Option<(usize, FramedCurve)> {
     let fields = curve_fields(payload, offset)?;
     if fields != offset.checked_add(CURRENT_FIELDS)?
         || !ROSTER_SELECTORS.contains(&View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?)
     {
         return None;
     }
-    let start = usize::from(View::u16_le_at(payload, fields)?);
-    let end = usize::from(View::u16_le_at(payload, fields.checked_add(2)?)?);
     match View::u16_le_at(payload, fields.checked_add(16)?)? {
-        0 => (start != end && !object_identifier_line(payload, offset)?)
-            .then_some(CurveForm::Line { start, end }),
+        0 => Some((fields, FramedCurve::Line)),
         1 => {
-            let center_at = fields.checked_add(20)?;
-            let tail = center_at.checked_add(2)?;
+            let tail = fields.checked_add(22)?;
             if View::u16_le_at(payload, fields.checked_add(18)?)? != 0
-                || payload.get(tail..tail.checked_add(4)?)? != I32_MINUS_TWO
+                || !payload
+                    .get(tail..tail.checked_add(16)?)?
+                    .chunks_exact(4)
+                    .all(|word| word == I32_MINUS_TWO)
             {
                 return None;
             }
-            let center = usize::from(View::u16_le_at(payload, center_at)?);
-            Some(CurveForm::Arc { start, end, center })
+            let start = View::u16_le_at(payload, fields)?;
+            let end = View::u16_le_at(payload, fields.checked_add(2)?)?;
+            Some((
+                fields,
+                if start == end {
+                    FramedCurve::Circle
+                } else {
+                    FramedCurve::Arc
+                },
+            ))
         }
         _ => None,
+    }
+}
+
+/// The form of the curve record at `offset`, when its type is a line or an
+/// arc in its arc layout and its fields are positions in the point records of
+/// its own sketch: the current layout with its eight zero bytes, a roster
+/// selector, and for a line no object-identifier trailer. The layout before
+/// `swVersion` 11000 keeps the readings of `super::endpoints`.
+pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
+    let (fields, framed) = framed_curve(payload, offset)?;
+    let start = usize::from(View::u16_le_at(payload, fields)?);
+    let end = usize::from(View::u16_le_at(payload, fields.checked_add(2)?)?);
+    match framed {
+        FramedCurve::Line => (start != end && !object_identifier_line(payload, offset)?)
+            .then_some(CurveForm::Line { start, end }),
+        FramedCurve::Circle | FramedCurve::Arc => {
+            let center = usize::from(View::u16_le_at(payload, fields.checked_add(20)?)?);
+            Some(CurveForm::Arc { start, end, center })
+        }
     }
 }
 
