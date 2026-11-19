@@ -206,6 +206,7 @@ fn finalize_result(
         crate::tree::file_root_id(),
         cadmpeg_ir::products::ExternalDocument::default(),
     )?;
+    crate::design_v11::project(ctx, &mut ir)?;
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
         ctx,
