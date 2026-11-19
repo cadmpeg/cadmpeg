@@ -138,9 +138,12 @@ fn explicit_loop_role_overrides_face_list_order() {
 fn object_attribute_items_are_written_in_ascending_order() {
     let payload = object_attributes_payload(
         "body",
-        None,
-        Some(Color::new(1.0, 0.5, 0.0, 1.0).expect("valid color")),
-        Some(false),
+        super::super::ObjectDisplay {
+            name: None,
+            color: Some(Color::new(1.0, 0.5, 0.0, 1.0).expect("valid color")),
+            visible: Some(false),
+            layer: 0,
+        },
     )
     .expect("valid object attributes");
     assert_eq!(&payload[21..], &[6, 255, 128, 0, 0, 11, 0, 13, 1, 0]);
@@ -191,11 +194,7 @@ fn nonempty_user_string_presentation_is_omitted_by_id() {
     }
 
     let (bytes, losses) = super::write_reported(decoded.ir(), RhinoArchiveVersion::V8);
-    let message = super::loss_naming(
-        &losses,
-        crate::loss::RhinoLossCode::NativeRecordsOmitted,
-        &id,
-    );
+    let message = super::native_omission_naming(&losses, &id);
     assert!(message.contains("`object_presentation`"), "{message}");
     assert_eq!(super::decoded(bytes).geometry.points.len(), 1);
 }
@@ -245,11 +244,7 @@ fn nonempty_mesh_modifier_presentation_is_omitted_by_id() {
     }
 
     let (bytes, losses) = super::write_reported(decoded.ir(), RhinoArchiveVersion::V8);
-    let message = super::loss_naming(
-        &losses,
-        crate::loss::RhinoLossCode::NativeRecordsOmitted,
-        &id,
-    );
+    let message = super::native_omission_naming(&losses, &id);
     assert!(message.contains("`object_presentation`"), "{message}");
     assert_eq!(super::decoded(bytes).geometry.points.len(), 1);
 }
@@ -303,11 +298,7 @@ fn nonempty_layer_per_viewport_settings_are_omitted_by_id() {
     }
 
     let (bytes, losses) = super::write_reported(decoded.ir(), RhinoArchiveVersion::V8);
-    let message = super::loss_naming(
-        &losses,
-        crate::loss::RhinoLossCode::NativeRecordsOmitted,
-        &id,
-    );
+    let message = super::native_omission_naming(&losses, &id);
     assert!(message.contains("`layers`"), "{message}");
     assert_eq!(super::decoded(bytes).geometry.points.len(), 1);
 }

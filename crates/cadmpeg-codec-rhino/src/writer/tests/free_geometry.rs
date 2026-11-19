@@ -751,16 +751,13 @@ fn native_records_without_an_encoder_are_omitted_by_id() {
         );
 
     let (bytes, losses) = super::write_reported(decoded.ir(), RhinoArchiveVersion::V8);
-    let message = super::loss_naming(
-        &losses,
-        crate::loss::RhinoLossCode::NativeRecordsOmitted,
-        "rhino:presentation:material#unsupported",
-    );
+    let message =
+        super::native_omission_naming(&losses, "rhino:presentation:material#unsupported");
     assert!(message.contains("`materials`"), "{message}");
     assert_eq!(
         losses
             .iter()
-            .filter(|loss| loss.code == crate::loss::RhinoLossCode::NativeRecordsOmitted.kind())
+            .filter(|loss| loss.code.local_code() == "native.records-omitted")
             .count(),
         1,
         "the regenerated layer, presentation and settings records charge nothing: {losses:#?}"
@@ -804,8 +801,11 @@ fn noncanonical_nurbs_periodicity_omits_the_curve() {
     );
     assert!(super::decoded(bytes).geometry.curves.is_empty());
 }
+/// A mesh coordinate outside the 32-bit float range of the 3DM mesh vertex
+/// array is a value the archive cannot hold: the mesh is dropped by id and
+/// the rest of the document is written.
 #[test]
-fn mesh_coordinate_above_f32_max_refuses_round_down() {
+fn mesh_coordinate_above_f32_max_is_omitted_by_id() {
     let mesh = Tessellation::new(
         cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#wide-coordinates")
             .expect("valid identity"),
@@ -820,14 +820,31 @@ fn mesh_coordinate_above_f32_max_refuses_round_down() {
         Vec::new(),
     )
     .expect("finite coordinates are admitted by the IR");
-
-    let error = super::super::check_mesh(&mesh)
-        .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let mut ir = CadIr::empty();
+    ir.model.tessellations.push(mesh);
+    ir.geometry.points.push(Point::new(
+        PointId::mint("cadir:model:point#beside-the-mesh").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    let message = super::loss_naming(
+        &losses,
+        crate::loss::RhinoLossCode::WriterMeshOmitted,
+        "cadir:model:tessellation#wide-coordinates",
+    );
+    assert!(message.contains("32-bit float"), "{message}");
+    let written = super::decoded(bytes);
+    assert!(written.model.tessellations.is_empty());
+    assert_eq!(written.geometry.points.len(), 1);
 }
 
+/// A mesh coordinate outside the 32-bit float range of the 3DM mesh vertex
+/// array is a value the archive cannot hold: the mesh is dropped by id and
+/// the rest of the document is written.
 #[test]
-fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
+fn mesh_coordinate_below_negative_f32_max_is_omitted_by_id() {
     let mesh = Tessellation::new(
         cadmpeg_ir::tessellation::TessellationId::mint("cadir:model:tessellation#wide-coordinates")
             .expect("valid identity"),
@@ -842,10 +859,24 @@ fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
         Vec::new(),
     )
     .expect("finite coordinates are admitted by the IR");
-
-    let error = super::super::check_mesh(&mesh)
-        .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let mut ir = CadIr::empty();
+    ir.model.tessellations.push(mesh);
+    ir.geometry.points.push(Point::new(
+        PointId::mint("cadir:model:point#beside-the-mesh").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    let message = super::loss_naming(
+        &losses,
+        crate::loss::RhinoLossCode::WriterMeshOmitted,
+        "cadir:model:tessellation#wide-coordinates",
+    );
+    assert!(message.contains("32-bit float"), "{message}");
+    let written = super::decoded(bytes);
+    assert!(written.model.tessellations.is_empty());
+    assert_eq!(written.geometry.points.len(), 1);
 }
 
 #[test]

@@ -1,22 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
-//! What the Rhino write does with each record of the `rhino` native namespace.
-
-use std::collections::BTreeSet;
+//! What the Rhino write does with each arena of the `rhino` native namespace
+//! (§3.4, Rules W1 and W3).
 
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{NativeNamespace, NativeRecord};
 
-use crate::loss::RhinoLossCode;
+use super::layers::LayerTable;
 
 /// What the write does with one native record (§3.4, Rule W3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeDisposition {
-    /// The writer regenerates the record from neutral records and its own
-    /// defaults.
+    /// The archive states the record itself.
+    Written,
+    /// The writer states the record's content from neutral records and its
+    /// own defaults.
     Regenerated,
-    /// The writer has no encoder for the record, or the record states content
-    /// the regenerated record does not hold.
+    /// The archive does not state the record.
     Dropped,
+}
+
+/// What the write declares for one native arena.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ArenaDeclaration {
+    /// Every record of the arena has this disposition.
+    Uniform(NativeDisposition),
+    /// A mixed arena: each record has its own disposition.
+    PerRecord,
+}
+
+/// The declaration of native arena `arena`. An arena not named here is one
+/// this writer has no encoder for.
+fn declaration(arena: &str) -> ArenaDeclaration {
+    use ArenaDeclaration::{PerRecord, Uniform};
+    match arena {
+        "unknowns" => Uniform(NativeDisposition::Regenerated),
+        "document_settings" | "layers" | "object_presentation" | "opaque_records" => PerRecord,
+        _ => Uniform(NativeDisposition::Dropped),
+    }
 }
 
 /// Opaque typecodes the writer emits itself: the OpenNURBS version property
@@ -28,64 +48,53 @@ const REGENERATED_OPAQUE_TYPECODES: &[&str] = &["0xa0000026", "0x20008031"];
 const REGENERATED_SETTINGS: &[&str] = &["id", "writer_version"];
 
 /// The disposition of `record` in native arena `arena`.
-pub(crate) fn disposition(arena: &str, record: &NativeRecord) -> NativeDisposition {
-    use NativeDisposition::{Dropped, Regenerated};
-    let regenerated = match arena {
-        "byte_spans" | "unknowns" => true,
-        "document_settings" => record.fields().is_ok_and(|fields| {
-            fields
-                .iter()
-                .all(|(name, value)| REGENERATED_SETTINGS.contains(&name.as_str()) || value.is_null())
-        }),
-        "layers" => super::default_native_layer(record),
-        "object_presentation" => super::default_native_presentation(record),
-        "opaque_records" => {
-            let typecode = record.field("typecode");
-            let typecode = typecode.as_ref().and_then(serde_json::Value::as_str);
-            typecode.is_some_and(|typecode| REGENERATED_OPAQUE_TYPECODES.contains(&typecode))
-                || generated_comment(record)
-        }
-        _ => false,
-    };
-    if regenerated {
-        Regenerated
-    } else {
-        Dropped
+pub(crate) fn disposition(
+    arena: &str,
+    record: &NativeRecord,
+    layers: &LayerTable,
+) -> NativeDisposition {
+    use NativeDisposition::{Dropped, Regenerated, Written};
+    match declaration(arena) {
+        ArenaDeclaration::Uniform(disposition) => disposition,
+        ArenaDeclaration::PerRecord => match arena {
+            "layers" if layers.writes_native_layer(record.id()) => Written,
+            "object_presentation" if layers.regenerates_presentation(record.id()) => Regenerated,
+            "document_settings" if writer_settings(record) => Regenerated,
+            "opaque_records" if writer_opaque_record(record) => Regenerated,
+            _ => Dropped,
+        },
     }
 }
 
-/// Whether `record` is the start-section comment this writer emits.
-fn generated_comment(record: &NativeRecord) -> bool {
+/// Whether a document settings record states only fields the writer states.
+fn writer_settings(record: &NativeRecord) -> bool {
+    record.fields().is_ok_and(|fields| {
+        fields
+            .iter()
+            .all(|(name, value)| REGENERATED_SETTINGS.contains(&name.as_str()) || value.is_null())
+    })
+}
+
+/// Whether an opaque record is one the writer emits: the version property,
+/// the units setting, or the start-section comment.
+fn writer_opaque_record(record: &NativeRecord) -> bool {
     let Ok(fields) = record.fields() else {
         return false;
     };
-    record.id() == "rhino:source:opaque#comment"
-        && fields.get("typecode").and_then(serde_json::Value::as_str) == Some("0x00000001")
-        && fields.get("data").and_then(serde_json::Value::as_str)
-            == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw==")
+    let typecode = fields.get("typecode").and_then(serde_json::Value::as_str);
+    typecode.is_some_and(|typecode| REGENERATED_OPAQUE_TYPECODES.contains(&typecode))
+        || (record.id() == "rhino:source:opaque#comment"
+            && typecode == Some("0x00000001")
+            && fields.get("data").and_then(serde_json::Value::as_str)
+                == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw=="))
 }
 
-/// The source UUIDs of the layers the write regenerates: an object on one of
-/// them keeps its layer.
-pub(crate) fn regenerated_layers(namespace: Option<&NativeNamespace>) -> BTreeSet<String> {
-    namespace
-        .and_then(|namespace| namespace.arenas().get("layers"))
-        .into_iter()
-        .flatten()
-        .filter(|record| disposition("layers", record) == NativeDisposition::Regenerated)
-        .filter_map(|record| {
-            record
-                .field("source_uuid")
-                .as_ref()
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .collect()
-}
-
-/// One `native.records-omitted` loss per arena that holds a dropped record,
-/// naming every dropped id in sorted order.
-pub(crate) fn omission_losses(namespace: Option<&NativeNamespace>) -> Vec<LossNote> {
+/// One `export:native.records-omitted` loss per arena that holds a dropped
+/// record, naming every dropped id.
+pub(crate) fn omission_losses(
+    namespace: Option<&NativeNamespace>,
+    layers: &LayerTable,
+) -> Vec<LossNote> {
     let Some(namespace) = namespace else {
         return Vec::new();
     };
@@ -93,20 +102,25 @@ pub(crate) fn omission_losses(namespace: Option<&NativeNamespace>) -> Vec<LossNo
         .arenas()
         .iter()
         .filter_map(|(arena, records)| {
-            let mut dropped = records
-                .iter()
-                .filter(|record| disposition(arena, record) == NativeDisposition::Dropped)
-                .map(NativeRecord::id)
-                .collect::<Vec<_>>();
-            if dropped.is_empty() {
-                return None;
-            }
-            dropped.sort_unstable();
-            Some(RhinoLossCode::NativeRecordsOmitted.note(format!(
-                "the rhino write has no encoder for native arena `{arena}`: {} record(s) omitted: {}",
-                dropped.len(),
-                dropped.join(", ")
-            )))
+            let reason = match declaration(arena) {
+                ArenaDeclaration::Uniform(_) => {
+                    format!("of arena `{arena}`, which it has no encoder for")
+                }
+                ArenaDeclaration::PerRecord => format!(
+                    "of arena `{arena}` that state fields or references the written records do \
+                     not hold"
+                ),
+            };
+            cadmpeg_ir::codec::write::native_records_omitted(
+                "rhino",
+                &reason,
+                records
+                    .iter()
+                    .filter(|record| {
+                        disposition(arena, record, layers) == NativeDisposition::Dropped
+                    })
+                    .map(NativeRecord::id),
+            )
         })
         .collect()
 }

@@ -97,7 +97,8 @@ struct Written {
 }
 
 /// The archive [`RhinoCodec`] produces for one target with its losses, or the
-/// refusal it reports. A produced archive must decode.
+/// refusal it reports. A produced archive decodes, and its document passes the
+/// check with no Error.
 ///
 /// The request is [`TargetRequest::Explicit`], which is what the golden name
 /// `<fixture>.v5.bin` states: this fixture written at archive 50, whatever the
@@ -123,12 +124,19 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<W
     });
     Some(match written {
         Ok(losses) => {
-            if let Err(error) = RhinoCodec.decode(
-                &mut Cursor::new(encoded.clone()),
-                &DecodeOptions::default(),
-            ) {
-                panic!("the {version:?} archive the encoder wrote does not decode: {error}");
-            }
+            let rewritten = RhinoCodec
+                .decode(&mut Cursor::new(encoded.clone()), &DecodeOptions::default())
+                .unwrap_or_else(|error| {
+                    panic!("the {version:?} archive the encoder wrote does not decode: {error}")
+                });
+            let check = cadmpeg_ir::validate::validate_neutral(rewritten.ir(), Vec::new())
+                .expect("the written archive's document validates");
+            assert_eq!(
+                check.error_count(),
+                0,
+                "the {version:?} archive the encoder wrote fails the check: {:#?}",
+                check.findings
+            );
             Ok(Written {
                 archive: encoded,
                 losses: losses
