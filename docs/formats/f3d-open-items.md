@@ -1983,17 +1983,17 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** The decoder projects the stored major diameter as the thread diameter and charges `feature.thread-fractional-size-diameter-assumed`.
 
-### DR-206. Sides of a two-sided to-object Revolve
+### DR-206. Span of a two-sided to-object Revolve
 
-**Question.** Which side of the profile plane does each target of a two-sided to-object `Revolve` end?
+**Question.** Which span between its two targets does a two-sided to-object `Revolve` keep, and what does a scope with one target on both sides select?
 
-**Known.** The frame stores the side-one and side-two target groups and no side flag. Two scopes whose side-one and side-two target planes are exchanged store the same frame and produce the same body. In each two-sided scope, each side of the profile plane ends at the first target that its travel reaches, and the two sides reach different targets first.
+**Known.** `f3d.md` §3.1 "A to-object `Revolve` scope stores extent kind `1`" gives the side-one and side-two target groups. A scope whose two targets are exchanged stores the exchanged groups and produces the same body. For a New Body or Join profile on the XY origin plane revolved about the Y origin axis, the body of a scope with two different targets is a span of the revolution between the two targets, and the profile position lies outside that span. One rule gives the span for plane, face, and body targets: the travel leaves the profile toward the negative-normal side of the sketch plane, the span starts where the travel first reaches the target that it reaches second, and the span ends where the travel next reaches the other target. A scope with the same plane on both sides produces the body of the one-sided scope that ends at that plane.
 
-**Need.** Two-sided to-object scopes whose travels on both sides reach the same target first, and scopes whose targets are faces or bodies.
+**Need.** Two-sided to-object scopes on another sketch plane or about a reversed axis, scopes with one target on both sides, and Cut or Intersect scopes, each with the resulting body geometry.
 
 **Conflict.** None.
 
-**Note.** The decoder keeps both target groups in the native construction and projects a two-sided extent whose two terminations are unresolved.
+**Note.** The decoder keeps both target groups in the native construction and projects a two-sided extent whose two terminations are unresolved. The neutral two-sided extent states one termination on each side of the profile plane.
 
 ### DR-172. Paired-locus dimension owner binding
 
