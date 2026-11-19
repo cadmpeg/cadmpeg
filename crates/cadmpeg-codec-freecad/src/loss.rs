@@ -113,6 +113,8 @@ pub(crate) enum FreecadLossCode {
     TopologyLocationIdentityBounded,
     /// Non-boundary edge geometry transfers with its face incidence retained natively.
     TopologyNonBoundaryIncidenceRetained,
+    /// A shape listed twice at one location restates its topology records, and the later ones are not stated.
+    TopologyRecordRepeated,
     /// Producer version metadata used an alias or conflicting declarations.
     ProgramVersionNoncanonical,
     /// Persistence version metadata used a lowercase alias.
@@ -171,6 +173,7 @@ impl FreecadLossCode {
         Self::PcurveLocationAmbiguous,
         Self::TopologyLocationIdentityBounded,
         Self::TopologyNonBoundaryIncidenceRetained,
+        Self::TopologyRecordRepeated,
         Self::ProgramVersionNoncanonical,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
@@ -235,6 +238,7 @@ impl FreecadLossCode {
             Self::TopologyNonBoundaryIncidenceRetained => {
                 "topology.non-boundary-incidence-retained"
             }
+            Self::TopologyRecordRepeated => "topology.record-repeated",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
@@ -290,6 +294,7 @@ impl FreecadLossCode {
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::TopologyNonBoundaryIncidenceRetained
+            | Self::TopologyRecordRepeated
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
@@ -338,7 +343,8 @@ impl FreecadLossCode {
             | Self::PcurveNotTransferred
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded
-            | Self::TopologyNonBoundaryIncidenceRetained => LossTaxonomy::RecordNotTyped,
+            | Self::TopologyNonBoundaryIncidenceRetained
+            | Self::TopologyRecordRepeated => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
             | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
             Self::PersistenceCountNoncanonical
@@ -430,6 +436,7 @@ mod tests {
                 "pcurve.location-ambiguous",
                 "topology.location-identity-bounded",
                 "topology.non-boundary-incidence-retained",
+                "topology.record-repeated",
                 "metadata.program-version-noncanonical",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",

@@ -26,9 +26,16 @@ fn occurrence_output_truncates(source: &[u8], existing: usize) {
             &mut admitted,
         )
         .expect("initial assembly fits");
+        let decoded = ir.model.occurrences.len();
         ir.model
             .occurrences
             .resize(existing, ir.model.occurrences[0].clone());
+        for (index, occurrence) in ir.model.occurrences.iter_mut().enumerate().skip(decoded) {
+            occurrence.id = format!("step:product:occurrence#pad-{index:06}")
+                .try_into()
+                .expect("padding occurrence id");
+        }
+        ir.finalize();
         let model_input =
             serde_json::to_vec(&ir).expect("synthetic existing assembly budget envelope");
         crate::test_support::with_service_context(&model_input, |_, ctx| {

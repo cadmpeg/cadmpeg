@@ -26,7 +26,9 @@ pub(crate) fn assert_retained_refusal_at<T>(
 pub(crate) fn validate_native(
     ir: &cadmpeg_ir::document::CadIr,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
-    let bytes = serde_json::to_vec(ir).expect("test document serializes");
+    // A document whose native arena repeats an id does not serialize (§2.8),
+    // and the context needs only some root bytes.
+    let bytes = serde_json::to_vec(ir).unwrap_or_default();
     with_service_context(&bytes, |ctx| {
         crate::validate_native(ctx, ir).expect("validate the native records")
     })

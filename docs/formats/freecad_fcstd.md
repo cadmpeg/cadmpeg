@@ -387,6 +387,12 @@ tessellation is presentation data and does not replace an available exact shape.
 use is a distinct neutral occurrence. Repeated root uses of the same shape at the same placement
 retain their serialized root order as an occurrence discriminator; they do not share body,
 region, shell, face, loop, coedge, edge, vertex, or point identity.
+CADIR decision: below the root, a region, shell, face, loop, or coedge is keyed by its shape and
+location identity, so a compound or a shell that lists one shape twice at one location identity
+lists one element twice. The first listing is the element (CADIR §2.2), as edges, vertices, and
+points already are. Each record a later listing restates is read and not stated, and the decoder
+charges one `fcstd/topology.record-repeated` loss that names the payload and the record's id. Body
+kind and shell closure count every listing.
 A body's kind is its topology's dimension. An edge occurrence in a shell is an edge shape at the
 location identity of its composed face, wire, and edge use locations, so one edge shape at two
 location identities is two occurrences. Each boundary use of an edge occurrence by a face's wire is
