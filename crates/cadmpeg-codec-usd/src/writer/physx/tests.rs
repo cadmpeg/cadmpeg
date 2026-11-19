@@ -2,8 +2,9 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::design::units::Quantity;
 use cadmpeg_ir::ids::{OccurrenceId, SolverSettingsId};
-use cadmpeg_ir::physics::solver::{Dimension, SolverSettings, SolverTarget, SolverValue};
+use cadmpeg_ir::physics::solver::{SolverSettings, SolverTarget, SolverValue};
 use cadmpeg_ir::products::JointId;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -35,14 +36,14 @@ fn values_return_to_scene_units_by_their_dimension() {
             "physxJoint:armature",
             SolverValue::Real {
                 value: FiniteReal::new(2.0e6).unwrap(),
-                dimension: Dimension::new(2, 1, 0),
+                dimension: Quantity::of(2, 1, 0, 0),
             },
         ),
         (
             "physxJoint:maxJointVelocity",
             SolverValue::Real {
                 value: FiniteReal::new(std::f64::consts::PI).unwrap(),
-                dimension: Dimension::new(0, 0, 1),
+                dimension: Quantity::of(0, 0, 1, -1),
             },
         ),
     ]);
@@ -67,7 +68,7 @@ fn a_value_with_no_attribute_or_unit_is_not_written() {
             "physxJoint:armature",
             SolverValue::Real {
                 value: FiniteReal::new(1.0).unwrap(),
-                dimension: Dimension::new(3, 0, 0),
+                dimension: Quantity::of(3, 0, 0, 0),
             },
         ),
     ]);

@@ -110,6 +110,7 @@ mod carchive;
 mod classification;
 mod container;
 mod decode;
+mod design_v11;
 mod dialect;
 pub mod exact_ledger;
 mod feature_schema;
