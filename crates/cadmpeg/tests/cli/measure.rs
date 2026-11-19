@@ -835,9 +835,11 @@ fn cadir_with_and_without_sidecar() {
     }));
 }
 
+/// A document whose scope holds no model class measures no body and says
+/// so with `measure:output.empty`; `--reject-empty` refuses it.
 #[cfg(feature = "step")]
 #[test]
-fn container_depth_cadir_is_refused() {
+fn container_depth_cadir_measures_no_body_and_reject_empty_refuses_it() {
     let dir = tempdir().unwrap();
     let cadir = dir.path().join("container.cadir.json");
     dump(
@@ -851,13 +853,46 @@ fn container_depth_cadir_is_refused() {
         .arg("--json")
         .output()
         .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["measure"]["bodies"].as_array().map(Vec::len), Some(0));
+    let losses = value["measure"]["losses"].as_array().unwrap();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0]["code"]["value"]["namespace"], "measure");
+    assert_eq!(losses[0]["code"]["value"]["code"], "output.empty");
+    assert_eq!(losses[0]["severity"], "warning");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("measure:output.empty"));
+
+    let output = cadmpeg()
+        .arg("measure")
+        .arg(&cadir)
+        .arg("--json")
+        .arg("--reject-empty")
+        .output()
+        .unwrap();
     assert_eq!(output.status.code(), Some(1));
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["status"], "refused");
-    assert_eq!(value["refusal"]["code"], "insufficient_depth");
-    assert_eq!(value["refusal"]["stage"], "plan");
-    assert_eq!(value["refusal"]["depth"]["needed"], "geometry");
-    assert_eq!(value["refusal"]["depth"]["recorded"], "container");
+    assert_eq!(value["refusal"]["code"], "strict_measure_rejected");
+    assert_eq!(value["refusal"]["stage"], "measure");
+    assert!(value["refusal"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("measure:output.empty"));
+
+    let geometry = dir.path().join("geometry.cadir.json");
+    dump(&fixture("measure_plane_hole.p21"), &geometry, &[]);
+    let output = cadmpeg()
+        .arg("measure")
+        .arg(&geometry)
+        .arg("--json")
+        .arg("--reject-empty")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(value["measure"].get("losses").is_none());
 }
 
 #[cfg(feature = "step")]

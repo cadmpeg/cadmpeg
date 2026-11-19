@@ -5,8 +5,12 @@
 //! request resolved through that domain, and returns a bare [`ExportBody`].
 //! The sealed [`Encoder::plan`] wrapper is the single author of the export's
 //! identity and fidelity resolution: a backend cannot report a format, a
-//! target, or a fidelity state other than the one it was given.
+//! target, or a fidelity state other than the one it was given. It applies
+//! the caller's [`Strictness`] to the completed report before any byte
+//! reaches a destination.
 
+use std::collections::BTreeSet;
+use std::fmt;
 use std::io::Write;
 
 use crate::codec::FormatId;
@@ -18,6 +22,7 @@ use crate::report::{
         SynthesisFidelity, WritePath as ReportWritePath,
     },
     loss::LossNote,
+    strictness::Strictness,
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
@@ -38,6 +43,7 @@ pub use coverage::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, DesignArenaDispositions,
     ProcessArenaDispositions,
 };
+use loss::ExportLossCode;
 use target::{DialectFree, TargetDomain, TargetRequest, TargetResolution};
 
 /// How much of its source a document must record for an encoder to plan it.
@@ -125,12 +131,15 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// Plans one export without writing to the destination.
     ///
     /// Refuses with [`CodecError::InsufficientDepth`] a document that records
-    /// less depth than [`Self::needs`] admits.
+    /// less depth than [`Self::needs`] admits. Charges `export:record.invalid`
+    /// for each Error of [`EncodeInput::validation`] in what the output
+    /// writes. Refuses with [`EncodeError::StrictRejected`] a completed report
+    /// that holds an entry [`EncodeInput::strictness`] refuses.
     fn plan(
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, CodecError>;
+    ) -> Result<ExportPlan, EncodeError>;
 }
 
 impl<E: EncoderBackend> Encoder for E {
@@ -150,14 +159,15 @@ impl<E: EncoderBackend> Encoder for E {
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, CodecError> {
+    ) -> Result<ExportPlan, EncodeError> {
         let recorded = input.ir.scope().depth();
         if !E::NEEDS.admits(recorded) {
             return Err(CodecError::InsufficientDepth {
                 format: E::FORMAT.as_str(),
                 needed: E::NEEDS.request(),
                 recorded,
-            });
+            }
+            .into());
         }
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
@@ -171,11 +181,24 @@ impl<E: EncoderBackend> Encoder for E {
             notes,
         } = body;
         losses.extend(coverage.omission_losses(input.ir, E::FORMAT.as_str()));
+        if let Some(validation) = input.validation {
+            losses.extend(
+                carried_errors(input.ir, validation, coverage, E::FORMAT)
+                    .into_iter()
+                    .map(record_invalid),
+            );
+        }
         let write_path = write_path.into_report(input.fidelity.is_some());
         let report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
             Some(target) => ExportReport::native(target, census, write_path, losses, notes),
         };
+        if let Some(entry) = input.strictness.first_refused(&report.losses, false) {
+            return Err(EncodeError::StrictRejected(StrictWriteRejection {
+                report: Box::new(report),
+                entry,
+            }));
+        }
         Ok(ExportPlan {
             report,
             bytes,
@@ -184,6 +207,13 @@ impl<E: EncoderBackend> Encoder for E {
         })
     }
 }
+
+/// The strictness that refuses nothing, the default of [`EncodeInput`].
+static PERMISSIVE: Strictness = Strictness {
+    pinned: false,
+    floor: None,
+    codes: BTreeSet::new(),
+};
 
 /// Borrowed inputs used to plan an export.
 #[derive(Debug, Clone, Copy)]
@@ -195,16 +225,24 @@ pub struct EncodeInput<'a> {
     /// The source of the files that external assets of the document name,
     /// for an encoder that writes their content into its output.
     pub assets: Option<&'a dyn Companions>,
+    /// The validation of `ir`. The wrapper charges `export:record.invalid`
+    /// for each of its Errors in what the output writes.
+    pub validation: Option<&'a ValidationReport>,
+    /// The report entries on which the caller refuses the write. The default
+    /// refuses none.
+    pub strictness: &'a Strictness,
 }
 
 impl<'a> EncodeInput<'a> {
     /// Borrows a document and its decode-time fidelity for one export.
     #[must_use]
-    pub const fn new(ir: &'a CadIr, fidelity: Option<&'a SourceFidelity>) -> Self {
+    pub fn new(ir: &'a CadIr, fidelity: Option<&'a SourceFidelity>) -> Self {
         Self {
             ir,
             fidelity,
             assets: None,
+            validation: None,
+            strictness: &PERMISSIVE,
         }
     }
 
@@ -213,6 +251,120 @@ impl<'a> EncodeInput<'a> {
     pub const fn with_assets(mut self, assets: &'a dyn Companions) -> Self {
         self.assets = Some(assets);
         self
+    }
+
+    /// Attaches the validation of the document.
+    #[must_use]
+    pub const fn with_validation(mut self, validation: &'a ValidationReport) -> Self {
+        self.validation = Some(validation);
+        self
+    }
+
+    /// Sets the report entries on which the caller refuses the write.
+    #[must_use]
+    pub const fn with_strictness(mut self, strictness: &'a Strictness) -> Self {
+        self.strictness = strictness;
+        self
+    }
+}
+
+/// Failure from the sealed [`Encoder::plan`] wrapper.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum EncodeError {
+    /// The encoder or its planning failed before a report was completed.
+    #[error(transparent)]
+    Codec(#[from] CodecError),
+    /// The completed export report holds an entry that
+    /// [`EncodeInput::strictness`] refuses. Nothing is written.
+    #[error("strictness refuses {0}")]
+    StrictRejected(StrictWriteRejection),
+}
+
+/// A strict refusal bound to the entry in its completed export report.
+///
+/// Only the sealed encode wrapper constructs it, so the refusing entry is
+/// always an element of [`Self::report`].
+#[derive(Debug)]
+pub struct StrictWriteRejection {
+    report: Box<ExportReport>,
+    entry: usize,
+}
+
+impl StrictWriteRejection {
+    /// The entry that refused the write.
+    #[must_use]
+    pub fn entry(&self) -> &LossNote {
+        &self.report.losses[self.entry]
+    }
+
+    /// The completed report that holds the refusing entry.
+    #[must_use]
+    pub fn report(&self) -> &ExportReport {
+        &self.report
+    }
+}
+
+impl fmt::Display for StrictWriteRejection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let entry = self.entry();
+        write!(f, "{}: {}", entry.code, entry.message)
+    }
+}
+
+/// The `export:record.invalid` entry of one carried validation Error,
+/// naming its record, or its rule where it names no record.
+fn record_invalid(finding: &Finding) -> LossNote {
+    let subject = finding
+        .entity
+        .clone()
+        .unwrap_or_else(|| finding.check.to_string());
+    ExportLossCode::RecordInvalid.note(format!(
+        "{subject}: written despite validation error: {}",
+        finding.message
+    ))
+}
+
+/// The Error findings of `report` that name something an output of `format`
+/// with `coverage` may carry. Findings with no resolved entity are carried
+/// because they cannot be shown to be outside the output.
+fn carried_errors<'r>(
+    ir: &CadIr,
+    report: &'r ValidationReport,
+    coverage: ArenaCoverage,
+    format: FormatId,
+) -> Vec<&'r Finding> {
+    let errors: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|finding| finding.severity >= Severity::Error)
+        .collect();
+    if errors.is_empty() {
+        return errors;
+    }
+    let locator = FindingLocator::new(ir, errors.iter().copied());
+    errors
+        .into_iter()
+        .filter(|finding| {
+            locator.scope(finding).is_none_or(|locations| {
+                locations
+                    .into_iter()
+                    .any(|location| carries_location(coverage, format, location))
+            })
+        })
+        .collect()
+}
+
+fn carries_location(
+    coverage: ArenaCoverage,
+    format: FormatId,
+    location: EntityLocation<'_>,
+) -> bool {
+    match location {
+        EntityLocation::Model(kind) => coverage.carries(kind),
+        EntityLocation::Native(namespace) => {
+            coverage == ArenaCoverage::Complete || namespace == format.as_str()
+        }
     }
 }
 
@@ -388,34 +540,7 @@ impl ExportPlan {
     /// by complete coverage or by their own format's encoder; a backend reads
     /// no native namespace other than its own format's.
     pub fn carried_errors<'r>(&self, ir: &CadIr, report: &'r ValidationReport) -> Vec<&'r Finding> {
-        let errors: Vec<_> = report
-            .findings
-            .iter()
-            .filter(|finding| finding.severity >= Severity::Error)
-            .collect();
-        if errors.is_empty() {
-            return errors;
-        }
-        let locator = FindingLocator::new(ir, errors.iter().copied());
-        errors
-            .into_iter()
-            .filter(|finding| {
-                locator.scope(finding).is_none_or(|locations| {
-                    locations
-                        .into_iter()
-                        .any(|location| self.carries_location(location))
-                })
-            })
-            .collect()
-    }
-
-    fn carries_location(&self, location: EntityLocation<'_>) -> bool {
-        match location {
-            EntityLocation::Model(kind) => self.coverage.carries(kind),
-            EntityLocation::Native(namespace) => {
-                self.coverage == ArenaCoverage::Complete || namespace == self.format.as_str()
-            }
-        }
+        carried_errors(ir, report, self.coverage, self.format)
     }
 
     /// Writes the planned payload and returns the unchanged plan-time report.

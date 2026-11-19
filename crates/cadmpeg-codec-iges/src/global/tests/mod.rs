@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::DecodeOptions;
 
 use crate::loss::IgesLossCode;
@@ -102,6 +101,6 @@ fn strict_options(depth: cadmpeg_core::decode::DecodeDepth) -> DecodeOptions {
         depth,
         ..DecodeOptions::default()
     };
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     options
 }

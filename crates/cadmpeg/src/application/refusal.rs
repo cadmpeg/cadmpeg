@@ -12,9 +12,11 @@ use std::path::Path;
 use cadmpeg_core::decode::{DecodeDepth, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::target::TargetRefusal;
+use cadmpeg_ir::codec::write::{EncodeError, StrictWriteRejection};
 use cadmpeg_ir::codec::DecodeFailure;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::report::strictness::code_name;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
-use cadmpeg_registry::Format;
 use serde::Serialize;
 
 /// A conversion workflow either refuses a modeled request or fails
@@ -103,6 +105,21 @@ impl From<cadmpeg_core::CodecError> for ApplicationError {
     }
 }
 
+impl From<EncodeError> for ApplicationError {
+    fn from(error: EncodeError) -> Self {
+        match error {
+            EncodeError::Codec(error) => error.into(),
+            EncodeError::StrictRejected(rejection) => ConversionRefusal::StrictExportRejected {
+                rejection,
+                decode_report: None,
+                validation: None,
+            }
+            .into(),
+            error => Self::Operational(error.into()),
+        }
+    }
+}
+
 impl fmt::Display for ApplicationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -183,14 +200,14 @@ pub(crate) enum RefusalCode {
     DecodeFailed,
     /// The input was identified but its dialect has no decode grammar.
     UnsupportedDialect,
-    /// Strict decode policy rejected a reported loss.
+    /// The decode's strictness refused an entry of its report.
     StrictDecodeRejected,
-    /// The check found errors under `--reject-errors`.
+    /// The check found errors.
     CheckFailed,
-    /// Decode reported losses under `--reject-lossy`.
-    DecodeLossRejected,
-    /// Export planning reported losses under `--reject-lossy`.
-    ExportLossRejected,
+    /// The write's strictness refused an entry of its report.
+    StrictExportRejected,
+    /// The measurement's strictness refused an entry of its report.
+    StrictMeasureRejected,
     /// The encoder cannot write the dialect `--to` named.
     UnsupportedTarget,
     /// The document records less of its source than the encoder plans from.
@@ -206,11 +223,10 @@ impl RefusalCode {
     const fn disposition(self) -> RefusalDisposition {
         let (stage, exit_code) = match self {
             Self::ResourceLimit | Self::DecodeFailed => (RefusalStage::Decode, 2),
-            Self::UnsupportedDialect | Self::StrictDecodeRejected | Self::DecodeLossRejected => {
-                (RefusalStage::Decode, 1)
-            }
+            Self::UnsupportedDialect | Self::StrictDecodeRejected => (RefusalStage::Decode, 1),
             Self::CheckFailed => (RefusalStage::Check, 1),
-            Self::ExportLossRejected => (RefusalStage::Export, 1),
+            Self::StrictExportRejected => (RefusalStage::Export, 1),
+            Self::StrictMeasureRejected => (RefusalStage::Measure, 1),
             Self::UnsupportedTarget | Self::InsufficientDepth | Self::UnsupportedOutputFormat => {
                 (RefusalStage::Plan, 1)
             }
@@ -228,8 +244,8 @@ impl fmt::Display for RefusalCode {
             Self::UnsupportedDialect => "unsupported_dialect",
             Self::StrictDecodeRejected => "strict_decode_rejected",
             Self::CheckFailed => "check_failed",
-            Self::DecodeLossRejected => "decode_loss_rejected",
-            Self::ExportLossRejected => "export_loss_rejected",
+            Self::StrictExportRejected => "strict_export_rejected",
+            Self::StrictMeasureRejected => "strict_measure_rejected",
             Self::UnsupportedTarget => "unsupported_target",
             Self::InsufficientDepth => "insufficient_depth",
             Self::UnsupportedOutputFormat => "unsupported_output_format",
@@ -253,7 +269,7 @@ pub(crate) enum RefusalStage {
     Decode,
     /// Validation refused.
     Check,
-    /// Export loss policy or artifact emission refused.
+    /// The write's strictness or artifact emission refused.
     Export,
     /// Measurement of a loaded document refused.
     Measure,
@@ -275,18 +291,6 @@ impl Serialize for RefusalStage {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_str(self)
     }
-}
-
-/// The operation whose validation failed.
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum CheckOperation {
-    /// Report validation findings without an export.
-    Check,
-    /// Refuse an export after validation.
-    Export {
-        /// The number of error findings located in what the export writes.
-        carried: usize,
-    },
 }
 
 /// Typed refusal from the conversion workflow.
@@ -314,35 +318,35 @@ pub(crate) enum ConversionRefusal {
         /// Codec-owned reason no decode grammar can admit it.
         reason: String,
     },
-    /// Decode completed, but strict mode rejected a loss in its report.
+    /// Decode completed, but its strictness refused an entry of its report.
     StrictDecodeRejected {
         /// Completed decode report bound to the loss that caused refusal.
         rejection: cadmpeg_ir::codec::StrictDecodeRejection,
     },
-    /// The check found errors under `--reject-errors`.
+    /// `check` found errors.
     CheckFailed {
-        /// Operation rejected by validation.
-        operation: CheckOperation,
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
         /// Validation report available for an optional `--report`.
         validation: ValidationReport,
     },
-    /// Decode reported losses under `--reject-lossy`.
-    DecodeLossRejected {
-        /// Requested output format.
-        format: Format,
-        /// Decode report available for an optional `--report`.
-        decode_report: DecodeReport,
-    },
-    /// Export planning reported losses under `--reject-lossy`.
-    ExportLossRejected {
+    /// Export planning completed, but the write's strictness refused an
+    /// entry of its report.
+    StrictExportRejected {
+        /// Completed export report bound to the entry that caused refusal.
+        rejection: StrictWriteRejection,
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
-        /// Validation report available for an optional `--report`.
-        validation: ValidationReport,
-        /// Export report computed by encoder planning before rejection.
-        export_report: ExportReport,
+        /// Validation report, when the check completed.
+        validation: Option<ValidationReport>,
+    },
+    /// Measurement completed, but its strictness refused an entry of its
+    /// report.
+    StrictMeasureRejected {
+        /// The refused entry.
+        entry: LossNote,
+        /// Decode report available for an optional `--report`.
+        decode_report: Option<DecodeReport>,
     },
     /// The command-line target cannot select a writable output format.
     UnsupportedOutputFormat {
@@ -355,8 +359,8 @@ pub(crate) enum ConversionRefusal {
         refusal: Box<TargetRefusal>,
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
-        /// Validation report available for an optional `--report`.
-        validation: ValidationReport,
+        /// Validation report, when the check completed.
+        validation: Option<ValidationReport>,
     },
     /// The document records less of its source than the encoder plans from.
     InsufficientDepth {
@@ -366,8 +370,8 @@ pub(crate) enum ConversionRefusal {
         depth: DepthReport,
         /// Decode report available for an optional `--report`.
         decode_report: Option<DecodeReport>,
-        /// Validation report available for an optional `--report`.
-        validation: ValidationReport,
+        /// Validation report, when the check completed.
+        validation: Option<ValidationReport>,
     },
     /// Binary container would write to stdout without an override.
     BinaryStdoutRejected {
@@ -527,10 +531,7 @@ impl ConversionRefusal {
                 let loss = rejection.loss();
                 RefusalEvidence {
                     code: RefusalCode::StrictDecodeRejected,
-                    message: Cow::Owned(format!(
-                        "strict mode rejects {}: {}",
-                        loss.code, loss.message
-                    )),
+                    message: Cow::Owned(strict_message("decode", loss)),
                     detail: None,
                     reports: RefusalReports {
                         decode: Some(rejection.report()),
@@ -540,24 +541,14 @@ impl ConversionRefusal {
                 }
             }
             Self::CheckFailed {
-                operation,
                 decode_report,
                 validation,
             } => RefusalEvidence {
                 code: RefusalCode::CheckFailed,
-                message: Cow::Owned(match operation {
-                    CheckOperation::Check => {
-                        format!("check found {} error(s)", validation.error_count())
-                    }
-                    CheckOperation::Export { carried } if *carried == validation.error_count() => format!(
-                        "check found {} error(s); refusing to export under --reject-errors",
-                        validation.error_count()
-                    ),
-                    CheckOperation::Export { carried } => format!(
-                        "check found {} error(s), {carried} in what the export writes; refusing to export under --reject-errors",
-                        validation.error_count()
-                    ),
-                }),
+                message: Cow::Owned(format!(
+                    "check found {} error(s)",
+                    validation.error_count()
+                )),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
@@ -565,45 +556,31 @@ impl ConversionRefusal {
                     export: None,
                 },
             },
-            Self::DecodeLossRejected {
-                format,
-                decode_report,
-            } => RefusalEvidence {
-                code: RefusalCode::DecodeLossRejected,
-                message: Cow::Owned(format!(
-                    "decode reported {} loss(es); refusing to write a lossy {} (omit --reject-lossy to allow)",
-                    decode_report.losses.len(),
-                    format.name()
-                )),
-                detail: None,
-                reports: RefusalReports {
-                    decode: Some(decode_report),
-                    check: None,
-                    export: None,
-                },
-            },
-            Self::ExportLossRejected {
+            Self::StrictExportRejected {
+                rejection,
                 decode_report,
                 validation,
-                export_report,
             } => RefusalEvidence {
-                code: RefusalCode::ExportLossRejected,
-                message: Cow::Owned(format!(
-                    "export planning reported {} loss(es): {}; refusing to write a lossy {} (omit --reject-lossy to allow)",
-                    export_report.losses.len(),
-                    export_report
-                        .losses
-                        .iter()
-                        .map(|loss| loss.message.as_str())
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                    export_report.format()
-                )),
+                code: RefusalCode::StrictExportRejected,
+                message: Cow::Owned(strict_message("write", rejection.entry())),
                 detail: None,
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
-                    check: Some(validation),
-                    export: Some(export_report),
+                    check: validation.as_ref(),
+                    export: Some(rejection.report()),
+                },
+            },
+            Self::StrictMeasureRejected {
+                entry,
+                decode_report,
+            } => RefusalEvidence {
+                code: RefusalCode::StrictMeasureRejected,
+                message: Cow::Owned(strict_message("measurement", entry)),
+                detail: None,
+                reports: RefusalReports {
+                    decode: decode_report.as_ref(),
+                    check: None,
+                    export: None,
                 },
             },
             Self::UnsupportedOutputFormat { message } => RefusalEvidence {
@@ -622,7 +599,7 @@ impl ConversionRefusal {
                 detail: Some(RefusalDetail::Target(refusal)),
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
-                    check: Some(validation),
+                    check: validation.as_ref(),
                     export: None,
                 },
             },
@@ -640,7 +617,7 @@ impl ConversionRefusal {
                 detail: Some(RefusalDetail::Depth(*depth)),
                 reports: RefusalReports {
                     decode: decode_report.as_ref(),
-                    check: Some(validation),
+                    check: validation.as_ref(),
                     export: None,
                 },
             },
@@ -667,6 +644,12 @@ impl ConversionRefusal {
                 },
             },
         }
+    }
+
+    /// Whether an operation ran out of a resource ceiling.
+    #[must_use]
+    pub(crate) const fn is_resource_limit(&self) -> bool {
+        matches!(self, Self::ResourceLimit { .. })
     }
 
     /// Stable code for tests and the report envelope.
@@ -698,6 +681,16 @@ impl ConversionRefusal {
     fn exit_code(&self) -> u8 {
         self.code().disposition().exit_code
     }
+}
+
+/// The message of a strict refusal: the operation and the entry, by the
+/// name its strictness spells.
+fn strict_message(operation: &str, entry: &LossNote) -> String {
+    format!(
+        "strictness refuses the {operation} on {}: {}",
+        code_name(&entry.code),
+        entry.message
+    )
 }
 
 fn unsupported_dialect_message(dialects: &DialectLayers, reason: &str) -> String {
@@ -740,7 +733,7 @@ mod tests {
     use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
     use cadmpeg_core::target::{TargetCatalog, TargetDescriptor};
 
-    use super::{ApplicationError, CheckOperation, ConversionRefusal, DepthReport, RefusalCode};
+    use super::{ApplicationError, ConversionRefusal, DepthReport, RefusalCode};
     use crate::application::transcoder::TargetSelection;
     use cadmpeg_core::target::TargetRefusal;
     use cadmpeg_ir::codec::DecodeFailure;
@@ -769,11 +762,11 @@ mod tests {
         let refusal = ConversionRefusal::UnsupportedTarget {
             refusal: Box::new(TargetRefusal::unknown_explicit("iges:9.9", IGES_CATALOG)),
             decode_report: None,
-            validation: ValidationReport {
+            validation: Some(ValidationReport {
                 entity_counts: BTreeMap::new(),
                 findings: Vec::new(),
                 losses: Vec::new(),
-            },
+            }),
         };
         assert_eq!(refusal.code(), RefusalCode::UnsupportedTarget);
         assert_eq!(report_value(&refusal)["stage"], "plan");
@@ -803,11 +796,11 @@ mod tests {
                 recorded: DecodeDepth::Geometry,
             },
             decode_report: None,
-            validation: ValidationReport {
+            validation: Some(ValidationReport {
                 entity_counts: BTreeMap::new(),
                 findings: Vec::new(),
                 losses: Vec::new(),
-            },
+            }),
         };
         assert_eq!(refusal.code(), RefusalCode::InsufficientDepth);
         assert_eq!(refusal.exit_code(), 1);
@@ -956,7 +949,6 @@ mod tests {
     #[test]
     fn check_refusal_maps_to_check_stage() {
         let refusal = ConversionRefusal::CheckFailed {
-            operation: CheckOperation::Check,
             decode_report: None,
             validation: ValidationReport {
                 entity_counts: BTreeMap::new(),

@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 #[cfg(any(feature = "iges", feature = "rhino", feature = "step", feature = "usd"))]
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+use cadmpeg_ir::report::check::ValidationReport;
+use cadmpeg_ir::report::strictness::{code_name, Strictness};
+use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::CadIr;
 use cadmpeg_registry::Format;
 
@@ -83,20 +86,55 @@ fn prepared(
     ir: CadIr,
     format: Format,
     encoder: Box<dyn Encoder>,
-    loss_policy: LossPolicy,
+    write: Strictness,
 ) -> PreparedConversion {
     let validation =
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     PreparedConversion {
         document: LoadedDocument::neutral(ir, 0),
-        validation,
+        validation: Some(validation),
         encoder,
         selection: TargetSelection::new(format, None),
         assets: crate::loader::companions::Directory::beside(Path::new("input")),
         destination: ResolvedDestination::Stdout,
-        loss_policy,
-        reject_errors: false,
+        write,
     }
+}
+
+/// The write's strictness under `--reject-lossy=export` at the default floor.
+fn reject_export_losses() -> Strictness {
+    Strictness {
+        floor: Some(Severity::Info),
+        ..Strictness::default()
+    }
+}
+
+/// The write's strictness under `--reject-errors`.
+fn reject_errors() -> Strictness {
+    Strictness::default().with_code("export:record.invalid")
+}
+
+fn validation(conversion: &mut PreparedConversion) -> &mut ValidationReport {
+    conversion.validation.as_mut().expect("the check completed")
+}
+
+/// The number of `export:record.invalid` entries of a write refused on one.
+#[cfg(feature = "fcstd")]
+fn refused_invalid_records(error: &crate::application::refusal::ApplicationError) -> usize {
+    let Some(crate::application::refusal::ConversionRefusal::StrictExportRejected {
+        rejection,
+        ..
+    }) = error.refusal()
+    else {
+        panic!("expected a strict export refusal, got {error:?}");
+    };
+    assert_eq!(code_name(&rejection.entry().code), "export:record.invalid");
+    rejection
+        .report()
+        .losses
+        .iter()
+        .filter(|entry| code_name(&entry.code) == "export:record.invalid")
+        .count()
 }
 
 #[cfg(feature = "iges")]
@@ -106,7 +144,7 @@ fn encoder_planning_owns_unknown_explicit_target_admission() {
         CadIr::empty(),
         Format::Iges,
         Box::new(cadmpeg_codec_iges::IgesCodec),
-        LossPolicy::Allow,
+        Strictness::default(),
     );
     conversion.selection.request = Some("nonesuch".into());
 
@@ -134,29 +172,32 @@ fn step_ir_with_unrepresentable_native_content() -> CadIr {
     ir
 }
 
-/// STEP planning returns concrete loss rows, and the shared application
-/// gate names them when export-loss rejection is active.
+/// STEP planning returns concrete loss rows, and the write's strictness
+/// refuses on them when its floor is set.
 #[cfg(feature = "step")]
 #[test]
-fn step_export_losses_are_rejected_by_the_shared_plan_gate() {
+fn step_export_losses_are_refused_by_the_write_strictness() {
     let conversion = prepared(
         step_ir_with_unrepresentable_native_content(),
         Format::Step,
         Box::new(cadmpeg_codec_step::StepCodec::default()),
-        LossPolicy::RejectExport,
+        reject_export_losses(),
     );
     let Err(error) = conversion.plan() else {
         panic!("the plan loss must refuse");
     };
     let refusal = error
         .refusal()
-        .expect("the shared gate returns a typed refusal");
-    assert!(
-        matches!(refusal, ConversionRefusal::ExportLossRejected { .. }),
-        "{refusal:?}"
-    );
+        .expect("the strict gate returns a typed refusal");
+    let ConversionRefusal::StrictExportRejected { rejection, .. } = refusal else {
+        panic!("{refusal:?}");
+    };
     let message = refusal.evidence().message;
-    assert!(message.contains("source-native record(s)"), "{message}");
+    assert!(message.contains(&rejection.entry().message), "{message}");
+    assert_eq!(
+        refusal.report().code().to_string(),
+        "strict_export_rejected"
+    );
     let report = refusal
         .evidence()
         .reports
@@ -181,7 +222,7 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
         step_ir_with_unrepresentable_native_content(),
         Format::Step,
         Box::new(cadmpeg_codec_step::StepCodec::default()),
-        LossPolicy::Allow,
+        Strictness::default(),
     );
     let planned = conversion.plan().expect("loss reporting is not refusal");
     assert!(
@@ -197,10 +238,11 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
 }
 
 /// A Rhino write omits product structure it cannot represent. The wrapper
-/// charges that omission as an export loss, so the shared gate refuses it.
+/// charges that omission as an export loss, so the write's strictness
+/// refuses it.
 #[cfg(feature = "rhino")]
 #[test]
-fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
+fn rhino_omitted_product_structure_is_refused_by_the_write_strictness() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity grammar"),
@@ -238,17 +280,18 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
         ir,
         Format::Rhino,
         Box::new(cadmpeg_codec_rhino::RhinoCodec),
-        LossPolicy::RejectExport,
+        reject_export_losses(),
     );
     let Err(error) = conversion.plan() else {
         panic!("the omitted product definition must refuse");
     };
     let refusal = error
         .refusal()
-        .expect("the shared gate returns a typed refusal");
-    let ConversionRefusal::ExportLossRejected { export_report, .. } = refusal else {
+        .expect("the strict gate returns a typed refusal");
+    let ConversionRefusal::StrictExportRejected { rejection, .. } = refusal else {
         panic!("{refusal:?}");
     };
+    let export_report = rejection.report();
     assert!(
         export_report
             .losses
@@ -288,7 +331,7 @@ fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
         CadIr::empty(),
         Format::Cadir,
         Box::new(NotImplementedEncoder),
-        LossPolicy::RejectExport,
+        reject_export_losses(),
     );
     let Err(error) = conversion.plan() else {
         panic!("the synthetic writer is not implemented");
@@ -300,25 +343,20 @@ fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
     assert!(error.refusal().is_none());
 }
 
-/// A failed plan returns its own refusal by default, and the check refusal
-/// under `reject_errors`.
+/// A failed plan completes no report, so the write's strictness has nothing
+/// to refuse: the plan's own failure stands under `--reject-errors` too.
 #[test]
-fn a_failed_plan_refuses_on_check_errors_only_under_reject_errors() {
-    use crate::application::refusal::{CheckOperation, ConversionRefusal};
-    use cadmpeg_ir::report::{
-        check::{Check, Finding},
-        Severity,
-    };
+fn a_failed_plan_returns_its_own_failure_under_reject_errors() {
+    use cadmpeg_ir::report::check::{Check, Finding};
 
-    for reject_errors in [false, true] {
+    for write in [Strictness::default(), reject_errors()] {
         let mut conversion = prepared(
             CadIr::empty(),
             Format::Cadir,
             Box::new(NotImplementedEncoder),
-            LossPolicy::Allow,
+            write,
         );
-        conversion.reject_errors = reject_errors;
-        conversion.validation.findings.push(Finding {
+        validation(&mut conversion).findings.push(Finding {
             related: Vec::new(),
             check: Check::Counts,
             severity: Severity::Error,
@@ -328,24 +366,11 @@ fn a_failed_plan_refuses_on_check_errors_only_under_reject_errors() {
         let Err(error) = conversion.plan() else {
             panic!("the synthetic writer is not implemented");
         };
-        if reject_errors {
-            assert!(
-                matches!(
-                    error.refusal(),
-                    Some(ConversionRefusal::CheckFailed {
-                        operation: CheckOperation::Export { carried: 1 },
-                        ..
-                    })
-                ),
-                "{error:?}"
-            );
-        } else {
-            assert_eq!(
-                error.to_string(),
-                "not implemented yet: writer path is not implemented"
-            );
-            assert!(error.refusal().is_none());
-        }
+        assert_eq!(
+            error.to_string(),
+            "not implemented yet: writer path is not implemented"
+        );
+        assert!(error.refusal().is_none());
     }
 }
 
@@ -510,13 +535,57 @@ fn loss_policy_cli_preserves_omission_and_rejects_allow_spelling() {
     assert_eq!(error.kind(), clap::error::ErrorKind::InvalidValue);
 }
 
+#[test]
+fn reject_lossy_floor_needs_reject_lossy_and_reject_empty_parses() {
+    use clap::Parser;
+    let error = crate::Cli::try_parse_from([
+        "cadmpeg",
+        "convert",
+        "input.step",
+        "--reject-lossy-floor=warning",
+    ])
+    .unwrap_err();
+    assert_eq!(
+        error.kind(),
+        clap::error::ErrorKind::MissingRequiredArgument
+    );
+    let crate::Command::Convert {
+        reject_lossy_floor,
+        reject_empty,
+        ..
+    } = crate::Cli::try_parse_from([
+        "cadmpeg",
+        "convert",
+        "input.step",
+        "--reject-lossy=export",
+        "--reject-lossy-floor=error",
+        "--reject-empty",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("expected convert command");
+    };
+    assert_eq!(reject_lossy_floor.severity(), Severity::Error);
+    assert!(reject_empty);
+    let crate::Command::Convert {
+        reject_lossy_floor, ..
+    } = crate::Cli::try_parse_from(["cadmpeg", "convert", "input.step", "--reject-lossy"])
+        .unwrap()
+        .command
+    else {
+        panic!("expected convert command");
+    };
+    assert_eq!(reject_lossy_floor.severity(), Severity::Info);
+}
+
 #[cfg(feature = "fcstd")]
 fn checked_design_history() -> (LoadedDocument, cadmpeg_ir::report::check::ValidationReport) {
     let inputs = cadmpeg_registry::InputCatalog::with_builtins();
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/freecad_fcstd/fixtures/design_history.FCStd");
     let options = cadmpeg_ir::codec::DecodeOptions::default();
-    let document = crate::loader::load_artifact(&inputs, &path, options, None)
+    let document = crate::loader::load_artifact(&inputs, &path, options.clone(), None)
         .expect("load the FreeCAD design-history fixture");
     let validation = crate::application::validators::validate_loaded(
         &inputs,
@@ -530,7 +599,7 @@ fn checked_design_history() -> (LoadedDocument, cadmpeg_ir::report::check::Valid
 }
 
 #[cfg(all(feature = "fcstd", feature = "step"))]
-fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> PreparedConversion {
+fn prepare_cadir_for_step(ir: &CadIr, path: &Path, write: Strictness) -> PreparedConversion {
     use cadmpeg_ir::codec::write::CadirEncoder;
     use cadmpeg_ir::codec::DecodeOptions;
     use cadmpeg_registry::InputCatalog;
@@ -550,8 +619,7 @@ fn prepare_cadir_for_step(ir: &CadIr, path: &Path, reject_errors: bool) -> Prepa
         },
         export_target(TargetSelection::new(Format::Step, None)),
         &super::ConversionPolicy {
-            losses: LossPolicy::Allow,
-            reject_errors,
+            write,
             destination: DestinationPolicy::Stdout {
                 allow_binary: false,
             },
@@ -571,10 +639,17 @@ fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
     document.ir.model.parameters[0].owner =
         Some(FeatureId::mint("fcstd:test:feature#missing").expect("valid absent feature identity"));
     let directory = tempfile::tempdir().expect("temporary CADIR directory");
-    let conversion =
-        prepare_cadir_for_step(&document.ir, &directory.path().join("design.json"), true);
+    let conversion = prepare_cadir_for_step(
+        &document.ir,
+        &directory.path().join("design.json"),
+        reject_errors(),
+    );
     let planned = conversion.plan().expect("STEP drops the design arenas");
-    let report = &planned.prepared().validation;
+    let report = planned
+        .prepared()
+        .validation
+        .as_ref()
+        .expect("the check completed");
     assert!(
         report.findings.iter().any(|finding| {
             finding.severity >= Severity::Error
@@ -602,30 +677,31 @@ fn a_design_arena_error_does_not_refuse_a_step_export_under_reject_errors() {
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn a_brep_error_refuses_a_step_export_under_reject_errors() {
-    use crate::application::refusal::CheckOperation;
     use cadmpeg_ir::ids::SurfaceId;
-    use cadmpeg_ir::report::Severity;
 
     let (mut document, _) = checked_design_history();
     let face_id = document.ir.geometry.faces[0].id.to_string();
     document.ir.geometry.faces[0].surface =
         SurfaceId::mint("fcstd:test:surface#missing").expect("valid absent surface identity");
     let directory = tempfile::tempdir().expect("temporary CADIR directory");
-    let conversion =
-        prepare_cadir_for_step(&document.ir, &directory.path().join("brep.json"), true);
+    let conversion = prepare_cadir_for_step(
+        &document.ir,
+        &directory.path().join("brep.json"),
+        reject_errors(),
+    );
     let Err(error) = conversion.plan() else {
         panic!("STEP must refuse an error in the B-rep it writes");
     };
-    let Some(ConversionRefusal::CheckFailed {
-        operation: CheckOperation::Export { carried },
-        validation,
+    let carried = refused_invalid_records(&error);
+    let Some(ConversionRefusal::StrictExportRejected {
+        validation: Some(validation),
         ..
     }) = error.refusal()
     else {
-        panic!("expected an export check refusal, got {error:?}");
+        panic!("expected a strict export refusal with its check, got {error:?}");
     };
-    assert!(*carried >= 1);
-    assert_eq!(*carried, validation.error_count());
+    assert!(carried >= 1);
+    assert_eq!(carried, validation.error_count());
     assert!(
         validation.findings.iter().any(|finding| {
             finding.severity >= Severity::Error
@@ -659,11 +735,7 @@ fn a_brep_error_refuses_a_step_export_under_reject_errors() {
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
-    use crate::application::refusal::CheckOperation;
-    use cadmpeg_ir::report::{
-        check::{Check, Finding},
-        Severity,
-    };
+    use cadmpeg_ir::report::check::{Check, Finding};
 
     let (document, _) = checked_design_history();
     let feature_id = document.ir.model.features[0].id.to_string();
@@ -672,11 +744,10 @@ fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
             document.ir.clone(),
             Format::Step,
             export_target(TargetSelection::new(Format::Step, None)).encoder,
-            LossPolicy::Allow,
+            reject_errors(),
         );
-        conversion.reject_errors = true;
-        assert_eq!(conversion.validation.error_count(), 0);
-        conversion.validation.findings.push(Finding {
+        assert_eq!(validation(&mut conversion).error_count(), 0);
+        validation(&mut conversion).findings.push(Finding {
             related: Vec::new(),
             check: Check::Counts,
             severity: Severity::Error,
@@ -684,7 +755,7 @@ fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
             entity: None,
         });
         if include_design_error {
-            conversion.validation.findings.push(Finding {
+            validation(&mut conversion).findings.push(Finding {
                 related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
@@ -695,35 +766,18 @@ fn an_error_without_an_entity_refuses_a_step_export_under_reject_errors() {
         let Err(error) = conversion.plan() else {
             panic!("an unlocated error must refuse the export");
         };
+        assert_eq!(refused_invalid_records(&error), 1, "{error:?}");
         assert!(
-            matches!(
-                error.refusal(),
-                Some(ConversionRefusal::CheckFailed {
-                    operation: CheckOperation::Export { carried: 1 },
-                    ..
-                })
-            ),
-            "{error:?}"
+            error.to_string().contains("export:record.invalid"),
+            "{error}"
         );
-        if include_design_error {
-            assert!(
-                error
-                    .to_string()
-                    .contains("2 error(s), 1 in what the export writes"),
-                "{error}"
-            );
-        }
     }
 }
 
 #[cfg(feature = "fcstd")]
 #[test]
 fn a_design_arena_error_refuses_a_freecad_round_trip_under_reject_errors() {
-    use crate::application::refusal::{CheckOperation, ConversionRefusal};
-    use cadmpeg_ir::report::{
-        check::{Check, Finding},
-        Severity,
-    };
+    use cadmpeg_ir::report::check::{Check, Finding};
 
     let (document, validation) = checked_design_history();
     let feature_id = document.ir.model.features[0].id.to_string();
@@ -731,16 +785,15 @@ fn a_design_arena_error_refuses_a_freecad_round_trip_under_reject_errors() {
         let target = super::export_target(TargetSelection::new(Format::Fcstd, None));
         let mut conversion = PreparedConversion {
             document: document.clone(),
-            validation: validation.clone(),
+            validation: Some(validation.clone()),
             encoder: target.encoder,
             selection: target.selection,
             assets: crate::loader::companions::Directory::beside(Path::new("input")),
             destination: ResolvedDestination::Stdout,
-            loss_policy: LossPolicy::Allow,
-            reject_errors: true,
+            write: reject_errors(),
         };
         if inject_error {
-            conversion.validation.findings.push(Finding {
+            validation(&mut conversion).findings.push(Finding {
                 related: Vec::new(),
                 check: Check::Counts,
                 severity: Severity::Error,
@@ -750,16 +803,7 @@ fn a_design_arena_error_refuses_a_freecad_round_trip_under_reject_errors() {
             let Err(error) = conversion.plan() else {
                 panic!("FreeCAD carries design errors through complete coverage");
             };
-            assert!(
-                matches!(
-                    error.refusal(),
-                    Some(ConversionRefusal::CheckFailed {
-                        operation: CheckOperation::Export { carried: 1 },
-                        ..
-                    })
-                ),
-                "{error:?}"
-            );
+            assert_eq!(refused_invalid_records(&error), 1, "{error:?}");
         } else {
             let planned = conversion
                 .plan()
@@ -772,20 +816,17 @@ fn a_design_arena_error_refuses_a_freecad_round_trip_under_reject_errors() {
 #[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn a_carried_error_does_not_refuse_the_export_by_default() {
-    use cadmpeg_ir::report::{
-        check::{Check, Finding},
-        Severity,
-    };
+    use cadmpeg_ir::report::check::{Check, Finding};
 
     let (document, _) = checked_design_history();
     let mut conversion = prepared(
         document.ir,
         Format::Step,
         export_target(TargetSelection::new(Format::Step, None)).encoder,
-        LossPolicy::Allow,
+        Strictness::default(),
     );
-    assert_eq!(conversion.validation.error_count(), 0);
-    conversion.validation.findings.push(Finding {
+    assert_eq!(validation(&mut conversion).error_count(), 0);
+    validation(&mut conversion).findings.push(Finding {
         related: Vec::new(),
         check: Check::Counts,
         severity: Severity::Error,
@@ -796,24 +837,30 @@ fn a_carried_error_does_not_refuse_the_export_by_default() {
         .plan()
         .expect("a carried error is reported, and the export proceeds");
     assert_eq!(planned.carried_errors(), 1);
+    assert_eq!(
+        planned
+            .plan
+            .report()
+            .losses
+            .iter()
+            .filter(|entry| code_name(&entry.code) == "export:record.invalid")
+            .count(),
+        1
+    );
 }
 
 #[cfg(feature = "step")]
 #[test]
 fn an_f3d_native_design_record_error_does_not_refuse_a_step_export_under_reject_errors() {
-    use cadmpeg_ir::report::{
-        check::{Check, Finding},
-        Severity,
-    };
+    use cadmpeg_ir::report::check::{Check, Finding};
 
     let mut conversion = prepared(
         step_ir_with_unrepresentable_native_content(),
         Format::Step,
         export_target(TargetSelection::new(Format::Step, None)).encoder,
-        LossPolicy::Allow,
+        reject_errors(),
     );
-    conversion.reject_errors = true;
-    assert_eq!(conversion.validation.error_count(), 0);
+    assert_eq!(validation(&mut conversion).error_count(), 0);
     let finding = Finding {
         related: Vec::new(),
         check: Check::Counts,
@@ -821,12 +868,16 @@ fn an_f3d_native_design_record_error_does_not_refuse_a_step_export_under_reject_
         message: "synthetic native design record error".into(),
         entity: Some("f3d:test:asm-history#0".into()),
     };
-    conversion.validation.findings.push(finding.clone());
+    validation(&mut conversion).findings.push(finding.clone());
     let planned = conversion
         .plan()
         .expect("STEP drops the foreign native namespace");
     assert_eq!(planned.carried_errors(), 0);
-    assert!(planned.prepared().validation.findings.contains(&finding));
+    assert!(planned
+        .prepared()
+        .validation
+        .as_ref()
+        .is_some_and(|validation| validation.findings.contains(&finding)));
 }
 
 #[cfg(feature = "usd")]

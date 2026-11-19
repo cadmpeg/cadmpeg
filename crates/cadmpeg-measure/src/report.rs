@@ -7,6 +7,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::report::loss::LossNote;
 use serde::Serialize;
 
 use crate::reason::{Category, CaveatCode};
@@ -33,6 +34,8 @@ macro_rules! accessors {
 pub struct MeasureReport {
     pub(crate) tolerances: ReportTolerances,
     pub(crate) caveats: Vec<Caveat>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) losses: Vec<LossNote>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) occurrence: Option<OccurrenceMeasures>,
     pub(crate) bodies: Vec<BodyMeasures>,
@@ -47,6 +50,8 @@ accessors!(MeasureReport {
     tolerances: ReportTolerances;
     /// Document-level caveats.
     caveats: Vec<Caveat>;
+    /// Coded report entries, which the caller's strictness reads.
+    losses: Vec<LossNote>;
     /// The occurrence whose instance space the rows are in; absent for
     /// model space.
     occurrence: Option<OccurrenceMeasures>;

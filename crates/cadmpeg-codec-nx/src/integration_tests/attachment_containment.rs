@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 use cadmpeg_ir::report::loss::LossNote;
@@ -46,11 +46,11 @@ fn try_decode_failing_at(
     bytes: Vec<u8>,
     point: Point,
     error: fn() -> CodecError,
-    mode: DecodeMode,
+    pinned: bool,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, DecodeFailure> {
     let _injected = inject(point, error);
     let mut options = DecodeOptions::default();
-    options.policy.mode = mode;
+    options.strictness.pinned = pinned;
     NxCodec.decode(&mut Cursor::new(bytes), &options)
 }
 
@@ -148,24 +148,14 @@ fn schemaless_topology_prt() -> Vec<u8> {
 #[test]
 fn strict_decode_refuses_a_contained_attachment_failure() {
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = DecodeMode::Strict;
+    strict.strictness.pinned = true;
     NxCodec
         .decode(&mut Cursor::new(schemaless_topology_prt()), &strict)
         .expect("strict decode admits the fixture without an attachment failure");
-    try_decode_failing_at(
-        schemaless_topology_prt(),
-        Point::Entry,
-        malformed,
-        DecodeMode::Salvage,
-    )
-    .expect("salvage decode keeps the geometry");
-    let error = try_decode_failing_at(
-        schemaless_topology_prt(),
-        Point::Entry,
-        malformed,
-        DecodeMode::Strict,
-    )
-    .expect_err("strict decode refuses the attachment failure");
+    try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, false)
+        .expect("salvage decode keeps the geometry");
+    let error = try_decode_failing_at(schemaless_topology_prt(), Point::Entry, malformed, true)
+        .expect_err("strict decode refuses the attachment failure");
     match error {
         DecodeFailure::StrictRejected { rejection } => {
             assert_eq!(
@@ -179,13 +169,8 @@ fn strict_decode_refuses_a_contained_attachment_failure() {
 
 #[test]
 fn attachment_resource_refusal_still_refuses_the_decode() {
-    let error = try_decode_failing_at(
-        prt_with_arrangements(),
-        Point::Exit,
-        resource_limit,
-        DecodeMode::Salvage,
-    )
-    .expect_err("a resource refusal is not contained");
+    let error = try_decode_failing_at(prt_with_arrangements(), Point::Exit, resource_limit, false)
+        .expect_err("a resource refusal is not contained");
     assert!(
         matches!(error, DecodeFailure::Codec(CodecError::ResourceLimit(_))),
         "{error:?}"

@@ -6,7 +6,6 @@ use crate::directory::SourceStatus;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 
@@ -436,7 +435,7 @@ fn strict_decode_refuses_an_unresolved_pointer_loss() {
         },
     ]);
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &options)

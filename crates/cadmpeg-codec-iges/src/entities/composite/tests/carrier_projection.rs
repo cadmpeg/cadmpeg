@@ -4,7 +4,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
@@ -663,7 +662,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
 #[test]
 fn strict_decode_refuses_a_degraded_composite_carrier_loss() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
 
     let error = IgesCodec
         .decode(

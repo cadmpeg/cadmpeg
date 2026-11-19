@@ -7,6 +7,7 @@ use std::sync::Arc;
 use cadmpeg_core::decode::{DecodeArena, DecodeCheckpoint, DecodeContext, DecodeTrace, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeFailure, DecodeResult, Decoded, FormatId};
+use cadmpeg_ir::report::strictness::Strictness;
 
 use super::archive::{self, ClassifiedMember};
 use crate::container::{ContainerScan, F3dContainerKind};
@@ -281,11 +282,13 @@ impl<'a> F3zSession<'a> {
         })
     }
 
-    /// Composes one result for every listed entry, in any arrival order.
+    /// Composes one result for every listed entry, in any arrival order, and
+    /// applies `strictness` to its completed report.
     /// Missing, duplicate, and foreign-session results are refused.
     pub fn compose(
         &self,
         members: impl IntoIterator<Item = F3zDecodedMember>,
+        strictness: &Strictness,
     ) -> Result<DecodeResult, DecodeFailure> {
         let arena = DecodeArena::new();
         let ctx = self.checkpoint.resume(&arena);
@@ -293,7 +296,9 @@ impl<'a> F3zSession<'a> {
         let result = self
             .compose_into(&ctx, members)
             .map_err(DecodeFailure::from)
-            .and_then(|decoded| DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d")));
+            .and_then(|decoded| {
+                DecodeResult::from_decoded(&ctx, decoded, FormatId::new("f3d"), strictness)
+            });
         ctx.finish_session()?;
         result
     }

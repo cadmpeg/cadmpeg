@@ -69,7 +69,11 @@ fn decode_charged(bytes: &[u8], policy: &DecodePolicy) -> Charged {
     let (ctx, root) =
         DecodeContext::from_root_bytes(bytes, &arena, policy).expect("acquire the archive");
     let available = ctx.retained_bytes_available();
-    let result = F3dCodec.decode_with_context(&ctx, root);
+    let result = F3dCodec.decode_with_context(
+        &ctx,
+        root,
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     let retained_bytes = available - ctx.retained_bytes_available();
     assert_eq!(
         ctx.resource_refusal(),

@@ -49,7 +49,7 @@ fn unreadable_required_nurbs_pole_has_a_geometry_loss_and_refuses_strict_mode() 
             .iter()
             .any(|loss| loss.code == IgesLossCode::GeometryNotProjected.kind()));
         let mut strict = DecodeOptions::default();
-        strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+        strict.strictness.pinned = true;
         assert!(
             matches!(
                 IgesCodec.decode(&mut Cursor::new(bytes), &strict),
@@ -91,7 +91,7 @@ fn spline_claim_recovery_is_rejected_by_strict_mode() {
         .iter()
         .any(|loss| loss.code == crate::loss::IgesLossCode::SplineClaimRecovered.kind()));
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    strict.strictness.pinned = true;
     assert!(matches!(
         IgesCodec.decode(&mut Cursor::new(input), &strict),
         Err(cadmpeg_ir::codec::DecodeFailure::StrictRejected { .. })

@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result as AnyResult};
 use cadmpeg_ir::codec::write::{
-    target::TargetRequest, DepthNeed, EncodeInput, Encoder, ExportPlan,
+    target::TargetRequest, DepthNeed, EncodeError, EncodeInput, Encoder, ExportPlan,
 };
 use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::report::strictness::Strictness;
 use cadmpeg_ir::report::{check::ValidationReport, decode::DecodeReport, export::ExportReport};
 use clap::ValueEnum;
 
@@ -26,7 +27,7 @@ pub(crate) struct SourceRequest<'a> {
     pub(crate) path: &'a Path,
     /// Explicit input format selection.
     pub(crate) forced: Option<ForcedInput>,
-    /// Decode options.
+    /// Decode options, with the decode's strictness.
     pub(crate) options: DecodeOptions,
     /// The work profile of the check's measurement findings.
     pub(crate) work: cadmpeg_measure::WorkProfile,
@@ -170,34 +171,34 @@ fn warn_on_extension_disagreement(named: Format, inferred: Option<Format>) {
     }
 }
 
-/// Which conversion losses refuse the conversion.
+/// Which phases `--reject-lossy` sets the strictness floor of.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub(crate) enum LossPolicy {
-    /// Permit losses at both phases.
+    /// Set no floor.
     #[default]
     #[value(skip)]
     Allow,
-    /// Refuse decode losses only.
+    /// Set the decode's floor.
     #[value(name = "decode")]
     RejectDecode,
-    /// Refuse export losses only.
+    /// Set the write's floor.
     #[value(name = "export")]
     RejectExport,
-    /// Refuse losses at either phase.
+    /// Set both floors.
     #[value(name = "any")]
     RejectAny,
 }
 
 impl LossPolicy {
-    /// Whether a decode loss refuses the conversion.
+    /// Whether the decode's strictness takes the floor.
     #[must_use]
-    const fn rejects_decode(self) -> bool {
+    pub(crate) const fn rejects_decode(self) -> bool {
         matches!(self, Self::RejectDecode | Self::RejectAny)
     }
 
-    /// Whether an export loss refuses the conversion.
+    /// Whether the write's strictness takes the floor.
     #[must_use]
-    const fn rejects_export(self) -> bool {
+    pub(crate) const fn rejects_export(self) -> bool {
         matches!(self, Self::RejectExport | Self::RejectAny)
     }
 
@@ -309,13 +310,14 @@ impl DestinationPolicy {
     }
 }
 
+/// The name of the entry that states a check Error in what the output writes.
+pub(crate) const RECORD_INVALID: &str = "export:record.invalid";
+
 /// Policy controlling the independent conversion phases.
 #[derive(Debug, Clone)]
 pub(crate) struct ConversionPolicy {
-    /// Decode and export loss refusal.
-    pub(crate) losses: LossPolicy,
-    /// Refuse export when validation reports an error in what the output writes.
-    pub(crate) reject_errors: bool,
+    /// The report entries on which the write is refused.
+    pub(crate) write: Strictness,
     /// Output destination rules.
     pub(crate) destination: DestinationPolicy,
 }
@@ -336,26 +338,28 @@ impl ResolvedDestination {
 }
 
 /// A loaded and validated conversion ready for export planning.
-/// Decode-loss refusal is complete. Check refusals run after planning.
+/// The decode's strictness has run. The write's runs in `plan`.
 pub(crate) struct PreparedConversion {
     /// Loaded source document.
     pub(crate) document: LoadedDocument,
-    /// Validation report.
-    pub(crate) validation: ValidationReport,
+    /// Validation report, absent where the check could not run to its end.
+    pub(crate) validation: Option<ValidationReport>,
     encoder: Box<dyn Encoder>,
     selection: TargetSelection,
     /// The files that external assets of the document name.
     assets: loader::companions::Directory,
     destination: ResolvedDestination,
-    loss_policy: LossPolicy,
-    reject_errors: bool,
+    write: Strictness,
 }
 
 /// Loads and validates a conversion without planning or writing it.
 ///
-/// Applies destination admission and decode-loss refusal. Runs validation.
-/// Check, plan, and export-loss refusals run in `plan`.
-/// Does not print reports or write destination artifacts.
+/// Applies destination admission; the decode applies its strictness. Runs
+/// validation. A check that cannot run to its end under the caller's
+/// ceilings is reported and does not stop the write, unless the write's
+/// strictness names [`RECORD_INVALID`]: the output then cannot be shown free
+/// of Errors, and the conversion refuses at stage `check`.
+/// Does not write destination artifacts.
 pub(crate) fn prepare(
     inputs: &InputCatalog,
     source: &SourceRequest<'_>,
@@ -369,14 +373,25 @@ pub(crate) fn prepare(
         .resolve(source.path)
         .map_err(ApplicationError::from)?;
 
-    let loaded = loader::load_artifact(inputs, source.path, source.options, source.forced)?;
-    let decode_report = loaded.decode_report().cloned();
+    let loaded = loader::load_artifact(inputs, source.path, source.options.clone(), source.forced)?;
 
-    if let Some(refusal) = decode_lossy_refusal(policy.losses, decode_report.as_ref(), format) {
-        return Err(refusal.into());
-    }
-
-    let validation = validate_loaded(inputs, &loaded, &source.options.policy, source.work)?;
+    let validation = match validate_loaded(inputs, &loaded, &source.options.policy, source.work) {
+        Ok(validation) => Some(validation),
+        Err(error)
+            if error
+                .refusal()
+                .is_some_and(ConversionRefusal::is_resource_limit)
+                && !policy
+                    .write
+                    .codes
+                    .iter()
+                    .any(|code| code.as_str() == RECORD_INVALID) =>
+        {
+            eprintln!("check: not completed: {error}; writing without it");
+            None
+        }
+        Err(error) => return Err(error),
+    };
     Ok(PreparedConversion {
         document: loaded,
         validation,
@@ -384,66 +399,56 @@ pub(crate) fn prepare(
         selection: target.selection,
         assets: loader::companions::Directory::beside(source.path),
         destination,
-        loss_policy: policy.losses,
-        reject_errors: policy.reject_errors,
+        write: policy.write.clone(),
     })
 }
 
 impl PreparedConversion {
-    /// Plans the export before applying check and export-loss refusals.
-    /// Under `reject_errors`, a failed plan counts every error as carried and
-    /// refuses on them before the plan refusal, and a completed plan refuses
-    /// on carried errors before export-loss refusal.
+    /// Plans the export. The encoder charges `export:record.invalid` for each
+    /// validation Error in what the output writes and applies the write's
+    /// strictness to the completed report.
     pub(crate) fn plan(self) -> Result<PlannedConversion, ApplicationError> {
         // Resolution is the encoder's, and so is its refusal: the message
         // already names the requested id and the whole catalog, and it
         // reflects this build's feature set. Restating it here would be a
         // second vocabulary to keep in step with the first.
-        let plan = match self.encoder.plan(
-            EncodeInput::new(&self.document.ir, self.document.fidelity()).with_assets(&self.assets),
-            self.selection.request(),
-        ) {
+        let mut input = EncodeInput::new(&self.document.ir, self.document.fidelity())
+            .with_assets(&self.assets)
+            .with_strictness(&self.write);
+        if let Some(validation) = &self.validation {
+            input = input.with_validation(validation);
+        }
+        let plan = match self.encoder.plan(input, self.selection.request()) {
             Ok(plan) => plan,
-            Err(error) => {
-                let carried = self.validation.error_count();
-                if carried > 0 && self.reject_errors {
-                    return Err(self.check_refusal(carried));
+            Err(EncodeError::StrictRejected(rejection)) => {
+                return Err(ConversionRefusal::StrictExportRejected {
+                    rejection,
+                    decode_report: self.document.decode_report().cloned(),
+                    validation: self.validation,
                 }
+                .into())
+            }
+            Err(EncodeError::Codec(error)) => {
                 return Err(plan_refusal(
                     error,
                     self.document.decode_report().cloned(),
                     self.validation,
-                ));
+                ))
+            }
+            Err(error) => {
+                return Err(
+                    ApplicationError::from(anyhow::Error::new(error)).at_stage(RefusalStage::Plan)
+                )
             }
         };
-        let carried = plan
-            .carried_errors(&self.document.ir, &self.validation)
-            .len();
-        if carried > 0 && self.reject_errors {
-            return Err(self.check_refusal(carried));
-        }
-        if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {
-            return Err(ConversionRefusal::ExportLossRejected {
-                decode_report: self.document.decode_report().cloned(),
-                validation: self.validation,
-                export_report: plan.report().clone(),
-            }
-            .into());
-        }
+        let carried = self.validation.as_ref().map_or(0, |validation| {
+            plan.carried_errors(&self.document.ir, validation).len()
+        });
         Ok(PlannedConversion {
             plan,
             prepared: self,
             carried_errors: carried,
         })
-    }
-
-    fn check_refusal(self, carried: usize) -> ApplicationError {
-        ConversionRefusal::CheckFailed {
-            operation: super::refusal::CheckOperation::Export { carried },
-            decode_report: self.document.decode_report().cloned(),
-            validation: self.validation,
-        }
-        .into()
     }
 
     /// Returns the selected output format.
@@ -509,7 +514,7 @@ pub(crate) enum EmittedArtifact {
 fn plan_refusal(
     error: cadmpeg_core::CodecError,
     decode_report: Option<DecodeReport>,
-    validation: ValidationReport,
+    validation: Option<ValidationReport>,
 ) -> ApplicationError {
     match error {
         cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
@@ -533,22 +538,6 @@ fn plan_refusal(
         .into(),
         _ => ApplicationError::from(error).at_stage(RefusalStage::Plan),
     }
-}
-
-fn decode_lossy_refusal(
-    policy: LossPolicy,
-    report: Option<&DecodeReport>,
-    format: Format,
-) -> Option<ConversionRefusal> {
-    if !policy.rejects_decode() {
-        return None;
-    }
-    let report = report?;
-    let count = report.losses.len();
-    (count > 0).then(|| ConversionRefusal::DecodeLossRejected {
-        format,
-        decode_report: report.clone(),
-    })
 }
 
 /// Emits one built plan to its destination and maintains CADIR sidecars.

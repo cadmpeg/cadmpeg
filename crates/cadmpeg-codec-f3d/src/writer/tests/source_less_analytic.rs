@@ -59,7 +59,7 @@ fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expecte
     assert!(!contained.ir().geometry.bodies.is_empty());
 
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    strict.strictness.pinned = true;
     let refused = F3dCodec.decode(&mut Cursor::new(bytes), &strict);
     assert!(
         matches!(

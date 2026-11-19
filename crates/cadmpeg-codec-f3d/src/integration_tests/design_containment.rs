@@ -3,7 +3,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, ResourceDimension, ResourceFailure, ResourceLimit};
+use cadmpeg_core::decode::{ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
@@ -85,7 +85,7 @@ fn a_design_intent_failure_keeps_geometry_and_reports_one_error_loss() {
 #[test]
 fn strict_mode_refuses_a_contained_design_intent_failure() {
     let mut options = DecodeOptions::default();
-    options.policy.mode = DecodeMode::Strict;
+    options.strictness.pinned = true;
     inject_failure(malformed_design);
 
     let failure = F3dCodec

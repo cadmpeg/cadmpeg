@@ -40,7 +40,7 @@
 
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
@@ -161,7 +161,8 @@ pub fn semantic_roundtrip<C>(
                 .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
             Ok((path, report, bytes))
         }
-        Err(error) => Err(error),
+        Err(EncodeError::Codec(error)) => Err(error),
+        Err(error) => panic!("{label}: the default strictness refused the write: {error}"),
     };
     let outcome = match written {
         Ok((path, report, bytes)) => {
@@ -290,7 +291,8 @@ where
                 .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
             Ok((path, bytes))
         }
-        Err(error) => Err(error),
+        Err(EncodeError::Codec(error)) => Err(error),
+        Err(error) => panic!("{label}: the default strictness refused the write: {error}"),
     };
     let outcome = match written {
         Ok((path, bytes)) => {

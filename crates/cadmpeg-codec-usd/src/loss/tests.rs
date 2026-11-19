@@ -92,3 +92,10 @@ fn note_takes_severity_from_the_code() {
         assert_eq!(note.code, code.kind());
     }
 }
+
+#[test]
+fn every_code_has_one_strictness_name() {
+    cadmpeg_test_support::strictness::assert_named_by_strictness(
+        UsdLossCode::ALL.iter().map(|code| code.note("")),
+    );
+}

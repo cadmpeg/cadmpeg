@@ -13,6 +13,7 @@ use crate::codec::FormatId;
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::check::{Check, Finding, ValidationReport};
 use crate::report::export::FidelityResolution;
+use crate::report::strictness::Strictness;
 use crate::report::Severity;
 use crate::schema::{EntityKind, EntitySchema};
 use crate::source_fidelity::SourceFidelity;
@@ -20,6 +21,13 @@ use crate::validate::validate_neutral;
 use crate::CadIr;
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
+
+fn codec_error(error: super::EncodeError) -> CodecError {
+    match error {
+        super::EncodeError::Codec(error) => error,
+        other => panic!("expected a codec error, got {other}"),
+    }
+}
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
@@ -103,6 +111,7 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
     let ir = CadIr::empty();
     let error = NeutralEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("any"))
+        .map_err(codec_error)
         .unwrap_err();
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("a dialect-free encoder has no explicit targets")
@@ -170,6 +179,7 @@ fn a_full_need_encoder_refuses_a_document_below_full_scope() {
         let ir = recorded_at(recorded);
         let error = F3dCoverageEncoder(ArenaCoverage::Complete)
             .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .map_err(codec_error)
             .unwrap_err();
         assert!(
             matches!(
@@ -200,6 +210,7 @@ fn a_geometry_need_encoder_admits_geometry_and_refuses_container() {
             EncodeInput::new(&container, None),
             TargetRequest::Explicit("new"),
         )
+        .map_err(codec_error)
         .unwrap_err();
     assert!(
         matches!(
@@ -674,4 +685,144 @@ fn carried_errors_follow_native_format_and_complete_coverage() {
     for plan in [f3d, complete] {
         assert_eq!(plan.carried_errors(&ir, &report), vec![&report.findings[0]]);
     }
+}
+
+struct ChargingEncoder(Vec<crate::report::loss::LossNote>);
+
+impl EncoderBackend for ChargingEncoder {
+    const FORMAT: FormatId = FormatId::new("cadir");
+    const NEEDS: DepthNeed = DepthNeed::Recorded;
+    type Target = DialectFree;
+    const TARGET: DialectFree = DialectFree;
+
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
+        body.losses.clone_from(&self.0);
+        Ok(body)
+    }
+}
+
+fn pinned_warning() -> crate::report::loss::LossNote {
+    crate::report::loss::LossNote::new(
+        crate::report::loss::LossTaxonomy::TopologyNotTransferred,
+        "pinned at warning",
+    )
+}
+
+fn unpinned_info() -> crate::report::loss::LossNote {
+    crate::report::loss::LossNote::new(crate::report::loss::LossTaxonomy::CarrierSummary, "census")
+}
+
+fn plan_with(
+    entries: Vec<crate::report::loss::LossNote>,
+    validation: Option<&ValidationReport>,
+    strictness: &Strictness,
+) -> Result<super::ExportPlan, super::EncodeError> {
+    let ir = CadIr::empty();
+    let mut input = EncodeInput::new(&ir, None).with_strictness(strictness);
+    if let Some(validation) = validation {
+        input = input.with_validation(validation);
+    }
+    ChargingEncoder(entries).plan(input, TargetRequest::Inherit)
+}
+
+fn refused_name(result: Result<super::ExportPlan, super::EncodeError>) -> String {
+    match result {
+        Err(super::EncodeError::StrictRejected(rejection)) => {
+            assert!(rejection
+                .report()
+                .losses
+                .iter()
+                .any(|entry| entry == rejection.entry()));
+            crate::report::strictness::code_name(&rejection.entry().code)
+        }
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_default_strictness_refuses_no_write() {
+    let validation = validation_report(vec![finding(None, "broken", Severity::Blocking)]);
+    let plan = plan_with(
+        vec![pinned_warning(), unpinned_info()],
+        Some(&validation),
+        &Strictness::default(),
+    )
+    .expect("the default refuses nothing");
+    assert_eq!(plan.report().losses.len(), 3);
+}
+
+#[test]
+fn a_carried_validation_error_is_charged_as_an_invalid_record() {
+    let validation = validation_report(vec![
+        finding(None, "unlocated", Severity::Error),
+        finding(None, "only a warning", Severity::Warning),
+    ]);
+    let plan = plan_with(Vec::new(), Some(&validation), &Strictness::default()).unwrap();
+    let names: Vec<_> = plan
+        .report()
+        .losses
+        .iter()
+        .map(|entry| {
+            (
+                crate::report::strictness::code_name(&entry.code),
+                entry.severity,
+            )
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec![("export:record.invalid".to_owned(), Severity::Error)]
+    );
+    assert!(plan.report().losses[0]
+        .message
+        .starts_with("referential_integrity: "));
+    let unvalidated = plan_with(Vec::new(), None, &Strictness::default()).unwrap();
+    assert!(unvalidated.report().losses.is_empty());
+}
+
+#[test]
+fn a_write_floor_refuses_an_entry_it_reaches_and_admits_one_below_it() {
+    let floor = |severity| Strictness {
+        floor: Some(severity),
+        ..Strictness::default()
+    };
+    assert_eq!(
+        refused_name(plan_with(
+            vec![unpinned_info(), pinned_warning()],
+            None,
+            &floor(Severity::Warning)
+        )),
+        "shared/topology_not_transferred"
+    );
+    plan_with(
+        vec![unpinned_info(), pinned_warning()],
+        None,
+        &floor(Severity::Error),
+    )
+    .expect("below the floor");
+}
+
+#[test]
+fn write_codes_refuse_a_named_entry_and_admit_another() {
+    let validation = validation_report(vec![finding(None, "broken", Severity::Error)]);
+    let named = Strictness::default().with_code("export:record.invalid");
+    assert_eq!(
+        refused_name(plan_with(Vec::new(), Some(&validation), &named)),
+        "export:record.invalid"
+    );
+    plan_with(vec![pinned_warning()], None, &named).expect("no invalid record");
+}
+
+#[test]
+fn a_pinned_write_refuses_an_entry_that_reaches_its_strict_floor() {
+    let pinned = Strictness {
+        pinned: true,
+        ..Strictness::default()
+    };
+    assert_eq!(
+        refused_name(plan_with(vec![pinned_warning()], None, &pinned)),
+        "shared/topology_not_transferred"
+    );
+    plan_with(vec![unpinned_info()], None, &pinned).expect("no strict floor");
 }

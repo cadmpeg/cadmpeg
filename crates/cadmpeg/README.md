@@ -91,12 +91,31 @@ output, because that spelling is nearly always `--input-format` (alias
 pipe, `--binary-stdout`.
 
 Conversion writes the output when the check finds errors, and the check report
-lists every finding. The check leaves model data unchanged. `--reject-errors`
-stops the conversion before export if the check finds errors in what the output
-writes. An error in data the output format does not carry, for example feature
-history in a STEP export, stays in the report and does not stop the write under
-`--reject-errors`. Conversion writes the available output when decoding
-transfers no geometry and reports the decode and export losses.
+lists every finding. The check leaves model data unchanged. Each check error in
+what the output writes is an `export:record.invalid` entry of the export
+report. An error in data the output format does not carry, for example feature
+history in a STEP export, stays in the check report only. Conversion writes the
+available output when decoding transfers no geometry and reports the decode and
+export losses. A check that cannot run to its end under the resource limits is
+reported, and the conversion writes without it.
+
+`convert` refuses only on request. Each refusal flag sets one field of the
+decode's or the write's strictness, the option a library caller sets on
+`DecodeOptions.strictness` and `EncodeInput.strictness` (CADIR v11 §3.4):
+
+| Flag | Sets |
+| --- | --- |
+| `--no-salvage` | the decode's `pinned`: refuse a loss whose code pins a strict floor its severity reaches |
+| `--reject-lossy[=decode\|export\|any]` | `floor` on the decode's strictness, the write's, or both (bare: both) |
+| `--reject-lossy-floor=info\|warning\|error\|blocking` | that floor; default `info`, every loss |
+| `--reject-errors` | adds `export:record.invalid` to the write's `codes` |
+| `--reject-empty` | adds `export:output.empty` to the write's `codes` |
+
+A refusal names the entry that refused it, with `strict_decode_rejected` at
+stage `decode` or `strict_export_rejected` at stage `export`, and exits 1.
+Under `--reject-errors`, a check that cannot run to its end refuses with
+`resource_limit` at stage `check`. `--reject-lossy=decode` judges this
+invocation's decode; a decode report restored from a sidecar never decides.
 
 `convert` decodes a native source only as deeply as the output needs: STEP,
 IGES, and Rhino output decodes geometry and skips design intent, so the decode
@@ -292,7 +311,10 @@ class of the carrier. It refuses a selection
 of more than one of faces, edges and surfaces. `--json` prints the versioned envelope; `--report FILE` (also `-o`
 and `--output`) writes it to a file. `--limits service` selects the smaller
 work allowance of a measurement pass. A CADIR document decoded at container
-depth holds no geometry; `measure` refuses it with `insufficient_depth`.
+depth holds no geometry; `measure` measures no body and reports
+`measure:output.empty` (Warning) in `measure.losses`. `--reject-empty` adds
+that code to the measurement's strictness and refuses it with
+`strict_measure_rejected` at stage `measure`.
 
 ## Inputs and outputs
 
@@ -426,7 +448,8 @@ on a semantic refusal of the input. Exit 2 is operational on every command.
   differ). `inspect cmp` exits 1 if the files are not identical, including
   length-only (Unix cmp contract). `dump` and `measure` exit 1 on a semantic
   refusal of the input: `strict_decode_rejected` under `--no-salvage`,
-  `unsupported_dialect`, or `insufficient_depth`.
+  `unsupported_dialect`, or, for `measure --reject-empty`,
+  `strict_measure_rejected`.
 - `2`: operational error, including invalid arguments, unrecognized input,
   decode or encode failure, and file-system errors.
 

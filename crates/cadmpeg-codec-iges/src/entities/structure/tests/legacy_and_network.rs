@@ -626,12 +626,9 @@ fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
 
 #[test]
 fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
-    for mode in [
-        cadmpeg_core::decode::DecodeMode::Strict,
-        cadmpeg_core::decode::DecodeMode::Salvage,
-    ] {
+    for pinned in [true, false] {
         let mut options = DecodeOptions::default();
-        options.policy.mode = mode;
+        options.strictness.pinned = pinned;
         let result = crate::reader::decode_with_test_occurrence_limits(
             &occurrence_limit_file(),
             options,
@@ -691,12 +688,9 @@ fn decode_bounds_product_occurrence_member_output_with_a_named_loss() {
 
 #[test]
 fn decode_reports_product_occurrence_depth_truncation() {
-    for mode in [
-        cadmpeg_core::decode::DecodeMode::Strict,
-        cadmpeg_core::decode::DecodeMode::Salvage,
-    ] {
+    for pinned in [true, false] {
         let mut options = DecodeOptions::default();
-        options.policy.mode = mode;
+        options.strictness.pinned = pinned;
         let result = IgesCodec
             .decode(&mut Cursor::new(occurrence_depth_limit_file()), &options)
             .unwrap();

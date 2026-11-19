@@ -58,7 +58,8 @@ pub(crate) fn load_artifact(
         ResolvedSource::Native { codec, selection } => {
             let format_id = codec.id();
             ctx.complete_input(&mut file, &mut prefix)?;
-            let result = codec.decode_with_context(&ctx, View::over_retained(&prefix));
+            let result =
+                codec.decode_with_context(&ctx, View::over_retained(&prefix), &options.strictness);
             ctx.finish_session()?;
             let result = result.map_err(|failure| {
                 ApplicationError::from_decode_failure(path, format_id, failure)
