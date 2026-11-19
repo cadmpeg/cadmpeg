@@ -1345,3 +1345,53 @@ fn shell_keeps_its_group_when_a_member_resolves_a_face() {
     };
     assert_eq!(removed_faces, FaceSelection::Native(group.id.clone()));
 }
+
+#[test]
+fn shell_projects_preceding_faces_with_empty_active_candidates() {
+    let mut scope = scope(DesignFeatureKind::Shell);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(6);
+            draft.previous_history_state_id = Some(5);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let operand = resolved_member_operand();
+    assert!(operand.candidate_faces.is_empty());
+    let FeatureOperation::Shell { removed_faces, .. } = projected_operation(
+        super::super::project_shell(&scope, &[operand], std::slice::from_ref(&group)),
+    ) else {
+        panic!("expected a shell");
+    };
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let prefix = crate::ids::feature_input_prefix(&feature, 5);
+    let expected = FaceSelection::historical(
+        crate::ids::feature_input_topology_id(&feature, 5),
+        vec![crate::ids::history_input_face_id(&prefix, 27)],
+        group.id,
+    )
+    .unwrap();
+    assert_eq!(removed_faces, expected);
+}
+
+#[test]
+fn shell_keeps_a_group_with_an_unresolved_historical_member() {
+    let mut scope = scope(DesignFeatureKind::Shell);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(6);
+            draft.previous_history_state_id = Some(5);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let mut operand = resolved_member_operand();
+    operand.resolved_face_slots.clear();
+    let FeatureOperation::Shell { removed_faces, .. } = projected_operation(
+        super::super::project_shell(&scope, &[operand], std::slice::from_ref(&group)),
+    ) else {
+        panic!("expected a shell");
+    };
+    assert_eq!(removed_faces, FaceSelection::Native(group.id));
+}
