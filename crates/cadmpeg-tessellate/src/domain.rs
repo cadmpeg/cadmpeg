@@ -20,6 +20,9 @@ const CLOSURE_RATIO: f64 = 1e-6;
 /// Ratio to a period cell's area within which a ring encloses the whole
 /// cell.
 const CELL_RATIO: f64 = 1e-6;
+/// Ratio of a hole node's distance from a side of the parameter domain to
+/// the domain span along that axis below which the hole reaches the side.
+const DOMAIN_CONTACT_RATIO: f64 = 1e-3;
 
 /// One polygon vertex.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -101,6 +104,15 @@ fn kind(ring: &Ring, frame: &Frame) -> Result<Kind, Refusal> {
         "a loop does not close in the parameter plane: it ends ({}, {}) from its start",
         ring.closure[0], ring.closure[1]
     )))
+}
+
+/// Whether `ring` closes in the parameter plane of a surface with no
+/// periodic parameter and runs clockwise there.
+pub(crate) fn clockwise_on_open_carrier(ring: &Ring, frame: &Frame) -> Result<bool, Refusal> {
+    if frame.periods.iter().any(Option::is_some) || ring.nodes.len() < 3 {
+        return Ok(false);
+    }
+    Ok(matches!(kind(ring, frame)?, Kind::Closed) && signed_area(&uvs(&ring.nodes)) < 0.0)
 }
 
 /// Maps a point into the frame of a strip that wraps along `axis`: the first
@@ -185,13 +197,30 @@ pub(crate) fn regions(rings: Vec<Ring>, frame: &Frame) -> Result<Vec<Region>, Re
     }
     if outers.is_empty() {
         let Some(domain) = frame.domain else {
-            return Err(Refusal::new(
+            return Err(Refusal::misoriented(
                 "the face has no outer loop and its surface no bounded domain",
             ));
         };
+        if frame.periods.iter().all(Option::is_none) && reaches_side(domain, &holes) {
+            return Err(Refusal::misoriented(
+                "a loop running against the face reaches a side of its surface's domain",
+            ));
+        }
         outers.push(rectangle(domain, frame, &holes));
     }
     assign(outers, holes, frame)
+}
+
+/// Whether a node of `holes` lies on a side of `domain`, where the whole
+/// domain less the holes splits apart.
+fn reaches_side(domain: [[f64; 2]; 2], holes: &[Vec<Node>]) -> bool {
+    holes.iter().flatten().any(|node| {
+        (0..2).any(|axis| {
+            let [low, high] = domain[axis];
+            let limit = DOMAIN_CONTACT_RATIO * (high - low);
+            node.uv[axis] - low <= limit || high - node.uv[axis] <= limit
+        })
+    })
 }
 
 /// The whole parameter domain as one polygon whose sides are open.
@@ -264,7 +293,9 @@ fn assign(
             }
         }
         if !placed {
-            return Err(Refusal::new("an inner loop lies outside every outer loop"));
+            return Err(Refusal::misoriented(
+                "an inner loop lies outside every outer loop",
+            ));
         }
     }
     Ok(regions)
@@ -299,6 +330,25 @@ fn strips(
         entries.push((mean, rising, nodes));
     }
     entries.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Across a periodic parameter, a falling ring with nothing below it
+    // bounds the strip that runs up through the seam to the next rising
+    // ring: it moves up one period.
+    if let Some(cross) = frame.periods[1 - axis] {
+        let mut moved = 0;
+        while moved < entries.len()
+            && entries.first().is_some_and(|entry| !entry.1)
+            && entries.iter().any(|entry| entry.1)
+        {
+            let mut entry = entries.remove(0);
+            entry.0 += cross;
+            for node in &mut entry.2 {
+                node.uv[1] += cross;
+            }
+            entries.push(entry);
+            entries.sort_by(|a, b| a.0.total_cmp(&b.0));
+            moved += 1;
+        }
+    }
     let hole_ranges: Vec<[f64; 2]> = holes
         .iter()
         .map(|hole| {

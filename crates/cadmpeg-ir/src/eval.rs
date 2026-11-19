@@ -216,14 +216,32 @@ pub fn analytic_surface_parameters_solved(
             let minor_radius = torus_surface.minor_radius();
             let (x, y, z) = components(center, *axis, *ref_direction);
             let (x, y, z) = (x?, y?, z?);
-            Some(FinitePoint2::from_coordinates(
-                FiniteReal::atan2(y, x),
+            let radial = ExtendedReal::hypot(x, y);
+            let latitude = |radial: ExtendedReal| {
                 ExtendedReal::atan2(
                     finite(z).over(minor_radius),
-                    ExtendedReal::hypot(x, y)
-                        .minus(major_radius.into())
-                        .over(minor_radius),
-                ),
+                    radial.minus(major_radius.into()).over(minor_radius),
+                )
+            };
+            // The inner sheet of a self-intersecting torus lies across the
+            // axis from its tube center, in the half-plane at `u + π`; the
+            // point takes the tube circle it is nearer.
+            let major = major_radius.get();
+            let minor = minor_radius.get().abs();
+            if major < minor {
+                let distance = x.get().portable_hypot(y.get());
+                let residual =
+                    |signed: f64| ((signed - major).portable_hypot(z.get()) - minor).abs();
+                if residual(-distance) < residual(distance) {
+                    return Some(FinitePoint2::from_coordinates(
+                        FiniteReal::atan2(y.negated(), x.negated()),
+                        latitude(radial.negated()),
+                    ));
+                }
+            }
+            Some(FinitePoint2::from_coordinates(
+                FiniteReal::atan2(y, x),
+                latitude(radial),
             ))
         }
         _ => None,

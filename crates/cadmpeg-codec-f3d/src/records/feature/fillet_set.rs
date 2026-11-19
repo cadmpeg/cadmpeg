@@ -53,13 +53,21 @@ pub(crate) struct DesignFilletSetList {
 }
 
 impl DesignFilletSetList {
+    pub(crate) fn projects_short_sets(&self, groups: impl IntoIterator<Item = u32>) -> bool {
+        self.sets.iter().any(DesignFilletSet::is_short_constant)
+            && self.supports_set_law_projection()
+            && groups
+                .into_iter()
+                .all(|group| self.sets.iter().any(|set| set.group_record_index == group))
+    }
+
     pub(crate) fn supports_set_law_projection(&self) -> bool {
         match self.sets.as_slice() {
             [] => false,
-            [set] => set.law.has_implicit_ordinal(),
-            sets => sets
-                .iter()
-                .all(|set| matches!(set.law, DesignFilletSetLaw::Chordal { .. })),
+            [set] => set.law.has_implicit_ordinal() || set.is_short_constant(),
+            sets => sets.iter().all(|set| {
+                matches!(set.law, DesignFilletSetLaw::Chordal { .. }) || set.is_short_constant()
+            }),
         }
     }
 }
@@ -140,7 +148,17 @@ pub(crate) struct DesignFilletSet {
 }
 
 impl DesignFilletSet {
+    pub(crate) fn is_short_constant(&self) -> bool {
+        usize::try_from(self.frame_length) == Ok(crate::layout::fillet_set_short_constant::LEN)
+            && matches!(self.law, DesignFilletSetLaw::Constant { .. })
+    }
+
     pub(crate) fn options_match_law(&self) -> bool {
+        if self.is_short_constant() {
+            return self.tangency_weight_owner_record_index.is_none()
+                && self.tangent_chain.is_none()
+                && self.curvature_continuity.is_none();
+        }
         let asymmetric = matches!(self.law, DesignFilletSetLaw::Asymmetric { .. });
         self.tangency_weight_owner_record_index.is_some() != asymmetric
             && self.tangent_chain.is_some() != self.law.has_implicit_ordinal()
