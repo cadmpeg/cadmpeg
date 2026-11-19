@@ -3689,3 +3689,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Paired saves with different property targets or entry widths, and the corresponding final body geometry.
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
+
+### DR-890. Tail marker of the two-opaque-byte planar curve tail
+
+**Question.** Which byte of the three bytes between the zero pad and the u32 lane is the tail marker when a planar sketch-curve tail stores two opaque bytes?
+
+**Known.** `f3d.md` §3.1 "Immediately after the 96-byte analytic payload" gives the three-opaque-byte tail and the two-opaque-byte tail. The specification places the tail marker directly before the u32 lane in both forms.
+
+**Need.** A two-opaque-byte tail with a nonzero byte before the u32 lane, and the counted region member lists that name or omit that curve.
+
+**Note.** The decoder reads the byte before the u32 lane as the tail marker and charges `sketch.curve-tail-marker-assumed` when that byte is nonzero.

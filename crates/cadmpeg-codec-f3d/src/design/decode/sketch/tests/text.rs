@@ -761,6 +761,34 @@ fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
 }
 
 #[test]
+fn textex_tag_sketch_text_record_admits_four_zero_bytes_before_its_owner() {
+    let plain = sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        Some((2.175, -0.5, 0.0)),
+    );
+    let owner_at = plain.len() - 11;
+    let mut padded = plain[..owner_at].to_vec();
+    padded.extend_from_slice(&[0; 4]);
+    padded.extend_from_slice(&plain[owner_at..]);
+    let text = decode_sketch_text(&padded).expect("padded sketch text record");
+    assert_eq!(text.owner_reference, 201);
+    assert_eq!(text.text, "path text");
+    assert_eq!(
+        text.placement().map(|placement| placement.anchor.get()),
+        Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
+    );
+
+    let mut nonzero = padded.clone();
+    nonzero[owner_at + 1] = 1;
+    assert!(decode_sketch_text(&nonzero).is_none());
+    let mut overlong = plain[..owner_at].to_vec();
+    overlong.extend_from_slice(&[0; 5]);
+    overlong.extend_from_slice(&plain[owner_at..]);
+    assert!(decode_sketch_text(&overlong).is_none());
+}
+
+#[test]
 fn txt_tag_sketch_text_record_decodes_its_anchor_and_metrics() {
     let text = decode_sketch_text(&txt_tag_sketch_text_record(
         &[("EntityGenesis", 4), ("txt_tag", 115)],
