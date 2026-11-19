@@ -2,18 +2,25 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::text::NonBlankString;
+
 use crate::design::configuration::{
-    ArrangementKind, DefinitionOverride, FeatureStateOverride, ParameterOverride, PartNumber,
+    ArrangementKind, DefinitionOverride, FeatureStateOverride, OccurrenceOverride,
+    ParameterOverride, PartNumber,
 };
 use crate::design::dimension::Dimension;
 use crate::design::parameter::{Deviations, Tolerance};
+use crate::design::refs::ConfigurationRef;
+use crate::design::selection::{OccurrencePath, PathStep, StepRef};
 use crate::design::units::{Quantity, ValueKind};
 use crate::document::CadIr;
+use crate::features::ConfigurationId;
 use crate::ids::ProductDefinitionId;
 use crate::pmi::LimitsAndFits;
 use crate::products::{
-    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
+    ExternalDocument, NestedOverride, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
+use crate::report::Severity;
 use crate::scalar::FiniteReal;
 use crate::transform::Transform;
 use crate::validate::design::fixture::{
@@ -306,4 +313,52 @@ fn a_fusion_root_component_spans_the_components_its_root_occurrences_place() {
             "test:design:definition#pin",
         ])
     );
+}
+
+/// The baseline with occurrence `bracket` placed in `part` and occurrence
+/// `bolt` placed in `bracket`, and configuration `large` overriding `bracket`
+/// with a nested override of `bolt` whose one step states `configuration`.
+fn nested_override(configuration: Option<ConfigurationRef>) -> CadIr {
+    let mut ir = document();
+    add_definition(&mut ir, "bracket");
+    add_definition(&mut ir, "bolt");
+    place(&mut ir, "part", "bracket", "bracket");
+    place(&mut ir, "bracket", "bolt", "bolt");
+    ir.design.configurations[1].overrides.occurrences.insert(
+        id("occurrence", "bracket"),
+        OccurrenceOverride {
+            nested: vec![NestedOverride {
+                path: OccurrencePath(vec![PathStep {
+                    occurrence: StepRef::Occurrence(id("occurrence", "bolt")),
+                    configuration,
+                }]),
+                transform: None,
+                suppressed: Some(true),
+                visible: None,
+                representation: None,
+            }],
+            ..OccurrenceOverride::default()
+        },
+    );
+    ir
+}
+
+/// The design errors validation reports on configuration `large`.
+fn errors_on_large(ir: &CadIr) -> usize {
+    let large: ConfigurationId = id("configuration", "large");
+    design_findings(ir)
+        .iter()
+        .filter(|finding| {
+            finding.severity == Severity::Error && finding.entity.as_deref() == Some(large.as_str())
+        })
+        .count()
+}
+
+#[test]
+fn a_nested_override_path_states_no_step_configuration() {
+    assert_no_design_finding(&nested_override(None));
+    let named = ConfigurationRef::Named(NonBlankString::new("Default").unwrap());
+    assert_eq!(errors_on_large(&nested_override(Some(named))), 1);
+    let local = ConfigurationRef::Local(id("configuration", "nowhere"));
+    assert_eq!(errors_on_large(&nested_override(Some(local))), 2);
 }

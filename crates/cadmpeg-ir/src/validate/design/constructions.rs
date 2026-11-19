@@ -669,12 +669,12 @@ fn check_principal_datums(index: &DesignIndex<'_>, held: &[Held<'_>], findings: 
         let FeatureOperation::Datum(datum) = &feature.definition.operation else {
             continue;
         };
-        let Some(scope) = index.scope_of(MemberKey::Feature(feature.id.as_str())) else {
+        let Some(definition) = index.owner_definition(feature.id.as_str()) else {
             continue;
         };
         if let Some((entity, container)) = principal_restatement(datum) {
             restating
-                .entry((scope.as_str(), entity, container))
+                .entry((definition.as_str(), entity, container))
                 .or_default()
                 .push(feature.id.as_str());
         }

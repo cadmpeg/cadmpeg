@@ -6,7 +6,7 @@
 //! anchor does not reach, so its order is not checked here. A pick whose
 //! target definition has no scope in this document is not checked.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -21,11 +21,13 @@ use crate::design::selection::{
     Propagation, SelectionRule, StepRef,
 };
 use crate::document::CadIr;
+use crate::features::ConfigurationId;
 use crate::ids::ProductDefinitionId;
 use crate::products;
 use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 
+use super::configurations::check_configuration_ref;
 use super::index::{DesignIndex, StateAt};
 use super::names::{derived_kinds, nested};
 use super::records::{DesignRecords, MemberKey, PositionKey};
@@ -51,6 +53,7 @@ pub(super) fn check<'a>(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let moved = moved_occurrences(index.records.ir);
+    let mut anchoring = Anchoring::new(index, states);
     for record in held {
         let owner = match record.holder {
             Holder::Definition(_) | Holder::Owned { .. } => record
@@ -68,7 +71,7 @@ pub(super) fn check<'a>(
             check_anchor(index, site, selection, findings);
             check_rules(selection, site, findings);
             for pick in selection.picks() {
-                check_pick(ctx, index, states, site, pick, &moved, findings)?;
+                check_pick(ctx, index, &mut anchoring, site, pick, &moved, findings)?;
             }
         }
     }
@@ -84,7 +87,7 @@ pub(super) fn check<'a>(
         check_pick(
             ctx,
             index,
-            states,
+            &mut anchoring,
             site,
             &publication.target,
             &moved,
@@ -280,15 +283,17 @@ fn check_rules(selection: &SelectionView<'_>, site: Site<'_>, findings: &mut Vec
             );
         }
     }
-    let explicit_terms: Vec<&TermView<'_>> = terms.iter().filter(explicit).collect();
-    for (position, term) in explicit_terms.iter().enumerate() {
-        if explicit_terms[..position]
-            .iter()
-            .any(|earlier| earlier.propagation == term.propagation)
-        {
-            record(format_args!(
-                "two Explicit terms of one selection have equal propagation"
-            ));
+    for list in [terms, excluded] {
+        let explicit_terms: Vec<&TermView<'_>> = list.iter().filter(explicit).collect();
+        for (position, term) in explicit_terms.iter().enumerate() {
+            if explicit_terms[..position]
+                .iter()
+                .any(|earlier| earlier.propagation == term.propagation)
+            {
+                record(format_args!(
+                    "two Explicit terms of one list of a selection have equal propagation"
+                ));
+            }
         }
     }
 }
@@ -309,7 +314,7 @@ fn picks_curve(pick: &Picked) -> bool {
 fn check_pick<'a>(
     ctx: &DecodeContext<'_>,
     index: &DesignIndex<'a>,
-    states: &'a States<'a>,
+    anchoring: &mut Anchoring<'a>,
     site: Site<'a>,
     pick: &Picked,
     moved: &BTreeSet<&str>,
@@ -394,8 +399,8 @@ fn check_pick<'a>(
         super::check_closed_topology(ctx, body, at, "witness body", findings)?;
     }
     if pick.context.is_none() {
-        for state in anchored_states(index, states, site) {
-            check_in_state(states, &state, pick, at, findings);
+        for state in anchored_states(index, anchoring, site) {
+            check_in_state(anchoring.states, &state, pick, at, findings);
         }
     }
     Ok(())
@@ -409,22 +414,138 @@ enum Stored<'a> {
     Evaluation(&'a str),
 }
 
+/// A scope, a configuration of it (`None` in a scope with none), and the
+/// position whose state a stored state holds there.
+type StateKey<'a> = (&'a str, Option<&'a ConfigurationId>, PositionKey<'a>);
+
+/// The stored states that anchored picks read, built once: each current
+/// state and each stored evaluation keyed by the position whose state it
+/// holds, and the features' statelessness and suppression as read.
+struct Anchoring<'a> {
+    states: &'a States<'a>,
+    current: BTreeMap<StateKey<'a>, &'a Extent<'a>>,
+    evaluations: BTreeMap<StateKey<'a>, Vec<&'a str>>,
+    stateless: BTreeMap<(&'a str, Option<&'a ConfigurationId>), bool>,
+    suppressed: BTreeMap<(&'a str, Option<&'a ConfigurationId>), bool>,
+}
+
+impl<'a> Anchoring<'a> {
+    fn new(index: &DesignIndex<'a>, states: &'a States<'a>) -> Self {
+        let mut anchoring = Self {
+            states,
+            current: BTreeMap::new(),
+            evaluations: BTreeMap::new(),
+            stateless: BTreeMap::new(),
+            suppressed: BTreeMap::new(),
+        };
+        for extent in &states.extents {
+            let configuration = index
+                .records
+                .scopes
+                .get(extent.scope)
+                .and_then(|scope| scope.active_configuration.as_ref());
+            let at = PositionKey::of(&extent.state.at);
+            if let Some(position) = anchoring.position(index, at, configuration) {
+                anchoring
+                    .current
+                    .entry((extent.scope, configuration, position))
+                    .or_insert(extent);
+            }
+        }
+        for evaluation in &index.records.ir.design.evaluations {
+            let (Some(_), Evaluated::State(of)) = (&evaluation.content, &evaluation.of) else {
+                continue;
+            };
+            let configuration = evaluation.configuration.as_ref();
+            if let Some(position) = anchoring.position(index, PositionKey::of(of), configuration) {
+                anchoring
+                    .evaluations
+                    .entry((evaluation.scope.as_str(), configuration, position))
+                    .or_default()
+                    .push(evaluation.id.as_str());
+            }
+        }
+        anchoring
+    }
+
+    /// The position whose state `position` names in `configuration`: its
+    /// rollback position (§5.3), stepped back over each feature that is
+    /// stateless there to the state entering it (§5.4). `None` where a
+    /// rollback names no member of its container, or a stateless feature
+    /// has no state entering it.
+    fn position(
+        &mut self,
+        index: &DesignIndex<'a>,
+        mut position: PositionKey<'a>,
+        configuration: Option<&'a ConfigurationId>,
+    ) -> Option<PositionKey<'a>> {
+        for _ in 0..=index.records.features.len() {
+            position = index.rollback_position(position)?;
+            let PositionKey::After(MemberKey::Feature(feature)) = position else {
+                return Some(position);
+            };
+            if !self.stateless(index, feature, configuration) {
+                return Some(position);
+            }
+            position = index.entering(feature)?;
+        }
+        None
+    }
+
+    /// `CadIr::is_stateless`, false where it does not decide.
+    fn stateless(
+        &mut self,
+        index: &DesignIndex<'a>,
+        feature: &'a str,
+        configuration: Option<&'a ConfigurationId>,
+    ) -> bool {
+        *self
+            .stateless
+            .entry((feature, configuration))
+            .or_insert_with(|| {
+                index.records.features.get(feature).is_some_and(|record| {
+                    index.records.ir.is_stateless(&record.id, configuration) == Ok(true)
+                })
+            })
+    }
+
+    /// Whether `feature`'s `suppressed` resolves to true in `configuration`
+    /// (§5.11), false where that does not decide.
+    fn suppressed(
+        &mut self,
+        index: &DesignIndex<'a>,
+        feature: &'a str,
+        configuration: Option<&'a ConfigurationId>,
+    ) -> bool {
+        *self
+            .suppressed
+            .entry((feature, configuration))
+            .or_insert_with(|| {
+                index.records.features.get(feature).is_some_and(|record| {
+                    index.records.ir.is_suppressed(&record.id, configuration) == Ok(true)
+                })
+            })
+    }
+}
+
 /// The stored states a pick without a context resolves in (§5.8): the
-/// current geometry of its scope for `Current`; for a position, the current
-/// state there, else each stored evaluation of it, the end of an ordered
-/// container being the position at its rollback. None where the anchor
-/// names no stored state, or is `Native`.
+/// current geometry of its scope for `Current`; for a position, in each
+/// configuration of the scope in which the holding feature is not
+/// suppressed, the current state there in the active configuration, else
+/// each stored evaluation of it there. None where the anchor names no
+/// stored state, or is `Native`.
 fn anchored_states<'a>(
     index: &DesignIndex<'a>,
-    states: &'a States<'a>,
+    anchoring: &mut Anchoring<'a>,
     site: Site<'a>,
 ) -> Vec<Stored<'a>> {
     let Some(scope) = site.owner.map(ProductDefinitionId::as_str) else {
         return Vec::new();
     };
-    let position = match site.anchor {
+    let anchored = match site.anchor {
         Anchor::Current => {
-            let extents: Vec<&Extent<'a>> = states
+            let extents: Vec<&Extent<'a>> = anchoring
+                .states
                 .extents
                 .iter()
                 .filter(|extent| extent.scope == scope)
@@ -446,25 +567,50 @@ fn anchored_states<'a>(
             None => return Vec::new(),
         },
     };
-    let Some(position) = index.rollback_position(position) else {
-        return Vec::new();
-    };
-    if let Some(extent) = states.extent(scope, position) {
-        return vec![Stored::Extents(vec![extent])];
-    }
-    index
+    let active = index
         .records
-        .ir
-        .design
-        .evaluations
-        .iter()
-        .filter(|evaluation| {
-            evaluation.scope.as_str() == scope
-                && evaluation.content.is_some()
-                && matches!(&evaluation.of, Evaluated::State(of) if PositionKey::of(of) == position)
-        })
-        .map(|evaluation| Stored::Evaluation(evaluation.id.as_str()))
-        .collect()
+        .scopes
+        .get(scope)
+        .and_then(|scope| scope.active_configuration.as_ref());
+    let configurations: Vec<Option<&'a ConfigurationId>> =
+        match index.records.scope_configurations.get(scope) {
+            Some(configurations) => configurations
+                .iter()
+                .map(|configuration| Some(&configuration.id))
+                .collect(),
+            None => vec![None],
+        };
+    let mut found = Vec::new();
+    for configuration in configurations {
+        if site
+            .holder
+            .feature()
+            .is_some_and(|feature| anchoring.suppressed(index, feature, configuration))
+        {
+            continue;
+        }
+        let Some(position) = anchoring.position(index, anchored, configuration) else {
+            continue;
+        };
+        let key = (scope, configuration, position);
+        if let Some(extent) = anchoring
+            .current
+            .get(&key)
+            .filter(|_| configuration == active)
+        {
+            found.push(Stored::Extents(vec![*extent]));
+            continue;
+        }
+        found.extend(
+            anchoring
+                .evaluations
+                .get(&key)
+                .into_iter()
+                .flatten()
+                .map(|evaluation| Stored::Evaluation(evaluation)),
+        );
+    }
+    found
 }
 
 /// An `Entity` pick matches an entity of its stored anchored state by the
@@ -713,19 +859,16 @@ fn check_definition(
     at: &str,
     findings: &mut Vec<Finding>,
 ) {
-    if !index
-        .records
-        .definitions
-        .contains_key(definition.definition.as_str())
-    {
+    let id = definition.definition.as_str();
+    if !index.records.definitions.contains_key(id) {
         super::error(
             findings,
             at,
-            format_args!(
-                "a pick context names definition {}, which does not exist",
-                definition.definition.as_str()
-            ),
+            format_args!("a pick context names definition {id}, which does not exist"),
         );
+    }
+    if let Some(configuration) = &definition.configuration {
+        check_configuration_ref(&index.records, configuration, Some(id), at, findings);
     }
 }
 
@@ -753,9 +896,6 @@ pub(in crate::validate) fn check_path(
     at: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let mut record = |message: std::fmt::Arguments<'_>| {
-        super::error(findings, at, message);
-    };
     let mut native = false;
     let mut previous = root;
     for step in &path.0 {
@@ -766,30 +906,44 @@ pub(in crate::validate) fn check_path(
                 continue;
             }
             StepRef::Occurrence(_) if native => {
-                record(format_args!(
-                    "an occurrence path names an occurrence after a Native step"
-                ));
+                super::error(
+                    findings,
+                    at,
+                    format_args!("an occurrence path names an occurrence after a Native step"),
+                );
                 return;
             }
             StepRef::Occurrence(occurrence) => occurrence,
         };
         let Some(record_) = records.occurrences.get(occurrence.as_str()) else {
-            record(format_args!(
-                "an occurrence path names occurrence {}, which does not exist",
-                occurrence.as_str()
-            ));
+            super::error(
+                findings,
+                at,
+                format_args!(
+                    "an occurrence path names occurrence {}, which does not exist",
+                    occurrence.as_str()
+                ),
+            );
             return;
         };
         if let (Some(expected), false) = (previous, moved.contains(occurrence.as_str())) {
             let placed_in = products::owner(&records.ir.model.product_definitions, occurrence)
                 .map(|owner| owner.id.as_str());
             if placed_in.is_some_and(|placed_in| placed_in != expected) {
-                record(format_args!(
+                super::error(
+                    findings,
+                    at,
+                    format_args!(
                     "occurrence path step {} is not an occurrence of the previous step's prototype",
                     occurrence.as_str()
-                ));
+                ),
+                );
                 return;
             }
+        }
+        if let Some(configuration) = &step.configuration {
+            let prototype = Some(record_.prototype.as_str());
+            check_configuration_ref(records, configuration, prototype, at, findings);
         }
         previous = Some(record_.prototype.as_str());
     }

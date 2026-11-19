@@ -11,7 +11,7 @@ use crate::design::configuration::{
     Arrangement, DesignConfiguration, Overrides, ParameterOverride,
 };
 use crate::design::dimension::Dimension;
-use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
+use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
 use crate::design::ops::body::PatternInstances;
 use crate::design::ops::surface::MeshKind;
 use crate::design::parameter::{DesignParameter, ParameterValue};
@@ -314,33 +314,6 @@ impl CadIr {
         cache_as(parameter, cache, negated).map(Some)
     }
 
-    fn feature_suppressed_in(
-        &self,
-        feature: &Feature,
-        chain: &[&DesignConfiguration],
-        configuration: Option<&ConfigurationId>,
-    ) -> Result<bool, EditError> {
-        if let Some(own) = chain.iter().find_map(|level| {
-            level
-                .overrides
-                .features
-                .get(&feature.id)
-                .and_then(|state| state.suppressed)
-        }) {
-            return Ok(own);
-        }
-        let (parameter, negated) = match &feature.suppressed {
-            None => return Ok(false),
-            Some(Dimension::Literal(value)) => return Ok(*value),
-            Some(Dimension::Parameter(parameter)) => (parameter, false),
-            Some(Dimension::Negated(parameter)) => (parameter, true),
-        };
-        Ok(match self.parameter_cache(parameter, configuration)? {
-            Some(ParameterValue::Boolean(value)) => *value != negated,
-            _ => false,
-        })
-    }
-
     /// The definition of a feature that applies in a configuration: the
     /// nearest override that states one, else the feature's own.
     ///
@@ -390,22 +363,57 @@ impl CadIr {
         feature: &FeatureId,
         configuration: Option<&ConfigurationId>,
     ) -> Result<bool, EditError> {
-        let record = self.design_feature(feature)?;
-        let chain = match configuration {
-            Some(configuration) => self.configuration_chain(configuration)?,
-            None => Vec::new(),
-        };
-        if self.feature_suppressed_in(record, &chain, configuration)? {
+        if self.is_suppressed(feature, configuration)? {
             return Ok(true);
         }
         let definition = self.feature_definition_in(feature, configuration)?;
         Ok(stateless_operation(&definition.operation))
     }
+
+    /// Whether feature `feature`'s `suppressed` resolves to true in
+    /// configuration `configuration` (§5.11): the nearest override that
+    /// states it, else its own value, a bound one being its parameter's
+    /// Boolean cache there.
+    ///
+    /// # Errors
+    ///
+    /// As [`CadIr::is_stateless`].
+    pub(crate) fn is_suppressed(
+        &self,
+        feature: &FeatureId,
+        configuration: Option<&ConfigurationId>,
+    ) -> Result<bool, EditError> {
+        let record = self.design_feature(feature)?;
+        let chain = match configuration {
+            Some(configuration) => self.configuration_chain(configuration)?,
+            None => Vec::new(),
+        };
+        if let Some(own) = chain.iter().find_map(|level| {
+            level
+                .overrides
+                .features
+                .get(feature)
+                .and_then(|state| state.suppressed)
+        }) {
+            return Ok(own);
+        }
+        let (parameter, negated) = match &record.suppressed {
+            None => return Ok(false),
+            Some(Dimension::Literal(value)) => return Ok(*value),
+            Some(Dimension::Parameter(parameter)) => (parameter, false),
+            Some(Dimension::Negated(parameter)) => (parameter, true),
+        };
+        Ok(match self.parameter_cache(parameter, configuration)? {
+            Some(ParameterValue::Boolean(value)) => *value != negated,
+            _ => false,
+        })
+    }
 }
 
 /// Whether an operation's kind cannot change a state: a sketch, a sheet, a
 /// datum, a feature that only generates other features, an appearance, and a
-/// section that only writes curves into a sketch.
+/// section that only writes curves into a sketch. An `Unresolved` operation
+/// is judged by its family.
 pub(super) fn stateless_operation(operation: &FeatureOperation) -> bool {
     match operation {
         FeatureOperation::Sketch(_)
@@ -418,6 +426,15 @@ pub(super) fn stateless_operation(operation: &FeatureOperation) -> bool {
             matches!(pattern.instances, PatternInstances::Members(_))
         }
         FeatureOperation::Mesh(mesh) => matches!(mesh.kind, MeshKind::Section { .. }),
+        FeatureOperation::Unresolved { family } => matches!(
+            family,
+            OperationFamily::Sketch
+                | OperationFamily::SpatialSketch
+                | OperationFamily::Spreadsheet
+                | OperationFamily::Datum
+                | OperationFamily::TemplateInstance
+                | OperationFamily::Decal
+        ),
         _ => false,
     }
 }

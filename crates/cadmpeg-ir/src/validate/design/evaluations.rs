@@ -3,14 +3,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::parameters;
+use super::configurations::check_configuration_ref;
 use super::records::{DesignRecords, MemberKey, OfKey, PositionKey};
 use crate::design::container::Container;
-use crate::design::dimension::Dimension;
 use crate::design::evaluation::{EvaluationStatus, StateBase};
-use crate::design::feature::{Feature, FeatureOperation, OperationFamily};
-use crate::design::ops::body::PatternInstances;
-use crate::design::ops::surface::MeshKind;
+use crate::design::feature::FeatureOperation;
 use crate::design::refs::Position;
 use crate::design::selection::{OccurrencePath, StepRef};
 use crate::features::ConfigurationId;
@@ -182,7 +179,11 @@ pub(super) fn check_evaluations(
             }
         };
         if let Some(feature) = feature.and_then(|feature| index.features.get(feature)) {
-            if is_stateless(index, feature, configuration) {
+            if index
+                .ir
+                .is_stateless(&feature.id, evaluation.configuration.as_ref())
+                == Ok(true)
+            {
                 super::error(
                     findings,
                     id,
@@ -366,68 +367,9 @@ pub(in crate::validate) fn state_chains<'a>(
     Ok(StateChains { cyclic, depths })
 }
 
-/// `CadIr::is_stateless(f, c)` (§5.4, D34, D35), decided where the document
-/// states what decides it: the feature's `suppressed` resolves to true in
-/// `configuration`, or the operation of the definition that applies there
-/// cannot change a state. A suppression bound to a parameter resolves through
-/// the parameter's value in `configuration`.
-pub(super) fn is_stateless(
-    index: &DesignRecords<'_>,
-    feature: &Feature,
-    configuration: Option<&str>,
-) -> bool {
-    let chain = index.configuration_chain(configuration);
-    let suppressed = chain
-        .iter()
-        .find_map(|configuration| {
-            configuration
-                .overrides
-                .features
-                .get(&feature.id)?
-                .suppressed
-        })
-        .or_else(|| match feature.suppressed.as_ref()? {
-            Dimension::Literal(value) => Some(*value),
-            Dimension::Parameter(parameter) => parameters::boolean_in(index, &chain, parameter),
-            Dimension::Negated(parameter) => {
-                parameters::boolean_in(index, &chain, parameter).map(|value| !value)
-            }
-        });
-    if suppressed == Some(true) {
-        return true;
-    }
-    stateless_operation(&index.definition_in(feature, configuration).operation)
-}
-
-/// An operation whose kind cannot change a state: a sketch, a sheet, a datum,
-/// a pattern whose instances are features of their own, a template instance,
-/// a decal, and a mesh section.
-fn stateless_operation(operation: &FeatureOperation) -> bool {
-    match operation {
-        FeatureOperation::Sketch(_)
-        | FeatureOperation::SpatialSketch(_)
-        | FeatureOperation::Spreadsheet(_)
-        | FeatureOperation::Datum(_)
-        | FeatureOperation::TemplateInstance(_)
-        | FeatureOperation::Decal(_) => true,
-        FeatureOperation::Pattern(pattern) => {
-            matches!(pattern.instances, PatternInstances::Members(_))
-        }
-        FeatureOperation::Mesh(mesh) => matches!(mesh.kind, MeshKind::Section { .. }),
-        FeatureOperation::Unresolved { family } => matches!(
-            family,
-            OperationFamily::Sketch
-                | OperationFamily::SpatialSketch
-                | OperationFamily::Spreadsheet
-                | OperationFamily::Datum
-                | OperationFamily::TemplateInstance
-                | OperationFamily::Decal
-        ),
-        _ => false,
-    }
-}
-
-/// Every `Occurrence` step of the path names an occurrence of the model.
+/// Every `Occurrence` step of the path names an occurrence of the model, and
+/// its `configuration` follows the `ConfigurationRef` rule for the
+/// occurrence's prototype.
 pub(super) fn check_path_steps(
     index: &DesignRecords<'_>,
     path: &OccurrencePath,
@@ -436,17 +378,22 @@ pub(super) fn check_path_steps(
     findings: &mut Vec<Finding>,
 ) {
     for step in &path.0 {
-        if let StepRef::Occurrence(occurrence) = &step.occurrence {
-            if !index.occurrences.contains_key(occurrence.as_str()) {
-                super::error(
-                    findings,
-                    entity,
-                    format_args!(
-                        "{what} path names {}, which is no occurrence of the model",
-                        occurrence.as_str()
-                    ),
-                );
+        let StepRef::Occurrence(occurrence) = &step.occurrence else {
+            continue;
+        };
+        match (index.prototype(occurrence.as_str()), &step.configuration) {
+            (None, _) => super::error(
+                findings,
+                entity,
+                format_args!(
+                    "{what} path names {}, which is no occurrence of the model",
+                    occurrence.as_str()
+                ),
+            ),
+            (Some(prototype), Some(configuration)) => {
+                check_configuration_ref(index, configuration, Some(prototype), entity, findings);
             }
+            (Some(_), None) => {}
         }
     }
 }
