@@ -98,7 +98,7 @@ fn part() -> Vec<(u32, Vec<u8>, Vec<u8>)> {
     ]
 }
 
-fn container<'n>(native: &'n CatiaNative, entity_id: u32) -> &'n CatiaFeatureContainer {
+fn container(native: &CatiaNative, entity_id: u32) -> &CatiaFeatureContainer {
     native
         .feature_containers
         .iter()
