@@ -30,7 +30,7 @@ use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitio
 mod parameters;
 
 /// The root definition of an NX part that states no assembly root.
-const PART_ROOT: &str = "nx:document:product-definition#root";
+pub(super) const PART_ROOT: &str = "nx:document:product-definition#root";
 const TIMELINE: &str = "nx:feature-history:timeline#root";
 
 /// Project the decoded NX history into `ir.design` as the design of

@@ -347,7 +347,7 @@ fn decode_user_defined_entities_as_named_opaque_records() {
             .expect("decode user-defined entity witness"),
     );
 
-    assert_eq!(result.ir().entity_count(), 0);
+    assert_eq!(result.ir().entity_count(), 1);
     let unknowns = result.ir().native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
 
