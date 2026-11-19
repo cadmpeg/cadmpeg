@@ -11,7 +11,9 @@ use serde_json::{json, Value};
 use crate::design::container::Container;
 use crate::design::evaluation::{CurrentState, EvaluationStatus};
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation};
-use crate::design::names::{NameEntry, NameTable, TopoName};
+use crate::design::names::{
+    GenerationRole, HoleFaceRole, InstanceIndex, NameEntry, NameKind, NameTable, TopoName,
+};
 use crate::design::refs::EntityRef;
 use crate::design::scope::DesignScope;
 use crate::design::selection::{Anchor, PickTarget, Picked, Witness};
@@ -688,7 +690,31 @@ fn an_entity_pick_matches_a_name_of_its_anchored_state() {
         &mut ir,
         current_pick(PickTarget::Entity(generated("face", "b"))),
     );
-    assert_finding(&ir, Check::Design, Severity::Warning, "a lost operand");
+    assert_finding(&ir, Check::Design, Severity::Warning, "matches no entity");
+
+    for name in [
+        TopoName::Generated {
+            kind: NameKind::Face,
+            feature: id("feature", "removed"),
+            role: Some(GenerationRole::Hole(HoleFaceRole::BoreWall)),
+            generator: None,
+            index: None,
+        },
+        TopoName::Instance {
+            feature: id("feature", "removed"),
+            instance: InstanceIndex(vec![1]),
+            of: Box::new(generated("face", "a")),
+        },
+    ] {
+        let mut ir = named_cube();
+        publish(&mut ir, current_pick(PickTarget::Entity(name.clone())));
+        let errors: Vec<_> = findings(&ir)
+            .into_iter()
+            .filter(|finding| finding.severity == Severity::Error)
+            .collect();
+        assert!(errors.is_empty(), "a lost operand is no Error: {errors:#?}");
+        assert_finding(&ir, Check::Design, Severity::Warning, "lost operand");
+    }
 
     let mut ir = named_cube();
     let mut pick = current_pick(PickTarget::Entity(generated("face", "a")));

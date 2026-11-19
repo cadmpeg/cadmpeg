@@ -518,9 +518,7 @@ fn check_in_state<'a>(
             Check::Design,
             Severity::Warning,
             Some(at),
-            format_args!(
-                "an Entity pick's name matches no entity of its anchored state: a lost operand"
-            ),
+            format_args!("an Entity pick's name matches no entity of its anchored state, a lost operand (D51)"),
         );
     }
 }
