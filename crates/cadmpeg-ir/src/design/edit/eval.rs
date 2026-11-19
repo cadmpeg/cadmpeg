@@ -302,11 +302,11 @@ fn compare(op: BinaryOp, left: Value, right: Value) -> Result<Value, EvalError> 
     Ok(Value::Boolean(result))
 }
 
-fn binary(
+fn binary<R>(
     op: BinaryOp,
     left: Value,
     right: Value,
-    right_node: &Node<ParameterRef>,
+    right_node: &Node<R>,
 ) -> Result<Value, EvalError> {
     match op {
         BinaryOp::Add | BinaryOp::Subtract => {
@@ -489,12 +489,12 @@ fn call(function: Function, args: Vec<Value>) -> Result<Value, EvalError> {
     }
 }
 
-enum Task<'a> {
-    Visit(&'a Node<ParameterRef>),
+enum Task<'a, R = ParameterRef> {
+    Visit(&'a Node<R>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<ParameterRef>),
+    Binary(BinaryOp, &'a Node<R>),
     Call(Function, usize),
-    Branch(&'a Node<ParameterRef>, &'a Node<ParameterRef>),
+    Branch(&'a Node<R>, &'a Node<R>),
 }
 
 /// Evaluates a neutral design expression tree on canonical values.
@@ -509,6 +509,15 @@ enum Task<'a> {
 pub fn evaluate(
     root: &Node<ParameterRef>,
     reference: &mut dyn FnMut(&ParameterRef) -> Option<Value>,
+) -> Result<Value, EvalError> {
+    evaluate_tree(root, reference)
+}
+
+/// [`evaluate`] over a tree of any reference type: a design expression, or
+/// a process expression whose references are `ParamRef`s.
+pub(super) fn evaluate_tree<R>(
+    root: &Node<R>,
+    reference: &mut dyn FnMut(&R) -> Option<Value>,
 ) -> Result<Value, EvalError> {
     let mut tasks = vec![Task::Visit(root)];
     let mut values: Vec<Value> = Vec::new();
