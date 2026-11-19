@@ -39,6 +39,9 @@ pub(crate) struct Walk {
     /// The sketch profile bodies read, each with the extent of the
     /// profile-family object that holds it.
     pub(crate) sketch_profiles: Vec<SketchProfile>,
+    /// The `moPMarkRecord_c` objects read, each with the named object that
+    /// holds it.
+    pub(crate) marks: Vec<reader::MarkOwner>,
     /// Top-level pointers read.
     #[cfg(test)]
     pub(crate) tops: usize,
@@ -108,6 +111,7 @@ pub(crate) fn walk<'b>(
         sketch_profiles: sketch_profiles(&r.profile_bodies, &r.ends),
         status,
         parameters: r.parameters,
+        marks: r.marks,
         #[cfg(test)]
         trace: r.trace,
         #[cfg(test)]

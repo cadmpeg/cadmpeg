@@ -69,6 +69,7 @@ fn scalar_archive_classes_map_each_value_offset() {
     let walk = Walk {
         status: Status::End,
         sketch_profiles: Vec::new(),
+        marks: Vec::new(),
         trace: Vec::new(),
         parameters: vec![
             parameter("moLengthParameter_c", 42),

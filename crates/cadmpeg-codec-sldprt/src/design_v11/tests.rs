@@ -575,3 +575,93 @@ fn configurations_mark_the_active_one() {
     ));
     assert_no_design_findings(&ir);
 }
+
+fn timeline_feature(name: &str, suppressed: bool) -> cadmpeg_ir::design::feature::Feature {
+    cadmpeg_ir::design::feature::Feature {
+        id: crate::history::project::neutral_feature_id(name).unwrap(),
+        name: Some(name.to_owned()),
+        suppressed: Some(Dimension::Literal(suppressed)),
+        definition: cadmpeg_ir::design::feature::FeatureDefinition {
+            operation: super::operation::origin(),
+            refine: None,
+            fuzzy_tolerance: None,
+        },
+        placement: None,
+        component: None,
+        driven_by: None,
+        native_ref: None,
+    }
+}
+
+fn rolled_back(after: &str, later: &[&str]) -> crate::rollback::Reading {
+    crate::rollback::Reading::RolledBack {
+        after: after.to_owned(),
+        later: later.iter().map(|name| (*name).to_owned()).collect(),
+    }
+}
+
+#[test]
+fn stored_marks_state_how_many_members_are_built() {
+    use crate::rollback::{Reading, Unread};
+    let features = [
+        timeline_feature("Sketch1", false),
+        timeline_feature("Boss-Extrude1", false),
+        timeline_feature("Sketch2", false),
+        timeline_feature("Cut-Extrude1", false),
+        timeline_feature("Fillet1", true),
+    ];
+    assert_eq!(super::stated(&features, Reading::End), Ok(5));
+    assert_eq!(
+        super::stated(
+            &features,
+            rolled_back("Boss-Extrude1", &["Cut-Extrude1", "Fillet1"])
+        ),
+        Ok(2)
+    );
+    assert_eq!(
+        super::stated(&features, rolled_back("Cut-Extrude1", &["Fillet1"])),
+        Ok(5),
+        "suppressed later features leave the tree built through its end"
+    );
+    assert_eq!(
+        super::stated(&features, rolled_back("Boss-Extrude2", &["Fillet1"])),
+        Err(Unread::FeatureUnresolved {
+            name: "Boss-Extrude2".to_owned()
+        })
+    );
+    assert_eq!(
+        super::stated(&features, rolled_back("Cut-Extrude1", &["Boss-Extrude1"])),
+        Err(Unread::FeatureOutOfOrder {
+            name: "Boss-Extrude1".to_owned()
+        })
+    );
+    assert_eq!(
+        super::stated(&features, Reading::Unread(Unread::NoMarkClass)),
+        Err(Unread::NoMarkClass)
+    );
+}
+
+#[test]
+fn a_rolled_back_timeline_states_the_member_after_its_bar() {
+    let id = super::container_id(cadmpeg_ir::identity_key!("timeline"));
+    let members = ["Sketch1", "Boss-Extrude1", "Sketch2"]
+        .map(|name| Member::Feature(timeline_feature(name, false).id));
+    assert_eq!(
+        super::built_through(&id, &members, 2),
+        (
+            Rollback::Before(members[2].clone()),
+            Position::After(members[1].clone())
+        )
+    );
+    assert_eq!(
+        super::built_through(&id, &members, 3),
+        (Rollback::End, Position::After(members[2].clone()))
+    );
+    assert_eq!(
+        super::built_through(&id, &members, 0),
+        (
+            Rollback::Before(members[0].clone()),
+            Position::Start(id.clone())
+        )
+    );
+}

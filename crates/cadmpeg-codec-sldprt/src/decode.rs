@@ -4229,10 +4229,12 @@ fn build_geometry_ir(
     if part {
         project_design(
             ctx,
+            scan,
             &mut ir,
             &native.feature_histories,
             &native.feature_input_lanes,
             current_bodies,
+            &mut pmi_losses,
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
@@ -4243,15 +4245,25 @@ fn build_geometry_ir(
     Ok((ir, annotations, unknowns, retention, pmi_losses))
 }
 
-/// State the v11 design of a part document beside its v10 records.
+/// State the v11 design of a part document beside its v10 records, with the
+/// rollback position the stored marks of `scan` give.
 fn project_design(
     ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
     ir: &mut CadIr,
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ir, histories, lanes, bodies)?;
+    let added = crate::design_v11::project(
+        ir,
+        histories,
+        lanes,
+        bodies,
+        || crate::rollback::read(ctx, scan),
+        losses,
+    )?;
     ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
 }
 
@@ -5108,10 +5120,12 @@ fn build_metadata_ir(
             .collect();
         project_design(
             ctx,
+            scan,
             &mut ir,
             &native.feature_histories,
             &native.feature_input_lanes,
             bodies,
+            &mut pmi_losses,
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local

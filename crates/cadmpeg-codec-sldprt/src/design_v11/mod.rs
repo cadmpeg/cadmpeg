@@ -5,9 +5,10 @@
 //!
 //! The part is one design scope over its root definition, which owns the
 //! bodies of the current geometry. The feature tree is one ordered timeline
-//! whose current state, at its end, holds those bodies; the scope holds the
-//! part's parameters and configurations. A part whose history holds no
-//! feature, or that has no history the decoder reads, states no design.
+//! whose current state, at its rollback position (`docs/formats/sldprt.md`
+//! §3.4), holds those bodies; the scope holds the part's parameters and
+//! configurations. A part whose history holds no feature, or that has no
+//! history the decoder reads, states no design.
 
 mod configurations;
 mod operation;
@@ -20,27 +21,36 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
-use cadmpeg_ir::design::refs::Position;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::report::loss::LossNote;
 
+use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
+use crate::rollback::{Reading, Unread};
 
 /// Project the design of a part document into `ir.design`, beside its v10
 /// records, and state the part's root definition.
 ///
 /// `lanes` are the `ResolvedFeatures` lanes whose scalars type the v10
 /// parameters. `bodies` are the bodies of the current geometry: those of the
-/// active configuration. Returns the number of records added.
+/// active configuration. `read_rollback` reads the stored marks; a reading that
+/// does not fix the position adds its reason to `losses`. Returns the number
+/// of records added.
 pub(crate) fn project(
     ir: &mut CadIr,
     histories: &[FeatureHistory],
     lanes: &[FeatureInputLane],
     bodies: Vec<BodyId>,
+    read_rollback: impl FnOnce() -> Result<Reading, CodecError>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<usize, CodecError> {
     let timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
@@ -53,10 +63,17 @@ pub(crate) fn project(
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
-    let at = members
-        .last()
-        .cloned()
-        .map_or_else(|| Position::Start(id.clone()), Position::After);
+    let built = match stated(&timeline.features, read_rollback()?) {
+        Ok(built) => built,
+        Err(unread) => {
+            losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
+                "The rollback position of the feature tree is not read ({unread}); the timeline \
+                 is stated built through its last member."
+            )));
+            members.len()
+        }
+    };
+    let (rollback, at) = built_through(&id, &members, built);
     let current = (!bodies.is_empty())
         .then(|| current_state(at, bodies.clone()))
         .into_iter()
@@ -66,7 +83,7 @@ pub(crate) fn project(
         kind: OrderedKind::Timeline,
         members,
         folders: timeline.folders,
-        rollback: Rollback::End,
+        rollback,
         placement: None,
     };
     let features = timeline.features;
@@ -88,6 +105,59 @@ pub(crate) fn project(
     ir.design.parameters.extend(parameters);
     ir.design.configurations.extend(configurations.records);
     Ok(added)
+}
+
+/// The number of leading timeline features the stored marks state built:
+/// all of them at `End`, or through the rolled-back feature.
+fn stated(features: &[Feature], reading: Reading) -> Result<usize, Unread> {
+    let (after, later) = match reading {
+        Reading::End => return Ok(features.len()),
+        Reading::Unread(unread) => return Err(unread),
+        Reading::RolledBack { after, later } => (after, later),
+    };
+    let index = |name: String| {
+        let found = {
+            let mut named = features
+                .iter()
+                .enumerate()
+                .filter(|(_, feature)| feature.name.as_deref() == Some(name.as_str()));
+            match (named.next(), named.next()) {
+                (Some((index, _)), None) => Some(index),
+                _ => None,
+            }
+        };
+        found.ok_or(Unread::FeatureUnresolved { name })
+    };
+    let rolled_back = index(after)?;
+    let mut built = features.len();
+    for name in later {
+        let position = index(name.clone())?;
+        if position <= rolled_back {
+            return Err(Unread::FeatureOutOfOrder { name });
+        }
+        if !matches!(
+            features[position].suppressed,
+            Some(Dimension::Literal(true))
+        ) {
+            built = rolled_back + 1;
+        }
+    }
+    Ok(built)
+}
+
+/// The rollback of a timeline `id` whose first `built` members are built, and
+/// the position of its current state.
+fn built_through(id: &ContainerId, members: &[Member], built: usize) -> (Rollback, Position) {
+    let at = built
+        .checked_sub(1)
+        .and_then(|last| members.get(last))
+        .cloned()
+        .map_or_else(|| Position::Start(id.clone()), Position::After);
+    let rollback = members
+        .get(built)
+        .cloned()
+        .map_or(Rollback::End, Rollback::Before);
+    (rollback, at)
 }
 
 /// The root definition: the part file itself, which no occurrence places.

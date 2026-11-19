@@ -100,6 +100,8 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftFaceDocumentTailAssumed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
+    /// The stored marks do not fix the rollback position of the feature tree.
+    HistoryRollbackUnread,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -355,6 +357,7 @@ impl SldprtLossCode {
         Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
+        Self::HistoryRollbackUnread,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -484,6 +487,7 @@ impl SldprtLossCode {
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
+            Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -648,6 +652,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -850,6 +855,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1075,6 +1081,7 @@ mod tests {
                 "pmi.swift-face-document-layout-assumed",
                 "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
+                "history.rollback-unread",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",

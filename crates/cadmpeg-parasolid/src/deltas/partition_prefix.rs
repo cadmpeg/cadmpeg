@@ -59,6 +59,12 @@ impl PartitionPrefixState {
         })
         .ok()
     }
+
+    /// The partition's current mark.
+    #[must_use]
+    pub const fn current_pmark(&self) -> PmarkState {
+        self.current_pmark
+    }
 }
 
 #[cfg(test)]
