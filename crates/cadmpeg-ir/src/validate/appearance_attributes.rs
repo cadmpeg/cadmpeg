@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::appearance::AppearanceTarget;
 use crate::attributes::{AttributeTarget, AttributeValue};
 use crate::design::dimension::{ParameterRef, RefTarget};
-use crate::design::edit::eval::{check_types, Type};
+use crate::design::edit::{check_types, ExpressionSite, Type};
 use crate::design::expr::{BinaryOp, Expression, ExpressionToken, MeasureTarget, Neutral, Node};
 use crate::design::selection::Anchor;
 use crate::design::units::ValueKind;
@@ -377,7 +377,7 @@ fn check_expression(
         }),
         RefTarget::External { .. } => Ok(Type::Unknown),
     };
-    if let Err(reason) = check_types(root, &type_of) {
+    if let Err(reason) = check_types(root, ExpressionSite::Parameter, &type_of) {
         error(
             findings,
             owner,

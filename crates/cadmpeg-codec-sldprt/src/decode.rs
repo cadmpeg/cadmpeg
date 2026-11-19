@@ -174,7 +174,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .as_ref()
         .map(crate::assembly::AssemblyProjection::virtual_site_keys)
         .unwrap_or_default();
-    let mut decoded = decode_scan(ctx, scan, &placed_virtual)?;
+    let part = assembly.is_none();
+    let mut decoded = decode_scan(ctx, scan, &placed_virtual, part)?;
     if let Some(assembly) = assembly {
         assembly.apply(&mut decoded);
     }
@@ -182,11 +183,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
 }
 
 /// Decode the part content of one scanned document. `placed_virtual` holds
-/// the site keys of the virtual component sections the assembly places.
+/// the site keys of the virtual component sections the assembly places;
+/// `part` states that the document is a part, whose design the decode states.
 fn decode_scan(
     ctx: &DecodeContext<'_>,
     mut scan: container::ContainerScan<'_>,
     placed_virtual: &BTreeSet<String>,
+    part: bool,
 ) -> Result<Decoded, CodecError> {
     let decode_digest = Sha256Digest::digest(scan.source_image);
     let classification = crate::dialect::classify_layers(&scan)?;
@@ -204,6 +207,7 @@ fn decode_scan(
             &classification,
             form_padding,
             &mut admitted_entities,
+            false,
             false,
         )?;
         let mut report =
@@ -240,6 +244,7 @@ fn decode_scan(
                 decoded,
                 form_padding,
                 &mut admitted_entities,
+                part,
             )?;
             report.losses.append(&mut pmi_losses);
             append_tessellation_losses(&ir, &mut report);
@@ -263,6 +268,7 @@ fn decode_scan(
         form_padding,
         &mut admitted_entities,
         true,
+        part,
     )?;
     let display_meshes = ir.model.tessellations.len();
     let mut report = build_container_report(
@@ -3365,6 +3371,7 @@ fn build_geometry_ir(
     decoded: DecodedBrep,
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
+    part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let DecodedBrep {
         metadata_header,
@@ -3812,6 +3819,7 @@ fn build_geometry_ir(
     )?;
     crate::history::bind::bind_bound_sketch_profiles(&mut ir.model.features, &ir.model.sketches);
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
+    let current_bodies = active_partition_bodies(&ir, &configuration_bodies);
     assign_configuration_bodies(&mut ir, configuration_bodies, Some(scan))?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
@@ -4226,12 +4234,63 @@ fn build_geometry_ir(
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
+    if part {
+        project_design(
+            ctx,
+            &mut ir,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+            current_bodies,
+        )?;
+    }
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
     ir.finalize();
     stamp_sketch_baseline(ctx, &mut ir, &native.feature_input_lanes)?;
     Ok((ir, annotations, unknowns, retention, pmi_losses))
+}
+
+/// State the v11 design of a part document beside its v10 records.
+fn project_design(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    bodies: Vec<cadmpeg_ir::ids::BodyId>,
+) -> Result<(), CodecError> {
+    let added = crate::design_v11::project(ir, histories, lanes, bodies)?;
+    ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
+}
+
+/// The bodies of the active configuration: those of the active Parasolid
+/// partition where the decode holds several, else every decoded body.
+fn active_partition_bodies(
+    ir: &CadIr,
+    configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
+) -> Vec<cadmpeg_ir::ids::BodyId> {
+    let decoded = || ir.geometry.bodies.iter().map(|body| body.id.clone());
+    let partitions = configuration_bodies
+        .iter()
+        .map(|(index, _)| *index)
+        .collect::<BTreeSet<_>>();
+    if partitions.len() < 2 {
+        return decoded().collect();
+    }
+    let active = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("active_parasolid_block"))
+        .and_then(|section| crate::container::configuration_index(section));
+    let Some(active) = active.filter(|index| partitions.contains(index)) else {
+        return decoded().collect();
+    };
+    let held = configuration_bodies
+        .iter()
+        .filter(|(index, _)| *index == active)
+        .flat_map(|(_, bodies)| bodies)
+        .collect::<HashSet<_>>();
+    decoded().filter(|body| held.contains(body)).collect()
 }
 
 fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
@@ -4597,6 +4656,7 @@ fn build_metadata_ir(
     form_padding: Option<usize>,
     admitted_entities: &mut u64,
     transfer_display: bool,
+    part: bool,
 ) -> Result<BuiltIr, CodecError> {
     let mut ir = CadIr::empty();
     let mut retention = retention::Retention::default();
@@ -5047,6 +5107,21 @@ fn build_metadata_ir(
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
+    if part {
+        let bodies = ir
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect();
+        project_design(
+            ctx,
+            &mut ir,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+            bodies,
+        )?;
+    }
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
     // records are attached.
@@ -5222,57 +5297,56 @@ fn complete_resolved_configuration_parameter_snapshots(ir: &mut CadIr) -> Result
 }
 
 fn mark_active_configuration(ir: &mut CadIr) {
-    let active_name = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("sw_configuration_name"))
-        .map(String::as_str);
-    let active_index = ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("active_parasolid_block"))
-        .and_then(|section| crate::container::configuration_index(section));
-    let by_name = active_name.and_then(|name| {
-        let mut matches = ir
-            .model
-            .configurations
-            .iter()
-            .enumerate()
-            .filter(|(_, configuration)| configuration.name.as_deref() == Some(name))
-            .map(|(position, _)| position);
-        matches.next().filter(|_| matches.next().is_none())
-    });
-    let by_index = active_index.and_then(|index| {
-        let index = u32::try_from(index).ok()?;
-        let mut matches = ir
-            .model
-            .configurations
-            .iter()
-            .enumerate()
-            .filter(|(_, configuration)| configuration.source_index == Some(index))
-            .map(|(position, _)| position);
-        matches.next().filter(|_| matches.next().is_none())
-    });
-    let selected = if active_name.is_some() {
-        by_name
-    } else if active_index.is_some() {
-        by_index
-    } else if ir.source.as_ref().is_some_and(|source| {
-        source
-            .attributes
-            .get("sldprt_active_partition_unresolved")
-            .map(String::as_str)
-            == Some("true")
-    }) {
-        None
-    } else if ir.model.configurations.len() == 1 {
-        Some(0)
-    } else {
-        None
-    };
+    let configurations = ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_deref(), configuration.source_index))
+        .collect::<Vec<_>>();
+    let selected = active_configuration_position(ir.source.as_ref(), &configurations);
     for (position, configuration) in ir.model.configurations.iter_mut().enumerate() {
         configuration.active = selected == Some(position);
     }
+}
+
+/// The position of the active configuration among `configurations`, each
+/// given by its name and partition index, as the document's active
+/// configuration name, else its active Parasolid block, selects it. A lone
+/// configuration is active unless the active partition is unresolved.
+pub(crate) fn active_configuration_position(
+    source: Option<&cadmpeg_ir::document::SourceMeta>,
+    configurations: &[(Option<&str>, Option<u32>)],
+) -> Option<usize> {
+    let attribute = |key: &str| source.and_then(|source| source.attributes.get(key));
+    let active_name = attribute("sw_configuration_name").map(String::as_str);
+    let active_index = attribute("active_parasolid_block")
+        .and_then(|section| crate::container::configuration_index(section));
+    let unique = |matches: &mut dyn Iterator<Item = usize>| {
+        matches.next().filter(|_| matches.next().is_none())
+    };
+    if let Some(name) = active_name {
+        return unique(
+            &mut configurations
+                .iter()
+                .enumerate()
+                .filter(|(_, (candidate, _))| *candidate == Some(name))
+                .map(|(position, _)| position),
+        );
+    }
+    if let Some(index) = active_index {
+        let index = u32::try_from(index).ok()?;
+        return unique(
+            &mut configurations
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, candidate))| *candidate == Some(index))
+                .map(|(position, _)| position),
+        );
+    }
+    if attribute("sldprt_active_partition_unresolved").map(String::as_str) == Some("true") {
+        return None;
+    }
+    (configurations.len() == 1).then_some(0)
 }
 
 fn snapshot_active_configuration(ir: &mut CadIr) -> Result<(), CodecError> {
