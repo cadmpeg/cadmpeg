@@ -239,6 +239,7 @@ const TYPED: &[&str] = &[
     "coil",
     "offset_face",
     "delete_face",
+    "hole",
 ];
 
 impl Walk<'_, '_> {

@@ -107,6 +107,7 @@ impl Inputs<'_> {
             "mirror" => self.mirror(record, dependencies),
             "sweep" => self.sweep(record, dependencies),
             "coil" => self.coil(record),
+            "hole" => self.hole(record),
             "delete_face" => Some(json!({"kind": "delete_face", "value": {
                 "faces": picked(record, "faces", "face_names")?,
                 "heal": record.get("heal").and_then(Value::as_bool) != Some(false),
@@ -129,6 +130,45 @@ impl Inputs<'_> {
             }
             _ => None,
         }
+    }
+
+    /// A simple, drilled or counterbored hole at a fixed position and
+    /// direction. Points, thread, countersink, and reference fields stay native.
+    fn hole(&self, record: &Value) -> Option<Value> {
+        let position = sketch::point(record.get("position"), self.scope)?;
+        let direction = unit(sketch::direction(record.get("direction"))?)?;
+        let bore = length(self.scope, record.get("diameter"))?;
+        let treatment = record.get("hole")?;
+        let kind = match treatment.get("type")?.as_str()? {
+            "simple" => json!({"kind": "simple"}),
+            "drilled" => json!({
+                "kind": "simple_drilled",
+                "drill_point_angle": self.scope.eval_json(treatment.get("tip_angle")?, Kind::Angle)?,
+            }),
+            "counterbore" => json!({
+                "kind": "counterbore",
+                "diameter": length(self.scope, treatment.get("cb_diameter"))?,
+                "depth": length(self.scope, treatment.get("cb_depth"))?,
+            }),
+            _ => return None,
+        };
+        let extent = match record.get("depth") {
+            None | Some(Value::Null) => json!({"kind": "through_all"}),
+            depth => json!({"kind": "blind", "length": length(self.scope, depth)?}),
+        };
+        Some(json!({"kind": "hole", "value": {
+            "direction": point_json(direction),
+            "placements": [{
+                "kind": "directed",
+                "position": point_json(position),
+                "direction": point_json(direction),
+            }],
+            "shape": {
+                "construction": {"kind": "form", "value": {"kind": kind}},
+                "diameter": bore,
+            },
+            "extent": extent,
+        }}))
     }
 
     fn fillet(&self, record: &Value) -> Option<Value> {

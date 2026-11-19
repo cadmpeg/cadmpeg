@@ -509,6 +509,37 @@ fn the_operation_families_carry_their_semantics() {
 }
 
 #[test]
+fn a_counterbore_hole_maps_to_the_neutral_hole() {
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Holes",
+        "units": "mm",
+        "params": [],
+        "features": [
+            {"id": 1, "name": "Base", "suppressed": false, "type": "box",
+             "corner": [0, 0, 0], "length": "40", "width": "20", "height": "10", "operation": "new_body"},
+            {"id": 2, "name": "Counterbore1", "suppressed": false, "type": "hole",
+             "position": [20.0, 10.0, 10.0], "direction": [0.0, 0.0, -1.0],
+             "diameter": "6", "depth": "8",
+             "hole": {"type": "counterbore", "cb_diameter": "10", "cb_depth": "3"}}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let features = features(&bytes);
+    let hole = &features[1]["definition"]["value"];
+    assert_eq!(hole["kind"], "hole");
+    assert_eq!(hole["value"]["shape"]["diameter"], 6.0);
+    assert_eq!(
+        hole["value"]["shape"]["construction"]["value"]["kind"]["kind"],
+        "counterbore"
+    );
+    assert_eq!(
+        hole["value"]["extent"],
+        json!({"kind": "blind", "length": 8.0})
+    );
+}
+
+#[test]
 fn components_occurrences_and_joints_form_the_product_structure() {
     let identity = json!([
         [1.0, 0.0, 0.0, 0.0],
