@@ -3,7 +3,9 @@
 use super::decode;
 use crate::test_support::test_archive::assert_valid_document;
 use cadmpeg_ir::drawings::DrawingKind;
-use cadmpeg_ir::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
+use cadmpeg_ir::semantic_annotations::{
+    AnnotationDimensionKind as DimensionKind, SemanticAnnotationKind,
+};
 
 const BOX_VOLUME_TOLERANCE: f64 = 1.0e-5;
 const BOX_AREA_TOLERANCE: f64 = 1.0e-5;
@@ -238,9 +240,8 @@ fn assert_authored_view(
         &[1.0, 0.0, 0.0],
         "{name}"
     );
-    assert_eq!(
-        view.rotation_degrees.unwrap().get(),
-        rotation_degrees,
+    assert!(
+        (view.rotation.unwrap().get().to_degrees() - rotation_degrees).abs() < 1e-12,
         "{name}"
     );
     assert_eq!(
@@ -365,7 +366,7 @@ fn physical_page_template_and_saved_dimension_are_exact() {
     assert_eq!(dimension.position.unwrap(), [65.0, 160.0, 0.0]);
     assert_eq!(
         dimension.dimension_kind.clone().unwrap(),
-        DimensionKind::HorizontalDistance {}
+        DimensionKind::HorizontalDistance
     );
     let [reference] = dimension.references["References2D"].as_slice() else {
         panic!("Length must have one 2D reference")
@@ -474,14 +475,14 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
         triangle_view.x_direction.unwrap().as_raw(),
         &[1.0, 0.0, 0.0]
     );
-    assert_eq!(triangle_view.rotation_degrees.unwrap().get(), 30.0);
+    assert!((triangle_view.rotation.unwrap().get().to_degrees() - 30.0).abs() < 1e-12);
     assert_eq!(
         triangle_view.relationships["Source"][0].native_text(),
         Some("Triangle")
     );
     for (name, kind, value) in [
-        ("Euclidean", DimensionKind::Distance {}, 30.0),
-        ("Vertical", DimensionKind::VerticalDistance {}, 10.0),
+        ("Euclidean", DimensionKind::Distance, 30.0),
+        ("Vertical", DimensionKind::VerticalDistance, 10.0),
     ] {
         let annotation = ir
             .model
@@ -651,12 +652,17 @@ fn expanded_templates_dimensions_and_view_families_keep_exact_data_and_losses() 
     assert_authored_fixture_shape_measures(result.ir(), "techdraw-dimensions", 30.0, 7.0);
     let model = &result.ir().model;
     for (name, kind, value, anchor_count) in [
-        ("Length", DimensionKind::HorizontalDistance {}, 30.0, 2),
-        ("Euclidean", DimensionKind::Distance {}, 30.0, 2),
-        ("Vertical", DimensionKind::VerticalDistance {}, 10.0, 2),
-        ("Radius", DimensionKind::Radius {}, 7.0, 2),
-        ("Diameter", DimensionKind::Diameter {}, 14.0, 2),
-        ("Angle", DimensionKind::Angle {}, 90.0, 0),
+        ("Length", DimensionKind::HorizontalDistance, 30.0, 2),
+        ("Euclidean", DimensionKind::Distance, 30.0, 2),
+        ("Vertical", DimensionKind::VerticalDistance, 10.0, 2),
+        ("Radius", DimensionKind::Radius, 7.0, 2),
+        ("Diameter", DimensionKind::Diameter, 14.0, 2),
+        (
+            "Angle",
+            DimensionKind::Angle,
+            std::f64::consts::FRAC_PI_2,
+            0,
+        ),
     ] {
         let annotation = model
             .semantic_annotations
@@ -866,12 +872,12 @@ fn dimension_measurements_follow_changed_saved_reference_geometry() {
     assert_valid_document(result.ir());
     assert_authored_fixture_shape_measures(result.ir(), "techdraw-variants", 42.0, 11.0);
     for (name, kind, expected) in [
-        ("Length", DimensionKind::HorizontalDistance {}, 42.0),
-        ("Euclidean", DimensionKind::Distance {}, 42.0),
-        ("Vertical", DimensionKind::VerticalDistance {}, 10.0),
-        ("Radius", DimensionKind::Radius {}, 11.0),
-        ("Diameter", DimensionKind::Diameter {}, 22.0),
-        ("Angle", DimensionKind::Angle {}, 90.0),
+        ("Length", DimensionKind::HorizontalDistance, 42.0),
+        ("Euclidean", DimensionKind::Distance, 42.0),
+        ("Vertical", DimensionKind::VerticalDistance, 10.0),
+        ("Radius", DimensionKind::Radius, 11.0),
+        ("Diameter", DimensionKind::Diameter, 22.0),
+        ("Angle", DimensionKind::Angle, std::f64::consts::FRAC_PI_2),
     ] {
         let annotation = result
             .ir()
@@ -1059,7 +1065,7 @@ fn asymmetric_saved_reference_y_is_reflected_into_page_coordinates() {
         .find(|annotation| annotation.object.ends_with("#TriangleBase"))
         .unwrap();
     assert_eq!(annotation.value.unwrap().get(), 40.0);
-    assert_eq!(annotation.dimension_kind, Some(DimensionKind::Distance {}));
+    assert_eq!(annotation.dimension_kind, Some(DimensionKind::Distance));
     assert_eq!(annotation.position.unwrap(), [80.0, 100.0, 0.0]);
     assert_eq!(
         annotation
@@ -1105,9 +1111,9 @@ fn custom_dimension_labels_keep_precedence_during_exact_evaluation() {
         assert_eq!(
             dimension.dimension_kind,
             Some(if label == "Distance" {
-                DimensionKind::Distance {}
+                DimensionKind::Distance
             } else {
-                DimensionKind::Radius {}
+                DimensionKind::Radius
             })
         );
         assert_eq!(

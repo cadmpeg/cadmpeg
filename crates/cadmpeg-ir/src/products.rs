@@ -1318,10 +1318,10 @@ pub enum DriveMode {
 /// `stiffness · (target_position − position) + damping · (target_velocity −
 /// velocity)`, limited to `max_force`.
 ///
-/// Rotations are radians and translations millimetres. Stiffness is newton
-/// millimetres per radian, or newtons per millimetre; damping is newton
-/// millimetre seconds per radian, or newton seconds per millimetre; the force
-/// limit is newton millimetres, or newtons.
+/// Rotations are radians and translations millimetres, and every coefficient
+/// is in kilograms, millimetres, seconds, and radians: stiffness is
+/// kg·mm²/(s²·rad), or kg/s²; damping kg·mm²/(s·rad), or kg/s; the force
+/// limit kg·mm²/s², or kg·mm/s².
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]

@@ -48,13 +48,21 @@ HOLDERS = {
     "PhysxDrivePerformanceEnvelopeAPI": "Joint",
 }
 
-# (length, mass, angle) exponents and whether the angle unit is degrees.
-NONE = (0, 0, 0, False)
-DISTANCE = (1, 0, 0, False)
-MASS = (0, 1, 0, False)
-FORCE = (1, 1, 0, False)
-TORQUE = (2, 1, 0, False)
-DEGREES = (0, 0, 1, True)
+# (length, mass, angle, time) exponents and whether the angle unit is
+# degrees.
+NONE = (0, 0, 0, 0, False)
+DISTANCE = (1, 0, 0, 0, False)
+MASS = (0, 1, 0, 0, False)
+INERTIA = (2, 1, 0, 0, False)
+DEGREES = (0, 0, 1, 0, True)
+VELOCITY = (1, 0, 0, -1, False)
+ANGULAR_VELOCITY = (0, 0, 1, -1, True)
+FORCE = (1, 1, 0, -2, False)
+TORQUE = (2, 1, 0, -2, False)
+LINEAR_STIFFNESS = (0, 1, 0, -2, False)
+ANGULAR_STIFFNESS = (2, 1, -1, -2, True)
+LINEAR_DAMPING = (0, 1, 0, -1, False)
+ANGULAR_DAMPING = (2, 1, -1, -1, True)
 
 UNITS = {
     "distance": DISTANCE,
@@ -62,67 +70,67 @@ UNITS = {
     "dimensionless": NONE,
     "dimensionless.": NONE,
     "unitless": NONE,
-    "distance / seconds": DISTANCE,
-    "distance/second.": DISTANCE,
-    "distance/second": DISTANCE,
+    "distance / seconds": VELOCITY,
+    "distance/second.": VELOCITY,
+    "distance/second": VELOCITY,
     "mass * distance * distance / seconds / seconds": TORQUE,
-    "force / distance": MASS,
-    "torque * seconds": TORQUE,
-    "distance * distance / seconds / seconds": (2, 0, 0, False),
-    "seconds": NONE,
-    "radians / seconds": (0, 0, 1, False),
-    "mass * distance * distance": TORQUE,
-    "force * seconds / distance": MASS,
-    "force / distance * time": MASS,
+    "force / distance": LINEAR_STIFFNESS,
+    "torque * seconds": (2, 1, 0, -1, False),
+    "distance * distance / seconds / seconds": (2, 0, 0, -2, False),
+    "seconds": (0, 0, 0, 1, False),
+    "radians / seconds": (0, 0, 1, -1, False),
+    "mass * distance * distance": INERTIA,
+    "force * seconds / distance": LINEAR_DAMPING,
+    "force / distance * time": LINEAR_DAMPING,
     "force": FORCE,
-    "s^-1": NONE,
-    "mass * distance / seconds / seconds / radians": (1, 1, -1, False),
+    "s^-1": (0, 0, 0, -1, False),
+    "mass * distance / seconds / seconds / radians": (1, 1, -1, -2, False),
     "mass * distance / seconds / seconds": FORCE,
     "mass * distance / second / second": FORCE,
     "mass * distance * distance / second / second": TORQUE,
-    "mass / distance / distance / distance": (-3, 1, 0, False),
+    "mass / distance / distance / distance": (-3, 1, 0, 0, False),
     "mass": MASS,
-    "force * seconds": FORCE,
+    "force * seconds": (1, 1, 0, -1, False),
     "energy": TORQUE,
-    "degrees / seconds": DEGREES,
-    "degrees/second": DEGREES,
-    "degrees/second.": DEGREES,
-    "degrees / distance": (-1, 0, 1, True),
-    "1 / (distance * distance * distance)": (-3, 0, 0, False),
+    "degrees / seconds": ANGULAR_VELOCITY,
+    "degrees/second": ANGULAR_VELOCITY,
+    "degrees/second.": ANGULAR_VELOCITY,
+    "degrees / distance": (-1, 0, 1, 0, True),
+    "1 / (distance * distance * distance)": (-3, 0, 0, 0, False),
 }
 
 # Attributes whose unit depends on the joint degree of freedom:
 # (linear, angular).
 JOINT = {
-    "physxJoint:armature": (MASS, TORQUE),
-    "physxJoint:maxJointVelocity": (DISTANCE, DEGREES),
-    "physxJointAxis:{}:armature": (MASS, TORQUE),
-    "physxJointAxis:{}:maxJointVelocity": (DISTANCE, DEGREES),
+    "physxJoint:armature": (MASS, INERTIA),
+    "physxJoint:maxJointVelocity": (VELOCITY, ANGULAR_VELOCITY),
+    "physxJointAxis:{}:armature": (MASS, INERTIA),
+    "physxJointAxis:{}:maxJointVelocity": (VELOCITY, ANGULAR_VELOCITY),
     "physxJointAxis:{}:staticFrictionEffort": (FORCE, TORQUE),
     "physxJointAxis:{}:dynamicFrictionEffort": (FORCE, TORQUE),
-    "physxJointAxis:{}:viscousFrictionCoefficient": (MASS, (2, 1, -1, True)),
-    "physxDrivePerformanceEnvelope:{}:maxActuatorVelocity": (DISTANCE, DEGREES),
-    "physxDrivePerformanceEnvelope:{}:speedEffortGradient": ((0, -1, 0, False), (-2, -1, 1, True)),
-    "physxDrivePerformanceEnvelope:{}:velocityDependentResistance": (MASS, (2, 1, -1, True)),
-    "physxLimit:{}:stiffness": (MASS, (2, 1, -1, True)),
-    "physxLimit:{}:damping": (MASS, (2, 1, -1, True)),
-    "physxLimit:{}:bounceThreshold": (DISTANCE, DEGREES),
+    "physxJointAxis:{}:viscousFrictionCoefficient": (LINEAR_DAMPING, ANGULAR_DAMPING),
+    "physxDrivePerformanceEnvelope:{}:maxActuatorVelocity": (VELOCITY, ANGULAR_VELOCITY),
+    "physxDrivePerformanceEnvelope:{}:speedEffortGradient": ((0, -1, 0, 1, False), (-2, -1, 1, 1, True)),
+    "physxDrivePerformanceEnvelope:{}:velocityDependentResistance": (LINEAR_DAMPING, ANGULAR_DAMPING),
+    "physxLimit:{}:stiffness": (LINEAR_STIFFNESS, ANGULAR_STIFFNESS),
+    "physxLimit:{}:damping": (LINEAR_DAMPING, ANGULAR_DAMPING),
+    "physxLimit:{}:bounceThreshold": (VELOCITY, ANGULAR_VELOCITY),
     "physxMimicJoint:{}:offset": (DISTANCE, DEGREES),
     "state:{}:physics:position": (DISTANCE, DEGREES),
-    "state:{}:physics:velocity": (DISTANCE, DEGREES),
+    "state:{}:physics:velocity": (VELOCITY, ANGULAR_VELOCITY),
 }
 
 # Attributes whose unit depends on another attribute of the schema:
 # (unit when the switch is off, unit when it is on).
 SWITCHED = {
-    "physxMaterial:compliantContactStiffness": ("physxMaterial:compliantContactAccelerationSpring", MASS, NONE),
-    "physxMaterial:compliantContactDamping": ("physxMaterial:compliantContactAccelerationSpring", MASS, NONE),
+    "physxMaterial:compliantContactStiffness": ("physxMaterial:compliantContactAccelerationSpring", LINEAR_STIFFNESS, (0, 0, 0, -2, False)),
+    "physxMaterial:compliantContactDamping": ("physxMaterial:compliantContactAccelerationSpring", LINEAR_DAMPING, (0, 0, 0, -1, False)),
 }
 
 # Force-API vectors, by `physxForce:mode`: (force, acceleration).
 MODE = {
-    "physxForce:force": (FORCE, DISTANCE),
-    "physxForce:torque": (TORQUE, DEGREES),
+    "physxForce:force": (FORCE, (1, 0, 0, -2, False)),
+    "physxForce:torque": (TORQUE, (0, 0, 1, -2, True)),
 }
 
 # Attributes that the schema states no unit for.
@@ -181,8 +189,8 @@ def attributes(path):
 
 
 def dimension(unit):
-    length, mass, angle, degrees = unit
-    return f"Dim::new({length}, {mass}, {angle}, {'true' if degrees else 'false'})"
+    length, mass, angle, time, degrees = unit
+    return f"Dim::new({length}, {mass}, {angle}, {time}, {'true' if degrees else 'false'})"
 
 
 def unit_text(name, kind, units):
