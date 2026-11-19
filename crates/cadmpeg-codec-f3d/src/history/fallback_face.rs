@@ -142,7 +142,7 @@ fn node_ordinals(operand: &DesignFaceOperand) -> Option<HashSet<usize>> {
         .recipe_nodes
         .iter()
         .filter_map(|node| node.recipe_structure.as_ref())
-        .filter(|node| node.has_valid_operand_ordinals(&operand.recipe_references))
+        .filter(|node| node.has_valid_boundary_edge_ordinals(&operand.recipe_references))
         .collect();
     if nodes.is_empty() {
         return None;
