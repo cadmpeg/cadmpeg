@@ -15,9 +15,7 @@ use super::{decoded, loss_naming, write_reported};
 #[test]
 fn a_document_with_nothing_writable_is_an_empty_archive() {
     let (bytes, losses) = write_reported(&CadIr::empty(), RhinoArchiveVersion::V8);
-    assert!(losses
-        .iter()
-        .any(|loss| loss.code == RhinoLossCode::WriterOutputEmpty.kind()));
+    assert!(super::charges_output_empty(&losses));
     let decoded = decoded(bytes);
     assert!(decoded.geometry.points.is_empty());
     assert!(decoded.geometry.bodies.is_empty());

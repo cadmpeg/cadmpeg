@@ -3626,9 +3626,9 @@ The native trim record has no repeated C2-use list or alternate parameter-space
 curve slot.
 
 CADIR writer decision: a neutral coedge with more than one ordered pcurve use
-is not representable by this trim record. The Rhino writer rejects that
-coedge before output; it does not select the first use or discard the other
-carriers, ranges, or tolerances.
+is not representable by this trim record. The Rhino writer omits the body
+that holds that coedge, with `writer.body-omitted` naming the body, and
+writes the rest of the document.
 
 Each stored tolerance is a finite nonnegative value or an explicit unset
 sentinel. The unset sentinels are `-1.23432101234321e308` and

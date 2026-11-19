@@ -1577,7 +1577,7 @@ fn parse_physically_based_material(
     })
 }
 
-fn parse_uuid_text(value: &str) -> Option<Uuid> {
+pub(crate) fn parse_uuid_text(value: &str) -> Option<Uuid> {
     let mut bytes = [0_u8; 16];
     let mut nibble = None;
     let mut index = 0;

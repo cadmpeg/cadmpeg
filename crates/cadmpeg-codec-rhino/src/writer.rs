@@ -5,9 +5,12 @@ use crate::mesh::FaceIndexWidth;
 use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
+mod display;
+mod layers;
 mod model;
 mod native;
 pub(crate) mod target;
+use display::{Displays, ObjectDisplay};
 use model::{
     WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritableObjectCurve,
     WritablePcurve, WritableVertex,
@@ -132,6 +135,7 @@ fn write_seekable(
     write_archive_prefix(
         ir.tolerances.linear.get(),
         plan.angular_tolerance,
+        &plan.layer_records,
         version,
         output,
     )?;
@@ -161,6 +165,7 @@ fn write_seekable(
             name: group.name.as_deref(),
             color: group.color,
             visible: group.visible,
+            layer: group.layer,
         };
         if group.points.len() == 1 {
             let point = group.points[0];
@@ -213,6 +218,7 @@ fn write_seekable(
 fn write_archive_prefix(
     linear_tolerance: f64,
     angular_tolerance: f64,
+    layer_records: &[Vec<u8>],
     version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
@@ -243,13 +249,7 @@ fn write_archive_prefix(
     ] {
         output.write_all(&table(typecode, &[])?)?;
         if typecode == TCODE_LINETYPE_TABLE {
-            output.write_all(&table(
-                TCODE_LAYER_TABLE,
-                &[zero_crc_chunk(
-                    TCODE_LAYER_RECORD,
-                    &class_wrapper(LAYER_CLASS, &default_layer_payload()?)?,
-                )?],
-            )?)?;
+            output.write_all(&table(TCODE_LAYER_TABLE, layer_records)?)?;
         }
     }
     Ok(())
@@ -335,47 +335,11 @@ struct BrepPayload {
 /// A native class identifier and the payload encoded for it.
 type ClassPayload = ([u8; 16], Vec<u8>);
 
-/// The display attributes an object record states.
-#[derive(Clone, Copy, Default)]
-struct ObjectDisplay<'a> {
-    name: Option<&'a str>,
-    color: Option<cadmpeg_ir::topology::Color>,
-    visible: Option<bool>,
-}
-
-impl<'a> ObjectDisplay<'a> {
-    /// The attributes of an object, and whether some stated attribute is not
-    /// written: a name with a null character, which Rhino strings cannot
-    /// state, a source layer outside `written_layers`, or an instance path.
-    fn admit(
-        name: Option<&'a str>,
-        color: Option<cadmpeg_ir::topology::Color>,
-        visible: Option<bool>,
-        source: Option<&'a cadmpeg_ir::SourceObjectAssociation>,
-        written_layers: &BTreeSet<String>,
-    ) -> (Self, bool) {
-        let name = name.or_else(|| source.and_then(|source| source.name.as_deref()));
-        let writable_name = name.filter(|name| !name.contains('\0'));
-        let display = Self {
-            name: writable_name,
-            color: color.or_else(|| source.and_then(|source| source.color)),
-            visible: visible.or_else(|| source.and_then(|source| source.visible)),
-        };
-        let reduced = writable_name != name
-            || source.is_some_and(|source| {
-                source
-                    .layer
-                    .as_ref()
-                    .is_some_and(|layer| !written_layers.contains(layer))
-                    || !source.instance_path.is_empty()
-            });
-        (display, reduced)
-    }
-}
-
 struct WritePlan<'a> {
     /// The angular tolerance the archive states.
     angular_tolerance: f64,
+    /// The encoded layer table records.
+    layer_records: Vec<Vec<u8>>,
     brep_records: std::fs::File,
     /// Each standalone point and its attributes.
     points: Vec<(&'a cadmpeg_ir::topology::Point, ObjectDisplay<'a>)>,
@@ -669,9 +633,8 @@ fn prepare_write(
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     let geometry = &ir.geometry;
-    let mut losses = native::omission_losses(ir.native.namespace("rhino"));
-    let layers = native::regenerated_layers(ir.native.namespace("rhino"));
-    let mut reduced_attributes = Vec::new();
+    let mut displays = Displays::new(ir)?;
+    let mut losses = native::omission_losses(ir.native.namespace("rhino"), displays.layers());
     let mut objects = 0_usize;
 
     let stated_angular = ir.tolerances.angular.get();
@@ -722,8 +685,8 @@ fn prepare_write(
     let mut adjusted_tolerances = Vec::new();
     for scope in &breps.scopes {
         let body = &scope.geometry.bodies[0];
-        let (display, reduced) =
-            ObjectDisplay::admit(body.name.as_deref(), body.color, body.visible, None, &layers);
+        let (display, admitted) =
+            displays.admit(body.id.as_str(), body.name.as_deref(), body.color, body.visible, None);
         let record = admit(
             WritableModel::try_new(scope).and_then(|model| {
                 brep_object_record(
@@ -740,9 +703,7 @@ fn prepare_write(
             brep_records.write_all(&record)?;
             objects += 1;
             adjusted_tolerances.extend(sub_resolution_tolerances(scope));
-            if reduced {
-                reduced_attributes.push(body.id.as_str());
-            }
+            displays.written(body.id.as_str(), admitted);
         }
     }
     if !adjusted_tolerances.is_empty() {
@@ -760,17 +721,24 @@ fn prepare_write(
     let mut claimed = FreeVertexClaims::default();
     let mut point_groups = Vec::new();
     for body in &general.geometry.bodies {
-        let group = admit(
-            free_vertex_group(&general, body, &mut claimed, &layers),
+        let points = admit(
+            free_vertex_group(&general, body, &mut claimed),
             &mut losses,
             RhinoLossCode::WriterBodyOmitted,
             format_args!("body {}", body.id),
         )?;
-        if let Some((group, reduced)) = group {
-            if reduced {
-                reduced_attributes.push(body.id.as_str());
-            }
-            point_groups.push(group);
+        if let Some(points) = points {
+            let (display, admitted) =
+                displays.admit(body.id.as_str(), body.name.as_deref(), body.color, body.visible, None);
+            point_groups.push(PointGroup {
+                points,
+                identity: body.id.as_str().to_owned(),
+                name: display.name.map(str::to_owned),
+                color: display.color,
+                visible: display.visible,
+                layer: display.layer,
+            });
+            displays.written(body.id.as_str(), admitted);
         }
     }
     objects += point_groups.len();
@@ -856,11 +824,9 @@ fn prepare_write(
             && !general_points.contains(point.id.as_str())
             && !is_support(point.source_object.as_ref())
     }) {
-        let (display, reduced) =
-            ObjectDisplay::admit(None, None, None, point.source_object.as_ref(), &layers);
-        if reduced {
-            reduced_attributes.push(point.id.as_str());
-        }
+        let (display, admitted) =
+            displays.admit(point.id.as_str(), None, None, None, point.source_object.as_ref());
+        displays.written(point.id.as_str(), admitted);
         points.push((point, display));
     }
     objects += points.len();
@@ -876,11 +842,9 @@ fn prepare_write(
             format_args!("curve {}", curve.id),
         )?;
         if let Some(payload) = payload {
-            let (display, reduced) =
-                ObjectDisplay::admit(None, None, None, curve.source_object.as_ref(), &layers);
-            if reduced {
-                reduced_attributes.push(curve.id.as_str());
-            }
+            let (display, admitted) =
+                displays.admit(curve.id.as_str(), None, None, None, curve.source_object.as_ref());
+            displays.written(curve.id.as_str(), admitted);
             curves.push((curve.id.as_str(), payload, display));
         }
     }
@@ -899,11 +863,14 @@ fn prepare_write(
             format_args!("surface {}", surface.id),
         )?;
         if let Some(payload) = payload {
-            let (display, reduced) =
-                ObjectDisplay::admit(None, None, None, surface.source_object.as_ref(), &layers);
-            if reduced {
-                reduced_attributes.push(surface.id.as_str());
-            }
+            let (display, admitted) = displays.admit(
+                surface.id.as_str(),
+                None,
+                None,
+                None,
+                surface.source_object.as_ref(),
+            );
+            displays.written(surface.id.as_str(), admitted);
             surfaces.push((surface.id.as_str(), payload, display));
         }
     }
@@ -911,10 +878,12 @@ fn prepare_write(
 
     let mut mesh_records = tempfile::tempfile()?;
     for mesh in &ir.model.tessellations {
+        let (display, admitted) =
+            displays.admit(mesh.id.as_str(), None, None, None, mesh.source_object.as_ref());
         let record = admit(
             check_mesh(mesh)
                 .and_then(|()| mesh_payload(mesh, archive_version))
-                .and_then(|payload| mesh_object_record(&payload, mesh.id.as_str())),
+                .and_then(|payload| mesh_object_record(&payload, mesh.id.as_str(), display)),
             &mut losses,
             RhinoLossCode::WriterMeshOmitted,
             format_args!("mesh {}", mesh.id),
@@ -922,25 +891,20 @@ fn prepare_write(
         if let Some(record) = record {
             mesh_records.write_all(&record)?;
             objects += 1;
+            displays.written(mesh.id.as_str(), admitted);
         }
     }
 
-    if !reduced_attributes.is_empty() {
-        reduced_attributes.sort_unstable();
-        losses.push(RhinoLossCode::WriterObjectAttributesReduced.note(format!(
-            "{} object(s) state a source layer, an instance path, or a name with a null \
-             character, which the written object attributes omit: {}",
-            reduced_attributes.len(),
-            reduced_attributes.join(", ")
-        )));
-    }
+    let layer_records = displays.layers().records()?;
+    losses.extend(displays.into_losses());
     if objects == 0 {
-        losses.push(
-            RhinoLossCode::WriterOutputEmpty.note("the written archive holds no object"),
-        );
+        losses.push(cadmpeg_ir::codec::write::output_empty(
+            "the written archive holds no object",
+        ));
     }
     Ok(WritePlan {
         angular_tolerance,
+        layer_records,
         brep_records,
         points,
         point_groups,
@@ -987,28 +951,10 @@ fn sub_resolution_tolerances(scope: &CadIr) -> Vec<&str> {
         .collect()
 }
 
-fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
-    let Ok(fields) = record.fields() else {
-        return false;
-    };
-    let fields = &fields;
-    json_i64(fields, "archive_index") == Some(0)
-        && json_i64(fields, "linetype_index") == Some(-1)
-        && json_i64(fields, "material_index") == Some(-1)
-        && json_str(fields, "name") == Some("Default")
-        && json_bool(fields, "visible") == Some(true)
-        && json_bool(fields, "locked") == Some(false)
-        && json_array_empty(fields, "rendering_materials")
-        && json_array_empty_or_missing(fields, "per_viewport_settings")
-}
-
-fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
-    let Ok(fields) = record.fields() else {
-        return false;
-    };
-    let fields = &fields;
-    json_i64(fields, "layer_index") == Some(0)
-        && json_i64(fields, "material_index") == Some(-1)
+/// Whether an object presentation record states only what the written object
+/// attributes state, its layer aside.
+fn default_native_presentation(fields: &NativeFields) -> bool {
+    json_i64(fields, "material_index") == Some(-1)
         && json_i64(fields, "linetype_index") == Some(-1)
         && json_i64(fields, "hatch_pattern_index") == Some(-1)
         && json_i64(fields, "object_mode") == Some(0)
@@ -1882,7 +1828,8 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             || cadmpeg_core::convert::f32_from_f64(n.z).is_none()
     }) {
         return Err(CodecError::NotImplemented(format!(
-            "mesh {} values exceed Rhino's native finite range",
+            "mesh {} has a vertex or normal coordinate outside the 32-bit float range of the \
+             3DM mesh vertex array",
             mesh.id
         )));
     }
@@ -1923,6 +1870,7 @@ struct PointGroup {
     name: Option<String>,
     color: Option<cadmpeg_ir::topology::Color>,
     visible: Option<bool>,
+    layer: i32,
 }
 
 /// Why a body of wire edges is omitted while its edge curves are written.
@@ -1939,16 +1887,15 @@ struct FreeVertexClaims {
     points: BTreeSet<String>,
 }
 
-/// Admits one free-vertex body of `ir` as a point or point-cloud object, with
-/// whether some stated attribute is not written.
+/// The points of one free-vertex body of `ir`, written as a point or
+/// point-cloud object.
 ///
 /// The body's records join `claimed` only when the body is admitted.
 fn free_vertex_group(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
     claimed: &mut FreeVertexClaims,
-    written_layers: &BTreeSet<String>,
-) -> Result<(PointGroup, bool), CodecError> {
+) -> Result<Vec<cadmpeg_ir::math::Point3>, CodecError> {
     let geometry = &ir.geometry;
     if geometry.body_regions(&body.id).count() != 1 || body.transform.is_some() {
         return Err(CodecError::NotImplemented(format!(
@@ -2036,23 +1983,7 @@ fn free_vertex_group(
     claimed.shells.insert(shell.id.as_str().to_owned());
     claimed.vertices.extend(vertices);
     claimed.points.extend(points);
-    let (display, reduced) = ObjectDisplay::admit(
-        body.name.as_deref(),
-        body.color,
-        body.visible,
-        None,
-        written_layers,
-    );
-    Ok((
-        PointGroup {
-            points: group,
-            identity: body.id.as_str().to_owned(),
-            name: display.name.map(str::to_owned),
-            color: display.color,
-            visible: display.visible,
-        },
-        reduced,
-    ))
+    Ok(group)
 }
 
 fn check_frame(
@@ -2706,22 +2637,21 @@ fn attributed_object_record(
         class_uuid,
         payload,
         None,
-        Some(object_attributes_payload(
-            identity,
-            display.name,
-            display.color,
-            display.visible,
-        )?),
+        Some(object_attributes_payload(identity, display)?),
     )
 }
 
-fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, CodecError> {
+fn mesh_object_record(
+    payload: &MeshPayload,
+    identity: &str,
+    display: ObjectDisplay<'_>,
+) -> Result<Vec<u8>, CodecError> {
     framed_object_record(
         0x20,
         MESH_CLASS,
         &payload.body,
         Some(&payload.direct),
-        Some(object_attributes_payload(identity, None, None, None)?),
+        Some(object_attributes_payload(identity, display)?),
     )
 }
 
@@ -2735,12 +2665,7 @@ fn brep_object_record(
         BREP_CLASS,
         &payload.body,
         Some(&payload.direct),
-        Some(object_attributes_payload(
-            identity,
-            display.name,
-            display.color,
-            display.visible,
-        )?),
+        Some(object_attributes_payload(identity, display)?),
     )
 }
 
@@ -2773,14 +2698,18 @@ fn framed_object_record(
 
 fn object_attributes_payload(
     identity: &str,
-    name: Option<&str>,
-    color: Option<cadmpeg_ir::topology::Color>,
-    visible: Option<bool>,
+    display: ObjectDisplay<'_>,
 ) -> Result<Vec<u8>, CodecError> {
+    let ObjectDisplay {
+        name,
+        color,
+        visible,
+        layer,
+    } = display;
     let digest = Sha256::digest(identity.as_bytes());
     let mut payload = vec![0x20];
     payload.extend(&digest[..16]);
-    payload.extend(0_i32.to_le_bytes());
+    payload.extend(layer.to_le_bytes());
     if let Some(name) = name {
         payload.push(1);
         payload.extend(utf16(name)?);
@@ -2801,28 +2730,6 @@ fn object_attributes_payload(
         payload.extend([13, 1]);
     }
     payload.push(0);
-    Ok(payload)
-}
-
-fn default_layer_payload() -> Result<Vec<u8>, CodecError> {
-    let mut payload = vec![0x15];
-    payload.extend(0_i32.to_le_bytes());
-    payload.extend(0_i32.to_le_bytes());
-    payload.extend((-1_i32).to_le_bytes());
-    payload.extend((-1_i32).to_le_bytes());
-    payload.extend((-1_i32).to_le_bytes());
-    payload.extend([0_u8, 0, 0, 0]);
-    payload.extend(0_i16.to_le_bytes());
-    payload.extend(0_i16.to_le_bytes());
-    payload.extend(0.0_f64.to_le_bytes());
-    payload.extend(1.0_f64.to_le_bytes());
-    payload.extend(utf16("Default")?);
-    payload.push(1);
-    payload.extend((-1_i32).to_le_bytes());
-    payload.extend([0_u8, 0, 0, 0]);
-    payload.extend(0.0_f64.to_le_bytes());
-    payload.push(0);
-    payload.extend(&Sha256::digest(b"cadmpeg:default-layer")[..16]);
     Ok(payload)
 }
 

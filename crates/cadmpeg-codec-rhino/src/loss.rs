@@ -248,9 +248,6 @@ pub(crate) enum RhinoLossCode {
     /// Body kind came from the closed-shell gauge or from an unverified stored
     /// solid flag rather than from a flag the writer stamp vouches for.
     TopologyBodyKindGaugeSubstituted,
-    /// Native records of the source namespace the writer has no encoder for were
-    /// omitted.
-    NativeRecordsOmitted,
     /// A body the archive cannot state was omitted with its topology.
     WriterBodyOmitted,
     /// Topology or pcurves that no written body owns were omitted.
@@ -267,8 +264,12 @@ pub(crate) enum RhinoLossCode {
     WriterToleranceAdjusted,
     /// Object attributes the archive write does not state were omitted.
     WriterObjectAttributesReduced,
-    /// The written archive holds no object.
-    WriterOutputEmpty,
+    /// A layer, or an assignment to it, that a Rhino layer cannot state was
+    /// omitted.
+    WriterLayerReduced,
+    /// An appearance the archive states only as the colour of the objects it
+    /// is bound to.
+    WriterAppearanceReduced,
 }
 
 impl RhinoLossCode {
@@ -320,7 +321,6 @@ impl RhinoLossCode {
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
         Self::TopologyBodyKindGaugeSubstituted,
-        Self::NativeRecordsOmitted,
         Self::WriterBodyOmitted,
         Self::WriterTopologyOmitted,
         Self::WriterCurveOmitted,
@@ -329,7 +329,8 @@ impl RhinoLossCode {
         Self::WriterProceduralConstructionReduced,
         Self::WriterToleranceAdjusted,
         Self::WriterObjectAttributesReduced,
-        Self::WriterOutputEmpty,
+        Self::WriterLayerReduced,
+        Self::WriterAppearanceReduced,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -381,7 +382,6 @@ impl RhinoLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
-            Self::NativeRecordsOmitted => "native.records-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
             Self::WriterTopologyOmitted => "writer.topology-omitted",
             Self::WriterCurveOmitted => "writer.curve-omitted",
@@ -390,7 +390,8 @@ impl RhinoLossCode {
             Self::WriterProceduralConstructionReduced => "writer.procedural-construction-reduced",
             Self::WriterToleranceAdjusted => "writer.tolerance-adjusted",
             Self::WriterObjectAttributesReduced => "writer.object-attributes-reduced",
-            Self::WriterOutputEmpty => "output.empty",
+            Self::WriterLayerReduced => "writer.layer-reduced",
+            Self::WriterAppearanceReduced => "writer.appearance-reduced",
         }
     }
 
@@ -459,7 +460,6 @@ impl RhinoLossCode {
             }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
-            Self::NativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterTopologyOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterCurveOmitted => LossTaxonomy::GeometryNotTransferred,
@@ -468,7 +468,8 @@ impl RhinoLossCode {
             Self::WriterProceduralConstructionReduced => LossTaxonomy::ProceduralReduced,
             Self::WriterToleranceAdjusted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterObjectAttributesReduced => LossTaxonomy::AttributesNotTransferred,
-            Self::WriterOutputEmpty => LossTaxonomy::NoExportableSolids,
+            Self::WriterLayerReduced => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterAppearanceReduced => LossTaxonomy::AppearanceReduced,
         }
     }
 
@@ -568,7 +569,6 @@ mod tests {
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
                 "topology.body-kind-gauge-substituted",
-                "native.records-omitted",
                 "writer.body-omitted",
                 "writer.topology-omitted",
                 "writer.curve-omitted",
@@ -577,7 +577,8 @@ mod tests {
                 "writer.procedural-construction-reduced",
                 "writer.tolerance-adjusted",
                 "writer.object-attributes-reduced",
-                "output.empty",
+                "writer.layer-reduced",
+                "writer.appearance-reduced",
             ]
         );
     }

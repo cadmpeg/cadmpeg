@@ -36,16 +36,41 @@ fn loss_naming(
     code: crate::loss::RhinoLossCode,
     id: &str,
 ) -> String {
+    coded_loss_naming(losses, &code.kind(), id)
+}
+
+/// The message of the `export:native.records-omitted` loss that names `id`.
+fn native_omission_naming(losses: &[cadmpeg_ir::report::loss::LossNote], id: &str) -> String {
+    let kind = losses
+        .iter()
+        .map(|loss| &loss.code)
+        .find(|code| code.namespace() == "export" && code.local_code() == "native.records-omitted")
+        .unwrap_or_else(|| panic!("no export:native.records-omitted loss: {losses:#?}"));
+    coded_loss_naming(losses, kind, id)
+}
+
+/// Whether the losses charge `export:output.empty`.
+fn charges_output_empty(losses: &[cadmpeg_ir::report::loss::LossNote]) -> bool {
+    losses
+        .iter()
+        .any(|loss| loss.code.namespace() == "export" && loss.code.local_code() == "output.empty")
+}
+
+fn coded_loss_naming(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    kind: &cadmpeg_ir::report::loss::LossKind,
+    id: &str,
+) -> String {
     losses
         .iter()
         .find(|loss| {
-            loss.code == code.kind()
+            &loss.code == kind
                 && loss
                     .message
                     .split(|c: char| c.is_whitespace() || c == ',' || c == ';')
                     .any(|token| token.trim_end_matches(':') == id)
         })
-        .unwrap_or_else(|| panic!("no {code:?} loss names {id}: {losses:#?}"))
+        .unwrap_or_else(|| panic!("no {kind:?} loss names {id}: {losses:#?}"))
         .message
         .clone()
 }
@@ -65,6 +90,7 @@ mod encoding;
 mod free_geometry;
 mod model;
 mod nurbs;
+mod layers;
 mod omissions;
 mod planar;
 mod targets;

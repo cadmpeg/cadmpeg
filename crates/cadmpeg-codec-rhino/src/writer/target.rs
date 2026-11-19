@@ -142,8 +142,12 @@ pub(crate) fn plan(
 /// each record it omits, and `WriterSupportGeometryWithheld` accounts for
 /// withheld support records. Procedural surfaces and curves are `Dropped`:
 /// their carriers are written from the solved cache and
-/// `WriterProceduralConstructionReduced` names each construction. The wrapper
-/// charges the loss of each `Omitted` arena.
+/// `WriterProceduralConstructionReduced` names each construction. Presentation
+/// layers and appearance bindings are `Reported`: each layer is a layer record
+/// and each binding a written object's colour, and `WriterLayerReduced` and
+/// `WriterAppearanceReduced` name the rest. Appearances are `Dropped`: the
+/// archive states them only as object colours, which `WriterAppearanceReduced`
+/// names. The wrapper charges the loss of each `Omitted` arena.
 const COVERAGE: ArenaDispositions = {
     use ArenaDisposition::{Dropped, Ignored, Omitted, Reported};
     ArenaDispositions {
@@ -185,11 +189,11 @@ const COVERAGE: ArenaDispositions = {
         tessellations: Reported,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Omitted,
-        appearance_bindings: Omitted,
+        appearances: Dropped,
+        appearance_bindings: Reported,
         attributes: Omitted,
         pmi: Omitted,
-        presentation_layers: Omitted,
+        presentation_layers: Reported,
         physical_materials: Omitted,
         mass_properties: Omitted,
         rigid_bodies: Omitted,
