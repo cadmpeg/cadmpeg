@@ -446,6 +446,9 @@ pub(crate) enum F3dLossCode {
     /// A rectangular-pattern direction record of distance type 10 without a
     /// readable distribution block is read as a seed-to-final-instance extent.
     FeatureRectangularPatternDistanceFormAssumed,
+    /// The total extent of a symmetric rectangular-pattern direction is read
+    /// as the span from the first to the last instance.
+    FeatureRectangularPatternSymmetricExtentAssumed,
     /// A linear rectangular-pattern direction has no admitted direction
     /// record and no generated-instance run.
     FeatureRectangularPatternDirectionUnresolved,
@@ -1455,6 +1458,7 @@ impl F3dLossCode {
         Self::FeatureCircularPatternDistributionAssumed,
         Self::FeaturePatternPayloadSeedUnconfirmed,
         Self::FeatureRectangularPatternDistanceFormAssumed,
+        Self::FeatureRectangularPatternSymmetricExtentAssumed,
         Self::FeatureRectangularPatternDirectionUnresolved,
         Self::FeatureRectangularPatternDirectionRecordDisagrees,
         Self::FeatureOutputStateChainUnbound,
@@ -2195,6 +2199,9 @@ impl F3dLossCode {
             }
             Self::FeatureRectangularPatternDistanceFormAssumed => {
                 "feature.rectangular-pattern-distance-form-assumed"
+            }
+            Self::FeatureRectangularPatternSymmetricExtentAssumed => {
+                "feature.rectangular-pattern-symmetric-extent-assumed"
             }
             Self::FeatureRectangularPatternDirectionUnresolved => {
                 "feature.rectangular-pattern-direction-unresolved"
@@ -3214,6 +3221,7 @@ impl F3dLossCode {
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
+            | Self::FeatureRectangularPatternSymmetricExtentAssumed
             | Self::FeatureRectangularPatternDirectionUnresolved
             | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
@@ -3881,6 +3889,7 @@ impl F3dLossCode {
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
+            | Self::FeatureRectangularPatternSymmetricExtentAssumed
             | Self::FeatureRectangularPatternDirectionUnresolved
             | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
@@ -4757,6 +4766,7 @@ mod tests {
                 "feature.circular-pattern-distribution-assumed",
                 "feature.pattern-payload-seed-unconfirmed",
                 "feature.rectangular-pattern-distance-form-assumed",
+                "feature.rectangular-pattern-symmetric-extent-assumed",
                 "feature.rectangular-pattern-direction-unresolved",
                 "feature.rectangular-pattern-direction-record-disagrees",
                 "feature.output-state-chain-unbound",

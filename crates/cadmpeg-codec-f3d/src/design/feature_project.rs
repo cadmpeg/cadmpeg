@@ -7652,11 +7652,16 @@ fn project_rectangular_pattern_scalars(
         |distribution| !distribution.total_extent.value,
     );
     let symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
-    if symmetric {
-        // The extent of a symmetric direction has no settled measurement.
-        if !adjacent || construction.u_extent() == 0.0 {
-            return None;
-        }
+    if symmetric && construction.u_extent() == 0.0 {
+        return None;
+    }
+    if symmetric && !adjacent {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricExtentAssumed.note(format!(
+                "RectangularPattern scope {} reads the total extent of its symmetric direction one as the span from the first to the last instance.",
+                scope.id
+            )),
+        );
     }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),

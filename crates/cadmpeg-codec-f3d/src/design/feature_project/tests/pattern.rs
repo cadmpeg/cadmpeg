@@ -1059,9 +1059,12 @@ fn rectangular_pattern_carries_a_symmetric_spacing_direction() {
         panic!("one placement loss");
     };
     assert!(!loss.message.contains("symmetric"));
+}
 
+#[test]
+fn a_symmetric_extent_direction_keeps_its_count_and_charges_the_extent_reading() {
     let mut losses = Vec::new();
-    assert!(project_rectangular_pattern_scalars(
+    let symmetric = project_rectangular_pattern_scalars(
         &coincident_direction_scope(true, true),
         &[],
         &[],
@@ -1069,8 +1072,37 @@ fn rectangular_pattern_carries_a_symmetric_spacing_direction() {
         &[],
         &mut losses,
     )
-    .is_none());
-    assert!(losses.is_empty());
+    .expect("symmetric extent direction");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &symmetric else {
+        panic!("rectangular pattern definition");
+    };
+    assert!(matches!(
+        pattern.definition(),
+        PatternTransform::Linear {
+            symmetric: true,
+            ..
+        }
+    ));
+    let (spacing, count) = single_direction(symmetric);
+    assert!((spacing - 30.0).abs() < EPS_SPACING);
+    assert_eq!(count, 3);
+    let assumed = crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricExtentAssumed.kind();
+    assert_eq!(
+        losses.iter().filter(|loss| loss.code == assumed).count(),
+        1,
+        "{losses:?}"
+    );
+    let mut losses = Vec::new();
+    project_rectangular_pattern_scalars(
+        &coincident_direction_scope(true, false),
+        &[],
+        &[],
+        &[],
+        &[],
+        &mut losses,
+    )
+    .expect("symmetric spacing direction");
+    assert!(losses.iter().all(|loss| loss.code != assumed));
 }
 
 #[test]
@@ -1161,6 +1193,7 @@ fn a_symmetric_extent_pattern_charges_a_disagreeing_payload_seed() {
         let mut losses = Vec::new();
         let definition =
             project_rectangular_pattern_scalars(scope, groups, &[], &[], &[], &mut losses);
+        losses.retain(|loss| loss.code == charged);
         (definition, losses)
     };
     let body_group = [group(10, 30, DesignOperandRole::BODIES_B)];
@@ -1169,11 +1202,10 @@ fn a_symmetric_extent_pattern_charges_a_disagreeing_payload_seed() {
         &coincident_direction_scope_with_seed_words(true, true, 0, 0, 0),
         &body_group,
     );
-    assert!(definition.is_none());
+    assert!(definition.is_some());
     let [loss] = losses.as_slice() else {
         panic!("one seed loss: {losses:?}");
     };
-    assert_eq!(loss.code, charged);
     assert!(loss
         .message
         .contains("seed kind 0 at byte 150 where its seeds are bodies"));
@@ -1183,22 +1215,15 @@ fn a_symmetric_extent_pattern_charges_a_disagreeing_payload_seed() {
             &coincident_direction_scope_with_seed_words(true, true, seed_kind, bodies, untyped),
             &[],
         );
-        assert!(definition.is_none());
-        assert_eq!(
-            losses
-                .iter()
-                .map(|loss| loss.code.clone())
-                .collect::<Vec<_>>(),
-            [charged.clone()],
-            "{seed_kind} {bodies} {untyped}"
-        );
+        assert!(definition.is_some());
+        assert_eq!(losses.len(), 1, "{seed_kind} {bodies} {untyped}");
     }
     // The agreeing body seed charges nothing.
     let (definition, losses) = project(
         &coincident_direction_scope_with_seed_words(true, true, 2, 0, 0),
         &body_group,
     );
-    assert!(definition.is_none());
+    assert!(definition.is_some());
     assert!(losses.is_empty());
 }
 
