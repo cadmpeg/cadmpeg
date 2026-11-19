@@ -138,7 +138,7 @@ fn sketch_feature(key: &str, ordinal: u64) -> LegacyFeature {
     )
 }
 
-fn legacy_sketch(key: &str, placement: serde_json::Value) -> cadmpeg_ir::sketches::Sketch {
+fn legacy_sketch(key: &str, placement: &serde_json::Value) -> cadmpeg_ir::sketches::Sketch {
     serde_json::from_value(serde_json::json!({
         "id": format!("creo:model:sketch#{key}"),
         "native_ref": format!("creo:featdefs:sketch#{key}"),
@@ -164,7 +164,7 @@ fn a_sketch_whose_frame_is_unread_states_no_sketch_and_charges_a_loss() {
     ir.model.sketches = vec![
         legacy_sketch(
             "1",
-            serde_json::json!({
+            &serde_json::json!({
                 "kind": "resolved",
                 "frame": {
                     "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -173,7 +173,7 @@ fn a_sketch_whose_frame_is_unread_states_no_sketch_and_charges_a_loss() {
                 },
             }),
         ),
-        legacy_sketch("2", serde_json::json!({"kind": "unresolved"})),
+        legacy_sketch("2", &serde_json::json!({"kind": "unresolved"})),
     ];
     let model = ir.model.clone();
     let scan = crate::test_support::empty_container_scan();
