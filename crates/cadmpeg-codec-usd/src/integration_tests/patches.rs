@@ -505,12 +505,18 @@ fn without_brep_array(text: &str) -> String {
     format!("{}{}", &text[..start], &text[end..])
 }
 
+/// A trimmed face is written as a trimmed patch when its body has no
+/// `BrepArray` prim: here an edge curve with no geometry refuses the prim.
 #[test]
 fn a_trimmed_patch_round_trips_through_its_trim_curves() {
     let first = decode(&layer(&format!("{PLANE}{}", square_with_hole(true))));
-    let (text, _) = encode(first.ir());
+    let mut ir = first.ir().clone();
+    ir.geometry.curves[0].geometry =
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let (text, _) = encode(&ir);
+    assert!(!text.contains("def BrepArray"), "{text}");
     assert!(text.contains("trimCurve:points"), "{text}");
-    let second = decode(&without_brep_array(&text));
+    let second = decode(&text);
     assert_square_with_hole(&second, ROUNDED);
     assert!(!has_loss(&second, UsdLossCode::NurbsTrimNotTransferred));
     assert!(!has_loss(&second, UsdLossCode::NurbsTrimRegionAssumed));

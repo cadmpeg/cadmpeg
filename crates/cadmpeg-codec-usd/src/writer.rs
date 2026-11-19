@@ -1002,7 +1002,7 @@ impl<'ir> Writer<'ir> {
                     Some(nurbs)
                         if face.loops.is_empty()
                             || self.whole_domain(face, nurbs)
-                            || self.trim_loops(face).is_some() =>
+                            || (!exact && self.trim_loops(face).is_some()) =>
                     {
                         prims.push(Geometry::Patch(face, nurbs));
                     }

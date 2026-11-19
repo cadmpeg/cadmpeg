@@ -40,8 +40,8 @@ that the scene options of the write (`EncodeInput::scene`) select, with one
 root prim per root occurrence. Each occurrence becomes an `Xform` prim with a `matrix4d` placement, and a
 definition placed more than once is written once under the abstract
 `Prototypes` prim. Tessellations become `Mesh` prims, faces on NURBS surfaces
-of untessellated bodies become `NurbsPatch` prims with their loops as trim
-curves, wire edges and free curves
+of untessellated bodies become `NurbsPatch` prims (a body with no `BrepArray`
+prim writes its trimmed faces with their loops as trim curves), wire edges and free curves
 become `NurbsCurves` prims, and appearances become `UsdPreviewSurface`
 materials. What the layer cannot carry is reported as a `usd/export.*` loss.
 
