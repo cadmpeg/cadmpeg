@@ -152,8 +152,11 @@ pub(crate) fn reversed(nodes: &[Node]) -> Vec<Node> {
 pub(crate) fn regions(rings: Vec<Ring>, frame: &Frame) -> Result<Vec<Region>, Refusal> {
     let mut closed = Vec::new();
     let mut wraps: Vec<(usize, Ring)> = Vec::new();
+    // A loop whose samples run out and back along one chord bounds no area.
+    let mut flat = false;
     for ring in rings {
         if ring.nodes.len() < 2 {
+            flat = true;
             continue;
         }
         match kind(&ring, frame)? {
@@ -171,6 +174,7 @@ pub(crate) fn regions(rings: Vec<Ring>, frame: &Frame) -> Result<Vec<Region>, Re
     };
     for mut nodes in closed {
         if nodes.len() < 3 {
+            flat = true;
             continue;
         }
         // Twice the signed area, as `signed_area` returns it.
@@ -194,6 +198,9 @@ pub(crate) fn regions(rings: Vec<Ring>, frame: &Frame) -> Result<Vec<Region>, Re
         }
         let rings = wraps.into_iter().map(|(_, ring)| ring).collect();
         outers.extend(strips(rings, axis, frame, &holes)?);
+    }
+    if outers.is_empty() && holes.is_empty() && flat {
+        return Ok(Vec::new());
     }
     if outers.is_empty() {
         let Some(domain) = frame.domain else {

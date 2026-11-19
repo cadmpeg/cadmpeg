@@ -152,3 +152,12 @@ fn a_hole_two_periods_from_its_strip_lies_in_the_strip() {
     }
     assert!((hole[0].uv[0] - (2.0 * TAU - 2.5)).abs() < 1e-12);
 }
+
+#[test]
+fn a_loop_out_and_back_along_one_chord_bounds_no_region() {
+    let ring = Ring {
+        nodes: nodes(&[[0.001, 1.0], [0.0, 0.0]]),
+        closure: [0.0, 0.0],
+    };
+    assert!(regions(vec![ring], &cylinder()).unwrap().is_empty());
+}
