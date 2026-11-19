@@ -34,6 +34,7 @@ mod physics;
 mod pmi;
 mod point_clouds;
 mod presentation;
+mod process;
 mod products;
 mod referential_integrity;
 mod semantic_annotations;
@@ -166,6 +167,7 @@ fn validate_model_with_index<'ir>(
     check_typed_references(ctx, ir, ids, &mut findings)?;
     history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
     design::check_design(ctx, ir, ids, &mut findings)?;
+    process::check_process(ctx, ir, ids, &mut findings)?;
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),

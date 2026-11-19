@@ -28,7 +28,7 @@ use crate::report::Severity;
 
 use super::index::{DesignIndex, StateAt};
 use super::names::{derived_kinds, nested};
-use super::records::{MemberKey, PositionKey};
+use super::records::{DesignRecords, MemberKey, PositionKey};
 use super::states::{Extent, States};
 use super::walk::{PicksView, SelectionView, TermView};
 use super::{native_text, record_finding, Held, Holder};
@@ -105,7 +105,7 @@ pub(super) fn check<'a>(
                     format_args!("an instance-body path states a step configuration"),
                 );
             }
-            check_path(index, None, path, &moved, at, findings);
+            check_path(&index.records, None, path, &moved, at, findings);
         }
     }
     Ok(())
@@ -341,7 +341,7 @@ fn check_pick<'a>(
     check_principal(index, site, pick, findings);
     match &pick.context {
         Some(PickContext::Occurrence(path)) => check_path(
-            index,
+            &index.records,
             site.owner.map(ProductDefinitionId::as_str),
             path,
             moved,
@@ -359,7 +359,7 @@ fn check_pick<'a>(
             check_definition(index, assembly, at, findings);
             for path in own.iter().chain(target) {
                 check_path(
-                    index,
+                    &index.records,
                     Some(assembly.definition.as_str()),
                     path,
                     moved,
@@ -677,8 +677,8 @@ fn check_datum_part(index: &DesignIndex<'_>, pick: &Picked, at: &str, findings: 
     }
 }
 
-/// `Principal.container` names an ordered container of the pick's
-/// definition.
+/// `Principal.container` names an ordered container of the scope that spans
+/// the definition the pick resolves in (§5.1, §5.2).
 fn check_principal(
     index: &DesignIndex<'_>,
     site: Site<'_>,
@@ -698,9 +698,11 @@ fn check_principal(
     let ordered = matches!(record, crate::design::container::Container::Ordered { .. });
     let definition = resolving_definition(index, site.owner, pick);
     let scope = index.scope_of(MemberKey::Container(container.as_str()));
-    let elsewhere = matches!((definition, scope), (Some(definition), Some(scope)) if definition != scope.as_str());
+    let elsewhere = matches!((definition, scope), (Some(definition), Some(scope))
+        if definition != scope.as_str()
+            && !index.records.spanned_definitions(scope.as_str()).contains(definition));
     if !ordered || elsewhere {
-        super::error(findings, site.holder.record(), format_args!("a Principal pick names container {}, which is not an ordered container of its definition", container.as_str()),
+        super::error(findings, site.holder.record(), format_args!("a Principal pick names container {}, which is not an ordered container of the scope that spans its definition", container.as_str()),
         );
     }
 }
@@ -729,7 +731,7 @@ fn check_definition(
 
 /// The occurrences whose owner some state restates, whose membership the
 /// current listing does not decide.
-fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
+pub(in crate::validate) fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
     ir.design
         .evaluations
         .iter()
@@ -743,8 +745,8 @@ fn moved_occurrences(ir: &CadIr) -> BTreeSet<&str> {
 /// `Occurrence` step names an occurrence placed in the previous step's
 /// prototype, or in the root for the first step; every step after a
 /// `Native` step is `Native`.
-fn check_path(
-    index: &DesignIndex<'_>,
+pub(in crate::validate) fn check_path(
+    records: &DesignRecords<'_>,
     root: Option<&str>,
     path: &OccurrencePath,
     moved: &BTreeSet<&str>,
@@ -771,7 +773,7 @@ fn check_path(
             }
             StepRef::Occurrence(occurrence) => occurrence,
         };
-        let Some(record_) = index.records.occurrences.get(occurrence.as_str()) else {
+        let Some(record_) = records.occurrences.get(occurrence.as_str()) else {
             record(format_args!(
                 "an occurrence path names occurrence {}, which does not exist",
                 occurrence.as_str()
@@ -779,9 +781,8 @@ fn check_path(
             return;
         };
         if let (Some(expected), false) = (previous, moved.contains(occurrence.as_str())) {
-            let placed_in =
-                products::owner(&index.records.ir.model.product_definitions, occurrence)
-                    .map(|owner| owner.id.as_str());
+            let placed_in = products::owner(&records.ir.model.product_definitions, occurrence)
+                .map(|owner| owner.id.as_str());
             if placed_in.is_some_and(|placed_in| placed_in != expected) {
                 record(format_args!(
                     "occurrence path step {} is not an occurrence of the previous step's prototype",
