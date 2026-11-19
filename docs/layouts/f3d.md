@@ -57,6 +57,7 @@ Records `marked_reference_box_prefix`, `prefixed_marked_reference_box_prefix`, `
 
 | Type | Bytes | Endianness | Meaning |
 | ---- | ----: | ---------- | ------- |
+| `base_feature_inline_typed_body_reference` | 51 | little | Marker, u64 record index, LP-ASCII Body type GUID of 36 bytes, and two zero bytes. |
 | `component_body_membership_count` | 4 | little | The u32 count precedes the terminal Body-reference list. |
 | `component_body_membership_reference` | 51 | little | A present same-segment reference with a nonzero u64 target, a 36-byte ASCII type GUID, and two trailing zero bytes. |
 | `component_body_membership_local_reference` | 11 | little | A present untyped same-segment reference with a nonzero u64 target and two zero bytes. |
@@ -494,7 +495,7 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `reserved_0` | `u8` | little | spec | The compact owned expression trailer is five bytes · value `0` |
+| 0 | 1 | `opaque_flag` | `u8` | little | spec | The compact owned expression trailer is five bytes |
 | 1 | 1 | `driven` | `u8` | little | spec | The compact owned expression trailer is five bytes |
 | 2 | 3 | `zero_run_3` | `bytes[3]` | little | spec | The compact owned expression trailer is five bytes |
 
@@ -4848,6 +4849,77 @@ Unstated regions:
 - `11..45` (34 B): Bytes 11 through 44 are zero.
 - `177..389` (212 B): The generation-specific placement tail is retained as a named opaque carrier.
 
+## `joint_origin_scope_carrier_separation`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to the paired JointOrigin scope header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `paired_header` | `bytes[11]` | little | spec | Its indexed header starts 30 bytes after the paired scope header |
+
+Unstated regions:
+
+- `11..30` (19 B): The paired scope suffix precedes the carrier header.
+
+## `joint_origin_direct_carrier_369`
+
+Spec §3.1 · layout: byte offsets · size: 369 B
+
+Offsets are relative to the primary placement-carrier header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 34 | `zero_prefix` | `bytes[34]` | little | spec | carriers store 34 zero bytes |
+| 45 | 11 | `construction_reference` | `bytes[11]` | little | spec | a marked construction-record reference at offset 45 |
+| 56 | 4 | `zero_after_reference` | `bytes[4]` | little | spec | four zero bytes after that reference · value `[0, 0, 0, 0]` |
+| 60 | 128 | `matrix` | `f64[16]` | little | spec | The matrix columns give the axes and the origin in centimetres |
+| 358 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The final eleven bytes of the carrier are a marked scope backlink |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header.
+- `188..358` (170 B): Placement carrier payload before its scope backlink.
+
+## `joint_origin_direct_carrier_391`
+
+Spec §3.1 · layout: byte offsets · size: 391 B
+
+Offsets are relative to the primary placement-carrier header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 34 | `zero_prefix` | `bytes[34]` | little | spec | carriers store 34 zero bytes |
+| 45 | 11 | `construction_reference` | `bytes[11]` | little | spec | a marked construction-record reference at offset 45 |
+| 56 | 4 | `zero_after_reference` | `bytes[4]` | little | spec | four zero bytes after that reference · value `[0, 0, 0, 0]` |
+| 60 | 128 | `matrix` | `f64[16]` | little | spec | The matrix columns give the axes and the origin in centimetres |
+| 380 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The final eleven bytes of the carrier are a marked scope backlink |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header.
+- `188..380` (192 B): Placement carrier payload before its scope backlink.
+
+## `joint_origin_direct_carrier_412`
+
+Spec §3.1 · layout: byte offsets · size: 412 B
+
+Offsets are relative to the primary placement-carrier header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 35 | `zero_prefix` | `bytes[35]` | little | spec | The 412-byte carrier stores 35 zero bytes |
+| 46 | 11 | `construction_reference` | `bytes[11]` | little | spec | a marked construction-record reference at offset 46 |
+| 57 | 4 | `reference_suffix` | `bytes[4]` | little | spec | the bytes `00 00 01 00` after that reference · value `[0, 0, 1, 0]` |
+| 61 | 128 | `matrix` | `f64[16]` | little | spec | The matrix columns give the axes and the origin in centimetres |
+| 401 | 11 | `scope_backlink` | `bytes[11]` | little | spec | The final eleven bytes of the carrier are a marked scope backlink |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed placement header.
+- `189..401` (212 B): Placement carrier payload before its scope backlink.
+
 ## `work_plane_legacy_321_opaque_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 321 B
@@ -6700,6 +6772,18 @@ Spec §3.1 · layout: byte offsets · size: 51 B
 | 25 | 11 | `transform_reference` | `bytes[11]` | little | spec | the marked transform reference is at offset 25 |
 | 36 | 4 | `body_count` | `u32` | little | spec | `N` is at offset 36 |
 | 40 | 11 | `first_body_group` | `bytes[11]` | little | spec | the `N` marked group references start at offset 40 |
+
+## `legacy_extrude_group_tail_marker`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The empty group-tail record is its indexed header and eighteen zero bytes |
+| 11 | 18 | `zero_payload` | `bytes[18]` | little | spec | The empty group-tail record is its indexed header and eighteen zero bytes |
 
 ## `legacy_body_group_frame_123`
 
@@ -10082,6 +10166,66 @@ Parsed by:
 | 281 | 4 | `repeated_owner_word` | `u32` | little | spec | The indexed record named by the first Align prefix reference is its constructor |
 | 285 | 8 | `repeated_owner_padding` | `bytes[8]` | little | spec | The indexed record named by the first Align prefix reference is its constructor · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 
+## `sketch_null_explicit_member_head`
+
+Spec §3.1 · layout: byte offsets · size: 152 B
+
+Offsets are relative to the indexed head-placement header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 11 | `zero_run` | `bytes[11]` | little | spec | eleven zero bytes, the row-major 4×4 f64 local-to-model placement at offset 22 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 22 | 128 | `transform` | `f64[16]` | little | spec | the row-major 4×4 f64 local-to-model placement at offset 22 |
+| 150 | 1 | `padding` | `u8` | little | spec | then `00` plus either a one-byte null closing reference (152 bytes) · value `0` |
+| 151 | 1 | `closing_reference` | `u8` | little | spec | one-byte null closing reference · value `0` |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the placement fields.
+
+## `sketch_explicit_member_head`
+
+Spec §3.1 · layout: byte offsets · size: 162 B
+
+Offsets are relative to the indexed head-placement header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 11 | `zero_run` | `bytes[11]` | little | spec | eleven zero bytes, the row-major 4×4 f64 local-to-model placement at offset 22 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 22 | 128 | `transform` | `f64[16]` | little | spec | the row-major 4×4 f64 local-to-model placement at offset 22 |
+| 150 | 1 | `padding` | `u8` | little | spec | a marked closing reference that starts with `01` (162 bytes, or 202 bytes with an inline type GUID) · value `0` |
+| 151 | 11 | `closing_reference` | `bytes[11]` | little | spec | a marked closing reference that starts with `01` (162 bytes, or 202 bytes with an inline type GUID) |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the placement fields.
+
+## `sketch_typed_explicit_member_head`
+
+Spec §3.1 · layout: byte offsets · size: 202 B
+
+Offsets are relative to the indexed head-placement header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 11 | `zero_run` | `bytes[11]` | little | spec | eleven zero bytes, the row-major 4×4 f64 local-to-model placement at offset 22 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 22 | 128 | `transform` | `f64[16]` | little | spec | the row-major 4×4 f64 local-to-model placement at offset 22 |
+| 150 | 1 | `padding` | `u8` | little | spec | a marked closing reference that starts with `01` (162 bytes, or 202 bytes with an inline type GUID) · value `0` |
+| 151 | 51 | `closing_reference` | `bytes[51]` | little | spec | a marked closing reference that starts with `01` (162 bytes, or 202 bytes with an inline type GUID) |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the placement fields.
+
 ## `sketch_typed_compact_member_head`
 
 Spec §3.1 · layout: byte offsets · size: 74 B
@@ -12045,6 +12189,22 @@ Unstated regions:
 
 - `0..56` (56 B): Shared identity-locator fields.
 - `60..62` (2 B): Shared identity-locator tail.
+
+## `captured_position_v4_path_wrapper`
+
+Spec §Captured component positions · layout: byte offsets · size: 37 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_operand_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 1 | `marker` | `u8` | little | spec | marker zero at offset 21 · value `0` |
+
+Unstated regions:
+
+- `0..21` (21 B): Shared indexed header and zero run.
+- `22..37` (15 B): Shared path count and marked path reference.
 
 ## `unmarked_sphere_local_frame`
 

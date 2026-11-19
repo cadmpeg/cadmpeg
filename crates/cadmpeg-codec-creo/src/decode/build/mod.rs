@@ -3,6 +3,7 @@
 
 mod arenas;
 mod coverage;
+mod design_v11;
 pub(super) mod ir;
 pub(super) mod ir_features;
 mod ir_geometry;

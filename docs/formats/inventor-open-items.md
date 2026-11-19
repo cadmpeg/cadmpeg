@@ -393,6 +393,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Join the references and selection point to the selected line and its orientation. Check that direction, the instance counts, and the spacing reproduce the stored state after the pattern in at least three distinct designs.
 
+### DE-25. Extrusion draft sense and neutral plane
+
+**Question.** Which angle sign narrows the outer boundary, and which plane keeps the profile cross-section for each drafted extent form?
+
+**Known.** Section 13 defines slot 5 as the forward taper angle and slot 28 as the opposite-side taper angle. Both parameters use radians. The v10 operation retains these values in its side drafts. The v11 operation retains a drafted extrusion as native operands and reports `feature.design-operation-native`.
+
+**Need.** Controlled positive and negative taper settings, with profile and result cross-sections, for profile-plane and from-plane origins and each extent form.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

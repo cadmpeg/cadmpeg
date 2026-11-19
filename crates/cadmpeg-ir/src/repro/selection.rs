@@ -290,7 +290,7 @@ pub fn select(
             }
         }
     }
-    serde_json::from_value(value)
+    serde_json::from_str(&value.to_string())
         .map(Some)
         .map_err(CodecError::malformed)
 }
