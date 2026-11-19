@@ -213,6 +213,8 @@ struct Unwritten {
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
     untrimmed_breps: Vec<String>,
+    /// Bodies whose `BrepArray` prim leaves out the poles of ring loops.
+    pole_breps: Vec<String>,
     curves: usize,
     channels: usize,
     reduced_appearances: BTreeSet<String>,
@@ -1843,6 +1845,14 @@ impl<'ir> Writer<'ir> {
                  exact image on its NURBS surface: {}",
                 unwritten.untrimmed_breps.len(),
                 unwritten.untrimmed_breps.join(", ")
+            )));
+        }
+        if !unwritten.pole_breps.is_empty() {
+            losses.push(UsdLossCode::ExportBrepPoleNotWritten.note(format!(
+                "the BrepArray prims of {} bodies leave out the poles of their edge loops, \
+                 which an edgeuse ring cannot hold: {}",
+                unwritten.pole_breps.len(),
+                unwritten.pole_breps.join(", ")
             )));
         }
         if unwritten.curves > 0 {

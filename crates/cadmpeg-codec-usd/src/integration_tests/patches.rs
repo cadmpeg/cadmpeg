@@ -286,8 +286,8 @@ fn a_hole_authored_counterclockwise_is_a_hole_by_its_nesting() {
     assert!(has_loss(&result, UsdLossCode::NurbsTrimRegionAssumed));
 }
 
-#[test]
-fn a_patch_closed_in_u_shares_its_seam_edge() {
+/// A rational cylinder of radius 1 and height 2, closed in u.
+fn closed_in_u() -> String {
     let h = std::f64::consts::FRAC_1_SQRT_2;
     let circle = [
         (1.0, 0.0, 1.0),
@@ -308,11 +308,16 @@ fn a_patch_closed_in_u_shares_its_seam_edge() {
             weights.push(format!("{w}"));
         }
     }
-    let result = decode(&layer(&format!(
+    layer(&format!(
         "    int uVertexCount = 9\n    int vVertexCount = 2\n    int uOrder = 3\n    int vOrder = 2\n    double[] uKnots = [0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4]\n    double[] vKnots = [0, 0, 1, 1]\n    double[] pointWeights = [{}]\n    point3f[] points = [{}]\n",
         weights.join(", "),
         points.join(", ")
-    )));
+    ))
+}
+
+#[test]
+fn a_patch_closed_in_u_shares_its_seam_edge() {
+    let result = decode(&closed_in_u());
     assert_valid(&result);
     let ir = result.ir();
     assert_eq!(rings(ir), vec![(4, 0)]);
@@ -341,20 +346,54 @@ fn a_patch_closed_in_u_shares_its_seam_edge() {
     }
 }
 
-#[test]
-fn a_side_that_meets_in_one_point_is_a_pole_of_the_loop() {
-    let apex = [0.0, 0.0, 1.0];
-    let rim = [[1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]];
+const APEX: [f64; 3] = [0.0, 0.0, 1.0];
+const RIM: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]];
+
+/// A patch whose side `u = 0` meets in `APEX` and whose side `u = 1` is the
+/// quadratic `RIM`.
+fn pole_patch() -> String {
     let mut points = Vec::new();
-    for corner in rim {
-        for point in [apex, corner] {
+    for corner in RIM {
+        for point in [APEX, corner] {
             points.push(format!("({}, {}, {})", point[0], point[1], point[2]));
         }
     }
-    let result = decode(&layer(&format!(
+    layer(&format!(
         "    int uVertexCount = 2\n    int vVertexCount = 3\n    int uOrder = 2\n    int vOrder = 3\n    double[] uKnots = [0, 0, 1, 1]\n    double[] vKnots = [0, 0, 0, 1, 1, 1]\n    point3f[] points = [{}]\n",
         points.join(", ")
-    )));
+    ))
+}
+
+#[test]
+fn trim_sides_along_the_seam_share_one_edge_whatever_their_parameterization() {
+    let band = "    int[] trimCurve:counts = [4]\n    int[] trimCurve:orders = [2, 2, 2, 3]\n    int[] trimCurve:vertexCounts = [2, 2, 2, 3]\n    double[] trimCurve:knots = [0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1]\n    double3[] trimCurve:points = [(0, 0.25, 1), (4, 0.25, 1), (4, 0.25, 1), (4, 0.75, 1), (4, 0.75, 1), (0, 0.75, 1), (0, 0.75, 1), (0, 0.7, 1), (0, 0.25, 1)]\n";
+    let text = closed_in_u().replace("}\n", &format!("{band}}}\n"));
+    let result = decode(&text);
+    assert_valid(&result);
+    assert!(!has_loss(&result, UsdLossCode::NurbsTrimNotTransferred));
+    let ir = result.ir();
+    assert_eq!(rings(ir), vec![(4, 0)]);
+    assert_eq!(
+        ir.geometry.edges.len(),
+        3,
+        "the two seam sides share one edge"
+    );
+    for samples in edge_samples(ir) {
+        let on_circle = samples.iter().all(|p| {
+            (p[0].hypot(p[1]) - 1.0).abs() <= ON_CURVE
+                && [0.5, 1.5].iter().any(|z| (p[2] - z).abs() <= ON_CURVE)
+        });
+        let on_seam = samples.iter().all(|p| {
+            distance([p[0], p[1], 0.0], [1.0, 0.0, 0.0]) <= ON_CURVE && (0.5..=1.5).contains(&p[2])
+        });
+        assert!(on_circle || on_seam, "an edge leaves the band: {samples:?}");
+    }
+}
+
+#[test]
+fn a_side_that_meets_in_one_point_is_a_pole_of_the_loop() {
+    let (apex, rim) = (APEX, RIM);
+    let result = decode(&pole_patch());
     assert_valid(&result);
     let ir = result.ir();
     assert_eq!(rings(ir), vec![(3, 1)]);
@@ -485,4 +524,38 @@ fn an_untrimmed_patch_round_trips_without_trim_curves() {
     let second = decode(&without_brep_array(&text));
     assert_valid(&second);
     assert_eq!(rings(second.ir()), vec![(4, 0)]);
+}
+
+/// The faces, loop rings, and edges of a decoded model, in a stable order.
+fn shape(ir: &CadIr) -> (usize, Vec<(usize, usize)>, usize) {
+    let mut rings = rings(ir);
+    rings.sort_unstable();
+    (ir.geometry.faces.len(), rings, ir.geometry.edges.len())
+}
+
+#[test]
+fn bounded_patches_round_trip_through_a_brep_array_without_their_poles() {
+    for text in [
+        layer(&bicubic("")),
+        layer(&format!("{PLANE}{}", square_with_hole(true))),
+        closed_in_u(),
+        pole_patch(),
+    ] {
+        let first = decode(&text);
+        let (written, report) = encode(first.ir());
+        assert!(written.contains("def BrepArray"), "{written}");
+        let second = decode(&written);
+        assert_valid(&second);
+        let (faces, rings, edges) = shape(first.ir());
+        let poles: usize = rings.iter().map(|(_, poles)| poles).sum();
+        let ringed = rings.iter().map(|(coedges, _)| (*coedges, 0)).collect();
+        assert_eq!(shape(second.ir()), (faces, ringed, edges), "{written}");
+        assert_eq!(
+            report
+                .losses
+                .iter()
+                .any(|loss| loss.code == UsdLossCode::ExportBrepPoleNotWritten.kind()),
+            poles > 0
+        );
+    }
 }

@@ -355,6 +355,15 @@ fn midpoint(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [0, 1, 2].map(|axis| f64::midpoint(a[axis], b[axis]))
 }
 
+fn helper(record: &NurbsCurveRecord<3>) -> Option<Nurbs<3>> {
+    Some(Nurbs {
+        degree: record.order.checked_sub(1)?,
+        knots: record.knots.clone(),
+        points: record.points.clone(),
+        weights: record.weights.clone(),
+    })
+}
+
 fn record<const N: usize>(curve: &Nurbs<N>) -> NurbsCurveRecord<N> {
     NurbsCurveRecord {
         order: curve.degree + 1,
@@ -397,28 +406,31 @@ impl Builder<'_> {
             .all(|point| distance(*point, curve.points[0]) <= self.brep.tolerance)
     }
 
-    /// Whether edge curve `known` runs along `curve` the other way.
+    /// Whether edge curve `known` runs along `curve` the other way: each
+    /// interior sample of either curve lies within the tolerance of the
+    /// other, and the nearest parameters on `known` of the samples of
+    /// `curve` decrease.
     fn opposite(&self, known: &NurbsCurveRecord<3>, curve: &NurbsCurveRecord<3>) -> bool {
-        let domain = |curve: &NurbsCurveRecord<3>| {
-            Some([
-                *curve.knots.get(curve.order - 1)?,
-                *curve.knots.get(curve.points.len())?,
-            ])
-        };
-        let (Some(a), Some(b)) = (domain(known), domain(curve)) else {
+        let (Some(known), Some(curve)) = (helper(known), helper(curve)) else {
             return false;
         };
-        (0..=SEAM_SAMPLES).all(|index| {
-            let Some(fraction) = f64_from_index(index)
-                .zip(f64_from_index(SEAM_SAMPLES))
-                .map(|(index, count)| index / count)
-            else {
-                return false;
-            };
-            let p = super::convert::evaluate(known, a[0] + (a[1] - a[0]) * (1.0 - fraction));
-            let q = super::convert::evaluate(curve, b[0] + (b[1] - b[0]) * fraction);
-            matches!((p, q), (Some(p), Some(q)) if distance(p, q) <= self.brep.tolerance)
-        })
+        let near = |from: &Nurbs<3>, onto: &Nurbs<3>| -> Option<Vec<f64>> {
+            let [low, high] = from.domain()?;
+            let count = f64_from_index(SEAM_SAMPLES)?;
+            (1..SEAM_SAMPLES)
+                .map(|index| {
+                    let t = low + (high - low) * f64_from_index(index)? / count;
+                    let point = from.point_at(t)?;
+                    let nearest = onto.nearest(point)?;
+                    (distance(onto.point_at(nearest)?, point) <= self.brep.tolerance)
+                        .then_some(nearest)
+                })
+                .collect()
+        };
+        let (Some(along), Some(_)) = (near(&curve, &known), near(&known, &curve)) else {
+            return false;
+        };
+        along.windows(2).all(|pair| pair[1] < pair[0])
     }
 
     /// Adds the loop of parameter-space curves `curves` and returns its
