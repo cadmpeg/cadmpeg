@@ -64,7 +64,23 @@
         "point_clouds": [],
         "presentation_documents": [],
         "presentation_layers": [],
-        "product_definitions": [],
+        "product_definitions": [
+          {
+            "bodies": [],
+            "bom_properties": {},
+            "id": "nx:document:product-definition#root",
+            "instance_bodies": [],
+            "kind": "part",
+            "occurrences": [],
+            "representations": [],
+            "sketches": [],
+            "storage": {
+              "document": {},
+              "kind": "file"
+            },
+            "tessellations": []
+          }
+        ],
         "rigid_bodies": [],
         "semantic_annotations": [],
         "sketch_constraints": [],
@@ -172,7 +188,13 @@
     },
     "source_fidelity": {
       "annotations": {
-        "exactness": {},
+        "exactness": {
+          "nx:document:product-definition#root": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          }
+        },
         "provenance": {}
       },
       "decode_digest": "12479758e4dfc4a4042ea3f9d694d486466d1a9fcc4f6a304d59cbdc5d7e536c",
