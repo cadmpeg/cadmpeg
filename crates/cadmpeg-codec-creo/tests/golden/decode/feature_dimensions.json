@@ -237,7 +237,21 @@
           "owner": "creo:model:sketch_feature#917",
           "plane": {
             "after": [],
-            "inputs": [],
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "input"
+                    },
+                    "picks": {
+                      "kind": "unread"
+                    }
+                  }
+                }
+              }
+            ],
             "kind": "placed",
             "resolved_in": {}
           },
