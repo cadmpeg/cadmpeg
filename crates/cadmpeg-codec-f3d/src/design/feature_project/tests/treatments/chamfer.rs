@@ -742,8 +742,7 @@ fn fixed_two_distance_chamfer_names_reference_face_assumption() {
     assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 1);
 }
 
-#[test]
-fn fixed_chamfer_face_and_edge_groups_take_the_one_specification() {
+fn fixed_equal_distance_scope() -> DesignParameterScope {
     let mut scope = localized_chamfer_scope();
     if let DesignScopePayloadMut::Chamfer(payload) = scope.payload_mut() {
         payload.fixed = Some(
@@ -753,6 +752,12 @@ fn fixed_chamfer_face_and_edge_groups_take_the_one_specification() {
             .unwrap(),
         );
     }
+    scope
+}
+
+#[test]
+fn fixed_chamfer_face_and_edge_groups_take_the_one_specification() {
+    let scope = fixed_equal_distance_scope();
     let groups = [
         localized_fillet_group_with_role(101, 2, vec![201], DesignOperandRole::ROLE_0X10),
         localized_fillet_group(100, 0, vec![200]),
@@ -766,7 +771,43 @@ fn fixed_chamfer_face_and_edge_groups_take_the_one_specification() {
         group.spec,
         ChamferSpec::Distance { distance } if (distance.get() - 2.0).abs() < EPS_CHAMFER_DISTANCE_MM
     )));
-    assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 0);
+    assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 2);
+    assert_eq!(
+        loss_count(&projected, F3dLossCode::ChamferEdgeRoleAssumed),
+        0
+    );
+}
+
+#[test]
+fn fixed_chamfer_with_two_edge_role_groups_keeps_its_scope_selector() {
+    let scope = fixed_equal_distance_scope();
+    for second in [DesignOperandRole::BODIES_B, DesignOperandRole::ROLE_0X9] {
+        let groups = [
+            localized_fillet_group(100, 0, vec![200]),
+            localized_fillet_group_with_role(101, 2, vec![201], second),
+        ];
+        let projected = project_scope(&scope, &[], &[], &groups);
+        assert!(matches!(
+            projected_groups(&projected),
+            [ChamferGroup { edges: EdgeSelection::Native(id), .. }] if id == &scope.id
+        ));
+        assert_eq!(loss_count(&projected, ChamferSelectionUnresolved), 1);
+    }
+}
+
+#[test]
+fn fixed_chamfer_shares_its_specification_with_another_role_and_names_the_assumption() {
+    let scope = fixed_equal_distance_scope();
+    let groups = [
+        localized_fillet_group_with_role(100, 0, vec![200], DesignOperandRole::ROLE_0X9),
+        localized_fillet_group_with_role(101, 2, vec![201], DesignOperandRole::ROLE_0X10),
+    ];
+    let projected = project_scope(&scope, &[], &[], &groups);
+    assert_eq!(projected_groups(&projected).len(), 2);
+    assert_eq!(
+        loss_count(&projected, F3dLossCode::ChamferEdgeRoleAssumed),
+        1
+    );
 }
 
 #[test]
