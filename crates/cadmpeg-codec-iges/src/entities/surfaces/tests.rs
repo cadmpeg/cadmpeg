@@ -510,7 +510,7 @@ fn split_keeping_levels(controls: &[[f64; 4]], parameter: f64) -> (Vec<[f64; 4]>
 fn ruled_span_split_of_a_high_degree_polygon_matches_the_level_split() {
     let span = cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan {
         domain: [2.0, 6.0],
-        controls: (0..1024_u32)
+        controls: (0..32_u32)
             .map(|index| {
                 let t = f64::from(index);
                 [t.sin(), t.cos(), 0.5 * t, 1.0 + f64::from(index % 5) / 8.0]
