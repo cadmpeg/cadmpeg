@@ -108,6 +108,7 @@ fn legacy_extrude_group_accepts_its_independent_empty_tail_record() {
     bytes.extend_from_slice(&[0; 2]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
     push_marked_reference(&mut bytes, 131);
+    let role_offset = bytes.len();
     bytes.extend_from_slice(&DesignOperandRole::BODIES_A.raw().to_le_bytes());
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -120,30 +121,61 @@ fn legacy_extrude_group_accepts_its_independent_empty_tail_record() {
     push_marked_reference(&mut bytes, scope.record_index);
     indexed_header(&mut bytes, *b"262", header.record_index);
 
-    let parse = |bytes: &[u8]| {
-        super::super::parse_construction_operand_group_with_offsets(
+    let parse = |bytes: &[u8], scope: &DesignParameterScope| {
+        super::super::parse_construction_operand_group_in_stream(
             bytes,
-            &scope,
+            scope,
             0,
             &header,
             Some(&std::cell::OnceCell::new()),
+            None,
         )
     };
     assert!(matches!(
-        parse(&bytes),
+        parse(&bytes, &scope),
         ConstructionOperandGroupParse::Unclosed
     ));
     indexed_header(&mut bytes, *b"256", 180);
     let marker_payload = bytes.len();
     bytes.extend_from_slice(&[0; 18]);
     indexed_header(&mut bytes, *b"256", 181);
-    let group = parse(&bytes).complete().expect("independent empty marker");
+    let group = parse(&bytes, &scope)
+        .complete()
+        .expect("independent empty marker");
     assert_eq!(group.extrude_role(), Some(DesignExtrudeOperandRole::Bodies));
     assert_eq!(group.members()[0].value, 121);
 
+    let symmetric = crate::design::test_support::legacy_symmetric_extrude_scope(
+        scope.clone(),
+        [header.record_index, 121, 44, 45, 46],
+    );
+    assert!(matches!(
+        parse(&bytes, &symmetric),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+    bytes[role_offset..role_offset + size_of::<u64>()]
+        .copy_from_slice(&DesignOperandRole::PROFILE.raw().to_le_bytes());
+    let group = parse(&bytes, &symmetric)
+        .complete()
+        .expect("independent profile marker");
+    assert_eq!(
+        group.extrude_role(),
+        Some(DesignExtrudeOperandRole::Profile)
+    );
+    assert_eq!(group.members()[0].value, 121);
+
+    let mut unrelated_member = symmetric.clone();
+    unrelated_member
+        .try_edit(|draft| *draft.reference_members.values_mut().nth(1).unwrap() = 122)
+        .unwrap();
+    assert!(matches!(
+        parse(&bytes, &unrelated_member),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+
     bytes[marker_payload] = 1;
     assert!(matches!(
-        parse(&bytes),
+        parse(&bytes, &symmetric),
         ConstructionOperandGroupParse::Unclosed
     ));
 }
