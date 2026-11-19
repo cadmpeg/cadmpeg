@@ -18,8 +18,8 @@ use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::feature::{
     assembly::{
-        DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandPath,
-        DesignAssemblyOperandQualifier,
+        DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind,
+        DesignAssemblyOperandPath, DesignAssemblyOperandQualifier,
     },
     assembly_features::DesignComponentOccurrence,
     scope::DesignParameterScope,
@@ -782,6 +782,66 @@ pub(crate) fn as_built_additional_owner_count(scope: &DesignParameterScope) -> O
         return Some(0);
     }
     wide_as_built_additional_owner_count(scope.frame_length())
+}
+
+pub(crate) fn placement_ordered_references_hold(
+    scope: &DesignParameterScope,
+    alignment: &DesignAssemblyAlignment,
+    owners: &[(u32, u32)],
+) -> bool {
+    use crate::layout::assembly_as_built_scope_owner_run as layout;
+    let Some(count) = as_built_additional_owner_count(scope) else {
+        return false;
+    };
+    let Some(run) = &alignment.additional_owner_run else {
+        return false;
+    };
+    let table = scope.reference_members();
+    let compact_shift = compact_placement_as_built_prefix_shift(scope);
+    let shift = compact_shift.unwrap_or_default();
+    usize::try_from(run.count.value) == Ok(count)
+        && run.count.offset
+            == scope.byte_offset() + u64_from_index(layout::ADDITIONAL_OWNER_COUNT + shift)
+        && run.references.len() == count
+        && owners.len() == 4 + count
+        && owners
+            .iter()
+            .enumerate()
+            .all(|(ordinal, (local, _))| usize::try_from(*local) == Ok(ordinal))
+        && alignment.owners.len() == 4
+        && alignment
+            .owners
+            .iter()
+            .zip(owners)
+            .all(|(reference, (_, index))| reference.value == *index)
+        && (compact_shift.is_some()
+            || (table.len() == 9 + count
+                && (count != 0
+                    || table.values_in(5..9).is_some_and(|values| {
+                        values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                    }))))
+        && run
+            .references
+            .iter()
+            .zip(owners.iter().skip(4))
+            .enumerate()
+            .all(|(ordinal, (reference, (_, index)))| {
+                reference.value == *index
+                    && reference.offset
+                        == scope.byte_offset()
+                            + u64_from_index(
+                                layout::ADDITIONAL_OWNER_REFERENCES + shift + 11 * ordinal,
+                            )
+                    && table.values().any(|value| value == index)
+            })
+        && (0..table.len())
+            .filter(|&start| {
+                table.values_in(start..start + 4).is_some_and(|values| {
+                    values.eq(alignment.owners.iter().map(|owner| &owner.value))
+                })
+            })
+            .count()
+            == 1
 }
 
 fn wide_as_built_additional_owner_count(frame_length: u64) -> Option<usize> {
@@ -1810,6 +1870,8 @@ fn unique_scope<'a>(
 
 #[cfg(test)]
 mod tests {
+    mod placement_owner_run;
+
     #[test]
     fn null_wide_locator_admission_is_specific_to_assemble() {
         let guid = "2E3AC990-483D-4A55-8662-C064B976A957";
