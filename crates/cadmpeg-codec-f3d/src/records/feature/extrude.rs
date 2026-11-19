@@ -706,6 +706,20 @@ impl DesignExtrudePrologue {
         }
     }
 
+    /// Shifted legacy profile-plane form whose first side ends at a face.
+    pub(crate) fn is_legacy_shifted_to_face(self) -> bool {
+        matches!(
+            self,
+            Self::LegacyShifted {
+                operation_prefix_marker_offset: None,
+                direction_face_extend_values: [1, 2],
+                extent: Some(DesignExtrudeExtent::OneSidedToFace),
+                start: DesignExtrudeStart::ProfilePlane,
+                ..
+            }
+        )
+    }
+
     /// Target option and measurement of a distance first side.
     pub(crate) fn distance_tail(self) -> Option<DesignExtrudeDistanceTail> {
         match self {

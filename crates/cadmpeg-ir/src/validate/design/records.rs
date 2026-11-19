@@ -125,7 +125,10 @@ pub(super) fn members(container: &Container) -> Vec<&Member> {
     }
 }
 
-fn by_id<'a, T>(records: &'a [T], id: impl Fn(&'a T) -> &'a str) -> BTreeMap<&'a str, &'a T> {
+pub(super) fn by_id<'a, T>(
+    records: &'a [T],
+    id: impl Fn(&'a T) -> &'a str,
+) -> BTreeMap<&'a str, &'a T> {
     let mut index = BTreeMap::new();
     for record in records {
         index.entry(id(record)).or_insert(record);
