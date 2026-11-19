@@ -12466,6 +12466,28 @@ source = "spec"
 anchor = "u32 `N`, and `N` pairs of LP-UTF16 GUIDs"
 
 [[record]]
+name = "timeline_paste_name_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "after the null GUID and before the paired header, three zero bytes"
+size = 7
+note = "Offsets are relative to the byte after the null removal key of a paste object that keeps its sources. The same-segment references start at the end of this prefix."
+
+[[record.field]]
+name = "zero_run_3"
+offset = 0
+type = "bytes[3]"
+source = "spec"
+anchor = "before the paired header, three zero bytes"
+
+[[record.field]]
+name = "reference_count"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "a u32 reference count, that many same-segment references"
+
+[[record]]
 name = "base_feature_wide_zero_body"
 kind = "byte"
 section = "3.1"
@@ -26926,7 +26948,7 @@ name = "solid"
 offset = 35
 type = "u8"
 source = "spec"
-anchor = "Offset 35 stores the solid flag `1`"
+anchor = "Offset 35 stores the solid flag: `1` creates a solid body and `0` a surface body. Offset 36"
 
 [[record.field]]
 name = "symmetric"
@@ -41162,6 +41184,27 @@ type = "u32"
 value = 1
 source = "spec"
 anchor = "A u32 with value one and a nullable local record reference follow the Boolean."
+
+[[record]]
+name = "split_body_compact_group_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A compact `Split` construction group uses Fusion type"
+size = 25
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+note = "Counted member references follow this prefix."
+
+[[record.gap]]
+offset = 0
+size = 21
+note = "Indexed header and ten zero bytes."
+
+[[record.field]]
+name = "member_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "The u32 member count starts at offset 21."
 
 [[record]]
 name = "mesh_plane_cut_scope_prefix"

@@ -151,8 +151,13 @@ impl LocalOccurrencePaths {
     /// Keys left after an external occurrence continue inside its member, which
     /// the archive merge binds. Keys left after a local occurrence can name a
     /// reference that this document omitted.
-    pub(crate) fn refuses_residual_keys(&self, stream: &str, occurrence: &OccurrenceId) -> bool {
-        self.requires_external_binding(stream)
+    pub(crate) fn refuses_residual_keys(
+        &self,
+        stream: &str,
+        occurrence: &OccurrenceId,
+        require_complete_local_path: bool,
+    ) -> bool {
+        (require_complete_local_path || self.requires_external_binding(stream))
             && self.projected_occurrence_is_external.get(occurrence) != Some(&true)
     }
 
@@ -356,9 +361,17 @@ mod tests {
             projected_occurrence_is_external: BTreeMap::from([(external.clone(), true)]),
             paths: BTreeMap::new(),
         };
-        assert!(paths.refuses_residual_keys(stream, &local));
-        assert!(!paths.refuses_residual_keys(stream, &external));
-        assert!(!LocalOccurrencePaths::default().refuses_residual_keys(stream, &local));
+        for require_complete_local_path in [false, true] {
+            assert!(paths.refuses_residual_keys(stream, &local, require_complete_local_path));
+            assert!(!paths.refuses_residual_keys(stream, &external, require_complete_local_path));
+        }
+        let without_unplaced = LocalOccurrencePaths {
+            unplaced_external: Vec::new(),
+            ..paths
+        };
+        assert!(!without_unplaced.refuses_residual_keys(stream, &local, false));
+        assert!(without_unplaced.refuses_residual_keys(stream, &local, true));
+        assert!(!without_unplaced.refuses_residual_keys(stream, &external, true));
     }
 
     #[test]

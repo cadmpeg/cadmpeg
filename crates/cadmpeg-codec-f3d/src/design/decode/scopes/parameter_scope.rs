@@ -173,13 +173,22 @@ pub(crate) fn decode_parameter_scopes(
                 crate::design::decode::meta::unambiguous_design_primary_frames(bytes, metadata).ok()
             })
             .unwrap_or_default();
-        let browser_nodes = metadata
-            .as_ref()
-            .filter(|_| needs_browser_metadata)
-            .and_then(|metadata| {
-                crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
-            })
-            .unwrap_or_default();
+        let paste_metadata = metadata.as_ref().filter(|_| needs_browser_metadata);
+        let paste_nodes = super::base_feature::PasteNodes {
+            sources: paste_metadata
+                .and_then(|metadata| {
+                    crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
+                })
+                .unwrap_or_default(),
+            copies: paste_metadata
+                .and_then(|metadata| {
+                    crate::design::decode::presentation::presentation_scene_node_guids(
+                        bytes, metadata,
+                    )
+                    .ok()
+                })
+                .unwrap_or_default(),
+        };
         let stream_scope_start = out.len();
         let mut direct_joint_origin_offsets = HashSet::new();
         let mut mesh_scope_ranges = HashMap::new();
@@ -693,13 +702,18 @@ pub(crate) fn decode_parameter_scopes(
                     losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
                     losses.extend(loft_lists_loss(&scope, value));
                 }
+                if let crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(
+                    value,
+                ) = &construction
+                {
+                    losses.extend(referenced_revolve_reference_loss(bytes, &scope, value));
+                }
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::Revolve(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
                     ) => {
                         *slot = Some(value);
-                        losses.extend(referenced_revolve_reference_loss(bytes, &scope));
                         if let Some(length) = marker_one_revolve_assumed_length(bytes, &scope) {
                             losses.push(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(
                                 format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-269).", scope.id),
@@ -901,7 +915,7 @@ pub(crate) fn decode_parameter_scopes(
                         stream_view,
                         &scope,
                         owners,
-                        &browser_nodes,
+                        &paste_nodes,
                         &mut losses,
                     )?,
                     None => None,
