@@ -6,8 +6,10 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
+use cadmpeg_ir::scalar::{Angle, FiniteReal};
 use cadmpeg_ir::semantic_annotations::{
-    SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    AnnotationDimensionKind, LineDirections, MeasuredOn, NumberFormat, SemanticAnnotation,
+    SemanticAnnotationId, SemanticAnnotationKind, ViewAxis,
 };
 
 use crate::native::{
@@ -349,7 +351,7 @@ fn annotation_position(
     }
 }
 
-fn optional_scalar_property(
+pub(crate) fn optional_scalar_property(
     ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     name: &str,
@@ -424,6 +426,72 @@ fn string_property(
                 property.id
             ))
         })
+}
+
+/// The value of a Boolean property.
+pub(crate) fn bool_property(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<bool>, CodecError> {
+    let Some(property) = typed_property(properties, name, &["App::PropertyBool"])? else {
+        return Ok(None);
+    };
+    let attributes = direct_value_attributes(ctx, property, "Bool", &["value"])?;
+    match attributes.get("value").map(String::as_str) {
+        Some("true" | "1") => Ok(Some(true)),
+        Some("false" | "0") => Ok(Some(false)),
+        _ => Err(CodecError::malformed(format_args!(
+            "property {} is not a Boolean",
+            property.id
+        ))),
+    }
+}
+
+/// The selected index of an enumeration property, with its label where the
+/// file stores the enumeration's list.
+pub(crate) fn enumeration_property(
+    ctx: &DecodeContext<'_>,
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<(usize, Option<String>)>, CodecError> {
+    let Some(property) = typed_property(properties, name, &["App::PropertyEnumeration"])? else {
+        return Ok(None);
+    };
+    let xml = ctx.parse_xml(property.xml.text(), "enumeration property")?;
+    let root = xml.root_element();
+    let index = root
+        .children()
+        .find(|node| node.has_tag_name("Integer"))
+        .and_then(|node| node.attribute("value"))
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "property {} has no enumeration index",
+                property.id
+            ))
+        })?;
+    let label = root
+        .children()
+        .find(|node| node.has_tag_name("CustomEnumList"))
+        .and_then(|list| {
+            list.children()
+                .filter(|node| node.has_tag_name("Enum"))
+                .nth(index)?
+                .attribute("value")
+                .map(str::to_owned)
+        });
+    Ok(Some((index, label)))
+}
+
+/// The selected entry of an enumeration property: its stored label, or the
+/// built-in list's entry at its index.
+pub(crate) fn enumeration_entry<'a>(
+    selected: Option<&'a (usize, Option<String>)>,
+    built_in: &[&'a str],
+) -> Option<&'a str> {
+    let (index, label) = selected?;
+    label.as_deref().or_else(|| built_in.get(*index).copied())
 }
 
 fn typed_property<'a>(
@@ -673,8 +741,7 @@ pub(crate) fn enrich_dimensions(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     use crate::loss::FreecadLossCode;
-    use cadmpeg_ir::scalar::FiniteReal;
-    use cadmpeg_ir::semantic_annotations::DimensionKind;
+    use cadmpeg_ir::semantic_annotations::AnnotationDimensionKind as DimensionKind;
 
     for annotation in &mut model.semantic_annotations {
         if annotation.kind != SemanticAnnotationKind::Dimension {
@@ -704,20 +771,27 @@ pub(crate) fn enrich_dimensions(
                     .attribute("value")
             });
             let kind = match label {
-                Some("Distance") => Some(DimensionKind::Distance {}),
-                Some("DistanceX") => Some(DimensionKind::HorizontalDistance {}),
-                Some("DistanceY") => Some(DimensionKind::VerticalDistance {}),
-                Some("Radius") => Some(DimensionKind::Radius {}),
-                Some("Diameter") => Some(DimensionKind::Diameter {}),
-                Some("Angle") => Some(DimensionKind::Angle {}),
-                Some("Angle3Pt") => Some(DimensionKind::ThreePointAngle {}),
-                None if custom.is_none() && selected == "0" => Some(DimensionKind::Distance {}),
+                Some("Distance") => Some(DimensionKind::Distance),
+                Some("DistanceX") => Some(DimensionKind::HorizontalDistance),
+                Some("DistanceY") => Some(DimensionKind::VerticalDistance),
+                Some("Radius") => Some(DimensionKind::Radius),
+                Some("Diameter") => Some(DimensionKind::Diameter),
+                Some("Angle") => Some(DimensionKind::Angle),
+                Some("Angle3Pt") => Some(DimensionKind::ThreePointAngle),
+                Some("Area") => Some(DimensionKind::Area {
+                    holes_excluded: None,
+                }),
+                None if custom.is_none() && selected == "0" => Some(DimensionKind::Distance),
                 None if custom.is_none() => match selected {
-                    "1" => Some(DimensionKind::HorizontalDistance {}),
-                    "2" => Some(DimensionKind::VerticalDistance {}),
-                    "4" => Some(DimensionKind::Radius {}),
-                    "5" => Some(DimensionKind::Diameter {}),
-                    "6" => Some(DimensionKind::Angle {}),
+                    "1" => Some(DimensionKind::HorizontalDistance),
+                    "2" => Some(DimensionKind::VerticalDistance),
+                    "4" => Some(DimensionKind::Radius),
+                    "5" => Some(DimensionKind::Diameter),
+                    "6" => Some(DimensionKind::Angle),
+                    "7" => Some(DimensionKind::ThreePointAngle),
+                    "8" => Some(DimensionKind::Area {
+                        holes_excluded: None,
+                    }),
                     _ => None,
                 },
                 _ => None,
@@ -748,6 +822,10 @@ pub(crate) fn enrich_dimensions(
                 }
             }
         }
+        let angular = matches!(
+            annotation.dimension_kind,
+            Some(DimensionKind::Angle | DimensionKind::ThreePointAngle)
+        );
         for (name, slot) in [
             ("OverTolerance", &mut annotation.upper_tolerance),
             ("UnderTolerance", &mut annotation.lower_tolerance),
@@ -755,7 +833,7 @@ pub(crate) fn enrich_dimensions(
             let value =
                 optional_scalar_property(ctx, &owned, name, &["App::PropertyQuantityConstraint"])?;
             if let Some(value) = value {
-                let value = FiniteReal::new(value)
+                let value = FiniteReal::new(if angular { value.to_radians() } else { value })
                     .ok_or_else(|| CodecError::malformed("dimension tolerance must be finite"))?;
                 if value.get() != 0.0 {
                     if arbitrary_tolerances {
@@ -779,8 +857,114 @@ pub(crate) fn enrich_dimensions(
                 }
             }
         }
+        dimension_semantics(ctx, annotation, &owned)?;
     }
     Ok(())
+}
+
+/// The `TechDraw` 1.1.4 dimension properties that state what a dimension
+/// measures and how it shows its value (`DrawViewDimension.cpp`,
+/// `DimensionFormatter.cpp`).
+fn dimension_semantics(
+    ctx: &DecodeContext<'_>,
+    annotation: &mut SemanticAnnotation,
+    owned: &[&PropertyRecord],
+) -> Result<(), CodecError> {
+    if annotation.runtime_type == "TechDraw::DrawViewDimExtent" {
+        let direction = enumeration_property(ctx, owned, "DirExtent")?;
+        let axis = match enumeration_entry(direction.as_ref(), &["Horizontal", "Vertical"]) {
+            Some("Horizontal") => Some(ViewAxis::X),
+            Some("Vertical") => Some(ViewAxis::Y),
+            _ => None,
+        };
+        if let Some(axis) = axis {
+            annotation.dimension_kind = Some(AnnotationDimensionKind::Extent { axis });
+        }
+    }
+    if let Some(AnnotationDimensionKind::Area { holes_excluded }) = &mut annotation.dimension_kind {
+        *holes_excluded = bool_property(ctx, owned, "UseActualArea")?;
+    }
+    annotation.measured_on = if annotation.runtime_type == "TechDraw::LandmarkDimension" {
+        Some(MeasuredOn::Model)
+    } else {
+        let measure = enumeration_property(ctx, owned, "MeasureType")?;
+        match enumeration_entry(measure.as_ref(), &["True", "Projected"]) {
+            Some("True") => Some(MeasuredOn::Model),
+            Some("Projected") => Some(MeasuredOn::View),
+            _ => None,
+        }
+    };
+    annotation.basic = bool_property(ctx, owned, "TheoreticalExact")?;
+    if let Some(inverted) = bool_property(ctx, owned, "Inverted")? {
+        if matches!(
+            annotation.dimension_kind,
+            Some(AnnotationDimensionKind::Angle | AnnotationDimensionKind::ThreePointAngle)
+        ) {
+            annotation.reflex = Some(inverted);
+        } else {
+            annotation.negated = Some(inverted);
+        }
+    }
+    if bool_property(ctx, owned, "AngleOverride")? == Some(true) {
+        let angle = |name| -> Result<Option<Angle>, CodecError> {
+            Ok(
+                optional_scalar_property(ctx, owned, name, &["App::PropertyAngle"])?
+                    .and_then(|degrees| Angle::new(degrees.to_radians())),
+            )
+        };
+        if let (Some(dimension_line), Some(extension_lines)) =
+            (angle("LineAngle")?, angle("ExtensionAngle")?)
+        {
+            annotation.line_directions = Some(LineDirections {
+                dimension_line,
+                extension_lines,
+            });
+        }
+    }
+    if bool_property(ctx, owned, "EqualTolerance")? == Some(true) {
+        if let Some(upper) = annotation.upper_tolerance {
+            annotation.lower_tolerance = FiniteReal::new(-upper.get());
+        }
+    }
+    annotation.number_format = annotation.format.as_deref().and_then(number_format);
+    if let Some(format) = &mut annotation.number_format {
+        format.unit_shown = bool_property(ctx, owned, "ShowUnits")?;
+    }
+    Ok(())
+}
+
+/// The meaning of a `FormatSpec`: `%.Nf` is `decimals: N`, `%.Nw` the same
+/// with trailing zeros removed, and `%Xr` a rounding to `X`; the text around
+/// the specifier is the prefix and suffix. Another conversion has none.
+fn number_format(spec: &str) -> Option<NumberFormat> {
+    let start = spec.find('%')?;
+    let rest = &spec[start + 1..];
+    let (decimals, trim_zeros, round_to, length) = if let Some(places) = rest.strip_prefix('.') {
+        let digits = places.find(|character: char| !character.is_ascii_digit())?;
+        let decimals = places[..digits].parse::<u8>().ok()?;
+        let trim_zeros = match places[digits..].chars().next()? {
+            'f' => false,
+            'w' => true,
+            _ => return None,
+        };
+        (Some(decimals), trim_zeros, None, digits + 2)
+    } else {
+        let digits =
+            rest.find(|character: char| !(character.is_ascii_digit() || character == '.'))?;
+        if digits == 0 || !rest[digits..].starts_with('r') {
+            return None;
+        }
+        let increment = FiniteReal::new(rest[..digits].parse().ok()?)?;
+        (None, false, Some(increment), digits + 1)
+    };
+    Some(NumberFormat {
+        prefix: spec[..start].to_owned(),
+        suffix: rest[length..].to_owned(),
+        decimals,
+        trim_zeros,
+        round_to,
+        unit_shown: None,
+    })
 }
 
 #[cfg(test)]

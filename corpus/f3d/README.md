@@ -94,3 +94,18 @@ the Combine.
 - `combine_tools_n1.f3d`: one tool. 1 body, 9480 mm³, 12 faces.
 - `combine_tools_n2.f3d`: two tools. 1 body, 9960 mm³, 18 faces.
 - `combine_tools_n3.f3d`: three tools. 1 body, 10440 mm³, 24 faces.
+
+# Fusion API fixtures: surface revolves
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. A Sketch on the XZ origin plane is revolved about
+the Z origin axis as a new surface body (isSolid false), with an angle extent of
+90 deg and Symmetric on. The API reported the body count, area and face count
+after the Revolve.
+
+- `symmetric_surface_revolve.f3d`: a closed rectangle at x 5–10 mm, z 0–10 mm.
+  1 surface body, 706.85835 mm², 4 faces: cylinders at radius 5 and 10 mm and
+  two planar annular faces.
+- `open_profile_surface_revolve.f3d`: one open line from (10, 0, 0) to
+  (10, 0, 10) mm, selected through createOpenProfile. 1 surface body,
+  314.15927 mm², 1 cylindrical face.

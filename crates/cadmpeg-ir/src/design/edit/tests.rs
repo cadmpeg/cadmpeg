@@ -749,7 +749,7 @@ fn set_dimension_marks_dependents_and_recomputes_caches() {
     ));
     document.design.parameters[1].tolerance = Some(Tolerance::Fit {
         fit: serde_json::from_value::<LimitsAndFits>(json!({
-            "form_variance": "h", "zone_variance": "h", "grade": "7", "source": "ISO 286"
+            "form_variance": "H", "zone": "shaft", "grade": "7", "source": {"kind": "iso286"}
         }))
         .unwrap(),
         mate: None,
