@@ -124,16 +124,16 @@ impl std::fmt::Display for Unread {
 /// A `moPMarkRecord_c` found by its class tag: where its body starts and the
 /// mark it names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct MarkRecord {
-    pub(crate) at: usize,
-    pub(crate) mark: u32,
+struct MarkRecord {
+    at: usize,
+    mark: u32,
 }
 
 /// The current mark and the main line back from it, current first.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MarkChain {
-    pub(crate) current: u32,
-    pub(crate) main: Vec<u32>,
+struct MarkChain {
+    current: u32,
+    main: Vec<u32>,
 }
 
 /// Read the rollback position of the active configuration's feature tree.
@@ -219,7 +219,7 @@ fn configuration_stream(partition: &str) -> Option<String> {
 }
 
 /// The current mark of a deltas transmit and the main line back from it.
-pub(crate) fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
+fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
     let mut current = None;
     let mut marks = BTreeMap::<u32, PmarkState>::new();
     for event in records.events() {
@@ -255,11 +255,7 @@ pub(crate) fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
 /// and whose record heads mostly name main-line marks after the initial one,
 /// the one whose record heads name the most distinct such marks. `None` where
 /// no index or several do.
-pub(crate) fn token_naming_marks(
-    stream: &[u8],
-    count: Option<u32>,
-    chain: &MarkChain,
-) -> Option<u32> {
+fn token_naming_marks(stream: &[u8], count: Option<u32>, chain: &MarkChain) -> Option<u32> {
     let marks = match chain.main.split_last() {
         Some((_, later)) if !later.is_empty() => later,
         _ => chain.main.as_slice(),
@@ -321,7 +317,7 @@ fn record_mark(stream: &[u8], body: usize) -> Option<u32> {
 
 /// Every `moPMarkRecord_c` of a `ResolvedFeatures` stream whose class has map
 /// index `index`, in stream order.
-pub(crate) fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
+fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
     let tag = match u16::try_from(index) {
         Ok(short) if short < LONG_TAG => (0x8000 | short).to_le_bytes().to_vec(),
         _ => {
@@ -345,7 +341,7 @@ pub(crate) fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
 
 /// Join the current mark to the feature records. `owners` gives the walk's
 /// holders of the records; it runs only off the `End` reading.
-pub(crate) fn join(
+fn join(
     chain: &MarkChain,
     records: &[MarkRecord],
     owners: impl FnOnce() -> Result<Vec<MarkOwner>, CodecError>,
