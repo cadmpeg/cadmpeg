@@ -2920,6 +2920,304 @@ A `SurfaceRuled` scope stores nine zero bytes after its indexed header, followed
 
 An absent auxiliary identity uses the same primary-candidate fallback as an auxiliary identity that has no historical candidate; the fallback remains subject to unique-candidate and exact-planar-carrier checks.
 
+#### Records of a sketch-and-extrude design
+
+This subsection gives the records that a Design stream holds when its timeline lists exactly a `Sketch` item and then an `Extrude` item and its MetaStream header stores serializer magic `1234`. A stream with serializer magic `1234` writes every reference in the eleven-byte plain form. Record indices in this subsection are local to one Design `BulkStream`.
+
+**Type table.** The type table of such a design registers every type of the first table below with a nonempty entity-ID run. The type GUID is the stable identity; the class tag is `256` plus the table position.
+
+| Type GUID | Base-type GUID | Version | Add-in | Role |
+|---|---|---|---|---|
+| `016D8C93-144B-4352-9299-98FA738BD4FF` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 2 | `Fusion` |  |
+| `074F9459-89C2-4B7D-8AB4-DCE67AE944FE` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 1 | `Fusion` |  |
+| `0897AF07-EF1B-42E5-BDD9-1C746A085CBC` | `60F291CB-499B-4AB1-B0E5-340368671724` | 0 | `Fusion` |  |
+| `0C5DAB90-715E-49EA-A56E-E30F2328F43E` | `B5B50E5B-EDC8-4309-82A3-C53B3E82033D` | 0 | `Geometry` |  |
+| `0D57BD2F-D09B-43FC-AD57-1E89A118C453` | `70F5E801-1E8E-436E-8A09-36487F8A2859` | 1 | `Fusion` |  |
+| `0DBF95ED-82D2-4CC4-936D-642370679CBB` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `Component` |  |
+| `0E18EEF2-0D6F-480C-997E-5EBC7369AE5F` | `1E5F6CE7-7544-4DE1-8C7B-6BACF6DC8E40` | 0 | `Geometry` | Origin point |
+| `0FAF9824-8ECA-45ED-B199-589022ED5F6D` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 9 | `Fusion` |  |
+| `12D00AC0-B828-48C8-9740-80C4D992DB65` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 | `Fusion` |  |
+| `1787C882-91E2-4363-9C18-80C98EBE4C77` | `CB844AB6-240D-4FC9-9C9F-3679DC896D6F` | 0 | `CommonData` |  |
+| `19031004-3AB6-4D13-ABBF-C51EE214688D` | `1E5F6CE7-7544-4DE1-8C7B-6BACF6DC8E40` | 0 | `Geometry` | Origin axis |
+| `1E650EA7-07C5-4111-B639-7DEE3A659799` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `Fusion` |  |
+| `21086CE0-C398-4B1B-9CD6-86F092429833` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 2 | `CommonData` |  |
+| `2343B7AB-A2E0-4C66-8B74-99A05E4C670B` | `74D7FEF9-44E9-494D-A25D-81EC33D2841E` | 1 | `Scene` |  |
+| `23FD63FB-4EBE-4C85-A42B-5D9809AA3499` | `3C822807-C6B1-4FFC-9AE4-769A487EC7B3` | 17 | `CommonData` |  |
+| `2972A3B8-3627-49BC-8C3D-18707605EC44` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 1 | `Geometry` | Origin container |
+| `2C54F6D6-5C2B-4C4A-89A2-2AB486EF152D` | `130A0711-4E92-4FCD-AADE-B9C82238BB27` | 0 |  | Protein asset manager |
+| `2CA5A1CD-C99B-4C9B-91AF-57989148E841` | `F8CD0BB3-2CE6-4236-8C1B-6D0638BF215F` | 1 | `Fusion` | Construction-operand group |
+| `2DEE34BE-FA70-4D54-979C-164D86FDA786` | `70F5E801-1E8E-436E-8A09-36487F8A2859` | 2 | `EntityTracking` | Tracked sketch-curve identities |
+| `2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B` | `872045B4-F653-4691-9752-ABC7684834BF` | 0 | `EntityTracking` |  |
+| `2F4C1849-1A5A-4F6C-A086-8DD445CBF94B` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 3 | `Fusion` | Feature timeline |
+| `30DCFC57-8E13-405B-9295-5CF74AC1FB39` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `CommonData` |  |
+| `3185B924-6C84-4804-BE77-9105B09209DA` | `130A0711-4E92-4FCD-AADE-B9C82238BB27` | 0 | `Fusion` |  |
+| `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A` | `5C069ACB-169F-4555-9792-815B4671DDA0` | 0 | `EntityTracking` | Side-face tracking entry |
+| `362B7EC3-0F09-47C8-A3BE-DC066715CDAE` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 0 | `Geometry` | Sketch-point companion |
+| `372234A0-2A6C-4122-8047-E74DBA04F326` | `B5B50E5B-EDC8-4309-82A3-C53B3E82033D` | 0 | `Body` |  |
+| `3978701C-58EC-401A-8D24-A6FF4103DC24` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `Fusion` |  |
+| `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `Fusion` | Owner collection |
+| `3A7E4411-2E8A-4FA8-96A3-9902E1ACAF2F` | `5EAF2F0F-4AEE-4F20-B569-119A7BD1F36D` | 0 | `Geometry` | `SketchesRoot` node |
+| `3B9288E7-E1DE-414D-90BD-1C0CDAC77EB1` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 |  |  |
+| `40DCC3F41D-E94F-B3B1-3E95-9B6ABE572C` | `E8DCB040-6A0E-4AD1-BCF3-1E1AEDD35EE4` | 1 | `Body` | Snapshot body map |
+| `44A64366-4BD3-4B24-881A-F94C206E8F2D` | `37AD519C-AFB3-4CE2-9E6D-E3269FC6CDB9` | 18 | `MSketch` | Sketch entity container |
+| `47C245A2-2DBE-4B1F-9C56-762F373BB0C8` | `B5B50E5B-EDC8-4309-82A3-C53B3E82033D` | 0 | `Geometry` |  |
+| `49B2AA69-7655-4C36-A14E-9582CCF1283C` | `130A0711-4E92-4FCD-AADE-B9C82238BB27` | 0 | `Fusion` |  |
+| `4BD53E5A-0B3E-45E5-AE8B-02044306485A` | `6144EA59-3ACA-4172-9F14-A6531E94D69B` | 0 | `Fusion` | Profile selection |
+| `5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 4 | `Geometry` | Sketch collection |
+| `549FBB80-B890-473E-A5C0-415D3D9BF4E6` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 4 | `Fusion` |  |
+| `596C8B98-D176-4E40-B294-6404BAD566BC` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 3 | `Component` |  |
+| `5A1BF548-241F-46FD-9FB5-E4B05126EB9D` | `6144EA59-3ACA-4172-9F14-A6531E94D69B` | 1 | `Fusion` | Placement path |
+| `5D15E992-1E93-4D79-A553-10D2624148AE` | `D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B` | 1 | `Fusion` | First record-timestamp entry of a scope table |
+| `5D89B935-3F04-4CAB-81F5-E7B309E7E13F` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 1 | `Fusion` | Persistent-id table |
+| `5FBE538E-139B-46D4-BCAF-CC796D1E1F78` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 | `Fusion` | Item-tail companion |
+| `60F93DE2-6329-4598-A6AF-096AC63E627C` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `Fusion` |  |
+| `64435F6E-077A-4F6B-A7B6-537BF84BA414` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `Fusion` |  |
+| `6CCF41D5-40BE-48ED-A834-18F3EAED6C57` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 1 | `Fusion` | Record-timestamp table; parameter companion |
+| `702B9CD2-537C-429E-8CC4-22BEEEB98C37` | `EB7847AF-E60D-4AB0-A736-4AC00C1F1D21` | 1 | `Scene` | Body cache |
+| `736DEAAF-2425-405E-B871-003AAB726295` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 5 | `Scene` |  |
+| `74CA4562-59F8-4C97-8AD1-F8297C21F9AA` | `E8DCB040-6A0E-4AD1-BCF3-1E1AEDD35EE4` | 0 | `Body` | Body map |
+| `778FECF0-46E7-4EB8-A8D0-52C950CCEAAE` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 0 | `EntityTracking` |  |
+| `77EF6384-409E-498D-8167-BCA537533B35` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `Component` |  |
+| `7A6A3D31-BE74-4E19-9115-20642944C2E4` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 8 | `CommonData` | Parameter |
+| `7B6C3C2D-4096-4E6D-B225-699E8C2D9355` | `2CA5A1CD-C99B-4C9B-91AF-57989148E841` | 14 | `Fusion` | Sketch placement |
+| `7E84430B-74C7-4B67-92D0-4131A0B79109` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `Fusion` |  |
+| `830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 |  | Archive-entry name |
+| `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 3 | `Fusion` |  |
+| `88A5C187-5E68-4318-8A33-3AAA72F9DDB1` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `CommonData` |  |
+| `8D424E29-DE23-4B1F-A3AD-84C52A497D1A` | `1E5F6CE7-7544-4DE1-8C7B-6BACF6DC8E40` | 1 | `Geometry` | Construction plane (origin planes) |
+| `8DA771B7-52ED-42FC-94E2-2353FE141373` | `A2052F46-21B4-4AAA-9AF1-C371F0AB6CAB` | 5 | `Fusion` | `Sketch` parameter scope |
+| `8EF00D65-F18D-4179-A644-FE0CA39943D6` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 5 | `Fusion` |  |
+| `90055C05-546C-4EE7-B3C9-3DD922AD0C9C` | `70F5E801-1E8E-436E-8A09-36487F8A2859` | 0 | `EntityTracking` | Tracked entity identity |
+| `904F885E-D859-4755-A7EF-6EBED8732FAD` | `21F379C8-CAFD-4985-B461-767673A4C502` | 1 | `Component` | Component naming space |
+| `91461D14-4F77-44B2-9E79-8B052566D9CE` | `B5B50E5B-EDC8-4309-82A3-C53B3E82033D` | 0 | `Fusion` |  |
+| `A1675506-5D2D-47A5-8AD2-8FD5CE946DA0` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `CommonData` |  |
+| `A2EDAFD4-B122-49CC-AF09-96BE5C57A89D` | `5EAF2F0F-4AEE-4F20-B569-119A7BD1F36D` | 0 | `Body` |  |
+| `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 3 | `Geometry` |  |
+| `ABA79BE7-D8D2-4C17-B59B-C2035E111F77` | `5C069ACB-169F-4555-9792-815B4671DDA0` | 4 | `Fusion` | Body tracking entry |
+| `AC202226-A700-462A-BC41-13631C9E95D5` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `Component` |  |
+| `AD3F9695-7FDF-4708-AE05-B21309CDE969` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 1 | `Geometry` |  |
+| `AE9F7FB5-2798-4BE4-8905-F8FB42A07193` | `CC33853A-069B-4292-BC1B-059FE3A08E09` | 0 | `Scene` |  |
+| `B0556F58-EE09-46A7-B18F-E296F48E5B13` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 4 | `CommonData` | Parameter collection |
+| `B13113CC-031E-4F93-8240-C4C10728869F` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 | `Fusion` |  |
+| `B4CDE096-07DE-4272-BA4A-B257EFE0B470` | `CB844AB6-240D-4FC9-9C9F-3679DC896D6F` | 0 | `Fusion` |  |
+| `B61F1D39-4984-47B0-9248-3A1113E86FC1` | `199B8352-4C51-4CB3-9756-26722AE44E76` | 0 | `CommonData` |  |
+| `B65B5682-9355-44C7-8AFC-823058C4A36B` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 | `Fusion` |  |
+| `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA` | `CB844AB6-240D-4FC9-9C9F-3679DC896D6F` | 2 | `Fusion` | Tracked-results table |
+| `BC84911E-A581-4E51-ABE4-B0F681CFED06` | `5EAF2F0F-4AEE-4F20-B569-119A7BD1F36D` | 1 | `CommonData` |  |
+| `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `Fusion` |  |
+| `C170F594-38B1-4C2A-B649-7FE0164C44E3` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `Fusion` |  |
+| `C2CEDAE7-1716-47C1-B7B1-07B70081D0FB` | `8E9D588C-28EF-43C4-B9A6-AA5430A68D4B` | 11 | `Geometry` | Sketch point |
+| `C3423E04-7E85-4B44-8E31-A5FA9C100052` | `CB844AB6-240D-4FC9-9C9F-3679DC896D6F` | 2 | `Fusion` | Timeline context |
+| `C46D3EEB-40E1-43FA-83DC-9CB204335417` | `FA85BB02-9D57-4E5E-A3A1-3D150C7ED082` | 1 | `EntityTracking` | Persistent selection identity |
+| `C6EE7300-667E-4EA5-9F61-71F98412DE8B` | `199B8352-4C51-4CB3-9756-26722AE44E76` | 0 | `CommonData` |  |
+| `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C` | `5C069ACB-169F-4555-9792-815B4671DDA0` | 2 | `EntityTracking` | Tracked transform target |
+| `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B` | `9A171A9A-5599-4872-987C-9B5E8E2A6C9C` | 0 | `EntityTracking` | Placement transform |
+| `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 4 | `Body` | `Body` owner |
+| `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` | `D4CBC599-0FFB-4D32-BF14-A7F0AFA25013` | 2 | `Component` |  |
+| `D26351F0-5940-4D23-AA20-2C35475A6D9E` | `CB844AB6-240D-4FC9-9C9F-3679DC896D6F` | 2 | `Fusion` | Browser-node member |
+| `D3937028-C20C-4E65-B010-94AD418A5C20` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 19 | `Body` | Body-presentation owner |
+| `D50DCC35-42CC-4E7D-9B81-4EB8252712D0` | `5EAF2F0F-4AEE-4F20-B569-119A7BD1F36D` | 0 | `CommonData` |  |
+| `D91D429C-1BB5-4640-B49F-69AF14F463E9` | `B24D5130-8751-4272-8143-D230D8757873` | 0 | `Fusion` | Parameter owner |
+| `D9554B4F-2333-42C2-9495-2148D96F7437` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 11 | `CommonData` |  |
+| `DCA267ED-D615-4934-B64F-AD805E8003E2` | `9FF71F46-205F-484B-A2B5-A245D0D8FE33` | 2 | `Geometry` | Sketch line |
+| `DD405BC2-D673-44F0-8833-5CB2A1C186C7` | `3FED63D9-CDC5-4334-A5C5-6C10271320D5` | 8 | `Fusion` | `Extrude` parameter scope |
+| `E03784ED-5E19-4E14-B9F2-3B07017018CD` | `42054630-20A0-40E1-B969-CFE9E742F5C9` | 23 | `Fusion` | Component aggregate |
+| `E276745D-D84E-40D5-88BC-8C94DD4ACCDF` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 1 | `CommonData` |  |
+| `E55D0457-898F-4A8E-B1A5-C85BDBA8794F` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 | `Body` | Snapshot body-map companion |
+| `F47A46FB-DA27-4AFA-8A72-1B38FA596E23` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 0 | `Geometry` |  |
+| `F670456D-872C-4818-95E9-DE115B264ACA` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `Fusion` |  |
+| `F9CB8717-EB86-47F2-AAA7-39E142C57A09` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 1 | `CommonData` |  |
+| `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `Fusion` |  |
+| `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 1 | `Component` |  |
+
+The type table can also register the types below with a nonempty entity-ID run. It also holds entries with an empty ID run, among them the base types of the registered types.
+
+| Type GUID | Base-type GUID | Version | Add-in |
+|---|---|---|---|
+| `29F107C1-ADA2-4819-94C9-6AE1BB015249` | `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB` | 0 | `Scene` |
+| `4912A0EC-8A3D-4FE2-9F0F-A5C2CB493A07` | `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB` | 0 | `Scene` |
+| `7ACC2A03-0261-4879-A14A-A93D661A5BDC` | `70F5E801-1E8E-436E-8A09-36487F8A2859` | 3 | `EntityTracking` |
+| `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C` | `D0EDEF7C-5879-45A4-9651-900659CC4FDD` | 0 | `Scene` |
+| `BFB592FE-03DD-4DAA-A4AC-14D02ABB672A` | `5662F619-2281-4AD9-93DC-1FCFDA1062E7` | 0 | `Fusion` |
+| `CAEC057F-5A9D-4FBE-B0E2-1C97BF6567FF` | `804A1AC8-DCA8-4204-AED5-1E64BE8B7CAB` | 0 | `Scene` |
+
+**Feature item tail.** The tail of a timeline item's parameter scope starts after the LP-UTF16 feature-family name and ends at the paired header. Every `Sketch` and `Extrude` item of a stream whose MetaStream serializer magic is `1234` stores the 78-byte tail. The same items of a plain-reference stream with any other serializer magic, after which the MetaStream header stores one further u32, store the 77-byte tail. The 196-byte tail is the typed-reference parameter-scope tail of §3.1 and stores each reference as a 51-byte typed reference. Each later offset moves by `2L` after a custom label of `L` code units.
+
+| Field | Type | 78-byte tail | 77-byte tail | 196-byte tail |
+|---|---|---|---|---|
+| family ordinal, `1` for the first item of a family | u32 | 0 | 0 | 0 |
+| `0` | u32 | 4 | 4 | 4 |
+| custom-label code-unit count `L`; `L` UTF-16LE code units follow | u32 | 8 | 8 | 8 |
+| `0` | u32 | 12 | 12 | 12 |
+| state bytes | 3 × u8 | 16 | 16 | 16 |
+| the item's tracked-results table (type `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA`) | reference | 19 | 19 | 19 |
+| null reference slot `0` | u8 | 30 | 30 | — |
+| preceding history-state identity, `0xffffffff` for null | u32 | 31 | 31 | 70 |
+| evaluation epoch | u32 | 35 | 35 | 74 |
+| evaluation duration, finite and nonnegative | f64 | 39 | 39 | 78 |
+| second evaluation epoch | u32 | 47 | 47 | 86 |
+| the item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) | reference | 51 | 51 | 90 |
+| `1` | u8 | 62 | — | — |
+| suppressed flag `s0` | u8 | 63 | 62 | 141 |
+| rolled-back flag `s1` | u8 | 64 | 63 | 142 |
+| the scope's record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) | reference | 65 | 64 | 143 |
+| `00 00` | 2 × u8 | 76 | 75 | 194 |
+
+In the 78-byte tail, the state bytes are `00 00 00` when `s0` is `0`. The current history-state identity is the u32 immediately before the LP-UTF16 family name.
+
+The paired scope record is the paired indexed header, eight zero bytes, and a reference to the owner collection (type `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C`). It is 30 bytes in the plain form.
+
+A `Sketch` item stores a null current identity and a null preceding identity, and its tracked-results table has no entries. An `Extrude` item stores the identity of the `delta_state` it commits as its current identity and the identity of the state it follows as its preceding identity. The first `Extrude` of a design follows the root state of the history.
+
+**Tracked-results table.** The record of type `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA`, type version `2`, add-in `Fusion`, has this plain-form layout:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | entry count `n` |
+| 25 | `n` × 19 bytes | entries: a reference and a u64 key |
+| 25 + 19n | u64 | next key |
+| 33 + 19n | header | paired indexed header |
+| 44 + 19n | 9 × u8 | zero |
+
+The keys increase by one from entry to entry, and the next key is one more than the last key. A `Sketch` item's table has `n = 0` and next key `1`. The table of the design's `Extrude`, with `k` side faces, has `k` entries that reference records of type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A` with keys `3` to `k + 2`, then one entry that references a record of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77` with key `k + 3`; the next key is `k + 4`.
+
+**Tracked entries of an `Extrude`.** A side-face entry with key `t` tracks the side face whose name group has token `t`. Its record has type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`, type version `0`, add-in `EntityTracking`, and one of two plain forms:
+
+| Field | Type | 37-byte form | 33-byte form |
+|---|---|---|---|
+| indexed header | header | 0 | 0 |
+| zero | bytes | 11 to 19 | 11 to 20 |
+| `1` | u8 | 20 | — |
+| `0` | u32 | 21 | — |
+| the curve record (type `2DEE34BE-FA70-4D54-979C-164D86FDA786`) | reference | 25 | 21 |
+| `0` | u8 | 36 | 32 |
+
+The curve record of type `2DEE34BE-FA70-4D54-979C-164D86FDA786`, type version `2`, add-in `EntityTracking`, names the sketch curve of the side face and its neighbours in the loop:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | `1` |
+| 25 | u32 | `0` |
+| 29 | u32 | curve count `n` |
+| 33 | `n` × 40 bytes | curve entries in the profile-loop entry form: u32 kind, u64 sketch-curve primary identity, u64 secondary identity, u32 sense, two u32 operands, eight zero bytes |
+| 33 + 40n | u32, then that many u64 | the curve identities that meet the entry curve at its first end |
+| — | u32, then that many u64 | the curve identities that meet the entry curve at its second end |
+
+The primary identity of the entry is the sketch curve of the tracked side face. For a line with sense `1`, the first end is the start point of the stored line geometry and the second end is its end point; sense `0xffffffff` exchanges them. The side-face entries of the design's `Extrude` use the 37-byte form, and each of their curve records holds one entry of kind `3` with sense `1` and operands `1` and `1`, and one curve identity in each list.
+
+The body entry is a record of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`, type version `4`, add-in `Fusion`. The body entry of the design's `Extrude` has this layout:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 11 × u8 | zero |
+| 22 | LP-UTF16 | GUID of 36 code units |
+| 98 | u32 | `0` |
+| 102 | u32 | `1` |
+| 106 | LP-ASCII | token string: the decimal side tokens, concatenated in ascending byte order of their decimal strings |
+| — | u32 | offset count `m`, one more than the number of tokens |
+| — | `m` × u32 | the offset of each token in the token string, then the length of the token string |
+| — | u64 | the `Extrude` scope's first persistent identity |
+| — | u8 | `0` |
+| — | u32 | `1` |
+| — | u8 | `0`, a null reference |
+| — | u8 | `0` |
+| — | header | paired indexed header, followed by nine zero bytes |
+
+Its token string lists the `k` side tokens `3` to `k + 2`. A body entry for side tokens `3`, `4`, `5`, and `6` stores the string `3456` and the offsets `0, 1, 2, 3, 4`.
+
+**Item-tail companion.** The record of type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`, type version `0`, is 33 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 9 × u8 | zero |
+| 20 | u8 | `1` |
+| 21 | 8 × u8 | zero |
+| 29 | u32 | item word |
+
+**Record-timestamp table and parameter companion.** The record-timestamp table of a `Sketch` or `Extrude` scope uses the prefix `01 01` and lists first the record of type `5D15E992-1E93-4D79-A553-10D2624148AE` that references the component aggregate. The parameter companion is also a record of type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`: its 58-byte prefix is the record-timestamp prefix with the bytes `00 00` in place of `01 01` and an entry count of `0`, followed by the owner entry.
+
+**Timeline context.** The record of type `C3423E04-7E85-4B44-8E31-A5FA9C100052`, type version `2`, add-in `Fusion`, that the timeline names stores these fields after its indexed header:
+
+| Offset | Type | Field |
+|---|---|---|
+| 11 | 10 × u8 | zero |
+| 21 | u32 | count `N` of browser-node references |
+| 25 | `N` references | browser-node members (type `D26351F0-5940-4D23-AA20-2C35475A6D9E`) |
+| — | u32 | count `M` of feature-type counters |
+| — | `M` entries | LP-ASCII type name `Dc<Family>MetaType` and a u64 counter, in ascending byte order of the name |
+| — | u64 | context value |
+| — | u32 | count `K` of references of type `549FBB80-B890-473E-A5C0-415D3D9BF4E6` |
+| — | `K` references | |
+| — | 7 references | types `12D00AC0-B828-48C8-9740-80C4D992DB65`, `B65B5682-9355-44C7-8AFC-823058C4A36B`, the timeline, `B13113CC-031E-4F93-8240-C4C10728869F`, the persistent-id table, the owner collection, and `016D8C93-144B-4352-9299-98FA738BD4FF`, in this order |
+
+The paired header, eight zero bytes, and a reference to the component aggregate (type `E03784ED-5E19-4E14-B9F2-3B07017018CD`) end the record. A design with one `Sketch` and one `Extrude` stores the counters `DcExtrudeFeatureMetaType = 1` and `DcSketchMetaType = 1`.
+
+**Persistent-id table.** The record of type `5D89B935-3F04-4CAB-81F5-E7B309E7E13F` maps the persistent feature identities that face names reference to their scope records. Type version `1` stores the forward form:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | scope count `S` |
+| 25 | `S` entries | u64 scope record index, u32 identity count `c`, `c` × u64 identity |
+| — | u32 | pair count `P` |
+| — | `P` × 16 bytes | `(u64 identity, u64 scope record index)` pairs in ascending identity order |
+| — | u32 | retired count `R` |
+| — | `R` × u64 | retired identities |
+| — | reference | the timeline context |
+
+Type version `0` stores the reverse form:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | pair count `P` |
+| 25 | `P` × 16 bytes | `(u64 identity, u64 scope record index)` pairs |
+| — | u32 | retired count `R` |
+| — | `R` × u64 | retired identities |
+| — | reference | the timeline context |
+
+The pairs of the forward form list every identity of the forward run, with the same scope. They can also list identities whose scopes have no forward entry; each of these identities is greater than every identity of the forward run. The pairs resolve an identity to its scope. A retired identity is in no pair and is less than the greatest listed identity. Identities come from a counter that starts at `300`. A `Sketch` scope owns one identity and an `Extrude` scope owns two. A design with one `Sketch` and one `Extrude` stores `Sketch → 300` and `Extrude → 301, 302`.
+
+**Origin.** The component's origin container has type GUID `2972A3B8-3627-49BC-8C3D-18707605EC44`, type version `1`, and add-in `Geometry`:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 12 × u8 | zero |
+| 23 | u32 | `7` |
+| 27 | reference | the origin point (type `0E18EEF2-0D6F-480C-997E-5EBC7369AE5F`) |
+| 38, 49, 60 | reference | the three origin axes (type `19031004-3AB6-4D13-ABBF-C51EE214688D`) |
+| 71, 82, 93 | reference | the planes `XY`, `XZ`, and `YZ` (type `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`) |
+| 104 | reference | the component aggregate |
+
+The three plane records have consecutive record indices and store their LP-UTF16 names `XY`, `XZ`, and `YZ`.
+
+**Sketch placement.** The `Sketch` scope's prefix references its sketch entity container and its placement record (type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`). The scope's ordered reference table holds the placement, the placement path that the placement references, and the owners of the sketch's dimension parameters. A placement path of type `5A1BF548-241F-46FD-9FB5-E4B05126EB9D` names a tracked entity identity (type `90055C05-546C-4EE7-B3C9-3DD922AD0C9C`) with its first reference. The path also references the placement transform (type `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`), whose reference names a record of type `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C`, which references a second tracked entity identity. A tracked entity identity is 29 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u64 | Design entity ID of the tracked entity |
+
+The two identities of a placement name the same entity, a record of the construction-plane type `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`: one of the three origin planes, or a construction plane of the design.
+
+**Owned parameters.** A one-sided distance `Extrude` owns two parameters, with source kinds `AlongDistance` and `TaperAngle`. A sketch dimension's source kind is a dimension kind with a numeric suffix, such as `Linear Dimension-2`. An owned parameter's name is `d<n>`. In a stream with serializer magic `1234`, the owner of an `Extrude` parameter is the 104-byte scalar owner form, and the owner of a sketch dimension is the 104-byte scalar owner form or the 108-byte tagged scalar variant owner form. Both forms store the repeated scope field `01 + u32 scope_record_index + six zero bytes + 01 + u8 variant` and the flag byte. Each owner's companion is the 58-byte parameter companion.
+
+**History of the first `Extrude`.** When the first `Extrude` is the only item that commits a state, the `.smbh` history is two `delta_state` records: the root state and the `Extrude`'s state, which is the head. The head state has one bulletin board with owner reference `0` and number `2`. Every change of that board is an insertion, and the insertions name every entity slot of the solved model except slot `0` once each.
+
+**Side faces.** A sketch line's first point reference names its end point and its second point reference names its start point, which is the start of the stored line geometry. When the identity record of an `Extrude`'s profile selection holds one region group whose region has one loop of one entry and no further region, the side face of the one-sided or two-sided `Extrude` has the name group `(1, "3", [E])`, where `E` is the scope's first persistent identity.
+
+**Side-face walk.** In a stream with serializer magic `1234`, a one-sided `Extrude` (travel direction `1`) whose operation is join, new body, or cut and whose reversed-direction byte is `0` names its side faces by a walk of its profile loop when the profile identity record holds one region group of one region with one loop, and every entry of that loop names a sketch line and stores incidence words `1` and `1`. The `k`-th line of the walk generates side token `k + 2`. The loop's ring runs each entry's line from its end point to its start point when the entry's traversal flag is `1`, and from its start point to its end point when the flag is `0`. Each line of the ring ends where the next line starts. In the Sketch's own coordinates, the ring runs counterclockwise about the Sketch z axis. Let `C` be the loop line whose sketch-curve record has the largest record index, and `P` the start point of `C`. Token `3` is the line whose run in the ring starts at `P`: `C` itself when the traversal flag of `C` is `0`, and the line after `C` in the ring when the flag is `1`. When the `AlongDistance` value is positive, tokens `4`, `5`, and onward follow the ring from token `3`. When the value is negative, they run against the ring from token `3`.
+
 ### 3.2 Materials
 
 Visual and physical materials are distinct serialized channels.
