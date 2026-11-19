@@ -798,6 +798,54 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** When a `Combine` scope stores no preceding history state, the decoder binds its operands in the predecessor that the history header names. An operand that this binding leaves native binds through its direct body recipe.
 
+### DR-881. Tracked-results entry records
+
+**Question.** What are the layouts of the records that the entries of a tracked-results table reference (types `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`, `2DEE34BE-FA70-4D54-979C-164D86FDA786`, and `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`), and does the key of a side-face entry equal the side token of the face that it tracks?
+
+**Known.** `f3d.md` §3.1 "**Tracked-results table.**" gives the table, its keys, and the entry types of a `Sketch` and an `Extrude`. A `2DEE34BE` record holds integers that equal sketch-curve persistent identities. An `ABA79BE7` record holds the result body's browser-node GUID.
+
+**Need.** A writer of an `Extrude` must write these records for each side face and for the result body.
+
+### DR-882. Timeline-context counters and context value
+
+**Question.** What do the `Dc<Family>MetaType` counters and the u64 context value of the timeline context record count?
+
+**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`.
+
+**Need.** A writer must write correct values for designs with other item sets.
+
+### DR-883. Extrude side-face loop orientation
+
+**Question.** Which stored fields give the loop direction and the extrusion sense that order the side tokens of a one-sided `Extrude` whose profile is one closed loop of lines?
+
+**Known.** The token-3 face's curve is the loop curve with the largest persistent identity or the loop curve that shares that curve's start point. The side tokens follow the loop in one direction. Both start curves and both directions occur. `f3d.md` §3.1 "**Side faces.**" gives the drawn start point of a line and the side token of a one-sided or two-sided `Extrude` whose profile is one loop of one entry. A symmetric `Extrude` of such a profile can carry side token `5` without side token `3`.
+
+**Need.** The profile-region entry order of the profile selection record (type `4BD53E5A-0B3E-45E5-AE8B-02044306485A`) and the `Extrude` direction fields against the order of the token-3 and token-4 curves. A writer names side faces by this order.
+
+### DR-884. Sketch placement without a tracked identity
+
+**Question.** What does a sketch placement path name when it references no tracked entity identity?
+
+**Known.** `f3d.md` §3.1 "**Sketch placement.**" gives the path of a sketch on a construction plane. A placement can also reference a path of type `5662F619-2281-4AD9-93DC-1FCFDA1062E7`.
+
+**Need.** The placement of a sketch on a body face.
+
+### DR-885. Persistent-id table forward and reverse disagreement
+
+**Question.** Why do the forward run and the reverse pairs of some type-version-1 persistent-id tables list different identities?
+
+**Known.** `f3d.md` §3.1 "**Persistent-id table.**" gives both runs. In most tables the pairs list exactly the identities of the forward run.
+
+**Need.** A reader that resolves a face name through the table must know which run is authoritative.
+
+### DR-886. Item-tail companion word
+
+**Question.** What does the u32 at offset 29 of the item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) encode?
+
+**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`.
+
+**Need.** A writer must choose the word for each item it writes.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
