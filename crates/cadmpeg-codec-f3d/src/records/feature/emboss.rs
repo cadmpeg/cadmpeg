@@ -12,7 +12,16 @@ use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 use cadmpeg_core::decode::u64_from_index;
 use serde::{Deserialize, Serialize};
 
-const PROFILE_FIRST_SINGLE_REFERENCE_ORDER: [usize; 7] = [4, 8, 5, 7, 2, 6, 0];
+/// Positions in the scope's ordered reference table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct EmbossTableSlots {
+    pub(crate) profile_group: u32,
+    pub(crate) profile_member: u32,
+    pub(crate) face_group: u32,
+    pub(crate) face_member: u32,
+    pub(crate) auxiliary_group: u32,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum DesignEmbossControlWords {
@@ -86,21 +95,62 @@ impl DesignEmbossConstruction {
         ]
     }
 
-    fn reference_order_matches(&self, scope: &DesignParameterScope, ordinals: [usize; 7]) -> bool {
-        self.references()
-            .iter()
-            .zip(ordinals)
-            .all(|(field, ordinal)| {
-                scope.reference_members().values().nth(ordinal) == Some(&field.value)
-            })
+    /// Ordered-reference-table positions of the selection groups and their
+    /// sole members, when the scope has the fixed nine-reference form.
+    pub(crate) fn table_slots(&self, scope: &DesignParameterScope) -> Option<EmbossTableSlots> {
+        if self.pair_count() != Some(1)
+            || !matches!(self.control_words, DesignEmbossControlWords::Two(_))
+            || u32::try_from(scope.reference_members().len()).ok()
+                != Some(fixed_table::REFERENCE_COUNT_VALUE)
+        {
+            return None;
+        }
+        let position = |field: Located<u32>| {
+            let mut matching = scope
+                .reference_members()
+                .values()
+                .enumerate()
+                .filter(|(_, value)| **value == field.value)
+                .map(|(ordinal, _)| ordinal);
+            match (matching.next(), matching.next()) {
+                (Some(ordinal), None) => u32::try_from(ordinal).ok(),
+                _ => None,
+            }
+        };
+        let profile_group = position(self.profile_group)?;
+        let face_group = position(self.face_group)?;
+        let slots = EmbossTableSlots {
+            profile_group,
+            profile_member: profile_group.checked_add(1)?,
+            face_group,
+            face_member: face_group.checked_add(1)?,
+            auxiliary_group: position(self.auxiliary_group)?,
+        };
+        let [depth, horizontal, vertical, rotation] =
+            self.scalar_owners().map(|(owner, _)| position(owner));
+        let mut ordinals = [
+            depth?,
+            horizontal?,
+            vertical?,
+            rotation?,
+            slots.profile_group,
+            slots.profile_member,
+            slots.face_group,
+            slots.face_member,
+            slots.auxiliary_group,
+        ];
+        ordinals.sort_unstable();
+        if !ordinals
+            .into_iter()
+            .eq(0..fixed_table::REFERENCE_COUNT_VALUE)
+        {
+            return None;
+        }
+        Some(slots)
     }
 
     pub(crate) fn has_fixed_operands(&self, scope: &DesignParameterScope) -> bool {
-        self.pair_count() == Some(1)
-            && matches!(self.control_words, DesignEmbossControlWords::Two(_))
-            && u32::try_from(scope.reference_members().len()).ok()
-                == Some(fixed_table::REFERENCE_COUNT_VALUE)
-            && self.reference_order_matches(scope, PROFILE_FIRST_SINGLE_REFERENCE_ORDER)
+        self.table_slots(scope).is_some()
     }
 
     fn pair_count(&self) -> Option<usize> {
@@ -157,9 +207,13 @@ impl DesignEmbossConstruction {
                 != Some(scope.reference_count_offset())
             || self.sketch_profile.as_ref().is_some_and(|profile| {
                 pair_count != 1
-                    || !self.has_fixed_operands(scope)
-                    || profile.scope_reference_ordinal != 1
-                    || scope.reference_members().values().nth(1) != Some(&profile.record_index)
+                    || self.table_slots(scope).is_none_or(|slots| {
+                        profile.scope_reference_ordinal != slots.profile_member
+                            || usize::try_from(slots.profile_member)
+                                .ok()
+                                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                                != Some(&profile.record_index)
+                    })
             })
         {
             return false;

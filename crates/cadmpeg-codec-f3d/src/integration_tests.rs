@@ -11,6 +11,7 @@ mod configuration_parameters;
 mod design_containment;
 mod design_parameters;
 mod emboss_operands;
+mod emboss_profile_selection;
 mod external_placement;
 mod f30_placements;
 mod fillet_projection;

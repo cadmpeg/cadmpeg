@@ -12,16 +12,19 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     for scope in &ctx.native.design_parameter_scopes {
         let operands = scope
             .emboss_operand_construction()
-            .is_none_or(|construction| {
+            .zip(scope.emboss_table_slots())
+            .is_none_or(|(construction, slots)| {
                 construction.sketch_profile.is_some()
                     && ctx.native.design_face_operands.iter().any(|operand| {
                         design_stream(&operand.id) == design_stream(&scope.id)
                             && operand.scope_record_index == scope.record_index
-                            && operand.scope_reference_ordinal == 2
+                            && operand.scope_reference_ordinal == slots.face_group
                             && operand.group_record_index() == Some(construction.face_group.value)
                             && operand.group_member_ordinal() == Some(0)
-                            && Some(&operand.record_index())
-                                == scope.reference_members().values().nth(3)
+                            && usize::try_from(slots.face_member)
+                                .ok()
+                                .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
+                                == Some(&operand.record_index())
                             && operand.recipe_kind
                                 == crate::records::recipes::ConstructionRecipeKind::BoundedFace
                     })
@@ -52,7 +55,10 @@ fn auxiliary_links_hold(
     scope: &DesignParameterScope,
     groups: &[DesignExtrudeSelectionGroup],
 ) -> bool {
-    let Some(construction) = scope.emboss_operand_construction() else {
+    let (Some(construction), Some(slots)) = (
+        scope.emboss_operand_construction(),
+        scope.emboss_table_slots(),
+    ) else {
         return true;
     };
     let mut matching = groups.iter().filter(|group| {
@@ -63,7 +69,9 @@ fn auxiliary_links_hold(
     let Some(group) = matching.next() else {
         return false;
     };
-    matching.next().is_none() && group.scope_reference_ordinal == 8 && !group.typed_references
+    matching.next().is_none()
+        && group.scope_reference_ordinal == slots.auxiliary_group
+        && !group.typed_references
 }
 
 fn links_hold(
@@ -72,7 +80,10 @@ fn links_hold(
     owners: &[DesignParameterOwner],
     groups: &[DesignConstructionOperandGroup],
 ) -> bool {
-    let Some(construction) = scope.emboss_operand_construction() else {
+    let (Some(construction), Some(slots)) = (
+        scope.emboss_operand_construction(),
+        scope.emboss_table_slots(),
+    ) else {
         return true;
     };
     let stream = design_stream(&scope.id);
@@ -115,18 +126,21 @@ fn links_hold(
         (
             construction.profile_group.value,
             DesignOperandRole::PROFILE,
-            0,
-            1,
+            slots.profile_group,
+            slots.profile_member,
         ),
         (
             construction.face_group.value,
             DesignOperandRole::ROLE_0X10,
-            2,
-            3,
+            slots.face_group,
+            slots.face_member,
         ),
     ]
     .into_iter()
     .all(|(record, role, ordinal, member_ordinal)| {
+        let Ok(member_ordinal) = usize::try_from(member_ordinal) else {
+            return false;
+        };
         let mut matching = groups.iter().filter(|group| {
             design_stream(&group.id) == stream
                 && group.scope_record_index == scope.record_index
