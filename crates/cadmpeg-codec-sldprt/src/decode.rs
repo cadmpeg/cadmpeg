@@ -4227,7 +4227,13 @@ fn build_geometry_ir(
     snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     if part {
-        project_design(ctx, &mut ir, &native.feature_histories, current_bodies)?;
+        project_design(
+            ctx,
+            &mut ir,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+            current_bodies,
+        )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
@@ -4242,9 +4248,10 @@ fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ir, histories, bodies)?;
+    let added = crate::design_v11::project(ir, histories, lanes, bodies)?;
     ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
 }
 
@@ -5099,7 +5106,13 @@ fn build_metadata_ir(
             .iter()
             .map(|body| body.id.clone())
             .collect();
-        project_design(ctx, &mut ir, &native.feature_histories, bodies)?;
+        project_design(
+            ctx,
+            &mut ir,
+            &native.feature_histories,
+            &native.feature_input_lanes,
+            bodies,
+        )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown

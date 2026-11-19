@@ -28,16 +28,18 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 
-use crate::records::FeatureHistory;
+use crate::records::{FeatureHistory, FeatureInputLane};
 
 /// Project the design of a part document into `ir.design`, beside its v10
 /// records, and state the part's root definition.
 ///
-/// `bodies` are the bodies of the current geometry: those of the active
-/// configuration. Returns the number of records added.
+/// `lanes` are the `ResolvedFeatures` lanes whose scalars type the v10
+/// parameters. `bodies` are the bodies of the current geometry: those of the
+/// active configuration. Returns the number of records added.
 pub(crate) fn project(
     ir: &mut CadIr,
     histories: &[FeatureHistory],
+    lanes: &[FeatureInputLane],
     bodies: Vec<BodyId>,
 ) -> Result<usize, CodecError> {
     let timeline = tree::timeline(histories)?;
@@ -45,7 +47,8 @@ pub(crate) fn project(
         return Ok(0);
     }
     let definition = root_definition();
-    let parameters = parameters::parameters(histories, &timeline, &definition)?;
+    let decoded = parameters::Decoded::new(&ir.model.parameters, lanes);
+    let parameters = parameters::parameters(histories, &timeline, &definition, &decoded)?;
     let configurations =
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
