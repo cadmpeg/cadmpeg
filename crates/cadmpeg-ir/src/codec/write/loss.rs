@@ -21,6 +21,16 @@ pub(crate) enum ExportLossCode {
     NativeRecordsOmitted,
     /// The output holds no geometry (§3.5).
     OutputEmpty,
+    /// A feature the target needs a state or names for is not written
+    /// (§3.4, Features without their state).
+    EvaluationMissing,
+    /// A parameter's expression is written as its cached value (§5.13).
+    ParameterFlattened,
+    /// A parameter is written under another name (§5.13).
+    ParameterRenamed,
+    /// A record's byte positions that no decoder reads have no stated value
+    /// (§3.4, Residual bytes).
+    RecordResidualUnavailable,
 }
 
 impl ExportLossCode {
@@ -30,14 +40,22 @@ impl ExportLossCode {
             Self::ArenaOmitted(_) => "arena.omitted",
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::OutputEmpty => "output.empty",
+            Self::EvaluationMissing => "evaluation.missing",
+            Self::ParameterFlattened => "parameter.flattened",
+            Self::ParameterRenamed => "parameter.renamed",
+            Self::RecordResidualUnavailable => "record.residual-unavailable",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
-            Self::ArenaOmitted(_) | Self::NativeRecordsOmitted | Self::OutputEmpty => {
-                Severity::Warning
-            }
+            Self::ArenaOmitted(_)
+            | Self::NativeRecordsOmitted
+            | Self::OutputEmpty
+            | Self::EvaluationMissing
+            | Self::ParameterFlattened
+            | Self::RecordResidualUnavailable => Severity::Warning,
+            Self::ParameterRenamed => Severity::Info,
         }
     }
 
@@ -47,6 +65,10 @@ impl ExportLossCode {
             Self::ArenaOmitted(kind) => kind,
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
+            Self::EvaluationMissing
+            | Self::ParameterFlattened
+            | Self::ParameterRenamed
+            | Self::RecordResidualUnavailable => return LossTaxonomy::ParametricRecordOmitted,
         };
         match kind {
             EntityKind::Body
@@ -160,6 +182,76 @@ where
     ids.dedup();
     Some(ExportLossCode::NativeRecordsOmitted.note(format!(
         "the {format} write omits {} native record(s) {reason}: {}",
+        ids.len(),
+        ids.join(", ")
+    )))
+}
+
+/// `export:evaluation.missing`: the writer writes no item for these
+/// features. The message gives the count and then every id, sorted (§3.2).
+/// `None` when `ids` is empty.
+#[must_use]
+pub fn evaluation_missing<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::EvaluationMissing, format, reason, ids)
+}
+
+/// `export:parameter.flattened`: the writer writes these parameters as their
+/// cached values, or not at all where they have none (§5.13).
+#[must_use]
+pub fn parameter_flattened<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::ParameterFlattened, format, reason, ids)
+}
+
+/// `export:parameter.renamed`: the writer writes these parameters under
+/// other names. Each entry names the parameter and both names (§5.13).
+#[must_use]
+pub fn parameter_renamed<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::ParameterRenamed, format, reason, ids)
+}
+
+/// `export:record.residual-unavailable`: the format specification states no
+/// value for byte positions of these records (§3.4, Residual bytes).
+#[must_use]
+pub fn record_residual_unavailable<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(
+        ExportLossCode::RecordResidualUnavailable,
+        format,
+        reason,
+        ids,
+    )
+}
+
+/// One note of `code` that lists every entry of `ids`, sorted, after their
+/// count.
+fn listed<I, S>(code: ExportLossCode, format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut ids = ids.into_iter().map(Into::into).collect::<Vec<String>>();
+    if ids.is_empty() {
+        return None;
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Some(code.note(format!(
+        "the {format} write {reason} ({}): {}",
         ids.len(),
         ids.join(", ")
     )))
