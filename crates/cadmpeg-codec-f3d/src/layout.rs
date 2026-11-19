@@ -3168,6 +3168,22 @@ pub(crate) mod legacy_pipe_operation_prefix {
     pub(crate) const OPAQUE_POST_OPERATION: usize = 30;
 }
 
+/// Byte offsets for the `legacy_extrude_sketch_profile_tail` record.
+///
+/// Spec §3.1. Record length 93 B.
+pub(crate) mod legacy_extrude_sketch_profile_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 93;
+    /// Offset of `role` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u32`). Spec §3.1.
+    pub(crate) const ROLE_VALUE: u32 = 0x0000_0041;
+    /// Offset of `empty_record_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const EMPTY_RECORD_REFERENCE: usize = 57;
+    /// Offset of `zero_flags` (`bytes[2]`). Spec §3.1.
+    pub(crate) const ZERO_FLAGS: usize = 68;
+}
+
 /// Byte offsets for the `sketch_profile_region_selection_prefix` record.
 ///
 /// Spec §3.1. Record length 40 B.
@@ -4945,6 +4961,21 @@ pub(crate) mod shifted_extrude_prologue {
     pub(crate) const ZERO_RUN_3: usize = 24;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 27;
+    /// Offset of `direction` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const DIRECTION: usize = 31;
+    /// Offset of `face_extend` (`u32`, little-endian). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const FACE_EXTEND: usize = 35;
+    /// Offset of `direction_reversed` (`u8`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const DIRECTION_REVERSED: usize = 39;
+    /// Offset of `geometry_kind` (`u8`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const GEOMETRY_KIND: usize = 40;
+    /// Offset of `start_support` (`u8`). Spec §3.1.
+    #[cfg(test)]
+    pub(crate) const START_SUPPORT: usize = 41;
 }
 
 /// Byte offsets for the `legacy_class_338_two_sided_distance_extrude_frame` record.
@@ -5115,6 +5146,22 @@ pub(crate) mod shifted_reference_aware_extrude_scope_prefix {
     pub(crate) const SECOND_SIDE_EXTENT: usize = 288;
     /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const REFERENCE_COUNT: usize = 292;
+}
+
+/// Byte offsets for the `legacy_class_330_symmetric_extrude_frame` record.
+///
+/// Spec §3.1. Record length 420 B.
+pub(crate) mod legacy_class_330_symmetric_extrude_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 420;
+    /// Offset of `first_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_SIDE_EXTENT: usize = 106;
+    /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_SIDE_EXTENT: usize = 110;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT: usize = 252;
+    /// Stated value of `reference_count` (`u32`). Spec §3.1.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_0005;
 }
 
 /// Byte offsets for the `shifted_reference_aware_extrude_class_323_tail` record.
