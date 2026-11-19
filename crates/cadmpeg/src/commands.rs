@@ -42,6 +42,9 @@ use cadmpeg_measure::compare::Verdict;
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
 pub(crate) fn print_load_notice(document: &LoadedDocument) {
+    if let Some(loss) = &document.stale_sidecar {
+        eprintln!("warning: {}: {}", loss.code, loss.message);
+    }
     let LoadOrigin::Decoded {
         selection: Selection::Detected { confidence },
         report,

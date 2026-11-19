@@ -4233,6 +4233,7 @@ fn build_geometry_ir(
             &native.feature_histories,
             &native.feature_input_lanes,
             current_bodies,
+            &mut pmi_losses,
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local
@@ -4250,9 +4251,12 @@ fn project_design(
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ir, histories, lanes, bodies)?;
-    ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
+    cadmpeg_ir::design::projection::project_layer(ctx, "sldprt", ir, losses, |ir, _| {
+        let added = crate::design_v11::project(ir, histories, lanes, bodies)?;
+        ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
+    })
 }
 
 /// The bodies of the active configuration: those of the active Parasolid
@@ -5112,6 +5116,7 @@ fn build_metadata_ir(
             &native.feature_histories,
             &native.feature_input_lanes,
             bodies,
+            &mut pmi_losses,
         )?;
     }
     // Sort arenas for the order-sensitive loss scans that follow; the local

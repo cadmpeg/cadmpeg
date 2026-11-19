@@ -7,13 +7,13 @@ use std::path::Path;
 use anyhow::{anyhow, Context};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, View};
 use cadmpeg_ir::codec::DecodeOptions;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::{CadIr, DecodeSidecar};
 
 use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
 };
 
-use crate::application::artifact_store;
+use crate::application::artifact_store::{self, SidecarLoad};
 use crate::application::document::LoadedDocument;
 use crate::application::refusal::ApplicationError;
 
@@ -97,19 +97,21 @@ pub(crate) fn load_artifact(
             )
         }
     })?;
-    let Some(sidecar) = artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
-    else {
-        return Ok(LoadedDocument::neutral(
-            ir,
-            cadmpeg_core::decode::u64_from_index(text.len()),
-        ));
-    };
-    Ok(LoadedDocument::restored(
-        ir,
-        sidecar.report,
-        sidecar.fidelity,
-        cadmpeg_core::decode::u64_from_index(text.len()),
-    ))
+    let input_bytes = cadmpeg_core::decode::u64_from_index(text.len());
+    Ok(
+        match artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)? {
+            SidecarLoad::Absent => LoadedDocument::neutral(ir, input_bytes),
+            SidecarLoad::Stale(loss) => {
+                LoadedDocument::neutral(ir, input_bytes).with_stale_sidecar(loss)
+            }
+            SidecarLoad::Matching(sidecar) => {
+                let DecodeSidecar {
+                    report, fidelity, ..
+                } = *sidecar;
+                LoadedDocument::restored(ir, report, fidelity, input_bytes)
+            }
+        },
+    )
 }
 
 /// Whether the file name has the decode-sidecar suffix that `dump` writes
@@ -150,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn matching_sidecar_restores_decoded_origin_and_mismatch_is_hard_error() {
+    fn matching_sidecar_restores_decoded_origin_and_a_stale_one_is_ignored() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("part.cadir.json");
         let text = CadIr::empty().to_canonical_json().unwrap();
@@ -186,13 +188,19 @@ mod tests {
         assert_eq!(outcome.input_bytes, u64::try_from(text.len()).unwrap());
 
         std::fs::write(&path, format!("{text}\n")).unwrap();
-        let error = load_artifact(
+        let outcome = load_artifact(
             &InputCatalog::with_builtins(),
             &path,
             DecodeOptions::default(),
             Some(ForcedInput::Cadir),
         )
-        .unwrap_err();
-        assert!(error.to_string().contains("does not match"));
+        .expect("a stale sidecar does not refuse the load");
+        assert_eq!(outcome.origin, LoadOrigin::Neutral);
+        assert_eq!(outcome.ir, CadIr::empty());
+        let loss = outcome
+            .stale_sidecar
+            .expect("the load reports the stale sidecar");
+        assert_eq!(loss.code, cadmpeg_ir::source_fidelity::sidecar_stale_kind());
+        assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
     }
 }
