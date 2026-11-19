@@ -284,7 +284,12 @@ fn expanding_restates_the_decoder_instances() {
     let original = shared_bracket();
     let mut ir = original.clone();
     own_once(&mut ir, &BTreeMap::new());
-    let expanded = super::expand(&ir.model.product_definitions, &ir.model.occurrences).unwrap();
+    let expanded = super::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+    )
+    .unwrap();
     let instances = expanded
         .occurrences
         .iter()

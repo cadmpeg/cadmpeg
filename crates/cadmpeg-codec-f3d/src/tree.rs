@@ -857,9 +857,9 @@ pub(crate) struct Expanded {
 
 /// Expands the instance tree of `definitions` and `occurrences` as
 /// [`own_once`] found it, each instance at the values its top-level
-/// occurrence's overrides give it. An expansion past the default entity
-/// limit, which bounds the decoder's own, is refused.
+/// occurrence's overrides give it. The decode policy bounds the instance count.
 pub(crate) fn expand(
+    limits: &cadmpeg_core::decode::ResourceLimits,
     definitions: &[ProductDefinition],
     occurrences: &[Occurrence],
 ) -> Result<Expanded, CodecError> {
@@ -902,7 +902,6 @@ pub(crate) fn expand(
         })
         .collect::<Vec<_>>();
     stack.reverse();
-    let limits = cadmpeg_core::decode::ResourceLimits::default();
     let mut seen = BTreeSet::new();
     while let Some(pending) = stack.pop() {
         let Some(&occurrence) = occurrence_at.get(pending.occurrence.as_str()) else {
@@ -989,7 +988,12 @@ pub(crate) fn stated(
 /// [`expand`] gives it.
 #[cfg(test)]
 pub(crate) fn world_poses(model: &Model) -> BTreeMap<OccurrenceId, Transform> {
-    let expanded = expand(&model.product_definitions, &model.occurrences).expect("expand");
+    let expanded = expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &model.product_definitions,
+        &model.occurrences,
+    )
+    .expect("expand");
     let parents = parent_ids(&expanded.definitions, &expanded.occurrences);
     let local = expanded
         .occurrences

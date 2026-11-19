@@ -188,8 +188,12 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         .occurrences
         .iter()
         .all(|occurrence| occurrence.overrides.is_empty()));
-    let expanded =
-        crate::tree::expand(&ir.model.product_definitions, &ir.model.occurrences).unwrap();
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+    )
+    .unwrap();
     let poses = crate::tree::world_poses(&ir.model);
     let mut translations = expanded
         .occurrence_of
