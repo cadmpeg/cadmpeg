@@ -77,6 +77,8 @@ pub(crate) enum CatiaLossCode {
     GeometrySurfaceWeightsInferred,
     /// Native surface extrapolation controls remain outside the neutral carrier.
     GeometrySurfaceExtrapolationNotTransferred,
+    /// Bounded native plane charts emit neutral plane supports without their intervals.
+    GeometryPlaneBoundsNotTransferred,
     /// A witnessed conic branch exceeds the incident face bounds.
     GeometryConicBranchBoundsInferred,
     /// A sheet face uses a fitted surface carrier.
@@ -191,6 +193,7 @@ impl CatiaLossCode {
         Self::GeometrySurfaceParametersNotTransferred,
         Self::GeometrySurfaceWeightsInferred,
         Self::GeometrySurfaceExtrapolationNotTransferred,
+        Self::GeometryPlaneBoundsNotTransferred,
         Self::GeometryConicBranchBoundsInferred,
         Self::GeometrySheetSurfaceFitted,
         Self::GeometryRollingBallRailsAdjusted,
@@ -265,6 +268,7 @@ impl CatiaLossCode {
             Self::GeometrySurfaceExtrapolationNotTransferred => {
                 "geometry.surface-extrapolation-not-transferred"
             }
+            Self::GeometryPlaneBoundsNotTransferred => "geometry.plane-bounds-not-transferred",
             Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
             Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
@@ -364,6 +368,7 @@ impl CatiaLossCode {
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
             Self::GeometrySurfaceParametersNotTransferred
             | Self::GeometrySurfaceExtrapolationNotTransferred
+            | Self::GeometryPlaneBoundsNotTransferred
             | Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
@@ -458,6 +463,7 @@ mod tests {
                 "geometry.surface-parameters-not-transferred",
                 "geometry.surface-weights-inferred",
                 "geometry.surface-extrapolation-not-transferred",
+                "geometry.plane-bounds-not-transferred",
                 "geometry.conic-branch-bounds-inferred",
                 "geometry.sheet-surface-fitted",
                 "geometry.rolling-ball-rails-adjusted",

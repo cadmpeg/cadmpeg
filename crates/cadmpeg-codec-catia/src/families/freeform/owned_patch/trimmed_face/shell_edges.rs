@@ -123,7 +123,10 @@ fn recover_on_chart(
     }
     Some(Patch {
         face: face.face_pos,
-        recovery: SheetBoundaryRecovery::default(),
+        recovery: SheetBoundaryRecovery {
+            untransferred_plane_bounds: carrier.untransferred_plane_bounds(),
+            ..SheetBoundaryRecovery::default()
+        },
         body: face.member.body,
         forward,
         sense_inferred: carrier.roster_sense_inferred(),
