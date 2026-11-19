@@ -460,7 +460,45 @@ fn programs_assign_through_paths_and_external_names() {
             value: neutral("4[mm]", &[]),
         }],
     ));
-    assert_no_finding_containing(&ir, "program assigns");
+    assert_finding(
+        &ir,
+        "program assigns d0 of the external definition test:design:definition#unread, which the document does not hold; its body is `source`",
+    );
+
+    let unread = ParameterRef {
+        target: RefTarget::External {
+            definition: id("definition", "unread"),
+            name: NonBlankString::new("d1").unwrap(),
+        },
+        through: None,
+    };
+    ir.design.programs[0].body = ProgramBody::Neutral(vec![Statement::If {
+        condition: neutral("$0 > 1[mm]", std::slice::from_ref(&unread)),
+        then: vec![Statement::Assign {
+            target: reference("width"),
+            value: neutral("$0 * 2", &[unread]),
+        }],
+        otherwise: Vec::new(),
+    }]);
+    assert_finding(
+        &ir,
+        "program reads d1 of the external definition test:design:definition#unread in a condition",
+    );
+    assert_finding(&ir, "program reads d1 of the external definition test:design:definition#unread in an assigned value");
+    ir.design.programs[0].body = ProgramBody::Source {
+        dialect: ExpressionDialect::Creo,
+        tokens: vec![
+            ExpressionToken::Reference(ParameterRef {
+                target: RefTarget::External {
+                    definition: id("definition", "unread"),
+                    name: NonBlankString::new("d0").unwrap(),
+                },
+                through: None,
+            }),
+            ExpressionToken::Text(" = 4".to_owned()),
+        ],
+    };
+    assert_no_finding_containing(&ir, "program");
 }
 
 #[test]
@@ -536,7 +574,25 @@ fn process_expressions_type_check() {
     );
     assert_finding(&ir, "expression does not type-check");
     ir.process.parameters[1] = process_parameter("bad", None, "3 * 2", &[]);
-    assert_no_finding_containing(&ir, "expression");
+    assert_finding(
+        &ir,
+        "process parameter has no kind, so its expression is `source`",
+    );
+    ir.process.parameters[1].definition = ProcessDefinition::Expression(Expression::Source {
+        dialect: ExpressionDialect::FreeCad,
+        tokens: vec![ExpressionToken::Text("3 * 2".to_owned())],
+    });
+    assert_no_finding_containing(&ir, "process-parameter");
+    ir.process.parameters.push(process_parameter(
+        "reads",
+        Some(LENGTH),
+        "$0 * 1[mm]",
+        &[ParamRef::Process(id("process-parameter", "bad"))],
+    ));
+    assert_finding(
+        &ir,
+        "neutral expression references test:design:process-parameter#bad, a process parameter with no kind",
+    );
 }
 
 fn equation_curve(x: &str) -> FeatureOperation {

@@ -589,9 +589,10 @@ fn feature_expressions(wire: &Json) -> Vec<(FeaturePlace, Expression)> {
     found
 }
 
-/// A process parameter with no kind holds a `Number`, a stated value follows
-/// a stated kind, each reference of its expression resolves, and a neutral
-/// expression type-checks with a root of the stated kind.
+/// A process parameter with no kind holds a `Number` and has a `Source`
+/// expression, no neutral tree references it, a stated value follows a stated
+/// kind, each reference of its expression resolves, and a neutral expression
+/// type-checks with a root of the stated kind.
 fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut Vec<Finding>) {
     let process = &index.ir.process;
     let kinds: BTreeMap<&str, Option<&ValueKind>> = process
@@ -647,6 +648,29 @@ fn check_process_parameters(index: &DesignRecords<'_>, findings: &mut Vec<Findin
         };
         let refs: Vec<&ParamRef> = match expression {
             Expression::Neutral(neutral) => {
+                if parameter.kind.is_none() {
+                    super::error(
+                        findings,
+                        entity,
+                        format_args!(
+                            "process parameter has no kind, so its expression is `source`"
+                        ),
+                    );
+                }
+                for reference in node_references(&neutral.0) {
+                    if let ParamRef::Process(target) = reference {
+                        if let Some(None) = kinds.get(target.as_str()) {
+                            super::error(
+                                findings,
+                                entity,
+                                format_args!(
+                                    "neutral expression references {}, a process parameter with no kind",
+                                    target.as_str()
+                                ),
+                            );
+                        }
+                    }
+                }
                 let site = Site {
                     entity,
                     kind: parameter.kind.as_ref(),

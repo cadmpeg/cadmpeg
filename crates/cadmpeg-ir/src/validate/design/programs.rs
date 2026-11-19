@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::parameters::node_references;
 use super::records::{DesignRecords, MemberKey};
 use crate::design::dimension::{ParameterRef, RefTarget};
 use crate::design::parameter::ParameterDefinition;
@@ -42,11 +43,10 @@ pub(super) fn check_programs(index: &DesignRecords<'_>, findings: &mut Vec<Findi
             continue;
         };
         let id = program.id.as_str();
+        check_external_references(id, statements, findings);
         let targets = assign_targets(statements);
         let mut named = BTreeSet::new();
         for target in targets {
-            // An `External` target names a parameter of a document that was
-            // not read, so no record states its definition (interim, G2-22).
             let RefTarget::Parameter(parameter) = &target.target else {
                 continue;
             };
@@ -105,6 +105,52 @@ fn check_owner(index: &DesignRecords<'_>, program: &ParameterProgram, findings: 
             id,
             format_args!("program has an owner and states the stage {stage:?}"),
         );
+    }
+}
+
+/// No statement of a `Neutral` program holds an `External` reference, as an
+/// `Assign` target or in a value or condition: a program that assigns an
+/// unread parameter is `Source`, and one that reads it references the
+/// parameter the decoder mints for it (§5.13).
+fn check_external_references(id: &str, statements: &[Statement], findings: &mut Vec<Finding>) {
+    let mut pending: Vec<&Statement> = statements.iter().rev().collect();
+    while let Some(statement) = pending.pop() {
+        let (place, references) = match statement {
+            Statement::Assign { target, value } => {
+                if matches!(target.target, RefTarget::External { .. }) {
+                    super::error(
+                        findings,
+                        id,
+                        format_args!(
+                            "program assigns {}, which the document does not hold; its body is `source`",
+                            target_text(target)
+                        ),
+                    );
+                }
+                ("an assigned value", node_references(&value.0))
+            }
+            Statement::If {
+                condition,
+                then,
+                otherwise,
+            } => {
+                pending.extend(otherwise.iter().rev());
+                pending.extend(then.iter().rev());
+                ("a condition", node_references(&condition.0))
+            }
+        };
+        for reference in references {
+            if matches!(reference.target, RefTarget::External { .. }) {
+                super::error(
+                    findings,
+                    id,
+                    format_args!(
+                        "program reads {} in {place}, which the document does not hold; it reads a minted parameter",
+                        target_text(reference)
+                    ),
+                );
+            }
+        }
     }
 }
 
