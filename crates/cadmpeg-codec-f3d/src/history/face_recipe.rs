@@ -18,6 +18,7 @@ pub(super) struct FaceRecipeIndex {
     edge_faces: HashMap<i64, Vec<i64>>,
     endpoints: HashMap<i64, Option<[i64; 2]>>,
     corners: HashMap<i64, Vec<Corner>>,
+    vertex_edges: HashMap<i64, BTreeSet<i64>>,
 }
 
 impl FaceRecipeIndex {
@@ -27,6 +28,12 @@ impl FaceRecipeIndex {
         let mut face_loops = HashMap::new();
         let mut edge_faces = HashMap::<_, Vec<_>>::new();
         let mut corners = HashMap::<_, Vec<_>>::new();
+        let mut vertex_edges = HashMap::<_, BTreeSet<_>>::new();
+        for row in &topology.edge_vertices {
+            for vertex in [row.start_vertex, row.end_vertex] {
+                vertex_edges.entry(vertex).or_default().insert(row.edge);
+            }
+        }
         let mut coedge_rows = HashMap::new();
         for row in &topology.coedge_topology {
             coedge_rows
@@ -109,7 +116,18 @@ impl FaceRecipeIndex {
             edge_faces,
             endpoints,
             corners,
+            vertex_edges,
         }
+    }
+
+    /// Whether every edge of the topology that meets `vertex`, including
+    /// the edges of faces without a complete boundary, bounds a corner there.
+    fn corners_cover_vertex_edges(&self, vertex: i64, corners: &[Corner]) -> bool {
+        self.vertex_edges.get(&vertex).is_some_and(|edges| {
+            edges
+                .iter()
+                .all(|edge| corners.iter().any(|corner| corner.edges.contains(edge)))
+        })
     }
 
     fn fan(&self, edge: i64, vertex: i64, first_face: i64) -> Option<Vec<i64>> {
@@ -148,8 +166,10 @@ impl FaceRecipeIndex {
         let [first, second] = corners.as_slice() else {
             return None;
         };
-        (first.edges == [edge, edge] && second.edges == [edge, edge])
-            .then(|| vec![first.face, second.face])
+        (first.edges == [edge, edge]
+            && second.edges == [edge, edge]
+            && self.corners_cover_vertex_edges(vertex, corners))
+        .then(|| vec![first.face, second.face])
     }
 
     fn branching_fan_matches(
@@ -164,6 +184,7 @@ impl FaceRecipeIndex {
             return false;
         };
         if ordinals.len() != corners.len()
+            || !self.corners_cover_vertex_edges(vertex, corners)
             || corners
                 .iter()
                 .any(|corner| corner.edges[0] == corner.edges[1])
@@ -334,10 +355,13 @@ impl FaceRecipeIndex {
         }
         let mut resolved = None;
         for face in candidates? {
-            let boundary = self.boundaries.get(&face)?;
+            let (Some(boundary), Some(loops)) = (self.boundaries.get(&face), self.loops.get(&face))
+            else {
+                continue;
+            };
             let whole = 0..boundary.len();
             let ranges = if single_loop {
-                self.loops.get(&face)?.as_slice()
+                loops.as_slice()
             } else {
                 std::slice::from_ref(&whole)
             };
