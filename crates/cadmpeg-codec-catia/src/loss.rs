@@ -71,6 +71,8 @@ pub(crate) enum CatiaLossCode {
     TopologyAffineVertexReconciled,
     /// A planar shared-edge lift uses a native parameter-map fit tolerance.
     GeometryParameterMapAccuracyInferred,
+    /// Native local surface limits and affine chart maps remain outside the neutral carrier.
+    GeometrySurfaceParametersNotTransferred,
     /// A witnessed conic branch exceeds the incident face bounds.
     GeometryConicBranchBoundsInferred,
     /// A sheet face uses a fitted surface carrier.
@@ -182,6 +184,7 @@ impl CatiaLossCode {
         Self::GeometryRollingSheetExtended,
         Self::TopologyAffineVertexReconciled,
         Self::GeometryParameterMapAccuracyInferred,
+        Self::GeometrySurfaceParametersNotTransferred,
         Self::GeometryConicBranchBoundsInferred,
         Self::GeometrySheetSurfaceFitted,
         Self::GeometryRollingBallRailsAdjusted,
@@ -248,6 +251,9 @@ impl CatiaLossCode {
             Self::GeometryConicBranchBoundsInferred => "geometry.conic-branch-bounds-inferred",
             Self::GeometryParameterMapAccuracyInferred => {
                 "geometry.parameter-map-accuracy-inferred"
+            }
+            Self::GeometrySurfaceParametersNotTransferred => {
+                "geometry.surface-parameters-not-transferred"
             }
             Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
             Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
@@ -345,7 +351,8 @@ impl CatiaLossCode {
             | Self::GeometryConicBranchBoundsInferred
             | Self::GeometrySheetSurfaceFitted
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
-            Self::GeometryUnresolvedCarriers
+            Self::GeometrySurfaceParametersNotTransferred
+            | Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
             | Self::GeometryAnalyticPayloadInvalid
@@ -436,6 +443,7 @@ mod tests {
                 "geometry.rolling-sheet-extended",
                 "topology.affine-vertex-reconciled",
                 "geometry.parameter-map-accuracy-inferred",
+                "geometry.surface-parameters-not-transferred",
                 "geometry.conic-branch-bounds-inferred",
                 "geometry.sheet-surface-fitted",
                 "geometry.rolling-ball-rails-adjusted",
