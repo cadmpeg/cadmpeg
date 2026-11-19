@@ -803,6 +803,46 @@ fn a_current_two_sided_extrude_keeps_the_side_of_each_distance() {
 }
 
 #[test]
+fn values_the_document_does_not_state_are_not_byte_exact() {
+    let document = json!({
+        "format": "solidcraft/57",
+        "name": "Exact",
+        "units": "mm",
+        "params": [
+            {"name": "w", "expr": "20 mm", "unit": "mm", "model": false},
+            {"name": "h", "expr": "w * 2", "unit": "mm", "model": false}
+        ],
+        "features": [
+            {"id": 1, "name": "Sketch1", "suppressed": false, "type": "sketch",
+             "plane": {"type": "origin", "name": "XY"},
+             "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                                   {"id": "c", "pos": [0.0, 0.0]}],
+                        "curves": [{"id": "c1", "type": "circle", "c": 1, "r": 2.0}],
+                        "constraints": [{"id": "k1", "type": "radius", "c": 2, "value": 2.0}]}}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let fidelity = serde_json::to_value(result.source_fidelity()).unwrap();
+    let exactness = &fidelity["annotations"]["exactness"];
+    // The value of h follows from its expression, so it is derived.
+    let h = &exactness["solidcraft:design:parameter#h"];
+    assert!(
+        h.is_object(),
+        "a derived parameter is annotated: {exactness}"
+    );
+    // The expression of a dimension parameter is this decoder's own text.
+    let dimension = &exactness["solidcraft:design:parameter#1%3Ak1"];
+    assert!(
+        dimension.is_object(),
+        "a dimension parameter is annotated: {exactness}"
+    );
+}
+
+#[test]
 fn body_and_face_looks_colour_the_cached_body() {
     let bytes = crate::test_support::cached_design_editing(|document| {
         document["appearances"] = json!({

@@ -315,3 +315,20 @@ A two-sided extrude has the sides `first` (against the normal for a negative
 `direction`) and `second` of `distance2`. A distance keeps its side whatever
 its sign, so an extrude whose sides do not lie on the two sides of the sketch
 plane has no neutral two-sided form.
+
+### 3.11 Exactness
+
+A value the document states is byte-exact and carries no note. Three kinds
+of value are not stated, and each is noted in the source fidelity:
+
+- A parameter's `value` evaluated from an expression that names other
+  parameters is `derived`.
+- The `expression` of a dimension parameter is this decoder's text, built
+  from the dimension's value, so it is `inferred`.
+- The `operands` of a grounded joint and the `schema` of a look are this
+  decoder's own construction, so they are `inferred`.
+
+A default that the migration of an earlier format supplies is an inference
+of the migration, not a value of the document. Its records are not yet
+noted; the migrated XZ frame and the participants of an earlier design are
+the open cases.

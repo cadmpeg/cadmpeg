@@ -14,6 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::IdentityKey;
 use cadmpeg_ir::math::portable::Portable;
@@ -214,7 +215,19 @@ impl<'a> Looks<'a> {
 
     /// Adds the appearances, the bindings, and the physical materials of the
     /// user materials to `ir`.
-    pub(crate) fn finish(mut self, ir: &mut CadIr) -> Result<(), CodecError> {
+    pub(crate) fn finish(
+        mut self,
+        ir: &mut CadIr,
+        annotations: &mut AnnotationBuilder,
+    ) -> Result<(), CodecError> {
+        // The schema names are this decoder's own, not the document's.
+        for appearance_id in self.records.keys() {
+            annotations.field_exactness(
+                appearance_id,
+                "schema",
+                cadmpeg_ir::Exactness::Inferred,
+            )?;
+        }
         let materials: Vec<String> = self
             .materials
             .into_iter()

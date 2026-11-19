@@ -104,8 +104,20 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     }
     if let Some(document) = &source.document {
         if let (Some(version), true) = (version, decodes_history) {
-            let outcome =
-                crate::history::decode(ctx, &document.object, version, &outputs, &owners, &mut ir)?;
+            let outcome = {
+                let mut builder = cadmpeg_ir::annotations::AnnotationBuilder::new();
+                let outcome = crate::history::decode(
+                    ctx,
+                    &document.object,
+                    version,
+                    &outputs,
+                    &owners,
+                    &mut ir,
+                    &mut builder,
+                )?;
+                annotations.append(builder.build())?;
+                outcome
+            };
             losses.extend(outcome.losses);
             crate::look::views(&document.object, &mut ir)?;
         }

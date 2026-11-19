@@ -23,11 +23,13 @@ use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::Feature;
 use cadmpeg_ir::ids::{BodyId, IdentityKey};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{Sketch, SketchEntity};
+use cadmpeg_ir::Exactness;
 use serde_json::{json, Map, Value};
 
 use crate::loss::SolidcraftLossCode;
@@ -88,6 +90,7 @@ struct Walk<'w, 'c> {
     ctx: &'w DecodeContext<'c>,
     scope: Scope,
     ir: &'w mut CadIr,
+    annotations: &'w mut AnnotationBuilder,
     tally: Tally,
     sketches: BTreeMap<u64, SketchUse>,
     planes: BTreeMap<u64, Frame>,
@@ -108,6 +111,7 @@ pub(crate) fn decode(
     outputs: &BTreeMap<u64, Vec<BodyId>>,
     components: &BTreeMap<u64, Vec<BodyId>>,
     ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
 ) -> Result<Outcome, CodecError> {
     let mut outcome = Outcome::default();
     let migrated = crate::migrate::upgrade(version, document);
@@ -132,6 +136,7 @@ pub(crate) fn decode(
         planes: BTreeMap::new(),
         owners: BTreeMap::new(),
         dimension_parameters: Vec::new(),
+        annotations,
         sketch_owners: Vec::new(),
     };
     for (ordinal, record) in features.iter().enumerate() {
@@ -559,9 +564,13 @@ impl Walk<'_, '_> {
                 "properties": properties,
             }));
         }
+        let mut dimension_ids = BTreeSet::new();
         for mut record in std::mem::take(&mut self.dimension_parameters) {
             let owner = record["owner"].as_str().map(str::to_owned);
             record["ordinal"] = json!(next(owner)?);
+            if let Some(id) = record["id"].as_str() {
+                dimension_ids.insert(id.to_owned());
+            }
             records.push(record);
         }
         self.ctx.charge_entities(
@@ -572,7 +581,24 @@ impl Walk<'_, '_> {
             if let Some(object) = record.as_object_mut() {
                 object.retain(|_, value| !value.is_null());
             }
-            let parameter = serde_json::from_value(record).map_err(malformed)?;
+            let parameter_id = record["id"].as_str().unwrap_or_default().to_owned();
+            let from_dimension = dimension_ids.contains(&parameter_id);
+            let evaluated = record
+                .get("dependencies")
+                .and_then(Value::as_array)
+                .is_some_and(|d| !d.is_empty());
+            let parameter: cadmpeg_ir::features::DesignParameter =
+                serde_json::from_value(record).map_err(malformed)?;
+            if from_dimension {
+                self.annotations.field_exactness(
+                    &parameter_id,
+                    "expression",
+                    Exactness::Inferred,
+                )?;
+            } else if evaluated {
+                self.annotations
+                    .field_exactness(&parameter_id, "value", Exactness::Derived)?;
+            }
             self.ir.model.parameters.push(parameter);
         }
         Ok(())

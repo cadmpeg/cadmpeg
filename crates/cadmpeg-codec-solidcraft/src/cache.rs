@@ -218,7 +218,9 @@ pub(crate) fn decode(
             )),
         }
     }
-    looks.finish(ir)?;
+    let mut look_annotations = AnnotationBuilder::new();
+    looks.finish(ir, &mut look_annotations)?;
+    annotations.append(look_annotations.build())?;
     outcome.losses.extend(tally.notes());
     if !undecoded.is_empty() {
         outcome

@@ -548,6 +548,12 @@ impl super::Walk<'_, '_> {
                 "drives": [],
             });
             let joint: AssemblyJoint = serde_json::from_value(record).map_err(malformed)?;
+            // The grounded frame is the identity, which the document does not state.
+            self.annotations.field_exactness(
+                joint.id.as_str(),
+                "operands",
+                cadmpeg_ir::Exactness::Inferred,
+            )?;
             self.ir.model.assembly_joints.push(joint);
         }
         if unresolved > 0 {
