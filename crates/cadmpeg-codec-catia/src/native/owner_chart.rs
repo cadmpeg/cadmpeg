@@ -85,6 +85,8 @@ pub(super) enum CatiaOwnerChartAddress {
     TaggedU8,
     /// Tagged two-byte reference.
     TaggedU16,
+    /// Tagged three-byte reference.
+    TaggedU24,
 }
 
 impl CatiaOwnerChartBridgeReference {
@@ -100,6 +102,7 @@ impl CatiaOwnerChartBridgeReference {
             CatiaAllocationReferenceEncoding::Selector2 => CatiaOwnerChartAddress::Selector2,
             CatiaAllocationReferenceEncoding::TaggedU8 => CatiaOwnerChartAddress::TaggedU8,
             CatiaAllocationReferenceEncoding::TaggedU16 => CatiaOwnerChartAddress::TaggedU16,
+            CatiaAllocationReferenceEncoding::TaggedU24 => CatiaOwnerChartAddress::TaggedU24,
         };
         Self { value, address }
     }
@@ -116,6 +119,7 @@ impl CatiaOwnerChartBridgeReference {
             CatiaOwnerChartAddress::Selector2 => CatiaAllocationReferenceEncoding::Selector2,
             CatiaOwnerChartAddress::TaggedU8 => CatiaAllocationReferenceEncoding::TaggedU8,
             CatiaOwnerChartAddress::TaggedU16 => CatiaAllocationReferenceEncoding::TaggedU16,
+            CatiaOwnerChartAddress::TaggedU24 => CatiaAllocationReferenceEncoding::TaggedU24,
         }
     }
 
