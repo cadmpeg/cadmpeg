@@ -359,6 +359,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/records/feature/patterns.rs`                  | `MAX_RECTANGULAR_PATTERN_RECORD_BYTES`    | `1 << 20`                                               | 4    | Bytes one instance record spans in the same search. Same skip and loss. |
 | `cadmpeg-codec-f3d`      | `src/records/feature/patterns.rs`                  | `MAX_RECTANGULAR_PATTERN_SCANNED_BYTES`   | `1 << 24`                                               | 4    | Bytes the instance records of one search span together. Same skip and loss. |
 | `cadmpeg-codec-f3d`      | `src/history/binding.rs`                           | `MAX_HISTORY_BINDING_WORK`                | `1 << 23`                                               | 4    | History records decoded by topology binding, a `WorkBudget` created in `decode/design_intent.rs` and shared by the history streams of one decode. A stream that exhausts it keeps its bulletin boards and history records without historical topology; `history.binding-work-exceeded` counts those streams and names the constant. |
+| `cadmpeg-codec-f3d` | `src/history/face_recipe.rs` | `MAX_FACE_RECIPE_MATCH_WORK` | `1 << 22` | 4 | Work units for one counted Shell face program: endpoint corner-pair probes and augmenting edge visits. Exhaustion retains the recipe and reports `feature.face-recipe-work-exceeded`. |
 | `cadmpeg-codec-f3d`      | `src/design/decode/sketch.rs`                      | `MAX_RELATION_RUN`                        | `4096`                                                  | 1    | Counted runs in sketch relation, text and pattern records. A larger count rejects the framing candidate (`None`).                                                                                                                                                            |
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/sheet_metal.rs`          | `MAX_EDGE_WIDTH_DISTANCE_OWNERS`          | `2`                                                     | 1    | Width-distance owners in the single-edge flange frame. A frame with more is not recognized.                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/design/decode/presentation.rs`                | `MAX_ENVELOPE_GAP`                        | `8`                                                     | 1    | Zero padding admitted while a presentation envelope is located.                                                                                                                                                                                                              |
@@ -565,16 +566,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 343.
+Production `MAX_*` constants: 344.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 77    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 171   |
+| 4    | Local work cap             | 172   |
 | N    | Not a decode bound         | 53    |
-|      | Total                      | 343   |
+|      | Total                      | 344   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -582,7 +583,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 20, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 27,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 28,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
 `cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
