@@ -4088,6 +4088,72 @@ fn model_curve_differential_by_id_inner(
     scratch.settle(result)
 }
 
+/// The point of [`model_curve_differential_by_id_inner`], evaluated without
+/// its derivatives.
+fn model_curve_differential_point_by_id_inner(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    parameter: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        let depth_guard = ModelEvaluationDepthGuard::enter(admission)
+            .map_err(EvaluationFailure::ResourceLimit)?;
+        if !parameter.is_finite() {
+            return Err(EvaluationFailure::NoValue);
+        }
+        let curve = index
+            .curves(curve_id.as_str(), admission)
+            .map_err(EvaluationFailure::from)?
+            .ok_or(EvaluationFailure::NoValue)?;
+        admission.model_step()?;
+        if !depth_guard.bind(
+            ModelEvaluationIdentity::Curve(std::ptr::from_ref(curve)),
+            admission,
+        ) {
+            return Err(EvaluationFailure::NoValue);
+        }
+        if let Some(procedural) = index
+            .procedural_curves_for_curve(curve_id.as_str(), admission)
+            .map_err(EvaluationFailure::from)?
+            .and_then(|procedurals| procedurals.first().copied())
+        {
+            match procedural.definition() {
+                ProceduralCurveDefinition::Replica { source, transform } => {
+                    return placed_point(
+                        *transform,
+                        model_curve_differential_point_by_id_inner(
+                            admission, index, source, parameter,
+                        ),
+                    );
+                }
+                ProceduralCurveDefinition::Subset(definition_payload) => {
+                    let source_parameter = subset_source_parameter(
+                        *definition_payload.parameter_range(),
+                        *definition_payload.sense(),
+                        parameter,
+                    )?;
+                    return model_curve_differential_point_by_id_inner(
+                        admission,
+                        index,
+                        definition_payload.source(),
+                        source_parameter,
+                    );
+                }
+                ProceduralCurveDefinition::Helix(helix) => {
+                    return helix_differential(helix, parameter)
+                        .map(|differential| differential.point);
+                }
+                _ => {}
+            }
+        }
+        let solved = curve.geometry.solved().ok_or(EvaluationFailure::NoValue)?;
+        crate::eval::decode::curve_point_solved(admission, solved, parameter)
+    })();
+    scratch.settle(result)
+}
+
 /// Map a nonnegative local subset parameter into its ordered source range.
 fn subset_source_parameter(
     interval: ParameterInterval,
@@ -4403,10 +4469,13 @@ fn model_native_extrusion_point(
         extrusion_directrix_reversed(construction.revision_form()),
     )
     .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
-    let point =
-        model_curve_differential_by_id_inner(admission, index, directrix, carrier.parameter.get())
-            .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?
-            .point;
+    let point = model_curve_differential_point_by_id_inner(
+        admission,
+        index,
+        directrix,
+        carrier.parameter.get(),
+    )
+    .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?;
     admit_point(offset(point.get(), &[(v, direction)]))
 }
 
@@ -4579,14 +4648,13 @@ fn model_native_revolution_point(
     let (angle, _) = native_revolution_angle(construction, angular_parameter)?;
     let axis_origin = construction.axis_origin().get();
     let axis = unit_length_axis(construction.axis_direction());
-    let point = model_curve_differential_by_id_inner(
+    let point = model_curve_differential_point_by_id_inner(
         admission,
         index,
         construction.directrix(),
         carrier.parameter.get(),
     )
-    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?
-    .point;
+    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?;
     admit_point(revolved_point(point.get(), axis_origin, axis, angle))
 }
 
