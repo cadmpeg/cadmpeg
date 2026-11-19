@@ -489,7 +489,7 @@ fn call(function: Function, args: Vec<Value>) -> Result<Value, EvalError> {
     }
 }
 
-enum Task<'a, R> {
+enum Task<'a, R = ParameterRef> {
     Visit(&'a Node<R>),
     Unary(UnaryOp),
     Binary(BinaryOp, &'a Node<R>),

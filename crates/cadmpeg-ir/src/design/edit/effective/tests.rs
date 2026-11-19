@@ -85,7 +85,7 @@ fn configuration_of(key: u32, scope: u32) -> DesignConfiguration {
     }
 }
 
-fn placement(owner: u32, key: u32, prototype: u32, at: Transform) -> (u32, Occurrence) {
+fn placement(owner: usize, key: u32, prototype: u32, at: Transform) -> (usize, Occurrence) {
     (
         owner,
         Occurrence::new(occurrence(key), definition(prototype), Some(at)),
@@ -109,7 +109,7 @@ fn assembly() -> CadIr {
         placement(2, 2, 3, shift(0.0, 1.0, 0.0)),
         placement(3, 3, 4, shift(0.0, 0.0, 100.0)),
     ] {
-        document.model.product_definitions[owner as usize - 1]
+        document.model.product_definitions[owner - 1]
             .occurrences
             .push(record.id.clone());
         document.model.occurrences.push(record);

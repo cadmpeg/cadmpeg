@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use cadmpeg_core::text::NonBlankString;
 use serde_json::json;
 
-use crate::design::configuration::DesignConfiguration;
+use crate::design::configuration::{DesignConfiguration, Overrides};
 use crate::design::container::{Container, OrderedKind, Rollback};
 use crate::design::dimension::{Dimension, ParamRef, ParameterRef, RefTarget};
 use crate::design::evaluation::{
@@ -130,7 +130,7 @@ fn native_feature(key: u32, operation: FeatureOperation) -> Feature {
     }
 }
 
-fn operation(key: u32, kind: serde_json::Value) -> Operation {
+fn operation(key: u32, kind: &serde_json::Value) -> Operation {
     serde_json::from_value(json!({
         "id": operation_id(key).as_str(),
         "kind": kind,
@@ -150,7 +150,7 @@ fn operation(key: u32, kind: serde_json::Value) -> Operation {
 fn machining(key: u32) -> Operation {
     operation(
         key,
-        json!({"kind": "machining", "class": {"kind": "probing"}}),
+        &json!({"kind": "machining", "class": {"kind": "probing"}}),
     )
 }
 
@@ -251,7 +251,7 @@ fn machined() -> CadIr {
         machining(2),
         operation(
             3,
-            json!({"kind": "modifier", "modifier": "dogbone", "inputs": [operation_id(1).as_str()]}),
+            &json!({"kind": "modifier", "modifier": "dogbone", "inputs": [operation_id(1).as_str()]}),
         ),
         machining(4),
     ];
@@ -309,11 +309,11 @@ fn literal(value: f64) -> super::super::Literal {
 
 #[test]
 fn a_design_edit_marks_the_operations_that_depend_on_it_and_what_follows_them() {
+    use EvaluationStatus::{Current, Stale};
     let mut document = machined();
     document
         .set_dimension(&parameter_id(1), literal(20.0))
         .unwrap();
-    use EvaluationStatus::{Current, Stale};
     assert_eq!(
         (1..=4)
             .map(|key| toolpath_status(&document, key))
@@ -485,7 +485,7 @@ fn switching_the_active_configuration_rebases_process_states() {
             name: format!("c{key}"),
             parent: None,
             comment: None,
-            overrides: Default::default(),
+            overrides: Overrides::default(),
             active_arrangements: BTreeSet::new(),
             materials: Vec::new(),
             native_ref: None,
