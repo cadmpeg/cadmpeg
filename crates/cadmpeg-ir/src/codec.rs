@@ -229,6 +229,9 @@ impl DecodeResult {
         format: FormatId,
     ) -> Result<Self, DecodeFailure> {
         let result = DecodeResult::new(decoded, format, ctx.depth())?;
+        result.ir().check_arena_order().map_err(|error| {
+            CodecError::malformed(format_args!("codec {format:?} decoded an {error}"))
+        })?;
         if result.report().format() != format.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
@@ -295,9 +298,6 @@ impl DecodeResult {
             None => FormatIdentity::unclassified(format.as_str().to_owned()),
         };
         ir.finalize();
-        ir.check_arena_order().map_err(|error| {
-            CodecError::malformed(format_args!("codec {format:?} decoded an {error}"))
-        })?;
         Ok(Self {
             ir,
             report: DecodeReport::from_body(classification, body),
