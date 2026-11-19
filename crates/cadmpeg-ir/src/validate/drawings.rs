@@ -4,8 +4,12 @@
 use super::record_finding;
 use crate::index::identities::IdentitySet;
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use crate::document::design_records::DesignRecords;
 use crate::document::CadIr;
+use crate::drawings::{Drawing, DrawingKind};
+use crate::references::ReferenceRecords;
 use crate::report::{
     check::{Check, Finding},
     Severity,
@@ -13,8 +17,10 @@ use crate::report::{
 
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
     let records = DesignRecords::of(ir);
+    let named = ReferenceRecords::of(&ir.model);
+    let graph = DrawingGraph::of(&ir.model.drawings);
     let mut orders = std::collections::BTreeSet::new();
-    for drawing in &ir.model.drawings {
+    for (index, drawing) in ir.model.drawings.iter().enumerate() {
         let mut refs_valid = all_ids.contains(&drawing.object)
             && drawing
                 .native_ref
@@ -36,12 +42,26 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         if refs_valid {
             'groups: for targets in drawing.relationships.values() {
                 for target in targets {
-                    if !target.target.resolves(&records, |id| all_ids.contains(id)) {
+                    if !target
+                        .target
+                        .resolves(&records, &named, |id| all_ids.contains(id))
+                    {
                         refs_valid = false;
                         break 'groups;
                     }
                 }
             }
+        }
+        if !views_are_valid(drawing, &named) || graph.on_cycle(index) {
+            record_finding(
+                findings,
+                Check::ReferentialIntegrity,
+                Severity::Error,
+                Some(drawing.id.as_str()),
+                format_args!(
+                    "drawing views or base view name a record of another kind, repeat, or form a cycle"
+                ),
+            );
         }
         let order_valid = orders.insert(drawing.order);
         let numeric_valid = drawing.physical_content_is_valid()
@@ -65,6 +85,133 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
     }
 }
 
+/// Whether each `views` entry names a drawing record that is no `Page` and
+/// no `Template`, once, and `base_view` names a `View`, `Projection`,
+/// `Section`, or `Detail` record.
+fn views_are_valid(drawing: &Drawing, targets: &ReferenceRecords<'_>) -> bool {
+    let mut listed = BTreeSet::new();
+    drawing.views.iter().all(|view| {
+        listed.insert(view.as_str())
+            && targets.drawing(view).is_some_and(|record| {
+                !matches!(record.kind, DrawingKind::Page | DrawingKind::Template)
+            })
+    }) && drawing.base_view.as_ref().is_none_or(|base| {
+        targets.drawing(base).is_some_and(|record| {
+            matches!(
+                record.kind,
+                DrawingKind::View
+                    | DrawingKind::Projection
+                    | DrawingKind::Section
+                    | DrawingKind::Detail
+            )
+        })
+    })
+}
+
+/// The drawing records reached from themselves through `views`, or through
+/// `base_view`, by arena index.
+struct DrawingGraph {
+    cyclic: Vec<bool>,
+}
+
+impl DrawingGraph {
+    fn of(drawings: &[Drawing]) -> Self {
+        let index: BTreeMap<&str, usize> = drawings
+            .iter()
+            .enumerate()
+            .map(|(position, drawing)| (drawing.id.as_str(), position))
+            .collect();
+        let lookup = |id: &crate::drawings::DrawingId| index.get(id.as_str()).copied();
+        let views: Vec<Vec<usize>> = drawings
+            .iter()
+            .map(|drawing| drawing.views.iter().filter_map(lookup).collect())
+            .collect();
+        let bases: Vec<Vec<usize>> = drawings
+            .iter()
+            .map(|drawing| drawing.base_view.iter().filter_map(lookup).collect())
+            .collect();
+        let through_views = on_cycle(&views);
+        let through_bases = on_cycle(&bases);
+        Self {
+            cyclic: through_views
+                .into_iter()
+                .zip(through_bases)
+                .map(|(views, bases)| views || bases)
+                .collect(),
+        }
+    }
+
+    fn on_cycle(&self, index: usize) -> bool {
+        self.cyclic.get(index).copied().unwrap_or(false)
+    }
+}
+
+/// Which nodes lie on a cycle of the graph whose successors are
+/// `successors`: the members of a strongly connected component with more
+/// than one node, and the nodes that are their own successor. Iterative
+/// Tarjan, so a deep graph costs no call stack.
+fn on_cycle(successors: &[Vec<usize>]) -> Vec<bool> {
+    const UNVISITED: usize = usize::MAX;
+    let count = successors.len();
+    let mut order = vec![UNVISITED; count];
+    let mut low = vec![0; count];
+    let mut on_stack = vec![false; count];
+    let mut stack = Vec::new();
+    let mut cyclic = vec![false; count];
+    let mut next = 0;
+    for root in 0..count {
+        if order[root] != UNVISITED {
+            continue;
+        }
+        let mut frames = vec![(root, 0_usize)];
+        order[root] = next;
+        low[root] = next;
+        next += 1;
+        stack.push(root);
+        on_stack[root] = true;
+        while let Some(frame) = frames.last_mut() {
+            let (node, edge) = *frame;
+            if let Some(&successor) = successors[node].get(edge) {
+                frame.1 += 1;
+                if successor == node {
+                    cyclic[node] = true;
+                }
+                if order[successor] == UNVISITED {
+                    order[successor] = next;
+                    low[successor] = next;
+                    next += 1;
+                    stack.push(successor);
+                    on_stack[successor] = true;
+                    frames.push((successor, 0));
+                } else if on_stack[successor] {
+                    low[node] = low[node].min(order[successor]);
+                }
+                continue;
+            }
+            frames.pop();
+            if let Some(&(parent, _)) = frames.last() {
+                low[parent] = low[parent].min(low[node]);
+            }
+            if low[node] == order[node] {
+                let mut component = Vec::new();
+                while let Some(member) = stack.pop() {
+                    on_stack[member] = false;
+                    component.push(member);
+                    if member == node {
+                        break;
+                    }
+                }
+                if component.len() > 1 {
+                    for member in component {
+                        cyclic[member] = true;
+                    }
+                }
+            }
+        }
+    }
+    cyclic
+}
+
 #[cfg(test)]
 mod tests {
     use super::check_drawings;
@@ -77,7 +224,7 @@ mod tests {
                 serde_json::from_value(serde_json::json!({
                     "id": id, "object": "test:source:unknown#record", "kind": "page",
                     "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record",
-                    "relationships": {}, "curves": [], "parameters": {}, "assets": []
+                    "relationships": {}, "views": [], "curves": [], "parameters": {}, "assets": []
                 }))
                 .unwrap(),
             );
@@ -226,6 +373,179 @@ mod tests {
                 native_ref: None,
             });
         assert_eq!(findings(&design), 0);
+    }
+
+    fn graph(kinds: &[(&str, crate::drawings::DrawingKind)]) -> CadIr {
+        let mut ir = CadIr::empty();
+        for (order, (name, kind)) in kinds.iter().enumerate() {
+            ir.model.drawings.push(crate::drawings::Drawing::new(
+                drawing_id(name),
+                "test:source:unknown#record".to_owned(),
+                kind.clone(),
+                "Test".to_owned(),
+                u32::try_from(order).unwrap(),
+                None,
+            ));
+        }
+        ir
+    }
+
+    fn drawing_id(name: &str) -> crate::drawings::DrawingId {
+        crate::drawings::DrawingId::mint(format!("test:model:drawing#{name}")).unwrap()
+    }
+
+    fn flagged(ir: &CadIr) -> Vec<String> {
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
+        let mut findings = Vec::new();
+        check_drawings(ir, &ids, &mut findings);
+        findings
+            .into_iter()
+            .map(|finding| finding.entity.unwrap_or_default())
+            .collect()
+    }
+
+    #[test]
+    fn views_name_records_that_are_no_page_or_template_once() {
+        use crate::drawings::DrawingKind;
+        let mut ir = graph(&[
+            ("page", DrawingKind::Page),
+            ("template", DrawingKind::Template),
+            ("group", DrawingKind::Projection),
+            ("item", DrawingKind::Projection),
+            ("clip", DrawingKind::View),
+            ("other", DrawingKind::Page),
+        ]);
+        ir.model.drawings[0].views = vec![drawing_id("group"), drawing_id("clip")];
+        ir.model.drawings[2].views = vec![drawing_id("item")];
+        ir.model.drawings[4].views = vec![drawing_id("item")];
+        assert!(flagged(&ir).is_empty(), "{:?}", flagged(&ir));
+        for invalid in ["other", "template", "absent"] {
+            let mut bad = ir.clone();
+            bad.model.drawings[2].views.push(drawing_id(invalid));
+            assert_eq!(flagged(&bad), ["test:model:drawing#group"], "{invalid}");
+        }
+        let mut repeated = ir.clone();
+        repeated.model.drawings[0].views.push(drawing_id("group"));
+        assert_eq!(flagged(&repeated), ["test:model:drawing#page"]);
+        let mut cycle = ir;
+        cycle.model.drawings[3].views = vec![drawing_id("clip")];
+        cycle.model.drawings[4].views = vec![drawing_id("group")];
+        assert_eq!(
+            flagged(&cycle),
+            [
+                "test:model:drawing#group",
+                "test:model:drawing#item",
+                "test:model:drawing#clip"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_base_view_names_a_view_kind_and_base_views_form_no_cycle() {
+        use crate::drawings::DrawingKind;
+        let mut ir = graph(&[
+            ("front", DrawingKind::View),
+            ("section", DrawingKind::Section),
+            ("detail", DrawingKind::Detail),
+            ("note", DrawingKind::Annotation),
+        ]);
+        ir.model.drawings[1].base_view = Some(drawing_id("front"));
+        ir.model.drawings[2].base_view = Some(drawing_id("section"));
+        assert!(flagged(&ir).is_empty());
+        let mut annotation = ir.clone();
+        annotation.model.drawings[2].base_view = Some(drawing_id("note"));
+        assert_eq!(flagged(&annotation), ["test:model:drawing#detail"]);
+        let mut itself = ir.clone();
+        itself.model.drawings[0].base_view = Some(drawing_id("front"));
+        assert_eq!(flagged(&itself), ["test:model:drawing#front"]);
+        let mut cycle = ir;
+        cycle.model.drawings[0].base_view = Some(drawing_id("detail"));
+        assert_eq!(
+            flagged(&cycle),
+            [
+                "test:model:drawing#front",
+                "test:model:drawing#section",
+                "test:model:drawing#detail"
+            ]
+        );
+    }
+
+    #[test]
+    fn drawing_annotation_and_pmi_targets_name_existing_records() {
+        use crate::drawings::DrawingKind;
+        use crate::references::{DrawingPart, ReferenceSelection, ReferenceTarget};
+        let mut ir = graph(&[
+            ("dimension", DrawingKind::Dimension),
+            ("front", DrawingKind::View),
+        ]);
+        ir.model.drawings[1]
+            .curves
+            .push(serde_json::from_value(serde_json::json!({"geometry": {"kind": "line", "start": [0, 0], "end": [1, 0]}, "visibility": "visible", "source": "cosmetic"})).unwrap());
+        let with_target = |ir: &CadIr, target: ReferenceTarget| {
+            let mut ir = ir.clone();
+            ir.model.drawings[0].relationships.insert(
+                cadmpeg_core::text::NonBlankString::new("References2D".to_owned()).unwrap(),
+                vec![ReferenceSelection::new(target)],
+            );
+            flagged(&ir)
+        };
+        let view = |part| ReferenceTarget::Drawing {
+            drawing: drawing_id("front"),
+            part,
+        };
+        assert!(with_target(&ir, view(None)).is_empty());
+        assert!(with_target(&ir, view(Some(DrawingPart::Unread))).is_empty());
+        assert!(with_target(&ir, view(Some(DrawingPart::Curve(0)))).is_empty());
+        assert_eq!(
+            with_target(&ir, view(Some(DrawingPart::Curve(1)))),
+            ["test:model:drawing#dimension"]
+        );
+        assert_eq!(
+            with_target(
+                &ir,
+                ReferenceTarget::Drawing {
+                    drawing: drawing_id("absent"),
+                    part: None
+                }
+            ),
+            ["test:model:drawing#dimension"]
+        );
+        let annotation = crate::semantic_annotations::SemanticAnnotationId::mint(
+            "test:model:semantic-annotation#note",
+        )
+        .unwrap();
+        assert_eq!(
+            with_target(&ir, ReferenceTarget::Annotation(annotation.clone())),
+            ["test:model:drawing#dimension"]
+        );
+        let pmi = crate::ids::PmiId::mint("test:model:pmi#flatness").unwrap();
+        assert_eq!(
+            with_target(&ir, ReferenceTarget::Pmi(pmi.clone())),
+            ["test:model:drawing#dimension"]
+        );
+        ir.model
+            .semantic_annotations
+            .push(crate::semantic_annotations::SemanticAnnotation::new(
+                annotation.clone(),
+                "test:source:unknown#record".to_owned(),
+                crate::semantic_annotations::SemanticAnnotationKind::Text,
+                "Test".to_owned(),
+                0,
+                "test:source:unknown#record".to_owned(),
+            ));
+        assert!(with_target(&ir, ReferenceTarget::Annotation(annotation)).is_empty());
+        ir.model.pmi.push(crate::pmi::PmiAnnotation::new(
+            pmi.clone(),
+            Vec::new(),
+            crate::pmi::PmiDefinition::Presentation {
+                text: None,
+                placement: None,
+                semantics: Vec::new(),
+            },
+        ));
+        assert!(with_target(&ir, ReferenceTarget::Pmi(pmi)).is_empty());
     }
 
     #[test]

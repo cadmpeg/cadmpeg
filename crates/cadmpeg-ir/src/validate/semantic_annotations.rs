@@ -17,6 +17,7 @@ pub(super) fn check_semantic_annotations(
     findings: &mut Vec<Finding>,
 ) {
     let records = DesignRecords::of(ir);
+    let named = crate::references::ReferenceRecords::of(&ir.model);
     let mut orders = std::collections::BTreeSet::new();
     for annotation in &ir.model.semantic_annotations {
         let native = |target: &str| {
@@ -34,7 +35,10 @@ pub(super) fn check_semantic_annotations(
         if refs_valid {
             'groups: for targets in annotation.references.values() {
                 for target in targets {
-                    if !target.target.resolves(&records, |id| all_ids.contains(id)) {
+                    if !target
+                        .target
+                        .resolves(&records, &named, |id| all_ids.contains(id))
+                    {
                         refs_valid = false;
                         break 'groups;
                     }

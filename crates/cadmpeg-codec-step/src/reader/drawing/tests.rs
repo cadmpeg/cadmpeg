@@ -32,30 +32,42 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     );
 
     assert_eq!(result.ir().model.drawings.len(), 6);
-    let page = result
-        .ir()
-        .model
-        .drawings
-        .iter()
-        .find(|drawing| drawing.runtime_type == "DRAWING_SHEET_REVISION")
-        .expect("drawing sheet");
+    let record = |runtime_type: &str| {
+        result
+            .ir()
+            .model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.runtime_type == runtime_type)
+            .unwrap_or_else(|| panic!("{runtime_type}"))
+    };
+    let whole = |runtime_type: &str| {
+        cadmpeg_ir::ReferenceSelection::new(cadmpeg_ir::ReferenceTarget::Drawing {
+            drawing: record(runtime_type).id.clone(),
+            part: None,
+        })
+    };
+    let page = record("DRAWING_SHEET_REVISION");
     assert!(matches!(page.kind, cadmpeg_ir::drawings::DrawingKind::Page));
     assert_eq!(page.parameters["name"], "Sheet");
     assert_eq!(page.parameters["usage_7_sequence"], "1");
-    assert!(page.relationships["items"]
-        .iter()
-        .any(|target| { target.native_text() == Some("#4") }));
-    assert!(page.relationships["drawing_revision"]
-        .iter()
-        .any(|target| { target.native_text() == Some("#2") }));
+    assert_eq!(page.views, [record("PRESENTATION_VIEW").id.clone()]);
+    assert!(!page.relationships.contains_key("items"));
+    assert_eq!(
+        page.relationships["drawing_revision"],
+        [whole("DRAWING_REVISION")]
+    );
+    assert_eq!(page.relationships["revision"], [whole("DRAWING_REVISION")]);
+    assert_eq!(
+        record("DRAWING_REVISION").relationships["sheet_revision"],
+        [whole("DRAWING_SHEET_REVISION")]
+    );
+    assert_eq!(
+        record("DRAWING_REVISION").relationships["drawing"],
+        [whole("DRAWING_DEFINITION")]
+    );
 
-    let view = result
-        .ir()
-        .model
-        .drawings
-        .iter()
-        .find(|drawing| drawing.runtime_type == "PRESENTATION_VIEW")
-        .expect("presentation view");
+    let view = record("PRESENTATION_VIEW");
     assert!(view.relationships["items"]
         .iter()
         .any(|target| { target.native_text() == Some("#5") }));
@@ -74,9 +86,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     assert!(model.relationships["semantic_definition"]
         .iter()
         .any(|target| { target.native_text() == Some("#11") }));
-    assert!(model.relationships["associated_items"]
-        .iter()
-        .any(|target| { target.native_text() == Some("#4") }));
+    assert_eq!(
+        model.relationships["associated_items"],
+        [whole("PRESENTATION_VIEW")]
+    );
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -210,21 +223,38 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
     assert!(drawing_targets
         .iter()
         .any(|record| record.id() == "step:data:shape_aspect#3"));
+    let callout = result
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAUGHTING_CALLOUT")
+        .expect("draughting callout");
     assert_eq!(
-        model.relationships["associated_items"]
-            .iter()
-            .filter_map(cadmpeg_ir::ReferenceSelection::native_text)
-            .filter(|target| *target == "#5")
-            .count(),
-        3
+        model.relationships["associated_items"],
+        vec![
+            cadmpeg_ir::ReferenceSelection::new(cadmpeg_ir::ReferenceTarget::Drawing {
+                drawing: callout.id.clone(),
+                part: None,
+            });
+            3
+        ]
     );
+    let placeholder = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str().ends_with("#7"))
+        .expect("placeholder PMI");
     assert_eq!(
-        model.relationships["annotation_placeholder"]
-            .iter()
-            .filter_map(cadmpeg_ir::ReferenceSelection::native_text)
-            .filter(|target| *target == "#7")
-            .count(),
-        2
+        model.relationships["annotation_placeholder"],
+        vec![
+            cadmpeg_ir::ReferenceSelection::new(cadmpeg_ir::ReferenceTarget::Pmi(
+                placeholder.id.clone()
+            ));
+            2
+        ]
     );
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DraughtingSemanticDefinitionUntyped.kind()
@@ -249,6 +279,94 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
                     .as_str()
                     .ends_with("draughting_model_item_association_with_placeholder+item_identified_representation_usage+annotation_placeholder_occurrence#11")
         }));
+}
+
+#[test]
+fn a_sheet_lists_its_views_in_id_order_and_keeps_other_items() {
+    let result = decode_inline(
+        "#1=REPRESENTATION_CONTEXT('','');
+#5=ITEM('opaque');
+#6=DRAWING_SHEET_REVISION('Sheet',(#30,#5,#20,#7),#1,$);
+#7=DRAWING_SHEET_REVISION('Other',(),#1,$);
+#20=PRESENTATION_VIEW('Front',(),#1);
+#30=PRESENTATION_VIEW('Top',(),#1);",
+    );
+    let drawings = &result.ir().model.drawings;
+    let named = |name: &str| {
+        drawings
+            .iter()
+            .find(|drawing| drawing.parameters.get("name").map(String::as_str) == Some(name))
+            .unwrap_or_else(|| panic!("{name}"))
+    };
+    let sheet = named("Sheet");
+    assert_eq!(
+        sheet.views,
+        [named("Front").id.clone(), named("Top").id.clone()]
+    );
+    assert!(named("Front").id < named("Top").id);
+    let items = &sheet.relationships["items"];
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].native_text(), Some("#5"));
+    assert_eq!(
+        items[1].target,
+        cadmpeg_ir::ReferenceTarget::Drawing {
+            drawing: named("Other").id.clone(),
+            part: None,
+        }
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn a_drawing_association_names_the_semantic_pmi_it_presents() {
+    let result = decode_inline(
+        "#1=REPRESENTATION_CONTEXT('','');
+#2=DRAUGHTING_MODEL('Model',(),#1);
+#3=SHAPE_ASPECT('feature','',#4,.T.);
+#4=ITEM('shape');
+#5=DRAUGHTING_CALLOUT('Callout',());
+#6=DIMENSIONAL_SIZE(#3,'width');
+#9=DRAUGHTING_MODEL_ITEM_ASSOCIATION('','',#6,#2,#5);
+#1000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#1001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(12.0),#1000);
+#1002=SHAPE_DIMENSION_REPRESENTATION('nominal',(#1001),$);
+#1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#6,#1002);",
+    );
+    let ir = result.ir();
+    let pmi = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str().ends_with("#6"))
+        .expect("semantic dimension");
+    let record = |runtime_type: &str| {
+        ir.model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.runtime_type == runtime_type)
+            .unwrap_or_else(|| panic!("{runtime_type}"))
+    };
+    let model = record("DRAUGHTING_MODEL");
+    assert_eq!(
+        model.relationships["semantic_definition"],
+        [cadmpeg_ir::ReferenceSelection::new(
+            cadmpeg_ir::ReferenceTarget::Pmi(pmi.id.clone())
+        )]
+    );
+    assert_eq!(
+        model.relationships["associated_items"],
+        [cadmpeg_ir::ReferenceSelection::new(
+            cadmpeg_ir::ReferenceTarget::Drawing {
+                drawing: record("DRAUGHTING_CALLOUT").id.clone(),
+                part: None,
+            }
+        )]
+    );
+    let validation = cadmpeg_ir::validate_neutral(ir, result.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
@@ -520,12 +638,14 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
             cadmpeg_ir::ids::SurfaceId::mint("step:data:surface#1").expect("surface id"),
         ),
     );
-    let entities =
-        std::collections::BTreeMap::from([("step:data:surface#1".to_owned(), surface.clone())]);
+    let targets = std::collections::BTreeMap::from([(
+        "step:data:surface#1".to_owned(),
+        cadmpeg_ir::ReferenceTarget::Entity(surface.clone().into()),
+    )]);
     let resolved = super::target_resolution(
         target,
         &identities,
-        &entities,
+        &targets,
         &std::collections::HashSet::new(),
         &exchange,
         &std::collections::BTreeMap::new(),
