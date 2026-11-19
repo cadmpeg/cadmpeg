@@ -21,6 +21,9 @@ use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+/// Largest number of characters kept from one Global string field.
+const MAX_ATTRIBUTE_CHARS: usize = 1024;
+
 fn source_meta(
     global: &global::GlobalRecord,
     representation: Representation,
@@ -62,6 +65,48 @@ fn source_meta(
             value.to_owned(),
         );
     }
+    for (key, value) in [
+        (
+            cadmpeg_core::nonblank_literal!("native_system_id"),
+            global.native_system(),
+        ),
+        (
+            cadmpeg_core::nonblank_literal!("preprocessor_version"),
+            global.preprocessor_version(),
+        ),
+        (cadmpeg_core::nonblank_literal!("author"), global.author()),
+        (
+            cadmpeg_core::nonblank_literal!("organization"),
+            global.organization(),
+        ),
+    ] {
+        let Some(value) =
+            value.and_then(|value| cadmpeg_core::text::attribute_text(value, MAX_ATTRIBUTE_CHARS))
+        else {
+            continue;
+        };
+        attributes.insert(key, value);
+    }
+    if let Some(flag) = global.units_flag() {
+        attributes.insert(
+            cadmpeg_core::nonblank_const!("units_flag"),
+            flag.to_string(),
+        );
+    }
+    attributes.insert(
+        cadmpeg_core::nonblank_const!("drafting_standard"),
+        global.drafting_standard().to_string(),
+    );
+    if let Some(scale) = global.model_scale() {
+        attributes.insert(
+            cadmpeg_core::nonblank_const!("model_scale"),
+            scale.get().to_string(),
+        );
+    }
+    attributes.insert(
+        cadmpeg_core::nonblank_const!("iges_version_flag"),
+        global.declared_version_flag().to_string(),
+    );
     SourceMeta::classified(
         cadmpeg_core::dialect::DialectLayers::of(primary),
         attributes,

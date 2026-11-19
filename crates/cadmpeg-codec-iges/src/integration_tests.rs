@@ -51,6 +51,7 @@ use crate::test_support::test_surface_fixtures::{
     tabulated_cylinder_file,
 };
 
+mod global_attributes;
 mod measured_geometry;
 mod truncated_fixed_ascii;
 

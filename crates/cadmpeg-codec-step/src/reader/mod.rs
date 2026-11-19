@@ -33,6 +33,7 @@ pub(crate) mod dependencies;
 mod drawing;
 pub(crate) mod geometry;
 mod groups;
+mod header;
 mod index;
 mod ownership;
 mod plant_dimensions;
@@ -148,6 +149,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         if let DecodeMode::Decode(packaging) = mode {
             packaging.add_source_attributes(&mut attributes);
         }
+        header::add_source_attributes(exchange, &mut attributes);
         // The `schema` attribute above stays: it is the joined identifier list,
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);

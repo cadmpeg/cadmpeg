@@ -295,6 +295,20 @@ macro_rules! nonblank_const {
     }};
 }
 
+/// Source text as a source-attribute value.
+///
+/// The value holds the first `max_chars` characters of `text` that are not
+/// control characters. It is `None` when no non-whitespace character remains.
+#[must_use]
+pub fn attribute_text(text: &str, max_chars: usize) -> Option<String> {
+    let value: String = text
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(max_chars)
+        .collect();
+    NonBlankString::new(value).map(NonBlankString::into_string)
+}
+
 impl PartialEq<str> for NonBlankString {
     fn eq(&self, other: &str) -> bool {
         self.0 == other
@@ -331,8 +345,25 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        named_entries, named_entries_reporting, NamedEntryError, NonBlankString, NonWhitespaceChar,
+        attribute_text, named_entries, named_entries_reporting, NamedEntryError, NonBlankString,
+        NonWhitespaceChar,
     };
+
+    #[test]
+    fn attribute_text_drops_control_characters_and_caps_characters() {
+        assert_eq!(
+            attribute_text("a\u{0}b\nc\u{7f}d\u{9b}e", 16).as_deref(),
+            Some("abcde")
+        );
+        assert_eq!(
+            attribute_text("\u{e9}\u{e9}\u{e9}", 2).as_deref(),
+            Some("\u{e9}\u{e9}")
+        );
+        assert_eq!(attribute_text(" ab ", 16).as_deref(), Some(" ab "));
+        assert_eq!(attribute_text("", 16), None);
+        assert_eq!(attribute_text(" \t\r\n", 16), None);
+        assert_eq!(attribute_text("abc", 0), None);
+    }
 
     #[test]
     fn prefixes_preserve_nonblank_strings_and_wire_values() {
