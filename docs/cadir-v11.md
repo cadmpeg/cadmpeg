@@ -161,6 +161,7 @@ pub struct Transform([[f64; 4]; 3]); pub struct Transform2([[f64; 3]; 2]);
 // Strings.
 pub struct NonBlankString(String);  pub struct Sha256Digest(String);
 pub struct NativeSelections(Vec<String>);
+pub struct CodecName(String);
 pub struct Base64Bytes(Vec<u8>);
 // The root's own types.
 pub struct IrVersion;
@@ -184,7 +185,7 @@ pub struct Native(BTreeMap<CodecId, BTreeMap<NonBlankString, Vec<NativeRecord>>>
 
 - **Scalars.** Each is a JSON number read as a 64-bit float, finite. `PositiveLength`, `PositiveAngle` and `PositiveReal` are greater than 0. The `NonNegative` forms and `FitTolerance` are at least 0. The `NonZero` forms are not 0. `Fraction` lies in [0, 1], `InteriorAngle` in (0, π), and `SlopeAngle` in (−π/2, π/2). `Length` and its forms are millimetres, `Angle` and its forms radians, and the rest dimensionless.
 - **Tuples.** A `UnitVector2` is a JSON array `[x, y]`. A `Transform` is three rows of four finite numbers, row-major: the linear part in the first three columns and the translation in the fourth. The fourth row, `[0, 0, 0, 1]`, is not written. A `Transform2` is two rows of three finite numbers, the same layout as `Transform`. `FinitePoint2`, `FinitePoint3`, `FiniteVector3`, and `UnitVector3` hold finite coordinates in the order of their frame's axes, and their JSON form is stated in Annex A. A `UnitVector2` or `UnitVector3` has length 1 within 10⁻⁹.
-- **Strings.** A `NonBlankString` holds at least one character that is not white space. White space here and in §2.2 is the Unicode `White_Space` property. A `Sha256Digest` is 64 lower-case hexadecimal digits. `NativeSelections` is checked: at least one name, each holding a character that is not white space, no two equal, in source order. `Base64Bytes` is a byte string written in RFC 4648 base64.
+- **Strings.** A `NonBlankString` holds at least one character that is not white space. White space here and in §2.2 is the Unicode `White_Space` property. A `Sha256Digest` is 64 lower-case hexadecimal digits. `NativeSelections` is checked: at least one name, each holding a character that is not white space, no two equal, in source order. `Base64Bytes` is a byte string written in RFC 4648 base64. A `CodecName` is a codec id (§2.2), `:`, and a name holding at least one character that is not white space, as in `fcstd:Transition` and `sldprt:auto_select`; the name may hold further colons. It is checked. The texts this document writes `codec:name` are of this type: a native option or source setting key, a `Native` operation's kind, a `Native` selection rule, propagation, or relation, and an `Other` generation role. Any other `Native` arm holds the source's kind identifier as a `NonBlankString` (§6), which may carry a codec prefix and need not.
 - **The id types** are newtypes over a string of §2.2's form, one per arena: the arena ids `BodyId`, `RegionId`, `ShellId`, `FaceId`, `LoopId`, `CoedgeId`, `EdgeId`, `VertexId`, the carrier ids, `ProductDefinitionId`, `OccurrenceId`, `FeatureId`, `ParameterId`, and every `…Id` this document declares with its arena; and `ContainerId`, `EvaluationId`, `PublicationId`, `ArrangementId`, `ParameterProgramId`, `SheetMetalRuleId`, `SpatialSketchConstraintId`, `PointCloudId`, `SetupId`, `OperationId`, `MachiningFeatureId`, `ToolId`, `PresetId`, `MachineId`, `ProgramId`, `ProcessGroupId`, `ProcessParameterId`, `ToolpathId`, and `ProcessStateId`.
 - **`IrVersion`** writes the string `"11"` and reads no other value (§3.6).
 - **`SourceMeta`** is a file's source. `identity` is either the dialect layers its codec classified (`primary` first, then `extra` in the order the codec found them), or, where none was classified, the bare codec id (`{"kind": "unclassified", "format": "step"}`). A `DialectMatch` names a registry dialect id (`rhino:archive-80`). A `DialectId` is `<format>:<name>`: the format is lower-case ASCII letters and digits; the name is lower-case ASCII letters, digits, `.`, and `-`, and neither starts nor ends with `-`. A `Grammar` is a name of that second form. `DialectLayers` is checked: no two of its layers have the same format and `instance`. `declared` holds the version fields the source declares, verbatim, under keys its codec's format specification lists. `instance` names which occurrence of a layer inside the containing file it is, where there is more than one. `admission` states how the decoder read the layer: `Admitted`, with the grammar of the identified dialect; `Unverified`, with another grammar of the same format, named by `using`, its format-local name; `Residual`, with no declared grammar; `Refused`, identified, with its content not decoded. The decoder charges its dialect-unverified loss for `Unverified` and `Residual`. `attributes` holds the properties the source file states about itself, under keys its codec's format specification lists. It holds nothing a decoder computes (§3.1, Rule B).
@@ -198,7 +199,7 @@ The types this document names and does not state here or in its parts are listed
 A condition this document states on the content of a document is a condition of a checked type or a rule of part 10, never both.
 
 - **Checked types.** A checked type states a condition on its own values, and a value that breaks the condition is not a value of the type. The checked types are:
-  - the scalars, tuples, strings, and ids of §2.2 and §2.7, `NativeSelections` and `Base64Bytes` among them, `DialectLayers` (§2.7), and `Uuid` (§7.6);
+  - the scalars, tuples, strings, and ids of §2.2 and §2.7, `NativeSelections`, `CodecName`, and `Base64Bytes` among them, `DialectLayers` (§2.7), and `Uuid` (§7.6);
   - a set and a pair map, whose members or keys are distinct and in order, and a map, whose keys are distinct (§2.5);
   - an arena, of a `Topology`, of `Model`, `Design`, or `Process`, or of a `Native` namespace: its records are in strictly increasing order of id, so no id occurs twice in it (§2.2);
   - `IrVersion` (§3.6) and `CanonicalUnits` (§2), `ContentScope` with the scope invariants of §2.1, and the two depth bounds of §2.5, which are conditions of `CadIr`;
@@ -872,7 +873,7 @@ pub enum Generator {
     SpatialSketchEntity(SpatialSketchEntityId),
     Entity(Box<TopoName>),
 }
-pub enum GenerationRole { Start, End, Side, Seam, Body, Hole(HoleFaceRole), Other(NonBlankString) }
+pub enum GenerationRole { Start, End, Side, Seam, Body, Hole(HoleFaceRole), Other(CodecName) }
 pub enum HoleFaceRole { BoreWall, Bottom, HeadWall, HeadFloor, HeadCone }
 ```
 
@@ -1009,13 +1010,13 @@ pub enum SelectionRule {
     Region { boundary: Members<Picked, Unordered> },
     Intersection { with: Members<Picked, Unordered> },
     Affected,
-    Native(NonBlankString),
+    Native(CodecName),
 }
 pub enum Propagation {
     Off,
     Minimal,
     Connected { continuity: Option<Continuity>, angle: Option<Dimension<Angle>>, gap: Option<Dimension<Length>> },
-    Native(NonBlankString),
+    Native(CodecName),
 }
 pub enum Continuity { G0, G1, G2, G3, Native(NonBlankString) }
 ```
@@ -1077,7 +1078,7 @@ pub enum Relation {
     PrincipalNormal, Binormal,
     Radius, Limit,
     Fold,
-    Native(NonBlankString),
+    Native(CodecName),
 }
 pub enum ScalarDimension {
     Length(Dimension<Length>),
@@ -1604,9 +1605,9 @@ pub enum FeatureOperation {
     MaterialRemoval,
     Stored { bodies: Option<Vec<BodyId>>, tessellations: Vec<TessellationId>, origin: StoredOrigin },
     Unresolved { family: OperationFamily },
-    Native { kind: NonBlankString, native_options: NativeOptions, source_settings: NativeOptions },
+    Native { kind: CodecName, native_options: NativeOptions, source_settings: NativeOptions },
 }
-pub type NativeOptions = BTreeMap<NonBlankString, NativeOption>;
+pub type NativeOptions = BTreeMap<CodecName, NativeOption>;
 pub enum NativeOption {
     Bool(Dimension<bool>),
     Integer(Dimension<i64>),
@@ -5008,7 +5009,7 @@ Validation uses reference lookup and in-IR arithmetic and never refuses a decode
 - A `PickContext::InContext` names an `assembly` from which `own` and `target` resolve, where they are present. A `DefinitionRef` names an existing definition, and its `configuration`, where present, follows the `ConfigurationRef` rule below.
 - An `OccurrencePath` resolves step by step from its root definition, against the occurrence membership of the state it is read in (§5.4, §5.8): each `Occurrence` step names an occurrence of the previous step's prototype, or of the root for the first step; every step after a `Native` step is `Native`. A step's `configuration`, where present, follows the `ConfigurationRef` rule below. A path in a nested override (base or per configuration), an instance-body entry, a representation member, or an instance target states no step configuration.
 - A witness `body` is a `Topology` closed over its own references.
-- Rules: an `All` or `Affected` term has no seeds, and every other rule's term has at least one seed. `Chain.end`, `Region.boundary`, and `Intersection.with` picks resolve in the selection's anchored state. A `Region` term whose boundary picks curves has a seed with a `Containing` domain. A `Picks::Rule` with one `Explicit` term, no propagation, and no exclusions is an Error (it is `Named`, D43). Two `Explicit` terms of one selection with equal propagation are an Error: the explicit items of one list under one propagation are one term (§5.8). `SelectionRule::Native`, `Propagation::Native`, and `Relation::Native` text has the form `codec:name`.
+- Rules: an `All` or `Affected` term has no seeds, and every other rule's term has at least one seed. `Chain.end`, `Region.boundary`, and `Intersection.with` picks resolve in the selection's anchored state. A `Region` term whose boundary picks curves has a seed with a `Containing` domain. A `Picks::Rule` with one `Explicit` term, no propagation, and no exclusions is an Error (it is `Named`, D43). Two `Explicit` terms of one selection with equal propagation are an Error: the explicit items of one list under one propagation are one term (§5.8).
 
 **Constructions (§5.9).**
 - An input's subject is valid for the construction's kind: `Point`, `Direction`, and `Axis` take `Whole`; `Plane` takes `Whole`, `Origin`, `XAxis`, `YAxis`; `Frame` takes all five; `Curve` takes `Whole` and `Origin` (§6.6).
@@ -5095,7 +5096,7 @@ Validation uses reference lookup and in-IR arithmetic and never refuses a decode
 - `Pierce.point` and the three entities of `AngleOperands::Points` are point entities. `Weight.pole` holds a `Pole(i)` role of a spline entity. `SketchPolygon.inscribed` occurs only with a `circle`, and `circle` is a circle entity of the same sketch. `DerivationMode::OntoFaces.faces` picks faces. `FixedLength.of` and `FixedAngle.of` are nonempty and name line entities. A `TextContent` whose `vertical_box` is `CapHeight` has no `vertical: Some(Baseline)`.
 
 **Shared option types (§6).**
-- Each `native_options` and `source_settings` key has the form `codec:name`, and no key is in both maps of one record (§6).
+- No key is in both maps of one record (§6).
 - A `ProfileRef` holds at least one pick. Profile picks target a sketch, a sketch region, a sketch entity, a spatial-sketch entity, a face, an edge, a curve, a surface, or a feature result. Path picks target a sketch, a sketch entity, a spatial-sketch entity, an edge, a curve, or a feature result; where the state exists, the resolved curves form one connected chain.
 - `Targets::Selected` picks resolve to bodies. A feature that is a member of a `Body` container has `targets: None`. An `Apply` with `Join` occurs only where the feature's input state, where it is stored, holds a body the feature can join: a first solid feature is `NewBody` (§6).
 - `BooleanOp::Assemble` occurs only in `Combine`; `Sew` occurs only in a `SolidOutput` whose `body` is `Sheet` or `None`, or in a `SheetOutput` whose `solid` is `Sheet` or `None`.
