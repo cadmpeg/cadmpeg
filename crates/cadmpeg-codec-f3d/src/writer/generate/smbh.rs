@@ -442,10 +442,7 @@ fn encode_wire_body_smbh(
                 attribute_start,
             )?,
         );
-        native_i64(
-            &mut records,
-            source_less_body_key(attributes, body, ordinal)?,
-        );
+        native_i64(&mut records, source_less_body_key(attributes, body)?);
         native_ref(&mut records, -1);
         native_ref(
             &mut records,
@@ -823,10 +820,7 @@ fn encode_face_topology_smbh(
                 attribute_start,
             )?,
         );
-        native_i64(
-            &mut records,
-            source_less_body_key(attributes, body, body_ordinal)?,
-        );
+        native_i64(&mut records, source_less_body_key(attributes, body)?);
         native_ref(&mut records, -1);
         native_ref(
             &mut records,
