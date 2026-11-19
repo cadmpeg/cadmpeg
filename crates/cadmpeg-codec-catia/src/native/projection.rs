@@ -470,6 +470,9 @@ pub(super) fn native_allocation_reference_encoding(
         crate::wire::bytes::AllocationReferenceEncoding::TaggedU16 => {
             CatiaAllocationReferenceEncoding::TaggedU16
         }
+        crate::wire::bytes::AllocationReferenceEncoding::TaggedU24 => {
+            CatiaAllocationReferenceEncoding::TaggedU24
+        }
     }
 }
 
