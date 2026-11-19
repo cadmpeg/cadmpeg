@@ -15,16 +15,19 @@ on:
 permissions:
   contents: read
 
-# A new run supersedes the in-flight run of its group. A PR has one group per
-# ref. Pushes to main share one group, so a merge cancels the run of the merge
-# before it; the `changes` job widens the next run to every commit since the
-# last successful push run. The nightly and dispatched runs use the ref group,
-# so a merge does not cancel the nightly full gate. A re-run of a push run gets
-# its own group: Cut release re-runs a cancelled bump-commit run, and that
-# re-run must not cancel the run of the newer main head, or be cancelled by it.
+# A PR has one group per ref, and a new push to the PR cancels its run in
+# flight. Pushes to main share one group, and a merge does not cancel the push
+# run in flight: main's run takes longer than the gap between merges, so
+# cancelling it left main with no finished run. A merge queues behind the
+# running push run and replaces the push run already queued, and the `changes`
+# job widens the queued run to every commit since the last successful push run.
+# The nightly and dispatched runs use the ref group, so a merge does not cancel
+# the nightly full gate. A re-run of a push run gets its own group: Cut release
+# re-runs a cancelled bump-commit run, and that re-run must not cancel the run
+# of the newer main head, or be cancelled by it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name != 'push' && github.ref || github.run_attempt == '1' && 'push' || format('push-{0}-{1}', github.sha, github.run_attempt) }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
   CARGO_TERM_COLOR: always
