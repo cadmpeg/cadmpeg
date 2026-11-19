@@ -1,3 +1,4 @@
+use super::CatiaCompactClassToken::{Selector, Tag};
 use super::{CatiaFeatureContainer, CatiaFeatureMember, CatiaFeatureReference, CatiaSegmentValue};
 use crate::native::CatiaNative;
 use crate::test_support::test_object_graph::{
@@ -64,6 +65,15 @@ fn compact(flags: u8, tag: u8) -> Vec<u8> {
     vec![0x00, flags, tag, tag]
 }
 
+/// Compact prefix whose class is a wide one-based selector.
+fn wide(flags: u8, ordinal: u32) -> Vec<u8> {
+    let mut prefix = vec![0x00, flags, 0x32];
+    prefix.extend_from_slice(&ordinal.to_le_bytes());
+    prefix.push(0x32);
+    prefix.extend_from_slice(&ordinal.to_le_bytes());
+    prefix
+}
+
 /// A part root listing a plane, a hybrid body, and an empty body, with its
 /// in-work object and main body; the hybrid body lists two pads.
 fn part() -> Vec<(u32, Vec<u8>, Vec<u8>)> {
@@ -83,7 +93,7 @@ fn part() -> Vec<(u32, Vec<u8>, Vec<u8>)> {
         (3, compact(0x08, HYBRID_BODY), body),
         (4, compact(0x0c, GSM_PLANE), vec![0xfe]),
         (5, compact(0x08, PAD), vec![0xfe]),
-        (6, compact(0x08, PAD), vec![0xfe]),
+        (6, wide(0x08, 13), vec![0xfe]),
         (7, compact(0x08, MECHANICAL_TOOL), vec![0xfe]),
     ]
 }
@@ -152,7 +162,7 @@ fn compact_definition_tag_selects_the_class_entry() {
             let class = entity.compact_class.as_ref().expect("compact class");
             (
                 entity.entity_id,
-                class.tag,
+                class.token,
                 class.ordinal,
                 class.name.as_str(),
             )
@@ -161,12 +171,12 @@ fn compact_definition_tag_selects_the_class_entry() {
     assert_eq!(
         classes,
         [
-            (2, MECHANICAL_PART, 4, "MechanicalPart"),
-            (3, HYBRID_BODY, 11, "HybridBody"),
-            (4, GSM_PLANE, 13, "GSMPlane"),
-            (5, PAD, 12, "Pad"),
-            (6, PAD, 12, "Pad"),
-            (7, MECHANICAL_TOOL, 10, "MechanicalTool"),
+            (2, Tag(MECHANICAL_PART), 4, "MechanicalPart"),
+            (3, Tag(HYBRID_BODY), 11, "HybridBody"),
+            (4, Tag(GSM_PLANE), 13, "GSMPlane"),
+            (5, Tag(PAD), 12, "Pad"),
+            (6, Selector(13), 12, "Pad"),
+            (7, Tag(MECHANICAL_TOOL), 10, "MechanicalTool"),
         ]
     );
     assert!(native.entity_records.iter().all(|entity| entity
@@ -184,9 +194,11 @@ fn compact_definition_rejects_other_prefix_shapes() {
         (5, vec![0x01, 0x00, MECHANICAL_PART, 0x39], vec![0xfe]),
         (6, vec![0x00, 0x00, 0x33, 0x39], vec![0xfe]),
         (7, vec![0x00, 0x00, 0x43, 0x39], vec![0xfe]),
+        (8, wide(0x00, 0), vec![0xfe]),
+        (9, wide(0x00, 16), vec![0xfe]),
     ];
     let native = CatiaNative::decode(&stream(&records));
-    assert_eq!(native.entity_records.len(), 6);
+    assert_eq!(native.entity_records.len(), 8);
     assert!(native
         .entity_records
         .iter()
