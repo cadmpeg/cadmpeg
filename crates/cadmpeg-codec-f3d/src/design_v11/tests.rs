@@ -489,6 +489,14 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
             &[("owner_record_index", "77")],
         ),
         parameter(
+            "shared",
+            Some("f3d:xref/role-1/reference-0/occurrence-0/model:document-parameters#0"),
+            "2 mm",
+            Some(V10::Length(Length::new(2.0).unwrap())),
+            &[],
+            &[],
+        ),
+        parameter(
             "other",
             Some("f3d:model:feature#other:9"),
             "1 mm",
@@ -507,8 +515,9 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
         .collect::<BTreeMap<_, _>>();
     assert_eq!(
         by_name.keys().copied().collect::<Vec<_>>(),
-        ["alias", "bare", "count", "d1", "d2", "turn"]
+        ["alias", "bare", "count", "d1", "d2", "shared", "turn"]
     );
+    assert_eq!(by_name["shared"].owner, None);
     let d1 = by_name["d1"];
     assert_eq!(d1.scope, root);
     assert_eq!(

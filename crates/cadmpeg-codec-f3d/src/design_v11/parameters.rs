@@ -44,22 +44,35 @@ const UNIT: &str = "unit";
 const UNRESOLVED_OWNER: &str = "owner_record_index";
 
 /// The parameters of the scopes keyed by document prefix in `scopes`.
-/// `features` holds the ids of the scopes' features. A model parameter whose
-/// owner is no such feature has no owner the scope states, so it is no
-/// parameter here.
+/// `features` holds the ids of the scopes' features. A parameter owned by a
+/// document's parameter scope, the root's or a referenced design's, is a user
+/// parameter. A model parameter whose owner is no such feature has no owner
+/// the scope states, so it is no parameter here.
 pub(super) fn project(
     legacy: &[LegacyParameter],
     scopes: &BTreeMap<String, ProductDefinitionId>,
     features: &BTreeSet<&str>,
 ) -> Vec<DesignParameter> {
     let document_parameters = crate::ids::document_parameter_scope_id();
+    let referenced_document_parameters = document_parameters
+        .as_str()
+        .strip_prefix("f3d:")
+        .map(|local| format!("/{local}"));
+    let is_document_parameters = |owner: &FeatureId| {
+        owner == &document_parameters
+            || owner
+                .as_str()
+                .strip_prefix("f3d:xref/")
+                .zip(referenced_document_parameters.as_deref())
+                .is_some_and(|(path, local)| path.ends_with(local))
+    };
     let scoped = legacy
         .iter()
         .filter_map(|parameter| {
             let stream = parameter.native_ref.as_deref().and_then(native_stream)?;
             let scope = scopes.get(document_prefix(stream))?;
             let owner = match &parameter.owner {
-                Some(owner) if owner == &document_parameters => None,
+                Some(owner) if is_document_parameters(owner) => None,
                 Some(owner) if features.contains(owner.as_str()) => Some(owner),
                 Some(_) => return None,
                 None if parameter.properties.contains_key(UNRESOLVED_OWNER) => return None,
