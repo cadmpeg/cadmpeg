@@ -103,17 +103,148 @@ fn native_losses(ir: &CadIr, losses: &mut Vec<cadmpeg_ir::report::loss::LossNote
 }
 
 pub(crate) fn unproduced_bodies(ir: &CadIr) -> usize {
-    let produced = ir
-        .model
-        .features
+    ir.design
+        .scopes
         .iter()
-        .flat_map(|feature| feature.evaluation.outputs().iter())
-        .collect::<BTreeSet<_>>();
-    ir.geometry
-        .bodies
-        .iter()
-        .filter(|body| !produced.contains(&body.id))
-        .count()
+        .map(|scope| scope.unproduced.len())
+        .sum()
+}
+
+/// Whether a member before the rollback of `timeline` can change a state
+/// (§5.4), so that the member produces the timeline's current bodies (§5.5).
+/// An `Unresolved` operation of a family whose every operation is stateless
+/// is stateless.
+pub(crate) fn timeline_produces(ir: &CadIr, timeline: &Container) -> Result<bool, CodecError> {
+    let Container::Ordered {
+        members, rollback, ..
+    } = timeline
+    else {
+        return Ok(false);
+    };
+    let end = match rollback {
+        Rollback::End => members.len(),
+        Rollback::Before(member) => members
+            .iter()
+            .position(|candidate| candidate == member)
+            .ok_or_else(|| CodecError::malformed("Inventor v11 rollback names no member"))?,
+    };
+    for member in &members[..end] {
+        let Member::Feature(id) = member else {
+            continue;
+        };
+        let feature = ir
+            .design
+            .features
+            .iter()
+            .find(|feature| &feature.id == id)
+            .ok_or_else(|| CodecError::malformed("Inventor v11 timeline names no feature"))?;
+        if let FeatureOperation::Unresolved { family } = &feature.definition.operation {
+            if matches!(
+                family,
+                OperationFamily::Sketch
+                    | OperationFamily::SpatialSketch
+                    | OperationFamily::Spreadsheet
+                    | OperationFamily::Datum
+                    | OperationFamily::TemplateInstance
+                    | OperationFamily::Decal
+            ) {
+                continue;
+            }
+        }
+        if !ir
+            .is_stateless(id, None)
+            .map_err(|error| CodecError::malformed(error.to_string()))?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Checks each part scope's states through the IR's checked state resolver:
+/// every current state and evaluation resolves, a current state's extent
+/// holds exactly its listed bodies with the part as their owner, and the
+/// timeline production predicate places the owned bodies.
+pub(crate) fn validate_states(
+    ir: &CadIr,
+    limits: &cadmpeg_core::decode::ResourceLimits,
+) -> Result<Vec<cadmpeg_ir::report::check::Finding>, CodecError> {
+    let mut findings = Vec::new();
+    let mut fail = |message: String, entity: Option<String>| {
+        findings.push(cadmpeg_ir::report::check::Finding {
+            check: cadmpeg_ir::report::check::Check::NativeLinks,
+            severity: cadmpeg_ir::report::Severity::Error,
+            message,
+            entity,
+            related: Vec::new(),
+        });
+    };
+    for scope in &ir.design.scopes {
+        for current in &scope.current {
+            let state = match ir.resolved_current_state(&scope.definition, &current.at) {
+                Ok(state) => state,
+                Err(error) => {
+                    fail(
+                        format!("Inventor v11 current state does not resolve: {error}"),
+                        Some(scope.definition.as_str().to_owned()),
+                    );
+                    continue;
+                }
+            };
+            let mut extent = state
+                .records()
+                .bodies
+                .iter()
+                .map(|body| &body.id)
+                .collect::<Vec<_>>();
+            extent.sort();
+            let mut listed = current.bodies.iter().collect::<Vec<_>>();
+            listed.sort();
+            if extent != listed
+                || state
+                    .owners()
+                    .values()
+                    .any(|owner| owner != &scope.definition)
+            {
+                fail(
+                    "Inventor v11 current state extent differs from its part bodies".into(),
+                    Some(scope.definition.as_str().to_owned()),
+                );
+            }
+            let timeline = match &current.at {
+                Position::Start(id) => ir.design.containers.iter().find(|c| c.id() == id),
+                Position::After(member) => ir.design.containers.iter().find(
+                    |c| matches!(c, Container::Ordered { members, .. } if members.contains(member)),
+                ),
+            };
+            let produces = match timeline {
+                Some(timeline) => timeline_produces(ir, timeline)?,
+                None => false,
+            };
+            if (produces && !scope.unproduced.is_empty())
+                || (!produces && !current.bodies.is_empty())
+            {
+                fail(
+                    "Inventor v11 current and unproduced bodies differ from the timeline's producing members".into(),
+                    Some(scope.definition.as_str().to_owned()),
+                );
+            }
+        }
+        for evaluation in ir
+            .design
+            .evaluations
+            .iter()
+            .filter(|evaluation| evaluation.scope == scope.definition)
+        {
+            if let Err(error) = ir.resolved_evaluation_state(&evaluation.id, limits) {
+                fail(
+                    format!("Inventor v11 evaluation does not resolve: {error}"),
+                    Some(evaluation.id.as_str().to_owned()),
+                );
+            }
+        }
+    }
+    Ok(findings)
 }
 
 pub(crate) fn validate_operations(
@@ -189,8 +320,17 @@ fn project_history(
     let owned_bodies = part.bodies.iter().collect::<BTreeSet<_>>();
     let mut ordered = ir.model.features.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|feature| (feature.ordinal, &feature.id));
+    let mut owned = ir
+        .geometry
+        .bodies
+        .iter()
+        .filter(|body| owned_bodies.contains(&body.id))
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    owned.sort();
     let mut roots = Vec::new();
     let mut current = Vec::new();
+    let mut root_timeline = None;
     for (flat, key) in [(false, "root"), (true, "flat-pattern")] {
         let history = ordered
             .iter()
@@ -219,21 +359,14 @@ fn project_history(
                 || Position::Start(id.clone()),
                 |index| Position::After(members[index].clone()),
             );
-            let mut bodies = ir
-                .geometry
-                .bodies
-                .iter()
-                .filter(|body| owned_bodies.contains(&body.id))
-                .map(|body| body.id.clone())
-                .collect::<Vec<_>>();
-            bodies.sort();
             current.push(CurrentState {
                 at,
-                bodies,
+                bodies: Vec::new(),
                 poses: BTreeMap::default(),
                 status: EvaluationStatus::Current,
                 native_ref: None,
             });
+            root_timeline = Some(id.clone());
         }
         roots.push(id.clone());
         ir.design.containers.push(Container::Ordered {
@@ -287,6 +420,23 @@ fn project_history(
     ctx.charge_entities(1, "project Inventor v11 scope")?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));
     ir.design.containers.sort_by(|a, b| a.id().cmp(b.id()));
+    let produces = match root_timeline {
+        Some(id) => {
+            let timeline = ir
+                .design
+                .containers
+                .iter()
+                .find(|container| container.id() == &id)
+                .ok_or_else(|| CodecError::malformed("Inventor v11 root timeline is absent"))?;
+            timeline_produces(ir, timeline)?
+        }
+        None => false,
+    };
+    let mut unproduced = BTreeSet::new();
+    match current.first_mut() {
+        Some(state) if produces => state.bodies = owned,
+        _ => unproduced.extend(owned),
+    }
     ir.design.scopes.push(DesignScope {
         definition,
         roots,
@@ -294,7 +444,7 @@ fn project_history(
         active_arrangements: BTreeSet::default(),
         occurrences: BTreeMap::default(),
         current,
-        unproduced: BTreeSet::default(),
+        unproduced,
     });
     Ok(())
 }
