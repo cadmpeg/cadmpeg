@@ -22,7 +22,7 @@ fn require_local_fields(fields: &[NativeBytes<[u8; 6]>]) -> Result<(), String> {
     {
         Ok(())
     } else {
-        Err("15-byte Base Feature elements require ordinary same-segment references".into())
+        Err("Base Feature reference fields require clear same-segment flags".into())
     }
 }
 
@@ -893,7 +893,7 @@ cadmpeg_core::named_optional_field!(
     "null_reference_flag_offset"
 );
 
-/// Join one column-wise run of 15-byte Base Feature references.
+/// Join one column-wise run of local Base Feature references.
 fn entry_rows(
     values: Vec<u64>,
     offsets: Vec<u64>,

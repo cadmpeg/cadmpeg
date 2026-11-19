@@ -121,6 +121,8 @@ pub(crate) struct NurbsChart<'ir> {
     pub(crate) evaluation: Option<&'ir SurfaceId>,
     pub(crate) offset_reach: f64,
     pub(crate) column_offset: Option<f64>,
+    /// The distance within which the poles of a `v` side coincide.
+    pub(crate) collapse_tolerance: f64,
     /// The `u` and `v` knot domains.
     pub(crate) domain: [[f64; 2]; 2],
     pub(crate) periods: [Option<f64>; 2],
@@ -239,6 +241,7 @@ impl<'ir> NurbsChart<'ir> {
             evaluation: None,
             offset_reach: 0.0,
             column_offset: None,
+            collapse_tolerance: 0.0,
             domain: [u, v],
             periods: [
                 surface.u_periodic().then_some(u[1] - u[0]),
@@ -250,7 +253,7 @@ impl<'ir> NurbsChart<'ir> {
     /// The model points to which a whole `v` side of the pole grid
     /// collapses: along such a side the surface is one point and `u` is not
     /// defined.
-    pub(crate) fn collapsed_v_sides(&self, tolerance: f64) -> Vec<Point3> {
+    pub(crate) fn collapsed_v_sides(&self) -> Vec<Point3> {
         let (columns, rows) = (self.surface.u_count(), self.surface.v_count());
         let mut points = Vec::new();
         let Some(last) = rows.checked_sub(1) else {
@@ -263,7 +266,7 @@ impl<'ir> NurbsChart<'ir> {
             let first = self.placement.point(first.get());
             let collapsed = (1..columns).all(|column| {
                 self.surface.pole(column, side).is_some_and(|pole| {
-                    self.placement.point(pole.get()).distance(first) <= tolerance
+                    self.placement.point(pole.get()).distance(first) <= self.collapse_tolerance
                 })
             });
             if collapsed && !points.contains(&first) {
@@ -445,13 +448,38 @@ impl NurbsChart<'_> {
         self.surface.v_knots().as_slice().to_vec()
     }
 
+    /// The width of the knot domain of `axis`. An integral along an
+    /// isoline of the other parameter is a density per unit of `axis`, so
+    /// its error goal is an area goal over this width.
+    pub(crate) fn width(&self, axis: usize) -> f64 {
+        self.domain[axis][1] - self.domain[axis][0]
+    }
+
     /// The knots of the `u` direction.
     pub(crate) fn u_breaks(&self) -> Vec<f64> {
         self.surface.u_knots().as_slice().to_vec()
     }
 }
 
+/// The number of distinct values in a sorted knot vector.
+fn distinct_knots(knots: &[f64]) -> usize {
+    knots.windows(2).filter(|pair| pair[0] != pair[1]).count() + usize::from(!knots.is_empty())
+}
+
 impl Chart<'_> {
+    /// Whether the inner integrals of a region run along `u`: on a NURBS
+    /// chart with no periodic axis whose `u` knots bound fewer spans than
+    /// its `v` knots.
+    pub(crate) fn inner_along_u(&self) -> bool {
+        match self {
+            Self::Nurbs(nurbs) => {
+                nurbs.periods == [None, None]
+                    && distinct_knots(&nurbs.u_breaks()) < distinct_knots(&nurbs.v_breaks())
+            }
+            _ => false,
+        }
+    }
+
     /// The periods of `u` and `v`.
     pub(crate) fn periods(&self) -> [Option<f64>; 2] {
         let tau = Some(std::f64::consts::TAU);
@@ -750,12 +778,24 @@ impl Chart<'_> {
         }
     }
 
+    /// The chart with a NURBS `v` side collapsed where its poles coincide
+    /// within `tolerance`.
+    pub(crate) fn collapsing_within(self, tolerance: f64) -> Self {
+        match self {
+            Self::Nurbs(nurbs) => Self::Nurbs(NurbsChart {
+                collapse_tolerance: tolerance,
+                ..nurbs
+            }),
+            other => other,
+        }
+    }
+
     /// The points where `u` is not defined: a cone apex, the poles of a
     /// closed chart, and the points to which a whole `v` side of a NURBS
-    /// pole grid collapses within `tolerance`.
-    pub(crate) fn singular_points(&self, tolerance: f64) -> impl Iterator<Item = Point3> {
+    /// pole grid collapses within the chart's collapse tolerance.
+    pub(crate) fn singular_points(&self) -> impl Iterator<Item = Point3> {
         let collapsed = match self {
-            Self::Nurbs(nurbs) => nurbs.collapsed_v_sides(tolerance),
+            Self::Nurbs(nurbs) => nurbs.collapsed_v_sides(),
             _ => Vec::new(),
         };
         self.apex()
@@ -768,7 +808,7 @@ impl Chart<'_> {
     /// Whether `point` lies within `tolerance` of one of the
     /// [`singular_points`](Self::singular_points).
     pub(crate) fn singular_at(&self, point: Point3, tolerance: f64) -> bool {
-        self.singular_points(tolerance)
+        self.singular_points()
             .any(|singular| singular.distance(point) <= tolerance)
     }
 

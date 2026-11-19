@@ -149,11 +149,14 @@ pub enum UnavailableReason {
     /// A principal moment agrees with another within their separation
     /// tolerance, so its principal axis is not determined.
     MassPrincipalAxesDegenerate,
-    /// An occurrence of the chain has a scale other than `(1, 1, 1)`.
+    /// An occurrence of the chain or of its subtree has a transform that
+    /// scales.
     PlacementOccurrenceScale,
     /// The occurrence's prototype is external or unresolved.
     PlacementPrototypeUnresolved,
-    /// The occurrence's parent chain does not reach a root occurrence.
+    /// The occurrence's chain does not reach the root definition: an owning
+    /// definition on the way is placed by no occurrence or by several, or
+    /// the chain repeats.
     PlacementOccurrenceChainBroken,
     /// Two occurrences of the subtree place the same body.
     PlacementOccurrenceBodyRepeated,

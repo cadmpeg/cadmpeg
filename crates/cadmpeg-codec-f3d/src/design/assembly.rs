@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod motion_link;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
@@ -156,6 +158,16 @@ impl AssemblyScopeGeneration {
                     layout.first_reference + layout.stride,
                 ]),
             }
+        } else if compact_placement_as_built_scope(scope) {
+            use crate::layout::assembly_as_built_scope_378 as layout;
+            Self {
+                operand_frame: None,
+                alignment: AssemblyAlignmentLanes::Fixed(Some((4, 0, 4))),
+                locator_offsets: Some([
+                    layout::FIRST_LOCATOR_REFERENCE,
+                    layout::SECOND_LOCATOR_REFERENCE,
+                ]),
+            }
         } else {
             Self::new(
                 scope.frame_length(),
@@ -208,9 +220,8 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
             cadmpeg_ir::OperandContainer::Occurrence { occurrence, .. } => {
                 named.insert(occurrence);
             }
-            cadmpeg_ir::OperandContainer::External {
-                external_document: ExternalDocument::Missing {},
-            } => {}
+            cadmpeg_ir::OperandContainer::External { external_document }
+                if *external_document == ExternalDocument::default() => {}
             cadmpeg_ir::OperandContainer::External { external_document } => {
                 if !documents.contains(&external_document) {
                     documents.push(external_document);
@@ -222,10 +233,9 @@ pub(crate) fn joint_placed_identity_occurrences<'a>(
     let (direct, unnamed) = occurrences
         .iter()
         .filter(|occurrence| {
-            matches!(
-                occurrence.prototype,
-                cadmpeg_ir::products::PrototypeReference::External { .. }
-            ) && occurrence.transform.rows() == cadmpeg_ir::transform::Transform::identity().rows()
+            crate::xref::is_document_definition(&occurrence.prototype)
+                && occurrence.transform.unwrap_or_default().rows()
+                    == cadmpeg_ir::transform::Transform::identity().rows()
         })
         .fold((0_usize, 0_usize), |(direct, unnamed), occurrence| {
             if named.contains(&occurrence.id) {
@@ -508,6 +518,13 @@ impl RigidGroupLocatorLayout {
         Self::admit_form(registered, length, false)
     }
 
+    pub(crate) fn admit_compact_as_built(
+        registered: Option<(&str, u32)>,
+        length: usize,
+    ) -> Option<Self> {
+        Self::admit(registered, length).filter(|layout| !layout.typed && !layout.wide)
+    }
+
     pub(crate) fn admit_assemble(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
         Self::admit_form(registered, length, true)
     }
@@ -698,11 +715,36 @@ pub(crate) fn rigid_as_built_scope(scope: &DesignParameterScope) -> bool {
 pub(crate) fn placement_ordered_as_built_scope(scope: &DesignParameterScope) -> bool {
     !rigid_as_built_scope(scope)
         && scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
-        && as_built_additional_owner_count(scope.frame_length()).is_some()
+        && (compact_placement_as_built_scope(scope)
+            || wide_as_built_additional_owner_count(scope.frame_length()).is_some())
 }
 
-/// The additional-owner count selected by the scope frame length.
-pub(crate) fn as_built_additional_owner_count(frame_length: u64) -> Option<usize> {
+pub(crate) fn compact_placement_as_built_scope(scope: &DesignParameterScope) -> bool {
+    use crate::layout::assembly_as_built_scope_378 as layout;
+    scope.kind() == crate::records::feature::scope::DesignFeatureKind::AsBuilt
+        && matches!(
+            (
+                scope.canonical_name_frame_length(),
+                scope.reference_members().len()
+            ),
+            (Some(355), 7) | (Some(377), 9)
+        )
+        && scope
+            .reference_count_offset()
+            .checked_sub(scope.byte_offset())
+            == Some(u64_from_index(layout::REFERENCE_COUNT))
+}
+
+pub(crate) const AS_BUILT_SCOPE_TYPE_GUID: &str = "AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0";
+
+pub(crate) fn as_built_additional_owner_count(scope: &DesignParameterScope) -> Option<usize> {
+    if compact_placement_as_built_scope(scope) {
+        return Some(0);
+    }
+    wide_as_built_additional_owner_count(scope.frame_length())
+}
+
+fn wide_as_built_additional_owner_count(frame_length: u64) -> Option<usize> {
     match frame_length {
         378 => Some(0),
         422 => Some(2),
@@ -712,7 +754,8 @@ pub(crate) fn as_built_additional_owner_count(frame_length: u64) -> Option<usize
 }
 
 pub(crate) fn wide_as_built_scope(scope: &DesignParameterScope) -> bool {
-    rigid_as_built_scope(scope) || placement_ordered_as_built_scope(scope)
+    rigid_as_built_scope(scope)
+        || (placement_ordered_as_built_scope(scope) && !compact_placement_as_built_scope(scope))
 }
 
 /// Admit the legacy 383/258 assembly scope only as its exact generation.
@@ -967,7 +1010,9 @@ pub(crate) fn project_assembly_joints_with_paths(
                 joints.entry(joint.id.as_str().to_owned()).or_insert(joint);
                 let members =
                     rigid_group_member_joints(scope, stream, &occurrences, scopes, inserts, paths);
-                if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble {
+                if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble
+                    || compact_placement_as_built_scope(scope)
+                {
                     assumed_active += 1 + members.joints.len();
                 }
                 paired_joints += members.paired;
@@ -1056,6 +1101,13 @@ pub(crate) fn project_assembly_joints_with_paths(
             "{unprojected_members} rigid group member(s) after their group's first two were retained natively: their operands or connector frames do not project. Each group's joint between its first two members projects."
         )));
     }
+    let (linked, unbound_links) = motion_link::project(scopes, motions, paths, &mut joints);
+    if unbound_links != 0 {
+        losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+            "{unbound_links} MotionLink scope(s) retain their source relation because both revolute joints could not be bound."
+        )));
+    }
+    assumed_active += linked;
     if assumed_active != 0 {
         losses.push(F3dLossCode::AssemblyJointActivationAssumed.note(format!(
             "{assumed_active} projected Design assembly joint(s) are assumed active: the activation meaning of their scope-tail booleans is unknown."
@@ -1187,6 +1239,12 @@ fn project_assembly_joint(
             Ok(None)
         };
     };
+    let compact_as_built = compact_placement_as_built_scope(scope);
+    if compact_as_built && motion.is_none_or(|motion| motion.limits.is_none()) {
+        return Err(CodecError::NotImplemented(
+            "As-built joint motion is unresolved".into(),
+        ));
+    }
     // A rigid group's joint record has a motion record with no freedom entry.
     if rigid_as_built_scope(scope) && motion.is_some_and(|motion| !motion.freedoms.is_empty()) {
         return Err(CodecError::NotImplemented(
@@ -1246,7 +1304,7 @@ fn project_assembly_joint(
                 frames.clone(),
                 frames.each_ref().map(|frame| {
                     JointOperand::external(
-                        ExternalDocument::Missing {},
+                        ExternalDocument::default(),
                         scope.id.clone(),
                         vec![format!(
                             "construction-record#{}",
@@ -1284,6 +1342,15 @@ fn project_assembly_joint(
         }
         None => (None, None),
     };
+    if compact_as_built
+        && operands
+            .iter()
+            .any(|operand| !paths.has_projected_joint_operand(&operand.container))
+    {
+        return Err(CodecError::NotImplemented(
+            "As-built joint operand has no projected occurrence".into(),
+        ));
+    }
     let [first_operand, second_operand] = operands;
     let angle = cadmpeg_ir::scalar::FiniteReal::new(alignment.angle())
         .ok_or_else(|| CodecError::Malformed("joint angle must be finite".into()))?;
@@ -1340,6 +1407,9 @@ fn project_assembly_joint(
             }
         }
     };
+    if let (true, Some(reason)) = (compact_as_built, undecoded.as_ref()) {
+        return Err(CodecError::NotImplemented(reason.clone()));
+    }
     let frame = |rows: [[f64; 4]; 4]| {
         super::components::neutral_transform(if turn_y_to_z {
             turn_frame_y_to_z(rows)
@@ -1519,6 +1589,26 @@ fn projected_frame_sense(scope: &DesignParameterScope) -> Option<cadmpeg_ir::pro
                 cadmpeg_ir::products::PlaneSense::Opposed
             }
         })
+}
+
+pub(super) fn compact_as_built_relation_only(
+    scope: &DesignParameterScope,
+    alignment: &crate::records::feature::assembly::DesignAssemblyAlignment,
+    stream_types: &std::collections::HashMap<u64, (&str, u32)>,
+) -> bool {
+    let older_joint = scope
+        .record_index
+        .checked_sub(1)
+        .and_then(|index| stream_types.get(&u64::from(index)))
+        .is_some_and(|(guid, version)| {
+            *version == 4 && guid.eq_ignore_ascii_case(super::decode::joint_motion::JOINT_TYPE_GUID)
+        });
+    older_joint
+        || matches!(
+            &alignment.form,
+            Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Qualified(operands))
+                if operands.iter().any(|operand| !null_construction_operand(operand))
+        )
 }
 
 fn null_construction_operand(
@@ -2040,19 +2130,24 @@ mod tests {
             ..Default::default()
         };
         let instances = |references: &[crate::records::xref::XrefReference]| {
-            references.iter().map(|reference| {
-                serde_json::from_value::<cadmpeg_ir::products::Occurrence>(serde_json::json!({
-                    "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
-                    "prototype": {"kind":"unresolved"}, "parent": {"kind":"root"},
-                    "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
-                    "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
-                })).unwrap()
-            }).collect::<Vec<_>>()
+            references
+                .iter()
+                .map(|reference| {
+                    let mut occurrence = cadmpeg_ir::products::Occurrence::new(
+                        crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
+                        crate::xref::document_definition_id(reference.relative_path.as_str()),
+                        Some(cadmpeg_ir::transform::Transform::identity()),
+                    );
+                    occurrence.native_ref = Some(reference.id.clone());
+                    occurrence
+                })
+                .collect::<Vec<_>>()
         };
         let occurrences = instances(&table.references);
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &table.references,
+            &[],
             &occurrences,
             &[],
         );
@@ -2163,6 +2258,7 @@ mod tests {
         let kept_bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &restored.xref_references,
+            &[],
             &kept,
             &[],
         );
@@ -2182,6 +2278,7 @@ mod tests {
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &restored.xref_references,
+            &[],
             &[],
             &[],
         );
@@ -2207,6 +2304,7 @@ mod tests {
         let partial_bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &with_child,
+            &[],
             &ancestor,
             &[],
         );
@@ -2261,6 +2359,7 @@ mod tests {
             &[other_document],
             &[],
             &[],
+            &[],
         );
         let independent = super::project_assembly_joints_with_paths(
             &restored.design_parameter_scopes,
@@ -2285,6 +2384,7 @@ mod tests {
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &table.references,
+            &[],
             &occurrences,
             &[],
         );
@@ -2335,7 +2435,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
             &[],
             &inserts,
-            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[], &[], &[]),
+            &super::super::components::paths::LocalOccurrencePaths::new(&[], &[], &[], &[], &[]),
         )
         .unwrap();
         assert!(matches!(
@@ -2524,6 +2624,7 @@ mod tests {
         let bindings = super::super::components::paths::LocalOccurrencePaths::new(
             &[],
             &table.references[..1],
+            &[],
             &occurrences,
             &[],
         );
@@ -2620,19 +2721,16 @@ mod tests {
     fn joint_placed_identity_occurrences_count_each_inserted_design_once() {
         let occurrence = |id: &str, scope: &str| -> cadmpeg_ir::products::Occurrence {
             let prototype = if scope == "external" {
-                serde_json::json!({"kind": "external", "document": {"kind": "path", "path": format!("{id}.f3d")}})
+                crate::xref::document_definition_id(&format!("{id}.f3d"))
             } else {
-                serde_json::json!({"kind": "local", "definition": "f3d:model:product_definition#1"})
+                cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product_definition#1")
+                    .unwrap()
             };
-            serde_json::from_value(serde_json::json!({
-                "id": format!("f3d:model:occurrence#{id}"),
-                "prototype": prototype,
-                "parent": {"kind": "root"},
-                "ordinal": 0,
-                "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
-                "scale": [1.0, 1.0, 1.0],
-            }))
-            .unwrap()
+            cadmpeg_ir::products::Occurrence::new(
+                cadmpeg_ir::ids::OccurrenceId::mint(format!("f3d:model:occurrence#{id}")).unwrap(),
+                prototype,
+                Some(cadmpeg_ir::transform::Transform::identity()),
+            )
         };
         let occurrences = [
             occurrence("xref-0-0", "external"),
@@ -2644,7 +2742,7 @@ mod tests {
         };
         let external = container(serde_json::json!({
             "kind": "external",
-            "external_document": {"kind": "document_id", "document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
+            "external_document": {"document_id": "7b14bb25-3d8a-422c-9b0c-0805a6ef037c"},
         }));
         let named = container(serde_json::json!({
             "kind": "occurrence",
@@ -2653,7 +2751,7 @@ mod tests {
         }));
         let missing = container(serde_json::json!({
             "kind": "external",
-            "external_document": {"kind": "missing"},
+            "external_document": {},
         }));
         assert_eq!(
             super::joint_placed_identity_occurrences(&occurrences, [&missing, &missing]),

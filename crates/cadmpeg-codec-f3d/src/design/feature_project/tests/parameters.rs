@@ -368,6 +368,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
                         distance_tail: None,
+                        opaque_distance_word: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
                         direction_face_extend_offsets: [132, 136],
                         direction_reversed: false,
@@ -1063,4 +1064,244 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
             cadmpeg_ir::scalar::Length::new(12.5).unwrap()
         ))
     );
+}
+
+#[test]
+fn work_axis_parameters_keep_literal_definitions_and_require_unique_owner_joins() {
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(44),
+        "Other + 12 deg",
+        "AlongDistance",
+        Some("mm"),
+        "",
+        1.25,
+    ))
+    .unwrap();
+    parameter.id = "f3d:native/BulkStream.dat:parameter#45".into();
+    parameter.record_index = 45;
+    let mut owner = crate::records::parameters::DesignParameterOwnerWire::from(
+        parse_parameter_owner(&parameter_owner_frame())
+            .unwrap()
+            .into_record("native/BulkStream.dat", 0)
+            .unwrap(),
+    );
+    owner.id = "f3d:native/BulkStream.dat:owner#44".into();
+    owner.record_index = 44;
+    owner.parameter_record_index = 45;
+    owner.scope_record_index = 1;
+    owner.companion_record_index = 46;
+    for case in 0..6 {
+        let mut owners =
+            vec![
+                crate::records::parameters::DesignParameterOwner::try_from(owner.clone()).unwrap(),
+            ];
+        let mut native = vec![parameter.clone()];
+        match case {
+            1 => {
+                let mut duplicate = owner.clone();
+                duplicate.id = "f3d:native/BulkStream.dat:owner#other".into();
+                duplicate.scope_record_index = 2;
+                owners.push(duplicate.try_into().unwrap());
+            }
+            2 => {
+                native[0].record_index = 47;
+                native[0].id = "f3d:native/BulkStream.dat:parameter#47".into();
+            }
+            3 => {
+                let mut duplicate = parameter.clone();
+                duplicate.id = "f3d:native/BulkStream.dat:parameter#other".into();
+                native.push(duplicate);
+            }
+            _ => {}
+        }
+        let mut scopes = [
+            DesignParameterScope::empty(
+                "f3d:native/BulkStream.dat:scope#1",
+                if case == 4 {
+                    crate::records::feature::scope::DesignFeatureKind::Extrude
+                } else {
+                    crate::records::feature::scope::DesignFeatureKind::WorkAxis
+                },
+                1,
+            ),
+            DesignParameterScope::empty(
+                "f3d:native/BulkStream.dat:scope#2",
+                crate::records::feature::scope::DesignFeatureKind::Extrude,
+                2,
+            ),
+        ];
+        if case != 5 {
+            scopes[0]
+                .try_edit(|draft| {
+                    draft.reference_members =
+                        crate::records::identity::ReferenceRun::unlocated(vec![44]);
+                    draft.layout_fixture_references();
+                    draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                    draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                    draft.layout_fixture_tail();
+                })
+                .unwrap();
+        }
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+        let projected = crate::test_support::with_decode_context(|ctx| {
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &native,
+                    owners: &owners,
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        });
+        assert_eq!(projected.parameters.len(), native.len());
+        for p in &projected.parameters {
+            assert_eq!(p.name, "");
+            assert_eq!(p.expression, "Other + 12 deg");
+            assert_eq!(p.owner.is_some(), case == 0 || case == 4);
+            assert_eq!(
+                p.value,
+                Some(ParameterValue::Length(Length::new(12.5).unwrap()))
+            );
+        }
+    }
+}
+
+#[test]
+fn work_axis_duplicate_source_parameter_names_retain_rows_and_the_neutral_uniqueness_finding() {
+    for missing_carrier in [false, true] {
+        let mut native = Vec::new();
+        let mut owners = Vec::new();
+        for (ordinal, (name, expression, value)) in [
+            ("", "A + 1 mm", 1.25),
+            ("same", "B + 2 mm", 2.5),
+            ("same", "C + 3 mm", 3.75),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let index = 44 + u32::try_from(ordinal).unwrap() * 3;
+            let mut parameter = parse_design_parameter_record(&parameter_record(
+                Some(index),
+                expression,
+                "AlongDistance",
+                Some("mm"),
+                name,
+                value,
+            ))
+            .unwrap();
+            parameter.record_index = index + 1;
+            parameter.id = format!("f3d:native/BulkStream.dat:parameter#{}", index + 1);
+            parameter.source_ordinal = u32::try_from(ordinal).unwrap();
+            native.push(parameter);
+            let mut owner = crate::records::parameters::DesignParameterOwnerWire::from(
+                parse_parameter_owner(&parameter_owner_frame())
+                    .unwrap()
+                    .into_record("native/BulkStream.dat", 0)
+                    .unwrap(),
+            );
+            owner.id = format!("f3d:native/BulkStream.dat:owner#{index}");
+            owner.record_index = index;
+            owner.scope_record_index = 1;
+            owner.parameter_record_index = index + 1;
+            owner.companion_record_index = index + 2;
+            owner.local_ordinal = u32::try_from(ordinal).unwrap();
+            owner.evaluated_value = value;
+            owners.push(crate::records::parameters::DesignParameterOwner::try_from(owner).unwrap());
+        }
+        let mut scope = DesignParameterScope::empty(
+            "f3d:native/BulkStream.dat:scope#1",
+            crate::records::feature::scope::DesignFeatureKind::WorkAxis,
+            1,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![44, 47, 50]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        if !missing_carrier {
+            let crate::records::feature::scope::DesignScopePayloadMut::WorkAxis(slot) =
+                scope.payload_mut()
+            else {
+                panic!("axis")
+            };
+            let real = |value| {
+                crate::bytes::reference_fields::ReadField::Value(
+                    cadmpeg_ir::scalar::FiniteReal::new(value).unwrap(),
+                )
+            };
+            *slot = Some(
+                crate::records::feature::work_axes::DesignWorkAxisConstruction {
+                    candidates: vec![
+                        crate::records::feature::work_axes::DesignWorkAxisCandidate {
+                            origin: [real(0.0), real(0.0), real(2.0)],
+                            displacement: [real(0.0), real(0.0), real(1.0)],
+                            ..Default::default()
+                        },
+                    ],
+                    ..Default::default()
+                },
+            );
+        }
+        let scopes = [scope];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+        let projected = crate::test_support::with_decode_context(|ctx| {
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    native: &native,
+                    owners: &owners,
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        });
+        assert_eq!(projected.parameters.len(), 3);
+        for (ordinal, (parameter, source)) in projected.parameters.iter().zip(&native).enumerate() {
+            assert_eq!(parameter.name, source.name());
+            assert_eq!(parameter.expression, source.expression());
+            assert_eq!(parameter.native_ref.as_deref(), Some(source.id.as_str()));
+            assert_eq!(parameter.owner.as_ref(), Some(&projected.features[0].id));
+            assert_eq!(parameter.ordinal, u32::try_from(ordinal).unwrap());
+            let Some(ParameterValue::Length(length)) = &parameter.value else {
+                panic!("length")
+            };
+            assert!((length.get() - [12.5, 25.0, 37.5][ordinal]).abs() < 1.0e-12);
+        }
+        assert_eq!(
+            projected
+                .parameters
+                .iter()
+                .map(|parameter| &parameter.id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            3
+        );
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features = projected.features;
+        ir.model.parameters = projected.parameters;
+        let report = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+        let counts = report
+            .findings
+            .iter()
+            .filter(|finding| {
+                finding.check == cadmpeg_ir::report::check::Check::Counts
+                    && finding.severity == cadmpeg_ir::report::Severity::Error
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(counts.len(), 1, "{counts:?}");
+        assert_eq!(
+            counts[0].entity.as_deref(),
+            Some(ir.model.parameters[2].id.as_str())
+        );
+    }
 }

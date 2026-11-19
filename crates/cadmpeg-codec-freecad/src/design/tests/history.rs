@@ -472,9 +472,9 @@ fn transfers_datum_frames_from_persisted_placements() {
     ));
     assert!(matches!(
         definition("Axis"),
-        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DatumAxis { origin, direction })
-            if *origin == cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
-                && *direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::DatumAxis { axis })
+            if axis.origin().unwrap().get() == cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
+                && axis.direction().unwrap().get() == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
     ));
     assert!(matches!(
         definition("Point"),
@@ -1216,10 +1216,12 @@ fn custom_forward_link_cycle_is_retained_only_in_native_graph() {
         .features
         .iter()
         .all(|feature| feature.dependencies.is_empty()));
-    assert!(result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::FreecadLossCode::FeatureCyclicHistory
-            .note("")
-            .code));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::FeatureCyclicHistory
+                .note("")
+                .code
+    }));
 }
 
 #[test]

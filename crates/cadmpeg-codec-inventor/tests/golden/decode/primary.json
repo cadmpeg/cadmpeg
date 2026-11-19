@@ -3,14 +3,47 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "inventor:document:timeline#root",
+            "kind": "timeline",
+            "members": [],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
       "features": [],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "start",
+                "value": "inventor:document:timeline#root"
+              },
+              "bodies": [],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "inventor:document:product#root",
+          "occurrences": {},
+          "roots": [
+            "inventor:document:timeline#root"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -68,8 +101,16 @@
           "bodies": [],
           "bom_properties": {},
           "id": "inventor:document:product#root",
+          "instance_bodies": [],
           "kind": "part",
-          "sketches": []
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],

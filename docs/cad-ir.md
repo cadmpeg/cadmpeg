@@ -218,6 +218,8 @@ Datum planes retain their operation family when placement is unresolved and carr
 
 A `replace_face` construction keeps target faces and replacement support faces in distinct operands. Its optional Boolean `tangent_chain` controls inclusion of faces tangent to the targets. Absence leaves that control unresolved; a present value is `true` or `false`.
 
+A `split_body` operation carries an optional `extend_tool` Boolean. A present value selects whether to extend the splitting geometry through the target bodies. An absent value leaves extension unknown.
+
 A `thicken` construction independently retains its selected faces, positive total thickness, travel side, tangent-chain setting and solid result. Missing result or tangent-chain fields leave those settings unresolved. `SolidFeatureResult` describes new-body construction or a Boolean operation with its target-body selection and is shared by coils and thickens. A symmetric Thicken splits its total thickness evenly across both sides.
 
 Linear pattern counts define grid positions, including the seed at `(0, 0)`. An absent second direction has one position. `omitted_instances` is an optional array of zero-based `[first, second]` grid coordinates. Each coordinate is in bounds and distinct, and `(0, 0)` is excluded. An absent or empty array omits no position. The retained instance count is the product of the direction counts minus the number of omitted coordinates. Length conversion preserves these coordinates. A direction with `symmetric` set to `true` places its instances on both sides of the seed. Its coordinate `0` is the seed, an odd coordinate `k` is `(k + 1) / 2` spacings along the direction, and an even coordinate `k` above zero is `k / 2` spacings against it. An even count therefore places `count / 2` instances along the direction and `count / 2 - 1` against it. An absent `symmetric` is `false`: coordinate `k` is `k` spacings along the direction.
@@ -264,7 +266,7 @@ Ordered resolved and historical body sets store nonempty member rows. Each row p
 
 A configuration feature evaluation is `suppressed` or `active`. A suppressed evaluation has no outputs. An active evaluation owns its output list, which may be empty. Dependencies and the feature definition remain present independently of the evaluation state.
 
-A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`).
+A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`). The operation omits unresolved `thickness` and `side` fields independently.
 
 `SheetMetalAttachedPlate` builds a flat plate from its profile, thickness, and side. Its attachment selects the existing sheet edge. It has no Boolean operation or bend dimensions. `SheetMetalBend` names that plate and selects the attachment edge in its own input topology. It builds the joining bend region with its inside radius, relief, and transition. Replay the plate first, then its bend. The pair transfers together; an unresolved member keeps both members native. Each historical attachment selection identifies its own feature's input topology row.
 

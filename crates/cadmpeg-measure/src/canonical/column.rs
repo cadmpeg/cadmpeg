@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A chart reduced to its `v`-isoline at one `u`, for inner integrals
-//! across `v`.
+//! A chart reduced to its `v`-isoline at one `u`, or to its `u`-isoline at
+//! one `v`, for inner integrals along the isoline.
 
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -19,10 +19,12 @@ const MAX_COLUMN_DEGREE: usize = 15;
 /// Basis values of one degree, on the stack.
 type Basis = [f64; MAX_COLUMN_DEGREE + 1];
 
-/// A chart along its `v`-isoline at one `u`.
+/// A chart along its `v`-isoline at one `u`, or along its `u`-isoline at
+/// one `v` when `along_u` is set.
 pub(crate) struct Column<'a, 'ir> {
     chart: &'a Chart<'ir>,
-    u: f64,
+    at: f64,
+    along_u: bool,
     isoline: Option<Isoline<'a>>,
 }
 
@@ -31,10 +33,13 @@ struct Isoline<'a> {
     knots: &'a [f64],
     degree: usize,
     domain: [f64; 2],
-    /// `Σᵢ Nᵢ(u) Pʷᵢⱼ` for each `j`.
+    /// The poles contracted with the fixed parameter's basis values, along
+    /// the isoline.
     controls: Vec<[f64; 4]>,
-    /// `Σᵢ Nᵢ'(u) Pʷᵢⱼ` for each `j`.
+    /// The poles contracted with the fixed parameter's basis derivatives.
     across: Vec<[f64; 4]>,
+    /// Whether the isoline runs along `u`.
+    along_u: bool,
     twice_across: Option<Vec<[f64; 4]>>,
     offset_distance: Option<f64>,
     periodic: bool,
@@ -57,7 +62,28 @@ impl<'a, 'ir> Column<'a, 'ir> {
             }
             _ => None,
         };
-        Ok(Self { chart, u, isoline })
+        Ok(Self {
+            chart,
+            at: u,
+            along_u: false,
+            isoline,
+        })
+    }
+
+    /// The `u`-isoline of a NURBS `chart` at `v`.
+    pub(crate) fn across(eval: &Eval<'_, '_>, chart: &'a Chart<'ir>, v: f64) -> Measure<Self> {
+        let isoline = match chart {
+            Chart::Nurbs(nurbs) if nurbs.evaluation.is_none() && nurbs.column_offset.is_none() => {
+                Isoline::across(eval, nurbs.surface, v, nurbs.domain, nurbs.placement)?
+            }
+            _ => None,
+        };
+        Ok(Self {
+            chart,
+            at: v,
+            along_u: true,
+            isoline,
+        })
     }
 
     /// The point and first partials at `(u, s)`.
@@ -67,7 +93,11 @@ impl<'a, 'ir> Column<'a, 'ir> {
                 return Ok(partials);
             }
         }
-        self.chart.partials(eval, self.u, s)
+        if self.along_u {
+            self.chart.partials(eval, s, self.at)
+        } else {
+            self.chart.partials(eval, self.at, s)
+        }
     }
 }
 
@@ -150,9 +180,85 @@ impl<'a> Isoline<'a> {
             domain: v,
             controls,
             across,
+            along_u: false,
             twice_across,
             offset_distance,
             periodic: surface.v_periodic(),
+            placement,
+        }))
+    }
+
+    /// The `u`-isoline at `v` of a surface with no offset.
+    fn across(
+        eval: &Eval<'_, '_>,
+        surface: &'a NurbsSurface,
+        v: f64,
+        [u, [v0, v1]]: [[f64; 2]; 2],
+        placement: Placement,
+    ) -> Measure<Option<Self>> {
+        let v = if surface.v_periodic() && !(v0..=v1).contains(&v) {
+            v0 + (v - v0).rem_euclid(v1 - v0)
+        } else {
+            v
+        };
+        if !(v0..=v1).contains(&v) {
+            return Ok(None);
+        }
+        let (Ok(u_degree), Ok(v_degree)) = (
+            usize::try_from(surface.u_degree()),
+            usize::try_from(surface.v_degree()),
+        ) else {
+            return Ok(None);
+        };
+        if u_degree > MAX_COLUMN_DEGREE || v_degree > MAX_COLUMN_DEGREE {
+            return Ok(None);
+        }
+        let v_knots = surface.v_knots().as_slice();
+        let (u_count, v_count) = (surface.u_count(), surface.v_count());
+        let Some(span) = span(v_knots, v_degree, v_count, v) else {
+            return Ok(None);
+        };
+        let mut values: Basis = [0.0; MAX_COLUMN_DEGREE + 1];
+        let mut slopes: Basis = [0.0; MAX_COLUMN_DEGREE + 1];
+        if !basis(v_knots, v_degree, span, v, &mut values, &mut slopes) {
+            return Ok(None);
+        }
+        let work = u_count
+            .checked_add(v_degree + 1)
+            .and_then(|n| n.checked_mul(v_degree + 1))
+            .ok_or_else(|| eval.work.exhaustion())?;
+        eval.charge(work)?;
+        let mut controls = Vec::new();
+        let mut across = Vec::new();
+        for i in 0..u_count {
+            let mut control = [0.0; 4];
+            let mut partial = [0.0; 4];
+            for r in 0..=v_degree {
+                let column = span + r - v_degree;
+                let Some(pole) = surface.pole(i, column) else {
+                    return Ok(None);
+                };
+                let weight = surface.weight(i, column).map_or(1.0, NonZeroReal::get);
+                let pole = pole.get();
+                let homogeneous = [pole.x * weight, pole.y * weight, pole.z * weight, weight];
+                for lane in 0..4 {
+                    control[lane] += values[r] * homogeneous[lane];
+                    partial[lane] += slopes[r] * homogeneous[lane];
+                }
+            }
+            controls.push(control);
+            across.push(partial);
+        }
+        Ok(Some(Self {
+            knots: surface.u_knots().as_slice(),
+            degree: u_degree,
+            domain: u,
+            controls,
+            across,
+            along_u: true,
+            twice_across: None,
+            offset_distance: None,
+            periodic: surface.u_periodic(),
             placement,
         }))
     }
@@ -220,7 +326,11 @@ impl<'a> Isoline<'a> {
                 (lanes[2] - at.z * lanes[3]) / weight,
             )
         };
-        let (mut at, mut du, mut dv) = (at, derivative(across), derivative(along));
+        let (mut at, mut du, mut dv) = if self.along_u {
+            (at, derivative(along), derivative(across))
+        } else {
+            (at, derivative(across), derivative(along))
+        };
         if let Some(distance) = self.offset_distance {
             let second = |lanes: [f64; 4], a: Vector3, wa: f64, b: Vector3, wb: f64| {
                 Vector3::new(

@@ -25,6 +25,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
@@ -1282,6 +1283,7 @@ pub(crate) fn append_design_losses(
         | AngularTermination::ThroughNext {}
         | AngularTermination::ToFirst {}
         | AngularTermination::ToLast {}
+        | AngularTermination::ToPlane { .. }
         | AngularTermination::Angle { .. } => false,
     };
     let incomplete_extrude_extent = |extent: &ExtrudeExtent| match extent {
@@ -1922,8 +1924,15 @@ pub(crate) fn append_design_losses(
                             cadmpeg_ir::features::CombineDestination::NewComponent
                         )
                 }
-                FeatureOperation::BoundaryFill { tools, cells } => {
-                    incomplete_body_selection(tools) || cells.iter().any(incomplete_body_selection)
+                FeatureOperation::BoundaryFill { tools, cells, plane_tools, .. } => {
+                    incomplete_body_selection(tools)
+                        || !plane_tools.is_empty()
+                        || cells.iter().any(|cell| match cell {
+                            BoundaryFillCell::BodyRegion(body) => {
+                                incomplete_body_selection(body)
+                            }
+                            BoundaryFillCell::Recorded { .. } => true,
+                        })
                 }
                 FeatureOperation::CutWithSurface { targets, tools, .. } => {
                     incomplete_body_selection(targets) || incomplete_face_selection(tools)
@@ -1939,18 +1948,37 @@ pub(crate) fn append_design_losses(
                     incomplete_body_selection(targets)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
                 }
-                FeatureOperation::SplitBody { targets, tool } => {
+                FeatureOperation::SilhouetteSplit { target, direction, mode } => {
+                    incomplete_body_selection(target)
+                        || direction.is_none()
+                        || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
+                }
+        FeatureOperation::SplitBody { targets, tool, .. } => {
                     incomplete_body_selection(targets)
                         || match tool {
                             SplitBodyTool::Faces(faces) => incomplete_face_selection(faces),
                             SplitBodyTool::Plane { .. } => false,
                         }
                 }
-                FeatureOperation::SplitFace { targets, tool } => {
+                FeatureOperation::SplitFace {
+                    targets,
+                    tool,
+                    method,
+                } => {
                     incomplete_face_selection(targets)
                         || match tool {
                             SplitFaceTool::Path(path) => incomplete_path(path),
+                            SplitFaceTool::Faces(faces) => incomplete_face_selection(faces),
+                            SplitFaceTool::Native(_) => true,
                             SplitFaceTool::Plane { .. } | SplitFaceTool::Planes { .. } => false,
+                        }
+                        || match method {
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::Unresolved {} => true,
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::SurfaceIntersection {
+                                ..
+                            }
+                            | cadmpeg_ir::features::surfaces::SplitFaceMethod::ClosestPoint {} => false,
+                            cadmpeg_ir::features::surfaces::SplitFaceMethod::AlongVector { .. } => true,
                         }
                 }
                 FeatureOperation::SewBodies {

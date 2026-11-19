@@ -11,7 +11,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ParseError, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::OccurrenceParent;
 use cadmpeg_ir::report::loss::LossNote;
 use serde::{Deserialize, Serialize};
 
@@ -374,6 +373,7 @@ pub(crate) fn bind(
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
+    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
     let mut paths = BTreeMap::<Vec<u64>, Option<OccurrenceId>>::new();
     for occurrence in &ir.model.occurrences {
         let mut chain = Vec::new();
@@ -393,9 +393,9 @@ pub(crate) fn bind(
                     break;
                 }
             }
-            current = match &record.parent {
-                OccurrenceParent::Root {} => None,
-                OccurrenceParent::Occurrence { occurrence: parent } => {
+            current = match parents.get(&record.id) {
+                None => None,
+                Some(parent) => {
                     let parent = occurrences.get(parent.as_str()).copied();
                     if parent.is_none() {
                         valid = false;
@@ -443,6 +443,36 @@ pub(crate) fn bind(
     ir.native
         .namespace_mut("f3d")
         .set_arena(ctx, "display_poses", &rows)?;
+    Ok(())
+}
+
+/// Renames the occurrence each bound display pose names by `renamed`. A
+/// pose's row keeps its full path, so a pose of one instance of a shared
+/// occurrence names that occurrence.
+pub(crate) fn rename_bound(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    renamed: &std::collections::HashMap<String, String>,
+) -> Result<(), CodecError> {
+    let Some(native) = ir.native.namespace("f3d") else {
+        return Ok(());
+    };
+    let mut rows: Vec<DisplayPose> = native.arena_as_for_decode(ctx, "display_poses")?;
+    let mut changed = false;
+    for row in &mut rows {
+        let SceneBinding::Bound { occurrence } = &mut row.binding else {
+            continue;
+        };
+        if let Some(to) = renamed.get(occurrence.as_str()) {
+            *occurrence = OccurrenceId::mint(to.clone()).map_err(CodecError::malformed)?;
+            changed = true;
+        }
+    }
+    if changed {
+        ir.native
+            .namespace_mut("f3d")
+            .set_arena(ctx, "display_poses", &rows)?;
+    }
     Ok(())
 }
 

@@ -25,6 +25,24 @@ pub(crate) fn definition(definition: &str) -> ProductDefinitionId {
     )
 }
 
+/// The root definition: the stage the root layer stack composes, which
+/// places the root prims.
+pub(crate) fn stage() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "root"),
+        cadmpeg_ir::identity_key!("stage"),
+    )
+}
+
+/// The definition of the document an external arc names: `asset`, and the
+/// prim inside it the arc targets.
+pub(crate) fn external_definition(asset: &str, prim_path: Option<&str>) -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("usd", "stage", "external"),
+        key(&format!("@{asset}@{}", prim_path.unwrap_or_default())),
+    )
+}
+
 pub(crate) fn occurrence(path: &str) -> OccurrenceId {
     OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("usd", "stage", "occurrence"),

@@ -105,6 +105,7 @@ fn documents() -> Vec<Value> {
 /// treatment diameter above the bore it widens, a knot vector as long as its
 /// poles and degree need, a membership its cages commit.
 fn seed_documents() -> Vec<(&'static str, Value)> {
+    let identity = json!(cadmpeg_ir::transform::Transform::identity());
     let mut partial_form_inputs = json!(cadmpeg_ir::features::form::FormInputs::default());
     partial_form_inputs["reference_evidence"] = json!([{
         "source": "test:sweep:record#0",
@@ -153,7 +154,41 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
             "distance": {"kind": distance, "parameter": "test:sweep:parameter#0"},
         })
     };
+    let axis = |name: &'static str, axis: Value| {
+        (
+            name,
+            document(
+                "features",
+                feature(&json!({"kind": "datum_axis", "value": {"axis": axis}})),
+            ),
+        )
+    };
     vec![
+        axis(
+            "input-only datum axis",
+            json!({
+                "inputs": [{"reference": {"kind": "built", "value": {
+                    "kind": "point", "inputs": [], "after": [], "resolved_in": {},
+                    "resolved": {"x": 0.0, "y": 0.0, "z": 0.0}
+                }}}],
+                "native_options": {}, "source_settings": {}
+            }),
+        ),
+        axis(
+            "option-only datum axis",
+            json!({
+                "inputs": [],
+                "native_options": {"test:flag": {"kind": "bool", "value": {"kind": "literal", "value": true}}},
+                "source_settings": {}
+            }),
+        ),
+        axis(
+            "setting-only datum axis",
+            json!({
+                "inputs": [], "native_options": {},
+                "source_settings": {"test:flag": {"kind": "bool", "value": {"kind": "literal", "value": true}}}
+            }),
+        ),
         hole(
             "chamfer and counterdrill exit",
             json!({
@@ -439,6 +474,33 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                     },
                     "id": "test:sweep:parameter-program#0",
                     "scope": "test:sweep:product-definition#0",
+                }),
+            ),
+        ),
+        (
+            "current state with poses",
+            design_document(
+                "scopes",
+                json!({
+                    "active_arrangements": [],
+                    "current": [{
+                        "at": {"kind": "start", "value": "test:sweep:container#0"},
+                        "bodies": [],
+                        "poses": [
+                            [
+                                [{"occurrence": {"kind": "occurrence", "value": "test:sweep:occurrence#0"}}],
+                                identity,
+                            ],
+                            [
+                                [{"occurrence": {"kind": "native", "value": {"codec": "inventor", "value": {"kind": "text", "value": "occurrence 1"}}}}],
+                                identity,
+                            ],
+                        ],
+                        "status": "current",
+                    }],
+                    "definition": "test:sweep:product-definition#0",
+                    "occurrences": {},
+                    "roots": ["test:sweep:container#0"],
                 }),
             ),
         ),
