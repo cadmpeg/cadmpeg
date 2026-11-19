@@ -68,6 +68,88 @@ fn localized_edge_treatment_group_retention_is_language_independent() {
 }
 
 #[test]
+fn legacy_extrude_group_accepts_its_independent_empty_tail_record() {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#0",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        12,
+    );
+    let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) = scope.payload_mut()
+    else {
+        panic!("Extrude scope");
+    };
+    slot.get_or_insert_with(Default::default).extrude_prologue =
+        Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 27,
+            direction_face_extend_values: [1, 2],
+            side_extent_discriminators: [2, 0],
+            side_extent_discriminator_offsets: [116, 268],
+            extent: Some(DesignExtrudeExtent::OneSidedToFace),
+            direction_face_extend_offsets: [31, 35],
+            direction_reversed: false,
+            direction_reversed_offset: 39,
+            solid_operation: true,
+            solid_operation_offset: 40,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: 41,
+        });
+    let header = RecordFrame {
+        record_index: 100,
+        byte_offset: 0,
+        class_tag: "291".to_owned().try_into().unwrap(),
+    };
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"291", header.record_index);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 121);
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 131);
+    bytes.extend_from_slice(&DesignOperandRole::BODIES_A.raw().to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&0.0f64.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    push_marked_reference(&mut bytes, 180);
+    bytes.extend_from_slice(&[0; 2]);
+    push_marked_reference(&mut bytes, header.record_index + 1);
+    bytes.push(0);
+    push_marked_reference(&mut bytes, scope.record_index);
+    indexed_header(&mut bytes, *b"262", header.record_index);
+
+    let parse = |bytes: &[u8]| {
+        super::super::parse_construction_operand_group_in_stream(
+            bytes,
+            &scope,
+            0,
+            &header,
+            Some(&std::cell::OnceCell::new()),
+            None,
+        )
+    };
+    assert!(matches!(
+        parse(&bytes),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+    indexed_header(&mut bytes, *b"256", 180);
+    let marker_payload = bytes.len();
+    bytes.extend_from_slice(&[0; 18]);
+    indexed_header(&mut bytes, *b"256", 181);
+    let group = parse(&bytes).complete().expect("independent empty marker");
+    assert_eq!(group.extrude_role(), Some(DesignExtrudeOperandRole::Bodies));
+    assert_eq!(group.members()[0].value, 121);
+
+    bytes[marker_payload] = 1;
+    assert!(matches!(
+        parse(&bytes),
+        ConstructionOperandGroupParse::Unclosed
+    ));
+}
+
+#[test]
 fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let scope = DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {

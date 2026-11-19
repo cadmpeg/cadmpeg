@@ -1828,6 +1828,7 @@ fn copy_bound_planar_profile(
         | PlanarProfileRef::SketchProfiles { .. }
         | PlanarProfileRef::SketchRegions { .. }
         | PlanarProfileRef::SketchSelection { .. }
+        | PlanarProfileRef::SketchEntities { .. }
         | PlanarProfileRef::Native(_) => Ok(profile.clone()),
         _ => Err(CodecError::malformed(
             "bound planar profile has unsupported resolved form",
@@ -5757,6 +5758,11 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         }
         let Some(profile) = profile else {
+            if let Some(selected) =
+                resolve_entity_selection_profile(group, &resolution.path_resolution())
+            {
+                resolved_revolve_profiles.insert(group.id.clone(), (selected, None));
+            }
             continue;
         };
         let mut matches = resolution.placements.iter().filter(|placement| {

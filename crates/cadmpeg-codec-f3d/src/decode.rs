@@ -2133,7 +2133,7 @@ fn report_parameter_trailer_flags(
             &mut report.losses,
             F3dLossCode::ParameterTrailerFlagUninterpreted,
             format_args!(
-                "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
+                "{} decoded parameter(s) in {} set an uninterpreted flag in the compact expression trailer.",
                 parameters.count, parameters.stream
             ),
         );

@@ -127,7 +127,7 @@ fn a_pick_at_the_end_of_an_ordered_container_resolves_at_its_rollback() {
     assert_finding(
         &rolled_back(&face_of("ghost")),
         Check::Design,
-        Severity::Error,
+        Severity::Warning,
         "matches no entity of its anchored state",
     );
 }

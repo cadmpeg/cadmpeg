@@ -40,7 +40,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which curve partition does the second incidence word select, and what does the third incidence word count?
 
-**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. Public BHCS Revolve 1 selects curve 116 with `(1,2)` and curve 118 with `(2,2)`. Its directed arrangement boundary uses the first interval of curve 116 and the second interval of curve 118. Public SHCS Revolve 1 selects curve 138 with `(2,3)`. Public Standoff Revolve 1 repeats curve 179 with `(1,2)` and `(2,2)` in one exterior loop. The complete intersection partition of SHCS curve 138 has four pieces, and the stored last word is three. Its selected-member graph excludes curve 147 and has three pieces; the second piece equals the directed arrangement interval. Pulley curve 3853 carries `(3,3)`, while its full selected-member curve graph has four pieces at the intersections with curves 3883, 3905, and 3879. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks.
+**Known.** Each 40-byte member carries a traversal flag and two positive incidence words. Public BHCS Revolve 1 selects curve 116 with `(1,2)` and curve 118 with `(2,2)`. Its directed arrangement boundary uses the first interval of curve 116 and the second interval of curve 118. Public SHCS Revolve 1 selects curve 138 with `(2,3)`. Public Standoff Revolve 1 repeats curve 179 with `(1,2)` and `(2,2)` in one exterior loop. The complete intersection partition of SHCS curve 138 has four pieces, and the stored last word is three. Its selected-member graph excludes curve 147 and has three pieces; the second piece equals the directed arrangement interval. Pulley curve 3853 carries `(3,3)`, while its full selected-member curve graph has four pieces at the intersections with curves 3883, 3905, and 3879. The construction-path grammar in §3.1 supplies fragment ordinals and counts from a serialized primary/related tracking graph. The existing arrangement resolver derives exact parameter ranges and directions from unique directed boundary walks. One local corpus file has a symmetric intersect Extrude whose counted members each join uniquely to a Sketch curve. Other Sketch curves with tail marker zero divide its boundary. The member-ring resolver requires one atomic arrangement boundary with the complete named-curve ring and traversal directions. Its join remains unresolved. The transition certificate accepts one-sided blind Cut, Join, and NewBody. The selection retains its native identity with `feature.profile-selection-native`.
 
 **Need.** The join from each counted member to its native primary/related tracking graph, the partition domain and circle phase, the treatment of line extensions, clipped members and coincident curves, and the relation to feature-time sketch revisions. These rules must determine both incidence words and the selected interval in independent designs.
 
@@ -268,7 +268,7 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Question.** Where does a pasted copy sit relative to its source body?
 
-**Known.** `f3d.md` §3.1 "In the scope that a paste object owns" gives the copy form. The object and scope frames store the copy bodies, their parameter-body records and the source GUID pairs. In the copy saves whose sources survive, each copy has its source's bounding box and volume. The decoder projects the copy as `MoveBody` with zero translation and no rotation.
+**Known.** `f3d.md` §3.1 "In the scope that a paste object owns" gives the copy form. The object and scope frames store the copy bodies, their parameter-body records and the source GUID pairs. In the copy saves whose sources survive, each copy has its source's bounding box and volume. The decoder projects a paste whose sources and copies lie in one component as `MoveBody` with zero translation and no rotation. A paste whose copies lie in one component that holds none of its sources projects as `InsertBodies`, with the copies as its outputs, which their stored geometry places.
 
 **Need.** A paste that places a copy at an offset or a rotation from its source, and the bytes that hold that placement.
 
@@ -1205,15 +1205,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-223. `Shell` removed faces that the transition leaves open
 
-**Question.** Which faces does a `Shell` removed-face group select when a face that its transition updates or deletes has no plane or cylinder row, when the changed faces without a wall outnumber the group's distinct members, or when the shell stores unequal or skin walls?
+**Question.** Which faces does a `Shell` removed-face group select when its bounded-face decoding is incomplete and the transition has cone, sphere, torus or spline faces, competing wall correspondences, or unequal or skin walls?
 
-**Known.** The specification states the removed faces from the walls of the transition when every changed face has a row to compare. A face on a cone, sphere, torus, or spline surface has no row. A kept face whose wall merges with another face, or a removed face with an unrelated face at the wall offset, changes the count. Each group member is a bounded-face recipe.
+**Known.** A complete counted bounded-face program selects the unique input face with a boundary loop that matches every node. The recipe faces are the removed faces. For a group whose recipes do not resolve, the wall comparison selects the changed faces without a wall when their count equals the distinct member count and every changed face has a row to compare. Cone, sphere, torus and spline faces require other carrier comparisons. A kept face whose wall merges with another face and a removed face with an unrelated face at the wall offset can change the wall-derived membership while preserving its count.
 
-**Need.** The mapping from a bounded-face member recipe to the face it selects, or a wall comparison for the other surface forms.
+**Need.** The remaining bounded-face node forms and wall comparisons for the other surface families.
 
 **Conflict.** None.
 
-**Note.** Keep the group as the native selection. Unequal inside and outside offsets project as a neutral Shell with `BothSides` and absent total thickness. `feature.shell-independent-walls-native` records the retained source offsets and parameter expressions.
+**Note.** `feature.shell-removed-faces-assumed` names differing recipe and wall-derived face sets and retains the recipe faces. Keep a group native when both its recipes and wall comparison are unresolved. Unequal inside and outside offsets project as a neutral Shell with `BothSides` and absent total thickness. `feature.shell-independent-walls-native` records the retained source offsets and parameter expressions.
 
 ### DR-126. Auxiliary references of a Move scope
 
@@ -1775,13 +1775,13 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Conflict.** None.
 
-### DR-251. Compact null-owner parameters: owner and trailer byte 3
+### DR-251. Compact parameter ownership and expression trailer flags
 
-**Question.** Does the null owner of a compact null-owner dimension parameter mean that the parameter has no owner or that the frame does not store it, and what does byte 3 of the five-byte compact expression trailer state when it is `1`?
+**Question.** Does the null owner of a compact null-owner dimension parameter mean that the parameter has no owner or that the frame does not store it, and what does byte 3 of that trailer state when it is `1`? What does byte 0 of the ordinary compact owned trailer state?
 
-**Known.** The specification states the compact null-owner parameter form and the class-`287` form, which both admit the trailers `00 00 00 00 00` and `00 00 00 01 00`. Five Linear Dimension parameters in the compact null-owner form store `00 00 00 01 00`; their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. These frames store the null owner `u8 0` at offset 30 while their source kind names a Linear Dimension. The decoder reads them without an owner binding and reports `parameter.owner-unstored` for each stream with such a parameter. It keeps the parameter flags at their defaults and reports `parameter.trailer-flag-uninterpreted` for each stream with a decoded parameter whose byte 3 is `1`.
+**Known.** The specification states the compact null-owner parameter form and the class-`287` form, which both admit the trailers `00 00 00 00 00` and `00 00 00 01 00`. Five Linear Dimension parameters in the compact null-owner form store `00 00 00 01 00`; their expressions chain the parameters (`6.35 mm`, then each names the previous one). The compact owned trailer stores the driven flag at byte 1, which aligns with byte 6 of the wide expression trailer; under that alignment, byte 3 is the position of the wide favorite flag. These frames store the null owner `u8 0` at offset 30 while their source kind names a Linear Dimension. The decoder reads them without an owner binding and reports `parameter.owner-unstored` for each stream with such a parameter. It keeps the parameter flags at their defaults and reports `parameter.trailer-flag-uninterpreted` for each stream with a decoded parameter whose byte 3 is `1`. An ordinary compact owned `Side1Offset` can set byte 0 with the driven flag clear. The decoder retains the offset and reports the same loss.
 
-**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form or a compact trailer that sets byte 3.
+**Need.** Fusion's own reading of the five parameters (favorite, driving state, owner) from a local import of a public design that stores this form, or a second public design with the compact null-owner form or a compact trailer that sets byte 3. A controlled owned parameter save must identify the setting that changes byte 0.
 
 **Conflict.** None.
 
@@ -2057,11 +2057,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-657. Referenced-angle Revolve direction kind 1 and second tail reference
 
-**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361-byte referenced-angle frame name?
+**Question.** What does direction kind `1` at offset 33 of a referenced-angle `Revolve` scope select? What does the second marked reference of the 88-byte tail of a 361- or 379-byte referenced-angle frame name?
 
-**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361-byte frame the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and records `feature.revolve-layout-assumed` with the target.
+**Known.** `f3d.md` §3.1 gives the referenced-angle form direction kind `0` or `1`, and the 361- and 379-byte frames the 88-byte fixed tail. Direction kind `1` occurs with a full turn, where the swept solid is the same for each direction. The decoder reads direction kind `1` only for a full turn and leaves a partial-turn scope with direction kind `1` unresolved. The second tail reference names a record index of the same Design stream that is not an ordered scope reference. The decoder reads the 361-byte frame with the 351-byte fields and the 379-byte frame with the 369-byte fields, and records `feature.revolve-layout-assumed` with the target.
 
-**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and a 361-byte referenced-angle scope with the record that its second tail reference names.
+**Need.** One referenced-angle `Revolve` saved with a partial turn in each direction, once with direction kind `0` and once with direction kind `1`, and 361- and 379-byte referenced-angle scopes with the records that their second tail references name.
 
 **Conflict.** None.
 

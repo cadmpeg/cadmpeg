@@ -24,6 +24,7 @@ use crate::index::identities::IdentitySet;
 use crate::index::ModelIndex;
 use crate::report::check::Finding;
 use crate::schema::EntitySchema;
+use crate::topology::ChildLists;
 use crate::transform::Transform;
 
 macro_rules! topology_arenas {
@@ -154,8 +155,15 @@ struct Located<'a> {
     index: usize,
 }
 
+/// An evaluation's resolved state, and the state of its base: the same chain
+/// without the evaluation's own delta.
+struct Resolved<'a> {
+    base: ResolvedState<'a>,
+    state: ResolvedState<'a>,
+}
+
 /// One state with every delta of its chain applied.
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct ResolvedState<'a> {
     records: BTreeMap<&'a str, Located<'a>>,
     names: BTreeMap<&'a EntityRef, &'a NameEntry>,
@@ -190,12 +198,40 @@ struct Resolver<'a, 'c, 'd> {
     ctx: &'c DecodeContext<'d>,
     index: &'c DesignRecords<'a>,
     geometry: BTreeMap<&'a str, Located<'a>>,
+    children: ChildLists<'a>,
 }
 
 impl<'a> Resolver<'a, '_, '_> {
+    /// The children of a current-geometry record that only their parent
+    /// pointers list (D29): a body's regions and a shell's faces.
+    fn derived_children(&self, located: Located<'a>) -> Vec<&'a str> {
+        match located.arena {
+            Arena::Body => located
+                .topology
+                .bodies
+                .get(located.index)
+                .map(|body| self.children.body_regions(&body.id))
+                .unwrap_or_default()
+                .iter()
+                .map(|region| region.id.as_str())
+                .collect(),
+            Arena::Shell => located
+                .topology
+                .shells
+                .get(located.index)
+                .map(|shell| self.children.shell_faces(&shell.id))
+                .unwrap_or_default()
+                .iter()
+                .map(|face| face.id.as_str())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// The extent of a scope's current state at `position`: its bodies and the
-    /// records of the current geometry they reach, their name entries, and its
-    /// poses. `None` where the scope has no current state there.
+    /// records of the current geometry they reach, through references and
+    /// through the derived child lists, their name entries, and its poses.
+    /// `None` where the scope has no current state there.
     fn extent(
         &self,
         scope: &str,
@@ -226,6 +262,7 @@ impl<'a> Resolver<'a, '_, '_> {
             if state.records.insert(id, located).is_some() {
                 continue;
             }
+            pending.extend(self.derived_children(located));
             located.visit_references(self.ctx, &mut |target| {
                 if let Some((target, _)) = self.geometry.get_key_value(target) {
                     if !state.records.contains_key(target) {
@@ -245,16 +282,16 @@ impl<'a> Resolver<'a, '_, '_> {
         Ok(Some(state))
     }
 
-    /// The resolved state of an evaluation with content. A repeated identity
-    /// in the evaluation's own delta is reported. `None` where the chain of
-    /// bases does not resolve (an absent base, a base with no content, a
-    /// cycle, or a `Current` base that names no current state), which the
-    /// evaluation rules report.
+    /// The resolved state of an evaluation with content, and of its base. A
+    /// repeated identity in the evaluation's own delta is reported. `None`
+    /// where the chain of bases does not resolve (an absent base, a base with
+    /// no content, a cycle, or a `Current` base that names no current state),
+    /// which the evaluation rules report.
     fn resolve(
         &self,
         evaluation: &'a Evaluation,
         findings: &mut Vec<Finding>,
-    ) -> Result<Option<ResolvedState<'a>>, CodecError> {
+    ) -> Result<Option<Resolved<'a>>, CodecError> {
         let mut chain: Vec<&'a Evaluation> = vec![evaluation];
         let mut seen = BTreeSet::from([evaluation.id.as_str()]);
         let start = loop {
@@ -282,17 +319,20 @@ impl<'a> Resolver<'a, '_, '_> {
             }
         };
         let mut state = start;
-        for link in chain.iter().rev() {
+        for link in chain[1..].iter().rev() {
             if let Some(content) = &link.content {
-                let report = std::ptr::eq(*link, evaluation);
-                apply(
-                    &mut state,
-                    &content.delta,
-                    report.then_some((evaluation.id.as_str(), &mut *findings)),
-                );
+                apply(&mut state, &content.delta, None);
             }
         }
-        Ok(Some(state))
+        let base = state.clone();
+        if let Some(content) = &evaluation.content {
+            apply(
+                &mut state,
+                &content.delta,
+                Some((evaluation.id.as_str(), &mut *findings)),
+            );
+        }
+        Ok(Some(Resolved { base, state }))
     }
 }
 
@@ -373,6 +413,7 @@ pub(super) fn check_resolved_states(
         ctx,
         index,
         geometry: locate(&ir.geometry),
+        children: ir.geometry.child_lists(),
     };
     check_current_names(&resolver, findings);
     let mut topology: BTreeSet<&str> = resolver.geometry.keys().copied().collect();
@@ -389,12 +430,23 @@ pub(super) fn check_resolved_states(
         if evaluation.content.is_none() {
             continue;
         }
-        let Some(state) = resolver.resolve(evaluation, findings)? else {
+        let Some(Resolved { base, state }) = resolver.resolve(evaluation, findings)? else {
             continue;
         };
         let id = evaluation.id.as_str();
         check_entries(index, &state, id, findings);
         check_closure(ctx, &state, &topology, ids, id, findings)?;
+        if let Some(content) = &evaluation.content {
+            state_topology::check_state_topology(
+                ctx,
+                ir.tolerances.linear,
+                &base,
+                &state,
+                &content.delta.records,
+                id,
+                findings,
+            )?;
+        }
         check_stored_bodies(index, evaluation, &state, findings);
     }
     Ok(())
@@ -579,5 +631,6 @@ fn check_stored_bodies(
     }
 }
 
+mod state_topology;
 #[cfg(test)]
 mod tests;
