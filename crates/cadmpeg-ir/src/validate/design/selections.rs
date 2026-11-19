@@ -672,12 +672,18 @@ fn instance_bodies_along(
         .filter_map(|definition| index.records.definitions.get(definition))
         .any(|definition| !definition.instance_bodies.is_empty());
     along
-        || index.records.ir.design.evaluations.iter().any(|evaluation| {
-            evaluation
-                .content
-                .as_ref()
-                .is_some_and(|content| !content.delta.instance_bodies.is_empty())
-        })
+        || index
+            .records
+            .ir
+            .design
+            .evaluations
+            .iter()
+            .any(|evaluation| {
+                evaluation
+                    .content
+                    .as_ref()
+                    .is_some_and(|content| !content.delta.instance_bodies.is_empty())
+            })
 }
 
 /// Whether a pick into another scope reads that scope's active
@@ -699,12 +705,14 @@ fn reads_active_configuration(index: &DesignIndex<'_>, scope: &str, pick: &Picke
     };
     match stated {
         None => !index.records.has_configurations(scope),
-        Some(ConfigurationRef::Local(configuration)) => index
-            .records
-            .scopes
-            .get(scope)
-            .and_then(|design| design.active_configuration.as_ref())
-            == Some(configuration),
+        Some(ConfigurationRef::Local(configuration)) => {
+            index
+                .records
+                .scopes
+                .get(scope)
+                .and_then(|design| design.active_configuration.as_ref())
+                == Some(configuration)
+        }
         Some(ConfigurationRef::Named(_)) => false,
     }
 }
@@ -854,7 +862,10 @@ fn check_target_order<'a>(
     let Some(target) = index.target_feature(&pick.target) else {
         return;
     };
-    let features = match (site.scope, index.records.scope_of(MemberKey::Feature(target))) {
+    let features = match (
+        site.scope,
+        index.records.scope_of(MemberKey::Feature(target)),
+    ) {
         (Some(own), Some(scope)) if own != scope => match site.anchor {
             Anchor::Pinned(position) if position_scope(index, position) == Some(scope) => {
                 index.state_features(StateAt::Position(position))
@@ -941,7 +952,12 @@ fn check_beyond_current<'a>(
 
 /// Reports a target that does not depend-order before the pick's anchored
 /// state: an Error, or that cycle's Warning for a back-edge.
-fn report_order(index: &DesignIndex<'_>, site: Site<'_>, target: &str, findings: &mut Vec<Finding>) {
+fn report_order(
+    index: &DesignIndex<'_>,
+    site: Site<'_>,
+    target: &str,
+    findings: &mut Vec<Finding>,
+) {
     let holder = site.holder.feature();
     let at = site.holder.record();
     let cycle = holder.is_some_and(|feature| index.depends_on(target, feature));
