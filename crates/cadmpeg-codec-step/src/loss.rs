@@ -281,6 +281,14 @@ pub(crate) enum StepLossCode {
     OccurrenceNoWritableProduct,
     /// Occurrence metadata values were not represented.
     OccurrenceMetadataOmitted,
+    /// An instance that shows its own bodies or nested placements was
+    /// written as an occurrence of a product definition of its own.
+    InstanceDefinitionSplit,
+    /// An instance path names no occurrence of the document.
+    InstancePathUnresolved,
+    /// A definition whose every instance shows bodies of its own was not
+    /// written, nor were its bodies.
+    InstancePrototypeBodiesOmitted,
     /// PMI annotations were not written.
     PmiAnnotationNotWritten,
     /// An all-around scope has fewer than two writable geometric components.
@@ -554,6 +562,9 @@ impl StepLossCode {
         Self::OccurrenceExternalProduct,
         Self::OccurrenceNoWritableProduct,
         Self::OccurrenceMetadataOmitted,
+        Self::InstanceDefinitionSplit,
+        Self::InstancePathUnresolved,
+        Self::InstancePrototypeBodiesOmitted,
         Self::PmiAnnotationNotWritten,
         Self::PmiAllAroundComponentsUnresolved,
         Self::SourceAssociationOmitted,
@@ -764,6 +775,9 @@ impl StepLossCode {
             Self::OccurrenceExternalProduct => "occurrence.external-product",
             Self::OccurrenceNoWritableProduct => "occurrence.no-writable-product",
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
+            Self::InstanceDefinitionSplit => "product.instance-definition-split",
+            Self::InstancePathUnresolved => "product.instance-path-unresolved",
+            Self::InstancePrototypeBodiesOmitted => "product.instance-prototype-bodies-omitted",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
             Self::PmiAllAroundComponentsUnresolved => "pmi.all-around-components-unresolved",
             Self::SourceAssociationOmitted => "source.association-omitted",
@@ -881,6 +895,7 @@ impl StepLossCode {
             | Self::ProductNonPartKind
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceMetadataOmitted
+            | Self::InstanceDefinitionSplit
             | Self::SourceAssociationOmitted
             | Self::PassthroughRecordOmitted
             | Self::DisplayColorUnstyled
@@ -939,6 +954,7 @@ impl StepLossCode {
             | Self::ProductBomPropertyOmitted
             | Self::OccurrenceNoWritableProduct
             | Self::OccurrenceMetadataOmitted
+            | Self::InstanceDefinitionSplit
             | Self::ValidationItemUnsupported => LossTaxonomy::MetadataNotTransferred,
             Self::AttributeStringInvalid
             | Self::LayerItemWithoutCarrier
@@ -969,6 +985,7 @@ impl StepLossCode {
             | Self::ValidationMeasureUnitUnresolved
             | Self::GeometryCarrierNotWritten
             | Self::HelixFitFailed
+            | Self::InstancePrototypeBodiesOmitted
             | Self::ProceduralDefinitionNotWritten => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyRootRejected
             | Self::TopologyRootIncomplete
@@ -1047,6 +1064,7 @@ impl StepLossCode {
             | Self::NauoPlacementAmbiguous
             | Self::BodyConflictingMappedPlacements
             | Self::AssemblyOccurrenceOmittedNoParentProduct
+            | Self::InstancePathUnresolved
             | Self::AssemblyJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
             Self::NoGeometryWritten => LossTaxonomy::GeometryNotTransferred,
@@ -1246,6 +1264,9 @@ mod tests {
                 "occurrence.external-product",
                 "occurrence.no-writable-product",
                 "occurrence.metadata-omitted",
+                "product.instance-definition-split",
+                "product.instance-path-unresolved",
+                "product.instance-prototype-bodies-omitted",
                 "pmi.annotation-not-written",
                 "pmi.all-around-components-unresolved",
                 "source.association-omitted",

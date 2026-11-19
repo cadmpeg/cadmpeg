@@ -1783,7 +1783,7 @@ fn uncontradicted_literal(
     (!contradicted).then_some(value)
 }
 
-fn parameter_expression(value: &ParameterValue) -> String {
+pub(crate) fn parameter_expression(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(value) => format!("{} mm", value.get()),
         ParameterValue::Angle(value) => format!("{} rad", value.get()),
