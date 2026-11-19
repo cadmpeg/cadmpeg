@@ -15,7 +15,10 @@ use cadmpeg_ir::topology::{EdgeCarrier, ShellMember};
 
 use crate::loss::F3dLossCode;
 use crate::test_support::assert_written_with_loss;
-use crate::test_support::smbh_geometry_test::{synthetic_geometry_smbh, synthetic_wire_body_smbh};
+use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::test_support::smbh_geometry_test::{
+    synthetic_geometry_smbh, synthetic_two_body_smbh, synthetic_wire_body_smbh,
+};
 use crate::test_support::smbh_pcurves_test::synthetic_geometry_with_pcurve_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
 use crate::F3dCodec;
@@ -359,4 +362,29 @@ fn an_open_edge_with_no_stated_range_is_written_between_its_vertices() {
             [written_low, written_high]
         );
     }
+}
+
+#[test]
+fn a_body_without_a_retained_key_takes_a_key_no_other_body_holds() {
+    let mut ir = source_less(&synthetic_two_body_smbh([7, 1]));
+    let first = ir.geometry.bodies[0].id.to_string();
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        assert_eq!(native.body_native_keys.len(), 2);
+        native
+            .body_native_keys
+            .retain(|key| key.body.as_str() != first);
+    }
+    let (_, decoded) = write(&ir);
+    let keys = f3d_native(&decoded)
+        .body_native_keys
+        .iter()
+        .map(|key| key.asm_body_key)
+        .collect::<Vec<_>>();
+    assert_eq!(keys.len(), 2, "{keys:?}");
+    assert_ne!(keys[0], keys[1], "{keys:?}");
+    assert!(
+        keys.contains(&Some(1)),
+        "the retained key is kept: {keys:?}"
+    );
 }
