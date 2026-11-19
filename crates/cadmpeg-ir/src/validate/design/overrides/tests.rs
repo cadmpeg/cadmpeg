@@ -12,7 +12,7 @@ use crate::report::Severity;
 
 const D16: &str = "a dimension difference is a parameter override";
 
-fn offset_plane(offset: Value, after: Value) -> FeatureDefinition {
+fn offset_plane(offset: &Value, after: &Value) -> FeatureDefinition {
     serde_json::from_value(json!({"operation": {"kind": "datum", "value": {
         "element": {"kind": "plane", "value": {
             "inputs": [{
@@ -42,7 +42,7 @@ fn literal(value: f64) -> Value {
 /// overriding its definition with `definition`.
 fn overridden(definition: FeatureDefinition) -> CadIr {
     let mut ir = document();
-    ir.design.features[0].definition = offset_plane(literal(10.0), json!([]));
+    ir.design.features[0].definition = offset_plane(&literal(10.0), &json!([]));
     ir.design.configurations[1].overrides.features.insert(
         feature("extrude"),
         FeatureStateOverride {
@@ -61,17 +61,20 @@ fn d16(ir: &CadIr) -> bool {
 
 #[test]
 fn a_definition_override_restates_the_base_dimensions() {
-    assert!(!d16(&overridden(offset_plane(literal(10.0), json!([])))));
-    assert!(!d16(&overridden(offset_plane(literal(10.0 + 1e-12), json!([])))));
-    assert!(d16(&overridden(offset_plane(literal(12.0), json!([])))));
+    assert!(!d16(&overridden(offset_plane(&literal(10.0), &json!([])))));
+    assert!(!d16(&overridden(offset_plane(
+        &literal(10.0 + 1e-12),
+        &json!([])
+    ))));
+    assert!(d16(&overridden(offset_plane(&literal(12.0), &json!([])))));
     let bound = json!({"kind": "parameter", "value": "test:design:parameter#d"});
-    assert!(d16(&overridden(offset_plane(bound, json!([])))));
+    assert!(d16(&overridden(offset_plane(&bound, &json!([])))));
 }
 
 #[test]
 fn a_dimension_at_a_place_the_base_lacks_is_not_compared() {
     let step = json!([{"kind": "translate", "value": {"axis": "x", "distance": literal(5.0)}}]);
-    assert!(!d16(&overridden(offset_plane(literal(10.0), step))));
+    assert!(!d16(&overridden(offset_plane(&literal(10.0), &step))));
 }
 
 #[test]

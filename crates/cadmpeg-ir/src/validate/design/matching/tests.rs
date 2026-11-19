@@ -82,7 +82,11 @@ fn edge_faces(ir: &CadIr) -> Vec<BTreeSet<usize>> {
                 .iter()
                 .filter(|coedge| coedge.edge == edge.id)
                 .filter_map(|coedge| {
-                    let record = ir.geometry.loops.iter().find(|record| record.id == coedge.owner_loop)?;
+                    let record = ir
+                        .geometry
+                        .loops
+                        .iter()
+                        .find(|record| record.id == coedge.owner_loop)?;
                     face_at.get(&record.face).copied()
                 })
                 .collect()
@@ -137,7 +141,11 @@ fn assert_matches(ir: &CadIr, name: &TopoName, expected: bool) {
     assert_eq!(matcher.matches_any(name), expected, "{name:?}");
     let evaluation = ir.design.evaluations[0].id.as_str();
     let matcher = matchers.get(&Stored::Evaluation(evaluation)).unwrap();
-    assert_eq!(matcher.matches_any(name), expected, "{name:?} in {evaluation}");
+    assert_eq!(
+        matcher.matches_any(name),
+        expected,
+        "{name:?} in {evaluation}"
+    );
 }
 
 #[test]
@@ -202,8 +210,12 @@ fn a_meeting_name_matches_the_vertex_where_its_faces_meet() {
     let third = (0..ir.geometry.faces.len())
         .find(|face| {
             ![first, second, opposite].contains(face)
-                && sides.iter().any(|side| side.contains(&first) && side.contains(face))
-                && sides.iter().any(|side| side.contains(&second) && side.contains(face))
+                && sides
+                    .iter()
+                    .any(|side| side.contains(&first) && side.contains(face))
+                && sides
+                    .iter()
+                    .any(|side| side.contains(&second) && side.contains(face))
         })
         .unwrap();
     let corner = meeting(&[

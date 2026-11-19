@@ -218,9 +218,8 @@ impl<'a> States<'a> {
                 StateBase::Empty => return Some(chain),
                 StateBase::Evaluation(base) => at = self.layers.get(base.as_str())?,
                 StateBase::Current(position) => {
-                    chain.bottom = Some(
-                        self.extent(evaluation.scope.as_str(), PositionKey::of(position))?,
-                    );
+                    chain.bottom =
+                        Some(self.extent(evaluation.scope.as_str(), PositionKey::of(position))?);
                     return Some(chain);
                 }
             }

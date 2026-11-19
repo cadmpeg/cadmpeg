@@ -37,7 +37,12 @@ pub(super) fn check<'a>(
                 .map(move |body| (body.as_str(), definition.id.as_str()))
         })
         .collect();
-    let bodies: BTreeSet<&str> = ir.geometry.bodies.iter().map(|body| body.id.as_str()).collect();
+    let bodies: BTreeSet<&str> = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.as_str())
+        .collect();
     for configuration in &ir.design.configurations {
         let at = configuration.id.as_str();
         let scope = configuration.scope.as_str();

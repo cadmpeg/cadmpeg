@@ -206,7 +206,12 @@ impl<'a> Matcher<'a> {
                     .into_iter()
                     .filter_map(|(entity, entry)| Some((entity.id(), entry.name.as_ref()?)))
                     .collect(),
-                StateKey::Extents(extents.iter().map(|extent| std::ptr::from_ref(*extent)).collect()),
+                StateKey::Extents(
+                    extents
+                        .iter()
+                        .map(|extent| std::ptr::from_ref(*extent))
+                        .collect(),
+                ),
             ),
             Stored::Evaluation(evaluation) => (
                 states
@@ -280,7 +285,8 @@ impl<'a> Matcher<'a> {
             _ => {}
         }
         if let Some(index) = own_index(name) {
-            let index_of = |entity: &&str| self.entries.get(entity).and_then(|entry| own_index(entry));
+            let index_of =
+                |entity: &&str| self.entries.get(entity).and_then(|entry| own_index(entry));
             if found.iter().any(|entity| index_of(entity).is_some()) {
                 found.retain(|entity| index_of(entity) == Some(index));
             }
@@ -299,8 +305,10 @@ impl<'a> Matcher<'a> {
         let Some(topology) = self.topology() else {
             return Vec::new();
         };
-        let sides: Vec<BTreeSet<&'a str>> =
-            faces.iter().map(|face| self.resolve(face, reading)).collect();
+        let sides: Vec<BTreeSet<&'a str>> = faces
+            .iter()
+            .map(|face| self.resolve(face, reading))
+            .collect();
         let mut candidates: Vec<&'a str> = if faces.is_empty() {
             topology.edges.keys().copied().collect()
         } else {
@@ -337,8 +345,10 @@ impl<'a> Matcher<'a> {
         let Some(topology) = self.topology() else {
             return Vec::new();
         };
-        let sides: Vec<BTreeSet<&'a str>> =
-            faces.iter().map(|face| self.resolve(face, reading)).collect();
+        let sides: Vec<BTreeSet<&'a str>> = faces
+            .iter()
+            .map(|face| self.resolve(face, reading))
+            .collect();
         topology
             .vertices
             .keys()
@@ -406,7 +416,7 @@ fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> boo
                 && role == other_role
                 && match (generator, other_generator) {
                     (Some(Generator::Entity(left)), Some(Generator::Entity(right))) => {
-                        inner(&**left, &**right)
+                        inner(left, right)
                     }
                     (left, right) => left == right,
                 }
@@ -422,7 +432,7 @@ fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> boo
                 instance: other_instance,
                 of: other_of,
             },
-        ) => feature == other_feature && instance == other_instance && inner(&**of, &**other_of),
+        ) => feature == other_feature && instance == other_instance && inner(of, other_of),
         (
             TopoName::Blend {
                 feature,
@@ -467,7 +477,7 @@ fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> boo
                 feature: other_feature,
                 from: other_from,
             },
-        ) => feature == other_feature && inner(&**from, &**other_from),
+        ) => feature == other_feature && inner(from, other_from),
         (
             TopoName::Split {
                 feature,
@@ -479,7 +489,7 @@ fn same(left: &TopoName, right: &TopoName, reading: Reading, outer: bool) -> boo
                 from: other_from,
                 piece: other_piece,
             },
-        ) => feature == other_feature && piece == other_piece && inner(&**from, &**other_from),
+        ) => feature == other_feature && piece == other_piece && inner(from, other_from),
         (
             TopoName::Merged { feature, from },
             TopoName::Merged {
@@ -515,9 +525,12 @@ impl<'a> Matchers<'a> {
     /// bases does not resolve.
     pub(super) fn get(&self, state: &Stored<'a>) -> Option<Rc<Matcher<'a>>> {
         let key = match state {
-            Stored::Extents(extents) => {
-                StateKey::Extents(extents.iter().map(|extent| std::ptr::from_ref(*extent)).collect())
-            }
+            Stored::Extents(extents) => StateKey::Extents(
+                extents
+                    .iter()
+                    .map(|extent| std::ptr::from_ref(*extent))
+                    .collect(),
+            ),
             Stored::Evaluation(evaluation) => StateKey::Evaluation(evaluation),
         };
         if let Some(found) = self.built.borrow().get(&key) {

@@ -51,7 +51,8 @@ fn check_overrides(
     findings: &mut Vec<Finding>,
 ) {
     for (feature, state) in &overrides.features {
-        let (Some(definition), Some(base)) = (&state.definition, records.features.get(feature.as_str()))
+        let (Some(definition), Some(base)) =
+            (&state.definition, records.features.get(feature.as_str()))
         else {
             continue;
         };
@@ -103,9 +104,12 @@ fn close(left: &Value, right: &Value, tolerance: f64) -> bool {
         }
         (Value::Map(left), Value::Map(right)) => {
             left.len() == right.len()
-                && left.iter().zip(right).all(|((left_key, left), (right_key, right))| {
-                    left_key == right_key && close(left, right, tolerance)
-                })
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|((left_key, left), (right_key, right))| {
+                        left_key == right_key && close(left, right, tolerance)
+                    })
         }
         _ => left == right,
     }
@@ -379,7 +383,10 @@ impl ser::SerializeMap for Map<'_> {
 /// writes first; the arm and value of a dimension; or nothing below a name
 /// or a pick.
 enum Fields<'c> {
-    Plain { into: Collect<'c>, pushed: usize },
+    Plain {
+        into: Collect<'c>,
+        pushed: usize,
+    },
     Dimension {
         into: Collect<'c>,
         arm: Option<String>,
@@ -410,7 +417,9 @@ macro_rules! fields_impl {
                         }
                         into.nested(key.to_owned(), value)
                     }
-                    Fields::Dimension { arm, value: held, .. } => {
+                    Fields::Dimension {
+                        arm, value: held, ..
+                    } => {
                         match key {
                             "kind" => *arm = value.serialize(Text).ok(),
                             "value" => *held = serde_value::to_value(value).ok(),

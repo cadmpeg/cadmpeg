@@ -92,9 +92,7 @@ const fn built_fits(relation: &Relation, kind: Kind) -> bool {
         Relation::Parallel | Relation::Perpendicular | Relation::Angle => {
             !matches!(kind, Kind::Point)
         }
-        Relation::Tangent | Relation::AtParameter => {
-            !matches!(kind, Kind::Point | Kind::Direction)
-        }
+        Relation::Tangent | Relation::AtParameter => !matches!(kind, Kind::Point | Kind::Direction),
         Relation::Offset | Relation::Radius | Relation::Limit => !matches!(kind, Kind::Direction),
         Relation::Coincident
         | Relation::Midway

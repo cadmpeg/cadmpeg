@@ -13,9 +13,9 @@ use crate::design::refs::EntityRef;
 use crate::document::CadIr;
 use crate::report::Severity;
 
-fn material(picks: Vec<Value>) -> MaterialOverride {
+fn material(pick: &Value) -> MaterialOverride {
     serde_json::from_value(json!({
-        "target": {"at": {"kind": "current"}, "picks": {"kind": "named", "value": picks}},
+        "target": {"at": {"kind": "current"}, "picks": {"kind": "named", "value": [pick]}},
         "material": {"kind": "named", "value": "steel"}
     }))
     .unwrap()
@@ -49,7 +49,8 @@ fn named() -> CadIr {
 
 fn overlap(ir: &CadIr) -> bool {
     design_findings(ir).iter().any(|finding| {
-        finding.severity == Severity::Error && finding.message.contains("no two entries select one body")
+        finding.severity == Severity::Error
+            && finding.message.contains("no two entries select one body")
     })
 }
 
@@ -57,23 +58,21 @@ fn overlap(ir: &CadIr) -> bool {
 fn two_materials_that_select_one_body_are_an_error() {
     let mut ir = named();
     let pick = body_pick(&ir);
-    ir.design.configurations[1].materials = vec![material(vec![pick.clone()])];
+    ir.design.configurations[1].materials = vec![material(&pick)];
     assert!(!overlap(&ir), "{:#?}", design_findings(&ir));
-    ir.design.configurations[1]
-        .materials
-        .push(material(vec![pick]));
+    ir.design.configurations[1].materials.push(material(&pick));
     assert!(overlap(&ir), "{:#?}", design_findings(&ir));
 }
 
 #[test]
 fn names_select_bodies_only_in_the_active_configuration() {
-    let name = json!({"target": {"kind": "entity", "value": serde_json::to_value(root()).unwrap()}});
+    let name =
+        json!({"target": {"kind": "entity", "value": serde_json::to_value(root()).unwrap()}});
     let mut ir = named();
-    ir.design.configurations[0].materials =
-        vec![material(vec![name.clone()]), material(vec![name.clone()])];
+    ir.design.configurations[0].materials = vec![material(&name), material(&name)];
     assert!(overlap(&ir), "{:#?}", design_findings(&ir));
     let mut ir = named();
-    ir.design.configurations[1].materials = vec![material(vec![name.clone()]), material(vec![name])];
+    ir.design.configurations[1].materials = vec![material(&name), material(&name)];
     assert!(!overlap(&ir), "{:#?}", design_findings(&ir));
 }
 
@@ -83,18 +82,18 @@ fn a_material_target_picks_bodies() {
     let face = json!({"target": {"kind": "entity", "value": {"kind": "generated", "value": {
         "kind": "face", "feature": "test:design:feature#extrude"
     }}}});
-    ir.design.configurations[1].materials = vec![material(vec![face])];
+    ir.design.configurations[1].materials = vec![material(&face)];
     assert_finding(&ir, "picks something other than a body");
 
     let mut ir = named();
     let mut pick = body_pick(&ir);
     pick["resolved"] = json!([{"kind": "face", "value": ir.geometry.faces[0].id.as_str()}]);
-    ir.design.configurations[1].materials = vec![material(vec![pick])];
+    ir.design.configurations[1].materials = vec![material(&pick)];
     assert_finding(&ir, "which is no body");
 
     let mut ir = named();
     let datum = json!({"target": {"kind": "principal", "value": {"entity": "xy_plane"}}});
-    ir.design.configurations[1].materials = vec![material(vec![datum])];
+    ir.design.configurations[1].materials = vec![material(&datum)];
     assert_finding(&ir, "picks something other than a body");
 }
 
@@ -105,6 +104,6 @@ fn a_material_target_picks_in_a_definition_the_scope_spans() {
         "target": {"kind": "entity", "value": serde_json::to_value(root()).unwrap()},
         "context": {"kind": "definition", "value": {"definition": "test:design:definition#elsewhere"}}
     });
-    ir.design.configurations[1].materials = vec![material(vec![pick])];
+    ir.design.configurations[1].materials = vec![material(&pick)];
     assert_finding(&ir, "which is no definition the scope spans");
 }

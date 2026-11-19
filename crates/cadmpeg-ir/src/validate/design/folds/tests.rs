@@ -81,12 +81,16 @@ fn fold_edges_share_one_end_vertex_and_lie_in_one_plane() {
     assert!(fold_errors(&folded([first, second, first, second])).is_empty());
     let errors = fold_errors(&folded([first, second, third, first]));
     assert!(
-        errors.iter().any(|message| message.contains("do not lie in one plane")),
+        errors
+            .iter()
+            .any(|message| message.contains("do not lie in one plane")),
         "{errors:?}"
     );
     let errors = fold_errors(&folded([0, apart(&ir), 0, apart(&ir)]));
     assert!(
-        errors.iter().any(|message| message.contains("do not share one end vertex")),
+        errors
+            .iter()
+            .any(|message| message.contains("do not share one end vertex")),
         "{errors:?}"
     );
 }

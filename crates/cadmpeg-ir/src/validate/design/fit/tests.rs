@@ -12,18 +12,18 @@ fn principal(entity: &str) -> Value {
     json!({"target": {"kind": "principal", "value": {"entity": entity}}})
 }
 
-fn picks(picks: Vec<Value>) -> Value {
+fn picks(picks: &[Value]) -> Value {
     json!({"kind": "picks", "value": {"at": {"kind": "current"}, "picks": {"kind": "named", "value": picks}}})
 }
 
 fn built(kind: &str) -> Value {
     json!({"kind": "built", "value": {"kind": kind, "inputs": [{
         "role": {"subject": "whole", "relation": {"kind": "coincident"}},
-        "reference": picks(vec![principal("origin")])
+        "reference": picks(&[principal("origin")])
     }], "after": [], "resolved_in": {}}})
 }
 
-fn input(relation: &str, reference: Value, value: Option<Value>) -> Value {
+fn input(relation: &str, reference: &Value, value: Option<Value>) -> Value {
     let mut input = json!({"role": {"subject": "whole", "relation": {"kind": relation}}, "reference": reference});
     if let Some(value) = value {
         input["value"] = value;
@@ -32,7 +32,7 @@ fn input(relation: &str, reference: Value, value: Option<Value>) -> Value {
 }
 
 /// The fixture with its extrude a datum of `element` built from `inputs`.
-fn datum(element: &str, inputs: Vec<Value>) -> CadIr {
+fn datum(element: &str, inputs: &[Value]) -> CadIr {
     let mut ir = document();
     let construction = json!({"inputs": inputs, "after": [], "resolved_in": {}});
     let value = if element == "points" {
@@ -40,12 +40,13 @@ fn datum(element: &str, inputs: Vec<Value>) -> CadIr {
     } else {
         construction
     };
-    ir.design.features[0].definition.operation = serde_json::from_value(json!({"kind": "datum", "value": {
-        "element": {"kind": element, "value": value},
-        "native_options": {},
-        "source_settings": {}
-    }}))
-    .unwrap();
+    ir.design.features[0].definition.operation =
+        serde_json::from_value(json!({"kind": "datum", "value": {
+            "element": {"kind": element, "value": value},
+            "native_options": {},
+            "source_settings": {}
+        }}))
+        .unwrap();
     ir
 }
 
@@ -59,11 +60,11 @@ fn errors(ir: &CadIr, fragment: &str) -> bool {
 fn a_nested_construction_fits_its_relation() {
     let refused = "which does not take one";
     assert!(errors(
-        &datum("plane", vec![input("parallel", built("point"), None)]),
+        &datum("plane", &[input("parallel", &built("point"), None)]),
         refused
     ));
     assert!(!errors(
-        &datum("plane", vec![input("parallel", built("axis"), None)]),
+        &datum("plane", &[input("parallel", &built("axis"), None)]),
         refused
     ));
     let position = json!({"kind": "position", "value": {
@@ -72,20 +73,33 @@ fn a_nested_construction_fits_its_relation() {
         "z": {"kind": "literal", "value": 3.0}
     }});
     assert!(errors(
-        &datum("points", vec![input("coordinates", built("plane"), Some(position.clone()))]),
+        &datum(
+            "points",
+            &[input(
+                "coordinates",
+                &built("plane"),
+                Some(position.clone())
+            )]
+        ),
         refused
     ));
     assert!(!errors(
-        &datum("points", vec![input("coordinates", built("frame"), Some(position))]),
+        &datum(
+            "points",
+            &[input("coordinates", &built("frame"), Some(position))]
+        ),
         refused
     ));
     let length = json!({"kind": "length", "value": {"kind": "literal", "value": 1.0}});
     assert!(errors(
-        &datum("plane", vec![input("offset", built("direction"), Some(length))]),
+        &datum(
+            "plane",
+            &[input("offset", &built("direction"), Some(length))]
+        ),
         refused
     ));
     assert!(errors(
-        &datum("points", vec![input("center", built("plane"), None)]),
+        &datum("points", &[input("center", &built("plane"), None)]),
         refused
     ));
 }
@@ -97,9 +111,9 @@ fn a_measuring_origin_is_a_point() {
     let on_axis = |second: &str| {
         datum(
             "points",
-            vec![input(
+            &[input(
                 "at_parameter",
-                picks(vec![principal("x_axis"), principal(second)]),
+                &picks(&[principal("x_axis"), principal(second)]),
                 Some(ratio.clone()),
             )],
         )
@@ -113,9 +127,9 @@ fn a_fold_reference_picks_straight_edges() {
     let fold = |last: Value| {
         datum(
             "frame",
-            vec![input(
+            &[input(
                 "fold",
-                picks(vec![
+                &picks(&[
                     principal("x_axis"),
                     principal("y_axis"),
                     principal("z_axis"),
