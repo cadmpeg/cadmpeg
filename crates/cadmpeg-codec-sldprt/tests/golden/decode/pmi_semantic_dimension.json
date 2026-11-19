@@ -440,6 +440,18 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "history.rollback-unread",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline is stated built through its last member.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "feature.typed-operand-incomplete",
             "kind": "feature_history_retained",
             "namespace": "sldprt"
