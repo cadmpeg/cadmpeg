@@ -41,6 +41,7 @@ fn write(ir: &CadIr) -> (ExportReport, CadIr) {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("the written file decodes");
+    crate::test_support::assert_decodes_back(&report, decoded.report());
     (report, decoded.into_parts().0)
 }
 
@@ -273,4 +274,56 @@ fn a_document_asset_is_dropped_by_name() {
         &F3dLossCode::WriterAssetOmitted.kind().to_string(),
         "generated:test:asset#0",
     );
+}
+
+#[test]
+fn a_pole_loop_is_dropped_and_its_face_written() {
+    use cadmpeg_ir::topology::{FaceLoops, Loop, LoopBoundary, Point, Vertex};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture");
+    let face = ir.geometry.faces[0].id.clone();
+    let point = cadmpeg_ir::ids::PointId::mint("generated:test:pole-point#0").expect("identity");
+    let vertex = cadmpeg_ir::ids::VertexId::mint("generated:test:pole#0").expect("identity");
+    let pole = cadmpeg_ir::ids::LoopId::mint("generated:test:pole-loop#0").expect("identity");
+    ir.geometry.points.push(Point::new(
+        point.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.5, 0.5, 0.0)).expect("finite"),
+        None,
+    ));
+    ir.geometry.vertices.push(Vertex {
+        id: vertex.clone(),
+        point,
+        tolerance: None,
+        native_ref: None,
+    });
+    ir.geometry.loops.push(Loop {
+        id: pole.clone(),
+        face: face.clone(),
+        boundary: LoopBoundary::Vertex {
+            vertex,
+            pcurves: Vec::new(),
+        },
+        native_ref: None,
+    });
+    match &mut ir.geometry.faces[0].loops {
+        FaceLoops::Unspecified { loops } => loops.push(pole.clone()),
+        FaceLoops::Classified { inner, .. } => inner.push(pole.clone()),
+    }
+    let faces = ir.geometry.faces.len();
+    assert_written_with_loss(
+        &ir,
+        None,
+        &F3dLossCode::WriterGeometryOmitted.kind().to_string(),
+        pole.as_str(),
+    );
+    let (report, decoded) = write(&ir);
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.code != F3dLossCode::WriterBodyOmitted.kind()),
+        "{:#?}",
+        report.losses
+    );
+    assert_eq!(decoded.geometry.faces.len(), faces);
 }
