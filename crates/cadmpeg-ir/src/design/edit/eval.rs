@@ -194,7 +194,7 @@ fn same(left: Quantity, right: Quantity, what: &str) -> Result<Quantity, EvalErr
 }
 
 /// The value of a literal exponent: a number, or a negated number.
-fn literal_exponent(node: &Node<ParameterRef>) -> Option<f64> {
+fn literal_exponent<R>(node: &Node<R>) -> Option<f64> {
     match node {
         Node::Number { value, unit } if unit.0.is_empty() => Some(value.get()),
         Node::Unary {
@@ -302,11 +302,11 @@ fn compare(op: BinaryOp, left: Value, right: Value) -> Result<Value, EvalError> 
     Ok(Value::Boolean(result))
 }
 
-fn binary(
+fn binary<R>(
     op: BinaryOp,
     left: Value,
     right: Value,
-    right_node: &Node<ParameterRef>,
+    right_node: &Node<R>,
 ) -> Result<Value, EvalError> {
     match op {
         BinaryOp::Add | BinaryOp::Subtract => {
@@ -489,15 +489,16 @@ fn call(function: Function, args: Vec<Value>) -> Result<Value, EvalError> {
     }
 }
 
-enum Task<'a> {
-    Visit(&'a Node<ParameterRef>),
+enum Task<'a, R> {
+    Visit(&'a Node<R>),
     Unary(UnaryOp),
-    Binary(BinaryOp, &'a Node<ParameterRef>),
+    Binary(BinaryOp, &'a Node<R>),
     Call(Function, usize),
-    Branch(&'a Node<ParameterRef>, &'a Node<ParameterRef>),
+    Branch(&'a Node<R>, &'a Node<R>),
 }
 
-/// Evaluates a neutral design expression tree on canonical values.
+/// Evaluates a neutral expression tree on canonical values: a design
+/// expression, or a process expression whose references are `ParamRef`s.
 /// `reference` gives a reference's value, or `None` where it has none.
 ///
 /// # Errors
@@ -506,9 +507,9 @@ enum Task<'a> {
 /// parameter, or a bend variable has no value, [`EvalError::Type`] where an
 /// operand does not have the quantity or kind its operator takes, and
 /// [`EvalError::Domain`] for an operation outside its domain.
-pub fn evaluate(
-    root: &Node<ParameterRef>,
-    reference: &mut dyn FnMut(&ParameterRef) -> Option<Value>,
+pub fn evaluate<R>(
+    root: &Node<R>,
+    reference: &mut dyn FnMut(&R) -> Option<Value>,
 ) -> Result<Value, EvalError> {
     let mut tasks = vec![Task::Visit(root)];
     let mut values: Vec<Value> = Vec::new();
