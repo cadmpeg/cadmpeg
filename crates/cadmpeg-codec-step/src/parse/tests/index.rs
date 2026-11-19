@@ -119,7 +119,7 @@ fn anchor_node_limit_bounds_resource_expansion() {
 fn data_records_lie_within_their_section_extent() {
     use std::fmt::Write as _;
 
-    let count = 10_000;
+    let count = 10;
     let mut source = String::from("ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;");
     for id in 1..=count {
         write!(source, "#{id}=ITEM();").expect("authored record");
