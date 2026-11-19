@@ -20,7 +20,11 @@ fn scope(kind: DesignFeatureKind, references: Vec<u32>) -> DesignParameterScope 
     let mut draft =
         DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#17", kind, SCOPE).into_draft();
     draft.reference_members = ReferenceRun::unlocated(references);
-    DesignParameterScope::try_new(draft.with_fixture_layout()).unwrap()
+    draft.layout_fixture_references();
+    draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+    draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+    draft.layout_fixture_tail();
+    DesignParameterScope::try_new(draft).unwrap()
 }
 
 fn append_group(
