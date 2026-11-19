@@ -1389,8 +1389,22 @@ fn region_sampler_finds_a_band_between_grid_points() {
 fn square_and_nested_circle_holes(selected: &[usize]) -> Vec<usize> {
     let square = polygon("square", &[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]);
     let disk = circle("disk", (2.0, 2.0), 1.0);
-    let outer = region(&square, &[[0.0, 1.0]; 4]);
-    let inner = region(std::slice::from_ref(&disk), &[[0.0, TAU]]);
+    let mut outer = region(&square, &[[0.0, 1.0]; 4]);
+    let mut inner = region(std::slice::from_ref(&disk), &[[0.0, TAU]]);
+    crate::test_support::with_decode_context(|ctx| {
+        for (region, entities) in [
+            (&mut outer, square.as_slice()),
+            (&mut inner, std::slice::from_ref(&disk)),
+        ] {
+            for use_ in &region.boundary {
+                region.polyline.extend(
+                    super::boundary_use_samples(use_, entities, super::CURVE_SAMPLES, ctx)
+                        .unwrap()
+                        .unwrap(),
+                );
+            }
+        }
+    });
     let sampled = vec![
         Sampled {
             region: &outer,
@@ -1403,7 +1417,8 @@ fn square_and_nested_circle_holes(selected: &[usize]) -> Vec<usize> {
             nested: Vec::new(),
         },
     ];
-    let Some(ResolvedProfileSelection::Regions(regions)) = trimmed_selection(&sampled, selected)
+    let Some(ResolvedProfileSelection::Regions(regions)) =
+        trimmed_selection(&sampled, selected, TOLERANCE)
     else {
         panic!("trimmed regions");
     };
@@ -1488,4 +1503,45 @@ fn each_sketch_region_is_sampled_at_its_grid_point_farthest_from_its_boundary() 
         assert_eq!(sampled[0].point, Point2::new(side / 2.0, side / 2.0));
         assert!(sampled[0].nested.is_empty());
     }
+}
+
+#[test]
+fn selected_nested_interiors_without_a_hole_stay_native() {
+    let corners = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)];
+    let inner_corners = [(1.0, 1.0), (3.0, 1.0), (3.0, 3.0), (1.0, 3.0)];
+    let outer_entities = polygon("outer-overlap", &corners);
+    let inner_entities = polygon("inner-overlap", &inner_corners);
+    let mut outer = region(&outer_entities, &[[0.0, 1.0]; 4]);
+    let mut inner = region(&inner_entities, &[[0.0, 1.0]; 4]);
+    outer.polyline = corners.iter().map(|(u, v)| Point2::new(*u, *v)).collect();
+    inner.polyline = inner_corners
+        .iter()
+        .map(|(u, v)| Point2::new(*u, *v))
+        .collect();
+    let regions = [outer, inner];
+    let mut sampled = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new()).unwrap();
+    let Some(ResolvedProfileSelection::Regions(selected)) =
+        trimmed_selection(&sampled, &[0, 1], TOLERANCE)
+    else {
+        panic!("nested region with a hole resolves");
+    };
+    let entities: Vec<_> = outer_entities.into_iter().chain(inner_entities).collect();
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(
+            super::overlap::regions_are_disjoint(&selected, &entities, TOLERANCE, ctx).unwrap()
+        );
+        let mut overlapping = selected.clone();
+        let SketchProfileRegion::Trimmed {
+            hole_boundaries, ..
+        } = &mut overlapping[0]
+        else {
+            panic!("trimmed region");
+        };
+        hole_boundaries.clear();
+        assert!(
+            !super::overlap::regions_are_disjoint(&overlapping, &entities, TOLERANCE, ctx).unwrap()
+        );
+    });
+    sampled[0].nested.clear();
+    assert!(trimmed_selection(&sampled, &[0, 1], TOLERANCE).is_none());
 }
