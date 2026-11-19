@@ -3482,11 +3482,11 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 ### DR-706. Cut Extrude with atomic regions that have no sample point
 
-**Question.** How are the atomic regions of a Cut `Extrude` found when the arrangement has a region that holds no sample point of the grid?
+**Question.** How are the atomic regions of a Cut `Extrude` found when the arrangement has a region with no point more than ten model tolerances from its boundary?
 
-**Known.** A public RailCore Mini Cut `Extrude` has a Sketch of 54 profiles and a counted selection of eight rings of three curves. The arrangement has 72 faces. Sampling the atomic regions finds no interior point for at least one region, so no removed-region candidate forms. The rings come in pairs of the same three curves in opposite order.
+**Known.** A public RailCore Mini Cut `Extrude` has a Sketch of 54 profiles and a counted selection of eight rings of three curves. The arrangement has 72 faces. The sampler rule of the cap certificate (`f3d.md`) reads a narrow region through a grid point or a row midpoint. A region narrower than twenty tolerances has no sample, and no removed-region candidate forms for it. The rings come in pairs of the same three curves in opposite order.
 
-**Need.** An interior point rule for narrow regions, or a certificate that does not sample.
+**Need.** A certificate that does not sample regions narrower than twenty tolerances.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
 
