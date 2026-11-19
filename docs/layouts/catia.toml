@@ -4232,3 +4232,55 @@ offset = 3
 type = "f64[3]"
 source = "spec"
 anchor = "27-byte coordinate selector"
+
+[[record]]
+name = "surface_weight_row_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.1"
+anchor = "The three-byte weight-row prefix stores its command and mirror mask:"
+size = 3
+
+[[record.field]]
+name = "command"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "row command `01` or `05`"
+
+[[record.field]]
+name = "mirror"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "mirror mask"
+
+[[record]]
+name = "surface_weight_repeat_row_prefix"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "byte"
+section = "6.1"
+anchor = "The five-byte repeated weight-row prefix adds one field:"
+size = 5
+
+[[record.field]]
+name = "command"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "row command `01` or `05`"
+value = 5
+
+[[record.field]]
+name = "mirror"
+offset = 1
+type = "u16"
+source = "spec"
+anchor = "mirror mask"
+
+[[record.field]]
+name = "leading_repeats"
+offset = 3
+type = "u16"
+source = "spec"
+anchor = "leading-repeat count for command `05`"

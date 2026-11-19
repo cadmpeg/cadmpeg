@@ -1477,6 +1477,31 @@ Parsed by:
 | 0 | 3 | `tag` | `bytes[3]` | little | spec | 27-byte coordinate selector |
 | 3 | 24 | `coefficients` | `f64[3]` | little | spec | 27-byte coordinate selector |
 
+## `surface_weight_row_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | row command `01` or `05` |
+| 1 | 2 | `mirror` | `u16` | little | spec | mirror mask |
+
+## `surface_weight_repeat_row_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | row command `01` or `05` · value `5` |
+| 1 | 2 | `mirror` | `u16` | little | spec | mirror mask |
+| 3 | 2 | `leading_repeats` | `u16` | little | spec | leading-repeat count for command `05` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
