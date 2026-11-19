@@ -332,3 +332,13 @@ A default that the migration of an earlier format supplies is an inference
 of the migration, not a value of the document. Its records are not yet
 noted; the migrated XZ frame and the participants of an earlier design are
 the open cases.
+
+### 3.12 Plastic features
+
+`boss`, `lip`, `rest`, and `snap_fit` have no neutral operation in this
+format. Each decodes as a native operation of its kind, with its scalar
+fields (`position`, `direction`, `height`, `width`, `thickness`, and so on)
+and its parameter names. Each is charged `solidcraft/history.features-undecoded`.
+Their geometry is in the model cache, so the body they make decodes; only the
+operation is native. A neutral form needs an operation in the IR, which is a
+change to the shared feature schema and is not made by this codec.
