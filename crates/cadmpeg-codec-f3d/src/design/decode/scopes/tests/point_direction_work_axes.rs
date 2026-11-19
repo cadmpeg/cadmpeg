@@ -9,6 +9,9 @@ use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::feature::work_axes::{DesignWorkAxisConstruction, DesignWorkAxisSource};
 use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use crate::test_support::indexed_header;
+use cadmpeg_ir::design::construction::InputReference;
+use cadmpeg_ir::design::names::{Base64Bytes, NativeNameValue};
+use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::FeatureOperation;
 
 const CARRIER: u32 = 40;
@@ -398,7 +401,7 @@ fn two_point_rule_reads_the_point_data_endpoints() {
 }
 
 #[test]
-fn qualified_axis_input_keeps_the_solved_axis_and_states_no_input() {
+fn qualified_axis_input_keeps_the_solved_axis_and_is_named_by_its_stored_reference() {
     for reference_type in [12, 18] {
         let mut bytes = Vec::new();
         Carrier {
@@ -420,11 +423,11 @@ fn qualified_axis_input_keeps_the_solved_axis_and_states_no_input() {
         {
             assert!((actual - expected).abs() < 1.0e-12);
         }
-        let [local] = axis.inputs() else {
-            panic!("one stated input");
+        let [local, qualified_input] = axis.inputs() else {
+            panic!("two stated inputs");
         };
         assert!(local.reference.is_some() && local.role.is_none());
-        assert!(read.has_loss(F3dLossCode::FeatureWorkAxisInputUnnamed));
+        assert!(qualified_input.role.is_none());
         let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) =
             &read.evidence.candidates[0].source
         else {
@@ -433,6 +436,25 @@ fn qualified_axis_input_keeps_the_solved_axis_and_states_no_input() {
         let qualified = &inputs.references[1];
         assert_eq!(qualified.target, ReadField::Value(u64::from(SECOND_INPUT)));
         assert_eq!(qualified.segment, ReadField::Value(7));
+        let Some(InputReference::Picks(selection)) = &qualified_input.reference else {
+            panic!("a selection");
+        };
+        let Picks::Named(picks) = &selection.picks else {
+            panic!("named picks");
+        };
+        let [pick] = picks.as_slice() else {
+            panic!("one pick");
+        };
+        assert!(matches!(pick.target, PickTarget::Native { within: None }));
+        assert!(pick.witness.is_none());
+        let mut stored = vec![1];
+        stored.extend_from_slice(&u64::from(SECOND_INPUT).to_le_bytes());
+        stored.extend_from_slice(&[0, 1]);
+        stored.extend_from_slice(&7u32.to_le_bytes());
+        assert_eq!(
+            pick.native.as_ref().map(|name| &name.value),
+            Some(&NativeNameValue::Bytes(Base64Bytes(stored)))
+        );
     }
 }
 

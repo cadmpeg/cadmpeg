@@ -2,6 +2,9 @@ use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROL
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_work_axis;
 use cadmpeg_ir::codec::DecodeOptions;
+use cadmpeg_ir::design::construction::InputReference;
+use cadmpeg_ir::design::names::{Base64Bytes, NativeNameValue};
+use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_test_support::EditableDecodeResult;
 use std::io::Cursor;
@@ -269,10 +272,20 @@ fn distinct_work_axis_members_with_equal_local_ids_keep_their_owners_images_and_
             panic!("axis")
         };
         assert!(neutral.geometry().is_some());
-        assert!(
-            neutral.inputs().is_empty(),
-            "a cross-document input reference has no native name and no witness"
-        );
+        let [input] = neutral.inputs() else {
+            panic!("the cross-document input reference is one input")
+        };
+        let Some(InputReference::Picks(selection)) = &input.reference else {
+            panic!("a selection")
+        };
+        let Picks::Named(picks) = &selection.picks else {
+            panic!("named picks")
+        };
+        let [pick] = picks.as_slice() else {
+            panic!("one pick")
+        };
+        assert!(matches!(pick.target, PickTarget::Native { within: None }));
+        assert!(pick.witness.is_none());
         assert_eq!(candidate.prefix.name, ReadField::Value(literal.to_owned()));
         assert_eq!(candidate.prefix.properties.len(), 2);
         for (property, (key, value)) in candidate.prefix.properties.iter().zip(properties) {
@@ -308,6 +321,12 @@ fn distinct_work_axis_members_with_equal_local_ids_keep_their_owners_images_and_
         assert_eq!(reference.versioned, ReadField::Value(1));
         assert_eq!(reference.version_key_guid, reference.asset_guid);
         assert_eq!(reference.version_urn, ReadField::Value(literal.to_owned()));
+        assert_eq!(
+            pick.native.as_ref().map(|name| &name.value),
+            Some(&NativeNameValue::Bytes(Base64Bytes(
+                reference.encoded().unwrap()
+            )))
+        );
         let image = format!("{}file:source-image#0", prefix(ordinal));
         assert_eq!(
             merged

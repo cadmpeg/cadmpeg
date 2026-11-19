@@ -104,7 +104,8 @@ fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() 
             ConfigurationId::mint("test:model:configuration#two").unwrap(),
             crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 2.0, 3.0)).unwrap(),
         )]),
-        ..Default::default()
+        solution: None,
+        resolved: None,
     };
     let input = ConstructionInput {
         role: None,

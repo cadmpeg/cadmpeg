@@ -27,7 +27,11 @@ fn datum_axis_partial_states_have_one_checked_wire_spelling() {
         reference: Some(InputReference::Built(Box::new(AnyConstruction::Point(
             Construction {
                 resolved: Some(origin()),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: Default::default(),
             },
         )))),
         value: None,
@@ -225,7 +229,11 @@ fn datum_axis_validation_reaches_bound_parameter_owners_and_nested_subjects() {
             reference: Some(InputReference::Built(Box::new(AnyConstruction::Point(
                 Construction {
                     resolved: Some(origin()),
-                    ..Default::default()
+                    inputs: Vec::new(),
+                    after: Vec::new(),
+                    solution: None,
+                    mode: None,
+                    resolved_in: Default::default(),
                 },
             )))),
             value: None,
@@ -323,7 +331,11 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
         (
             AnyConstruction::Frame(Construction {
                 resolved: Some(frame.clone()),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: Default::default(),
             }),
             None,
         ),
@@ -334,7 +346,11 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
                     normal: frame.z_axis,
                     x_axis: frame.z_axis,
                 }),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: Default::default(),
             }),
             Some("plane axes must be perpendicular"),
         ),
@@ -344,7 +360,11 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
                     z_axis: unit(0.0, 0.0, -1.0),
                     ..frame.clone()
                 }),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: Default::default(),
             }),
             Some("orthonormal and right-handed"),
         ),
@@ -357,7 +377,11 @@ fn datum_axis_validation_reaches_solved_plane_frame_and_curve_values() {
                     start: FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap(),
                     end: FinitePoint3::new(Point3::new(0.0, 1.0, 0.0)).unwrap(),
                 }),
-                ..Default::default()
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved_in: Default::default(),
             }),
             Some("arc endpoint is outside"),
         ),
@@ -437,7 +461,11 @@ fn datum_axis_validation_keeps_curve_origins_and_two_pick_parameters() {
                     reference: Some(InputReference::Built(Box::new(AnyConstruction::Curve(
                         Construction {
                             inputs: vec![coordinates],
-                            ..Default::default()
+                            after: Vec::new(),
+                            solution: None,
+                            mode: None,
+                            resolved: None,
+                            resolved_in: Default::default(),
                         },
                     )))),
                     value: None,
@@ -523,7 +551,9 @@ fn datum_axis_validation_rejects_bad_witness_frames_and_construction_controls() 
                                 angle: Dimension::Literal(crate::scalar::Angle::new(1.0).unwrap()),
                             },
                         ],
-                        ..Default::default()
+                        inputs: Vec::new(),
+                        mode: None,
+                        resolved_in: Default::default(),
                     },
                 )))),
                 value: None,
@@ -778,7 +808,9 @@ fn datum_axis_resolved_configuration_keys_require_configuration_records() {
         }],
         resolved: Some(origin()),
         resolved_in: std::collections::BTreeMap::from([(key, origin())]),
-        ..Default::default()
+        after: Vec::new(),
+        solution: None,
+        mode: None,
     };
     let mut consumer = feature(
         DatumAxisDraft {

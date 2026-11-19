@@ -608,7 +608,14 @@ fn equation_curve(x: &str) -> FeatureOperation {
     };
     FeatureOperation::Curve(Box::new(CurveFeature {
         definition: CurveDefinition::Equation {
-            frame: Construction::default(),
+            frame: Construction {
+                inputs: Vec::new(),
+                after: Vec::new(),
+                solution: None,
+                mode: None,
+                resolved: None,
+                resolved_in: BTreeMap::new(),
+            },
             coordinates: EquationCoordinates::Cartesian {
                 x: law(x),
                 y: law("0[mm]"),

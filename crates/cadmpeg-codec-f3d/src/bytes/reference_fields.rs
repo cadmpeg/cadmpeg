@@ -99,6 +99,63 @@ impl<G: AsRef<str>, L> ReferenceFields<G, L> {
     }
 }
 
+impl<G: AsRef<str>, L: AsRef<str>> ReferenceFields<G, L> {
+    /// The bytes of a complete non-null reference as the reference encoding
+    /// stores them, from its presence byte to its last field.
+    pub(crate) fn encoded(&self) -> Option<Vec<u8>> {
+        fn ascii<G: AsRef<str>>(out: &mut Vec<u8>, field: &ReadField<G>) -> Option<()> {
+            match field {
+                ReadField::Absent => {}
+                ReadField::Value(guid) => {
+                    let guid = guid.as_ref().as_bytes();
+                    out.extend_from_slice(&u32::try_from(guid.len()).ok()?.to_le_bytes());
+                    out.extend_from_slice(guid);
+                }
+                ReadField::Unread => return None,
+            }
+            Some(())
+        }
+        fn utf16<L: AsRef<str>>(out: &mut Vec<u8>, field: &ReadField<L>) -> Option<()> {
+            let text = field.value()?.as_ref();
+            let count = u32::try_from(text.encode_utf16().count()).ok()?;
+            out.extend_from_slice(&count.to_le_bytes());
+            out.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+            Some(())
+        }
+        if !self.complete || self.present != ReadField::Value(1) {
+            return None;
+        }
+        let mut out = vec![1];
+        out.extend_from_slice(&self.target.value()?.to_le_bytes());
+        ascii(&mut out, &self.inline_type_guid)?;
+        let cross_document = *self.cross_document.value()?;
+        out.push(cross_document);
+        if cross_document == 0 {
+            let different_segment = *self.different_segment.value()?;
+            out.push(different_segment);
+            if different_segment == 1 {
+                out.extend_from_slice(&self.segment.value()?.to_le_bytes());
+            }
+            return Some(out);
+        }
+        out.extend_from_slice(&self.segment.value()?.to_le_bytes());
+        utf16(&mut out, &self.asset_guid)?;
+        let same_document = *self.same_document.value()?;
+        out.push(same_document);
+        if same_document == 0 {
+            ascii(&mut out, &self.target_type_guid)?;
+            utf16(&mut out, &self.link_name)?;
+            let versioned = *self.versioned.value()?;
+            out.push(versioned);
+            if versioned == 1 {
+                utf16(&mut out, &self.version_key_guid)?;
+                utf16(&mut out, &self.version_urn)?;
+            }
+        }
+        Some(out)
+    }
+}
+
 pub(crate) struct ReferenceRead<'a> {
     pub(crate) fields: ReferenceFields<&'a str, Utf16View<'a>>,
     pub(crate) reference: Option<Reference<&'a str, Utf16View<'a>>>,
@@ -440,6 +497,59 @@ mod tests {
             assert!(!read.fields.complete);
         }
     }
+    #[test]
+    fn every_complete_reference_encodes_back_to_its_stored_bytes() {
+        let mut forms = Vec::new();
+        for inline in [false, true] {
+            let mut head = vec![1];
+            head.extend_from_slice(&42u64.to_le_bytes());
+            if inline {
+                head.extend_from_slice(&36u32.to_le_bytes());
+                head.extend_from_slice(INLINE.as_bytes());
+            }
+            let mut local = head.clone();
+            local.extend_from_slice(&[0, 0]);
+            forms.push(local);
+            let mut segment = head.clone();
+            segment.extend_from_slice(&[0, 1]);
+            segment.extend_from_slice(&7u32.to_le_bytes());
+            forms.push(segment);
+            let mut qualified = head.clone();
+            qualified.push(1);
+            qualified.extend_from_slice(&7u32.to_le_bytes());
+            crate::test_support::lp_utf16(&mut qualified, ASSET);
+            qualified.push(1);
+            forms.push(qualified);
+            let mut unversioned = head;
+            unversioned.push(1);
+            unversioned.extend_from_slice(&7u32.to_le_bytes());
+            crate::test_support::lp_utf16(&mut unversioned, ASSET);
+            unversioned.push(0);
+            if !inline {
+                unversioned.extend_from_slice(&36u32.to_le_bytes());
+                unversioned.extend_from_slice(SEPARATE.as_bytes());
+            }
+            crate::test_support::lp_utf16(&mut unversioned, "Rôle 1");
+            unversioned.push(0);
+            forms.push(unversioned);
+        }
+        for (inline, separate) in [(true, false), (false, true), (true, true)] {
+            forms.push(external(inline, separate).0);
+        }
+        for bytes in forms {
+            let read = read_reference_fields(&bytes, 0);
+            assert!(read.fields.complete);
+            assert_eq!(read.end, bytes.len());
+            assert_eq!(read.fields.into_owned().encoded(), Some(bytes.clone()));
+            let truncated = read_reference_fields(&bytes[..bytes.len() - 1], 0);
+            assert_eq!(truncated.fields.into_owned().encoded(), None);
+        }
+        assert_eq!(
+            read_reference_fields(&[0], 0).fields.into_owned().encoded(),
+            None
+        );
+    }
+
     #[test]
     fn null_local_and_qualified_same_document_remain_distinct() {
         let null = read_reference_fields(&[0], 0);
