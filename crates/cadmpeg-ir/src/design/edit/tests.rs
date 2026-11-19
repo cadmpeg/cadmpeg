@@ -274,6 +274,7 @@ fn timeline() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::default(),
     });
     document.design.features = vec![
         operation(1, FeatureOperation::Spreadsheet(id("spreadsheet", 1))),
@@ -982,6 +983,7 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: Vec::new(),
+        unproduced: BTreeSet::new(),
     });
     document.design.scopes[1].occurrences = BTreeMap::from([
         (
@@ -1994,3 +1996,5 @@ fn positions_and_constructions_rewrite_in_the_wire_form() {
         "a construction with no inputs or steps keeps its value"
     );
 }
+
+mod unproduced;

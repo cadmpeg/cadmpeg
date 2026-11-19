@@ -6,8 +6,8 @@
 //! that derives `Serialize` or `Deserialize` and computes the one tag form the
 //! spec gives it from its variants. It finds each field, named or in a newtype,
 //! and checks that an `Option` is omitted for `None` and refuses `null`, and
-//! that no field other than an `Option` is ever left out. Test files and
-//! `#[cfg(test)]` items are not wire types.
+//! that each other field is present, except an empty `DesignScope.unproduced`.
+//! Test files and `#[cfg(test)]` items are not wire types.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -1058,6 +1058,12 @@ fn check_fields(
         if has(&metas, "skip") {
             continue;
         }
+        let unproduced = at.ends_with(" DesignScope")
+            && field
+                .ident
+                .as_ref()
+                .is_some_and(|ident| ident == "unproduced")
+            && last_segment(ty).is_some_and(|(ident, _)| ident == "BTreeSet");
         let at = match &field.ident {
             Some(ident) => format!("{at}.{ident}@{}", ident.span().start().line),
             None => format!("{at}.{position}@{}", field.ty.span().start().line),
@@ -1110,10 +1116,10 @@ fn check_fields(
                 ));
             }
         } else {
-            if let Some(skip) = skip {
+            if let Some(skip) = skip.filter(|skip| !(unproduced && *skip == "BTreeSet::is_empty")) {
                 problems.push(format!("{at}: field is left out by {skip}"));
             }
-            if reads && has(&metas, "default") && index.is_collection(ty, 0) {
+            if reads && has(&metas, "default") && index.is_collection(ty, 0) && !unproduced {
                 problems.push(format!(
                     "{at}: collection field reads its omission as empty"
                 ));
@@ -1572,5 +1578,28 @@ fn every_wire_type_states_the_v11_wire_form() {
         "{} serialized types depart from the docs/cadir-v11.md §2.5 wire form:\n{}",
         problems.len(),
         problems.join("\n")
+    );
+}
+
+#[test]
+fn the_census_allows_an_empty_unproduced_set_on_a_design_scope() {
+    let source = r#"#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DesignScope {
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty", with = "cadmpeg_core::distinct_keys::set")]
+    unproduced: BTreeSet<BodyId>,
+}"#;
+    assert!(probe_problems(source).is_empty());
+    assert_eq!(
+        probe_problems(&source.replace("DesignScope", "Other")).len(),
+        2
+    );
+    assert_eq!(
+        probe_problems(&source.replace("unproduced", "other")).len(),
+        2
+    );
+    assert_eq!(
+        probe_problems(&source.replace("BTreeSet::is_empty", "always")).len(),
+        1
     );
 }

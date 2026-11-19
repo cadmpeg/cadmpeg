@@ -462,11 +462,27 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
     let mut listed: BTreeMap<&str, usize> = BTreeMap::new();
     for scope in &ir.design.scopes {
         let entity = scope.definition.as_str();
+        let spanned = index.spanned_definitions(entity);
+        let owned: BTreeSet<&str> = spanned
+            .iter()
+            .filter_map(|definition| index.definitions.get(definition))
+            .flat_map(|definition| {
+                definition.bodies.iter().chain(
+                    definition
+                        .instance_bodies
+                        .iter()
+                        .flat_map(|entry| &entry.bodies),
+                )
+            })
+            .map(crate::ids::BodyId::as_str)
+            .collect();
+        let mut scoped = BTreeSet::new();
         let mut posed: BTreeMap<&OccurrencePath, usize> = BTreeMap::new();
         for current in &scope.current {
             check_current_position(index, &current.at, entity, findings);
             for body in &current.bodies {
                 *listed.entry(body.as_str()).or_default() += 1;
+                scoped.insert(body.as_str());
                 if !bodies.contains(body.as_str()) {
                     super::error(
                         findings,
@@ -481,6 +497,39 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             for path in current.poses.keys() {
                 *posed.entry(path).or_default() += 1;
                 check_path_steps(index, path, entity, "pose", findings);
+            }
+        }
+        for body in &scope.unproduced {
+            *listed.entry(body.as_str()).or_default() += 1;
+            scoped.insert(body.as_str());
+            if !bodies.contains(body.as_str()) {
+                super::error(
+                    findings,
+                    entity,
+                    format_args!(
+                        "unproduced entry {} must be a body of the current geometry",
+                        body.as_str()
+                    ),
+                );
+            }
+            if !owned.contains(body.as_str()) {
+                super::error(
+                    findings,
+                    entity,
+                    format_args!(
+                        "unproduced body {} must be owned by a definition the scope spans",
+                        body.as_str()
+                    ),
+                );
+            }
+        }
+        for body in owned {
+            if !scoped.contains(body) {
+                super::error(
+                    findings,
+                    body,
+                    format_args!("body of scoped definition {entity} belongs to no current state or unproduced set of its scope"),
+                );
             }
         }
         for count in posed.into_values() {
@@ -498,25 +547,8 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
             super::error(
                 findings,
                 body,
-                format_args!("body belongs to {count} current states; it belongs to exactly one"),
+                format_args!("body belongs to {count} current states or unproduced sets; it belongs to exactly one"),
             );
-        }
-    }
-    for scope in &ir.design.scopes {
-        let Some(definition) = index.definitions.get(scope.definition.as_str()) else {
-            continue;
-        };
-        for body in &definition.bodies {
-            if !listed.contains_key(body.as_str()) {
-                super::error(
-                    findings,
-                    body.as_str(),
-                    format_args!(
-                        "body of scoped definition {} belongs to no current state",
-                        scope.definition.as_str()
-                    ),
-                );
-            }
         }
     }
     check_stored_features(index, findings);

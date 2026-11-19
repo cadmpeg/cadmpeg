@@ -223,6 +223,7 @@ fn machined() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::new(),
     });
     document.design.features = vec![
         native_feature(

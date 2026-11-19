@@ -171,6 +171,7 @@ pub(in crate::validate) fn document() -> CadIr {
             status: EvaluationStatus::Current,
             native_ref: None,
         }],
+        unproduced: BTreeSet::default(),
     });
     design.containers.push(Container::Ordered {
         id: id("container", "timeline"),

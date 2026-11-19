@@ -244,10 +244,20 @@ impl<'a> Resolver<'a, '_, '_> {
         }) else {
             return Ok(None);
         };
+        let mut state = self.geometry_extent(&current.bodies)?;
+        state.poses = current.poses.iter().collect();
+        Ok(Some(state))
+    }
+
+    /// The topology records that `bodies` reach through the derived child
+    /// lists and references, with their name entries.
+    fn geometry_extent(
+        &self,
+        bodies: impl IntoIterator<Item = &'a BodyId>,
+    ) -> Result<ResolvedState<'a>, CodecError> {
         let mut state = ResolvedState::default();
-        let mut pending: Vec<&'a str> = current
-            .bodies
-            .iter()
+        let mut pending: Vec<&'a str> = bodies
+            .into_iter()
             .filter_map(|body| {
                 self.geometry
                     .get_key_value(body.as_str())
@@ -277,8 +287,7 @@ impl<'a> Resolver<'a, '_, '_> {
                 state.names.insert(entity, entry);
             }
         }
-        state.poses = current.poses.iter().collect();
-        Ok(Some(state))
+        Ok(state)
     }
 
     /// The state an evaluation's `Empty` or `Current` base names. `None`
@@ -564,6 +573,22 @@ pub(super) fn check_resolved_states(
         children: ir.geometry.child_lists(),
     };
     check_current_names(&resolver, findings);
+    let unproduced: BTreeSet<&BodyId> = ir
+        .design
+        .scopes
+        .iter()
+        .flat_map(|scope| &scope.unproduced)
+        .collect();
+    let extent = resolver.geometry_extent(unproduced.iter().copied())?;
+    for (entity, entry) in &extent.names {
+        if entry.name.is_some() {
+            super::error(
+                findings,
+                entity.id(),
+                format_args!("an entity of an unproduced body must have no structured name"),
+            );
+        }
+    }
     let mut topology: BTreeSet<&str> = resolver.geometry.keys().copied().collect();
     for evaluation in &ir.design.evaluations {
         if let Some(content) = &evaluation.content {
@@ -587,6 +612,15 @@ pub(super) fn check_resolved_states(
         let id = evaluation.id.as_str();
         let mut state = (*base).clone();
         apply(&mut state, &content.delta, Some((id, &mut *findings)));
+        for body in &unproduced {
+            if state.holds(Arena::Body, body.as_str()) {
+                super::error(
+                    findings,
+                    id,
+                    format_args!("evaluation states unproduced body {}", body.as_str()),
+                );
+            }
+        }
         check_entries(index, &state, id, findings);
         check_closure(ctx, &state, &topology, ids, id, findings)?;
         state_topology::check_state_topology(

@@ -164,6 +164,7 @@ fn project_timeline(
         active_arrangements: BTreeSet::new(),
         occurrences: BTreeMap::new(),
         current: vec![current],
+        unproduced: BTreeSet::default(),
     });
     Ok(())
 }

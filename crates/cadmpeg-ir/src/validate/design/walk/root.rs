@@ -482,6 +482,7 @@ impl Walk for DesignScope {
             active_arrangements: _,
             occurrences,
             current: _,
+            unproduced: _,
         } = self;
         occurrences.walk(into)?;
         Ok(())

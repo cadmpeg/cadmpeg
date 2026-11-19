@@ -332,33 +332,40 @@ impl<'a> DesignRecords<'a> {
             .collect()
     }
 
-    /// Whether `scope` holds the features of several definitions (§5.1): a
-    /// feature of it names a `component` other than the scope's definition.
-    fn holds_several_definitions(&self, scope: &str) -> bool {
-        self.features.iter().any(|(&id, feature)| {
-            feature
-                .component
-                .as_ref()
-                .is_some_and(|component| component.as_str() != scope)
-                && self.scope_of(MemberKey::Feature(id)) == Some(scope)
-        })
-    }
-
-    /// The definitions `scope` spans (§5.1): its own, and, where it holds the
-    /// features of several definitions, every definition placed below it
-    /// that has no scope of its own.
-    ///
-    /// A definition places the prototypes of the occurrences it owns (§5.5,
-    /// §8.1). An `External` definition is never spanned: it has no design.
+    /// The scope's definition and the embedded definitions it spans (§5.1).
     pub(in crate::validate) fn spanned_definitions(&self, scope: &str) -> BTreeSet<&'a str> {
-        let Some((&scope, _)) = self.definitions.get_key_value(scope) else {
+        let Some((&scope, root)) = self.definitions.get_key_value(scope) else {
             return BTreeSet::new();
         };
         let mut spanned = BTreeSet::from([scope]);
-        if !self.holds_several_definitions(scope) {
-            return spanned;
-        }
         let mut pending = vec![scope];
+        if matches!(root.storage, Storage::File { .. }) {
+            let key = scope.split_once('#').map(|(_, key)| key);
+            let placed: BTreeSet<&str> = self
+                .occurrences
+                .values()
+                .map(|occurrence| occurrence.prototype.as_str())
+                .collect();
+            for (&id, definition) in &self.definitions {
+                let file_key = id
+                    .split(':')
+                    .nth(1)
+                    .and_then(|scope| scope.split_once('@'))
+                    .map(|(key, _)| key);
+                let same_file = match file_key {
+                    Some(file_key) => Some(file_key) == key,
+                    None => root.is_root(),
+                };
+                if same_file
+                    && matches!(definition.storage, Storage::Embedded)
+                    && !self.scopes.contains_key(id)
+                    && !placed.contains(id)
+                    && spanned.insert(id)
+                {
+                    pending.push(id);
+                }
+            }
+        }
         while let Some(definition) = pending.pop() {
             let owned = self
                 .definitions
@@ -371,7 +378,7 @@ impl<'a> DesignRecords<'a> {
                 else {
                     continue;
                 };
-                if !matches!(placed.storage, Storage::External(_))
+                if matches!(placed.storage, Storage::Embedded)
                     && !self.scopes.contains_key(prototype)
                     && spanned.insert(prototype)
                 {
@@ -382,3 +389,6 @@ impl<'a> DesignRecords<'a> {
         spanned
     }
 }
+
+#[cfg(test)]
+mod tests;
