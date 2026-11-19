@@ -388,6 +388,14 @@ fn a_linear_instance_index_lies_in_its_run() {
         Severity::Error,
         refused,
     );
+    let mut parameter_seed = run(None, None);
+    parameter_seed["seed"] = json!({"kind": "parameter", "value": "test:design:parameter#n"});
+    assert_finding(
+        &patterned(&parameter_seed, &[2]),
+        Check::Design,
+        Severity::Error,
+        refused,
+    );
     assert_finding(
         &patterned(&run(Some("one"), None), &[-1]),
         Check::Design,
