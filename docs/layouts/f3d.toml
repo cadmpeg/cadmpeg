@@ -12466,6 +12466,28 @@ source = "spec"
 anchor = "u32 `N`, and `N` pairs of LP-UTF16 GUIDs"
 
 [[record]]
+name = "timeline_paste_name_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "after the null GUID and before the paired header, three zero bytes"
+size = 7
+note = "Offsets are relative to the byte after the null removal key of a paste object that keeps its sources. The same-segment references start at the end of this prefix."
+
+[[record.field]]
+name = "zero_run_3"
+offset = 0
+type = "bytes[3]"
+source = "spec"
+anchor = "before the paired header, three zero bytes"
+
+[[record.field]]
+name = "reference_count"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "a u32 reference count, that many same-segment references"
+
+[[record]]
 name = "base_feature_wide_zero_body"
 kind = "byte"
 section = "3.1"
