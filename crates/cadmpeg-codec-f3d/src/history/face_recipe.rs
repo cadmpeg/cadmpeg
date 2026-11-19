@@ -164,7 +164,9 @@ impl FaceRecipeIndex {
             return false;
         };
         if ordinals.len() != corners.len()
-            || corners.iter().any(|corner| corner.edges[0] == corner.edges[1])
+            || corners
+                .iter()
+                .any(|corner| corner.edges[0] == corner.edges[1])
         {
             return false;
         }
