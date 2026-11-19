@@ -63,8 +63,10 @@
         {
           "definition": {
             "operation": {
-              "kind": "sketch",
-              "value": "creo:model:sketch#917"
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
             }
           },
           "id": "creo:model:sketch_feature#917",
@@ -229,24 +231,7 @@
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
-      "sketches": [
-        {
-          "id": "creo:model:sketch#917",
-          "native_options": {},
-          "native_ref": "creo:featdefs:sketch#917",
-          "owner": "creo:model:sketch_feature#917",
-          "plane": {
-            "after": [],
-            "inputs": [],
-            "kind": "placed",
-            "resolved_in": {}
-          },
-          "solve": {
-            "status": "current"
-          },
-          "source_settings": {}
-        }
-      ],
+      "sketches": [],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
@@ -1163,6 +1148,18 @@
           }
         },
         "message": "1 history feature definition(s) retain only source-native semantics.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "design.sketch-plane-unread",
+            "kind": "feature_history_retained",
+            "namespace": "creo"
+          }
+        },
+        "message": "1 sketch(es) whose stored frame the decoder does not read state no v11 sketch record; a sketch feature that owns one is an unresolved sketch operation.",
         "severity": "warning"
       }
     ],

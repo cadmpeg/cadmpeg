@@ -5,9 +5,11 @@
 //! A curve's stored end is the point entity of its endpoint record, with a
 //! `Start` or `End` role; a centre a constraint names is a point entity
 //! with a `Center` role. The decoder reads no section's support references,
-//! so a sketch's plane has no inputs and states the stored frame where the
-//! decoder reads one. A relation whose v10 reading has no v11 relation of
-//! the same meaning keeps its operands and values as a `Native` relation.
+//! so a sketch's plane has no inputs and states the stored frame. A sketch
+//! whose stored frame the decoder does not read whole states no record, and
+//! its sketch feature is `Unresolved` (interim, gap 20261119-CR2-2). A
+//! relation whose v10 reading has no v11 relation of the same meaning keeps
+//! its operands and values as a `Native` relation.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,6 +34,7 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::IdentityNamespace;
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::math::{Point2, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Angle;
 use cadmpeg_ir::sketches::{
     Sketch as LegacySketch, SketchAxis, SketchConstraintDefinitionInput as Input,
@@ -41,6 +44,7 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::units::{FinitePoint2, UnitVector2, UnitVector3};
 
 use crate::container::ContainerScan;
+use crate::loss::CreoLossCode;
 
 const SKETCH_POINT: IdentityNamespace =
     cadmpeg_ir::identity_namespace!("creo", "model", "sketch_point");
@@ -51,14 +55,16 @@ const SKETCH_CENTER: IdentityNamespace =
 /// distance, in millimetres.
 const END_AGREEMENT: f64 = 1e-6;
 
-/// States every sketch whose owning feature the decoder reads, and returns
-/// the sketches a sketch feature of their own owns.
+/// States every sketch whose owning feature and stored frame the decoder
+/// reads, and returns the stated sketches a sketch feature of their own owns.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
 ) -> Result<BTreeSet<SketchId>, CodecError> {
     let (owners, standalone) = owners(scan, ir);
+    let mut unplaced = 0_usize;
     let kinds = ir
         .design
         .parameters
@@ -73,8 +79,12 @@ pub(super) fn project(
         let Some(owner) = owners.get(&sketch.id) else {
             continue;
         };
+        let Some(projected) = project_sketch(sketch, owner) else {
+            unplaced += 1;
+            continue;
+        };
         ctx.charge_entities(1, "project Creo v11 sketch")?;
-        sketches.push(project_sketch(sketch, owner));
+        sketches.push(projected);
         let record = |native_ref: &Option<String>| record(sketch, native_ref.as_ref());
         let mut points = Points::new(
             sketch,
@@ -128,15 +138,25 @@ pub(super) fn project(
             entity.roles = roles;
         }
     }
+    if unplaced != 0 {
+        losses.push(CreoLossCode::DesignSketchPlaneUnread.note(format!(
+            "{unplaced} sketch(es) whose stored frame the decoder does not read state no v11 \
+             sketch record; a sketch feature that owns one is an unresolved sketch operation."
+        )));
+    }
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
     entities.sort_by(|a, b| a.id.cmp(&b.id));
     constraints.sort_by(|a, b| a.id.cmp(&b.id));
+    let stated = sketches
+        .iter()
+        .map(|sketch| sketch.id.clone())
+        .collect::<BTreeSet<_>>();
     ir.design.sketches.extend(sketches);
     ir.design.sketch_entities.extend(entities);
     ir.design.sketch_constraints.extend(constraints);
     Ok(standalone
         .into_iter()
-        .filter(|sketch| owners.contains_key(sketch))
+        .filter(|sketch| stated.contains(sketch))
         .collect())
 }
 
@@ -208,23 +228,20 @@ fn owners(scan: &ContainerScan, ir: &CadIr) -> (BTreeMap<SketchId, FeatureId>, B
     (owners, standalone)
 }
 
-fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
-    let resolved = sketch
-        .placement
-        .resolved()
-        .and_then(|(origin, normal, u_axis)| {
-            let z_axis = UnitVector3::normalized(normal.get())?;
-            let x_axis = UnitVector3::normalized(u_axis.get())?;
-            let y_axis =
-                UnitVector3::normalized(Vector3::from(z_axis).cross(Vector3::from(x_axis)))?;
-            Some(FrameValue {
-                origin,
-                x_axis,
-                y_axis,
-                z_axis,
-            })
-        });
-    Sketch {
+/// The v11 sketch of a sketch whose stored frame the decoder reads whole;
+/// `None` for one whose plane would state no input, no step, and no value.
+fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Option<Sketch> {
+    let (origin, normal, u_axis) = sketch.placement.resolved()?;
+    let z_axis = UnitVector3::normalized(normal.get())?;
+    let x_axis = UnitVector3::normalized(u_axis.get())?;
+    let y_axis = UnitVector3::normalized(Vector3::from(z_axis).cross(Vector3::from(x_axis)))?;
+    let resolved = Some(FrameValue {
+        origin,
+        x_axis,
+        y_axis,
+        z_axis,
+    });
+    Some(Sketch {
         id: sketch.id.clone(),
         owner: owner.clone(),
         name: sketch.name.clone(),
@@ -239,7 +256,7 @@ fn project_sketch(sketch: &LegacySketch, owner: &FeatureId) -> Sketch {
         native_options: BTreeMap::new(),
         source_settings: BTreeMap::new(),
         native_ref: sketch.native_ref.clone(),
-    }
+    })
 }
 
 /// A native kind in the Creo namespace; a kind the decoder already names

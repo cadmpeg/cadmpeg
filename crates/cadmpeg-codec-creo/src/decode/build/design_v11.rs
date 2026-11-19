@@ -25,6 +25,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::{BodyId, IdentityNamespace, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::SketchId;
 
 use crate::container::ContainerScan;
@@ -42,13 +43,14 @@ pub(super) fn project(
     scan: &ContainerScan,
     ir: &mut CadIr,
     definition: &ProductDefinitionId,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if ir.model.features.is_empty() {
         return Ok(());
     }
     let definition = definition.clone();
     parameters::project(ctx, ir, &definition)?;
-    let sketches = sketches::project(ctx, scan, ir)?;
+    let sketches = sketches::project(ctx, scan, ir, losses)?;
     parameters::omit_measured_display(ir);
     project_timeline(ctx, ir, &definition, &sketches)?;
     ir.design.features.sort_by(|a, b| a.id.cmp(&b.id));

@@ -268,7 +268,7 @@ fn a_relation_with_no_v11_relation_of_its_meaning_stays_native() {
 }
 
 #[test]
-fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_none() {
+fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_no_sketch() {
     let owner = FeatureId::mint("creo:model:sketch_feature#917").expect("owner");
     let placed: LegacySketch = serde_json::from_value(json!({
         "id": SKETCH,
@@ -283,7 +283,7 @@ fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_none() {
         "profiles": [],
     }))
     .expect("v10 sketch");
-    let SketchPlane::Placed(plane) = project_sketch(&placed, &owner).plane else {
+    let SketchPlane::Placed(plane) = project_sketch(&placed, &owner).expect("sketch").plane else {
         panic!("a placed plane");
     };
     assert!(plane.inputs.is_empty());
@@ -297,10 +297,7 @@ fn a_stored_frame_is_the_resolved_plane_and_an_unread_one_states_none() {
         "profiles": [],
     }))
     .expect("v10 sketch");
-    let SketchPlane::Placed(plane) = project_sketch(&unplaced, &owner).plane else {
-        panic!("a placed plane");
-    };
-    assert_eq!(plane.resolved, None);
+    assert_eq!(project_sketch(&unplaced, &owner), None);
 }
 
 #[test]
